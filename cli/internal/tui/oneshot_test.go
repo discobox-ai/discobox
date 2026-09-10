@@ -16,7 +16,6 @@ import (
 // one discobox's workspace rather than on its list.
 func openAttached(t *testing.T, ds *fakeSource, sandbox Sandbox) (*driver, *Model) {
 	t.Helper()
-	t.Setenv("NO_COLOR", "1")
 	m := New(t.Context(), ds, WithAttach(sandbox))
 	m.logo = logo{}
 	m.copyOS = func(string) error { return nil }
@@ -29,6 +28,7 @@ func openAttached(t *testing.T, ds *fakeSource, sandbox Sandbox) (*driver, *Mode
 // list, no prompt, no row to find. The attach starts from the row the command
 // already has, so it does not wait for the listing to come back first.
 func TestAnAttachOpensOnItsDiscobox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	box := testSandboxes()[1]
 	d, m := openAttached(t, ds, box)
@@ -61,6 +61,7 @@ func TestAnAttachOpensOnItsDiscobox(t *testing.T) {
 // attach: there is no list behind it that anybody asked for. The sessions keep
 // running, exactly as a detach always leaves them.
 func TestDetachingAnAttachClosesTheWindow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openAttached(t, ds, testSandboxes()[0])
 	// Past the wait screen the window opens on, which has the keys while it is
@@ -82,6 +83,7 @@ func TestDetachingAnAttachClosesTheWindow(t *testing.T) {
 // The launcher's own detach is unchanged: it leaves the workspace and lands
 // back on the list it was opened from.
 func TestDetachingTheLauncherKeepsTheWindow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -98,6 +100,7 @@ func TestDetachingTheLauncherKeepsTheWindow(t *testing.T) {
 // the harness exits, and the window goes with it rather than falling back to a
 // list.
 func TestAnAttachEndsWithItsSession(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openAttached(t, ds, testSandboxes()[0])
 	d.wait("the primary terminal", func() bool { return m.primary() != nil })
@@ -114,6 +117,7 @@ func TestAnAttachEndsWithItsSession(t *testing.T) {
 // the command that opened the window: a status line on a screen nobody is left
 // to read is not a report.
 func TestAnAttachThatCannotOpenEndsWithTheError(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.openExecErrFor = map[string]error{ExecPrimary: errors.New("session is sealed")}
 	d, m := openAttached(t, ds, testSandboxes()[0])
@@ -129,7 +133,6 @@ func TestAnAttachThatCannotOpenEndsWithTheError(t *testing.T) {
 // types.
 func openRun(t *testing.T, ds *fakeSource, req RunRequest) (*driver, *Model) {
 	t.Helper()
-	t.Setenv("NO_COLOR", "1")
 	m := New(t.Context(), ds, WithRun(req))
 	m.logo = logo{}
 	m.copyOS = func(string) error { return nil }
@@ -142,6 +145,7 @@ func openRun(t *testing.T, ds *fakeSource, req RunRequest) (*driver, *Model) {
 // in the prompt puts up: `discobox run` hands its request over and the window
 // makes the discobox, rather than the command asking on the terminal first.
 func TestARunWindowAsksTheWindowsOwnQuestion(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.workspace = SourceWorkspace{
 		Directory: "/src/disco2", Repository: true, Carries: true,
@@ -168,6 +172,7 @@ func TestARunWindowAsksTheWindowsOwnQuestion(t *testing.T) {
 // Enter means no there, the same way it does in the launcher: carrying local
 // content in is what has to be asked for.
 func TestARunWindowsQuestionLeadsWithCarryingNothing(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.workspace = SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
 	d, m := openRun(t, ds, RunRequest{})
@@ -184,6 +189,7 @@ func TestARunWindowsQuestionLeadsWithCarryingNothing(t *testing.T) {
 // never on the list of everything else — which is not what somebody who ran one
 // command is looking at.
 func TestARunWindowWaitsOnItsOwnScreen(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.runGate = make(chan struct{})
 	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false", Prompt: []string{"fix the tests"}})
@@ -205,6 +211,7 @@ func TestARunWindowWaitsOnItsOwnScreen(t *testing.T) {
 // The window is the run, so it is the attach on what it made: leaving the
 // workspace leaves the window, exactly as `discobox attach`'s does.
 func TestARunWindowBecomesTheAttachOnWhatItMade(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
 	// Past the wait screen, which has the keys while it is up.
@@ -221,6 +228,7 @@ func TestARunWindowBecomesTheAttachOnWhatItMade(t *testing.T) {
 // A create that failed takes its wait down with it: the report belongs on a
 // screen somebody can read it on.
 func TestARunWindowsFailureIsReadable(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.runErr = errors.New("no pool is accepting discoboxes")
 	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
@@ -239,6 +247,7 @@ func TestARunWindowsFailureIsReadable(t *testing.T) {
 // empties the field on its way past, and that is not a prompt anybody typed
 // here.
 func TestAOneShotWindowLeavesTheDraftAlone(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.session.Draft = "the sentence I was in the middle of"
 	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
@@ -256,6 +265,7 @@ func TestAOneShotWindowLeavesTheDraftAlone(t *testing.T) {
 // The discobox carries on coming up in the background and nothing attaches to
 // it: what was left is this window.
 func TestEscOnAOneShotWaitLeavesTheDiscoboxStarting(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.runGate = make(chan struct{})
 	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
@@ -275,6 +285,7 @@ func TestEscOnAOneShotWaitLeavesTheDiscoboxStarting(t *testing.T) {
 // The launcher's own wait is unchanged: Esc stops watching and puts back the
 // list, which is where the discobox it was waiting for turns up.
 func TestTheLaunchersWaitOnlyStopsWatching(t *testing.T) {
+	t.Parallel()
 	m := &Model{st: newStyles(false)}
 	d := m.waitDialog("Starting nimble_swan", "creating the discobox")
 	if d.onCancel != nil || d.footer != "" {
@@ -287,6 +298,7 @@ func TestTheLaunchersWaitOnlyStopsWatching(t *testing.T) {
 // front of the wait for the discobox this run is making, exactly as it would
 // stand in front of the list on the launcher's own first run.
 func TestARunWindowStillShowsTheIntroductionWhenUnwelcomed(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := New(t.Context(), ds, WithRun(RunRequest{Prompt: []string{"fix", "the", "tests"}}), WithWelcome())
 	m.logo = logo{}
@@ -314,6 +326,7 @@ func TestARunWindowStillShowsTheIntroductionWhenUnwelcomed(t *testing.T) {
 // `discobox attach` never shows it, welcomed or not: there is no screen behind
 // the workspace it opens directly on for the introduction to hand over to.
 func TestAnAttachNeverShowsTheIntroduction(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	box := testSandboxes()[1]
 	m := New(t.Context(), ds, WithAttach(box), WithWelcome())

@@ -11,6 +11,7 @@ import (
 // The window opens ready to type: no key is needed before the first character
 // of a prompt, and nothing in the list is picked out while the prompt has it.
 func TestOpensInThePrompt(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	if m.focus != focusPrompt {
 		t.Fatal("the window should open with the prompt focused")
@@ -28,6 +29,7 @@ func TestOpensInThePrompt(t *testing.T) {
 // reports it as its own key, and a prompt that ignored it would be a prompt
 // where deleting a character depends on where your left hand happens to be.
 func TestShiftBackspaceDeletesInThePrompt(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, typeString("fix the reaperx")...)
 	send(t, m, keyPress("shift+backspace"))
@@ -43,6 +45,7 @@ func TestShiftBackspaceDeletesInThePrompt(t *testing.T) {
 // Enter with a prompt is the whole point of the window: it creates the sandbox
 // and attaches to it, and the prompt is spent.
 func TestEnterRunsThePromptAndAttaches(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
@@ -72,6 +75,7 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 // terminals can report Shift-Enter and Ctrl-Enter distinctly; byte-oriented
 // terminals commonly report the latter as Ctrl-J.
 func TestModifiedEnterInsertsANewline(t *testing.T) {
+	t.Parallel()
 	for _, key := range []string{"shift+enter", "ctrl+enter", "ctrl+j", "alt+enter"} {
 		t.Run(key, func(t *testing.T) {
 			ds := newFakeSource(testSandboxes()...)
@@ -93,6 +97,7 @@ func TestModifiedEnterInsertsANewline(t *testing.T) {
 // An empty prompt is not an error. It is the other thing you come here for: a
 // sandbox with nothing given to the harness.
 func TestEnterOnAnEmptyPromptStillCreates(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"))
@@ -105,6 +110,7 @@ func TestEnterOnAnEmptyPromptStillCreates(t *testing.T) {
 // --include-dirty=auto asks, and both answers are answers: the sandbox is
 // created either way, from the working tree or from the last commit.
 func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		answer string
 		want   string
@@ -140,6 +146,7 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 // stake — the whole directory is what would be carried — so it is asked before
 // anything is copied, and "no" still creates the discobox.
 func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		answer string
 		want   string
@@ -184,6 +191,7 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 // The size arrives while the question is up: it is asked immediately, with a
 // number that climbs, and only the final one is stated as fact.
 func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 	m := newTestModel(t, ds)
@@ -214,6 +222,7 @@ func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 // An empty directory carries nothing, so both answers make the same discobox
 // and there is nothing to ask.
 func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	ds.workspace = SourceWorkspace{Directory: "/home/ada/empty"}
 	m := newTestModel(t, ds)
@@ -232,6 +241,7 @@ func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
 
 // A clean working tree has nothing to ask about, so Enter goes straight through.
 func TestCleanWorkspaceIsNotAskedAbout(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"))
@@ -248,6 +258,7 @@ func TestCleanWorkspaceIsNotAskedAbout(t *testing.T) {
 // the bottom, the filter is the top, and a key that jumped from one to the
 // other would be moving the opposite way to what it says.
 func TestTheArrowsClimbTheWindowAndStopAtItsEnds(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress("tab"))
@@ -290,6 +301,7 @@ func TestTheArrowsClimbTheWindowAndStopAtItsEnds(t *testing.T) {
 // folder you are standing in has nothing in it and the sandboxes are elsewhere.
 // Refusing to move would leave no way to reach the one control that helps.
 func TestAnEmptyListLandsOnTheFolderFilter(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/elsewhere"}))
 	if len(m.list.rows()) != 0 {
 		t.Fatalf("expected an empty list, got %d rows", len(m.list.rows()))
@@ -311,6 +323,7 @@ func TestAnEmptyListLandsOnTheFolderFilter(t *testing.T) {
 
 // A letter in the list is a command, and it acts on the row under the cursor.
 func TestListLettersRunActions(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"))
@@ -335,6 +348,7 @@ func TestListLettersRunActions(t *testing.T) {
 
 // Selection is what a command acts on, and it outlives the cursor moving.
 func TestSelectionIsWhatCommandsActOn(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress(" "), keyPress("down"), keyPress(" "))
@@ -354,6 +368,7 @@ func TestSelectionIsWhatCommandsActOn(t *testing.T) {
 
 // V draws a range discobox-review-style, and a command acts on the whole of it.
 func TestVisualRangeActsOnTheWholeRange(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	showAllFolders(t, m)
@@ -380,6 +395,7 @@ func TestVisualRangeActsOnTheWholeRange(t *testing.T) {
 // Purge destroys the disk, so it asks first — and archiving, which is
 // reversible, does not.
 func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G")) // the archived row is last
@@ -415,6 +431,7 @@ func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
 
 // e opens the name for editing, and Enter sends the edited one.
 func TestRenameEditsTheNameInPlace(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("e"))
@@ -438,6 +455,7 @@ func TestRenameEditsTheNameInPlace(t *testing.T) {
 
 // Esc leaves the name alone, and so does Enter on the name it already had.
 func TestRenameCancelsWithoutCalling(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("e"), keyPress("esc"))
@@ -452,6 +470,7 @@ func TestRenameCancelsWithoutCalling(t *testing.T) {
 
 // Rename takes one box: a name is a name, and several rows cannot share one.
 func TestRenameTakesExactlyOneBox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress(" "), keyPress("down"), keyPress(" "), keyPress("e"))
@@ -467,6 +486,7 @@ func TestRenameTakesExactlyOneBox(t *testing.T) {
 // A row named by its terminal's title refuses rename: the configured name is
 // not the one on screen, so accepting a new one would visibly change nothing.
 func TestRenameRefusedWhenNameIsTerminalTitle(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	boxes[0].ConfigName = "brave-otter"
 	ds := newFakeSource(boxes...)
@@ -483,6 +503,7 @@ func TestRenameRefusedWhenNameIsTerminalTitle(t *testing.T) {
 
 // An action that does not apply says why rather than doing nothing.
 func TestUnavailableActionExplainsItself(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"))
@@ -500,6 +521,7 @@ func TestUnavailableActionExplainsItself(t *testing.T) {
 // Diff, apply and status run git inside the sandbox, so an archived one cannot
 // take them however much it changed — there is no container to run it in.
 func TestArchivedSandboxesCannotBeDiffed(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"))
@@ -523,6 +545,7 @@ func TestArchivedSandboxesCannotBeDiffed(t *testing.T) {
 
 // Archived sandboxes are out of the way until A asks for them.
 func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	showAllFolders(t, m)
 	if got := len(m.list.rows()); got != 3 {
@@ -537,6 +560,7 @@ func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
 // The window opens on the folder it is running in, which is what `discobox ls`
 // shows, and the header's dropdown is how you reach the others.
 func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	if m.list.folder != "/src/disco2" {
 		t.Fatalf("folder = %q, want the directory the window is running in", m.list.folder)
@@ -570,6 +594,7 @@ func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 // The dropdown lists every folder something was started from, plus the choice
 // to drop the filter, and choosing one applies it.
 func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter"))
 
@@ -598,6 +623,7 @@ func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
 // A folder with nothing in it is still worth offering when it is the one the
 // window is running in — it is where a new sandbox would be created.
 func TestTheFolderFilterAlwaysOffersThisDirectory(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	choices := m.folderChoices()
 	if len(choices) != 2 || choices[0] != "/src/disco2" || choices[1] != allFolders {
@@ -609,6 +635,7 @@ func TestTheFolderFilterAlwaysOffersThisDirectory(t *testing.T) {
 // a list that reorders under you must not move the cursor onto a different
 // sandbox between the key press and the action.
 func TestRefreshKeepsTheCursorOnItsSandbox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("down"))
@@ -630,6 +657,7 @@ func TestRefreshKeepsTheCursorOnItsSandbox(t *testing.T) {
 // reports it with the rest of its status — so a refresh carries it like any
 // other field and nothing is fetched on the list's behalf.
 func TestDiffstatArrivesWithTheListing(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(Sandbox{
 		ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/disco2",
 		Diff: DiffStat{Known: true, Added: 3, Deleted: 1, Files: 2},
@@ -647,6 +675,7 @@ func TestDiffstatArrivesWithTheListing(t *testing.T) {
 
 // A listing that fails says so, and does not take the window down with it.
 func TestListFailureIsReported(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	ds.listErr = errors.New("no server")
 	m := newTestModel(t, ds)
@@ -660,6 +689,7 @@ func TestListFailureIsReported(t *testing.T) {
 // Ctrl-D on an empty prompt quits the way a shell does, and does not when there
 // is something in the buffer to delete forward over.
 func TestCtrlDQuitsOnlyOnAnEmptyPrompt(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, typeString("something")...)
 	send(t, m, keyPress("ctrl+d"))
@@ -676,6 +706,7 @@ func TestCtrlDQuitsOnlyOnAnEmptyPrompt(t *testing.T) {
 // The window takes the whole terminal, so what was on screen before it started
 // is left exactly as it was and comes back when it exits.
 func TestTheWindowIsFullScreen(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	if !m.View().AltScreen {
 		t.Fatal("the launcher should take the alternate screen")
@@ -692,6 +723,7 @@ var _ tea.Model = (*Model)(nil)
 // The header is one control: the folder it is on is both which sandboxes are
 // listed and where a new one is created. Switching it switches both.
 func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 
@@ -724,6 +756,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 // already say. The header names the folder, so the source is a chip only when
 // it differs from it.
 func TestTheSourceChipOnlyShowsWhenItDiffers(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	if chips := m.opts.chips(m.st); strings.Contains(chips, "/src/disco2") {
@@ -748,6 +781,7 @@ func TestTheSourceChipOnlyShowsWhenItDiffers(t *testing.T) {
 // into the row directly above it: the last one. Tab is not a direction, so it
 // lands at the top.
 func TestUpFromThePromptLandsOnTheLastRow(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress("up"))
@@ -767,6 +801,7 @@ func TestUpFromThePromptLandsOnTheLastRow(t *testing.T) {
 // paragraph should stop at the top, not open the list up behind your words.
 // Tab is the way out, and it is a key you press once and mean.
 func TestUpStaysInThePromptWithTextInIt(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, typeString("one")...)
@@ -807,6 +842,7 @@ func TestUpStaysInThePromptWithTextInIt(t *testing.T) {
 // is nothing to move through, not a dead end: the empty list says to type a
 // prompt, so ↓ goes there rather than refusing.
 func TestDownReachesThePromptThroughAnEmptyList(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, keyPress("tab"))
 	if m.focus != focusFolder {
@@ -820,6 +856,7 @@ func TestDownReachesThePromptThroughAnEmptyList(t *testing.T) {
 }
 
 func TestTabFromThePromptLandsOnTheFirstRow(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 	if m.list.cursor != 0 {
@@ -831,6 +868,7 @@ func TestTabFromThePromptLandsOnTheFirstRow(t *testing.T) {
 // arriving at it: the cursor goes back to the sandbox it was left on, whichever
 // key brings it back.
 func TestComingBackToTheListKeepsTheCursor(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	showAllFolders(t, m)
 	send(t, m, keyPress("down")) // row 1, chosen deliberately
@@ -854,6 +892,7 @@ func TestComingBackToTheListKeepsTheCursor(t *testing.T) {
 // A different set of sandboxes is a list nobody has chosen a row in, so Up
 // lands at its end again rather than on whatever row number was last used.
 func TestSwitchingFolderForgetsTheCursor(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	showAllFolders(t, m)
 	send(t, m, keyPress("down"))
@@ -870,8 +909,8 @@ func TestSwitchingFolderForgetsTheCursor(t *testing.T) {
 // The leader is configurable — see the keys package for what a leader may be —
 // and it is the key the pane actually reserves, and the one the key lists name.
 func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	t.Setenv("NO_COLOR", "1")
 	m := New(t.Context(), ds, WithLeader("ctrl+b"))
 	m.logo = logo{}
 	d := newDriver(t, m)
@@ -903,6 +942,7 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 // prompt, the discoboxes, the folder they are filtered to, and back. Esc is the
 // way straight out from anywhere.
 func TestTabGoesRoundTheWindow(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	for _, want := range []focusArea{focusList, focusFolder, focusPrompt, focusList} {
@@ -933,6 +973,7 @@ func TestTabGoesRoundTheWindow(t *testing.T) {
 // TestVSCodeOpensTheBoxUnderTheCursor: v is a request that returns, so the
 // window stays where it was and says what happened on its status line.
 func TestVSCodeOpensTheBoxUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("v"))
@@ -954,6 +995,7 @@ func TestVSCodeOpensTheBoxUnderTheCursor(t *testing.T) {
 // A failure to reach the editor is the status line's, not a dialog's: nothing
 // about the box changed, and there is nothing to answer.
 func TestVSCodeReportsFailureOnTheStatusLine(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.editorErr = errors.New("no VS Code command found on PATH")
 	m := newTestModel(t, ds)
@@ -967,6 +1009,7 @@ func TestVSCodeReportsFailureOnTheStatusLine(t *testing.T) {
 // An archived box has no container to run an editor server in, so v is refused
 // with the reason rather than sent and failed.
 func TestVSCodeRefusedOnAnArchivedBox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	// The archived row is the last one, and only shown once A asks for it.
@@ -993,6 +1036,7 @@ func wedgedSandbox() Sandbox {
 // R repairs the discobox under the cursor, so recovering a wedged one never
 // means leaving the window for `discobox admin sandbox repair`.
 func TestRepairRunsOnAWedgedBox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(wedgedSandbox())
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("R"))
@@ -1005,6 +1049,7 @@ func TestRepairRunsOnAWedgedBox(t *testing.T) {
 // Repair rebuilds, so it is offered on the two shapes that need rebuilding and
 // refused — with the reason, on the menu — on a box that is working.
 func TestRepairIsRefusedOnAHealthyBox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"))
@@ -1021,6 +1066,7 @@ func TestRepairIsRefusedOnAHealthyBox(t *testing.T) {
 // An archived discobox is unarchived, not repaired — the server refuses it for
 // the same reason (ADR 0035), so the reason names the action that does work.
 func TestRepairPointsAnArchivedBoxAtUnarchive(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"))
@@ -1043,6 +1089,7 @@ func TestRepairPointsAnArchivedBoxAtUnarchive(t *testing.T) {
 // The repaint is the window's own key, not a pane's: it redraws from whatever
 // screen it is pressed on, and costs that screen nothing.
 func TestRepaintWorksOffThePanes(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, typeString("fix the reaper")...)
 

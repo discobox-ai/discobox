@@ -17,6 +17,7 @@ func initModel(title string, updates <-chan string) *Model {
 
 // Nothing to say, nothing shown — the line exists only while there is work.
 func TestInitializationIsSilentWithNothingToReport(t *testing.T) {
+	t.Parallel()
 	if line := initModel("Server initialization", nil).viewInitialization(); line != "" {
 		t.Fatalf("viewInitialization() = %q, want nothing", line)
 	}
@@ -25,6 +26,7 @@ func TestInitializationIsSilentWithNothingToReport(t *testing.T) {
 // The header says what the line is about, because the user did not ask for any
 // of this and needs to know it is one-time setup rather than their command.
 func TestInitializationCarriesItsHeaderAndLine(t *testing.T) {
+	t.Parallel()
 	m := initModel("Server initialization", make(chan string))
 	m.applyInitialization(initializationMsg{line: "Downloading images (1 of 4): harness-shell:v1"})
 
@@ -40,6 +42,7 @@ func TestInitializationCarriesItsHeaderAndLine(t *testing.T) {
 // Finishing takes the line away, which is the whole point: a window with
 // nothing to report looks like a window with nothing wrong.
 func TestInitializationDisappearsWhenDone(t *testing.T) {
+	t.Parallel()
 	m := initModel("Server initialization", make(chan string))
 	m.applyInitialization(initializationMsg{line: "Initializing resource pool"})
 	if m.viewInitialization() == "" {
@@ -57,6 +60,7 @@ func TestInitializationDisappearsWhenDone(t *testing.T) {
 // A closed channel is how "finished" arrives, so the subscription has to
 // translate it rather than block or spin.
 func TestInitializationEndsOnAClosedChannel(t *testing.T) {
+	t.Parallel()
 	updates := make(chan string)
 	close(updates)
 	m := initModel("Server initialization", updates)
@@ -74,6 +78,7 @@ func TestInitializationEndsOnAClosedChannel(t *testing.T) {
 // The window must not move because this text changed length, so it is one row
 // whatever it says.
 func TestInitializationStaysOnOneRow(t *testing.T) {
+	t.Parallel()
 	m := initModel("Server initialization", make(chan string))
 	m.width = 40
 	m.applyInitialization(initializationMsg{
@@ -89,6 +94,7 @@ func TestInitializationStaysOnOneRow(t *testing.T) {
 // transition silences is one nobody can rely on. It rides the status row every
 // screen already draws, so there is no screen it can fall off.
 func TestInitializationSurvivesTheWindowOpeningOut(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, &fakeSource{})
 	WithInitialization("Server initialization", make(chan string))(m)
 	m.applyInitialization(initializationMsg{line: "Downloading images (1 of 4)"})
@@ -118,6 +124,7 @@ func TestInitializationSurvivesTheWindowOpeningOut(t *testing.T) {
 // so it has to pin the report itself — and it is the screen where an
 // unexplained wait is least explicable, being otherwise all terminal.
 func TestInitializationShowsInTheWorkspace(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m, _ := openWorkspace(t, ds, "enter")
 	WithInitialization("Server initialization", make(chan string))(m)
@@ -140,6 +147,7 @@ func TestInitializationShowsInTheWorkspace(t *testing.T) {
 // narrow for both cuts the left back. The report is the one field on the row
 // that nothing else on screen accounts for, and F1 spells the keys out anyway.
 func TestInitializationIsNotDroppedOnANarrowRow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m, _ := openWorkspace(t, ds, "enter")
 	WithInitialization("Server initialization", make(chan string))(m)
@@ -158,6 +166,7 @@ func TestInitializationIsNotDroppedOnANarrowRow(t *testing.T) {
 // Finishing takes the report away, and takes nothing else with it: the row it
 // rode on belongs to the window either way.
 func TestInitializationDisappearsFromTheStatusRow(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, &fakeSource{})
 	WithInitialization("Server initialization", make(chan string))(m)
 	m.applyInitialization(initializationMsg{line: "Downloading images (1 of 4)"})
@@ -178,6 +187,7 @@ func TestInitializationDisappearsFromTheStatusRow(t *testing.T) {
 // like everything else, which is what makes that true without anything having
 // to arrange it.
 func TestInitializationReportIsSelectable(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, &fakeSource{})
 	slowClock(m)
 	var copied []string

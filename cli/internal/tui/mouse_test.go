@@ -92,6 +92,7 @@ func manySandboxes(n int) []Sandbox {
 }
 
 func TestAPressOnARowPutsTheCursorOnIt(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	slowClock(m)
@@ -112,6 +113,7 @@ func TestAPressOnARowPutsTheCursorOnIt(t *testing.T) {
 // A press on a row is only a press on a row: it says which one you mean, and
 // nothing about it runs.
 func TestAPressOnARowStartsNothing(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	ds := newFakeSource(boxes...)
 	m := newTestModel(t, ds)
@@ -128,6 +130,7 @@ func TestAPressOnARowStartsNothing(t *testing.T) {
 
 // The second press is the one that opens it, the way Enter does.
 func TestADoublePressOnARowAttaches(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	showAllFolders(t, m)
@@ -143,6 +146,7 @@ func TestADoublePressOnARowAttaches(t *testing.T) {
 // The pointer names the row, whatever else is marked: a double click on one
 // row of a marked set is about that row.
 func TestADoublePressActsOnTheRowUnderThePointer(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	showAllFolders(t, m)
@@ -159,6 +163,7 @@ func TestADoublePressActsOnTheRowUnderThePointer(t *testing.T) {
 
 // The right button over a row is that row's menu — the one `.` opens.
 func TestTheRightButtonOpensTheRowsMenu(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	slowClock(m)
@@ -178,6 +183,7 @@ func TestTheRightButtonOpensTheRowsMenu(t *testing.T) {
 // A hint that names a key is a button for that key, handled by the same
 // handler the keyboard reaches.
 func TestPressingAKeyHintPressesTheKey(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 
@@ -192,6 +198,7 @@ func TestPressingAKeyHintPressesTheKey(t *testing.T) {
 // The status line's offers are the screen's own keys, and they are buttons for
 // them too.
 func TestPressingAStatusHintActsOnTheList(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	slowClock(m)
@@ -210,6 +217,7 @@ func TestPressingAStatusHintActsOnTheList(t *testing.T) {
 
 // The folder filter is a dropdown, and a dropdown opens when it is clicked.
 func TestPressingTheFolderFilterOpensIt(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 
@@ -226,6 +234,7 @@ func TestPressingTheFolderFilterOpensIt(t *testing.T) {
 
 // The strip under the composer names the run options, so it is the way in.
 func TestPressingTheChipsOpensTheOptions(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 
@@ -241,6 +250,7 @@ func TestPressingTheChipsOpensTheOptions(t *testing.T) {
 // The wheel scrolls what is under the pointer and leaves the keyboard alone: a
 // prompt half typed is still where the keys go.
 func TestTheWheelScrollsTheListWithoutTakingFocus(t *testing.T) {
+	t.Parallel()
 	boxes := manySandboxes(40)
 	m := newTestModel(t, newFakeSource(boxes...))
 
@@ -258,6 +268,7 @@ func TestTheWheelScrollsTheListWithoutTakingFocus(t *testing.T) {
 // A drag across the frame selects the cells it crossed and copies them, which
 // is what the terminal's own selection did before the window took the mouse.
 func TestADragOverTheChromeSelectsAndCopies(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	slowClock(m)
@@ -284,6 +295,7 @@ func TestADragOverTheChromeSelectsAndCopies(t *testing.T) {
 // The middle button pastes the last selection, which is what it pastes
 // everywhere else.
 func TestTheMiddleButtonPastesTheLastSelection(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	slowClock(m)
@@ -306,6 +318,7 @@ func TestTheMiddleButtonPastesTheLastSelection(t *testing.T) {
 // A press in the composer is the caret moving, and a drag in it selects the
 // text rather than the frame under it.
 func TestADragInTheComposerSelectsItsText(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	m.copyOS = func(string) error { return nil }
@@ -325,6 +338,7 @@ func TestADragInTheComposerSelectsItsText(t *testing.T) {
 
 // A double click in the composer takes the word under it.
 func TestADoubleClickInTheComposerTakesAWord(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	m.copyOS = func(string) error { return nil }
 	send(t, m, typeString("hello world")...)
@@ -341,6 +355,7 @@ func TestADoubleClickInTheComposerTakesAWord(t *testing.T) {
 // opening prompt is inline in the shell's own scrollback, where the terminal's
 // selection is still the one that belongs.
 func TestTheOpeningPromptLeavesTheMouseToTheTerminal(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	m.expanded = false
 
@@ -356,6 +371,7 @@ func TestTheOpeningPromptLeavesTheMouseToTheTerminal(t *testing.T) {
 // A menu row is a press: a menu whose rows only answer their letters is a menu
 // the pointer cannot work.
 func TestPressingAMenuRowRunsIt(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	ds := newFakeSource(boxes...)
 	m := newTestModel(t, ds)
@@ -378,6 +394,7 @@ func TestPressingAMenuRowRunsIt(t *testing.T) {
 
 // And a confirmation's two answers are buttons for their own letters.
 func TestPressingAConfirmationAnswersIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	slowClock(m)
@@ -401,6 +418,7 @@ func TestPressingAConfirmationAnswersIt(t *testing.T) {
 // The run options panel: a row is a press, and the arrows on it change the
 // value the way the arrow keys do.
 func TestPressingTheOptionArrowsChangesTheValue(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("ctrl+o"))
@@ -418,6 +436,7 @@ func TestPressingTheOptionArrowsChangesTheValue(t *testing.T) {
 // The harnesses screen is a list of things you act on, so its rows answer the
 // pointer the way the discoboxes do.
 func TestPressingAHarnessRowMovesItsCursor(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("f3"))
@@ -434,6 +453,7 @@ func TestPressingAHarnessRowMovesItsCursor(t *testing.T) {
 // The right button there opens what that harness can take, which is the menu
 // `.` opens.
 func TestTheRightButtonOpensTheHarnessMenu(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("f3"))
@@ -449,6 +469,7 @@ func TestTheRightButtonOpensTheHarnessMenu(t *testing.T) {
 
 // The introduction takes one key, and the line that says so is a button for it.
 func TestPressingTheWelcomeFooterDismissesIt(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	m.welcoming = true
@@ -464,6 +485,7 @@ func TestPressingTheWelcomeFooterDismissesIt(t *testing.T) {
 // The secrets screen is two tables read as one, so a press has to say which of
 // them it landed in as well as which row.
 func TestPressingASecretRowMovesItsCursor(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 	slowClock(m)
 
@@ -480,6 +502,7 @@ func TestPressingASecretRowMovesItsCursor(t *testing.T) {
 
 // And the second press opens what the row holds, the way Enter does.
 func TestADoublePressOnASecretOpensIt(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	x, y := at(t, m, "OpenAI key")
@@ -493,6 +516,7 @@ func TestADoublePressOnASecretOpensIt(t *testing.T) {
 // A card being filled in answers the pointer too: a press moves the cursor to
 // the row and focuses its field, which is what ↑ and ↓ do.
 func TestPressingAFormRowMovesTheCursorToIt(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 	slowClock(m)
 	send(t, m, keyPress("n"))
@@ -516,6 +540,7 @@ func TestPressingAFormRowMovesTheCursorToIt(t *testing.T) {
 // nothing looks broken and the press simply misses — which is the failure this
 // whole mechanism has to be watched for.
 func TestEveryMarkLandsOnSomethingDrawn(t *testing.T) {
+	t.Parallel()
 	screens := map[string]func(t *testing.T) *Model{
 		"the discobox list": func(t *testing.T) *Model {
 			m := newTestModel(t, newFakeSource(testSandboxes()...))
@@ -594,6 +619,7 @@ func assertMarksLand(t *testing.T, m *Model, width int) {
 // can be clicked is answerable by moving the mouse rather than by clicking to
 // find out.
 func TestAHintShadesUnderThePointer(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	plain := plainFrame(m)
@@ -618,6 +644,7 @@ func TestAHintShadesUnderThePointer(t *testing.T) {
 // The window asks for every move so it can do that, and answers them itself: a
 // sandbox that subscribed to buttons alone is sent no more than it was.
 func TestABareMoveIsTheWindowsOwn(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	if got := m.mouseMode(); got != tea.MouseModeAllMotion {
 		t.Fatalf("the window asks for %v, want every move so a control can shade under the pointer", got)
@@ -628,6 +655,7 @@ func TestABareMoveIsTheWindowsOwn(t *testing.T) {
 // for their keys, because a card is the one surface where they would otherwise
 // only be readable.
 func TestPressingADialogsKeyLineAnswersIt(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	showAllFolders(t, m)
@@ -644,6 +672,7 @@ func TestPressingADialogsKeyLineAnswersIt(t *testing.T) {
 // And a menu row says so under the pointer, without taking the chevron from
 // the row Enter would run.
 func TestAMenuRowShadesUnderThePointer(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	showAllFolders(t, m)
@@ -664,6 +693,7 @@ func TestAMenuRowShadesUnderThePointer(t *testing.T) {
 
 // A card's text field takes the caret from a press, the way the composer does.
 func TestPressingACardsFieldPlacesTheCaret(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	m := newTestModel(t, newFakeSource(boxes...))
 	slowClock(m)
@@ -686,6 +716,7 @@ func TestPressingACardsFieldPlacesTheCaret(t *testing.T) {
 
 // And a card's key line closes it, on the cards that are only read.
 func TestPressingACardsCloseOffer(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("f1"))
@@ -706,6 +737,7 @@ func TestPressingACardsCloseOffer(t *testing.T) {
 
 // A form row that is typed into takes the caret too, and the cursor with it.
 func TestPressingAFormFieldPlacesTheCaret(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 	slowClock(m)
 	send(t, m, keyPress("n"))
@@ -738,6 +770,7 @@ func TestPressingAFormFieldPlacesTheCaret(t *testing.T) {
 // cursor is on: the arrow columns are kept on every row that can be stepped,
 // so the press that lights them is the press that uses them.
 func TestOneArrowPressChangesAnyOptionRow(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("ctrl+o"))
@@ -769,6 +802,7 @@ func TestOneArrowPressChangesAnyOptionRow(t *testing.T) {
 // And the value does not move as the pointer crosses it: the arrow columns are
 // there whether or not they are lit.
 func TestTheOptionValuesDoNotShiftUnderThePointer(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("ctrl+o"))
@@ -784,6 +818,7 @@ func TestTheOptionValuesDoNotShiftUnderThePointer(t *testing.T) {
 // The run options are one of the modal surfaces, so its key line is a key line
 // like every other: the offers on it are buttons for their keys.
 func TestPressingTheOptionsKeyLineLeaves(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("ctrl+o"))

@@ -20,6 +20,7 @@ func newWelcomeModel(t *testing.T, ds DataSource) *Model {
 
 // The introduction is the whole screen, ahead of the launcher behind it.
 func TestWelcomeTakesTheWindow(t *testing.T) {
+	t.Parallel()
 	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))
 
 	view := m.View()
@@ -40,6 +41,7 @@ func TestWelcomeTakesTheWindow(t *testing.T) {
 // Enter is the way out, and it says so on the server: the next window on this
 // project opens on the launcher.
 func TestWelcomeIsDismissedByEnterAndRecorded(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSource(testSandboxes()...)
 	m := newWelcomeModel(t, fake)
 
@@ -60,6 +62,7 @@ func TestWelcomeIsDismissedByEnterAndRecorded(t *testing.T) {
 // arrive at a screen the user has not seen yet — typing into a prompt that is
 // not on screen is how a first character goes missing.
 func TestWelcomeSwallowsEveryOtherKey(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSource(testSandboxes()...)
 	m := newWelcomeModel(t, fake)
 
@@ -81,6 +84,7 @@ func TestWelcomeSwallowsEveryOtherKey(t *testing.T) {
 // Ctrl-C still quits: a screen you cannot leave without answering is not what
 // an introduction is.
 func TestWelcomeDoesNotTrapCtrlC(t *testing.T) {
+	t.Parallel()
 	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress("ctrl+c"))
@@ -93,6 +97,7 @@ func TestWelcomeDoesNotTrapCtrlC(t *testing.T) {
 // welcome whether or not the server heard about it, so a failure is reported
 // and the window carries on.
 func TestWelcomeSurvivesAFailedWrite(t *testing.T) {
+	t.Parallel()
 	fake := newFakeSource(testSandboxes()...)
 	fake.welcomeErr = errors.New("the server said no")
 
@@ -110,7 +115,7 @@ func TestWelcomeSurvivesAFailedWrite(t *testing.T) {
 // WithWelcome is how the CLI opens the window on it, and it composes with the
 // screen the window was going to open on rather than replacing it.
 func TestWithWelcomeOpensOverTheScreenItWasGiven(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
+	t.Parallel()
 	m := New(t.Context(), newFakeSource(), WithWelcome(), WithHarnesses())
 	if !m.welcoming || !m.harnessesOpen {
 		t.Fatalf("welcoming = %v, harnessesOpen = %v; want both", m.welcoming, m.harnessesOpen)
@@ -121,6 +126,7 @@ func TestWithWelcomeOpensOverTheScreenItWasGiven(t *testing.T) {
 // has the whole loop, in order, so each one is on the screen and none of them
 // is `discobox run`, which does the same work without teaching the shape.
 func TestWelcomeShowsTheThreeCommandsInOrder(t *testing.T) {
+	t.Parallel()
 	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))
 
 	content := m.View().Content
@@ -144,6 +150,7 @@ func TestWelcomeShowsTheThreeCommandsInOrder(t *testing.T) {
 // and a card taller than the window loses rows off the bottom, which is where
 // the last step and the key that leaves are.
 func TestWelcomeDropsTheMarkOnAShortWindow(t *testing.T) {
+	t.Parallel()
 	m := newWelcomeModel(t, newFakeSource())
 	m.logo = newLogo(true)
 	if m.logo.height() == 0 {

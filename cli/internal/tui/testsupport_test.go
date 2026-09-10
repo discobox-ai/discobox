@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +16,16 @@ import (
 
 	"github.com/discobox-ai/discobox/termpane"
 )
+
+// The whole package renders colorless, so a frame is plain text a test can read
+// back. It is set here rather than per test because it is a process-wide
+// setting: os.Environ is what colorprofile reads (see detectColor), and a
+// t.Setenv in each test would bar every one of them from running in parallel.
+// A test that wants the colored frame builds its styles directly — newColorModel.
+func TestMain(m *testing.M) {
+	os.Setenv("NO_COLOR", "1")
+	os.Exit(m.Run())
+}
 
 // fakeSource stands in for the server. Every method records what it was asked
 // for, so a test can assert on the command a key press turned into rather than
@@ -1010,8 +1021,8 @@ func newColorModel(t *testing.T, ds DataSource) *Model {
 func newTestModel(t *testing.T, ds DataSource) *Model {
 	t.Helper()
 	// The whole window is built colorless, composer included, so a frame is
-	// plain text a test can read.
-	t.Setenv("NO_COLOR", "1")
+	// plain text a test can read. NO_COLOR is what does it, set once for the
+	// package in TestMain.
 	m := New(t.Context(), ds)
 	m.logo = logo{}
 	// Most of these are about the full launcher, which is what the window opens

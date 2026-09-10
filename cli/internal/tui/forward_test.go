@@ -23,6 +23,7 @@ func forwardSandboxes() []Sandbox {
 // discobox is serving, and the point is that those ports are reachable from
 // here without asking for anything.
 func TestWorkspaceOpensAForward(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(forwardSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the forward", func() bool { return m.forward != nil })
@@ -39,6 +40,7 @@ func TestWorkspaceOpensAForward(t *testing.T) {
 // being pressed: the bind wakes the window, and the header redraws from the
 // forward.
 func TestWorkspaceHeaderShowsBoundPortsAsTheyArrive(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(forwardSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the forward", func() bool { return m.forward != nil })
@@ -68,6 +70,7 @@ func TestWorkspaceHeaderShowsBoundPortsAsTheyArrive(t *testing.T) {
 // Detaching releases the local ports. They were taken to serve a screen that
 // is gone, and nothing on screen would account for them.
 func TestDetachingClosesTheForward(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(forwardSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the forward", func() bool { return m.forward != nil })
@@ -93,6 +96,7 @@ func TestDetachingClosesTheForward(t *testing.T) {
 // — so it is read on the way back out, which is where the window can be acted
 // on anyway.
 func TestAForwardThatFailsLeavesTheWorkspaceOpen(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(forwardSandboxes()...)
 	ds.forwardErr = errors.New("no route to the sandbox")
 	d, m, _ := openWorkspace(t, ds, "enter")

@@ -11,6 +11,7 @@ import (
 // One decimal below ten and none above, so "1.2 GiB" and "15 GiB" both fit the
 // same column.
 func TestHumanBytes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		n    int64
 		want string
@@ -29,6 +30,7 @@ func TestHumanBytes(t *testing.T) {
 // The age column ranks rows by recency; it is not there to time them, so one
 // unit is enough.
 func TestSince(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		ago  time.Duration
@@ -51,6 +53,7 @@ func TestSince(t *testing.T) {
 // A background painted across a row that carries its own colors has to be
 // re-asserted after every reset, or it would stop at the first styled span.
 func TestHighlightSurvivesEmbeddedResets(t *testing.T) {
+	t.Parallel()
 	st := newStyles(true)
 	row := "plain " + st.add.Render("+142") + " more"
 	out := highlight(st, row, colSelectedBG)
@@ -69,6 +72,7 @@ func TestHighlightSurvivesEmbeddedResets(t *testing.T) {
 
 // Without color there is no background to paint, and the row is left alone.
 func TestHighlightIsANoOpWithoutColour(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	if got := highlight(st, "plain row", colSelectedBG); got != "plain row" {
 		t.Fatalf("highlight = %q, want the row untouched", got)
@@ -77,6 +81,7 @@ func TestHighlightIsANoOpWithoutColour(t *testing.T) {
 
 // A column is a fixed number of display cells whatever is put in it.
 func TestPadAndTruncateMeasureCells(t *testing.T) {
+	t.Parallel()
 	if got := pad("abc", 6); got != "abc   " {
 		t.Errorf("pad = %q", got)
 	}
@@ -93,6 +98,7 @@ func TestPadAndTruncateMeasureCells(t *testing.T) {
 // The command preview only quotes what a shell would otherwise split or
 // interpret: a preview full of needless quotes is one you stop trusting.
 func TestShellQuote(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"":                  "''",
 		"codex":             "codex",

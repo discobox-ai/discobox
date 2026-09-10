@@ -16,6 +16,7 @@ import (
 // terminate-on-interrupt. So ^C reached nothing at all during a flow that can
 // wait minutes on an image pull.
 func TestHarnessExecCancelsTheFlowOnInterrupt(t *testing.T) {
+	t.Parallel()
 	ran := make(chan context.Context, 1)
 	exec := &harnessExec{
 		ctx: context.Background(),

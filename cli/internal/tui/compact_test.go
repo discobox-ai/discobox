@@ -12,7 +12,6 @@ import (
 // asked it to open out.
 func newCompactModel(t *testing.T, ds DataSource) (*driver, *Model) {
 	t.Helper()
-	t.Setenv("NO_COLOR", "1")
 	m := New(t.Context(), ds)
 	m.logo = logo{rows: []string{"aa", "bb", "cc", "dd", "ee", "ff"}, width: 2}
 	d := newDriver(t, m)
@@ -29,6 +28,7 @@ func newCompactModel(t *testing.T, ds DataSource) (*driver, *Model) {
 // The window opens as a prompt and nothing else: no sandboxes, no alternate
 // screen, and only the rows it needs.
 func TestTheWindowOpensAsAPrompt(t *testing.T) {
+	t.Parallel()
 	_, m := newCompactModel(t, newFakeSource(testSandboxes()...))
 
 	if m.expanded {
@@ -67,6 +67,7 @@ func TestTheWindowOpensAsAPrompt(t *testing.T) {
 // holding ↑ to walk back through it would otherwise throw the whole window
 // open behind your own words, which is not what the key was pressed for.
 func TestUpDoesNotOpenTheWindowOutWithTextInThePrompt(t *testing.T) {
+	t.Parallel()
 	d, m := newCompactModel(t, newFakeSource(testSandboxes()...))
 
 	for _, msg := range typeString("a plan") {
@@ -101,6 +102,7 @@ func TestUpDoesNotOpenTheWindowOutWithTextInThePrompt(t *testing.T) {
 // Reaching past the prompt is the ask for everything behind it: the window
 // opens out to full screen with the sandboxes on it.
 func TestReachingPastThePromptOpensTheWindowOut(t *testing.T) {
+	t.Parallel()
 	// Down is not among them: the prompt is the bottom of the window.
 	for _, key := range []string{"up", "tab"} {
 		t.Run(key, func(t *testing.T) {
@@ -140,6 +142,7 @@ func TestReachingPastThePromptOpensTheWindowOut(t *testing.T) {
 // the window later drops back there — a harness setup that takes the terminal —
 // lands in the middle of it.
 func TestThePromptComesOffTheScreenBeforeTheWindowTakesIt(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		open func(d *driver)
@@ -179,6 +182,7 @@ func TestThePromptComesOffTheScreenBeforeTheWindowTakesIt(t *testing.T) {
 // scrollback as it is printed, and nothing can erase them again. The mark is
 // what goes first, and the small window itself after that.
 func TestTheOpeningFrameFitsTheScreenItIsPrintedOn(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		height   int
@@ -194,7 +198,6 @@ func TestTheOpeningFrameFitsTheScreenItIsPrintedOn(t *testing.T) {
 		{name: "no room for a small window at all", height: 12, expanded: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("NO_COLOR", "1")
 			var options []Option
 			if tc.staging {
 				// A window with something to report under its frame, whether or
@@ -237,6 +240,7 @@ func TestTheOpeningFrameFitsTheScreenItIsPrintedOn(t *testing.T) {
 // Typing a prompt and running it does not open the window out on its own — but
 // the terminal it attaches to does, because a terminal wants the whole screen.
 func TestRunningFromTheOpeningPromptOpensOutForTheTerminal(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := newCompactModel(t, ds)
 
@@ -258,6 +262,7 @@ func TestRunningFromTheOpeningPromptOpensOutForTheTerminal(t *testing.T) {
 // flipping the screen back and forth around them would be the window arguing
 // with you.
 func TestTheWindowStaysOpenOnceItHasOpenedOut(t *testing.T) {
+	t.Parallel()
 	d, m := newCompactModel(t, newFakeSource(testSandboxes()...))
 	d.key("tab")
 	if !m.expanded {
@@ -278,6 +283,7 @@ func TestTheWindowStaysOpenOnceItHasOpenedOut(t *testing.T) {
 // filter — and that still opens the window out, since the filter is drawn in
 // the full window's header.
 func TestOpeningOutWithNothingToShow(t *testing.T) {
+	t.Parallel()
 	d, m := newCompactModel(t, newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/elsewhere"}))
 	d.key("tab")
 
@@ -292,6 +298,7 @@ func TestOpeningOutWithNothingToShow(t *testing.T) {
 // The opening glint runs once over the word the window is named for, and stops
 // the instant there is anything to do.
 func TestTheOpeningShimmerRunsOnceAndYields(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := New(t.Context(), ds)
 	m.st = newStyles(true) // it only runs where there is color to run it on
@@ -335,6 +342,7 @@ func TestTheOpeningShimmerRunsOnceAndYields(t *testing.T) {
 
 // Typing ends it: a glint playing under your own words is a distraction.
 func TestTypingEndsTheShimmer(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := New(t.Context(), ds)
 	m.st = newStyles(true)
@@ -358,6 +366,7 @@ func TestTypingEndsTheShimmer(t *testing.T) {
 
 // A terminal with no color has nothing to run it on.
 func TestNoShimmerWithoutColor(t *testing.T) {
+	t.Parallel()
 	_, m := newCompactModel(t, newFakeSource(testSandboxes()...))
 	if cmd := m.startShimmer(); cmd != nil || m.shimmer != 0 {
 		t.Fatal("there is no glint without color")
@@ -373,6 +382,7 @@ func TestNoShimmerWithoutColor(t *testing.T) {
 // below carries the path on one side and the keys on the other, and at 80 or
 // 100 columns there is no room between them.
 func TestTheOpeningHintIsInTheTopBorder(t *testing.T) {
+	t.Parallel()
 	const hint = "Tab or ↑ for the discoboxes you already have"
 
 	for _, width := range []int{80, 100, 120, 160} {
@@ -404,6 +414,7 @@ func TestTheOpeningHintIsInTheTopBorder(t *testing.T) {
 // be near. Opening the window out there are none, so it lands at the top — and
 // only afterwards does the last row become what Up reaches for.
 func TestOpeningOutLandsAtTheTopEvenFromUp(t *testing.T) {
+	t.Parallel()
 	d, m := newCompactModel(t, newFakeSource(testSandboxes()...))
 	if len(m.list.rows()) < 2 {
 		t.Fatalf("this test needs more than one row, got %d", len(m.list.rows()))

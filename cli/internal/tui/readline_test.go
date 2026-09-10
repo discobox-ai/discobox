@@ -28,6 +28,7 @@ func press(t *testing.T, m *Model, specs ...string) {
 // along; the textarea the composer is built on has not, which is why they
 // worked in a dialog and did nothing here.
 func TestCtrlArrowsMoveByWord(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "one two three")
 
 	press(t, m, "ctrl+left")
@@ -54,6 +55,7 @@ func TestCtrlArrowsMoveByWord(t *testing.T) {
 // back from, and that is the half of the muscle memory the composer used to
 // drop on the floor.
 func TestKillAndYank(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "one two three")
 
 	press(t, m, "ctrl+a", "ctrl+k")
@@ -75,6 +77,7 @@ func TestKillAndYank(t *testing.T) {
 // Taking a line apart a word at a time and putting the whole of it back with
 // one Ctrl-Y is the reason the ring exists.
 func TestConsecutiveKillsAccumulate(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "one two three")
 
 	press(t, m, "ctrl+w", "ctrl+w")
@@ -101,6 +104,7 @@ func TestConsecutiveKillsAccumulate(t *testing.T) {
 // Backspace is a typo, not a kill: what it takes never reaches the ring, so a
 // stray one cannot cost you the line you meant to move.
 func TestBackspaceIsNotAKill(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "one two")
 
 	press(t, m, "ctrl+w")
@@ -115,6 +119,7 @@ func TestBackspaceIsNotAKill(t *testing.T) {
 }
 
 func TestYankWithAnEmptyRingSaysSo(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "one")
 
 	press(t, m, "ctrl+y")
@@ -129,6 +134,7 @@ func TestYankWithAnEmptyRingSaysSo(t *testing.T) {
 // Undo walks back a change at a time, and a run of typing is one change: an
 // undo that gave a word back a letter at a time is not one anybody wants.
 func TestUndoWalksBackAChangeAtATime(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "")
 
 	send(t, m, typeString("reap the pool")...)
@@ -154,6 +160,7 @@ func TestUndoWalksBackAChangeAtATime(t *testing.T) {
 // Undo puts the cursor back where it stood when the change was made, not where
 // you have since wandered to.
 func TestUndoRestoresTheCursor(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "one two three")
 
 	press(t, m, "ctrl+w")
@@ -170,6 +177,7 @@ func TestUndoRestoresTheCursor(t *testing.T) {
 // A prompt that has been run is gone, and undo must not reach behind it into
 // something already sent.
 func TestUndoDoesNotReachBehindARun(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "")
 
 	send(t, m, typeString("reap the pool")...)
@@ -187,6 +195,7 @@ func TestUndoDoesNotReachBehindARun(t *testing.T) {
 // does at a shell — and at the end of a line it takes the last two words,
 // since there is no word ahead to be dragged past.
 func TestTransposeWords(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		value string
@@ -216,6 +225,7 @@ func TestTransposeWords(t *testing.T) {
 // The window's own keys still come first. Ctrl-D on an empty prompt quits and
 // Enter runs, and no readline key was allowed to take either of them.
 func TestTheWindowsKeysStillWinInTheComposer(t *testing.T) {
+	t.Parallel()
 	m := promptWith(t, "one two")
 
 	press(t, m, "ctrl+a", "ctrl+k")
@@ -230,6 +240,7 @@ func TestTheWindowsKeysStillWinInTheComposer(t *testing.T) {
 }
 
 func TestRemovedIsTheSpanThatWentAway(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ before, after, want string }{
 		{"one two", "one ", "two"},
 		{"one two", " two", "one"},

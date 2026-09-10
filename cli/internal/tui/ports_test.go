@@ -13,6 +13,7 @@ import (
 // group rather than once per port: three dev servers should not spell "http"
 // three times on a header row that is already short of space.
 func TestPortsTextGroupsByProtocol(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	for _, tc := range []struct {
 		name  string
@@ -89,6 +90,7 @@ func TestPortsTextGroupsByProtocol(t *testing.T) {
 // to type here as well as what the sandbox is serving there. One that kept its
 // number says it once: there is nothing to correct.
 func TestPortsTextShowsTheLocalPortForForwardedPorts(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	ports := []Port{
 		{Number: 8080, Protocol: "http"},
@@ -107,6 +109,7 @@ func TestPortsTextShowsTheLocalPortForForwardedPorts(t *testing.T) {
 // A port the forward has not bound keeps its bare number: an arrow on it would
 // promise a local port that is not listening.
 func TestPortsTextLeavesUnforwardedPortsAlone(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	ports := []Port{{Number: 8080, Protocol: "http"}, {Number: 9000, Protocol: "http"}}
 	want := "http:8081->8080,9000"
@@ -119,6 +122,7 @@ func TestPortsTextLeavesUnforwardedPortsAlone(t *testing.T) {
 // nothing else does: a browser has nothing to do with a Postgres socket, and a
 // port with no local end has nowhere to point.
 func TestPortsTextLinksForwardedWebPorts(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	ports := []Port{
 		{Number: 8080, Protocol: "http"},
@@ -149,6 +153,7 @@ func TestPortsTextLinksForwardedWebPorts(t *testing.T) {
 // A port the forward kept the number of is still forwarded, so it still links —
 // what it drops is the arrow, not the local end.
 func TestPortsTextLinksAForwardThatKeptItsNumber(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	rendered := portsText(st, Sandbox{Ports: []Port{{Number: 5173, Protocol: "http"}}}, map[int]int{5173: 5173})
 	if want := hyperlink("http://localhost:5173", "5173"); !strings.Contains(rendered, want) {
@@ -160,6 +165,7 @@ func TestPortsTextLinksAForwardThatKeptItsNumber(t *testing.T) {
 // the protocol groups: `http:6900` beside a dev server invites opening it as if
 // it were one, and the number is not the useful thing about it.
 func TestPortsTextLeavesTheDesktopOut(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	ports := []Port{
 		{Number: 8080, Protocol: "http"},
@@ -174,6 +180,7 @@ func TestPortsTextLeavesTheDesktopOut(t *testing.T) {
 // A sandbox serving only the desktop renders no port group at all, rather than
 // an empty `http:` label.
 func TestPortsTextIsEmptyWhenOnlyTheDesktopIsServed(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	ports := []Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID}}
 	if got := ansi.Strip(portsText(st, Sandbox{Ports: ports}, map[int]int{6900: 6900})); got != "" {
@@ -184,6 +191,7 @@ func TestPortsTextIsEmptyWhenOnlyTheDesktopIsServed(t *testing.T) {
 // The desktop gets its own field, labeled by the declaration rather than by a
 // number, and linked to the local end of its forward.
 func TestDesktopTextLinksTheForwardedDesktop(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	ports := []Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
 
@@ -203,6 +211,7 @@ func TestDesktopTextLinksTheForwardedDesktop(t *testing.T) {
 // An offer to open a desktop that is not reachable is worse than no offer, so
 // an unforwarded one draws nothing — the rule portEntry follows for links.
 func TestDesktopTextIsEmptyWithoutAForward(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	ports := []Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
 	if got := desktopText(st, Sandbox{Ports: ports}, nil); got != "" {
@@ -213,6 +222,7 @@ func TestDesktopTextIsEmptyWithoutAForward(t *testing.T) {
 // Nothing here knows what 6900 is. A desktop declared on another port is still
 // the desktop, and a plain port on 6900 is still a plain port.
 func TestTheDesktopIsRecognizedByIDNotByPortNumber(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	elsewhere := []Port{{Number: 7100, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
 	if got := ansi.Strip(desktopText(st, Sandbox{Ports: elsewhere}, map[int]int{7100: 7100})); got != "Desktop" {

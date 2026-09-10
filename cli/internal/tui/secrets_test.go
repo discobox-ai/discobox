@@ -45,6 +45,7 @@ func secretsFixture(t *testing.T) (*Model, *fakeSource) {
 }
 
 func TestTheScreenShowsWhatEachSecretIsAndWhatStandsOnIt(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	body := strings.Join(frame(m), "\n")
@@ -59,6 +60,7 @@ func TestTheScreenShowsWhatEachSecretIsAndWhatStandsOnIt(t *testing.T) {
 // unbound secret says so rather than showing a blank — blank reads as "not
 // loaded".
 func TestAnUnboundSecretSaysSo(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 	m.secrets.moveTo(1)
 	if s := m.secrets.current(); s == nil || s.ID != "sec_loose" {
@@ -70,6 +72,7 @@ func TestAnUnboundSecretSaysSo(t *testing.T) {
 }
 
 func TestGrantsAreListedAndRevoked(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("enter"))
@@ -123,6 +126,7 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 }
 
 func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("n"))
@@ -158,6 +162,7 @@ func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
 // four questions nobody knew were coming, which is the run of dialogs this
 // replaced.
 func TestTheOAuthRowsAreShownBeforeTheyAreAsked(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	send(t, m, keyPress("n"))
@@ -184,6 +189,7 @@ func TestTheOAuthRowsAreShownBeforeTheyAreAsked(t *testing.T) {
 // A form that is not answered stays up with the reason on it: closing it would
 // throw away everything already typed.
 func TestARequiredRowRefusesTheFormRatherThanClosingIt(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("n"))
@@ -200,6 +206,7 @@ func TestARequiredRowRefusesTheFormRatherThanClosingIt(t *testing.T) {
 }
 
 func TestTheBindingCanBeEditedAndReleased(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("e"))
@@ -227,6 +234,7 @@ func TestTheBindingCanBeEditedAndReleased(t *testing.T) {
 // take one made rotating a token a matter of deleting the secret and storing it
 // again, which takes every grant standing on it along with it.
 func TestASecretsValueIsReplacedFromTheSameCard(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("e"))
@@ -264,6 +272,7 @@ func TestASecretsValueIsReplacedFromTheSameCard(t *testing.T) {
 // the rest. The card refuses rather than sending it, and says which part it
 // cannot supply for you.
 func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{{
@@ -304,6 +313,7 @@ func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
 // an oauth credential are stored and renewed differently, and that is a new
 // credential rather than an edit.
 func TestTheKindOfAStoredCredentialCannotBeChanged(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	send(t, m, keyPress("e"))
@@ -318,6 +328,7 @@ func TestTheKindOfAStoredCredentialCannotBeChanged(t *testing.T) {
 // Deleting takes the grants with it, so the question says so and Enter is not
 // the answer.
 func TestDeletingAsksFirstAndSaysWhatGoesWithIt(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("d"))
@@ -343,6 +354,7 @@ func TestDeletingAsksFirstAndSaysWhatGoesWithIt(t *testing.T) {
 // A request nobody's discobox row can carry — one with no sandbox — still has
 // to be answerable, and this screen is where an operator is looking.
 func TestTheScreenCountsAndOpensWaitingRequests(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{waitingRequest()}
@@ -365,6 +377,7 @@ func TestTheScreenCountsAndOpensWaitingRequests(t *testing.T) {
 }
 
 func TestTheScreenIsAToggleAndEscapeLeavesIt(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 	send(t, m, keyPress(secretsKey))
 	if m.secretsOpen {
@@ -380,6 +393,7 @@ func TestTheScreenIsAToggleAndEscapeLeavesIt(t *testing.T) {
 // what this screen is for: there is no row to mark and no workspace to raise it
 // in, so if it is not counted here it is invisible everywhere.
 func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	orphan := waitingRequest()
 	orphan.ID, orphan.SandboxID = "sreq_orphan", ""
@@ -413,6 +427,7 @@ func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 // takes typing, moves between its rows and is answered by Enter, and a card
 // that could only be answered from a test is not one anybody can use.
 func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("n"))
@@ -451,6 +466,7 @@ func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
 // it on the floor — the card sat there taking nothing, and the pasted token
 // went into the composer behind it, which is not even on screen.
 func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("n"))
@@ -485,6 +501,7 @@ func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
 // picked out of what the window already holds, so nothing here is an ID
 // somebody has to type correctly.
 func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress(grantCreateKey))
@@ -550,6 +567,7 @@ func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 // injected, so it alone is asked for a variable and a use, and neither may be
 // left empty (ADR 0031 §4).
 func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress(grantCreateKey))
@@ -584,6 +602,7 @@ func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
 // content, so without a fixed allowance the window grew and shrank under the
 // cursor — moving every row somebody was reading.
 func TestTheFormIsTheSameHeightOnEveryRow(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	for _, open := range []struct {
@@ -654,6 +673,7 @@ func rowShown(m *Model, key string) bool {
 // A lifetime that is not a number grants nothing, rather than quietly meaning
 // something else — and the form stays up saying so, with what was typed on it.
 func TestAnUnreadableLifetimeGrantsNothing(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress(grantCreateKey))
@@ -674,6 +694,7 @@ func TestAnUnreadableLifetimeGrantsNothing(t *testing.T) {
 // Reading a grant and coming back lands on the grants, not on the list behind
 // them: the next move after reading one is reading the next, or withdrawing it.
 func TestLeavingAGrantReturnsToTheGrants(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	send(t, m, keyPress("enter"))
@@ -696,6 +717,7 @@ func TestLeavingAGrantReturnsToTheGrants(t *testing.T) {
 
 // Declining a revoke leaves you on the grants, not on the screen behind them.
 func TestDecliningARevokeReturnsToTheGrants(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("enter"))
@@ -717,6 +739,7 @@ func TestDecliningARevokeReturnsToTheGrants(t *testing.T) {
 // is what is waiting, and off the top of that is the secrets again — the same
 // way the discobox list and the prompt hand focus to each other.
 func TestTheTablesHandFocusToEachOther(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{waitingRequest()}
@@ -757,6 +780,7 @@ func TestTheTablesHandFocusToEachOther(t *testing.T) {
 // Enter on a request opens the same question the row mark and the workspace
 // banner open, for that request rather than the oldest one.
 func TestEnterOnARequestAnswersThatOne(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	older, newer := waitingRequest(), waitingRequest()
 	older.ID, older.Host, older.Created = "sreq_older", "api.github.com", older.Created.Add(-time.Hour)
@@ -789,6 +813,7 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 // Making a grant starts from the grants: a secret with none is not a dead end
 // telling somebody to go and run another command.
 func TestGrantsCanBeMadeFromTheGrantsList(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectGrants = nil
@@ -815,6 +840,7 @@ func TestGrantsCanBeMadeFromTheGrantsList(t *testing.T) {
 // nothing — all it saw was a sentinel it could not resolve — and a person's
 // ask is not that.
 func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		req  CredentialRequest
@@ -846,6 +872,7 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 // first asks, so a project grant can carry uses without knowing which boxes it
 // will cover.
 func TestAProjectGrantCanBeAccessOnlyToo(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress(grantCreateKey))
@@ -879,6 +906,7 @@ func TestAProjectGrantCanBeAccessOnlyToo(t *testing.T) {
 // renew it when that token goes stale. Choosing the kind is what brings those
 // rows onto the card.
 func TestAnOAuthSecretIsRegisteredFromTheWindow(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("n"))
@@ -916,6 +944,7 @@ func TestAnOAuthSecretIsRegisteredFromTheWindow(t *testing.T) {
 // rather than an oauth secret the server would refuse. The form says which row
 // it is waiting on and keeps everything already typed.
 func TestAnOAuthSecretWithoutRefreshMaterialStoresNothing(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("n"))
@@ -939,6 +968,7 @@ func TestAnOAuthSecretWithoutRefreshMaterialStoresNothing(t *testing.T) {
 // Opening an OAuth credential says what it is: where it renews, what the grant
 // may do, when the access token goes stale — and none of it is the credential.
 func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{{
@@ -981,6 +1011,7 @@ func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
 // An OAuth credential that cannot renew is the one worth saying so about: it
 // will expire and stay expired.
 func TestASecretThatCannotRenewSaysSo(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{{
@@ -1001,6 +1032,7 @@ func TestASecretThatCannotRenewSaysSo(t *testing.T) {
 // it the harness, and the window says what a person calls it — while still
 // sending what the server expects.
 func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectGrants = []Grant{{
@@ -1057,6 +1089,7 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 // is the meaningful answer "no limit" rather than an empty field. Both have to
 // be sayable in the window, and both have to read as what they are.
 func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("e"))
@@ -1103,6 +1136,7 @@ func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
 // facts about a credential rather than ways to tell two of them apart, and a
 // row carrying every field is a row nobody reads.
 func TestTheRowCarriesWhatTellsSecretsApartAndNoMore(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	body := strings.Join(frame(m), "\n")
@@ -1123,6 +1157,7 @@ func TestTheRowCarriesWhatTellsSecretsApartAndNoMore(t *testing.T) {
 // The two tables are one question — which of these credentials answers this
 // request — so they sit together, with the leftover room below them both.
 func TestTheRequestsTableSitsUnderTheSecrets(t *testing.T) {
+	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{{ID: "sreq_1", Host: "api.github.com", SandboxID: "sbx_one", Created: time.Now()}}
@@ -1153,6 +1188,7 @@ func TestTheRequestsTableSitsUnderTheSecrets(t *testing.T) {
 // refusal teaches the rule one rejection at a time. The form says the limit
 // against the row it applies to.
 func TestTheGrantLifetimeRowNamesTheSecretsLimit(t *testing.T) {
+	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	m.askForGrantScope()

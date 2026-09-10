@@ -12,6 +12,7 @@ import (
 // usually the most considered thing on the screen and closing a terminal is
 // not a decision to throw one away.
 func TestThePromptComesBackWithTheSession(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.session.Draft = "finish the pool reaper\nand test it"
 	m := newTestModel(t, ds)
@@ -37,6 +38,7 @@ func TestThePromptComesBackWithTheSession(t *testing.T) {
 // composer from the first frame. Anything typed in that moment is what is
 // being written now, and a draft must never land on top of it.
 func TestARestoredDraftNeverOverwritesWhatIsBeingTyped(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.session.Draft = "the old one"
 	m := newTestModel(t, ds)
@@ -55,6 +57,7 @@ func TestARestoredDraftNeverOverwritesWhatIsBeingTyped(t *testing.T) {
 // outright loses at most the last few seconds of it — and only when there is
 // something new to write, so an idle window writes nothing at all.
 func TestTheDraftIsSavedOnTheTick(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 
@@ -80,6 +83,7 @@ func TestTheDraftIsSavedOnTheTick(t *testing.T) {
 // a clock that will not tick again: a command batched with the quit races the
 // runtime shutting down.
 func TestClosingTheWindowSavesTheDraft(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("unsent")...)
@@ -97,6 +101,7 @@ func TestClosingTheWindowSavesTheDraft(t *testing.T) {
 // with has to drop what was stored, or the window comes back holding a prompt
 // you threw away.
 func TestQuittingOnAnEmptiedPromptDropsTheDraft(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.session.Draft = "an old thought"
 	m := newTestModel(t, ds)
@@ -121,6 +126,7 @@ func TestQuittingOnAnEmptiedPromptDropsTheDraft(t *testing.T) {
 // draft goes with it. Otherwise every window after it would open holding a
 // prompt that already has a discobox running it.
 func TestRunningThePromptDropsTheDraft(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("build it")...)
@@ -137,6 +143,7 @@ func TestRunningThePromptDropsTheDraft(t *testing.T) {
 // A store that cannot take the draft says so. It is the one thing the window
 // cannot quietly get wrong: silence would read as saved.
 func TestAFailedDraftSaveIsReported(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.draftErr = errors.New("read-only file system")
 	m := newTestModel(t, ds)
@@ -152,6 +159,7 @@ func TestAFailedDraftSaveIsReported(t *testing.T) {
 // A window with no folder resolved has nothing to key a draft by, and a draft
 // nothing can be keyed by is one nothing can return.
 func TestNoFolderNoDraft(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.session.Directory = ""
 	m := newTestModel(t, ds)

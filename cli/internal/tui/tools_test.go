@@ -38,6 +38,7 @@ func openPicker(t *testing.T, ds *fakeSource) (*driver, *Model) {
 // a press takes the whole line: what makes them worth a row is reading them and
 // seeing that there is nothing else to them.
 func TestTheToolsPickerPrintsAndCopiesTheAddresses(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openPicker(t, ds)
 	copies := make(chan string, 2)
@@ -100,6 +101,7 @@ func TestTheToolsPickerPrintsAndCopiesTheAddresses(t *testing.T) {
 // again the next time the card is opened — what it failed at is the kind of
 // thing that stops being true.
 func TestTheToolsPickerRetriesAFailedAddressLookup(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.addressErr = errors.New("no ssh_config to write")
 	d, m := openPicker(t, ds)
@@ -125,6 +127,7 @@ func TestTheToolsPickerRetriesAFailedAddressLookup(t *testing.T) {
 // The picker runs the tool in the discobox, as an exec session in its primary
 // source directory — nothing on this machine — and gives it the whole window.
 func TestTheToolsPickerRunsDiffInTheBox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 
@@ -153,6 +156,7 @@ func TestTheToolsPickerRunsDiffInTheBox(t *testing.T) {
 // ended, and choosing the tool again shows the same pane rather than starting a
 // second one.
 func TestMinimizingAToolKeepsItsSessionAndReopensIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 	opened := m.showingTool()
@@ -188,6 +192,7 @@ func TestMinimizingAToolKeepsItsSessionAndReopensIt(t *testing.T) {
 // Closing is the other button: it ends the session in the discobox, which is
 // the one thing the window does that a detach never does.
 func TestClosingAToolEndsItsSession(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "f")
 	execID := m.showingTool().execID
@@ -214,6 +219,7 @@ func TestClosingAToolEndsItsSession(t *testing.T) {
 // the window goes when the program does, rather than holding a dead screen the
 // reader has to dismiss before the workspace comes back.
 func TestAToolThatExitsTakesItsWindowWithIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 	term := ds.execTerm(m.showingTool().execID)
@@ -235,6 +241,7 @@ func TestAToolThatExitsTakesItsWindowWithIt(t *testing.T) {
 // The [-] and [x] on the border are the same two things, reachable with a
 // mouse: a press on one has to mean that button and not the pane under it.
 func TestTheToolWindowButtonsMinimizeAndClose(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 
@@ -279,6 +286,7 @@ func buttonColumns(t *testing.T, m *Model) (minimize, closeAt int) {
 // to a discobox with one already running picks it back up — put away, because
 // attaching to a discobox should show you the discobox.
 func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{{
 		ID: "exec_diff", Command: []string{"discobox-review"}, Tool: "diff",
@@ -314,6 +322,7 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 // Detaching closes the window onto the tools the way it closes the window onto
 // everything else: the streams go, and the sessions keep running.
 func TestDetachingLeavesTheToolSessionsRunning(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 
@@ -336,6 +345,7 @@ func TestDetachingLeavesTheToolSessionsRunning(t *testing.T) {
 // command; vscode is the odd one and is listed anyway, on the key it has in the
 // list, so there is one place to ask "open this box in X".
 func TestEveryToolIsReachableByItsKey(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, tool := range tools {
 		if seen[tool.key] {
@@ -357,6 +367,7 @@ func TestEveryToolIsReachableByItsKey(t *testing.T) {
 // Launching a tool carries its files into the discobox, before the session
 // starts: the tool reads its configuration when it comes up.
 func TestLaunchingAToolCarriesItsConfigIn(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m := openTool(t, ds, "f")
 
@@ -383,6 +394,7 @@ func TestLaunchingAToolCarriesItsConfigIn(t *testing.T) {
 // offered on every row, so the ones with no config have to say so rather than
 // look broken.
 func TestATooWithNoConfigSaysSo(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -404,6 +416,7 @@ func TestATooWithNoConfigSaysSo(t *testing.T) {
 // file means no second menu: a list with a single row is a press to answer a
 // question that has one answer.
 func TestThePickerEditsTheHighlightedToolsConfig(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.editToolFile = func(ToolFile) string { return `{"theme":"mine"}` }
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -436,6 +449,7 @@ func TestThePickerEditsTheHighlightedToolsConfig(t *testing.T) {
 // An editor that saved nothing changed nothing, and the line says that rather
 // than claiming a save.
 func TestAnUneditedConfigReportsUnchanged(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.editToolFile = func(file ToolFile) string { return file.Default }
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -455,6 +469,7 @@ func TestAnUneditedConfigReportsUnchanged(t *testing.T) {
 // name fresh dictates — says it in a modeline, because a .json file full of
 // comments is a screenful of syntax errors otherwise.
 func TestTheFreshConfigDeclaresItsFormat(t *testing.T) {
+	t.Parallel()
 	// The name fresh reads is not negotiable; the local one is ours to pick.
 	if freshConfig.Home != ".config/fresh/config.json" {
 		t.Errorf("Home = %q, want the path fresh actually reads", freshConfig.Home)
@@ -500,6 +515,7 @@ func TestTheFreshConfigDeclaresItsFormat(t *testing.T) {
 // file is and where it lands — the local name and the delivered path differ, and
 // a row that showed only one of them would be a row you cannot act on.
 func TestTheFileListNamesEveryFileAndWhereItGoes(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -527,6 +543,7 @@ func TestTheFileListNamesEveryFileAndWhereItGoes(t *testing.T) {
 // buffer with no file tree — the one thing you want from an editor pointed at a
 // project — so the argument is the feature, and it regresses silently.
 func TestFreshIsLaunchedOnItsDirectory(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	openTool(t, ds, "f")
 
@@ -539,6 +556,7 @@ func TestFreshIsLaunchedOnItsDirectory(t *testing.T) {
 // JSON reader, so a comment in it would take the whole file — and the enable
 // with it — silently.
 func TestTheLiveDiffSeedIsStrictJSON(t *testing.T) {
+	t.Parallel()
 	if strings.Contains(freshLiveDiff.Default, "//") {
 		t.Fatalf("a comment would make this unparseable:\n%s", freshLiveDiff.Default)
 	}
@@ -562,6 +580,7 @@ func TestTheLiveDiffSeedIsStrictJSON(t *testing.T) {
 
 // Every declared file has to be complete enough to deliver and to name.
 func TestEveryToolFileIsDeliverable(t *testing.T) {
+	t.Parallel()
 	for _, tool := range tools {
 		for _, file := range tool.files {
 			if file.Tool != tool.id {
@@ -584,6 +603,7 @@ func TestEveryToolFileIsDeliverable(t *testing.T) {
 // The workspace's hints line is where the picker is advertised — it is the only
 // place, so a window that never showed it is a picker nobody opens.
 func TestTheWorkspaceHintsOfferTheToolsPicker(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m, _ := openWorkspace(t, ds, "enter")
 
@@ -602,6 +622,7 @@ func TestTheWorkspaceHintsOfferTheToolsPicker(t *testing.T) {
 // workspace's own line survives it — no hint cut mid-word, and the way out never
 // among the casualties.
 func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 	d.key("ctrl+a")

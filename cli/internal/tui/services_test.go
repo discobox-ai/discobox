@@ -33,6 +33,7 @@ func serviceExecRecord(id, service, name string) Exec {
 
 // A running service is a tab in the left column, ahead of the terminals.
 func TestARunningServiceIsATabBeforeTheTerminals(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
@@ -65,6 +66,7 @@ func TestARunningServiceIsATabBeforeTheTerminals(t *testing.T) {
 // strip drawn from the exec listing alone said nothing about it at all — and a
 // declaration that cannot run is exactly the one you need to hear about.
 func TestABrokenDeclarationGetsATabSayingWhy(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{{
 		ID: "discobox-api", Name: "Discobox Api", Status: "stopped",
@@ -101,6 +103,7 @@ func TestABrokenDeclarationGetsATabSayingWhy(t *testing.T) {
 // A service that failed shows why, and what it printed before it did — which
 // after a crash is the reason.
 func TestAFailedServiceShowsItsLastOutput(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	code := 1
 	ds.services = []Service{{
@@ -128,6 +131,7 @@ func TestAFailedServiceShowsItsLastOutput(t *testing.T) {
 // service starts at "now" and the pane would sit empty until it next said
 // something. Its transcript is played in first.
 func TestARunningServicePaneOpensOnItsHistory(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -148,6 +152,7 @@ func TestARunningServicePaneOpensOnItsHistory(t *testing.T) {
 // A transcript longer than a pane could usefully hold is cut, at a line
 // boundary so the cut never lands inside an escape sequence.
 func TestHistoryIsTailedAtALineBoundary(t *testing.T) {
+	t.Parallel()
 	line := strings.Repeat("x", 99) + "\n"
 	logs := []byte(strings.Repeat(line, (historyLimit/len(line))+50))
 	got := tailHistory(logs)
@@ -166,6 +171,7 @@ func TestHistoryIsTailedAtALineBoundary(t *testing.T) {
 // the discobox is running it — and it is read-only, so focus there is focus
 // nowhere.
 func TestAServiceDoesNotTakeTheFocus(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -185,6 +191,7 @@ func TestAServiceDoesNotTakeTheFocus(t *testing.T) {
 // service is already running — so the tab that got there first must not be
 // left holding the keys.
 func TestThePrimaryTakesTheFocusWhenItArrivesAfterAService(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -214,6 +221,7 @@ func TestThePrimaryTakesTheFocusWhenItArrivesAfterAService(t *testing.T) {
 // A shell asked for by hand keeps the keys even when the primary lands after
 // it: the primary claims the index in its own column, not the window's focus.
 func TestAnAskedForShellKeepsTheFocusWhenThePrimaryArrives(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -237,6 +245,7 @@ func TestAnAskedForShellKeepsTheFocusWhenThePrimaryArrives(t *testing.T) {
 // keys off it, even though it lands ahead of it in the strip and shifts every
 // index along.
 func TestAnArrivingServiceLeavesTheWorkingPaneAlone(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -259,6 +268,7 @@ func TestAnArrivingServiceLeavesTheWorkingPaneAlone(t *testing.T) {
 // On a service, the list's own stop and start keys are the service's: the pane
 // you are looking at is what a verb applies to.
 func TestStopAndStartOnAServicePaneActOnTheService(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ key, want string }{
 		{"t", "stop sbx_one otel"},
 		{"T", "start sbx_one otel"},
@@ -289,6 +299,7 @@ func TestStopAndStartOnAServicePaneActOnTheService(t *testing.T) {
 // Everywhere else those keys still mean the discobox, including on the pane
 // right next to the service.
 func TestStopOnATerminalPaneStillActsOnTheDiscobox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -311,6 +322,7 @@ func TestStopOnATerminalPaneStillActsOnTheDiscobox(t *testing.T) {
 // A verb with no meaning for a service is not re-scoped: it still applies to
 // the discobox, which is the only thing it could apply to.
 func TestAnUnrelatedVerbOnAServicePaneActsOnTheDiscobox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -330,6 +342,7 @@ func TestAnUnrelatedVerbOnAServicePaneActsOnTheDiscobox(t *testing.T) {
 // The hints line under a focused service says what can be done to it, and does
 // not promise it keys: nothing at the far end reads them.
 func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -359,6 +372,7 @@ func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
 // A service is the one pane you deliberately look away from, so its tab is
 // where it says something happened while you were not looking.
 func TestAServiceTabMarksOutputYouHaveNotSeen(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -384,6 +398,7 @@ func TestAServiceTabMarksOutputYouHaveNotSeen(t *testing.T) {
 // Output that arrives while the service is on screen is output you are
 // reading, and is never marked.
 func TestOutputOnAVisibleServiceIsNotMarked(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -402,6 +417,7 @@ func TestOutputOnAVisibleServiceIsNotMarked(t *testing.T) {
 // Only services are marked. A shell running a build would wear the mark
 // permanently while saying nothing you did not already know.
 func TestAShellIsNotMarked(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -423,6 +439,7 @@ func TestAShellIsNotMarked(t *testing.T) {
 // A service stopped on purpose has no tab: its absence says the right thing,
 // and a pane to dismiss every time would be the window nagging.
 func TestAStoppedServiceHasNoTab(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -440,6 +457,7 @@ func TestAStoppedServiceHasNoTab(t *testing.T) {
 // service listing both opens and closes these panes, so there is one writer
 // per service rather than a tab nobody owns.
 func TestAServicePaneFollowsItsService(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -456,6 +474,7 @@ func TestAServicePaneFollowsItsService(t *testing.T) {
 // A restart keeps the exec id (ADR 0038) and moves the start time, so the pane
 // has to notice it is drawing a run that is over and open the new one.
 func TestARestartedServiceReopensItsPane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	first := runningService("otel", "OTEL", "exec_svc1")
 	ds.services = []Service{first}
@@ -474,6 +493,7 @@ func TestARestartedServiceReopensItsPane(t *testing.T) {
 
 // A declaration deleted from the repository takes its tab with it.
 func TestADeletedDeclarationLosesItsTab(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "failed"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -486,6 +506,7 @@ func TestADeletedDeclarationLosesItsTab(t *testing.T) {
 // The left column is [services, terminals], and services are ordered as the
 // repository declares them rather than by when their process started.
 func TestServicesSortBeforeTerminalsInDeclarationOrder(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	// Declared otel first and api second — the other way round from both
 	// their start times and their ids, so neither can pass for declaration
@@ -522,6 +543,7 @@ func TestServicesSortBeforeTerminalsInDeclarationOrder(t *testing.T) {
 // Services share the left column, so they never split the window: only shells
 // put a second box on screen.
 func TestServicesDoNotSplitTheWindow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -539,6 +561,7 @@ func TestServicesDoNotSplitTheWindow(t *testing.T) {
 
 // Nothing reads a service's stdin, so nothing types at its pane.
 func TestAServicePaneIsReadOnly(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
@@ -562,6 +585,7 @@ func TestAServicePaneIsReadOnly(t *testing.T) {
 // A plain exec with no TTY is not a session at all — a captured `disco exec` —
 // and must not become a tab just because services now can.
 func TestANonTTYExecThatIsNotAServiceIsNotATab(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{{
 		ID:        "exec_plain",
@@ -581,6 +605,7 @@ func TestANonTTYExecThatIsNotAServiceIsNotATab(t *testing.T) {
 // The leader plus S0 opens what the discobox declares, including the services
 // that have no tab.
 func TestLeaderS0OpensTheServicesMenu(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{
 		{ID: "discobox-api", Name: "Discobox API", Description: "hot reload", Status: "stopped"},
@@ -603,6 +628,7 @@ func TestLeaderS0OpensTheServicesMenu(t *testing.T) {
 
 // Choosing a service and a verb runs it against that service, and says so.
 func TestTheServicesMenuRunsAVerb(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -624,6 +650,7 @@ func TestTheServicesMenuRunsAVerb(t *testing.T) {
 // A discobox that declares no services says so rather than opening an empty
 // menu: an empty list of things you have never heard of reads as a failure.
 func TestTheServicesMenuOnADiscoboxWithNone(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -640,6 +667,7 @@ func TestTheServicesMenuOnADiscoboxWithNone(t *testing.T) {
 // A declaration that cannot run is listed with the reason, and cannot be
 // chosen: there is nothing to start.
 func TestTheServicesMenuShowsUnrunnableDeclarations(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{{ID: "broken", Name: "Broken", Status: "stopped", Problem: "script is not executable"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -658,6 +686,7 @@ func TestTheServicesMenuShowsUnrunnableDeclarations(t *testing.T) {
 }
 
 func TestTheServicesMenuReportsAFailedRead(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.servicesErr = errors.New("sandbox is not up")
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -676,6 +705,7 @@ func TestTheServicesMenuReportsAFailedRead(t *testing.T) {
 // on a sandbox that is still coming up, and a two-second cadence saying so is
 // noise the user cannot act on.
 func TestAFailedServicePollIsNotReported(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.servicesErr = errors.New("sandbox is not up")
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -710,6 +740,7 @@ func focusService(d *driver, m *Model) {
 // The services have an alphabet of their own one keystroke further in: the
 // leader, S, and the number the tab wears.
 func TestTheSChordJumpsToAServiceByItsNumber(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{
 		runningService("api", "API", "exec_api"),
@@ -739,6 +770,7 @@ func TestTheSChordJumpsToAServiceByItsNumber(t *testing.T) {
 
 // A number with no service under it is answered rather than swallowed.
 func TestAnUnknownServiceNumberIsReported(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("api", "API", "exec_api")}
 	ds.execs = []Exec{serviceExecRecord("exec_api", "api", "API")}
@@ -754,6 +786,7 @@ func TestAnUnknownServiceNumberIsReported(t *testing.T) {
 // The two countings are separate: a service wears S1 and the terminals and
 // shells keep the digits to themselves.
 func TestServiceTabsWearSNumbersAndLeaveTheDigitsAlone(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("api", "API", "exec_api")}
 	ds.execs = []Exec{serviceExecRecord("exec_api", "api", "API")}
@@ -774,6 +807,7 @@ func TestServiceTabsWearSNumbersAndLeaveTheDigitsAlone(t *testing.T) {
 // A service starting is not something you did, so it must not move a shell out
 // from under the digit you were reaching for.
 func TestAServiceStartingDoesNotRenumberAShell(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -794,6 +828,7 @@ func TestAServiceStartingDoesNotRenumberAShell(t *testing.T) {
 // The primary is 0 and `a` goes back to it, past the services that sit ahead
 // of it in the strip.
 func TestLeaderAGoesBackToThePrimaryPastTheServices(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{runningService("api", "API", "exec_api")}
 	ds.execs = []Exec{serviceExecRecord("exec_api", "api", "API")}

@@ -6,6 +6,7 @@ import "testing"
 // sandbox's port, answered with the local one the forward bound, on the name
 // rather than the address.
 func TestForwardedURLPointsAtTheLocalEnd(t *testing.T) {
+	t.Parallel()
 	m := &Model{forward: newFakeForward(
 		Binding{Port: 8080, Local: 8081},
 		Binding{Port: 443, Local: 8443},
@@ -39,6 +40,7 @@ func TestForwardedURLPointsAtTheLocalEnd(t *testing.T) {
 // With nothing forwarded — every screen but the workspace, and the workspace
 // until its forward binds — nothing is moved and nothing is linked.
 func TestForwardedURLIsInertWithoutAForward(t *testing.T) {
+	t.Parallel()
 	var m Model
 	if got, want := m.forwardedURL("http://localhost:8080/"), "http://localhost:8080/"; got != want {
 		t.Errorf("forwardedURL = %q, want %q", got, want)

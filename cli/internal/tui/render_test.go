@@ -14,6 +14,7 @@ import (
 //
 //	go test ./internal/tui -run TestFrames -v
 func TestFrames(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		drive func(m *Model)
@@ -72,6 +73,7 @@ func TestFrames(t *testing.T) {
 // A row carries what tells one sandbox from another: the state, the name, the
 // harness, the commit it was cut at and what it changed.
 func TestRowCarriesTheColumns(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 
@@ -98,6 +100,7 @@ func TestRowCarriesTheColumns(t *testing.T) {
 // somewhere else says so after its name; one created here says nothing, since
 // that is every other row.
 func TestARowFromAnotherMachineSaysWhereItCameFrom(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	boxes[0].OriginHostID, boxes[0].OriginHost = testHostID, "wilma"
 	boxes[1].OriginHostID, boxes[1].OriginHost = "host_zzzz456789abcdef", "betty"
@@ -129,6 +132,7 @@ func TestARowFromAnotherMachineSaysWhereItCameFrom(t *testing.T) {
 // The qualifier shares the name's column, so it is what gives way when there
 // is no room for both. The name never goes.
 func TestANarrowRowKeepsTheNameAndDropsWhereItCameFrom(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	boxes[1].OriginHostID, boxes[1].OriginHost = "host_zzzz456789abcdef", "betty"
 	m := newTestModel(t, newFakeSource(boxes...))
@@ -143,6 +147,7 @@ func TestANarrowRowKeepsTheNameAndDropsWhereItCameFrom(t *testing.T) {
 // A sandbox nothing has measured shows dots, not three zeroes: zeroes read as
 // "idle" where dots read as "not measured".
 func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 
@@ -160,6 +165,7 @@ func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
 // since the last sweep has cpu and no disk. The cell that is not measured is a
 // dot, not "0 B", which would say it holds nothing.
 func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
+	t.Parallel()
 	sandboxes := testSandboxes()
 	sandboxes[0].Usage = Usage{Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4}
 	m := newTestModel(t, newFakeSource(sandboxes...))
@@ -179,6 +185,7 @@ func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
 
 // Once something does report usage, the same column carries it.
 func TestUsageIsDrawnWhenItIsKnown(t *testing.T) {
+	t.Parallel()
 	sandboxes := testSandboxes()
 	sandboxes[0].Usage = Usage{
 		Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4,
@@ -201,6 +208,7 @@ func TestUsageIsDrawnWhenItIsKnown(t *testing.T) {
 // dot carries is its color, and a stopped ○ and an archived ▪ are a pixel
 // apart in monochrome.
 func TestWithoutColorTheStateIsSpelledOut(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 
@@ -221,6 +229,7 @@ func TestWithoutColorTheStateIsSpelledOut(t *testing.T) {
 // can take: a key list that offers purge on a running sandbox is one you stop
 // reading.
 func TestHintsOfferOnlyWhatApplies(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 
@@ -245,6 +254,7 @@ func TestHintsOfferOnlyWhatApplies(t *testing.T) {
 // the panel shows the command it describes, so what the window does stays
 // reproducible from a shell.
 func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, typeString("fix the reaper")...)
 	send(t, m, keyPress("ctrl+o"))
@@ -271,6 +281,7 @@ func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 // The project is named in the header only when it is not the default one: a
 // header that says "default" every time teaches you to skip the header.
 func TestHeaderNamesOnlyANonDefaultProject(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	if strings.Contains(m.viewHeader(120), "default") {
@@ -291,6 +302,7 @@ func TestHeaderNamesOnlyANonDefaultProject(t *testing.T) {
 // The mark is the first thing a narrow terminal loses; the list takes the
 // columns back.
 func TestTheMarkIsDroppedOnANarrowTerminal(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	m.logo = logo{rows: []string{"xx", "xx"}, width: 2}
 
@@ -329,6 +341,7 @@ func statusRow(m *Model) string {
 // cannot: the id, which is on no row at all, and the configured name, which a
 // row showing a terminal title is not showing.
 func TestStatusNamesTheBoxUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	boxes[0].ConfigName = "brave-otter"
 	m := newTestModel(t, newFakeSource(boxes...))
@@ -362,6 +375,7 @@ func TestStatusNamesTheBoxUnderTheCursor(t *testing.T) {
 // tail and whole, rather than the one thing on the row that is written down
 // nowhere else.
 func TestStatusKeepsTheIDOverTheKeys(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"), sizeMsg(90, 40))
 
@@ -385,6 +399,7 @@ func TestStatusKeepsTheIDOverTheKeys(t *testing.T) {
 // not immediately followed by the background being re-asserted is the point
 // where the row stops being painted.
 func TestSelectionPaintsTheWholeRow(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		keys []string
@@ -437,6 +452,7 @@ func paintedRow(t *testing.T, m *Model, bg string) string {
 // The mark is a mark: in the full window it sits at the head of the list it
 // marks, beside its first rows rather than floating halfway down a column.
 func TestTheMarkSitsAtTheTopOfTheList(t *testing.T) {
+	t.Parallel()
 	mark := logo{rows: []string{"aa", "bb"}, width: 2}
 
 	lines := strings.Split(mark.view(7), "\n")
@@ -462,6 +478,7 @@ func TestTheMarkSitsAtTheTopOfTheList(t *testing.T) {
 // The opening window centers it instead, because there the mark is the taller
 // of the two and a prompt pinned to its shoulder reads as a caption on it.
 func TestTheMarkIsCenteredInTheOpeningWindow(t *testing.T) {
+	t.Parallel()
 	mark := logo{rows: []string{"aa", "bb"}, width: 2}
 
 	// The blank rows are split above and below, the odd one going below so the
@@ -484,6 +501,7 @@ func TestTheMarkIsCenteredInTheOpeningWindow(t *testing.T) {
 // each side, so it does not sit flush against the box on one side with all the
 // space on the other.
 func TestTheMarkIsCenteredAcrossItsColumn(t *testing.T) {
+	t.Parallel()
 	mark := logo{rows: []string{"aaaa", "bb"}, width: 4}
 
 	if got, want := mark.column(), 4+2*logoGutter; got != want {
@@ -514,6 +532,7 @@ func TestTheMarkIsCenteredAcrossItsColumn(t *testing.T) {
 // its own column: there it is the thing being introduced, not the thing beside
 // a list.
 func TestTheMarkIsCenteredAcrossTheWelcomeCard(t *testing.T) {
+	t.Parallel()
 	mark := logo{rows: []string{"aaaa", "bb"}, width: 4}
 
 	rows := mark.centeredRows(20)
@@ -547,6 +566,7 @@ func TestTheMarkIsCenteredAcrossTheWelcomeCard(t *testing.T) {
 // A mark with no rows reserves nothing, so a colorless terminal gives the whole
 // width back to the list rather than an empty column.
 func TestNoMarkReservesNoColumn(t *testing.T) {
+	t.Parallel()
 	if got := (logo{}).column(); got != 0 {
 		t.Fatalf("column = %d, want 0", got)
 	}
@@ -555,6 +575,7 @@ func TestNoMarkReservesNoColumn(t *testing.T) {
 // And in the window: the list keeps enough rows to stand the mark beside, so a
 // project with one sandbox does not leave it hanging past the composer.
 func TestTheListKeepsRoomForTheMark(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()[0]))
 	m.logo = logo{rows: []string{"aa", "bb", "cc", "dd", "ee", "ff"}, width: 2}
 	m.layout()
@@ -568,6 +589,7 @@ func TestTheListKeepsRoomForTheMark(t *testing.T) {
 // The window is a box: an edge all the way round, in the mark's own purple, is
 // what says where it begins and ends in the scrollback it is sitting in.
 func TestTheWindowIsABox(t *testing.T) {
+	t.Parallel()
 	m := newColorModel(t, newFakeSource(testSandboxes()...))
 	lines := strings.Split(m.View().Content, "\n")
 
@@ -602,6 +624,7 @@ func TestTheWindowIsABox(t *testing.T) {
 // so a frame short of the height leaves a strip of whatever was there before,
 // and one over it scrolls.
 func TestTheWindowFillsTheTerminal(t *testing.T) {
+	t.Parallel()
 	// windowChrome plus a row for the composer is the shortest window there is;
 	// below that the terminal cannot hold one whatever it gives up.
 	for _, height := range []int{windowChrome + 1, 16, 24, 40} {
@@ -629,6 +652,7 @@ func TestTheWindowFillsTheTerminal(t *testing.T) {
 // promptMaxRows. Past that it scrolls, because a field that kept growing would
 // take the window over for a prompt you are only halfway through writing.
 func TestTheComposerGrowsToThreeRowsAndThenScrolls(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, sizeMsg(120, 24))
 
@@ -679,6 +703,7 @@ func TestTheComposerGrowsToThreeRowsAndThenScrolls(t *testing.T) {
 // word, but the folder dropdown's are paths, and a path cut off at a fixed
 // fourteen cells is not a path you can choose between.
 func TestMenuLabelsFitTheirContent(t *testing.T) {
+	t.Parallel()
 	long := "/home/darren/src/discobox-scratch"
 	m := newTestModel(t, newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: long}))
 	// Nothing was started in the folder the window is running in, so Tab lands
@@ -702,6 +727,7 @@ func TestMenuLabelsFitTheirContent(t *testing.T) {
 // strip naming every default is one you stop reading for the thing on it that
 // was chosen.
 func TestTheStripOnlyNamesWhatWasChosen(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 
 	if chips := m.opts.chips(m.st); strings.Contains(chips, "dirty") {
@@ -723,6 +749,7 @@ func TestTheStripOnlyNamesWhatWasChosen(t *testing.T) {
 // crowded onto the title band beside the count, and it goes above the band
 // because it is the frame the list is read inside.
 func TestMachineRowSaysWhatItHasAndIsUsing(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known:    true,
@@ -758,6 +785,7 @@ func TestMachineRowSaysWhatItHasAndIsUsing(t *testing.T) {
 // The columns whose numbers do not say what they are get labeled, and the
 // labels sit over their own cells.
 func TestColumnsAreLabeled(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 
@@ -825,6 +853,7 @@ func machineRow(t *testing.T, m *Model) string {
 // An unmeasured machine is not an idle one, so nothing is drawn until there is
 // something to draw.
 func TestMachineRowSaysNothingUntilItIsMeasured(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 
@@ -838,6 +867,7 @@ func TestMachineRowSaysNothingUntilItIsMeasured(t *testing.T) {
 // A narrow window keeps the figure that matters most and drops the rest, rather
 // than truncating one into a wrong number or taking the box count down with it.
 func TestMachineRowDropsFiguresItCannotFit(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known:    true,
@@ -861,6 +891,7 @@ func TestMachineRowDropsFiguresItCannotFit(t *testing.T) {
 // The machine frames the list, so it is read before the rows rather than found
 // after them.
 func TestMachineRowSitsAboveTheBand(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
@@ -891,6 +922,7 @@ func TestMachineRowSitsAboveTheBand(t *testing.T) {
 // the disk stays on the row — a stopped discobox is often exactly the one whose
 // disk is worth seeing.
 func TestAStoppedDiscoboxStillShowsItsDisk(t *testing.T) {
+	t.Parallel()
 	sandboxes := testSandboxes()
 	sandboxes[0].State = StateStopped
 	sandboxes[0].Usage = Usage{
@@ -917,6 +949,7 @@ func TestAStoppedDiscoboxStillShowsItsDisk(t *testing.T) {
 // is the difference between deleting somebody's work and reclaiming something
 // that rebuilds itself.
 func TestMachineRowSplitsDiskIntoDataAndCache(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
@@ -940,6 +973,7 @@ func TestMachineRowSplitsDiskIntoDataAndCache(t *testing.T) {
 // Too narrow for the split, the row keeps how much is left — that is what
 // somebody is reading it for — rather than dropping the disk figure whole.
 func TestMachineRowDropsTheDiskSplitBeforeTheFreeSpace(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,

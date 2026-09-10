@@ -10,6 +10,7 @@ import (
 // the whole list — the same two affordances the header's folder filter has,
 // because they are the same control.
 func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress("ctrl+o"))
@@ -64,6 +65,7 @@ func dialogLabels(d *dialog) []string {
 // The dropdown's last row is the one entry that is not a source: it opens the
 // field where a path the listing has never seen is typed, ref and all.
 func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress("ctrl+o"))
@@ -96,6 +98,7 @@ func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 // Moving the header moves the source with it, which is the direction that was
 // always there: the header is where the folder is chosen.
 func TestTheHeaderStillMovesTheSource(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	m.opts.chooseSource("https://github.com/acme/foo")
@@ -116,6 +119,7 @@ func TestTheHeaderStillMovesTheSource(t *testing.T) {
 // window happens to be running in, which is a discobox cut from somewhere
 // nobody named.
 func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	showAllFolders(t, m)
@@ -157,6 +161,7 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 // The answer can be that there is nothing to cut from, which is a discobox with
 // an empty workspace rather than one cut from the wrong place.
 func TestTheCreateQuestionTakesNoSourceForAnAnswer(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	showAllFolders(t, m)
@@ -183,6 +188,7 @@ func TestTheCreateQuestionTakesNoSourceForAnAnswer(t *testing.T) {
 // window takes it: the create is the wrong place to find out, since it fails
 // seconds later with the field gone and the path to retype from memory.
 func TestATypedSourceThatIsNotThereGoesBackIntoTheField(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.sourceErr = errors.New("/src/typo does not exist")
 	m := newTestModel(t, ds)
@@ -220,6 +226,7 @@ func TestATypedSourceThatIsNotThereGoesBackIntoTheField(t *testing.T) {
 // The field is also how the create's own question is answered with a place the
 // project has never been cut from, and a path that checks out runs.
 func TestAPathTypedIntoTheCreateQuestionRunsWhenItChecksOut(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	showAllFolders(t, m)

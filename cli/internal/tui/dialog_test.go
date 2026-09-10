@@ -10,6 +10,7 @@ import (
 
 // A dialog takes most of a window with room to spare, and all of one without.
 func TestADialogTakesMostOfTheWindow(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		window int
@@ -31,6 +32,7 @@ func TestADialogTakesMostOfTheWindow(t *testing.T) {
 // Whatever the policy works out to, it can never be wider than the terminal:
 // a dialog that overflows is one with its right edge off screen.
 func TestADialogNeverOutgrowsTheWindow(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	dialog := textDialog("Title", strings.Repeat("a word ", 200))
 	// From the narrowest box there is: the border and padding alone are six
@@ -48,6 +50,7 @@ func TestADialogNeverOutgrowsTheWindow(t *testing.T) {
 // The box's outside extent is what the policy asked for, so the sizing means
 // what it says rather than what the border leaves of it.
 func TestADialogIsDrawnAtTheWidthItWasGiven(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	dialog := textDialog("Title", "a short body")
 	for _, window := range []int{120, 100, 80, 60} {
@@ -59,6 +62,7 @@ func TestADialogIsDrawnAtTheWidthItWasGiven(t *testing.T) {
 
 // A dialog is the only thing on screen, so it sits in the middle of it.
 func TestADialogIsCentered(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, sizeMsg(120, 40), keyPress("f1"))
 
@@ -97,6 +101,7 @@ func TestADialogIsCentered(t *testing.T) {
 
 // Centering must not make the frame bigger than the terminal.
 func TestACenteredDialogStillFitsTheTerminal(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	for _, size := range [][2]int{{120, 40}, {100, 24}, {80, 20}, {60, 16}} {
 		send(t, m, sizeMsg(size[0], size[1]))
@@ -119,6 +124,7 @@ func TestACenteredDialogStillFitsTheTerminal(t *testing.T) {
 // The body grows with the window: a card that scrolled in a short terminal
 // should not still be scrolling in a tall one.
 func TestALongBodyUsesTheHeightItIsGiven(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	body := strings.TrimRight(strings.Repeat("a line\n", 60), "\n")
 	dialog := textDialog("Title", body)
@@ -148,6 +154,7 @@ func searchable() *dialog {
 func draw(d *dialog) string { return d.view(newStyles(false), &zones{}, 100, 24) }
 
 func TestSingleLineDialogBodyEllipsizesInsteadOfWrapping(t *testing.T) {
+	t.Parallel()
 	d := actionsDialog("Uncommitted changes", "/home/darren/src/disco2 has 7 uncommitted changes (cli/internal/cli/cp.go, cli/internal/cli/picker.go, cli/internal/cli/picker_test.go and 4 more)", []action{
 		{key: "false", label: "Start from the last commit", enabled: true},
 		{key: "true", label: "Include uncommitted changes", enabled: true},
@@ -166,6 +173,7 @@ func TestSingleLineDialogBodyEllipsizesInsteadOfWrapping(t *testing.T) {
 // / searches the body, and the tally says what it found while it is still
 // being typed.
 func TestSlashSearchesAScrollingBody(t *testing.T) {
+	t.Parallel()
 	d := searchable()
 	draw(d)
 	send := func(spec string) { d.update(keyPress(spec)) }
@@ -191,6 +199,7 @@ func TestSlashSearchesAScrollingBody(t *testing.T) {
 // Enter puts the line away and keeps the search: n and N walk the matches, and
 // the footer still says what was searched for.
 func TestNAndNWalkTheMatches(t *testing.T) {
+	t.Parallel()
 	d := searchable()
 	draw(d)
 	for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r", "enter"} {
@@ -223,6 +232,7 @@ func TestNAndNWalkTheMatches(t *testing.T) {
 // Esc belongs to the search line while one is open: it abandons the search and
 // puts the body back where it was, rather than closing the dialog.
 func TestEscAbandonsTheSearchAndKeepsYourPlace(t *testing.T) {
+	t.Parallel()
 	d := searchable()
 	draw(d)
 	for range 10 {
@@ -256,6 +266,7 @@ func TestEscAbandonsTheSearchAndKeepsYourPlace(t *testing.T) {
 
 // Backspacing past the start of the query is the same as never having asked.
 func TestBackspacingOutOfTheSearchEndsIt(t *testing.T) {
+	t.Parallel()
 	d := searchable()
 	draw(d)
 	for _, spec := range []string{"/", "l", "backspace", "backspace"} {
@@ -269,6 +280,7 @@ func TestBackspacingOutOfTheSearchEndsIt(t *testing.T) {
 // A body that fits its window does not offer a search: everything in it is
 // already on screen.
 func TestAShortBodyDoesNotOfferASearch(t *testing.T) {
+	t.Parallel()
 	st := newStyles(false)
 	short := textDialog("Title", "one line").view(st, &zones{}, 100, 24)
 	if strings.Contains(short, "/ search") {
@@ -282,6 +294,7 @@ func TestAShortBodyDoesNotOfferASearch(t *testing.T) {
 // The matches are painted, and a painted row is still a row of the box: the
 // background is drawn across the width the frame budgeted for it.
 func TestASearchedDialogStaysInsideItsBox(t *testing.T) {
+	t.Parallel()
 	st := newStyles(true)
 	for _, window := range []int{120, 100, 80, 60, 40, 20} {
 		d := searchable()
@@ -301,6 +314,7 @@ func TestASearchedDialogStaysInsideItsBox(t *testing.T) {
 // The help is what the search is for: from the window, F1 and / find a key
 // without reading down the whole of it.
 func TestTheHelpIsSearchable(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, sizeMsg(100, 30), keyPress("f1"), keyPress("/"))
 	send(t, m, typeString("vscode")...)
@@ -317,6 +331,7 @@ func TestTheHelpIsSearchable(t *testing.T) {
 // rather than the part that happens to be on screen — and it is a letter again
 // the moment the search line is open.
 func TestTheHelpIsCopiedWhole(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	copies := make(chan string, 2)
 	m.copyOS = func(text string) error { copies <- text; return nil }
@@ -371,6 +386,7 @@ func TestTheHelpIsCopiedWhole(t *testing.T) {
 // viewHints marks where it drew: an offer past the cut would be a button drawn
 // nowhere and pressable anyway. See REVIEW.md.
 func TestTheCardsKeyLineIsFittedToNarrowWindows(t *testing.T) {
+	t.Parallel()
 	st := newStyles(true)
 	// A query is what squeezes the row hardest: it takes its own cells off the
 	// left before a single offer is drawn, and "no matches" is the widest tally

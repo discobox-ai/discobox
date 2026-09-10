@@ -11,6 +11,7 @@ import (
 // it while a pool came up and gigabytes arrived. The window goes to the
 // discobox being made instead, and reports there.
 func TestWaitingDialogFollowsTheNarration(t *testing.T) {
+	t.Parallel()
 	m := &Model{st: newStyles(true), width: 80, height: 24}
 	m.dialog = statusDialog("Starting nimble_swan", "creating the discobox")
 
@@ -32,6 +33,7 @@ func TestWaitingDialogFollowsTheNarration(t *testing.T) {
 
 // It takes itself down when the attach it is covering can finish.
 func TestWaitingDialogClosesWhenProvisioningEnds(t *testing.T) {
+	t.Parallel()
 	m := &Model{st: newStyles(true), width: 80, height: 24}
 	m.dialog = statusDialog("Starting nimble_swan", "creating the discobox")
 
@@ -44,6 +46,7 @@ func TestWaitingDialogClosesWhenProvisioningEnds(t *testing.T) {
 // A dialog the user opened is theirs, and provisioning finishing must not close
 // it out from under them.
 func TestProvisioningDoneLeavesOtherDialogsAlone(t *testing.T) {
+	t.Parallel()
 	m := &Model{st: newStyles(true), width: 80, height: 24}
 	m.dialog = textDialog("Keys", "…")
 
@@ -57,6 +60,7 @@ func TestProvisioningDoneLeavesOtherDialogsAlone(t *testing.T) {
 // takes it away. Enter closing it would drop the user onto a pane that has not
 // attached yet.
 func TestWaitingDialogIsNotDismissedByEnter(t *testing.T) {
+	t.Parallel()
 	d := statusDialog("Starting nimble_swan", "creating the discobox")
 	if _, closed := d.update(tea.KeyPressMsg{Code: tea.KeyEnter}); closed {
 		t.Fatal("Enter dismissed a dialog that has no answer to give")
@@ -69,6 +73,7 @@ func TestWaitingDialogIsNotDismissedByEnter(t *testing.T) {
 // A name is better than an id, and an id is better than nothing: a freshly
 // created discobox may be reported before its name comes back.
 func TestSandboxLabelPrefersTheName(t *testing.T) {
+	t.Parallel()
 	if got := sandboxLabel(Sandbox{ID: "sbx_1", Name: "nimble_swan"}); got != "nimble_swan" {
 		t.Fatalf("sandboxLabel() = %q", got)
 	}

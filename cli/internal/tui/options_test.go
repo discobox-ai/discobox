@@ -7,6 +7,7 @@ import (
 
 // The chip strip always names the resolved harness.
 func TestTheChipStripAlwaysNamesTheResolvedHarness(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(false)
 
@@ -23,6 +24,7 @@ func TestTheChipStripAlwaysNamesTheResolvedHarness(t *testing.T) {
 }
 
 func TestShiftTabCyclesTheHarnessWithoutOpeningOptions(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	before := m.opts.opts[optHarness].display()
 
@@ -37,6 +39,7 @@ func TestShiftTabCyclesTheHarnessWithoutOpeningOptions(t *testing.T) {
 }
 
 func TestHarnessChipAndMarkerAreMutedForDefaultAndGoldForOverride(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(true)
 	harness := m.opts.opts[optHarness]
@@ -53,6 +56,7 @@ func TestHarnessChipAndMarkerAreMutedForDefaultAndGoldForOverride(t *testing.T) 
 }
 
 func TestHarnessChipStripIsEntirelyMutedWithoutPromptFocus(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(true)
 	m.opts.opts[optDetach].value = "on"
@@ -71,6 +75,7 @@ func TestHarnessChipStripIsEntirelyMutedWithoutPromptFocus(t *testing.T) {
 // There is no "none" among the choices: running without a coding harness is
 // the `shell` harness, which is one of the project's like any other.
 func TestTheHarnessChoicesOfferNoNone(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	for _, choice := range m.opts.opts[optHarness].choices {
 		if strings.Contains(strings.ToLower(choice), "none") {
@@ -83,6 +88,7 @@ func TestTheHarnessChoicesOfferNoNone(t *testing.T) {
 // harness rather than promoting whichever was registered first — which is how
 // the strip came to announce one nobody had chosen.
 func TestWithNoProjectDefaultNoHarnessIsClaimed(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	for i := range ds.harnesses {
 		ds.harnesses[i].Default = false
@@ -104,6 +110,7 @@ func TestWithNoProjectDefaultNoHarnessIsClaimed(t *testing.T) {
 // The strip exists even before an override because the resolved harness is
 // always useful context for the prompt.
 func TestTheChipStripStartsWithTheHarness(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(false)
 
@@ -122,6 +129,7 @@ func TestTheChipStripStartsWithTheHarness(t *testing.T) {
 // selector rather than a text field so the common case — the two or three
 // places you work in — never opens one.
 func TestTheSourceRowOffersTheProjectsSources(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	source := m.opts.opts[optSource]
@@ -144,6 +152,7 @@ func TestTheSourceRowOffersTheProjectsSources(t *testing.T) {
 // "No source" is a create with nothing checked out in it, which is one flag
 // rather than a source that happens to be empty.
 func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	m.opts.chooseSource(sourceNone)
 
@@ -166,6 +175,7 @@ func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
 // row until something else is chosen — a refresh of the listing underneath an
 // open panel must not drop the one entry the listing could not know about.
 func TestATypedSourceSurvivesARefresh(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	m.opts.chooseSource("/src/elsewhere@main")
@@ -185,6 +195,7 @@ func TestATypedSourceSurvivesARefresh(t *testing.T) {
 // goes to the directory the window is running in — which is where a discobox
 // from either is filed.
 func TestChoosingASourceMovesTheList(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	m.opts.chooseSource("/src/obot")

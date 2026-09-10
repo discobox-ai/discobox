@@ -18,7 +18,6 @@ import (
 // openWorkspace drives the window into the workspace on the first sandbox.
 func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *fakeTerminal) {
 	t.Helper()
-	t.Setenv("NO_COLOR", "1")
 	m := New(t.Context(), ds)
 	m.logo = logo{}
 	m.expanded = true
@@ -48,6 +47,7 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 // Attaching draws the sandbox's terminal in the window rather than handing the
 // real terminal over to a command.
 func TestAttachDrawsInTheWindow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -77,6 +77,7 @@ func TestAttachDrawsInTheWindow(t *testing.T) {
 // tab, focused: the workspace is the screen, and a shell was what was asked
 // for.
 func TestShellOpensTheWorkspaceWithAFreshTab(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "s")
 	d.wait("the tab", func() bool { return m.shells.len() == 1 })
@@ -96,6 +97,7 @@ func TestShellOpensTheWorkspaceWithAFreshTab(t *testing.T) {
 // The terminal is opened at the size of the box it is going into — the whole
 // width, with no other session to share the screen with.
 func TestPaneOpensAtTheSizeItWillBeDrawnAt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m, term := openWorkspace(t, ds, "enter")
 
@@ -116,6 +118,7 @@ func TestPaneOpensAtTheSizeItWillBeDrawnAt(t *testing.T) {
 // A tab opening splits the screen: the terminal is resized to the left half,
 // and the shell was opened at the right half's size to begin with.
 func TestATabSplitsTheScreen(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -142,6 +145,7 @@ func TestATabSplitsTheScreen(t *testing.T) {
 // and the hidden one is resized for it too — it keeps emulating off-screen,
 // and flipping back to it must show a screen drawn at the size it is shown at.
 func TestLeaderZMaximizesTheFocusedColumn(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -179,6 +183,7 @@ func TestLeaderZMaximizesTheFocusedColumn(t *testing.T) {
 // With nothing beside it there is nothing to maximize over, so the key says so
 // rather than looking broken.
 func TestLeaderZWithNoTabsSaysSo(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -193,6 +198,7 @@ func TestLeaderZWithNoTabsSaysSo(t *testing.T) {
 // The last tab closing gives the window back on its own: there is nothing left
 // to maximize over, and a workspace stuck maximized would hide the next tab.
 func TestClosingTheLastTabDropsTheMaximize(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -211,6 +217,7 @@ func TestClosingTheLastTabDropsTheMaximize(t *testing.T) {
 
 // Resizing the window resizes every terminal with it.
 func TestResizingTheWindowResizesTheTerminal(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -225,6 +232,7 @@ func TestResizingTheWindowResizesTheTerminal(t *testing.T) {
 // Every key belongs to the sandbox while a pane is up — including the ones the
 // window would otherwise use.
 func TestKeysGoToTheSandbox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, _, term := openWorkspace(t, ds, "enter")
 
@@ -242,6 +250,7 @@ func TestKeysGoToTheSandbox(t *testing.T) {
 // session keeps running, and the cursor is back on the sandbox it was opened
 // on.
 func TestDetachLeavesTheWholeWorkspace(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -275,6 +284,7 @@ func TestDetachLeavesTheWholeWorkspace(t *testing.T) {
 // The leader plus q quits the whole window from inside a pane — the exit
 // Ctrl-C is everywhere else — and the header's top right says so.
 func TestLeaderQQuitsTheWindow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -293,6 +303,7 @@ func TestLeaderQQuitsTheWindow(t *testing.T) {
 // The primary session ending ends the workspace: it is above all a view onto
 // that session.
 func TestEndedPrimaryClosesTheWorkspace(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -308,6 +319,7 @@ func TestEndedPrimaryClosesTheWorkspace(t *testing.T) {
 // on the left, the primary first, and its shells as tabs on the right, both in
 // session order. A session that has exited or has no terminal is neither.
 func TestAttachJoinsEveryLiveSession(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{
@@ -346,6 +358,7 @@ func TestAttachJoinsEveryLiveSession(t *testing.T) {
 // A session started from anywhere else appears as a tab while the workspace is
 // up: the screen mirrors the server, not what was opened here.
 func TestASessionStartedElsewhereBecomesATab(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -367,6 +380,7 @@ func TestASessionStartedElsewhereBecomesATab(t *testing.T) {
 // The poll never opens a second pane onto a session already on screen — the
 // shell the leader created included, whose tab and listing entry share an id.
 func TestThePollDoesNotReopenASessionAlreadyShown(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -392,6 +406,7 @@ func TestThePollDoesNotReopenASessionAlreadyShown(t *testing.T) {
 // A tick from a workspace that has been left is stale, and must not reopen
 // anything.
 func TestAStaleTickIsDropped(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	gen := m.wsGen
@@ -414,6 +429,7 @@ func TestAStaleTickIsDropped(t *testing.T) {
 // A shell that exits keeps its last screen as a tab to be read; dismissing it
 // closes the tab and leaves the workspace up.
 func TestAnExitedShellStaysReadableUntilDismissed(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -451,6 +467,7 @@ func TestAnExitedShellStaysReadableUntilDismissed(t *testing.T) {
 // window from it, so a shell you have finished reading does not have to be
 // dismissed before opening another one or walking to the next pane.
 func TestAHeldPaneStillAnswersTheLeader(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -496,9 +513,9 @@ func TestAHeldPaneStillAnswersTheLeader(t *testing.T) {
 // A terminal that cannot be opened reports on the status line and leaves the
 // window where it was, rather than stranding it in an empty pane.
 func TestFailedOpenIsReported(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.openExecErr = errors.New("sandbox is not running")
-	t.Setenv("NO_COLOR", "1")
 	m := New(t.Context(), ds)
 	m.logo = logo{}
 	d := newDriver(t, m)
@@ -519,6 +536,7 @@ func TestFailedOpenIsReported(t *testing.T) {
 // One session's attach failing does not take the workspace down: the tab is
 // reported and dropped, and the terminal keeps the screen.
 func TestAFailedTabDegradesToAReport(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{
@@ -543,6 +561,7 @@ func TestAFailedTabDegradesToAReport(t *testing.T) {
 // A reconnect never appears in the terminal's output — the stream simply
 // carries on — so the pane says so itself.
 func TestReconnectIsShownInThePane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -560,6 +579,7 @@ func TestReconnectIsShownInThePane(t *testing.T) {
 // Every row of chrome above the grid is an offset, and getting it wrong puts
 // the cursor a line off for the whole session.
 func TestPaneCursorLandsOnTheGrid(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -598,6 +618,7 @@ func TestPaneCursorLandsOnTheGrid(t *testing.T) {
 // above the grid, puts the cursor a line off the cell the sandbox believes it
 // is on for the rest of the session.
 func TestPaneCursorLandsOnTheGridUnderTheCredentialBand(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -646,6 +667,7 @@ func TestPaneCursorLandsOnTheGridUnderTheCredentialBand(t *testing.T) {
 // grid shifts every row below the wrap, putting the cursor on the wrong line
 // for the rest of the session.
 func TestTheFrameNeverWraps(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -668,6 +690,7 @@ func TestTheFrameNeverWraps(t *testing.T) {
 // names the terminal rather than the window, and a border is a line the eye
 // already follows, so it costs no row.
 func TestApplicationTitleIsSetIntoTheBorder(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -697,6 +720,7 @@ func TestApplicationTitleIsSetIntoTheBorder(t *testing.T) {
 // A title too long to sit in the line with rule either side is dropped rather
 // than squeezing the border out; the terminal's own title bar has it too.
 func TestALongTitleLeavesTheBorderAlone(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -717,6 +741,7 @@ func TestALongTitleLeavesTheBorderAlone(t *testing.T) {
 // program. It quits from everywhere else, which is where nothing is running to
 // take it.
 func TestCtrlCNeverQuitsFromAPane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -746,6 +771,7 @@ func TestCtrlCNeverQuitsFromAPane(t *testing.T) {
 // and click-to-focus need the events — and a sandbox that asked for the mouse
 // is forwarded them, translated out of screen space.
 func TestMouseIsForwardedToTheSandboxThatAskedForIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -779,6 +805,7 @@ func TestMouseIsForwardedToTheSandboxThatAskedForIt(t *testing.T) {
 // and so is the release: forwarding one without the other leaves the
 // application holding a button that never comes up.
 func TestAClickOnTheAirForwardsBothHalvesToTheSandbox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -801,6 +828,7 @@ func TestAClickOnTheAirForwardsBothHalvesToTheSandbox(t *testing.T) {
 // would rather copy a stack trace than click on it. The terminal keeps
 // reporting either way: the events drive selection while the mouse is taken.
 func TestPrefixMSeizesTheMouse(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -841,6 +869,7 @@ func TestPrefixMSeizesTheMouse(t *testing.T) {
 // Dragging over a pane whose sandbox never asked for the mouse selects, and
 // releasing copies: the clipboard commands run and the status line says so.
 func TestDragSelectsAndCopiesFromThePane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -862,6 +891,7 @@ func TestDragSelectsAndCopiesFromThePane(t *testing.T) {
 // down the pane's own lines, rather than falling through to the chrome's
 // selection across the whole frame.
 func TestDragFromTheBoxAirSelectsInThePane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -884,6 +914,7 @@ func TestDragFromTheBoxAirSelectsInThePane(t *testing.T) {
 // The air on the far side is the pane's too, and a press on it means the last
 // cell of the row rather than nothing.
 func TestPressInTheRightAirSelectsToTheEndOfTheRow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -908,6 +939,7 @@ func TestPressInTheRightAirSelectsToTheEndOfTheRow(t *testing.T) {
 // the tabs and the title: a drag there runs as the chrome's selection, so
 // border text stays drag-selectable.
 func TestTheBorderBesideTheAirStaysTheChromes(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -940,6 +972,7 @@ func TestTheBorderBesideTheAirStaysTheChromes(t *testing.T) {
 // Right-clicking a showing selection copies it and drops the highlight, the
 // way Windows terminals do; with nothing selected the button does nothing.
 func TestRightClickCopiesThePaneSelection(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 	copies := make(chan string, 4)
@@ -974,6 +1007,7 @@ func TestRightClickCopiesThePaneSelection(t *testing.T) {
 // Clicking a pane focuses it: with a mouse in hand, pointing at the thing is
 // how you say which one you mean.
 func TestClickFocusesThePaneUnderIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -1002,6 +1036,7 @@ func TestClickFocusesThePaneUnderIt(t *testing.T) {
 // the header: the header says what is in the window, and the title bar is how
 // you find the window among the others you have open.
 func TestTheTerminalTitleFollowsThePrimaryPane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -1027,6 +1062,7 @@ func TestTheTerminalTitleFollowsThePrimaryPane(t *testing.T) {
 // the window's name: the title bar is read from outside, where what matters is
 // which discobox this is and what its agent is doing.
 func TestTheTerminalTitleIgnoresTheFocusedTab(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "s")
 	d.wait("the tab", func() bool { return m.shells.len() == 1 })
@@ -1047,6 +1083,7 @@ func TestTheTerminalTitleIgnoresTheFocusedTab(t *testing.T) {
 // The leader plus s always opens a fresh shell: the tabs are the server's
 // sessions, and asking for another shell is asking for another session.
 func TestLeaderSOpensAnotherShell(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -1069,6 +1106,7 @@ func TestLeaderSOpensAnotherShell(t *testing.T) {
 // The leader plus a goes back to the terminal — there is always exactly one,
 // so the key is a place, not an opener.
 func TestLeaderAFocusesTheTerminal(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1092,6 +1130,7 @@ func TestLeaderAFocusesTheTerminal(t *testing.T) {
 // The leader plus h and l walk the strip — the terminal, then the tabs — and
 // stop at the ends rather than wrapping.
 func TestLeaderMovesBetweenTerminalAndTabs(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{
@@ -1140,6 +1179,7 @@ func TestLeaderMovesBetweenTerminalAndTabs(t *testing.T) {
 // it reaches the program in a shell tab exactly as it does in the terminal,
 // and the way out — the whole workspace's — is the leader's in both.
 func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, harness := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1175,6 +1215,7 @@ func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 // The workspace splits the row exactly: the terminal's box plus the shell box
 // come out at the window's width, whatever the division left over.
 func TestSplitPanesShareTheScreen(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1199,6 +1240,7 @@ func TestSplitPanesShareTheScreen(t *testing.T) {
 // screen, over the workspace when there is one and over the list when there is
 // not. The window never steps aside for it.
 func TestApplyFromTheListDrawsInAPane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	d := newDriver(t, m)
@@ -1256,6 +1298,7 @@ func TestApplyFromTheListDrawsInAPane(t *testing.T) {
 // read. An apply with little to say is over in a moment, and a pane that
 // vanished with it would be a screen you never got to see.
 func TestAFinishedCommandHoldsItsScreen(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1300,6 +1343,7 @@ func TestAFinishedCommandHoldsItsScreen(t *testing.T) {
 }
 
 func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
+	t.Parallel()
 	finish := func(t *testing.T, ds *fakeSource, d *driver, m *Model) {
 		t.Helper()
 		d.key("ctrl+a")
@@ -1431,6 +1475,7 @@ func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
 // The primary session that ends is gone: the workspace was a view onto it, so
 // it is not held.
 func TestAnEndedSessionIsNotHeld(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -1443,6 +1488,7 @@ func TestAnEndedSessionIsNotHeld(t *testing.T) {
 // rather than its name: that is what you would type at a shell to act on this
 // one.
 func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -1495,6 +1541,7 @@ func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
 // a snapshot, and a session that commits while you watch it must not leave the
 // header saying what was true when you attached.
 func TestTheBannerFollowsTheListingsGitStatus(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -1527,6 +1574,7 @@ func TestTheBannerFollowsTheListingsGitStatus(t *testing.T) {
 // a page you could open, and the address it is bound on decides nothing a
 // forward from inside the sandbox cares about.
 func TestTheBannerCarriesTheListeningPorts(t *testing.T) {
+	t.Parallel()
 	serving := testSandboxes()
 	serving[0].Ports = []Port{
 		{Number: 22, Protocol: "tcp"},
@@ -1546,6 +1594,7 @@ func TestTheBannerCarriesTheListeningPorts(t *testing.T) {
 // A sandbox serving nothing says nothing: an empty list is not a field worth
 // the width, and it reads the same as an agent that has not reported yet.
 func TestTheBannerOmitsPortsWhenNothingIsListening(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m, _ := openWorkspace(t, ds, "enter")
 
@@ -1563,6 +1612,7 @@ func TestTheBannerOmitsPortsWhenNothingIsListening(t *testing.T) {
 // The ports follow the listing the way the git fields do, so a dev server
 // started in one of these panes shows up in the header above it.
 func TestTheBannerFollowsTheListingsPorts(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.dispatch(sizeMsg(180, 40))
@@ -1587,6 +1637,7 @@ func TestTheBannerFollowsTheListingsPorts(t *testing.T) {
 // line under the grid repeats; then the program's own name, which you can see
 // you are in; then the folder, which every row of the list already shared.
 func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
+	t.Parallel()
 	serving := testSandboxes()
 	serving[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
 	ds := newFakeSource(serving...)
@@ -1632,6 +1683,7 @@ func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
 // the keys while it is happening, and unlike them it is written down nowhere
 // else on the screen, so it is not one of the things the row gives up.
 func TestTheBannerKeepsATransportStatusAsItNarrows(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	m.primary().status = "reconnecting…"
@@ -1655,6 +1707,7 @@ func TestTheBannerKeepsATransportStatusAsItNarrows(t *testing.T) {
 // so a narrow window loses a field rather than showing half of one. The id
 // never goes: it is what identifies the window.
 func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
+	t.Parallel()
 	serving := testSandboxes()
 	serving[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
 	ds := newFakeSource(serving...)
@@ -1690,6 +1743,7 @@ func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
 // Output longer than the pane can be read back through: a screen you cannot
 // scroll is a screen whose first half you never saw.
 func TestAFinishedCommandCanBeScrolled(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1741,6 +1795,7 @@ func TestAFinishedCommandCanBeScrolled(t *testing.T) {
 // Streaming output continues below a viewport in scrollback without pulling
 // the real window back to the live screen.
 func TestStreamingOutputDoesNotMoveScrolledViewport(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 	p := m.primary()
@@ -1775,6 +1830,7 @@ func TestStreamingOutputDoesNotMoveScrolledViewport(t *testing.T) {
 // Ctrl keeps the sequence open: the leader, then Ctrl-← Ctrl-→ walks across
 // without pressing the leader again.
 func TestMovingBetweenPanesRepeatsWhileCtrlIsHeld(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1824,6 +1880,7 @@ func TestMovingBetweenPanesRepeatsWhileCtrlIsHeld(t *testing.T) {
 // the terminal, 1 through 9 the tabs — no walking. A number with no tab under
 // it says so instead of moving anything.
 func TestLeaderDigitsJumpToPanes(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{
@@ -1866,6 +1923,7 @@ func TestLeaderDigitsJumpToPanes(t *testing.T) {
 // followed by a bare letter types the letter rather than firing the binding it
 // happens to be bound to.
 func TestAKeyAfterARunIsNotACommand(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, harness := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1891,6 +1949,7 @@ func TestAKeyAfterARunIsNotACommand(t *testing.T) {
 // runs. What is under it is untouched — still connected, still running, still
 // where it was — and is back the moment the command exits.
 func TestACommandTakesTheScreenOverTheWorkspace(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, harness := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -1956,6 +2015,7 @@ func TestACommandTakesTheScreenOverTheWorkspace(t *testing.T) {
 // the exception that also detaches: the workspace belongs to the box being put
 // away, so its result is reported on the list behind it.
 func TestLeaderRunsTheListsVerbs(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -1979,6 +2039,7 @@ func TestLeaderRunsTheListsVerbs(t *testing.T) {
 // A command that cannot run says why, rather than opening a screen that reports
 // the same thing less clearly. The checks are the list's, on the same discobox.
 func TestTheLeaderKeepsTheListsChecks(t *testing.T) {
+	t.Parallel()
 	boxes := testSandboxes()
 	boxes[0].Diff = DiffStat{Known: true}
 	ds := newFakeSource(boxes...)
@@ -2000,6 +2061,7 @@ func TestTheLeaderKeepsTheListsChecks(t *testing.T) {
 // of its own. It costs the application nothing, being behind the leader, and
 // one key that always works beats remembering which pane took Ctrl-C.
 func TestTheLeaderDetachesFromAnyPane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -2015,6 +2077,7 @@ func TestTheLeaderDetachesFromAnyPane(t *testing.T) {
 // moves: the editor is another window, and the terminals stay attached — which
 // is the whole point of binding it here rather than only in the list.
 func TestTheToolsPickerOpensTheWorkspaceBoxInVSCode(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -2041,6 +2104,7 @@ func TestTheToolsPickerOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 // that looked like it did nothing — and the window that was waiting for the
 // command stops saying it is.
 func TestAFailedCommandReportsOnTheWorkspace(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.openErr = errors.New("no pty here")
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -2067,6 +2131,7 @@ func TestAFailedCommandReportsOnTheWorkspace(t *testing.T) {
 // screen it takes is not up yet, and a key that appears to have done nothing
 // for as long as the server takes is the same key twice.
 func TestTheWorkspaceShowsWhatItIsWaitingFor(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -2082,6 +2147,7 @@ func TestTheWorkspaceShowsWhatItIsWaitingFor(t *testing.T) {
 // "finished" over an apply that could not cherry-pick contradicts the reason
 // printed above it.
 func TestAFailedCommandSaysSoRatherThanFinished(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -2116,6 +2182,7 @@ func TestAFailedCommandSaysSoRatherThanFinished(t *testing.T) {
 // just over: a session ending is not a verdict on anything, and a pane that
 // read failure into one would be inventing news.
 func TestAPaneWithNoVerdictIsSimplyFinished(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -2142,6 +2209,7 @@ func TestAPaneWithNoVerdictIsSimplyFinished(t *testing.T) {
 // happened — so the one moment it says its size again is the moment somebody
 // says the screen looks wrong. See termpane.Model.Repaint.
 func TestRepaintRedrawsTheWindowAndReachesTheBox(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m, term := openWorkspace(t, ds, "enter")
 	cols, rows := m.focusedPane().term.Size()
@@ -2166,6 +2234,7 @@ func TestRepaintRedrawsTheWindowAndReachesTheBox(t *testing.T) {
 // everyone types it. That is a chord, not a repaint: asking the sandbox for its
 // screen on the way past would fire on every step of a run of them.
 func TestRepaintDoesNotFireOnTheLeaderChord(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, _, term := openWorkspace(t, ds, "enter")
 

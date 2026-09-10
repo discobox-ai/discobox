@@ -12,6 +12,7 @@ import (
 // just asked for. It is a tab in the box the primary already has, so the
 // screen is not split by it.
 func TestLeaderCOpensATerminalBesideThePrimary(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -50,6 +51,7 @@ func TestLeaderCOpensATerminalBesideThePrimary(t *testing.T) {
 // under a virtual id with no creation time, so it sorts to the head of the
 // column even when another terminal's attach arrives first.
 func TestThePrimaryIsAlwaysTheFirstTerminal(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -82,6 +84,7 @@ func TestThePrimaryIsAlwaysTheFirstTerminal(t *testing.T) {
 // The digits count across the whole screen rather than per column: the
 // terminals from the primary at 0, and the shells carrying on from them.
 func TestDigitsCountAcrossBothColumns(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -118,6 +121,7 @@ func TestDigitsCountAcrossBothColumns(t *testing.T) {
 // The arrows walk the terminals and the shells as one strip, left to right,
 // stopping at its ends.
 func TestMovingWalksTheTerminalsThenTheShells(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -148,6 +152,7 @@ func TestMovingWalksTheTerminalsThenTheShells(t *testing.T) {
 // last screen when it ends, and dismissing it leaves the workspace up. Only
 // the primary's ending ends the workspace.
 func TestATerminalThatEndsIsHeldAndDismissed(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -171,6 +176,7 @@ func TestATerminalThatEndsIsHeldAndDismissed(t *testing.T) {
 // own while the workspace is up: the screen mirrors the server, and which side
 // a session is drawn on is the server's own answer.
 func TestATerminalStartedElsewhereJoinsTheLeftColumn(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -196,6 +202,7 @@ func TestATerminalStartedElsewhereJoinsTheLeftColumn(t *testing.T) {
 // A terminal that cannot be created is a report, not a closed workspace: the
 // screen is still a workspace without it.
 func TestAFailedTerminalReports(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	ds.newTerminalErr = errors.New("the harness would not start")

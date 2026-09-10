@@ -43,6 +43,7 @@ func sourceWithRequest(t *testing.T) (*Model, *fakeSource) {
 }
 
 func TestARowWithAWaitingRequestIsMarked(t *testing.T) {
+	t.Parallel()
 	m, _ := sourceWithRequest(t)
 
 	var marked string
@@ -74,6 +75,7 @@ func TestARowWithAWaitingRequestIsMarked(t *testing.T) {
 // arriving takes the screen: the poll that finds one lands while a sentence is
 // being typed into the prompt.
 func TestAWaitingRequestNeverTakesTheScreen(t *testing.T) {
+	t.Parallel()
 	m, _ := sourceWithRequest(t)
 
 	send(t, m, tickMsg{})
@@ -86,6 +88,7 @@ func TestAWaitingRequestNeverTakesTheScreen(t *testing.T) {
 }
 
 func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
+	t.Parallel()
 	m, _ := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -121,6 +124,7 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 // The order is the whole of the opinion: the secret for the site being asked
 // about comes first, however the inference spelled its host.
 func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	// The shape the server produces: a ghp_ token is bound to the site, and the
 	// agent asks for one of its hosts.
@@ -165,6 +169,7 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 // Choosing a secret bound to a neighboring host asks about the binding rather
 // than failing at the server, and the answer is what the server would suggest.
 func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	// A binding under the host being asked for: api.github.com does not answer
 	// for github.com, which is a different host serving different things.
@@ -212,6 +217,7 @@ func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
 // A secret bound to the host being asked for is approved straight away: there
 // is nothing to ask about.
 func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
+	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -226,6 +232,7 @@ func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 }
 
 func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
+	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -251,6 +258,7 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 }
 
 func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
+	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -267,6 +275,7 @@ func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 // The project may not have the credential yet, which is the common case the
 // first time an agent asks for one.
 func TestANewCredentialIsStoredThenApproved(t *testing.T) {
+	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -298,6 +307,7 @@ func TestANewCredentialIsStoredThenApproved(t *testing.T) {
 }
 
 func TestAnEmptyTokenLeavesTheRequestWaiting(t *testing.T) {
+	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -314,6 +324,7 @@ func TestAnEmptyTokenLeavesTheRequestWaiting(t *testing.T) {
 
 // The workspace is the one screen that may not be subtle about it.
 func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
+	t.Parallel()
 	m, _ := sourceWithRequest(t)
 	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
 
@@ -352,6 +363,7 @@ func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 // that hands out a credential — two commands one modifier apart, one of them
 // consequential and reached for in a hurry.
 func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
+	t.Parallel()
 	if credentialsLeaderKey == paneTerminalKey || strings.EqualFold(credentialsLeaderKey, paneTerminalKey) {
 		t.Fatalf("the credential key (%q) is a shift away from the terminal key (%q)",
 			credentialsLeaderKey, paneTerminalKey)
@@ -371,6 +383,7 @@ func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 }
 
 func TestTheBannerCountsSeveralRequests(t *testing.T) {
+	t.Parallel()
 	m, _ := sourceWithRequest(t)
 	second := waitingRequest()
 	second.ID, second.Name = "sreq_2", "npm"
@@ -386,6 +399,7 @@ func TestTheBannerCountsSeveralRequests(t *testing.T) {
 // A request nobody is looking at is still a request: answered from elsewhere,
 // the window notices on the poll rather than holding a stale mark.
 func TestAnAnsweredRequestClearsOnTheNextPoll(t *testing.T) {
+	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	if len(m.requests["sbx_one"]) != 1 {
 		t.Fatal("the request never arrived")
@@ -405,6 +419,7 @@ func TestAnAnsweredRequestClearsOnTheNextPoll(t *testing.T) {
 // screen driven by a mouse as much as a keyboard, has to answer to the obvious
 // gesture — and the whole band is the target, not the words on it.
 func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
@@ -454,6 +469,7 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 // end, and start one row lower. Answering both questions with one number is
 // what puts a terminal's cursor somewhere other than the cell it is drawn in.
 func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -503,6 +519,7 @@ func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
 // having happened, which is how a refused approval looks like a system that
 // silently refuses to grant one secret twice.
 func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
+	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
 	ds.approveErr = errTestRefused
@@ -535,6 +552,7 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 // reads as the window ignoring the keypress — which is what a refused
 // approval looked like.
 func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
 	req.Host = "github.com"

@@ -12,6 +12,7 @@ import (
 // shell prompt and everything printed on the way here. A flow that starts
 // writing into the middle of that reads as two screens drawn over each other.
 func TestHarnessExecClearsTheScreenBeforeTheFlowWrites(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	var sawBefore string
 	exec := &harnessExec{

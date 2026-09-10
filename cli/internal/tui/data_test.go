@@ -9,6 +9,7 @@ import (
 // work: a star for uncommitted content, a check for a head commit an apply
 // has landed, nothing for merely committed work.
 func TestSandboxBase(t *testing.T) {
+	t.Parallel()
 	spawn := Sandbox{Branch: "main", Commit: "1111111"}
 	cases := []struct {
 		name string
@@ -54,6 +55,7 @@ func TestSandboxBase(t *testing.T) {
 // on that made archive/unarchive the only way to reach work that was never
 // unreachable.
 func TestSandboxAttachable(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		s    Sandbox
@@ -79,6 +81,7 @@ func TestSandboxAttachable(t *testing.T) {
 // The reason names the obstacle, not the row's state: the two ways to have no
 // container are undone by different things.
 func TestAttachWhyNamesTheObstacle(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		s    Sandbox
@@ -107,6 +110,7 @@ func TestAttachWhyNamesTheObstacle(t *testing.T) {
 // repairable is attachable read the other way: the two shapes with nothing to
 // join are the two repair rebuilds.
 func TestRepairableIsTheWedge(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		s    Sandbox
@@ -134,6 +138,7 @@ func TestRepairableIsTheWedge(t *testing.T) {
 // this one says nothing, and neither does any row when this window cannot say
 // what identity it is itself.
 func TestSandboxElsewhere(t *testing.T) {
+	t.Parallel()
 	const here = "host_0123456789abcdef"
 	const there = "host_zzzz456789abcdef"
 	me := Session{HostID: here, Host: "wilma"}

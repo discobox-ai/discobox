@@ -8,6 +8,7 @@ import (
 // A narrated operation replaces the busy line as it goes, so a long wait says
 // what it is spending its time on instead of repeating one word for minutes.
 func TestNarrationReplacesTheBusyLine(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	m.busy = "creating the discobox…"
 
@@ -23,6 +24,7 @@ func TestNarrationReplacesTheBusyLine(t *testing.T) {
 // are in flight when an operation ends — the work and its feed are separate
 // goroutines — and one landing late would overwrite whatever replaced it.
 func TestNarrationFromAFinishedOperationIsDropped(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 
 	stale, _ := m.narrate()
@@ -39,6 +41,7 @@ func TestNarrationFromAFinishedOperationIsDropped(t *testing.T) {
 // operation owns the line, so the previous one's reports are stale by
 // definition rather than by timing.
 func TestStartingANarrationEndsThePreviousOne(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 
 	first, _ := m.narrate()
@@ -59,6 +62,7 @@ func TestStartingANarrationEndsThePreviousOne(t *testing.T) {
 // for it. The attach can block for minutes behind an image pull, and this is
 // the only thing that can say so.
 func TestOpeningAWorkspaceWatchesProvisioning(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, _, _ = openWorkspace(t, ds, "enter")
 
@@ -77,6 +81,7 @@ func TestOpeningAWorkspaceWatchesProvisioning(t *testing.T) {
 // the terminal is launched and installed, so a connected session means there is
 // nothing left to say about getting there.
 func TestConnectingEndsTheProvisioningNarration(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	_, m, _ := openWorkspace(t, ds, "enter")
 

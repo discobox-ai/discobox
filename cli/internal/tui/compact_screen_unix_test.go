@@ -35,6 +35,13 @@ import (
 // The mark is put back by hand because go test's output is not a terminal, so
 // the window would draw no color and drop it — and it is twelve of the rows
 // this is about.
+// This one does not run in parallel with the rest of the package. It is the
+// only test here that drives a real tea.Program over a real pty, and the
+// runtime's shutdown races its own input reader — cancelreader closes the tty
+// while the reader goroutine is still taking its descriptor. The window is tiny
+// and shut on a quiet machine, but the CPU contention of five hundred parallel
+// tests holds it open wide enough to hit. It is the library's race, not this
+// test's, so this test stays out of the contention rather than papering over it.
 func TestThePromptIsErasedFromTheScreenTheWindowLeavesBehind(t *testing.T) {
 	for _, tc := range []struct {
 		name string

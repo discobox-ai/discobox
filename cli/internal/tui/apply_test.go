@@ -22,6 +22,7 @@ func readySandboxes() []Sandbox {
 // and could come home, said in green rather than red, because this one is an
 // offer rather than a person waiting on you.
 func TestTheWorkspaceOffersToApplyWorkThatIsReady(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(readySandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the band", func() bool { return m.bannerTop() == 1 })
@@ -46,6 +47,7 @@ func TestTheWorkspaceOffersToApplyWorkThatIsReady(t *testing.T) {
 // And nothing at all otherwise: the band is the exception on a screen that is
 // otherwise all terminal, so a box with nothing to bring back does not get one.
 func TestNoApplyBandWithoutCommittedWork(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...) // sbx_one is dirty, and has never committed
 	_, m, _ := openWorkspace(t, ds, "enter")
 
@@ -60,6 +62,7 @@ func TestNoApplyBandWithoutCommittedWork(t *testing.T) {
 // One band at a time, and the request wins: an agent blocked on a person
 // outranks an offer that will still be there in a minute.
 func TestACredentialRequestOutranksTheApplyOffer(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(readySandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the offer", func() bool { return m.bannerShowing() == bannerApply })
@@ -87,6 +90,7 @@ func TestACredentialRequestOutranksTheApplyOffer(t *testing.T) {
 // The key is deliberate — a leader chord, typed by somebody who read the bar
 // that names it — so it runs the apply, the same as it does from the list.
 func TestTheApplyKeyGoesStraightToTheApply(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(readySandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the band", func() bool { return m.bannerTop() == 1 })
@@ -114,6 +118,7 @@ func TestTheApplyKeyGoesStraightToTheApply(t *testing.T) {
 // where a mistimed press on a tab lands. So it says what it is about to do to a
 // repository outside the discobox before it does it.
 func TestClickingTheApplyBandAsksFirst(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(readySandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the band drawn", func() bool { return m.banner.live })
@@ -148,6 +153,7 @@ func TestClickingTheApplyBandAsksFirst(t *testing.T) {
 
 // Saying no leaves the discobox exactly as it was, offer and all.
 func TestDecliningTheApplyQuestionAppliesNothing(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(readySandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the band drawn", func() bool { return m.banner.live })

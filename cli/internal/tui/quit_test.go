@@ -8,6 +8,7 @@ import (
 // The way out is one sequence wherever you are: the workspace already quits on
 // leader-q, and the discoboxes now do too.
 func TestLeaderQuitsFromTheList(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openList(t, ds)
 
@@ -24,6 +25,7 @@ func TestLeaderQuitsFromTheList(t *testing.T) {
 // Ctrl-C still quits there. It is no longer what the window advertises, but
 // nothing that used to work stopped working.
 func TestCtrlCStillQuitsFromTheList(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openList(t, ds)
 
@@ -36,6 +38,7 @@ func TestCtrlCStillQuitsFromTheList(t *testing.T) {
 // A mistyped leader costs nothing: the key it preceded is handled as though
 // the leader had never been pressed, the way it is in a pane.
 func TestAMistypedLeaderOnTheListCostsNothing(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openList(t, ds)
 	before := m.list.cursor
@@ -56,6 +59,7 @@ func TestAMistypedLeaderOnTheListCostsNothing(t *testing.T) {
 // Not in the prompt: Ctrl-A is the composer's own start-of-line, and an
 // editing key is not worth a quit Ctrl-C already does there.
 func TestTheLeaderDoesNotArmInThePrompt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := New(t.Context(), ds)
 	m.logo = logo{}
@@ -74,6 +78,7 @@ func TestTheLeaderDoesNotArmInThePrompt(t *testing.T) {
 
 // The header offers whichever quit works where you are.
 func TestTheHeaderOffersTheQuitThatWorksHere(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := New(t.Context(), ds)
 	m.logo = logo{}
@@ -94,7 +99,6 @@ func TestTheHeaderOffersTheQuitThatWorksHere(t *testing.T) {
 // openList opens the window and moves the keys onto the discoboxes.
 func openList(t *testing.T, ds *fakeSource) (*driver, *Model) {
 	t.Helper()
-	t.Setenv("NO_COLOR", "1")
 	m := New(t.Context(), ds)
 	m.logo = logo{}
 	m.expanded = true

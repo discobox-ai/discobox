@@ -22,6 +22,7 @@ func headerCol(t *testing.T, m *Model, text string) int {
 // The header is text too: double-clicking the sandbox id selects the whole id
 // — ids are word characters throughout — and releasing copies it.
 func TestDoubleClickTheHeaderIdCopiesIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -43,6 +44,7 @@ func TestDoubleClickTheHeaderIdCopiesIt(t *testing.T) {
 // The git summary is the diff's natural label, so clicking anywhere on that
 // group opens discobox-review exactly as the leader's tools, diff chord does.
 func TestClickingTheHeaderGitInfoOpensDiff(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -54,6 +56,7 @@ func TestClickingTheHeaderGitInfoOpensDiff(t *testing.T) {
 }
 
 func TestTheHeaderGitInfoShadesUnderThePointer(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	plain := plainFrame(m)
@@ -73,6 +76,7 @@ func TestTheHeaderGitInfoShadesUnderThePointer(t *testing.T) {
 // A press in a pane replaces the chrome's selection, and a press on the
 // chrome replaces the panes': one selection on screen at a time.
 func TestChromeAndPaneSelectionsAreExclusive(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 	term.send("hello world")
@@ -110,6 +114,7 @@ func TestChromeAndPaneSelectionsAreExclusive(t *testing.T) {
 // Clicking a tab's label in the strip selects that tab, the way the leader's
 // digits do.
 func TestClickingATabLabelSelectsIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	for want := 1; want <= 2; want++ {
@@ -143,6 +148,7 @@ func TestClickingATabLabelSelectsIt(t *testing.T) {
 // Clicking anywhere on a pane's box — its border, its title — focuses that
 // pane, not just clicks on its grid.
 func TestClickingABorderFocusesItsPane(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -169,6 +175,7 @@ func TestClickingABorderFocusesItsPane(t *testing.T) {
 // Clicking a box's [+] gives that column the whole window, and the [-] it
 // turns into gives the window back to the split.
 func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -215,6 +222,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 // A maximized shell box still takes clicks on its own tabs and its own grid,
 // which have moved to where the terminal's used to be.
 func TestAMaximizedShellBoxIsStillClickable(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	for want := 1; want <= 2; want++ {
@@ -272,6 +280,7 @@ func clickAt(d *driver, x, y int) {
 // The copy chords work over a chrome selection the way they do over a
 // pane's, and are swallowed rather than reaching the sandbox.
 func TestCopyChordOverAChromeSelection(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -296,6 +305,7 @@ func TestCopyChordOverAChromeSelection(t *testing.T) {
 // The chrome answers the right button the way the panes do: a showing
 // selection is copied and cleared.
 func TestRightClickOverAChromeSelection(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	copies := make(chan string, 4)

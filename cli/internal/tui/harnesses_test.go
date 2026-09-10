@@ -12,6 +12,7 @@ import (
 // it takes the same c as the help — with the window's own color stripped off on
 // the way to the clipboard, because what belongs there is the text.
 func TestTheConfigCardIsCopiedWithoutItsColor(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	copies := make(chan string, 1)
 	m.copyOS = func(text string) error { copies <- text; return nil }
@@ -36,6 +37,7 @@ func TestTheConfigCardIsCopiedWithoutItsColor(t *testing.T) {
 // harness row names F3 in its own hint, and the panel is the one surface with
 // no other way to the key reference.
 func TestTheWindowKeysReachOverTheRunOptions(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, sizeMsg(100, 30), keyPress("ctrl+o"))
 	if !m.optionsOpen {
@@ -82,6 +84,7 @@ func TestTheWindowKeysReachOverTheRunOptions(t *testing.T) {
 // F3 opens the harnesses screen from wherever the window is, and closes it
 // again.
 func TestHarnessesScreenOpensAndCloses(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress("f3"))
@@ -113,6 +116,7 @@ func TestHarnessesScreenOpensAndCloses(t *testing.T) {
 // The screen opens out of the prompt window, since it is a whole window rather
 // than something that fits beside the opening prompt.
 func TestHarnessesScreenExpandsTheWindow(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	m.expanded = false
 	m.layout()
@@ -129,6 +133,7 @@ func TestHarnessesScreenExpandsTheWindow(t *testing.T) {
 // WithHarnesses is `discobox configure`: the window opens on the screen, already
 // out.
 func TestWithHarnessesOpensOnTheScreen(t *testing.T) {
+	t.Parallel()
 	m := New(t.Context(), newFakeSource(), WithHarnesses())
 	if !m.harnessesOpen || !m.expanded {
 		t.Fatalf("WithHarnesses = {open:%v expanded:%v}, want the window opened out on the screen", m.harnessesOpen, m.expanded)
@@ -136,6 +141,7 @@ func TestWithHarnessesOpensOnTheScreen(t *testing.T) {
 }
 
 func TestHarnessesCursorMoves(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, keyPress("f3"))
 
@@ -159,6 +165,7 @@ func TestHarnessesCursorMoves(t *testing.T) {
 // Enabling runs the harness's own setup in an unmistakable configuration pane,
 // with harness-authored guidance outside the terminal grid.
 func TestHarnessesEnableRunsTheSetup(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
@@ -181,6 +188,7 @@ func TestHarnessesEnableRunsTheSetup(t *testing.T) {
 // pane's header, in the harness's own words, where the setup's full-screen
 // sign-in cannot paint over it — and only when the port is actually taken.
 func TestHarnessesEnableWarnsWhenADeclaredPortIsTaken(t *testing.T) {
+	t.Parallel()
 	declare := func(ds *fakeSource) {
 		for i := range ds.harnesses {
 			if ds.harnesses[i].ID == "hc_codex" {
@@ -209,6 +217,7 @@ func TestHarnessesEnableWarnsWhenADeclaredPortIsTaken(t *testing.T) {
 
 // Disabling asks first, since it deletes the secrets and files the setup wrote.
 func TestHarnessesDisableConfirms(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("f3"), keyPress("d"))
@@ -240,6 +249,7 @@ func TestHarnessesDisableConfirms(t *testing.T) {
 
 // An action that does not apply says why rather than doing nothing.
 func TestHarnessesDisableNeedsAnEnabledHarness(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("f3"), keyPress("j"), keyPress("j"), keyPress("d"))
@@ -253,6 +263,7 @@ func TestHarnessesDisableNeedsAnEnabledHarness(t *testing.T) {
 }
 
 func TestHarnessesSetDefault(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	// The second row is enabled and not the default, which is the only state
@@ -276,6 +287,7 @@ func TestHarnessesSetDefault(t *testing.T) {
 // v is the whole configuration: what the harness runs, which secret answers
 // each variable it needs, and the files it carries.
 func TestHarnessesConfigCard(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	ds.secrets = []HarnessSecret{
 		//nolint:gosec // These are the names of a variable and of a secret, not a credential.
@@ -308,6 +320,7 @@ func TestHarnessesConfigCard(t *testing.T) {
 // f picks a file and hands it to the editor, which reports back whether the
 // file changed.
 func TestHarnessesEditFile(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	ds.editChanged = true
 	m := newTestModel(t, ds)
@@ -338,6 +351,7 @@ func TestHarnessesEditFile(t *testing.T) {
 
 // A harness with no files has nothing to edit, and says so.
 func TestHarnessesEditNeedsFiles(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, keyPress("f3"), keyPress("G"), keyPress("f"))
 
@@ -349,6 +363,7 @@ func TestHarnessesEditNeedsFiles(t *testing.T) {
 // The run options' harness choices are the harnesses, with the default leading,
 // so enabling one makes it selectable without the window being reopened.
 func TestHarnessChoicesFollowTheListing(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 
@@ -380,6 +395,7 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 // row of a picker behave unlike the rest of it; F3 is how that screen is
 // reached, and the row's own hint says so.
 func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, keyPress("ctrl+o"))
 	if !m.optionsOpen {
@@ -403,6 +419,7 @@ func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 // A failed harness's row says why, under the cursor, where there is room for
 // it.
 func TestHarnessesFailedRowShowsTheError(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, keyPress("f3"), keyPress("G"), keyPress("k"))
 	if !strings.Contains(plainFrame(m), "the setup exited before it finished") {
@@ -418,6 +435,7 @@ func TestHarnessesFailedRowShowsTheError(t *testing.T) {
 // row too many scrolls the terminal, which is the one thing the renderer cannot
 // redraw its way out of.
 func TestHarnessesFrameFitsTheTerminal(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	for _, size := range [][2]int{{120, 40}, {100, 24}, {80, 20}} {
 		send(t, m, sizeMsg(size[0], size[1]))
@@ -437,6 +455,7 @@ func TestHarnessesFrameFitsTheTerminal(t *testing.T) {
 // in particular applies only to a harness that is enabled and not already the
 // default, which is the state the fixture's second row is in.
 func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("f3"))
@@ -471,6 +490,7 @@ func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 // s is the only action that needs a harness which is enabled and not already
 // the default, so it is the one most easily left unreachable.
 func TestHarnessHintsOfferTheDefault(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, keyPress("f3"), keyPress("j"))
 
@@ -483,6 +503,7 @@ func TestHarnessHintsOfferTheDefault(t *testing.T) {
 // create, so the window asks first and offers the way out — the same setup the
 // harnesses screen runs.
 func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 
@@ -514,6 +535,7 @@ func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
 // to offer and the window says so instead of asking a question whose yes does
 // nothing.
 func TestRunningAHarnessWithNoSetupSaysSoRatherThanAsking(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	for i := range ds.harnesses {
 		if ds.harnesses[i].ID == "hc_shell" {
@@ -553,6 +575,7 @@ func noDefaultSource(t *testing.T) *fakeSource {
 // harness the project should run, rather than letting the server refuse the
 // create a moment later.
 func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
+	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("do the thing")...)
@@ -575,6 +598,7 @@ func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
 
 // Choosing a harness that already works makes it the default outright.
 func TestChoosingAWorkingHarnessMakesItTheDefault(t *testing.T) {
+	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"))
@@ -594,6 +618,7 @@ func TestChoosingAWorkingHarnessMakesItTheDefault(t *testing.T) {
 // default afterwards — one intent, not two. A setup that left the project still
 // without a default would ask the same question on the next prompt.
 func TestChoosingAnUnconfiguredHarnessSetsItUpThenDefaultsIt(t *testing.T) {
+	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"))
@@ -623,6 +648,7 @@ func TestChoosingAnUnconfiguredHarnessSetsItUpThenDefaultsIt(t *testing.T) {
 // A project with nothing but `shell` has nothing to offer, and says so rather
 // than opening a menu with no choices on it.
 func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	ds.harnesses = []Harness{{
 		ID: "hc_shell", Name: "Shell", Slug: "shell", State: HarnessEnabled,
@@ -641,6 +667,7 @@ func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
 
 // With a default set, a prompt just runs.
 func TestAPromptWithADefaultDoesNotAsk(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, typeString("go")...)
@@ -656,6 +683,7 @@ func TestAPromptWithADefaultDoesNotAsk(t *testing.T) {
 // look the same and mean opposite things; the server refuses a create it cannot
 // resolve, which is the answer this would only be guessing at.
 func TestAPromptBeforeTheListingLandsIsNotRefused(t *testing.T) {
+	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	// Put the model back where it is a moment after opening: nothing loaded.
@@ -675,6 +703,7 @@ func TestAPromptBeforeTheListingLandsIsNotRefused(t *testing.T) {
 // The question interrupted a run, so answering it runs. Choosing a harness that
 // already works sets the default and then submits the prompt that asked.
 func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
+	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
@@ -691,6 +720,7 @@ func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
 // Same when the chosen harness had to be set up first: the run waits for the
 // setup and the default, then goes.
 func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
+	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
@@ -715,6 +745,7 @@ func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
 // Accepting the offer to set up a harness the run named also resumes it: the
 // run was interrupted the same way and is waiting for the same thing.
 func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	harness := m.opts.opts[optHarness]
@@ -738,6 +769,7 @@ func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
 // A setup that fails leaves the run unsubmitted: the harness still cannot carry
 // it, and running anyway would fail at create for the reason just reported.
 func TestAFailedSetupDoesNotResumeTheRun(t *testing.T) {
+	t.Parallel()
 	ds := noDefaultSource(t)
 	ds.configureErr = errors.New("the setup exited before it finished")
 	m := newTestModel(t, ds)
@@ -763,6 +795,7 @@ func TestAFailedSetupDoesNotResumeTheRun(t *testing.T) {
 // the other's screen: a screen that swallowed the key to its neighbor would
 // make the header's offer a lie for as long as it was up.
 func TestTheTwoScreensReachEachOther(t *testing.T) {
+	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress(harnessesKey))
@@ -797,6 +830,7 @@ func TestTheTwoScreensReachEachOther(t *testing.T) {
 // be typed at — the harness's banner says "Press Enter to start Claude Code",
 // and pressing it tore the flow down and began another.
 func TestTheConfigureTerminalTakesTheKeysFromTheScreenBehindIt(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 
@@ -837,6 +871,7 @@ func TestTheConfigureTerminalTakesTheKeysFromTheScreenBehindIt(t *testing.T) {
 // is what tells the user which keys are theirs, and offering the screen's while
 // the pane holds them is how a key that no longer works gets pressed.
 func TestTheKeyListUnderAConfigureTerminalIsThePanes(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress(harnessesKey), keyPress("e"))

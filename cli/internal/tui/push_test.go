@@ -17,6 +17,7 @@ func pushableSandboxes() []Sandbox {
 // The whole point: opening a discobox sends what has been committed here since
 // it was created, with nobody asking for it.
 func TestTheWorkspacePushesWithoutBeingAsked(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(pushableSandboxes()...)
 	ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Pushed: true}}
 
@@ -37,6 +38,7 @@ func TestTheWorkspacePushesWithoutBeingAsked(t *testing.T) {
 // window that said something every five seconds about having done nothing is a
 // window whose key hints are never on screen.
 func TestNothingIsSaidWhenThereIsNothingToPush(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(pushableSandboxes()...)
 	ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "a3f9c2179bbf"}}
 
@@ -52,6 +54,7 @@ func TestNothingIsSaidWhenThereIsNothingToPush(t *testing.T) {
 // The row's own gate: a discobox this machine did not push, or one whose source
 // it reads live, is never asked about at all.
 func TestADiscoboxThisMachineCannotPushIsNeverAsked(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(testSandboxes()...) // nothing is Pushable
 	d, _, _ := openWorkspace(t, ds, "enter")
 	d.settle()
@@ -66,6 +69,7 @@ func TestADiscoboxThisMachineCannotPushIsNeverAsked(t *testing.T) {
 // one every five seconds would send the same rejected pack behind a permanent
 // error line.
 func TestARefusedPushIsHeldUntilTheCommitMoves(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(pushableSandboxes()...)
 	ds.pushes = []SourcePush{{
 		Slug:   "primary",
@@ -98,6 +102,7 @@ func TestARefusedPushIsHeldUntilTheCommitMoves(t *testing.T) {
 // A commit made after a refusal is a new tip, and a new attempt: the hold is
 // released by the branch moving, not by anything the window is told.
 func TestANewCommitReleasesAHeldPush(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(pushableSandboxes()...)
 	ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Err: errors.New("refused")}}
 
@@ -118,6 +123,7 @@ func TestANewCommitReleasesAHeldPush(t *testing.T) {
 // The loop belongs to the workspace: leaving it ends the pushing, and a tick
 // still in flight from the one that was left does nothing.
 func TestLeavingTheWorkspaceStopsPushing(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(pushableSandboxes()...)
 	ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2"}}
 
@@ -143,6 +149,7 @@ func TestLeavingTheWorkspaceStopsPushing(t *testing.T) {
 // that failed and only "the origin already has it" can say the refusal is over.
 // Without that the window would skip the source until the next commit.
 func TestAnAnsweredRefusalReleasesTheHold(t *testing.T) {
+	t.Parallel()
 	ds := newFakeSource(pushableSandboxes()...)
 	ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Err: errors.New("refused")}}
 
