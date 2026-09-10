@@ -57,11 +57,14 @@ Otherwise infer it from the tags this repository already has:
 
 ```bash
 git fetch upstream --tags
-git tag -l 'v*' --sort=-v:refname | head -5
+git tag -l 'v[0-9]*' --sort=-v:refname | head -6
 ```
 
-The scheme is plain `vMAJOR.MINOR.PATCH`. Ignore the `vm/vN` tags entirely:
-those version the VM guest image, not the CLI.
+The glob matters. `'v*'` also matches `vm/vN` — the VM guest image tags, which
+sort above every CLI tag, so it returns a screen of the one thing this decision
+must ignore and no CLI version at all. `'v[0-9]*'` excludes them.
+
+The scheme is plain `vMAJOR.MINOR.PATCH`.
 
 - Patch (`v0.2.0` → `v0.2.1`) is the default for ordinary work, and the one to
   take without asking.
@@ -73,17 +76,35 @@ Dot releases are now cheap: every one publishes as a GitHub prerelease and only
 reaches people who installed `discobox-dev`, so cutting one does not need the
 ceremony it used to. Take the patch bump without asking.
 
-An explicit `-rc`/`-alpha` tag is a further step down and is rarely what you
-want, because it moves nothing at all — not `:latest`, not `discobox-dev` — and
-cannot be promoted to stable. The `v0.1.0-alpha.N` tags below `v0.1.0` were a
-temporary scheme and are not a pattern to continue. Reaching any channel with
-one takes `--prerelease` typed out.
+**The newest tags are alphas, and the alpha scheme is retired.** `v0.6.0-alpha.1`
+through `.3` sit above `v0.5.2` in that list. They are exactly what the dev
+channel replaces (ADR 0105): an alpha moves nothing at all — not `:latest`, not
+`discobox-dev` — and cannot be promoted to stable. Do not continue the series,
+and do not bump from it as though it were a release. **The next tag is the dot
+release those alphas were heading for**: after `v0.6.0-alpha.3` that is
+`v0.6.0` — not `v0.6.1`, and not `v0.6.0-alpha.4`.
+
+Reaching any channel with an `-rc`/`-alpha` tag takes `--prerelease` typed out.
 
 ## Remotes
 
-In this working copy `upstream` is GitHub (`ibuildthecloud/discobox`, which
+Confirm with `git remote -v` rather than assuming; this varies by checkout.
+Where both exist, `upstream` is GitHub (`ibuildthecloud/discobox`, which
 redirects to `discobox-ai/discobox`) and `origin` is a Depot mirror. Releases,
 tags, CI, and the `gh` CLI all mean **upstream**. Push there.
+
+**Inside a discobox there may be no GitHub remote at all** — `origin` is
+`/.discobox/origins/primary`, the sandbox's own mirror, and `gh` is not logged
+in. Add the remote, and get a credential with the `discobox-access` skill rather
+than assuming one exists; a push needs the token named explicitly and the URL
+spelled out, or the access judge will refuse it:
+
+```bash
+git remote add upstream https://github.com/discobox-ai/discobox.git
+discobox-access run --use <id> -- git -c credential.helper= \
+  -c 'credential.helper=!f() { if test "$1" = get; then echo username=x-access-token; echo "password=$GH_TOKEN"; fi; }; f' \
+  push https://github.com/discobox-ai/discobox.git HEAD:main
+```
 
 One consequence: `Taskfile.yml`'s `RELEASE_REPO` reads only `origin` and only
 matches github.com URLs, so it resolves empty here and
@@ -110,8 +131,8 @@ common here — are patch-identical and drop out silently. Confirm with
 
 ## 2. Get it green
 
-Run the CI test half locally first. It is the same target CI runs and it fails
-in minutes rather than after a runner queue:
+Run the CI test half locally first. It is the same target CI runs, and finding a
+failure here costs seconds rather than a seven-minute round trip:
 
 ```bash
 go tool task ci:test    # every module's tests, the way CI runs them
@@ -133,11 +154,11 @@ Six jobs must pass: `check`, `test`, `verify`, `build`, `darwin`, `windows`.
 
 `gh run view --log-failed` refuses while the run is in progress. To read a
 finished job's log while its siblings are still going — which is most of the
-time, since `darwin` runs long — fetch it from the API:
+time, since `windows` is the longest job — fetch it from the API:
 
 ```bash
 J=$(gh run view <run-id> --repo discobox-ai/discobox --json jobs -q '.jobs[]|select(.name=="windows")|.databaseId')
-gh api --allow-escape-sequences repos/discobox-ai/discobox/actions/jobs/$J/logs \
+gh api repos/discobox-ai/discobox/actions/jobs/$J/logs \
   | sed 's/\x1b\[[0-9;]*m//g' > /tmp/win.log
 grep -nE "(--- FAIL|FAIL\s+github|panic:)" /tmp/win.log
 ```
@@ -217,9 +238,9 @@ gh run list --repo discobox-ai/discobox --workflow release.yml --limit 1
 gh run watch <run-id> --repo discobox-ai/discobox --exit-status
 ```
 
-Wait for it to complete rather than polling; `binaries` has a darwin leg, so
-this is another 20-plus-minute wait. The next step downloads the assets it
-uploads, so running early just fails.
+Wait for it to complete rather than polling — about seven minutes, `images`
+being the long pole rather than the darwin leg of `binaries`. The next step
+downloads the assets it uploads, so running early just fails.
 
 Do not write the release notes by hand. `release:publish` creates the release
 with `--generate-notes` and `--prerelease`, always — every release is cut as a
@@ -418,5 +439,27 @@ pushed tag is outward-facing; do not choose it unprompted.
 
 ## Waiting
 
-`darwin` regularly queues 20+ minutes before it starts. Do not poll it in a
-loop — arm a Monitor that exits when the run completes, and keep working.
+Measured over the last ten runs of each: **CI takes about 7 minutes and the
+release workflow about 7 minutes**, and queue time is effectively zero — these
+are Depot runners and they start immediately. Earlier revisions of this file
+claimed a 20-plus-minute `darwin` queue. That is not what happens, and budgeting
+for it wastes real time.
+
+Where CI's seven minutes go, slowest first — every job runs in parallel, so the
+wall clock is just the top row:
+
+| job | median | |
+| --- | --- | --- |
+| `windows` | 7.2m | the critical path; 230s of it is `cd cli && go test ./...` |
+| `darwin` | 5.7m | over half is Nix install, cache restore, and `nix develop` |
+| `test` | 3.2m | |
+| `check` | 1.9m | |
+| `build` | 1.0m | |
+| `verify` | 0.7m | |
+
+Release, same shape: `images` 4.7m and `binaries` (darwin) 3.5m in parallel,
+then `publish` 1.0m.
+
+Still do not sit in a polling loop — arm a Monitor that exits when the run
+completes and keep working. Just expect it to fire in about seven minutes, not
+twenty.
