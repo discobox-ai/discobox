@@ -345,9 +345,22 @@ Which peers may connect is two layers, and `internal/irohd` owns both (ADR
 exists. A peer ID is written one way everywhere — the address, this file, the
 API, the database — so two of them can be compared by eye (ADR 0097 §5):
 
+The identity it is consulted about is the one the peer *claims*, which is not
+always the one it dialed from. A client on the `discobox/http/1+cert` ALPN
+presents a certificate binding its ephemeral endpoint to an enrolled identity,
+and `endpoint` verifies that binding before the policy sees anything (ADR 0100).
+So the allowlist below still admits an identity, never an endpoint, and it is
+asked exactly once — about the enrolled issuer for a certificate-bearing peer,
+and about the endpoint itself for every client that dials the plain ALPN.
+
 ```mermaid
 flowchart TD
-    accept[iroh accept: peer ID proven] --> file{"in &lt;data dir&gt;/authorized_ids?"}
+    accept[iroh accept: peer ID proven] --> alpn{"certificate ALPN?"}
+    alpn -- no --> file
+    alpn -- yes --> cert["read certificate; verify signature,<br/>subject == this endpoint, not expired"]
+    cert -- bad --> refuse
+    cert -- good --> file
+    file{"claimed ID in &lt;data dir&gt;/authorized_ids?"}
     file -- yes --> admit[admit]
     file -- no --> store{"store installed?"}
     store -- "not yet" --> wait[wait: deadline or listener cancel]

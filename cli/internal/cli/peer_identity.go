@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/endpoint"
 )
@@ -99,13 +100,18 @@ func configureIrohForEndpoint(parsed endpoint.Endpoint, relayURLs, logLevel stri
 		return err
 	}
 	path := defaultIrohIdentityPath()
-	key, err := loadOrCreateIrohIdentityKey(path)
+	enrolled, err := loadOrCreateIrohIdentityKey(path)
+	if err != nil {
+		return err
+	}
+	transport, certificate, err := irohTransportIdentity(enrolled)
 	if err != nil {
 		return err
 	}
 	if err := endpoint.ConfigureIroh(endpoint.IrohConfig{
-		SecretKey: key,
-		RelayURLs: splitRelayURLs(relayURLs),
+		SecretKey:   transport,
+		Certificate: certificate,
+		RelayURLs:   splitRelayURLs(relayURLs),
 	}); err != nil {
 		if strings.Contains(err.Error(), errIrohAlreadyConfigured.Error()) {
 			return nil
@@ -113,6 +119,46 @@ func configureIrohForEndpoint(parsed endpoint.Endpoint, relayURLs, logLevel stri
 		return err
 	}
 	return nil
+}
+
+// irohCertLifetime is how long a process's certificate is good for. It outlives
+// any command by a wide margin and expires long before a machine's uptime, which
+// is the balance ADR 0100 §3 asks for: the certificate is already worthless
+// without the ephemeral private key, and the expiry only bounds the damage from
+// a process compromised while it runs.
+const irohCertLifetime = 24 * time.Hour
+
+// irohTransportIdentity returns the key this process dials with and the
+// certificate proving it speaks for the enrolled one (ADR 0100).
+//
+// The transport key is generated here, per process, and never written down.
+// That is the whole point: the enrolled key is stable and machine-wide, and a
+// relay keeps one active connection per endpoint ID, so every discobox process
+// sharing that one identity took the relay slot from the others and none of
+// them could finish a handshake. A key that exists only for this process cannot
+// collide with anything.
+//
+// The enrolled key stays exactly what it was to an operator — the value
+// `discobox admin peer id` prints and `discobox admin peer add` enrolls. It is
+// now the certificate's issuer rather than the address this client dials from.
+func irohTransportIdentity(enrolled ed25519.PrivateKey) (ed25519.PrivateKey, *endpoint.PeerCert, error) {
+	_, transport, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate this process's transport key: %w", err)
+	}
+	public, ok := transport.Public().(ed25519.PublicKey)
+	if !ok {
+		return nil, nil, errors.New("generated transport key is not ed25519")
+	}
+	subject, err := endpoint.IrohIDFromPublicKey(public)
+	if err != nil {
+		return nil, nil, err
+	}
+	cert, err := endpoint.SignPeerCert(enrolled, subject, time.Now().Add(irohCertLifetime))
+	if err != nil {
+		return nil, nil, fmt.Errorf("certify this process's transport key: %w", err)
+	}
+	return transport, &cert, nil
 }
 
 // errIrohAlreadyConfigured matches the endpoint package's message for a second

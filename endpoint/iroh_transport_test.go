@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -482,4 +483,174 @@ func TestIrohEndpointDoesNotComeBackAfterClose(t *testing.T) {
 	if _, err := server.DirectAddrs(); !errors.Is(err, errIrohEndpointClosed) {
 		t.Fatalf("DirectAddrs() after close = %v, want errIrohEndpointClosed", err)
 	}
+}
+
+// The point of ADR 0100: a client dials with a key nobody has ever heard of and
+// is admitted as the identity it enrolled, because it presents a certificate
+// binding the two. The server's allowlist is unchanged — it still admits an
+// identity, not an endpoint.
+func TestIrohAdmitsAnEphemeralEndpointBearingACertificate(t *testing.T) {
+	enrolled := newSecretKey(t)
+	enrolledID, err := IrohIDFromPublicKey(enrolled.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+
+	var admitted []IrohID
+	server := newIrohEndpointForTest(t, IrohConfig{
+		SecretKey: newSecretKey(t),
+		Authorize: func(_ context.Context, id IrohID) error {
+			admitted = append(admitted, id)
+			if id != enrolledID {
+				return fmt.Errorf("endpoint %s is not authorized on this server", id)
+			}
+			return nil
+		},
+	})
+	addrs, err := server.DirectAddrs()
+	if err != nil {
+		t.Fatalf("DirectAddrs() error = %v", err)
+	}
+
+	// The transport key is generated for this client alone and never enrolled.
+	ephemeral := newSecretKey(t)
+	ephemeralID, err := IrohIDFromPublicKey(ephemeral.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	cert, err := SignPeerCert(enrolled, ephemeralID, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("SignPeerCert() error = %v", err)
+	}
+	client := newIrohEndpointForTest(t, IrohConfig{
+		SecretKey:   ephemeral,
+		Certificate: &cert,
+		Locate:      func(IrohID) []string { return addrs },
+	})
+
+	listener, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	t.Cleanup(cleanup)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "pong")
+	})
+	httpServer := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = httpServer.Serve(listener) }()
+	t.Cleanup(func() { _ = httpServer.Close() })
+
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+	if got := irohPing(t, irohClient(t, client, serverID)); got != "pong" {
+		t.Fatalf("/ping = %q, want %q", got, "pong")
+	}
+
+	// The allowlist saw the enrolled identity once, never the endpoint that
+	// dialed. Evaluating the ephemeral ID first would refuse and log it as
+	// unenrolled on the way to admitting it.
+	if len(admitted) != 1 || admitted[0] != enrolledID {
+		t.Fatalf("the policy was asked about %v, want exactly the enrolled identity %s", admitted, enrolledID)
+	}
+	if slices.Contains(admitted, ephemeralID) {
+		t.Fatalf("the policy was asked about the ephemeral endpoint %s", ephemeralID)
+	}
+}
+
+// A certificate is worthless to anyone but the endpoint it names, and the
+// server is where that has to hold: presenting someone else's certificate from
+// a different endpoint must be refused, however well signed it is.
+func TestIrohRefusesACertificateIssuedForAnotherEndpoint(t *testing.T) {
+	enrolled := newSecretKey(t)
+	enrolledID, err := IrohIDFromPublicKey(enrolled.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	server := newIrohEndpointForTest(t, IrohConfig{
+		SecretKey: newSecretKey(t),
+		Authorize: func(_ context.Context, id IrohID) error {
+			if id != enrolledID {
+				return fmt.Errorf("endpoint %s is not authorized on this server", id)
+			}
+			return nil
+		},
+	})
+	addrs, err := server.DirectAddrs()
+	if err != nil {
+		t.Fatalf("DirectAddrs() error = %v", err)
+	}
+
+	// A certificate for somebody else's endpoint, correctly signed by a
+	// correctly enrolled identity. The thief holds neither private key it
+	// names, and the handshake is what gives them away.
+	victimPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	victim, err := IrohIDFromPublicKey(victimPub)
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	stolen, err := SignPeerCert(enrolled, victim, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("SignPeerCert() error = %v", err)
+	}
+	thief := newIrohEndpointForTest(t, IrohConfig{
+		SecretKey:   newSecretKey(t),
+		Certificate: &stolen,
+		Locate:      func(IrohID) []string { return addrs },
+	})
+
+	listener, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	t.Cleanup(cleanup)
+	httpServer := &http.Server{ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = httpServer.Serve(listener) }()
+	t.Cleanup(func() { _ = httpServer.Close() })
+
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LogicalHTTPBaseURL+"/ping", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := irohClient(t, thief, serverID).Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("a certificate issued for another endpoint was accepted")
+	}
+	if !strings.Contains(err.Error(), "arrived from") {
+		t.Fatalf("error = %v, want the refusal to say the certificate was for another endpoint", err)
+	}
+}
+
+// irohPing is one request, with a deadline short enough that a client that
+// never gets in fails the test rather than hanging it.
+func irohPing(t *testing.T, client *http.Client) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LogicalHTTPBaseURL+"/ping", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /ping: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return string(body)
 }

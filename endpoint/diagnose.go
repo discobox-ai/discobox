@@ -68,8 +68,12 @@ const (
 	DiagnosisLayerIdentity = "identity"
 	// DiagnosisLayerBind is the local UDP socket.
 	DiagnosisLayerBind = "bind"
-	// DiagnosisLayerRelay is reaching a relay server, which is what makes a
-	// peer findable across networks.
+	// DiagnosisLayerRelay is whether *this machine* reaches a relay server,
+	// which is what makes a peer findable across networks.
+	//
+	// It answers for this end only. A green relay row above a failed connect
+	// is the common shape of "the server is the one that is missing", and a
+	// reader who takes it for the peer's relay reads it as a contradiction.
 	DiagnosisLayerRelay = "relay"
 	// DiagnosisLayerConnect is the QUIC handshake with the peer, which proves
 	// its identity and nothing about whether it will admit us.
@@ -174,6 +178,11 @@ const (
 	// diagnoseCloseWait bounds reading a refused connection's close reason.
 	// It is only paid on a failure, and only until the reason arrives.
 	diagnoseCloseWait = 3 * time.Second
+	// diagnoseResolveWait bounds reading back what a peer ID resolved to. It
+	// is a local lookup in the endpoint's own address book, so it is short:
+	// this runs after a dial has already spent its whole budget failing, and
+	// a report that hangs afterwards is worse than one without this line.
+	diagnoseResolveWait = 2 * time.Second
 	// diagnoseUserAgent identifies these probes in a server's access log, so a
 	// health request that arrived from `discobox status` is not mistaken for a
 	// client that is about to do something.
@@ -412,7 +421,17 @@ func diagnoseIroh(ctx context.Context, diagnosis *Diagnosis, configured *IrohEnd
 			DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
-	diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+local.String())
+	// What an operator enrolls comes first, because this row is what they read
+	// when a server says they are not enrolled. With a certificate the key that
+	// dials is generated per process and differs on every run, so printing it
+	// here as "this machine" would hand them a value to enroll that is wrong
+	// before they finish typing it (ADR 0100).
+	if cert := configured.cfg.Certificate; cert != nil {
+		diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+cert.Issuer.String(),
+			"dialing as "+local.Short()+", a key this process generated and certified")
+	} else {
+		diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+local.String())
+	}
 
 	started = time.Now()
 	bound, err := configured.bind()
@@ -462,10 +481,10 @@ func diagnoseIrohRelay(ctx context.Context, diagnosis *Diagnosis, configured *Ir
 		return false
 	}
 	if strings.TrimSpace(home) == "" {
-		diagnosis.ok(DiagnosisLayerRelay, started, "online, with no home relay")
+		diagnosis.ok(DiagnosisLayerRelay, started, "this machine is online, with no home relay")
 		return true
 	}
-	diagnosis.ok(DiagnosisLayerRelay, started, home)
+	diagnosis.ok(DiagnosisLayerRelay, started, "this machine is on "+home)
 	return true
 }
 
@@ -492,21 +511,37 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	}
 	addr := iroh.AddrOf(iroh.EndpointID(peer)).WithDirectAddrs(parsedAddrs...)
 
+	// Worked out before the dial rather than after it, because a dial that
+	// fails is the one whose reader needs it. A connect layer that reports what
+	// it was working with only when it succeeded tells you what you dialed
+	// exactly when you no longer care.
+	alpn := configured.dialALPN()
+	foundBy := "dialed by peer ID alone, leaving discovery to find it"
+	if len(parsedAddrs) > 0 {
+		foundBy = "direct addresses tried: " + joinAddrPorts(parsedAddrs)
+	}
+
 	connectCtx, cancel := context.WithTimeout(ctx, opts.ConnectTimeout)
 	defer cancel()
-	conn, err := bound.Connect(connectCtx, addr, []byte(irohALPN))
+	conn, err := bound.Connect(connectCtx, addr, []byte(alpn))
 	if err != nil {
+		detail := append([]string{"alpn " + irohALPN, foundBy}, resolvedDetail(ctx, bound, peer)...)
 		diagnosis.fail(DiagnosisLayerConnect, started, "the peer could not be reached", err,
-			connectHint(len(parsedAddrs) > 0, relayReached))
+			connectHint(len(parsedAddrs) > 0, relayReached), detail...)
 		diagnosis.skipRest(DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
 	defer func() { _ = conn.CloseWithError(0, "") }()
-	foundBy := "found by discovery, with no direct address given"
-	if len(parsedAddrs) > 0 {
-		foundBy = "direct addresses tried: " + joinAddrPorts(parsedAddrs)
+	// The certificate this client owes a server it dialed on the certificate
+	// ALPN. A diagnosis that skipped it would be refused for not presenting one
+	// — and would report that as the server's doing rather than its own.
+	if err := configured.presentCertificate(ctx, conn); err != nil {
+		diagnosis.fail(DiagnosisLayerConnect, started, "this client's certificate could not be sent", err,
+			"", "alpn "+alpn, foundBy)
+		diagnosis.skipRest(DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
+		return
 	}
-	diagnosis.ok(DiagnosisLayerConnect, started, "handshake with "+peer.Short(), "alpn "+irohALPN, foundBy)
+	diagnosis.ok(DiagnosisLayerConnect, started, "handshake with "+peer.Short(), "alpn "+alpn, foundBy)
 
 	started = time.Now()
 	stream, err := conn.OpenConn(ctx)
@@ -521,7 +556,7 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 		if reason := irohCloseReason(conn); reason != "" {
 			diagnosis.skip(DiagnosisLayerStream, "the connection was closed first")
 			diagnosis.fail(DiagnosisLayerAdmission, started, "the server closed the connection: "+reason, nil,
-				admissionHint(reason, local))
+				admissionHint(reason, enrolledIdentity(configured, local)))
 			diagnosis.skip(DiagnosisLayerServer, "the connection was closed before the server answered")
 			diagnosis.skip(DiagnosisLayerRoute, "the server closed the connection, and its paths went with it")
 			return
@@ -544,7 +579,7 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	if err != nil {
 		if reason := irohCloseReason(conn); reason != "" {
 			diagnosis.fail(DiagnosisLayerAdmission, started, "the server closed the connection: "+reason, nil,
-				admissionHint(reason, local))
+				admissionHint(reason, enrolledIdentity(configured, local)))
 			diagnosis.skip(DiagnosisLayerServer, "the connection was closed before the server answered")
 			diagnosis.skip(DiagnosisLayerRoute, "the server closed the connection, and its paths went with it")
 			return
@@ -666,6 +701,48 @@ func routeRTT(rtt time.Duration) string {
 	}
 }
 
+// resolvedDetail says what the peer ID resolved to, for a dial that failed.
+//
+// It is the other half of "the peer could not be reached". Discovery returning
+// nothing and discovery returning addresses that no longer answer are
+// different failures with different fixes — a server that is not publishing
+// against one that has moved — and the dial's own error is the same sentence
+// either way.
+//
+// The addresses are read after the dial rather than before it because that is
+// when they exist: a dial is what asks discovery, and what it learned outlives
+// the attempt that failed. iroh warns they may be outdated or unusable, which
+// is exactly the finding: every one inactive means these were had and none of
+// them worked.
+//
+// A failure to read them is reported as not knowing rather than as a second
+// error. This runs underneath a layer that has already failed, and the reader
+// is looking at that failure; a second one about introspection would bury it.
+func resolvedDetail(ctx context.Context, bound *iroh.Endpoint, peer IrohID) []string {
+	resolveCtx, cancel := context.WithTimeout(ctx, diagnoseResolveWait)
+	defer cancel()
+	addrs, err := bound.RemoteAddrs(resolveCtx, iroh.EndpointID(peer))
+	if err != nil {
+		return details("what this ID resolved to could not be read: " + err.Error())
+	}
+	if len(addrs) == 0 {
+		return details("this ID resolved to nothing: discovery has no addresses for this peer")
+	}
+	lines := []string{fmt.Sprintf("this ID resolved to %d %s, none of which answered:",
+		len(addrs), pluralizeAddress(len(addrs)))}
+	for _, addr := range addrs {
+		lines = append(lines, "  "+string(addr.Kind)+" "+addr.Addr+" ("+string(addr.Usage)+")")
+	}
+	return lines
+}
+
+func pluralizeAddress(n int) string {
+	if n == 1 {
+		return "address"
+	}
+	return "addresses"
+}
+
 func connectHint(hasDirect, relayReached bool) string {
 	switch {
 	case hasDirect:
@@ -673,7 +750,7 @@ func connectHint(hasDirect, relayReached bool) string {
 	case !relayReached:
 		return "With no relay reached and no ?addr= given, there is no way to find this peer. Fix the relay layer above, or dial the server's \"without discovery\" address, which it logs at startup."
 	default:
-		return "The peer ID resolved to nothing that answered. Check that the server is running and listening on iroh (DISCOBOX_SERVER_LISTEN), and that its peer ID is the one in this address."
+		return "The peer ID resolved to nothing that answered. The relay row above is this machine's own relay and says nothing about whether the server reached one, so a green relay and a failed connect together mean the far end is missing rather than this one. Check that the server is running and listening on iroh (DISCOBOX_SERVER_LISTEN), and that its peer ID is the one in this address."
 	}
 }
 
@@ -681,6 +758,17 @@ func connectHint(hasDirect, relayReached bool) string {
 // it. The reason is written by the server's admission gate, for exactly this
 // reader, so the wording is matched rather than parsed: an unrecognized reason
 // is still printed, and only the advice is withheld.
+// enrolledIdentity is the identity an operator would enroll for this client:
+// the certificate's issuer where there is one, and otherwise the endpoint
+// itself. A hint that named the per-process transport key would tell somebody
+// to enroll a value that stops existing when the command does (ADR 0100).
+func enrolledIdentity(configured *IrohEndpoint, local IrohID) IrohID {
+	if cert := configured.cfg.Certificate; cert != nil {
+		return cert.Issuer
+	}
+	return local
+}
+
 func admissionHint(reason string, local IrohID) string {
 	lowered := strings.ToLower(reason)
 	switch {
@@ -863,11 +951,16 @@ func (d *Diagnosis) ok(layer string, started time.Time, summary string, detail .
 	})
 }
 
-func (d *Diagnosis) fail(layer string, started time.Time, summary string, err error, hint string) {
+// fail records a layer that stopped the ones above it. It takes the same
+// trailing detail as [Diagnosis.ok] because a failure is where those facts are
+// worth the most: what a layer was working with is how a reader tells one cause
+// from another, and printing it only when the layer succeeded is backwards.
+func (d *Diagnosis) fail(layer string, started time.Time, summary string, err error, hint string, detail ...string) {
 	d.add(DiagnosisStep{
 		Layer:      layer,
 		Status:     DiagnosisFailed,
 		Summary:    summary,
+		Detail:     details(detail...),
 		Error:      errorText(err),
 		Hint:       hint,
 		DurationMS: millis(started),

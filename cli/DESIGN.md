@@ -162,6 +162,36 @@ transport helpers where OpenAPI does not model the stream.
   (opt-in, `DISCOBOX_PANE_E2E=1`) is what catches the omission, since a pane
   attached to an unstarted exec draws an empty screen forever with no error.
 
+## The Key That Dials Is Not the Key That Is Enrolled
+
+A CLI process dials with a key it generates at startup and never writes down,
+and proves the identity an operator enrolled by presenting a certificate for
+that key (ADR 0100). `irohTransportIdentity` (`internal/cli/peer_identity.go`)
+makes both, and the certificate travels on its own stream the moment a
+connection is up.
+
+The enrolled key is unchanged in every way an operator sees it: the same file,
+the same value `discobox admin peer id` prints, the same thing
+`discobox admin peer add` enrolls. It is now the certificate's issuer instead of
+the address this client dials from.
+
+That split exists because one key could not do both jobs. A relay keeps **one
+active connection per endpoint ID** and hands the newest one all inbound
+traffic, so every discobox process on a machine — sharing one identity from one
+file — took the relay slot from the others. It is invisible while direct paths
+carry the traffic, and it bites the moment everything is forced back onto the
+relay at once, which is exactly what a server restart does: the new server has a
+new port, every direct path dies, and hole punching needs the relay to rebuild
+them. The processes then starve each other mid-handshake and none of them
+reconnects.
+
+The ALPN carries the negotiation. A client that has a certificate dials
+`discobox/http/1+cert`; one that does not dials `discobox/http/1`; a server
+serves both. So an old client is admitted by its own endpoint ID exactly as
+before with no stream read, and a new client meeting an old server is refused at
+the TLS layer — an unambiguous "this server has no certificates" rather than a
+misleading "not enrolled".
+
 ## CLI State Directory
 
 `cliStateDir()` (`internal/cli/statedir.go`) is `<state>` throughout this

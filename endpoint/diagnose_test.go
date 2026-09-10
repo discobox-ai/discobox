@@ -1,8 +1,10 @@
 package endpoint
 
 import (
+	"crypto/ed25519"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -269,4 +271,77 @@ func TestDiagnoseReportsTheRouteTaken(t *testing.T) {
 	if strings.HasPrefix(route.Detail[0], "rtt 0s") {
 		t.Fatalf("route detail = %q, want a round trip at the scale it happened on", route.Detail[0])
 	}
+}
+
+// A dial that fails has to say what it dialed. It is the reader of the failed
+// row who needs to know whether the peer ID was resolved by discovery or a
+// direct address was tried and did not answer -- those have different causes
+// and different fixes, and for a while this was printed only when the dial
+// succeeded.
+func TestDiagnoseReportsWhatAFailedConnectDialed(t *testing.T) {
+	server, client := irohPair(t, admitAll)
+
+	// Nothing listens at the pinned address, so the dial fails with an address
+	// the report should name.
+	const dead = "127.0.0.1:1"
+	diagnosis := client.Diagnose(t.Context(), IrohURL(irohTestID(t, server))+"?addr="+dead, DiagnoseOptions{
+		RelayTimeout:   time.Second,
+		ConnectTimeout: 2 * time.Second,
+		RequestTimeout: 2 * time.Second,
+	})
+	step := stepFor(t, diagnosis, DiagnosisLayerConnect)
+	if step.Status != DiagnosisFailed {
+		t.Fatalf("connect = %s, want failed", step.Status)
+	}
+	if !slices.ContainsFunc(step.Detail, func(line string) bool { return strings.Contains(line, dead) }) {
+		t.Fatalf("connect detail = %v, want it to name the address that was dialed", step.Detail)
+	}
+	if !slices.ContainsFunc(step.Detail, func(line string) bool { return strings.Contains(line, irohALPN) }) {
+		t.Fatalf("connect detail = %v, want it to name the alpn", step.Detail)
+	}
+	// And what the ID resolved to, which is the half the dial's own error
+	// cannot carry. The address was pinned rather than discovered, so the
+	// endpoint knows exactly one and it never came alive.
+	joined := strings.Join(step.Detail, "\n")
+	if !strings.Contains(joined, "resolved to") {
+		t.Fatalf("connect detail = %v, want it to say what the ID resolved to", step.Detail)
+	}
+	if !strings.Contains(joined, "inactive") {
+		t.Fatalf("connect detail = %v, want the address it knew reported as never used", step.Detail)
+	}
+}
+
+// A peer nothing knows anything about resolves to nothing, and saying so is
+// the finding: it separates a server that is not publishing from one that has
+// moved, which the dial's own error cannot do.
+func TestDiagnoseReportsWhenAnIDResolvesToNothing(t *testing.T) {
+	// Deliberately not irohPair: its Locate hands back the server's addresses
+	// for any ID at all, so nothing is ever unresolved there. This client has
+	// no locator and no discovery, which is what having nothing looks like.
+	client := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t)})
+
+	absent := mustIrohIDForTest(t)
+	diagnosis := client.Diagnose(t.Context(), IrohURL(absent), DiagnoseOptions{
+		RelayTimeout:   time.Second,
+		ConnectTimeout: 2 * time.Second,
+		RequestTimeout: 2 * time.Second,
+	})
+	step := stepFor(t, diagnosis, DiagnosisLayerConnect)
+	if step.Status != DiagnosisFailed {
+		t.Fatalf("connect = %s, want failed", step.Status)
+	}
+	if !slices.ContainsFunc(step.Detail, func(line string) bool {
+		return strings.Contains(line, "resolved to nothing")
+	}) {
+		t.Fatalf("connect detail = %v, want it to say the ID resolved to nothing", step.Detail)
+	}
+}
+
+func mustIrohIDForTest(t *testing.T) IrohID {
+	t.Helper()
+	id, err := IrohIDFromPublicKey(newSecretKey(t).Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	return id
 }

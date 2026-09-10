@@ -154,6 +154,19 @@ type IrohConfig struct {
 	// has only an ID to go on, and it is a network round trip to n0.
 	DisableDiscovery bool
 
+	// Certificate proves, to a server that admits identities rather than
+	// endpoints, that this ephemeral endpoint speaks for an enrolled one
+	// (ADR 0100).
+	//
+	// Set it and SecretKey becomes a key generated for this process alone,
+	// while the identity an operator enrolled is the certificate's issuer. Nil
+	// keeps the old arrangement, where the key that dials is the key that was
+	// enrolled — which is what every client did before certificates existed and
+	// what one still does against a server that does not offer them.
+	//
+	// A client sets this. A server does not: its own identity is its address.
+	Certificate *PeerCert
+
 	// BindAddrs are the local UDP addresses to bind, replacing the default
 	// wildcard sockets. Empty binds the default, which is what a process
 	// reachable from another machine wants.

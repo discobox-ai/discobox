@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -21,6 +22,25 @@ import (
 // protocol on the same endpoint gets its own ALPN rather than having to be
 // distinguished inside the byte stream.
 const irohALPN = "discobox/http/1"
+
+// irohCertALPN is the same control plane, reached by a client that dials with
+// an ephemeral key and presents a certificate for the identity it enrolled
+// (ADR 0100 §4).
+//
+// The ALPN is what says a certificate is coming. Nothing else in a connection
+// does, and finding out by reading would consume the first stream of a client
+// that was never going to send one. It also makes the negotiation explicit in
+// both directions: a client meeting a server that does not serve this ALPN is
+// refused at the TLS layer, which says "this server does not do certificates"
+// rather than the misleading "not enrolled" it would otherwise be told.
+const irohCertALPN = "discobox/http/1+cert"
+
+// irohCertWait bounds reading a certificate from a peer that has just
+// connected. Short, because the peer sends it unprompted the moment the
+// handshake completes, so this waits on bytes already in flight rather than on
+// a round trip — and because unlike the admission store's wait, what it is
+// waiting for is a remote party.
+const irohCertWait = 3 * time.Second
 
 // irohTeardownTimeout bounds closing the bound endpoint, so a peer that has
 // stopped answering cannot hold up a shutdown.
@@ -121,7 +141,7 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 		RelayMode: relay,
 		RelayURLs: e.cfg.RelayURLs,
 		SecretKey: &secret,
-		ALPNs:     [][]byte{[]byte(irohALPN)},
+		ALPNs:     irohALPNs(e.cfg),
 		BindAddrs: e.cfg.BindAddrs,
 	})
 	if err != nil {
@@ -139,6 +159,33 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 	}
 	e.endpoint = bound
 	return e.endpoint, nil
+}
+
+// irohALPNs is what this endpoint speaks.
+//
+// A server serves both, so a client of either kind reaches it. A client dials
+// exactly one — the certificate ALPN when it has a certificate to present, the
+// plain one otherwise — because dialing is choosing, and offering both would
+// leave the server to guess which kind of client this is.
+// dialALPN is the protocol this endpoint asks for when it dials: the
+// certificate ALPN when it has one to present, the plain one otherwise.
+// Dialing is choosing, and the choice is what tells the server which kind of
+// client has arrived.
+func (e *IrohEndpoint) dialALPN() string {
+	if e.cfg.Certificate != nil {
+		return irohCertALPN
+	}
+	return irohALPN
+}
+
+func irohALPNs(cfg IrohConfig) [][]byte {
+	if cfg.Certificate != nil {
+		return [][]byte{[]byte(irohCertALPN)}
+	}
+	if cfg.Authorize != nil {
+		return [][]byte{[]byte(irohCertALPN), []byte(irohALPN)}
+	}
+	return [][]byte{[]byte(irohALPN)}
 }
 
 // irohReachDescription says how this endpoint expects to find peers, in the
@@ -423,9 +470,10 @@ func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ..
 			return nil, err
 		}
 		addr := iroh.AddrOf(iroh.EndpointID(id)).WithDirectAddrs(parsed...)
-		irohLogf(IrohLogInfo, "connect: dialing %s (direct %s, alpn %s)", id.Short(), joinAddrPorts(parsed), irohALPN)
+		alpn := e.dialALPN()
+		irohLogf(IrohLogInfo, "connect: dialing %s (direct %s, alpn %s)", id.Short(), joinAddrPorts(parsed), alpn)
 		started := time.Now()
-		opened, err := ep.Connect(ctx, addr, []byte(irohALPN))
+		opened, err := ep.Connect(ctx, addr, []byte(alpn))
 		if err != nil {
 			irohLogf(IrohLogError, "connect: %s failed after %s: %v", id.Short(), time.Since(started).Round(time.Millisecond), err)
 			return nil, fmt.Errorf("dial iroh endpoint %s: %w", id.Short(), err)
@@ -435,6 +483,12 @@ func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ..
 		// accepting it, so the refusal surfaces at the first stream rather than
 		// here. That is the layer boundary this line marks.
 		irohLogf(IrohLogInfo, "connect: %s connected in %s", id.Short(), time.Since(started).Round(time.Millisecond))
+		// Before the connection is pooled, so no request can be the thing that
+		// discovers the certificate was never sent.
+		if err := e.presentCertificate(ctx, opened); err != nil {
+			irohLogf(IrohLogError, "connect: %s could not be given this peer's certificate: %v", id.Short(), err)
+			return nil, err
+		}
 		conn = opened
 		return conn, nil
 	}
@@ -535,6 +589,18 @@ func (e *IrohEndpoint) authorize(conn *iroh.Conn) error {
 		return fmt.Errorf("endpoint identity is unreadable: %w", err)
 	}
 	peer := IrohID(id)
+	// Whichever identity is actually being claimed is the one the policy sees,
+	// and it sees it once. A certificate-bearing peer is never first evaluated
+	// as the ephemeral endpoint it dialed from, which would refuse and log it
+	// as unenrolled on the way to admitting it.
+	claimed := peer
+	if certified, err := e.presentedIdentity(conn, peer); err != nil {
+		irohLogf(IrohLogWarn, "accept: refused %s: %v", peer.Short(), err)
+		return err
+	} else if certified != nil {
+		claimed = *certified
+		irohLogf(IrohLogInfo, "accept: %s presented a certificate for %s", peer.Short(), claimed.Short())
+	}
 	if e.cfg.Authorize == nil {
 		irohLogf(IrohLogWarn, "accept: refusing %s: this endpoint has no admission policy", peer.Short())
 		return fmt.Errorf("endpoint %s is not authorized on this server", peer)
@@ -547,10 +613,149 @@ func (e *IrohEndpoint) authorize(conn *iroh.Conn) error {
 	// is the one place every outcome passes through: an admitted peer is
 	// otherwise invisible, and a server whose log only records refusals cannot
 	// answer "did my client get in at all".
-	if err := e.cfg.Authorize(e.ctx, peer); err != nil {
-		irohLogf(IrohLogWarn, "accept: refused %s: %v", peer.Short(), err)
+	if err := e.cfg.Authorize(e.ctx, claimed); err != nil {
+		irohLogf(IrohLogWarn, "accept: refused %s: %v", claimed.Short(), err)
 		return err
 	}
-	irohLogf(IrohLogInfo, "accept: admitted %s", peer.Short())
+	irohLogf(IrohLogInfo, "accept: admitted %s", claimed.Short())
 	return nil
+}
+
+// presentedIdentity reads the certificate a peer on the certificate ALPN owes
+// us, and reports the enrolled identity it proves. A peer on the plain ALPN
+// presents nothing and is its own identity, so this returns nil for it without
+// touching a stream — which is what leaves an existing client's first stream
+// for the HTTP listener, exactly as before (ADR 0100 §4).
+func (e *IrohEndpoint) presentedIdentity(conn *iroh.Conn, peer IrohID) (*IrohID, error) {
+	alpn, err := conn.ALPN()
+	if err != nil {
+		return nil, fmt.Errorf("this connection's protocol is unreadable: %w", err)
+	}
+	if string(alpn) != irohCertALPN {
+		return nil, nil
+	}
+
+	ctx, cancel := context.WithTimeout(e.ctx, irohCertWait)
+	defer cancel()
+	stream, err := conn.AcceptConn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("this connection promised a peer certificate and opened no stream to carry it: %w", err)
+	}
+	defer func() { _ = stream.Close() }()
+
+	raw := make([]byte, PeerCertSize)
+	// The header first, so a stream carrying something else is refused on its
+	// first bytes rather than parsed as a certificate.
+	if _, err := io.ReadFull(stream, raw[:PeerCertHeaderSize]); err != nil {
+		return nil, fmt.Errorf("reading the peer certificate: %w", err)
+	}
+	if err := CheckPeerCertHeader(raw[:PeerCertHeaderSize]); err != nil {
+		return nil, err
+	}
+	if _, err := io.ReadFull(stream, raw[PeerCertHeaderSize:]); err != nil {
+		return nil, fmt.Errorf("reading the peer certificate: %w", err)
+	}
+	cert, err := ParsePeerCert(raw)
+	if err != nil {
+		return nil, err
+	}
+	// The comparison the design rests on: a certificate is only bytes, and it
+	// means something only because the handshake proved this peer holds the key
+	// it names.
+	if err := cert.Check(peer, time.Now()); err != nil {
+		return nil, err
+	}
+	return &cert.Issuer, nil
+}
+
+// presentCertificate is the client half: the certificate goes out unprompted
+// the moment the connection is up, on a stream of its own.
+//
+// Nothing is waited for. The server either admits the connection or closes it
+// with a reason, and a client that waited for an acknowledgement would pay a
+// round trip to learn what its next request tells it anyway.
+func (e *IrohEndpoint) presentCertificate(ctx context.Context, conn *iroh.Conn) error {
+	if e.cfg.Certificate == nil {
+		return nil
+	}
+	raw, err := e.cfg.Certificate.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	certCtx, cancel := context.WithTimeout(ctx, irohCertWait)
+	defer cancel()
+	stream, err := conn.OpenConn(certCtx)
+	if err != nil {
+		return fmt.Errorf("open the stream for this peer's certificate: %w", err)
+	}
+	defer func() { _ = stream.Close() }()
+	if _, err := stream.Write(raw); err != nil {
+		return fmt.Errorf("send this peer's certificate: %w", err)
+	}
+	return nil
+}
+
+// IrohListenerState is what this process's iroh endpoint can say about itself:
+// the identity peers dial, whether it is currently reachable through a relay,
+// and the sockets and addresses it answers on.
+//
+// It exists because a server whose iroh listener has quietly stopped working
+// looks exactly like one whose listener is fine. The process is up, its unix
+// socket answers, /healthz says ready — and every client dialing its peer ID
+// times out with nothing anywhere to say why. This is the answer to that,
+// asked of the transport by the process that owns it.
+type IrohListenerState struct {
+	// ID is the identity peers dial. It cannot change while the process runs.
+	ID IrohID
+	// HomeRelay is the relay this endpoint is reachable through, empty when it
+	// is not reachable through one.
+	HomeRelay string
+	// Online reports whether the endpoint has a relay right now. A listener
+	// that is not online is reachable only from networks that can route to its
+	// sockets directly, which is a working deployment and a completely
+	// different one from what its address implies.
+	Online bool
+	// Sockets are the local UDP addresses the endpoint is bound to.
+	Sockets []netip.AddrPort
+	// DirectAddrs are the addresses it believes peers can reach it at.
+	DirectAddrs []string
+}
+
+// LocalIrohListenerState reports what this process's iroh endpoint can say
+// about itself. See [IrohListenerState].
+//
+// ctx bounds the one part of this that waits: whether a relay is reached. Pass
+// a short deadline — this is a status probe, and "not online within a moment"
+// is the answer a caller wants rather than something to block on.
+func LocalIrohListenerState(ctx context.Context) (IrohListenerState, error) {
+	configured, err := defaultIrohEndpoint()
+	if err != nil {
+		return IrohListenerState{}, err
+	}
+	return configured.listenerState(ctx)
+}
+
+func (e *IrohEndpoint) listenerState(ctx context.Context) (IrohListenerState, error) {
+	id, err := e.ID()
+	if err != nil {
+		return IrohListenerState{}, err
+	}
+	state := IrohListenerState{ID: id}
+	bound, err := e.bind()
+	if err != nil {
+		return state, err
+	}
+	if sockets, socketsErr := bound.BoundSockets(); socketsErr == nil {
+		state.Sockets = sockets
+	}
+	if addrs, addrsErr := e.DirectAddrs(); addrsErr == nil {
+		state.DirectAddrs = addrs
+	}
+	// Last, and allowed to fail: a relay that is not reached is the finding,
+	// not an error. Everything above it is still worth reporting.
+	if relay, relayErr := e.Relay(ctx); relayErr == nil {
+		state.HomeRelay = relay
+		state.Online = true
+	}
+	return state, nil
 }
