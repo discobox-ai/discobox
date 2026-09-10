@@ -93,8 +93,41 @@ func ServeBackend(w http.ResponseWriter, r *http.Request, repoPath, suffix strin
 	}
 }
 
+// backendEnv is the environment git http-backend runs in. It is built from
+// nothing rather than inherited from the pool agent, because of what sits on
+// either side of this process: the agent runs as root, while the backend runs
+// as the repository's owner (see ServeBackend) over a worktree the sandbox
+// itself can write.
+//
+// The caller's identity comes first. Every path git resolves from it —
+// $HOME/.gitconfig, the XDG attributes file — names a user this process is no
+// longer, so git reads root's configuration where the sandbox user is allowed
+// to and warns where it is not, muxing that warning into the client's sideband:
+//
+//	remote: warning: unable to access '/root/.config/git/attributes': Permission denied
+//
+// The repository comes second. Its own .git/config names programs git runs on
+// the pool host — core.hooksPath, uploadpack.packObjectsHook — and repo-local
+// configuration is read whatever the switches below say, so the sandbox picks
+// what this environment is handed to. Nothing the agent was started with — the
+// pool bootstrap token among it — belongs there. PATH is kept, because git
+// resolves what it execs through it, and nothing else is.
+//
+// So the only GIT_* variables the backend sees are the ones set here. An
+// inherited one is never harmless: GIT_NAMESPACE empties the ref
+// advertisement, GIT_CONFIG_COUNT with its GIT_CONFIG_KEY_*/GIT_CONFIG_VALUE_*
+// pairs injects the very configuration GIT_CONFIG_NOSYSTEM and
+// GIT_CONFIG_GLOBAL are switching off, and GIT_ALTERNATE_OBJECT_DIRECTORIES
+// lends the repository objects it does not have.
 func backendEnv(r *http.Request, repoPath, suffix string) []string {
-	env := append(os.Environ(),
+	env := make([]string, 0, 12)
+	if path, ok := os.LookupEnv("PATH"); ok {
+		env = append(env, "PATH="+path)
+	}
+	env = append(env,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_ATTR_NOSYSTEM=1",
 		"GIT_PROJECT_ROOT="+repoPath,
 		"GIT_HTTP_EXPORT_ALL=1",
 		"PATH_INFO="+suffix,
@@ -102,6 +135,14 @@ func backendEnv(r *http.Request, repoPath, suffix string) []string {
 		"QUERY_STRING="+r.URL.RawQuery,
 		"REMOTE_USER=pool-agent",
 	)
+	// Which protocol version the client speaks is a request header, and mapping
+	// it onto GIT_PROTOCOL is the HTTP server's job — http-backend answers v0 to
+	// anyone who does not, advertising every ref on every request and negotiating
+	// over more rounds than v2 needs. It belongs to the client and not to this
+	// host — one more thing this environment must not pick up from the agent.
+	if protocol := r.Header.Get("Git-Protocol"); protocol != "" {
+		env = append(env, "GIT_PROTOCOL="+protocol)
+	}
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		env = append(env, "CONTENT_TYPE="+contentType)
 	}
