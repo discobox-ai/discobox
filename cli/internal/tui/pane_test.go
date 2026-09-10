@@ -1381,7 +1381,7 @@ func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		finish(t, ds, d, m)
 		d.key("enter")
-		d.wait("archive", func() bool { return len(ds.did) == 1 })
+		d.wait("archive", func() bool { return len(ds.verbs()) == 1 })
 		if got := ds.did[0]; got != "archive sbx_one" {
 			t.Fatalf("did = %q, want archive sbx_one", got)
 		}
@@ -1961,7 +1961,7 @@ func TestLeaderRunsTheListsVerbs(t *testing.T) {
 
 	d.key("ctrl+a")
 	d.key("x") // archive
-	d.wait("the verb", func() bool { return len(ds.did) > 0 })
+	d.wait("the verb", func() bool { return len(ds.verbs()) > 0 })
 
 	if ds.did[0] != "archive sbx_one" {
 		t.Fatalf("did = %v, want the box on screen archived", ds.did)

@@ -156,7 +156,7 @@ func TestARunWindowAsksTheWindowsOwnQuestion(t *testing.T) {
 	// y is carry them in, and the create that follows is the window's own —
 	// with the prompt as the words the command was given.
 	d.key("y")
-	d.wait("the create", func() bool { return len(ds.runs) == 1 })
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 	if got := ds.runs[0].IncludeDirty; got != "true" {
 		t.Fatalf("includeDirty = %q, want the answer the dialog took", got)
 	}
@@ -174,7 +174,7 @@ func TestARunWindowsQuestionLeadsWithCarryingNothing(t *testing.T) {
 	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 
 	d.key("enter")
-	d.wait("the create", func() bool { return len(ds.runs) == 1 })
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 	if got := ds.runs[0].IncludeDirty; got != "false" {
 		t.Fatalf("includeDirty = %q, want the default answer to carry nothing extra", got)
 	}
@@ -187,7 +187,7 @@ func TestARunWindowWaitsOnItsOwnScreen(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.runGate = make(chan struct{})
 	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false", Prompt: []string{"fix the tests"}})
-	d.wait("the create", func() bool { return len(ds.runs) == 1 })
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 
 	if m.dialog == nil || m.dialog.kind != dlgStatus {
 		t.Fatalf("dialog = %+v, want the wait to have the screen", m.dialog)
@@ -300,7 +300,7 @@ func TestARunWindowStillShowsTheIntroductionWhenUnwelcomed(t *testing.T) {
 	// The run it was opened for proceeds behind the introduction the same way
 	// everything else loads behind it: no dirty workspace and a default
 	// harness mean nothing here for it to ask about.
-	d.wait("the create", func() bool { return len(ds.runs) == 1 })
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 
 	d.key("enter")
 	if m.welcoming {

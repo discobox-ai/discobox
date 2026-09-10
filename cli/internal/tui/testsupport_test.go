@@ -289,6 +289,15 @@ func (f *fakeSource) setResources(r Resources) {
 	f.resources = r
 }
 
+// runRequests is every create the window has asked for. A create runs on the
+// driver's own goroutine, so a test waiting for one reads it through here
+// rather than off the field.
+func (f *fakeSource) runRequests() []RunRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]RunRequest(nil), f.runs...)
+}
+
 func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string)) (Sandbox, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, req)
