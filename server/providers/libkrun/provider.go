@@ -69,10 +69,9 @@ const (
 // every guest rebuild compile a kernel and every kernel bump republish a
 // userland.
 //
-// It is a tag until the first vm-kernel/v* release is cut, at which point it is
-// re-pinned to that digest. Until then a machine either builds the kernel
-// locally (`task build:vm-kernel`) or names an image itself.
-const DefaultKernelImage = "ghcr.io/discobox-ai/discobox-vm-kernel:v0"
+// A digest rather than a tag, for the reason the guest image is one: a tag
+// would let whoever runs the server decide which kernel they boot.
+const DefaultKernelImage = "ghcr.io/discobox-ai/discobox-vm-kernel@sha256:23f0ce879e1dc3939fd0f498237d857d11478bec1c570d3f7222194ccf81955f"
 
 // guestImageDockerfile is the Dockerfile in a discobox checkout that produces
 // the guest artifact set, in the path form BuildKit's frontend wants. Its

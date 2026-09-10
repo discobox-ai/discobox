@@ -19,4 +19,4 @@ package guestimage
 // called a pool image: that already means the pool-agent container
 // (dockerworker.DefaultPoolImage), which every VM provider exposes as
 // workerImage alongside this one.
-const DefaultVMImage = "ghcr.io/discobox-ai/discobox-vm@sha256:689cb9bc05c1304358209ae9afeec70d2ee7b5d0cda786c558e2bcef6f4a76dd"
+const DefaultVMImage = "ghcr.io/discobox-ai/discobox-vm@sha256:af1d6ee4ac0b833c7432f61651b29dacaad7a9c71e7e080ac3dfcdc1c8e46a48"
