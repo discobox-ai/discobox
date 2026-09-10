@@ -106,8 +106,9 @@ func windowsSSHTarget(ctx context.Context) (sshTarget, error) {
 //
 // The Windows side needs interop to resolve at all, so its failure is returned
 // rather than raised: `admin ssh-config --write` has still written a usable
-// config for this side and says what it could not do, while `tools vscode`
-// launching a Windows editor cannot proceed and turns it into an error.
+// config for this side and says what it could not do, while an editor command
+// launching a Windows editor — `tools vscode` or `tools zed` — cannot proceed
+// and turns it into an error (editorFamily.sshTargets).
 func machineSSHTargets(ctx context.Context) (targets []sshTarget, windowsErr error) {
 	local, err := localSSHTarget()
 	if err != nil {

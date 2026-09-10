@@ -453,12 +453,12 @@ identity the exec runs as. `admin exec create --shell` is the same request in
 raw form.
 
 `discobox tools` groups the everyday development tools run *against* a sandbox —
-`git`, `ssh`, and `vscode` today. Which sandbox is the one thing every tool has
-in common, so `--discobox-id` is a persistent flag on `tools` itself and every
+`git`, `ssh`, `vscode`, and `zed` today. Which sandbox is the one thing every
+tool has in common, so `--discobox-id` is a persistent flag on `tools` itself and every
 subcommand inherits it. Everything else belongs to the subcommand that means it,
 including where the tool runs: `git` runs inside the sandbox and takes
-`--source`/`-s`, while `ssh` and `vscode` run on this machine and connect to the
-sandbox. Each then drives the same exec create/attach/status sequence as
+`--source`/`-s`, while `ssh`, `vscode` and `zed` run on this machine and connect
+to the sandbox. Each then drives the same exec create/attach/status sequence as
 `discobox shell`. Flag parsing stops at the first positional argument
 (`SetInterspersed(false)`), so everything from there on reaches the tool verbatim.
 
@@ -556,21 +556,42 @@ and `DISCOBOX_PROJECT` are how a copy is pointed elsewhere, which is what the
 help says. It is not only a parsing accident: `-p` and `-o` are both a global
 shorthand and an scp option, and after `cp` they have to be scp's.
 
-`discobox tools vscode` opens a sandbox in VS Code over Remote-SSH. Remote-SSH
-drives the system `ssh` binary and reads `ssh_config`, so the only way to hand
-it a host is to put the host where ssh finds it: the command refreshes the
-project's managed config (`buildManagedSSHConfig` + `writeManagedSSHConfig`, the
-same files `admin ssh-config --write` owns) and then runs `code --new-window
---folder-uri vscode-remote://ssh-remote+<alias>/<workdir>`.
+`discobox tools vscode` and `discobox tools zed` open a sandbox in an editor
+running on this machine, editing it in place over that editor's own remote
+support. Both editors drive the system `ssh` binary and read `ssh_config`, so
+the only way to hand either one a host is to put the host where ssh finds it:
+each command refreshes the project's managed config (`buildManagedSSHConfig` +
+`writeManagedSSHConfig`, the same files `admin ssh-config --write` owns) and
+then runs the editor against the alias it wrote.
 
-A folder URI rather than `--remote` and a path, on every platform (ADR 0074 §4):
-a bare path argument is the one thing VS Code's launcher rewrites. Started from
-WSL it is normally the Windows build, whose CLI reads a path argument as a path
-in *this* distribution, adds a `--remote wsl+<distro>` of its own, and opens the
-local directory instead of the discobox. A URI carries its own authority and is
-passed through untouched. `--remote` survives for the one case a folder URI
-cannot express: a sandbox that never reported where its source landed, which
-opens on the host with no folder.
+- VS Code: `code --new-window --folder-uri vscode-remote://ssh-remote+<alias>/<workdir>`.
+- Zed: `zed --new ssh://<alias>/<workdir>`, with no user and no port because the
+  stanza carries both, and `--reuse` where VS Code takes `--reuse-window`.
+
+What is the same for both — find the binary before anything is written, decide
+which ssh the config has to reach, run it and report how it went — is
+`editorFamily` (`internal/cli/tools_editor.go`): one value per editor holding
+its label, its `$DISCOBOX_*` variable, the builds it looks for, and anything it
+needs in its environment. What differs is the command line, and that stays in
+the command that means it. Which discobox is being opened, and which arguments
+are the editor's, is `App.editorRemote`, shared for the same reason.
+
+A URI rather than a path argument, on every platform, for both editors
+(ADR 0074 §4): a bare path is the one thing an editor's launcher does not pass
+through, and started from WSL the editor is normally the Windows build. VS
+Code's CLI reads the path as one in *this* distribution, adds a `--remote
+wsl+<distro>` of its own, and opens the local directory instead of the discobox.
+Zed's does not translate at all — its `--wsl` is a flag the user passes, not
+something it detects — so `/home/agent/repo` is resolved as a Windows path,
+which does not exist, and the window opens on nothing. A URI carries its own
+authority and is passed through untouched by both, and Zed percent-decodes the
+path it parses out of one, so a workdir with a space in it survives being part
+of it.
+
+Where the two differ is the sandbox that never reported where its source
+landed. VS Code has `--remote ssh-remote+<alias>`, which is its way of saying
+"connected, nothing open". Zed's URL has no such form, so `zedURL` points at the
+discobox's root: a connected window whose tree is the box, which beats refusing.
 
 Nothing is held open afterwards, which is the point of ADR 0057: the written
 stanzas reach the server through a `ProxyCommand`, so the editor reconnects on
@@ -580,9 +601,9 @@ its own, tomorrow as much as now, with no port on the server to depend on. The a
 caller guess them.
 
 Refreshing the config and working out what to point at it is
-`App.sandboxSSHRemote` (`internal/cli/ssh_config.go`), not the vscode command's
-own: the launcher's tools picker prints the same discobox's `ssh <alias>` and
-`ssh://<alias>/<workdir>` for copying (`apiDataSource.Addresses` →
+`App.sandboxSSHRemote` (`internal/cli/ssh_config.go`), not either editor
+command's own: the launcher's tools picker prints the same discobox's
+`ssh <alias>` and `ssh://<alias>/<workdir>` for copying (`apiDataSource.Addresses` →
 `tui.Addresses`), and it is the same three questions — which config, which
 alias, which directory — with the same write behind them. A printed address
 that would not have connected is worse than none, so the window pays for the
@@ -591,31 +612,44 @@ write exactly as the editor does.
 The window opens on the primary source's working directory, or the one
 `--source` names. `tools git` can leave the directory unsaid because an exec
 with no workdir lands in the sandbox's default; an SSH session cannot, because
-it lands in the run user's home (`server/internal/sshd/DESIGN.md`). A sandbox
-that never reported where its source landed still opens, on the host with no
-folder.
+it lands in the run user's home (`server/internal/sshd/DESIGN.md`).
 
 The editor binary is resolved *before* anything is written: it is the one
-failure nothing can fix after the fact. `--editor`, then `$DISCOBOX_VSCODE`,
-then the first of `code`, `code-insiders`, `codium`, `cursor`, `windsurf` on
-PATH — all the same CLI, so the only question is which is installed.
+failure nothing can fix after the fact. `--editor`, then the family's variable,
+then the first of the family's builds on PATH — `code`, `code-insiders`,
+`codium`, `cursor`, `windsurf` for `$DISCOBOX_VSCODE`, all the same CLI, so the
+only question is which is installed; `zeditor`, `zedit`, then `zed` for
+`$DISCOBOX_ZED`, ambiguous name last. Upstream's installer links the CLI as
+`zed` on every channel, so that is what almost every machine has — but a
+packager renames it precisely because something else already answers to `zed`
+(nixpkgs ships the data lake under that name), and on that machine both are on
+PATH. Neither family falls back to the other's binaries: a machine with only VS Code installed has no Zed, and
+`tools zed` says so rather than opening the wrong editor.
 
-Which editor it turns out to be then decides *which ssh* the config is written
-for (`sshTargetForEditor`). A Windows build launched from WSL connects with
-Windows OpenSSH, on the other side of the boundary from this process, and gets
-the Windows target described under [SSH Keys and Config](#ssh-keys-and-config-adr-0024).
-This is the only command that chooses a target, because it is the only one that
-knows which program will be driving ssh; `tools ssh` carries its own connection
-and never touches `ssh_config`.
+Which editor it turns out to be then decides *which ssh* the config has to reach
+(`editorFamily.sshTargets`). A Windows build launched from WSL connects with
+Windows OpenSSH, on the other side of the boundary from this process, and a
+Windows ssh_config that cannot be written is fatal for it rather than a note —
+see [SSH Keys and Config](#ssh-keys-and-config-adr-0024). These are the only
+commands that make that call, because they are the only ones that know which
+program will be driving ssh; `tools ssh` carries its own connection and never
+touches `ssh_config`.
 
-It runs with `DONT_PROMPT_WSL_INSTALL=1` (`vscodeQuietWSLPrompt`), always rather
-than only under WSL: the variable means nothing elsewhere, and a conditional is
+`tools vscode` runs the editor with `DONT_PROMPT_WSL_INSTALL=1`
+(`vscodeQuietWSLPrompt`), always rather than only under WSL: the variable means nothing elsewhere, and a conditional is
 a second thing to get wrong. VS Code's launcher asks "install VS Code in Windows
 instead… Continue anyway? [y/N]" when it finds itself inside WSL. That warning
 is aimed at someone typing `code`; here the binary has already been chosen and,
 when it is the Windows one, the config that side needs has already been written.
 Unset, the prompt reads from a stdin nobody is typing at and the command hangs
-or takes the default No.
+or takes the default No. Zed asks nothing of the sort and gets no such
+variable — `editorFamily.launchEnv` is empty for it.
+
+Zed installs its own server into `~/.zed_server` in the discobox on first
+connection, downloading it there from `zed.dev`. Nothing in this CLI manages
+that: a discobox without egress needs `"upload_binary_over_ssh": true` for the
+host in Zed's own settings, which makes Zed upload the binary over the SSH
+connection instead, and the command's help says so.
 
 ## Listing Order
 
@@ -1080,12 +1114,13 @@ level or layering on the attach transports above.
   two targets, so a newly created sandbox is immediately available to OpenSSH
   clients without a separate command.
 - **WSL** is the one place where the ssh that connects is not on the same side
-  of the machine as the CLI (ADR 0074). A Windows VS Code runs Windows
+  of the machine as the CLI (ADR 0074). A Windows VS Code or Zed runs Windows
   `ssh.exe`, which reads `%USERPROFILE%\.ssh\config`, opens files by their
   drive path, and cannot execute a Linux binary. Such a machine has *two* ssh
   installations, so `machineSSHTargets` answers with both and every command that
-  writes writes both — `admin ssh-config --write` as much as `tools vscode`,
-  since which side a tool drives is not something either command can know
+  writes writes both — `admin ssh-config --write` as much as `tools vscode` and
+  `tools zed`, since which side a tool drives is not something either command
+  can know
   (ADR 0078 §3). The stanzas are built once and rendered per target: what
   differs is how a path is spelled and what the `ProxyCommand` runs, not which
   sandboxes exist or which key authenticates. Printed output stays this side
@@ -1096,7 +1131,7 @@ level or layering on the attach transports above.
   "exec '<linux discobox>' --server '…' admin ssh-proxy"`, and a copy of the
   enrolled private key beside them, refreshed on every run. Resolving that side
   needs interop, so failing to is a warning — this side's config is still
-  written and still correct — except for `tools vscode` launching a Windows
+  written and still correct — except for an editor command launching a Windows
   editor, where it is the whole point and therefore an error. Windows is asked where its
   own folders are (`cmd.exe /c echo %LOCALAPPDATA%`, `wslpath -u`) rather than
   assumed — and `cmd.exe` itself is taken from PATH, or, in a distribution
@@ -1139,8 +1174,8 @@ level or layering on the attach transports above.
   generates keys, enrolls them, and rewrites two files per ssh installation, and
   every one of those is worth a line — but who is listening differs by caller
   and none of it may pick a screen for itself. `admin ssh-config`, `tools
-  vscode`, `tools ssh` and `cp` pass `printedNotes(stderr)`; `discobox run`
-  passes its status line, so the lines are gone before the attach; the launcher
+  vscode`, `tools zed`, `tools ssh` and `cp` pass `printedNotes(stderr)`;
+  `discobox run` passes its status line, so the lines are gone before the attach; the launcher
   passes its busy line, so nothing reaches the terminal it has drawn a window
   on. Everything below `writeProjectSSHConfig` therefore takes a `context.Context`
   and a sink rather than the `*cobra.Command`, which is what makes writing to

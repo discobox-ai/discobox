@@ -101,8 +101,8 @@ going to the box.
   Every box that gets created syncs the project's managed `ssh_config`, and
   `~/.ssh/config` carries one Include line pointing at it — on Windows, for both
   ssh installations, this side's and the one Windows tools drive.
-- **VS Code** opens on a box in a window of its own, over Remote-SSH:
-  `discobox tools vscode`.
+- **VS Code and Zed** open on a box in a window of their own, over the editor's
+  own remote support: `discobox tools vscode`, `discobox tools zed`.
 - **The launcher** is a full TUI: your coding agent's own interface on the left,
   the shells you open on the right, services and forwarded ports beside them.
   The mouse works; `F1` lists every key.
@@ -202,7 +202,7 @@ discobox apply      Cherry-pick a box's commits onto your working tree
 discobox push       Push local commits into a box's origin, to rebase there
 discobox proxy      Forward a box's listening ports to local ports
 discobox cp         Copy files in and out
-discobox tools      Run git, ssh, or VS Code against a box
+discobox tools      Run git, ssh, VS Code, or Zed against a box
 discobox secret     Manage secrets, grants, and approval requests
 discobox configure  Enable, disable, and set the default harness
 discobox admin      Pools, projects, harness images, and the API server

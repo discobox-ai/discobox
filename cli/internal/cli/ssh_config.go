@@ -163,10 +163,10 @@ type managedSSHConfigRequest struct {
 // host key is verified under, the key itself, and the Host pattern each sandbox
 // answers to.
 //
-// The aliases are what a caller handing a host to another program needs — `discobox
-// tools vscode` builds a Remote-SSH target out of one — and they cannot be
-// guessed from outside, since a contested pattern is dropped from every stanza
-// that wanted it.
+// The aliases are what a caller handing a host to another program needs —
+// `discobox tools vscode` builds a Remote-SSH target out of one, `tools zed` an
+// `ssh://` URL — and they cannot be guessed from outside, since a contested
+// pattern is dropped from every stanza that wanted it.
 type managedSSHConfig struct {
 	// target is the ssh installation this rendering is for: where its files
 	// go, how their paths are spelled, and what its ProxyCommand runs.
@@ -179,8 +179,8 @@ type managedSSHConfig struct {
 
 // buildManagedSSHConfig resolves the key, lists the project's sandboxes, and
 // renders the stanzas once per target. It does not decide what to do with them:
-// `ssh-config` prints or writes them, and `tools vscode` writes them and opens
-// an editor on one.
+// `ssh-config` prints or writes them, and the editor commands write them and
+// open an editor on one.
 //
 // The project is listed and the identity resolved once for all of them: what
 // differs between one ssh installation and the next is how the stanzas spell
@@ -508,9 +508,39 @@ func (t sandboxSSHRemote) gitURL() string {
 	return uri.String()
 }
 
+// zedURL is the remote's working tree as Zed takes it: an `ssh://` URL whose
+// authority is the ssh_config host, so Zed — which shells out to the ssh on
+// PATH — hands the whole connection back to the ssh that already knows how to
+// reach this discobox. No user and no port, because the stanza carries both.
+//
+// Built with net/url like gitURL, and for a second reason here: Zed parses the
+// URL and percent-decodes the path, so a workdir with a space in it has to
+// arrive encoded rather than raw.
+//
+// A URL rather than a path argument on every platform, for the reason
+// vscodeFolderURI is a URI (ADR 0074 §4): Zed's launcher passes anything
+// beginning with a known scheme through untouched, while a bare path it
+// resolves against the machine it is running on. Launched from WSL, Zed is
+// normally the Windows build, and /home/agent/repo there is a Windows path
+// that does not exist — unlike VS Code it does not translate one into the
+// distribution, it simply opens nothing.
+//
+// The discobox's root when there is no known working tree. Zed's URL has
+// nowhere to say "connected, nothing open" the way VS Code's --remote does, and
+// a window on / is a connected window whose tree is the box.
+func (t sandboxSSHRemote) zedURL() string {
+	folder := t.folder
+	if folder == "" {
+		folder = "/"
+	}
+	uri := url.URL{Scheme: "ssh", Host: t.host, Path: folder}
+	return uri.String()
+}
+
 // sandboxSSHRemote refreshes the project's managed ssh_config for every target
 // and works out how this sandbox is reached in it. It is what `tools vscode`
-// points an editor at and what the launcher's tools picker prints for copying:
+// and `tools zed` point an editor at, and what the launcher's tools picker
+// prints for copying:
 // the same three questions — which config, which alias, which directory — and
 // the same write behind them.
 func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string, notes noteFunc) (sandboxSSHRemote, error) {
