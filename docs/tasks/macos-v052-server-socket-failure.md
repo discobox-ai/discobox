@@ -6,9 +6,12 @@ Reproduce or narrow down a server exit on macOS, then fix and verify the cause
 if established. This is an investigation handoff, not an accepted diagnosis.
 
 A user running Discobox v0.5.2 reported macOS **26.6.2** (as supplied, not
-independently verified). They did not think the machine had slept. Connections
-stopped working and later worked again. No further logs or information are
-available; proceed without requiring anything more from this user.
+independently verified). They initially did not think the machine had slept,
+but subsequently confirmed that the failure seems to occur after system sleep.
+Treat sleep/wake as the priority reproduction path, with a reported correlation
+rather than a proven mechanism. Connections stopped working and later worked
+again. No additional logs are available; proceed without requiring anything
+more from this user.
 
 The server log contained two pool-sync warnings, at 2026-09-09 23:45:12 and
 2026-09-10 06:38:05, for pool `pool_bzrtb3x2b6f5fz10`:
@@ -49,7 +52,9 @@ collect the pool-agent's `rejected a control-plane request` log and its `error`
 field, which carries the parse failure; the response's `invalid_token` detail
 alone cannot distinguish expiry, clock skew, and a signature failure. Never
 record bearer tokens or private keys. Guest RTC synchronization and token skew
-allowances already existed in v0.5.2; sleep remains unproven.
+allowances already existed in v0.5.2. The reported sleep correlation makes
+post-wake clock behavior worth measuring, but does not prove the cause of a 401
+or explain the listener EBADF.
 
 ## Descriptor ownership hypothesis
 
@@ -108,33 +113,41 @@ Add a repeatable opt-in macOS integration/stress target to `Taskfile.yml`, with
 bounded duration and failure artifacts. Run an unmodified baseline before any
 VSOCK patch, and repeat the same workload after a candidate fix.
 
-1. **Control:** serve HTTP on a Unix listener and repeatedly probe it without
+1. **Sleep/wake (priority):** run the native server with a real vz guest and
+   disposable sandbox. Establish healthy Unix endpoint and pool API probes,
+   then suspend and resume the Mac. Confirm actual system sleep/wake from OS
+   power events, not just display sleep. Repeat with idle and active VSOCK
+   traffic, and with short and longer sleeps. Record sleep duration, host/guest
+   UTC offsets immediately after wake and through at least several 30-second
+   RTC-sync intervals, auth rejection causes, VM state, endpoint probe errors,
+   and server PID. Keep probes from autolaunching a replacement server. Observe
+   whether 401s recover as the guest clock catches up and whether the Unix
+   listener fails independently. If EBADF occurs, capture the descriptor
+   evidence described below. Compare with an awake run of the same workload.
+2. **Control:** serve HTTP on a Unix listener and repeatedly probe it without
    starting a VM. Record failures and descriptor counts.
-2. **VSOCK churn:** boot a guest and exercise both host-to-guest connections
+3. **VSOCK churn:** boot a guest and exercise both host-to-guest connections
    (Docker on port 3004 and pool API on 3002) and guest-to-host connections
    (control plane on 3001). Open, exchange data, and close in serial and then
    concurrently. Include abrupt peer disconnects and cancellation. Disable
    connection reuse where necessary so this creates connections instead of
    repeatedly using one HTTP keepalive connection.
-3. **Sentinel listener:** keep the same Unix listener open throughout churn.
+4. **Sentinel listener:** keep the same Unix listener open throughout churn.
    Probe it on independent new connections, recording every Accept/probe error,
    process PID, iteration, and elapsed time. Start with 10,000 connection cycles
    and a 30-minute time limit; make these configurable. Run with the listener
    allocated before VM startup, as in the real server. A supplementary case
    that allocates listeners during churn may expose descriptor reuse, but must
    not be presented as reproducing the incident's allocation order.
-4. **Lifecycle:** repeat dedicated test-pool stop/start cycles under traffic,
+5. **Lifecycle:** repeat dedicated test-pool stop/start cycles under traffic,
    observing teardown and pending accepts. Bound shutdown waits so a hang
    produces diagnostic stacks instead of wedging the test. Use existing pool
    lifecycle operations rather than deleting persistent state to recover.
-5. **Full application:** run the native server, create disposable sandboxes,
+6. **Full application:** run the native server, create disposable sandboxes,
    execute/attach/detach, and poll its Unix endpoint while the workload runs.
    Keep the observer from autolaunching a server: a restart would mask failure.
    Separately test CLI autolaunch after an intentional orderly server stop,
    recording old/new PIDs to validate the proposed recovery mechanism.
-6. **Optional sleep/wake:** only after awake runs, repeat with an intentional
-   sleep/wake cycle and collect host/guest clock offsets and auth logs. Label
-   this as a separate experiment, not an established incident precondition.
 
 If a descriptor failure occurs, capture native and Go stacks and descriptor
 allocation/duplication/close history, including ownership and thread identity.
