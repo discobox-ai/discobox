@@ -1,6 +1,6 @@
 # 0105 — A release is cut as a prerelease and blessed stable by hand
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-10
 
 ## Context
