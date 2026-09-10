@@ -1343,9 +1343,27 @@ tasks:
         # --remote: gh rejects the flag outright when a repository argument is
         # given, and adds no remote in that case anyway.
         gh repo fork "$upstream" --clone=false >/dev/null
-        gh repo sync "$fork" --branch master --force >/dev/null
-        base="$(gh api "repos/$fork/git/ref/heads/master" -q .object.sha)"
-        base_tree="$(gh api "repos/$fork/git/commits/$base" -q .tree.sha)"
+
+        # Based on *upstream's* master rather than the fork's, so the fork's own
+        # master is never synced and may be arbitrarily stale.
+        #
+        # `gh repo sync "$fork" --branch master --force` was here, and could not
+        # work: it goes through the merge-upstream API, which refuses any
+        # incoming commit that touches .github/workflows unless the token
+        # carries `workflow` scope — and winget-pkgs changes its workflows
+        # constantly, so this failed the moment a fork had any catching up to
+        # do. Granting that scope is the wrong trade: it would buy write access
+        # to every workflow in every public repository the submitting account
+        # can reach, in order to read a SHA that upstream hands out
+        # unauthenticated.
+        #
+        # A fork shares object storage with its upstream, so a ref created in
+        # the fork may point at a commit only upstream has, and a tree built
+        # here may name upstream's tree as its base. Cutting the branch straight
+        # from upstream is also simply more correct: the pull request is based
+        # on what master is now, not on whatever the fork last saw.
+        base="$(gh api "repos/$upstream/git/ref/heads/master" -q .object.sha)"
+        base_tree="$(gh api "repos/$upstream/git/commits/$base" -q .tree.sha)"
 
         # The title format the repository's pull request template asks for; the
         # moderation tooling reads it.
