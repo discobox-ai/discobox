@@ -17,9 +17,9 @@ import (
 // read, plus a directory of cropped screenshots beside it.
 //
 // The Markdown is the store, not a rendering of one. There is no sidecar index,
-// because the one thing the agent does to an item after reading it — tick the
-// checkbox — would then have to be written back into a second file the agent
-// does not know about, and the two would disagree the first time it wasn't.
+// because what the agent writes after acting on an item — its reply — would then
+// have to be written back into a second file the agent does not know about, and
+// the two would disagree the first time it wasn't.
 //
 // That choice sets the three rules the rest of this file follows. Reads are
 // tolerant, so a section this parser no longer recognizes is dropped from the

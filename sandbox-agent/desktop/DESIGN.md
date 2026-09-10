@@ -336,9 +336,9 @@ shots/df-0001.png  the marked region, cropped from the framebuffer
 ```
 
 **The Markdown is the store, not a rendering of one.** There is no sidecar
-index, because the one thing an agent does to a note after acting on it — tick
-the checkbox — would then have to be written back into a second file it does not
-know about, and the two would disagree the first time it wasn't.
+index, because what an agent writes after acting on a note — its reply — would
+then have to be written back into a second file it does not know about, and the
+two would disagree the first time it wasn't.
 
 That choice sets the three rules `feedback.go` follows:
 
