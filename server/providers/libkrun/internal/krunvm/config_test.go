@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 func validConfig() Config {
@@ -191,12 +193,12 @@ func TestOwnedSocketsExcludeTheServersOwnSocket(t *testing.T) {
 // reappearance is what the driver reads as the VM being up. A socket that
 // survived would make the next start look finished the instant it began.
 func TestRemoveOwnedSocketsClearsWhatALauncherLeftBehind(t *testing.T) {
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	cfg := validConfig()
 	cfg.RuntimeDir = dir
 	cfg.PasstSocket = filepath.Join(dir, "passt.sock")
 	cfg.VSOCK = []VSOCKMapping{
-		{Name: "control-plane", Port: 3001, Socket: filepath.Join(t.TempDir(), "server.sock"), Direction: GuestConnects},
+		{Name: "control-plane", Port: 3001, Socket: filepath.Join(shorttmp.Dir(t), "server.sock"), Direction: GuestConnects},
 		{Name: "docker", Port: 3004, Socket: filepath.Join(dir, "docker.sock"), Direction: HostConnects},
 	}
 	cfg.ConsoleLog = filepath.Join(dir, "console.log")

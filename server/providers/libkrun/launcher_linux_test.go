@@ -14,6 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // The launcher is this binary re-executed, so the thing most worth proving is
@@ -25,7 +26,7 @@ import (
 // which is deliberately pointed at a library that is not there.
 func TestLauncherFailureIsReportedWithTheChildsReason(t *testing.T) {
 	requireKVM(t)
-	root := t.TempDir()
+	root := shorttmp.Dir(t)
 	driver := newTestDriver(t, root, filepath.Join(root, "nonexistent-libkrun.so"))
 	// The runtime directory outlives a server process and libkrun does not
 	// unlink its sockets when it is killed, so the second start on a machine
@@ -56,7 +57,7 @@ func TestLauncherFailureIsReportedWithTheChildsReason(t *testing.T) {
 // end is held here and nowhere else, so it closes when this process exits
 // whether or not the child ever got that far.
 func TestTheLauncherIsSpawnedWithBothLifetimeMechanisms(t *testing.T) {
-	root := t.TempDir()
+	root := shorttmp.Dir(t)
 	runtimeDir := filepath.Join(root, "run", "pool_1")
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
 		t.Fatal(err)

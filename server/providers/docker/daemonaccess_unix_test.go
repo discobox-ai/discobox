@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // The failure this exists for: a fresh Docker install leaves the user out of
@@ -47,7 +49,11 @@ func TestSocketAccessHintSpeaksOnlyForARefusedSocket(t *testing.T) {
 		t.Skip("root is refused by no socket mode")
 	}
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "docker.sock")
+	// shorttmp rather than t.TempDir: a Unix socket path is capped at around
+	// 108 bytes, and t.TempDir spells this test's own name into a directory
+	// under $TMPDIR, which on CI is already long. Binding then fails with
+	// EINVAL, which reads as nothing to do with the length.
+	path := filepath.Join(shorttmp.Dir(t), "docker.sock")
 	var config net.ListenConfig
 	listener, err := config.Listen(ctx, "unix", path)
 	if err != nil {
