@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/termpane"
+	"github.com/discobox-ai/x/id"
 )
 
 // State is a sandbox's user-facing lifecycle state, narrowed to the five the
@@ -221,6 +222,15 @@ type Sandbox struct {
 	// row on screen already shares it.
 	Folder string
 
+	// OriginHostID identifies the machine the sandbox was created on, and
+	// OriginHost is the hostname that machine reported for itself, which is
+	// display only and may be empty. The folder does not answer this: two
+	// machines can hold the same project path, and their discoboxes then land
+	// in one folder with nothing on the row to say which is which. See
+	// Sandbox.elsewhere.
+	OriginHostID string
+	OriginHost   string
+
 	// Source is what the discobox was cut from, spelled the way `-C` takes it:
 	// the client directory holding the repository, or the repository URL when
 	// there was no local one. Empty for a discobox created with no source at
@@ -276,6 +286,17 @@ type Session struct {
 	// and Branch is what is checked out in it.
 	Directory string
 	Branch    string
+
+	// HostID is this machine's client identity, which is what makes a
+	// discobox created somewhere else recognizable as such. Empty where it
+	// could not be resolved, and then no row claims to be from elsewhere:
+	// marking every row is worse than marking none.
+	//
+	// Host is this machine's hostname, carried for the one thing the id
+	// cannot answer: whether a row's recorded hostname is the one the person
+	// is already sitting on. See Sandbox.elsewhere.
+	HostID string
+	Host   string
 
 	// Draft is the prompt that was left unsent in Directory when a window was
 	// last open on it, and is what the composer opens holding. See
@@ -518,6 +539,54 @@ func (s Sandbox) repairable() bool {
 		return false
 	}
 	return s.State == StateError || !s.HasRuntime
+}
+
+// elsewhere is what the row says about a discobox created under another client
+// identity: the hostname that machine reported, qualified by the host id that
+// actually identifies it, since a hostname is neither unique nor stable and the
+// id is what every other part of Discobox names the machine by.
+//
+// It is empty for a discobox this identity created, which is the usual row.
+// The qualifier is for the row nothing here started — a box from a laptop,
+// listed under a folder path this machine happens to share — and it is the
+// same fact `apply` refuses on, so a row that will not apply here says why
+// before it is tried.
+//
+// A client identity is not quite a machine (`internal/hostid`): it is stored
+// per user, and a config directory that does not survive the run — CI, a
+// container — mints a new one next time. Such a row genuinely came from an
+// identity that is not this one, and saying so is right; what would be wrong
+// is naming the hostname for it, since "from wilma" while sitting on wilma
+// reads as a mistake rather than as a second identity on wilma. So a recorded
+// hostname that is this machine's own is dropped and the id says it alone.
+//
+// session.HostID empty is unknown rather than "no machine": nothing is marked
+// at all, because a window that cannot say what is local cannot say what is
+// remote either.
+func (s Sandbox) elsewhere(session Session) string {
+	if session.HostID == "" || s.OriginHostID == "" || s.OriginHostID == session.HostID {
+		return ""
+	}
+	if s.OriginHost == "" || strings.EqualFold(s.OriginHost, session.Host) {
+		return "from " + shortHostID(s.OriginHostID)
+	}
+	return "from " + s.OriginHost + " (" + shortHostID(s.OriginHostID) + ")"
+}
+
+// shortHostID is a host id the length a row can afford: the prefix and enough
+// of the random part to tell two machines apart, since the full sixteen
+// characters would spend most of a name column on a value nobody reads to the
+// end. It is what tells two machines answering to the same hostname apart —
+// two "ubuntu" laptops is the case the id is here for at all.
+//
+// A host id that is not a generated one is said whole: DISCOBOX_HOST_ID takes
+// any string, and cutting somebody's own "ci" to six characters says nothing
+// about how long it was.
+func shortHostID(hostID string) string {
+	if !id.IsGenerated(hostID) {
+		return hostID
+	}
+	return hostID[:len(hostID)-id.RandomLength+6]
 }
 
 // up reports whether the sandbox is running anything, and so whether its usage

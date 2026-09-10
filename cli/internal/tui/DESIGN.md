@@ -1755,6 +1755,41 @@ row carries no folder column: it would repeat one value down the whole list.
 This replaced the old `f` "only the ones started here" toggle, which was the
 same filter with all but one of its choices missing.
 
+**A discobox created on another machine says so beside its name**
+(`Sandbox.elsewhere`). The folder cannot say it: a folder is a path, two
+machines can hold the same one, and their discoboxes then land in one folder
+with nothing on the row to tell them apart — the window lists the whole
+project and filters it by path, where an origin is a host *and* a path. So the row
+carries `OriginHostID`/`OriginHost` and the window carries `Session.HostID`,
+and a row whose origin host is not this one is qualified `from wilma
+(host_zzzz45)` in dim text after the name.
+
+It is a qualifier on the name rather than a column of its own: what it answers
+is "why is this here", which is a question about the name it sits beside, and
+no other row has anything to put in such a column. It comes out of the name's
+own cells and drops rather than cutting the name below what the tail columns
+already reserve for it — one `nameReserve`, held to by `tailColumns.add` and by
+the qualifier alike, because two numbers for "how narrow a name may get" drift
+the moment either is tuned. The name never goes. The host id is cut to its
+prefix and six characters (`shortHostID`): the hostname is what a person reads,
+and the id is there to tell two machines answering to `ubuntu` apart, which six
+characters do as well as sixteen. An identity somebody set for themselves
+through `DISCOBOX_HOST_ID` is not a generated id and is said whole.
+
+**A client identity is not quite a machine, so the hostname is dropped when it
+is our own.** `hostid` is stored per user under XDG, and a config directory
+that does not survive the run — CI, a container — mints a new one next time. A
+row like that did come from another identity, and saying so is right: it is the
+same fact `apply` refuses on, so the row says why before it is tried. Naming
+the hostname for it is what would be wrong — "from wilma" while sitting on
+wilma reads as a mistake — so `Session.Host` carries this machine's hostname
+and a row recording that same name is qualified by its id alone.
+
+Both halves are facts on the row rather than text handed to it: the row
+compares `Sandbox.OriginHostID` against `Session.HostID` and writes the
+qualifier itself. An unknown local identity marks nothing at all — a window
+that cannot say what is local cannot say what is remote either.
+
 The folder is also *where Enter creates*, not just what the list is filtered to:
 `optionSet.setFolder` points the run source at it, so the header is one control
 rather than two that look alike. `request()` leaves `Source` empty when the

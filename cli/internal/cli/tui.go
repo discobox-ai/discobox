@@ -168,6 +168,13 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 		return session, err
 	}
 	session.Directory = origin.ProjectPath
+	// This machine's identity, which is what tells a row created here from one
+	// created under another. It comes off the resolved origin rather than being
+	// read again: the same value the create request carries is the one the
+	// listing is compared against, hostname included — a row recording the
+	// hostname the window is already sitting on is not worth naming.
+	session.HostID = origin.HostId
+	session.Host = strings.TrimSpace(origin.Hostname.Or(""))
 	if branch, ok := gitutil.CurrentBranch(ctx, origin.ProjectPath); ok {
 		session.Branch = branch
 	}
@@ -388,6 +395,11 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	}
 	if origin, ok := sb.Origin.Get(); ok {
 		row.Folder = origin.ProjectPath
+		// Which machine it was created on, so the row can say so when that is
+		// not this one. The hostname is display only and often absent; the
+		// host id is what identifies the machine.
+		row.OriginHostID = strings.TrimSpace(origin.HostId)
+		row.OriginHost = strings.TrimSpace(origin.Hostname.Or(""))
 	}
 	if cfg, ok := sb.HarnessConfig.Get(); ok {
 		row.Harness = cfg.Slug

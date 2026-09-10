@@ -93,6 +93,53 @@ func TestRowCarriesTheColumns(t *testing.T) {
 	}
 }
 
+// Two machines can hold the same project path, so their discoboxes are filed
+// under one folder with nothing on the row to tell them apart. One created
+// somewhere else says so after its name; one created here says nothing, since
+// that is every other row.
+func TestARowFromAnotherMachineSaysWhereItCameFrom(t *testing.T) {
+	boxes := testSandboxes()
+	boxes[0].OriginHostID, boxes[0].OriginHost = testHostID, "wilma"
+	boxes[1].OriginHostID, boxes[1].OriginHost = "host_zzzz456789abcdef", "betty"
+	ds := newFakeSource(boxes...)
+	m := newTestModel(t, ds)
+	// Wide enough for the qualifier to fit beside the name; the narrow case is
+	// the test below.
+	send(t, m, tea.WindowSizeMsg{Width: 200, Height: 40}, keyPress("tab"))
+
+	qualified := rowFor(t, m, "exec/terminal consolidation")
+	if !strings.Contains(qualified, "from betty (host_zzzz45)") {
+		t.Errorf("row %q should say which machine it came from", qualified)
+	}
+	if row := rowFor(t, m, "fix flaky pool"); strings.Contains(row, "from ") {
+		t.Errorf("row %q is from this machine and should say nothing", row)
+	}
+
+	// The qualifier comes out of the name's own cells, so everything to the
+	// right of the name stands where it did — measured in terminal cells
+	// against the header, which is what the columns are read against. A
+	// qualifier that took a cell of its own would push the whole tail one
+	// column right on that row alone, which no substring match can see.
+	header := headerRow(t, m)
+	if got, want := displayCol(qualified, "·"), displayCol(header, "cpu"); got != want {
+		t.Errorf("the cpu cell of a qualified row starts at column %d and its label at %d:\n%s\n%s", got, want, header, qualified)
+	}
+}
+
+// The qualifier shares the name's column, so it is what gives way when there
+// is no room for both. The name never goes.
+func TestANarrowRowKeepsTheNameAndDropsWhereItCameFrom(t *testing.T) {
+	boxes := testSandboxes()
+	boxes[1].OriginHostID, boxes[1].OriginHost = "host_zzzz456789abcdef", "betty"
+	m := newTestModel(t, newFakeSource(boxes...))
+	send(t, m, tea.WindowSizeMsg{Width: 100, Height: 40}, keyPress("tab"))
+
+	row := rowFor(t, m, "exec/terminal")
+	if strings.Contains(row, "betty") {
+		t.Errorf("row %q should have dropped the qualifier at this width", row)
+	}
+}
+
 // A sandbox nothing has measured shows dots, not three zeroes: zeroes read as
 // "idle" where dots read as "not measured".
 func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
@@ -714,15 +761,7 @@ func TestColumnsAreLabeled(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, keyPress("tab"))
 
-	var header string
-	for _, line := range frame(m) {
-		if strings.Contains(line, "cpu") && strings.Contains(line, "mem") {
-			header = line
-		}
-	}
-	if header == "" {
-		t.Fatalf("no column header in\n%s", frameText(m))
-	}
+	header := headerRow(t, m)
 	if !strings.Contains(header, "disk") {
 		t.Errorf("header %q missing the disk label", header)
 	}
@@ -734,6 +773,19 @@ func TestColumnsAreLabeled(t *testing.T) {
 	if got, want := displayCol(row, "·"), displayCol(header, "cpu"); got != want {
 		t.Errorf("the cpu cell starts at column %d and its label at %d:\n%s\n%s", got, want, header, row)
 	}
+}
+
+// headerRow is the line labeling the columns whose numbers do not say what they
+// are, which is what a row's cells are measured against.
+func headerRow(t *testing.T, m *Model) string {
+	t.Helper()
+	for _, line := range frame(m) {
+		if strings.Contains(line, "cpu") && strings.Contains(line, "mem") {
+			return line
+		}
+	}
+	t.Fatalf("no column header in\n%s", frameText(m))
+	return ""
 }
 
 // displayCol is where sub starts in line, counted in terminal cells.

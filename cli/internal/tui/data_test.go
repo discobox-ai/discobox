@@ -129,3 +129,42 @@ func TestRepairableIsTheWedge(t *testing.T) {
 		})
 	}
 }
+
+// A discobox created under another client identity says so; one created under
+// this one says nothing, and neither does any row when this window cannot say
+// what identity it is itself.
+func TestSandboxElsewhere(t *testing.T) {
+	const here = "host_0123456789abcdef"
+	const there = "host_zzzz456789abcdef"
+	me := Session{HostID: here, Host: "wilma"}
+	cases := []struct {
+		name    string
+		s       Sandbox
+		session Session
+		want    string
+	}{
+		{"from this identity", Sandbox{OriginHostID: here, OriginHost: "wilma"}, me, ""},
+		{"no origin recorded", Sandbox{}, me, ""},
+		{"this identity unknown", Sandbox{OriginHostID: there, OriginHost: "betty"}, Session{Host: "wilma"}, ""},
+		{"another machine", Sandbox{OriginHostID: there, OriginHost: "betty"}, me, "from betty (host_zzzz45)"},
+		{"another machine with no hostname", Sandbox{OriginHostID: there}, me, "from host_zzzz45"},
+		// Another identity on this very machine: a second account, or a
+		// container that did not keep the id it generated last time. Naming
+		// the hostname there would read as a mistake, so the id says it alone.
+		{"another identity on this machine",
+			Sandbox{OriginHostID: there, OriginHost: "wilma"}, me, "from host_zzzz45"},
+		{"hostname compared case-insensitively",
+			Sandbox{OriginHostID: there, OriginHost: "WILMA"}, me, "from host_zzzz45"},
+		{"an unknown local hostname suppresses nothing",
+			Sandbox{OriginHostID: there, OriginHost: "wilma"}, Session{HostID: here}, "from wilma (host_zzzz45)"},
+		{"an identity somebody set themselves is said whole",
+			Sandbox{OriginHostID: "ci", OriginHost: "runner"}, me, "from runner (ci)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.s.elsewhere(tc.session); got != tc.want {
+				t.Fatalf("elsewhere = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

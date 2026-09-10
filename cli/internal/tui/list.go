@@ -536,9 +536,30 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	if s.State == StateError && s.Message != "" && atCursor {
 		name = s.Message
 	}
+
+	// A discobox created on another machine says so after its name, dim,
+	// because it is a qualifier on the name rather than a fact of its own —
+	// what it answers is "why is this here", which is a question about the
+	// name it is sitting beside. It shares the name's column instead of taking
+	// one: no other row has anything to put in such a column.
+	//
+	// It comes out of the name's own width, and goes rather than squeezing the
+	// name below what a name is readable in. The name never goes.
+	from := ""
+	if text := s.elsewhere(l.session); text != "" {
+		// The floor is the one the tail columns hold to, less the head, which
+		// is the part of that reserve the name does not get either way.
+		if room := nameW - lipgloss.Width(text) - 1; room >= nameReserve-lipgloss.Width(head) {
+			from = st.dimText.Render(" " + text)
+		}
+	}
+	nameW -= lipgloss.Width(from)
+
 	if atCursor {
 		// The cursor row is the one that can be scrolled, so it is the one
-		// whose measurements are worth keeping for the next key press.
+		// whose measurements are worth keeping for the next key press. They
+		// are the name's, not the cell's: the qualifier is not scrolled past
+		// to read the rest of the name.
 		l.nameWidth, l.nameFull = nameW, lipgloss.Width(name)
 		if l.nameScroll > 0 {
 			l.nameScroll = min(l.nameScroll, l.maxNameScroll())
@@ -550,7 +571,8 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 		nameStyle = st.cursorName
 	}
 
-	line := padANSI(head+padANSI(nameStyle.Render(truncate(name, nameW)), nameW)+tail, l.width)
+	cell := padANSI(nameStyle.Render(truncate(name, nameW))+from, nameW+lipgloss.Width(from))
+	line := padANSI(head+cell+tail, l.width)
 	switch {
 	case atCursor && selected:
 		return highlight(st, line, colBothBG)
@@ -786,8 +808,16 @@ type tailColumns struct {
 	text  string
 }
 
+// nameReserve is what the head and the name keep between them: a tail column
+// that would leave less than this is dropped instead of drawn. It is one
+// number rather than one per caller because it is one rule — anything that
+// wants cells the name is using holds to it, the qualifier on a discobox from
+// another machine included (see row). Two numbers for "how narrow a name may
+// get" drift the moment either is tuned.
+const nameReserve = 20
+
 func (t *tailColumns) add(text string, w int) {
-	if t.width-lipgloss.Width(t.text)-w < 20 {
+	if t.width-lipgloss.Width(t.text)-w < nameReserve {
 		return
 	}
 	t.text += padANSI(text, w)

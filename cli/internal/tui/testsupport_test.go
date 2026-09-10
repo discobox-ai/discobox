@@ -186,6 +186,10 @@ type fakeSource struct {
 // the shell split.
 func promptText(req RunRequest) string { return strings.Join(req.Prompt, " ") }
 
+// testHostID is the machine the test window is running on, which is what makes
+// a discobox created on another one recognizable as such.
+const testHostID = "host_0123456789abcdef"
+
 func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 	return &fakeSource{
 		session: Session{
@@ -193,6 +197,7 @@ func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 			DefaultProject: "default",
 			Directory:      "/src/disco2",
 			Branch:         "main",
+			HostID:         testHostID,
 		},
 		sandboxes: sandboxes,
 		createdID: "sbx_created",
