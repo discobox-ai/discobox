@@ -45,8 +45,9 @@ to your ssh_config; the key is enrolled in the project and reused on later runs.
 
 Every other argument is passed to scp untouched, so its own flags — -r, -p, -C,
 -o — mean what they always mean. That includes the ones this CLI otherwise
-takes: -p is scp's preserve here, not --project. Set DISCOBOX_SERVER and
-DISCOBOX_PROJECT in the environment to point a copy somewhere else.`,
+takes: -p is scp's preserve here, not --project. To point a copy somewhere
+else, write the flag in front of the command — discobox --server ... cp — or
+set DISCOBOX_SERVER and DISCOBOX_PROJECT in the environment.`,
 		Example: `  discobox cp ./config.yaml mybox:/tmp/config.yaml
   discobox cp -r mybox:/workspace/dist ./dist
   discobox cp :notes.md .

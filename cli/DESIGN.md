@@ -548,13 +548,11 @@ tree: every SSH session channel asks for `workdir: "~"`
 (`server/internal/sshd/DESIGN.md`), which is what makes `discobox cp x mybox:`
 mean what it means everywhere else.
 
-Flag parsing is off here for the reason it is off for `tools ssh`, and it costs
-the same thing: with `DisableFlagParsing` cobra parses *no* flags for the
-invocation, the root's persistent ones included, wherever they appear. So
-`discobox --server X cp …` does not reach a different server — `DISCOBOX_SERVER`
-and `DISCOBOX_PROJECT` are how a copy is pointed elsewhere, which is what the
-help says. It is not only a parsing accident: `-p` and `-o` are both a global
-shorthand and an scp option, and after `cp` they have to be scp's.
+Flag parsing is off here for the reason it is off for `tools ssh`: after the
+command name every flag is scp's, and `-p` and `-o` are both a global shorthand
+and an scp option, so they have to be. What stands *in front* of the command is
+still this CLI's, and is parsed by the root — see
+[Where a Global Flag Is Parsed](#where-a-global-flag-is-parsed).
 
 `discobox tools vscode` and `discobox tools zed` open a sandbox in an editor
 running on this machine, editing it in place over that editor's own remote
@@ -652,6 +650,48 @@ connection, downloading it there from `zed.dev`. Nothing in this CLI manages
 that: a discobox without egress needs `"upload_binary_over_ssh": true` for the
 host in Zed's own settings, which makes Zed upload the binary over the SSH
 connection instead, and the command's help says so.
+
+## Where a Global Flag Is Parsed
+
+The root's persistent flags — `--server`, `--iroh-relay`, `--iroh-log`,
+`--project`, `--chdir`, `--token`, `--output`, `--debug` and
+`--auto-start-server` — are parsed by the command they are written in front of
+(`TraverseChildren` on the root). Cobra's default is the other way round: it
+finds the command first and hands it every flag, wherever it stood. The
+commands that hand their arguments to another program parse none, so under the
+default `discobox --server X cp …` reached the default endpoint and said
+nothing. Those are exactly the commands that cannot sort it out for themselves:
+`-o` is this CLI's `--output` and one of scp's and ssh's options, so which of
+the two a flag belongs to is a question only its position answers
+([ADR 0103](../docs/adr/0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md)).
+
+Three things follow, all worth knowing before adding a command:
+
+- The word that names no command is reported by `rootArgs`
+  (`internal/cli/root.go`), not by cobra. Cobra's own check runs from `Find`,
+  which `TraverseChildren` replaces, so without this `discobox lst` would reach
+  the root's `RunE` as a stray argument rather than saying what it was near.
+- What is written in front of a subcommand and belongs only to the root is
+  refused by `refuseRootOnlyArguments`, from the root's `PersistentPreRunE`.
+  Two things land there, both otherwise silent: the words a `--` hides from the
+  command scan, which does not stop at one the way `stripFlags` did, and run's
+  own flags, which are the root's *local* flags and are parsed wherever they
+  stand. `discobox -- please run the tests` would otherwise dispatch to `run`
+  from the middle of a sentence, and `discobox -p '…' ls` would list with the
+  prompt dropped.
+- A flag belonging to a subcommand must be written after it. The default
+  accepted `discobox --wait admin server shutdown`; the root now parses that
+  `--wait` and does not know it.
+
+`admin provider create` and `update` are the other side of the same coin: their
+flags are the provider catalog's and are not known until the server answers, so
+they parse their own arguments and pull the global flags back out of them
+themselves (`consumeProviderCreateGlobalFlags`), wherever those stand. That is
+safe there because nothing downstream of it is another program's flag table.
+The set it consumes is its own — `--server`, `--project`, `--token`,
+`--output`/`-o` and `--debug`, the ones a script points at another server with
+— and not the nine above: written after those two commands, the rest are
+passed through to the catalog.
 
 ## Listing Order
 

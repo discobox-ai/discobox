@@ -1,6 +1,6 @@
 # 0100 — The prompt is a flag, and the bare command takes no words
 
-- **Status**: Accepted
+- **Status**: Accepted (§1's mechanism superseded by [0103](0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md))
 - **Date**: 2026-09-07
 - **Supersedes**: [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md)
   §4's positional half and §5 ("the root command's `Args` becomes

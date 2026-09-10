@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1639,6 +1640,57 @@ func TestBareCommandPrintsHelpWithoutATerminal(t *testing.T) {
 	}
 }
 
+// The flags in front of a command reach it even when the command parses no
+// flags of its own. `cp` and `tools ssh` hand their arguments to scp and ssh
+// untouched, so they are exactly the commands that cannot pick a global flag
+// out of what they were given; before the root parsed them itself,
+// `discobox --server ... cp` ignored the endpoint it was given and talked to
+// the default one.
+func TestGlobalFlagsReachCommandsThatParseNoFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// args is the command line, with the test server's URL substituted
+		// for the empty string.
+		args []string
+	}{
+		{name: "cp", args: []string{"--server", "", "--project", "proj-x", "cp", "notes.md", "mybox:"}},
+		{name: "tools ssh", args: []string{"--server", "", "--project", "proj-x", "tools", "ssh", "mybox"}},
+		// A flag that takes no value must not swallow the command name as
+		// one. Which flags those are is read off the root's own set before
+		// anything has parsed a flag, so this covers a command that parses
+		// its flags in the ordinary way too: swallowed, nothing would name a
+		// command and the root would refuse the word rather than run it.
+		{name: "valueless flag last", args: []string{"--server", "", "--project", "proj-x", "--debug", "ls"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var asked string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				asked = r.URL.Path
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				_, _ = w.Write([]byte(`{"items":[]}`))
+			}))
+			t.Cleanup(server.Close)
+
+			args := slices.Clone(tc.args)
+			args[slices.Index(args, "")] = server.URL
+			cmd := NewRootCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetIn(&bytes.Buffer{})
+			cmd.SetArgs(args)
+
+			// The command itself has nothing to copy to and no discobox to
+			// reach, so it fails after it has asked; what is under test is
+			// which server it asked, and for whose project.
+			_ = cmd.Execute()
+			if want := "/projects/proj-x/sandboxes"; asked != want {
+				t.Fatalf("asked %q, want %q; output:\n%s", asked, want, out.String())
+			}
+		})
+	}
+}
+
 // A word after the bare command is a subcommand, not a prompt: the prompt is
 // -p. Nothing can tell a misspelled subcommand from the first word of a prompt
 // — a prompt is words — so the two are not asked to share a spelling, and a
@@ -1669,17 +1721,36 @@ func TestBareWordsAreNotAPrompt(t *testing.T) {
 	}
 }
 
-// A `--` does not smuggle a prompt past that. cobra's stripFlags stops there,
-// so legacyArgs never sees the words and cannot report them — and dropping them
-// is worse than either: `discobox -d -- fix the failing tests` would otherwise
-// create a discobox with an empty prompt and say nothing about the four words
-// it lost. It is also the likeliest way to mistype this, since `run --` is what
-// run's own help teaches.
+// A `--` does not smuggle a prompt past that. It is the likeliest way to
+// mistype this, since `run --` is what run's own help teaches, and dropping the
+// words is worse than either failure above: `discobox -d -- fix the failing
+// tests` would otherwise create a discobox with an empty prompt and say nothing
+// about the four words it lost.
+//
+// The words after a `--` are the ones nothing else catches. Cobra's scan for
+// the command name does not stop there — it reads `--` as a flag awaiting a
+// value, takes the word after it as that value, and keeps looking — so a word
+// further along that happens to name a command is dispatched to, and only
+// refuseRootOnlyArguments notices. The table carries a prompt of each shape for
+// that reason: one whose words name nothing, ones that reach `run` and `push`
+// in the middle of a sentence, and one that reaches a command by an alias —
+// the spelling most likely to read as an ordinary word.
+//
+// What the refusal says back is the sentence, put together again from the two
+// halves the command name was found between, so it is a line to paste rather
+// than a line to retype.
 func TestBareWordsAfterADashDashAreRefused(t *testing.T) {
-	for _, args := range [][]string{
-		{"--", "fix", "the", "failing", "tests"},
-		{"-d", "--", "fix", "the", "failing", "tests"},
+	for _, tc := range []struct {
+		args   []string
+		prompt string
+	}{
+		{args: []string{"--", "fix", "the", "failing", "tests"}, prompt: "fix the failing tests"},
+		{args: []string{"-d", "--", "fix", "the", "failing", "tests"}, prompt: "fix the failing tests"},
+		{args: []string{"--", "please", "run", "the", "tests"}, prompt: "please run the tests"},
+		{args: []string{"-d", "--", "update", "push", "docs"}, prompt: "update push docs"},
+		{args: []string{"--", "rewrite", "r", "harness"}, prompt: "rewrite r harness"},
 	} {
+		args := tc.args
 		cmd := NewRootCommand()
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -1691,14 +1762,59 @@ func TestBareWordsAfterADashDashAreRefused(t *testing.T) {
 		if err == nil {
 			t.Fatalf("`discobox %s` was accepted, output:\n%s", strings.Join(args, " "), out.String())
 		}
-		// And it says what to type instead, since the words were a prompt.
+		// And it says what to type instead, since the words were a prompt —
+		// with the words themselves, as they were typed.
 		if !strings.Contains(err.Error(), "-p") {
 			t.Fatalf("error = %q, want it to name -p", err)
+		}
+		if !strings.Contains(err.Error(), tc.prompt) {
+			t.Fatalf("error = %q, want it to quote %q", err, tc.prompt)
 		}
 		// Nothing was created on the way to refusing: the -d form would
 		// otherwise have gone all the way to a discobox.
 		if strings.Contains(out.String(), "preparing source") {
 			t.Fatalf("`discobox %s` started a create:\n%s", strings.Join(args, " "), out.String())
+		}
+	}
+}
+
+// Run's flags are the root's own, and in front of a subcommand they are parsed
+// into a run that never happens. Silently: the subcommand runs, and the flag is
+// dropped — `discobox -p 'fix the failing tests' run` would create a discobox
+// with an empty prompt, since run has its own copy of those flags and nothing
+// was written after the name. Before the root parsed the flags in front of a
+// command, cobra rejected them as unknown flags for that command; this is that
+// loudness kept.
+func TestRunFlagsInFrontOfACommandAreRefused(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		flag string
+	}{
+		{args: []string{"-p", "fix the failing tests", "ls"}, flag: "--prompt"},
+		{args: []string{"-p", "fix the failing tests", "run"}, flag: "--prompt"},
+		{args: []string{"-H", "codex", "tools", "ssh", "mybox"}, flag: "--harness"},
+		{args: []string{"--detach", "ls"}, flag: "--detach"},
+	} {
+		cmd := NewRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs(tc.args)
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("`discobox %s` was accepted, output:\n%s", strings.Join(tc.args, " "), out.String())
+		}
+		// It names the flag that did nothing, since which one it was is the
+		// whole content of the mistake.
+		if !strings.Contains(err.Error(), tc.flag) {
+			t.Fatalf("error = %q, want it to name %s", err, tc.flag)
+		}
+		// And nothing ran: neither the command that was named nor the run that
+		// was not.
+		if strings.Contains(out.String(), "preparing source") {
+			t.Fatalf("`discobox %s` started a create:\n%s", strings.Join(tc.args, " "), out.String())
 		}
 	}
 }

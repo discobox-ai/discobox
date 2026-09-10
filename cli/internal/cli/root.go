@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -109,8 +110,25 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		// The flags in front of a subcommand are parsed by the command they
+		// were written on, which is the only way the ones whose own flag
+		// parsing is off ever see them. cobra's default hands every flag,
+		// wherever it stood, to the command it finally found; for `cp` and
+		// `tools ssh` that command parses none of them, so
+		// `discobox --server ... cp` silently talked to the default endpoint
+		// instead — and cannot simply parse them itself, since after the
+		// command name they are scp's and ssh's own (`-o` is one flag on this
+		// CLI and another on both of those).
+		TraverseChildren: true,
+		// What rootArgs suggests a misspelled command from. Cobra fills this
+		// in when it makes the suggestions itself, which under
+		// TraverseChildren it no longer does.
+		SuggestionsMinimumDistance: 2,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			app.errOut = cmd.ErrOrStderr()
+			if err := refuseRootOnlyArguments(cmd, args, runFlags); err != nil {
+				return err
+			}
 			if err := app.validate(); err != nil {
 				return err
 			}
@@ -120,30 +138,13 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 			cmd.SetContext(watchParentProcess(cmd.Context(), app.errOut))
 			return nil
 		},
+		// The words a bare `discobox` is given are refused, so nothing below
+		// has any to consider.
+		Args: rootArgs,
 		// Any of run's own flags makes this command a run: it is the one thing
 		// anybody does often enough to resent typing the name of, and
 		// `discobox` is already what you type to reach the same run in the
 		// launcher.
-		//
-		// The prompt is -p, and words after the command are not a prompt. They
-		// were, for a while (ADR 0089), and the price was cobra's root-only
-		// "unknown command" check, which only runs when Args is unset: with it
-		// disabled every subcommand name was one typo away from a sandbox, and
-		// `discobox lst` created a discobox prompted "lst" rather than saying
-		// what was misspelled. Nothing can tell a typo from the first word of a
-		// prompt — a prompt is words — so the prompt takes a flag and the words
-		// go back to being subcommands (ADR 0100). Leaving Args unset is most
-		// of that; run keeps its trailing prompt, where the name in front of
-		// it says what the words are.
-		//
-		// legacyArgs does not cover all of it, though: cobra's stripFlags
-		// stops at a `--`, so words past one never reach that check and would
-		// arrive here to be ignored. That is the same silent failure by
-		// another spelling — `discobox -d -- fix the failing tests` would
-		// create a discobox with an empty prompt and say nothing about the
-		// four words it dropped — and it is the likeliest way to mistype this,
-		// since `run --` is what run's own help teaches. So RunE refuses them
-		// rather than dropping them.
 		//
 		// Bare `discobox` at a terminal opens the launcher: it is the one thing
 		// you can ask for without knowing a subcommand, and typing the name of
@@ -151,10 +152,7 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 		// CI — it prints its help, because a full-screen window is not an
 		// answer to a program that expected output. A run says where its output
 		// goes for itself, so this only covers the launcher.
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 0 {
-				return fmt.Errorf("%s takes no arguments; the prompt is -p: discobox -p %q", cmd.CommandPath(), strings.Join(args, " "))
-			}
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if runRequested(runFlags) {
 				return app.runPrompt(cmd, &run, nil)
 			}
@@ -225,6 +223,112 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 	// command list; the --help flag still works on every command.
 	cmd.SetHelpCommand(&cobra.Command{Use: "no-help", Hidden: true})
 	return cmd, app
+}
+
+// rootArgs refuses the words that follow a bare `discobox`, which are never a
+// prompt and never anything else this command can run.
+//
+// The prompt is -p, and words after the command are not a prompt. They were,
+// for a while (ADR 0089), and the price was that every subcommand name was one
+// typo away from a sandbox: `discobox lst` created a discobox prompted "lst"
+// rather than saying what was misspelled. Nothing can tell a typo from the
+// first word of a prompt — a prompt is words — so the prompt takes a flag and
+// the words go back to being subcommands (ADR 0100). Run keeps its trailing
+// prompt, where the name in front of it says what the words are.
+//
+// The word that named no command is reported here rather than by cobra, whose
+// own check runs from Find and so not at all under TraverseChildren. Two kinds
+// of word arrive, and they are told different things. A word past a `--` is a
+// prompt written the way run's help teaches, and is answered with -p: dropping
+// it silently is the worse failure, since `discobox -d -- fix the failing
+// tests` would otherwise create a discobox with an empty prompt and say
+// nothing about the four words it lost. Anything else is a command that does
+// not exist, and is answered with the ones it was near.
+func rootArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	if cmd.ArgsLenAtDash() == 0 {
+		return wordsAreNotAPrompt(cmd, args)
+	}
+	suggestions := ""
+	if found := cmd.SuggestionsFor(args[0]); len(found) > 0 {
+		suggestions = "\n\nDid you mean this?\n\t" + strings.Join(found, "\n\t")
+	}
+	return fmt.Errorf("unknown command %q for %q%s", args[0], cmd.CommandPath(), suggestions)
+}
+
+func wordsAreNotAPrompt(cmd *cobra.Command, words []string) error {
+	return fmt.Errorf("%s takes no arguments; the prompt is -p: discobox -p %q", cmd.CommandPath(), strings.Join(words, " "))
+}
+
+// commandWords is the command's name as it was typed, for putting back into a
+// sentence a `--` split in half.
+//
+// The name is `CalledAs` rather than `Name` because the alias is what stands in
+// the words — and it is the alias that reads like one of them: `c`, `r`,
+// `init`, `ps` and `scp` are all commands here. Cobra fills `CalledAs` in for
+// the command it ends at only, so a parent reached by an alias (`t` for
+// `tools`) is still named canonically, and a flag written after the command
+// name is not here at all — this is what reached the command, and its own flags
+// were parsed out of it. Both are a word out of place in a line the reader can
+// see their own sentence in, rather than a wrong answer, and neither is
+// reachable from inside cobra's dispatch: what was actually typed is gone by
+// the time any hook runs.
+func commandWords(cmd *cobra.Command) []string {
+	words := strings.Fields(strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()))
+	if called := cmd.CalledAs(); called != "" && len(words) > 0 {
+		words[len(words)-1] = called
+	}
+	return words
+}
+
+// refuseRootOnlyArguments refuses what was written in front of a subcommand
+// and means nothing there. Both kinds are silent failures rather than wrong
+// answers, which is why they are worth a check of their own.
+//
+// Words are the first kind. A `--` in front of a subcommand ends the root's
+// flags, and cobra's scan for the command name does not stop at one — it reads
+// `--` as a flag awaiting a value, eats the word after it, and carries on
+// looking. So `discobox -- please run the tests` finds `run` in the middle of a
+// sentence and creates a discobox prompted "the tests". What gives it away is
+// that the root parsed a positional word while a subcommand was found, which
+// nothing else does: the words in front of a command name are only ever this.
+// They get the same answer `discobox -- fix the tests` gets, reassembled from
+// the root's leftovers, the command path, and what reached the command.
+//
+// Run's own flags are the second. They are the root's local flags, so
+// TraverseChildren parses them wherever they stand — and in front of a
+// subcommand they are parsed into a run that never happens. `discobox -p 'fix
+// the tests' ls` would list, silently, with the prompt dropped; `discobox -p
+// 'fix the tests' run` would create a discobox with an empty prompt, since run
+// has its own copy of those flags and nothing was written after the name.
+// Cobra used to reject these as unknown flags for the subcommand, and this is
+// that loudness kept.
+//
+// `version` carries an empty PersistentPreRunE and so reaches neither check, on
+// purpose: what somebody diagnosing a broken environment asks first is what
+// they are running, and printing it is not something a smuggled word can spoil.
+func refuseRootOnlyArguments(cmd *cobra.Command, args []string, runFlags *pflag.FlagSet) error {
+	root := cmd.Root()
+	if cmd == root {
+		// rootArgs has already refused anything there is to refuse here.
+		return nil
+	}
+	if words := root.Flags().Args(); len(words) > 0 {
+		return wordsAreNotAPrompt(root, slices.Concat(words, commandWords(cmd), args))
+	}
+	var given *pflag.Flag
+	runFlags.VisitAll(func(flag *pflag.Flag) {
+		if given == nil && flag.Changed {
+			given = flag
+		}
+	})
+	if given != nil {
+		return fmt.Errorf("--%s is a run's own flag and does nothing in front of %s: a run is `discobox run --%s ...`, or `discobox --%s ...` with no command name at all",
+			given.Name, cmd.CommandPath(), given.Name, given.Name)
+	}
+	return nil
 }
 
 func (a *App) addQuietFlag(cmd *cobra.Command) {
