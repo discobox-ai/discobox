@@ -156,7 +156,7 @@ type IrohConfig struct {
 
 	// Certificate proves, to a server that admits identities rather than
 	// endpoints, that this ephemeral endpoint speaks for an enrolled one
-	// (ADR 0100).
+	// (ADR 0104).
 	//
 	// Set it and SecretKey becomes a key generated for this process alone,
 	// while the identity an operator enrolled is the certificate's issuer. Nil

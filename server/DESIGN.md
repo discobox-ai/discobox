@@ -348,7 +348,7 @@ API, the database — so two of them can be compared by eye (ADR 0097 §5):
 The identity it is consulted about is the one the peer *claims*, which is not
 always the one it dialed from. A client on the `discobox/http/1+cert` ALPN
 presents a certificate binding its ephemeral endpoint to an enrolled identity,
-and `endpoint` verifies that binding before the policy sees anything (ADR 0100).
+and `endpoint` verifies that binding before the policy sees anything (ADR 0104).
 So the allowlist below still admits an identity, never an endpoint, and it is
 asked exactly once — about the enrolled issuer for a certificate-bearing peer,
 and about the endpoint itself for every client that dials the plain ALPN.

@@ -425,7 +425,7 @@ func diagnoseIroh(ctx context.Context, diagnosis *Diagnosis, configured *IrohEnd
 	// when a server says they are not enrolled. With a certificate the key that
 	// dials is generated per process and differs on every run, so printing it
 	// here as "this machine" would hand them a value to enroll that is wrong
-	// before they finish typing it (ADR 0100).
+	// before they finish typing it (ADR 0104).
 	if cert := configured.cfg.Certificate; cert != nil {
 		diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+cert.Issuer.String(),
 			"dialing as "+local.Short()+", a key this process generated and certified")
@@ -761,7 +761,7 @@ func connectHint(hasDirect, relayReached bool) string {
 // enrolledIdentity is the identity an operator would enroll for this client:
 // the certificate's issuer where there is one, and otherwise the endpoint
 // itself. A hint that named the per-process transport key would tell somebody
-// to enroll a value that stops existing when the command does (ADR 0100).
+// to enroll a value that stops existing when the command does (ADR 0104).
 func enrolledIdentity(configured *IrohEndpoint, local IrohID) IrohID {
 	if cert := configured.cfg.Certificate; cert != nil {
 		return cert.Issuer

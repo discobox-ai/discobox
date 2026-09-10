@@ -95,7 +95,7 @@ transport helpers where OpenAPI does not model the stream.
   `RunE` refuses any positional word that reaches it, naming `-p`. Dropping
   them would put the silent create back — `discobox -d -- fix the failing
   tests` with an empty prompt — by the one spelling `run`'s help teaches. See
-  [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
+  [ADR 0104](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
   which supersedes [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
   trade on that point; `run` keeps its trailing prompt, where the name in front
   of the words says what they are.
@@ -166,7 +166,7 @@ transport helpers where OpenAPI does not model the stream.
 
 A CLI process dials with a key it generates at startup and never writes down,
 and proves the identity an operator enrolled by presenting a certificate for
-that key (ADR 0100). `irohTransportIdentity` (`internal/cli/peer_identity.go`)
+that key (ADR 0104). `irohTransportIdentity` (`internal/cli/peer_identity.go`)
 makes both, and the certificate travels on its own stream the moment a
 connection is up.
 

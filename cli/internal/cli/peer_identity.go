@@ -123,13 +123,13 @@ func configureIrohForEndpoint(parsed endpoint.Endpoint, relayURLs, logLevel stri
 
 // irohCertLifetime is how long a process's certificate is good for. It outlives
 // any command by a wide margin and expires long before a machine's uptime, which
-// is the balance ADR 0100 §3 asks for: the certificate is already worthless
+// is the balance ADR 0104 §3 asks for: the certificate is already worthless
 // without the ephemeral private key, and the expiry only bounds the damage from
 // a process compromised while it runs.
 const irohCertLifetime = 24 * time.Hour
 
 // irohTransportIdentity returns the key this process dials with and the
-// certificate proving it speaks for the enrolled one (ADR 0100).
+// certificate proving it speaks for the enrolled one (ADR 0104).
 //
 // The transport key is generated here, per process, and never written down.
 // That is the whole point: the enrolled key is stable and machine-wide, and a

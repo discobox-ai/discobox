@@ -485,7 +485,7 @@ func TestIrohEndpointDoesNotComeBackAfterClose(t *testing.T) {
 	}
 }
 
-// The point of ADR 0100: a client dials with a key nobody has ever heard of and
+// The point of ADR 0104: a client dials with a key nobody has ever heard of and
 // is admitted as the identity it enrolled, because it presents a certificate
 // binding the two. The server's allowlist is unchanged — it still admits an
 // identity, not an endpoint.

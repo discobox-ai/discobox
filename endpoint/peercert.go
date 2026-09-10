@@ -10,7 +10,7 @@ import (
 
 // A client dials with a key it generated at startup and throws away, and
 // proves the identity an operator enrolled by presenting a certificate for it
-// (ADR 0100).
+// (ADR 0104).
 //
 // The two jobs one key used to do pull in opposite directions: the enrolled
 // credential wants to be stable and machine-wide, while the address a live

@@ -25,7 +25,7 @@ const irohALPN = "discobox/http/1"
 
 // irohCertALPN is the same control plane, reached by a client that dials with
 // an ephemeral key and presents a certificate for the identity it enrolled
-// (ADR 0100 §4).
+// (ADR 0104 §4).
 //
 // The ALPN is what says a certificate is coming. Nothing else in a connection
 // does, and finding out by reading would consume the first stream of a client
@@ -625,7 +625,7 @@ func (e *IrohEndpoint) authorize(conn *iroh.Conn) error {
 // us, and reports the enrolled identity it proves. A peer on the plain ALPN
 // presents nothing and is its own identity, so this returns nil for it without
 // touching a stream — which is what leaves an existing client's first stream
-// for the HTTP listener, exactly as before (ADR 0100 §4).
+// for the HTTP listener, exactly as before (ADR 0104 §4).
 func (e *IrohEndpoint) presentedIdentity(conn *iroh.Conn, peer IrohID) (*IrohID, error) {
 	alpn, err := conn.ALPN()
 	if err != nil {
