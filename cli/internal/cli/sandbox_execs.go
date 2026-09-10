@@ -220,7 +220,7 @@ func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*ap
 	}
 	body.SetTty(apiclientgen.NewOptBool(opts.tty))
 	if opts.tty {
-		if cols, rows, ok := client.NewOSConsole(os.Stdin).Size(); ok {
+		if cols, rows, ok := client.NewOSConsole(os.Stdin, os.Stdout).Size(); ok {
 			body.SetCols(apiclientgen.NewOptInt(cols))
 			body.SetRows(apiclientgen.NewOptInt(rows))
 		}
@@ -430,15 +430,15 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 	defer conn.Close()
 
 	opts := client.Options{
-		Conn:    conn,
-		Stdin:   stdin,
-		Stdout:  stdout,
-		Stderr:  stderr,
-		Console: client.NewOSConsole(stdin),
-		Kind:    "discobox exec",
-		Action:  "attach exec",
-		RawMode: interactive && tty,
-		Resize:  tty,
+		Conn:     conn,
+		Stdin:    stdin,
+		Stdout:   stdout,
+		Stderr:   stderr,
+		Console:  client.NewOSConsole(stdin, stdout),
+		Kind:     "discobox exec",
+		Action:   "attach exec",
+		RawMode:  interactive && tty,
+		Terminal: tty,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copySandboxExecInput(ctx, s, interactive)
 		},

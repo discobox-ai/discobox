@@ -814,10 +814,20 @@ session, `execstream/client`.
   drifted, and a corrupted stream is the first symptom.
   See [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
 - Everything the session does to this machine goes through `client.Console`:
-  raw mode, terminal size, signal delivery, and stopping and resuming. The real
-  one is `client.OSConsole`; it is the seam that lets suspend ordering and the
-  signal set be tested without a PTY, including on platforms this repository
-  cannot run.
+  raw mode, terminal size, signal delivery, stopping and resuming, and putting
+  the display back. The real one is `client.OSConsole`; it is the seam that lets
+  suspend ordering, the signal set, and the reset be tested without a PTY,
+  including on platforms this repository cannot run.
+- A terminal lent to a remote program is handed back reset. The attach ends
+  where it stands — detached, disconnected, killed — so the program that turned
+  on the alternate screen, mouse reporting or bracketed paste never turns them
+  off, and the session does it instead (`client.terminalReset`), after the
+  remote's last output and before the mode goes back. It resets modes only:
+  the caller's screen and scrollback are not the remote's to clear.
+- What that follows is `Options.Terminal` — the remote runs under a PTY, so
+  what it writes is the caller's screen — and not `RawMode`, which is about
+  whether this side's keys are taken. `exec -t` without `-i` is the case that
+  separates them: a remote PTY drawing on a terminal whose keys stay cooked.
 - Keep frame read/write, output frames, resize frames, signal forwarding,
   raw-terminal setup, close-input frames, and attach teardown in that session,
   never in a caller.

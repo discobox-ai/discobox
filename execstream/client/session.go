@@ -2,7 +2,8 @@
 // execstream connection.
 //
 // Everything this package does to the machine it runs on — raw mode, terminal
-// size, signal delivery, stopping and resuming — goes through Console. That is
+// size, signal delivery, stopping and resuming, and putting the display back
+// the way it was lent — goes through Console. That is
 // what makes the parts worth testing testable: the order a suspend does things
 // in, or which signals become frames, are properties of this package, while
 // actually stopping a process is the platform's. The real implementation is
@@ -40,6 +41,11 @@ type Console interface {
 	MakeRaw() (restore func(), raw bool, err error)
 	// Size reports the terminal size, or ok=false when there is no terminal.
 	Size() (cols, rows int, ok bool)
+	// ResetTerminal turns off the display modes the remote program turned on
+	// and had no chance to turn off — the alternate screen, mouse reporting,
+	// bracketed paste, and the rest. It runs when the session hands the
+	// terminal back, and does nothing when there is no terminal to hand back.
+	ResetTerminal()
 	// Suspend stops this process and returns once it is resumed.
 	Suspend()
 	// NotifySignals starts delivering the signals worth forwarding to ch.
@@ -67,9 +73,14 @@ type Options struct {
 	Action string
 	// RawMode asks for the terminal to be put in raw mode for the session, so
 	// keystrokes reach the remote process instead of the local line discipline.
+	// It is about this side's input alone: a stream can come from a terminal on
+	// the far end without the caller's own keys being taken.
 	RawMode bool
-	// Resize tracks the terminal size and sends it to the remote process.
-	Resize bool
+	// Terminal reports that the remote is drawing on a terminal: it runs under
+	// a PTY, and what it writes is display state on the caller's screen rather
+	// than bytes in a stream. The size is tracked and sent while the session
+	// runs, and the display is put back when it ends.
+	Terminal bool
 	// SignalReady sends a Ready frame once the output reader is running, telling
 	// the remote it is safe to stream replay history. Set for replay attaches.
 	SignalReady bool
@@ -159,19 +170,39 @@ func (s *Session) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if s.opts.RawMode && s.opts.Console != nil {
-		restore, raw, err := s.opts.Console.MakeRaw()
-		if err != nil {
-			return err
+	outputErr := make(chan error, 1)
+	outputDone := make(chan struct{})
+	otherErr := make(chan error, 3)
+
+	// The terminal goes back the way it was lent: the display state the remote
+	// left on it, and the mode this side took. Deferred in that order and run in
+	// the other, because a mode is handed back once the screen is done with.
+	if s.opts.Console != nil {
+		if s.opts.RawMode {
+			restore, raw, err := s.opts.Console.MakeRaw()
+			if err != nil {
+				return err
+			}
+			s.raw = raw
+			s.rawRestore = restore
+			defer restore()
 		}
-		s.raw = raw
-		s.rawRestore = restore
-		defer restore()
+		if s.opts.Terminal {
+			// The reset waits for the output reader first so it is the last
+			// thing written: a session that ends while a frame is being drawn
+			// would otherwise reset the terminal and then hand it the tail of
+			// what the remote was in the middle of saying.
+			defer func() {
+				waitForOutput(outputDone)
+				s.opts.Console.ResetTerminal()
+			}()
+		}
 	}
 
-	outputErr := make(chan error, 1)
-	otherErr := make(chan error, 3)
-	go func() { outputErr <- s.copyOutput() }()
+	go func() {
+		defer close(outputDone)
+		outputErr <- s.copyOutput()
+	}()
 	if s.opts.SignalReady {
 		// The output reader is running; tell the remote the tunnel is
 		// established so it can stream replay history without losing bytes to
@@ -187,7 +218,7 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	if s.opts.Resize {
+	if s.opts.Terminal {
 		go func() {
 			if err := s.watchResize(ctx); err != nil {
 				otherErr <- err
@@ -229,6 +260,21 @@ func (s *Session) Run(ctx context.Context) error {
 			_ = s.opts.Conn.Close()
 			return ctx.Err()
 		}
+	}
+}
+
+// outputDrain bounds the wait for the output reader before the terminal is
+// handed back. Every path out of Run closes the connection, which is what ends
+// that read; the bound is for the ones that cannot — a write that failed before
+// the loop was entered, or a transport that does not notice its own close.
+const outputDrain = 250 * time.Millisecond
+
+func waitForOutput(done <-chan struct{}) {
+	timer := time.NewTimer(outputDrain)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
 	}
 }
 
@@ -480,7 +526,7 @@ func (s *Session) suspend() error {
 	if err := s.WriteFrame(frame.Signal, []byte("CONT")); err != nil {
 		return err
 	}
-	if s.opts.Resize {
+	if s.opts.Terminal {
 		return s.WriteInitialResize()
 	}
 	return nil

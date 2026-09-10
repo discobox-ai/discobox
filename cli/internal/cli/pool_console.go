@@ -79,7 +79,7 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, s
 	// interface stays unset when stdin is not a terminal file.
 	var console client.Console
 	var cols, rows int
-	if osConsole := client.NewOSConsole(stdin); osConsole != nil {
+	if osConsole := client.NewOSConsole(stdin, stdout); osConsole != nil {
 		console = osConsole
 		cols, rows, _ = osConsole.Size()
 	}
@@ -93,15 +93,15 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, s
 	// keystrokes and can land in separate reads.
 	chord := newDetachFilter(a.leader())
 	session := client.New(client.Options{
-		Conn:    frames,
-		Stdin:   stdin,
-		Stdout:  stdout,
-		Stderr:  stderr,
-		Console: console,
-		Kind:    "pool console",
-		Action:  "open pool console",
-		RawMode: true,
-		Resize:  true,
+		Conn:     frames,
+		Stdin:    stdin,
+		Stdout:   stdout,
+		Stderr:   stderr,
+		Console:  console,
+		Kind:     "pool console",
+		Action:   "open pool console",
+		RawMode:  true,
+		Terminal: true,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copyTerminalInput(ctx, s, chord)
 		},

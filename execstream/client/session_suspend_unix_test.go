@@ -60,7 +60,7 @@ func TestResizeIsResentAfterResume(t *testing.T) {
 	console := newFakeConsole()
 	s := New(Options{
 		Conn: conn, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
-		Console: console, RawMode: true, Resize: true, Kind: "test",
+		Console: console, RawMode: true, Terminal: true, Kind: "test",
 	})
 	go func() { _ = s.Run(context.Background()) }()
 

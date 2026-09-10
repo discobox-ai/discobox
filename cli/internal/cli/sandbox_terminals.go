@@ -260,7 +260,7 @@ func createTerminalExecBody(opts sandboxTerminalCreateOptions) (*apimodel.Create
 		body.SetEnv(apiclientgen.NewOptCreateSandboxExecRequestEnv(apiclientgen.CreateSandboxExecRequestEnv(env)))
 	}
 	body.SetTty(apiclientgen.NewOptBool(true))
-	if cols, rows, ok := client.NewOSConsole(os.Stdin).Size(); ok {
+	if cols, rows, ok := client.NewOSConsole(os.Stdin, os.Stdout).Size(); ok {
 		body.SetCols(apiclientgen.NewOptInt(cols))
 		body.SetRows(apiclientgen.NewOptInt(rows))
 	}
@@ -387,11 +387,11 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		Stdin:       stdin,
 		Stdout:      stdout,
 		Stderr:      stderr,
-		Console:     client.NewOSConsole(stdin),
+		Console:     client.NewOSConsole(stdin, stdout),
 		Kind:        "harness terminal",
 		Action:      "attach terminal",
 		RawMode:     true,
-		Resize:      true,
+		Terminal:    true,
 		SignalReady: true,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copyTerminalInput(ctx, s, chord)
