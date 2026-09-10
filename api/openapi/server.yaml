@@ -4354,9 +4354,38 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                irohListener:
+                    $ref: '#/components/schemas/IrohListener'
                 peerId:
                     description: This server's peer ID. Absent when the server does not listen on `discobox://`, in which case it has no peer identity at all rather than an unused one.
                     type: string
+            type: object
+        IrohListener:
+            additionalProperties: false
+            description: What this server's iroh listener is doing right now, as opposed to who it is. A listener that has lost its relay leaves the process up, its socket answering and /healthz reporting ready, while every client dialing its peer ID times out; this is what makes that visible to an operator who can reach the server by any other transport. Absent on a server that does not listen for peers, and on one whose listener has not been read yet.
+            properties:
+                directAddrs:
+                    description: The addresses this listener believes peers can reach it at.
+                    items:
+                        type: string
+                    type: array
+                homeRelay:
+                    description: The relay this listener is reachable through. Absent when it has none.
+                    type: string
+                online:
+                    description: Whether the listener has a relay right now. Without one it is reachable only from networks that can route to its sockets directly, which is a working deployment and a completely different one from what its address implies.
+                    type: boolean
+                since:
+                    description: When `online` last changed, so a reader can tell how long a listener has been off its relay rather than only that it is.
+                    format: date-time
+                    type: string
+                sockets:
+                    description: The local UDP addresses the listener is bound to.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - online
             type: object
         ListSSHKeysBody:
             additionalProperties: false

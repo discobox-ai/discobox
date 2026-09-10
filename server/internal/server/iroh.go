@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
+	"net/netip"
 
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/server/internal/irohd"
@@ -22,24 +22,24 @@ import (
 // this server's address and `GET /peer` serves it (ADR 0098). A server with no
 // iroh endpoint returns the zero ID, which is the honest answer: it has no peer
 // identity rather than an unused one.
-func configureIroh(dataDir string, listenEndpoints, relayURLs []string, logLevel string) (*irohd.Admission, endpoint.IrohID, error) {
+func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayURLs []string, logLevel string) (*irohd.Admission, endpoint.IrohID, *irohd.ListenerWatch, error) {
 	if !hasIrohEndpoint(listenEndpoints) {
-		return nil, endpoint.IrohID{}, nil
+		return nil, endpoint.IrohID{}, nil, nil
 	}
 	level, err := endpoint.ParseIrohLogLevel(logLevel)
 	if err != nil {
-		return nil, endpoint.IrohID{}, fmt.Errorf("iroh.logLevel: %w", err)
+		return nil, endpoint.IrohID{}, nil, fmt.Errorf("iroh.logLevel: %w", err)
 	}
 	// Ahead of everything else, so a failure to load the library or bind the
 	// socket is itself logged at the level that was asked for. log.Writer() is
 	// this server's own log destination, which for an autolaunched server is
 	// the file `discobox admin server logs` prints.
 	if err := endpoint.SetIrohLogging(level, log.Writer()); err != nil {
-		return nil, endpoint.IrohID{}, fmt.Errorf("configure iroh logging: %w", err)
+		return nil, endpoint.IrohID{}, nil, fmt.Errorf("configure iroh logging: %w", err)
 	}
 	key, err := irohd.LoadOrCreateEndpointKey(dataDir)
 	if err != nil {
-		return nil, endpoint.IrohID{}, fmt.Errorf("iroh endpoint key: %w", err)
+		return nil, endpoint.IrohID{}, nil, fmt.Errorf("iroh endpoint key: %w", err)
 	}
 	// Built here and handed its store once NewApp returns: this runs before
 	// the database exists, so the managed layer cannot be captured (ADR 0095
@@ -58,52 +58,20 @@ func configureIroh(dataDir string, listenEndpoints, relayURLs []string, logLevel
 		// not name ours (ADR 0096 §6).
 		RelayURLs: relayURLs,
 	}); err != nil {
-		return nil, endpoint.IrohID{}, fmt.Errorf("configure iroh: %w", err)
+		return nil, endpoint.IrohID{}, nil, fmt.Errorf("configure iroh: %w", err)
 	}
 	id, err := endpoint.LocalIrohID()
 	if err != nil {
-		return nil, endpoint.IrohID{}, fmt.Errorf("iroh endpoint ID: %w", err)
+		return nil, endpoint.IrohID{}, nil, fmt.Errorf("iroh endpoint ID: %w", err)
 	}
 	// Printed before the listener starts, for the one caller GET /peer cannot
 	// serve: a client whose only transport is the endpoint it is trying to find
 	// (ADR 0052 §6). Every other caller — anything already reaching this server
 	// over a socket, a pipe or HTTP — asks for it instead (ADR 0098).
 	log.Printf("this server's peer ID is %s", id)
-	logIrohReach()
-	return admission, id, nil
-}
-
-// irohRelayWait bounds the one-off reachability report below. It is generous
-// because the answer is worth waiting for and nothing waits on it.
-const irohRelayWait = 30 * time.Second
-
-// logIrohReach says once, in the background, whether this server is reachable
-// from another network.
-//
-// A peer ID is resolved through a relay, so a server that never reaches one is
-// reachable only from networks that can route to its sockets directly. That is
-// a working deployment and a completely different one from what its address
-// implies — and until this line, the two looked identical in the log: the
-// address was printed either way, and the difference only appeared as a client
-// somewhere else timing out.
-//
-// In the background because it is a report, not a step: a server does not wait
-// to be reachable before it serves the local socket, and an operator on a
-// machine with no internet should not wait either.
-func logIrohReach() {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), irohRelayWait)
-		defer cancel()
-		switch relay, err := endpoint.LocalIrohRelay(ctx); {
-		case err != nil:
-			log.Printf("iroh: no relay reached after %s (%v); this server is reachable only from networks that can route to it directly",
-				irohRelayWait, err)
-		case relay == "":
-			log.Printf("iroh: online, with no home relay")
-		default:
-			log.Printf("iroh: reachable through relay %s", relay)
-		}
-	}()
+	watch := irohd.NewListenerWatch()
+	watch.Start(ctx)
+	return admission, id, watch, nil
 }
 
 func hasIrohEndpoint(listenEndpoints []string) bool {
@@ -137,6 +105,41 @@ func irohFallbackURL(display string) (string, error) {
 		return "", fmt.Errorf("endpoint %q is not reached over iroh", display)
 	}
 	return endpoint.LocalIrohFallbackURL()
+}
+
+// irohListenerService is how GET /peer answers what this server's listener is
+// doing right now, as opposed to who it is.
+//
+// It is a func rather than a value because that is the difference that matters:
+// the peer ID is loaded once and cannot change, while whether the listener has
+// a relay changes underneath a running server and is exactly the thing nobody
+// could see. A server with no iroh endpoint returns nil, and the API reports
+// nothing rather than a listener that is down.
+func irohListenerService(watch *irohd.ListenerWatch) services.IrohListenerService {
+	if watch == nil {
+		return nil
+	}
+	return func() (services.IrohListener, bool) {
+		state, since, read := watch.State()
+		if !read {
+			return services.IrohListener{}, false
+		}
+		return services.IrohListener{
+			Online:      state.Online,
+			HomeRelay:   state.HomeRelay,
+			Since:       since,
+			Sockets:     joinAddrPorts(state.Sockets),
+			DirectAddrs: state.DirectAddrs,
+		}, true
+	}
+}
+
+func joinAddrPorts(addrs []netip.AddrPort) []string {
+	out := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		out = append(out, addr.String())
+	}
+	return out
 }
 
 // serverPeer is what GET /peer answers with. A server that never configured an

@@ -45,6 +45,10 @@ type AppOptions struct {
 	// happens before this constructor runs (ADR 0098).
 	ServerPeer services.ServerPeer
 
+	// IrohListener reports what this server's iroh listener is doing now, as
+	// opposed to who it is. Nil on a server with no iroh endpoint.
+	IrohListener services.IrohListenerService
+
 	SecretSealer secrets.Sealer
 
 	// DispatcherPollInterval is how often the reconcile engine looks for
@@ -182,6 +186,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	svc := services.Services{
 		SSH:            opts.SSHIngress,
 		ServerPeer:     opts.ServerPeer,
+		IrohListener:   opts.IrohListener,
 		Projects:       appServices,
 		HarnessConfigs: appServices,
 		Sandboxes:      appServices,

@@ -6263,6 +6263,196 @@ func (s *HarnessVolumeVolume) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *IrohListener) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *IrohListener) encodeFields(e *jx.Encoder) {
+	{
+		if s.DirectAddrs != nil {
+			e.FieldStart("directAddrs")
+			e.ArrStart()
+			for _, elem := range s.DirectAddrs {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.HomeRelay.Set {
+			e.FieldStart("homeRelay")
+			s.HomeRelay.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("online")
+		e.Bool(s.Online)
+	}
+	{
+		if s.Since.Set {
+			e.FieldStart("since")
+			s.Since.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.Sockets != nil {
+			e.FieldStart("sockets")
+			e.ArrStart()
+			for _, elem := range s.Sockets {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfIrohListener = [5]string{
+	0: "directAddrs",
+	1: "homeRelay",
+	2: "online",
+	3: "since",
+	4: "sockets",
+}
+
+// Decode decodes IrohListener from json.
+func (s *IrohListener) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode IrohListener to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "directAddrs":
+			if err := func() error {
+				s.DirectAddrs = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.DirectAddrs = append(s.DirectAddrs, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"directAddrs\"")
+			}
+		case "homeRelay":
+			if err := func() error {
+				s.HomeRelay.Reset()
+				if err := s.HomeRelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"homeRelay\"")
+			}
+		case "online":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Bool()
+				s.Online = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"online\"")
+			}
+		case "since":
+			if err := func() error {
+				s.Since.Reset()
+				if err := s.Since.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"since\"")
+			}
+		case "sockets":
+			if err := func() error {
+				s.Sockets = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Sockets = append(s.Sockets, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sockets\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode IrohListener")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000100,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfIrohListener) {
+					name = jsonFieldsNameOfIrohListener[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *IrohListener) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *IrohListener) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *Job) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -9234,6 +9424,39 @@ func (s OptInt64) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptInt64) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes IrohListener as json.
+func (o OptIrohListener) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes IrohListener from json.
+func (o *OptIrohListener) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptIrohListener to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptIrohListener) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptIrohListener) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -29042,6 +29265,12 @@ func (s *ServerPeer) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.IrohListener.Set {
+			e.FieldStart("irohListener")
+			s.IrohListener.Encode(e)
+		}
+	}
+	{
 		if s.PeerId.Set {
 			e.FieldStart("peerId")
 			s.PeerId.Encode(e)
@@ -29049,9 +29278,10 @@ func (s *ServerPeer) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfServerPeer = [2]string{
+var jsonFieldsNameOfServerPeer = [3]string{
 	0: "$schema",
-	1: "peerId",
+	1: "irohListener",
+	2: "peerId",
 }
 
 // Decode decodes ServerPeer from json.
@@ -29071,6 +29301,16 @@ func (s *ServerPeer) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "irohListener":
+			if err := func() error {
+				s.IrohListener.Reset()
+				if err := s.IrohListener.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"irohListener\"")
 			}
 		case "peerId":
 			if err := func() error {

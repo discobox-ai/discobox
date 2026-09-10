@@ -5,6 +5,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
 // GetServerPeer serves this server's own peer ID (ADR 0098): the value a
@@ -24,5 +25,38 @@ func (h *Handler) GetServerPeer(context.Context) (serverapi.GetServerPeerRes, er
 	if id := h.services.ServerPeer.ID; id != "" {
 		body.SetPeerId(serverapi.NewOptString(id))
 	}
+	if listener, ok := irohListener(h.services.IrohListener); ok {
+		body.SetIrohListener(serverapi.NewOptIrohListener(listener))
+	}
 	return body, nil
+}
+
+// irohListener reports what the listener is doing, and whether there is
+// anything to report.
+//
+// Two cases answer no, and both are silence rather than a listener that is
+// down: a server with no iroh endpoint has nothing to say, and one whose watch
+// has not taken its first reading does not yet know. Reporting either as an
+// offline listener would be a false alarm about the transport an operator is
+// checking precisely because they suspect it.
+func irohListener(service services.IrohListenerService) (serverapi.IrohListener, bool) {
+	if service == nil {
+		return serverapi.IrohListener{}, false
+	}
+	state, read := service()
+	if !read {
+		return serverapi.IrohListener{}, false
+	}
+	listener := serverapi.IrohListener{
+		Online:      state.Online,
+		Sockets:     state.Sockets,
+		DirectAddrs: state.DirectAddrs,
+	}
+	if state.HomeRelay != "" {
+		listener.SetHomeRelay(serverapi.NewOptString(state.HomeRelay))
+	}
+	if !state.Since.IsZero() {
+		listener.SetSince(serverapi.NewOptDateTime(state.Since))
+	}
+	return listener, true
 }

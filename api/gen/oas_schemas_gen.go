@@ -3176,6 +3176,78 @@ func (s *HarnessVolumeVolume) UnmarshalText(data []byte) error {
 	}
 }
 
+// What this server's iroh listener is doing right now, as opposed to who it is. A listener that has
+// lost its relay leaves the process up, its socket answering and /healthz reporting ready, while
+// every client dialing its peer ID times out; this is what makes that visible to an operator who can
+// reach the server by any other transport. Absent on a server that does not listen for peers, and on
+// one whose listener has not been read yet.
+// Ref: #/components/schemas/IrohListener
+type IrohListener struct {
+	// The addresses this listener believes peers can reach it at.
+	DirectAddrs []string `json:"directAddrs"`
+	// The relay this listener is reachable through. Absent when it has none.
+	HomeRelay OptString `json:"homeRelay"`
+	// Whether the listener has a relay right now. Without one it is reachable only from networks that
+	// can route to its sockets directly, which is a working deployment and a completely different one
+	// from what its address implies.
+	Online bool `json:"online"`
+	// When `online` last changed, so a reader can tell how long a listener has been off its relay rather
+	// than only that it is.
+	Since OptDateTime `json:"since"`
+	// The local UDP addresses the listener is bound to.
+	Sockets []string `json:"sockets"`
+}
+
+// GetDirectAddrs returns the value of DirectAddrs.
+func (s *IrohListener) GetDirectAddrs() []string {
+	return s.DirectAddrs
+}
+
+// GetHomeRelay returns the value of HomeRelay.
+func (s *IrohListener) GetHomeRelay() OptString {
+	return s.HomeRelay
+}
+
+// GetOnline returns the value of Online.
+func (s *IrohListener) GetOnline() bool {
+	return s.Online
+}
+
+// GetSince returns the value of Since.
+func (s *IrohListener) GetSince() OptDateTime {
+	return s.Since
+}
+
+// GetSockets returns the value of Sockets.
+func (s *IrohListener) GetSockets() []string {
+	return s.Sockets
+}
+
+// SetDirectAddrs sets the value of DirectAddrs.
+func (s *IrohListener) SetDirectAddrs(val []string) {
+	s.DirectAddrs = val
+}
+
+// SetHomeRelay sets the value of HomeRelay.
+func (s *IrohListener) SetHomeRelay(val OptString) {
+	s.HomeRelay = val
+}
+
+// SetOnline sets the value of Online.
+func (s *IrohListener) SetOnline(val bool) {
+	s.Online = val
+}
+
+// SetSince sets the value of Since.
+func (s *IrohListener) SetSince(val OptDateTime) {
+	s.Since = val
+}
+
+// SetSockets sets the value of Sockets.
+func (s *IrohListener) SetSockets(val []string) {
+	s.Sockets = val
+}
+
 // Ref: #/components/schemas/Job
 type Job struct {
 	// Stable job ID.
@@ -4726,6 +4798,52 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIrohListener returns new OptIrohListener with value set to v.
+func NewOptIrohListener(v IrohListener) OptIrohListener {
+	return OptIrohListener{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIrohListener is optional IrohListener.
+type OptIrohListener struct {
+	Value IrohListener
+	Set   bool
+}
+
+// IsSet returns true if OptIrohListener was set.
+func (o OptIrohListener) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIrohListener) Reset() {
+	var v IrohListener
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIrohListener) SetTo(v IrohListener) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIrohListener) Get() (v IrohListener, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIrohListener) Or(d IrohListener) IrohListener {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -16306,7 +16424,8 @@ func (s *SecretValue) SetTokenUrl(val OptString) {
 // Ref: #/components/schemas/ServerPeer
 type ServerPeer struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
+	Schema       OptURI          `json:"$schema"`
+	IrohListener OptIrohListener `json:"irohListener"`
 	// This server's peer ID. Absent when the server does not listen on `discobox://`, in which case it
 	// has no peer identity at all rather than an unused one.
 	PeerId OptString `json:"peerId"`
@@ -16317,6 +16436,11 @@ func (s *ServerPeer) GetSchema() OptURI {
 	return s.Schema
 }
 
+// GetIrohListener returns the value of IrohListener.
+func (s *ServerPeer) GetIrohListener() OptIrohListener {
+	return s.IrohListener
+}
+
 // GetPeerId returns the value of PeerId.
 func (s *ServerPeer) GetPeerId() OptString {
 	return s.PeerId
@@ -16325,6 +16449,11 @@ func (s *ServerPeer) GetPeerId() OptString {
 // SetSchema sets the value of Schema.
 func (s *ServerPeer) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetIrohListener sets the value of IrohListener.
+func (s *ServerPeer) SetIrohListener(val OptIrohListener) {
+	s.IrohListener = val
 }
 
 // SetPeerId sets the value of PeerId.

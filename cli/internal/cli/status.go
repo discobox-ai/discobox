@@ -31,9 +31,30 @@ const statusLayerAPI = "api"
 // the transport's diagnosis plus the two things only this side knows: which
 // client asked, and whether the API answered it.
 type statusReport struct {
-	Client    statusClient       `json:"client"`
-	Endpoint  endpoint.Diagnosis `json:"endpoint"`
-	Reachable bool               `json:"reachable"`
+	Client   statusClient       `json:"client"`
+	Endpoint endpoint.Diagnosis `json:"endpoint"`
+	// Server is what the server says about its own iroh listener, when this
+	// client could reach it to ask. It is the other half of the report: every
+	// layer above is this client's view of one transport, and this is the
+	// server's view of the transport everyone else dials.
+	//
+	// It is why the question is worth asking over a unix socket, where none of
+	// the iroh layers apply. A server whose listener has lost its relay answers
+	// its socket perfectly while every remote client times out, and until this
+	// there was nowhere that fact was written down.
+	Server    *statusServer `json:"server,omitempty"`
+	Reachable bool          `json:"reachable"`
+}
+
+// statusServer is the server's own account of its iroh listener.
+type statusServer struct {
+	PeerID      string    `json:"peerId,omitempty"`
+	Listening   bool      `json:"listening"`
+	Online      bool      `json:"online"`
+	HomeRelay   string    `json:"homeRelay,omitempty"`
+	Since       time.Time `json:"since,omitzero"`
+	Sockets     []string  `json:"sockets,omitempty"`
+	DirectAddrs []string  `json:"directAddrs,omitempty"`
 }
 
 type statusClient struct {
@@ -111,6 +132,11 @@ func (a *App) runStatus(cmd *cobra.Command, timeout time.Duration) error {
 	report.Endpoint = endpoint.Diagnose(ctx, a.serverURL, endpoint.DiagnoseOptions{})
 	report.Endpoint.Steps = append(report.Endpoint.Steps, a.statusAPILayer(ctx, report.Endpoint))
 	report.Reachable = report.Endpoint.OK()
+	// Asked whenever this client got through at all, by whatever transport.
+	// Over a unix socket none of the layers above apply and this is the entire
+	// value of the command: it is the one place that says whether the transport
+	// other machines dial is working.
+	report.Server = a.statusServer(ctx, report.Endpoint)
 	return a.writeStatus(cmd, report)
 }
 
@@ -197,6 +223,47 @@ func (a *App) statusAPIStep(ctx context.Context) endpoint.DiagnosisStep {
 	step.Status = endpoint.DiagnosisOK
 	step.Summary = fmt.Sprintf("authenticated · %d %s", len(body.GetProjects()), pluralize("project", len(body.GetProjects())))
 	return step
+}
+
+// statusServer asks the server what its own iroh listener is doing.
+//
+// It is skipped for exactly the cases where the answer would be noise: a
+// transport that never got through has no server to ask, and a server that is
+// still starting answers every path with 503. A server that simply does not
+// serve the field — an older one, or one with no iroh endpoint — reports
+// nothing rather than a listener that is down.
+func (a *App) statusServer(ctx context.Context, diagnosis endpoint.Diagnosis) *statusServer {
+	if !diagnosis.OK() || diagnosis.ServerStatus == health.StatusStarting {
+		return nil
+	}
+	baseURL, httpClient, err := a.httpClientWithAutoStart(false)
+	if err != nil {
+		return nil
+	}
+	client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient))
+	if err != nil {
+		return nil
+	}
+	res, err := client.GetServerPeer(ctx)
+	if err != nil {
+		return nil
+	}
+	peer, err := expectResponse[apimodel.ServerPeer](res)
+	if err != nil {
+		return nil
+	}
+	out := &statusServer{PeerID: peer.GetPeerId().Or("")}
+	listener, ok := peer.GetIrohListener().Get()
+	if !ok {
+		return out
+	}
+	out.Listening = true
+	out.Online = listener.Online
+	out.HomeRelay = listener.GetHomeRelay().Or("")
+	out.Since = listener.GetSince().Or(time.Time{})
+	out.Sockets = listener.Sockets
+	out.DirectAddrs = listener.DirectAddrs
+	return out
 }
 
 func (a *App) writeStatus(cmd *cobra.Command, report statusReport) error {
@@ -294,6 +361,8 @@ func printStatus(out io.Writer, report statusReport) {
 		}
 	}
 
+	printStatusServer(writer, paint, report.Server)
+
 	fmt.Fprintln(writer)
 	if failure := report.Endpoint.FirstFailure(); failure != nil {
 		fmt.Fprintln(writer, paint(statusStyleErr, "Cannot reach the server: the "+failure.Layer+" layer failed."))
@@ -310,6 +379,48 @@ func printStatus(out io.Writer, report statusReport) {
 		}
 	}
 	fmt.Fprintln(writer, paint(statusStyleOK, "The server is reachable."))
+}
+
+// printStatusServer draws the server's account of its own iroh listener.
+//
+// It is a block of its own rather than another layer row, because it is not a
+// layer of this connection: everything above is what this client did, and this
+// is what the server says about the transport other machines dial. Reading it
+// as one more step of the same stack is exactly the confusion the relay row
+// already causes.
+func printStatusServer(out io.Writer, paint func(lipgloss.Style, string) string, server *statusServer) {
+	if server == nil || !server.Listening {
+		return
+	}
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, paint(statusStyleBold, "this server's own iroh listener"))
+	if server.Online {
+		fmt.Fprintf(out, "  relay    %s %s\n",
+			paint(statusStyleOK, "online"), paint(statusStyleDim, server.HomeRelay))
+	} else {
+		// The line this whole block exists for. A server without a relay is
+		// reachable only from networks that can route to its sockets, and until
+		// it is written down somewhere it looks exactly like a healthy one.
+		fmt.Fprintf(out, "  relay    %s %s\n",
+			paint(statusStyleWarn, "no relay"+statusServerFor(server.Since)),
+			paint(statusStyleDim, "reachable only from networks that can route to it directly"))
+	}
+	if len(server.Sockets) > 0 {
+		fmt.Fprintf(out, "  sockets  %s\n", paint(statusStyleDim, strings.Join(server.Sockets, " ")))
+	}
+	if len(server.DirectAddrs) > 0 {
+		fmt.Fprintf(out, "  reach    %s\n", paint(statusStyleDim, strings.Join(server.DirectAddrs, " ")))
+	}
+}
+
+// statusServerFor says how long the listener has been in its current state,
+// and nothing when that is unknown. "No relay for 4m" is what tells an operator
+// whether it lines up with what they have been seeing.
+func statusServerFor(since time.Time) string {
+	if since.IsZero() {
+		return ""
+	}
+	return " for " + time.Since(since).Round(time.Second).String()
 }
 
 // statusColumnWidths measures the two fixed columns against this report's own

@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -288,6 +289,35 @@ type ServerPeer struct {
 	ID string
 }
 
+// IrohListener is what this server's iroh listener is doing right now.
+//
+// Unlike [ServerPeer], which is an identity resolved once and fixed for the
+// life of the process, this changes underneath a running server — and it is the
+// change nobody could see. A listener that loses its relay leaves the process
+// up, the unix socket answering and /healthz saying ready, while every client
+// dialing its peer ID times out. Reporting it here means an operator who can
+// reach this server by any transport at all can ask about the one that is
+// broken.
+type IrohListener struct {
+	// Online reports whether the listener has a relay right now. Without one it
+	// is reachable only from networks that can route to its sockets directly.
+	Online bool
+	// HomeRelay is the relay it is reachable through, empty when it has none.
+	HomeRelay string
+	// Since is when Online last changed, so a report can say how long a
+	// listener has been off its relay rather than only that it is.
+	Since time.Time
+	// Sockets are the local UDP addresses it is bound to, and DirectAddrs the
+	// addresses it believes peers can reach it at.
+	Sockets     []string
+	DirectAddrs []string
+}
+
+// IrohListenerService reports the listener's current state, and whether it has
+// been read yet. A server with no iroh endpoint has a nil service: it has no
+// listener rather than one that is down.
+type IrohListenerService func() (IrohListener, bool)
+
 // Services groups the dependencies needed by the API operations.
 type Services struct {
 	// SSH is served by GET /ssh so a client can pin the host key before it
@@ -298,6 +328,11 @@ type Services struct {
 	// deciding what to dial. Peers, below, is the other direction — who this
 	// server admits.
 	ServerPeer ServerPeer
+
+	// IrohListener is served beside it: not who this server is, but whether the
+	// transport clients dial is working. Nil when this server has no iroh
+	// endpoint at all.
+	IrohListener IrohListenerService
 
 	Projects       ProjectService
 	HarnessConfigs HarnessConfigService
