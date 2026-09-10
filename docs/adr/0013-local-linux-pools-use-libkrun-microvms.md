@@ -1,6 +1,6 @@
 # 0013 — Local Linux pools use libkrun microVMs with VSOCK and passt
 
-- **Status**: Accepted
+- **Status**: Accepted (§1's decoupled launcher lifetime and §2's host-side guest-artifact build superseded by [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md) §9)
 - **Date**: 2026-07-23
 
 ## Context

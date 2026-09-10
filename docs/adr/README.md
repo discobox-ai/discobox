@@ -65,7 +65,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0010](0010-deletes-are-hard-deletes.md) | Deletes are hard deletes | Proposed |
 | [0011](0011-oauth-secrets-refresh-server-side-on-resolve.md) | OAuth secrets refresh server-side, on resolve | Proposed |
 | [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) | Sandbox config is three attribute-owned layers, merged by a shared library | Accepted |
-| [0013](0013-local-linux-pools-use-libkrun-microvms.md) | Local Linux pools use libkrun microVMs with VSOCK and passt | Accepted |
+| [0013](0013-local-linux-pools-use-libkrun-microvms.md) | Local Linux pools use libkrun microVMs with VSOCK and passt | Accepted (§1's launcher lifetime and §2's host-side artifact build superseded by [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md) §9) |
 | [0014](0014-disco-apply-pulls-sandbox-commits-via-cherry-pick.md) | `disco apply` pulls sandbox commits to the host via cherry-pick | Accepted |
 | [0015](0015-nested-docker-builds-trust-the-mitm-proxy-via-nri.md) | Nested Docker builds and containers trust the MITM proxy via an NRI plugin | Superseded by [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md) |
 | [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) | Sandbox image upgrades are explicit, in-place, and digest-driven | Accepted (harnessless part superseded by [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md)) |
@@ -155,3 +155,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) | The prompt is a flag, and the bare command takes no words | Accepted (supersedes [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md) §4's positional prompt and §5) |
 | [0095](0095-an-attached-client-pushes-the-commits-made-where-it-runs.md) | An attached client pushes the commits made where it is running | Accepted (supersedes [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) §8's manual key) |
 | [0096](0096-a-source-keeps-its-host-path-only-where-a-sandbox-may-hold-it.md) | A source keeps its host path inside the sandbox only where a sandbox may hold it | Accepted |
+| [0101](0101-one-guest-image-for-every-vm-backend-and-the-kernel-is-separate.md) | One guest image for every VM backend, and the kernel is a separate artifact | Accepted (settles [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md)'s deferred one-image question) |
