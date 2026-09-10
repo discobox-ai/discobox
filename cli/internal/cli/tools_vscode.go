@@ -1,26 +1,14 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
-
-	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 )
 
-// vscodeEditors are the VS Code builds this command knows how to launch, in the
-// order it looks for them. They are all the same program with the same CLI, so
-// the only question is which one is installed; --editor names one directly when
-// more than one is, or when it is something else entirely.
-var vscodeEditors = []string{"code", "code-insiders", "codium", "cursor", "windsurf"}
-
 // vscodeEditorEnv names the editor binary without repeating --editor on every
-// run, for a machine whose editor is not one of the names above.
+// run, for a machine whose editor is not one of the builds looked for.
 const vscodeEditorEnv = "DISCOBOX_VSCODE"
 
 // vscodeQuietWSLPrompt silences the question VS Code's launcher asks when it
@@ -35,6 +23,17 @@ const vscodeEditorEnv = "DISCOBOX_VSCODE"
 // config the Windows side needs to connect. Left alone, the prompt reads from a
 // stdin nobody is typing at and the command hangs or aborts on the default No.
 const vscodeQuietWSLPrompt = "DONT_PROMPT_WSL_INSTALL=1"
+
+// vscodeFamily is the VS Code builds this command knows how to launch, in the
+// order it looks for them. They are all the same program with the same CLI, so
+// the only question is which one is installed; --editor names one directly when
+// more than one is, or when it is something else entirely.
+var vscodeFamily = editorFamily{
+	label:      "VS Code",
+	env:        vscodeEditorEnv,
+	candidates: []string{"code", "code-insiders", "codium", "cursor", "windsurf"},
+	launchEnv:  []string{vscodeQuietWSLPrompt},
+}
 
 func (a *App) newToolsVSCodeCommand(sandboxID *string) *cobra.Command {
 	var source string
@@ -77,7 +76,7 @@ them.`,
 	}
 	cmd.Flags().SetInterspersed(false)
 	cmd.Flags().StringVarP(&source, "source", "s", "", "Source to open, named by its slug; defaults to the discobox's primary source")
-	cmd.Flags().StringVar(&editor, "editor", "", "Editor binary to run (default: $"+vscodeEditorEnv+", or the first of "+strings.Join(vscodeEditors, ", ")+" on PATH)")
+	cmd.Flags().StringVar(&editor, "editor", "", vscodeFamily.editorFlagHelp())
 	cmd.Flags().BoolVar(&reuseWindow, "reuse-window", false, "Open in the current VS Code window instead of a new one")
 	return cmd
 }
@@ -94,43 +93,21 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 	// Which editor to run is resolved before anything is written: it is the one
 	// failure the user can do nothing about afterwards, and refreshing an
 	// ssh_config for a window that will never open is work nobody asked for.
-	editor, err := resolveVSCodeEditor(opts.editor)
+	editor, err := vscodeFamily.resolve(opts.editor)
 	if err != nil {
 		return err
 	}
-	// Every ssh on this machine gets the refreshed stanzas, but which one the
-	// editor will drive decides whether a missing one is fatal: a Windows
-	// build launched from WSL connects with Windows OpenSSH, and without that
-	// config there is nothing for it to connect to.
 	// The user typed this command, so what it does on their behalf is printed
 	// where its own reporting goes. Driven from the launcher's window instead,
 	// that stream is io.Discard and none of it reaches the screen — see
 	// apiDataSource.OpenEditor.
 	notes := printedNotes(cmd.ErrOrStderr())
-	targets, windowsErr := machineSSHTargets(cmd.Context())
-	if windowsErr != nil {
-		if isWindowsExecutable(cmd.Context(), editor) {
-			return fmt.Errorf("%s is a Windows program, so it connects with Windows OpenSSH: %w; "+
-				"name a Linux build with --editor or $%s to use this machine's own ssh_config instead",
-				editor, windowsErr, vscodeEditorEnv)
-		}
-		notes("not writing the Windows ssh_config: %v", windowsErr)
-	}
-
-	var projectID, sandboxID string
-	var client *apiclientgen.Client
-	var editorArgs []string
-	if strings.TrimSpace(opts.sandboxArg) != "" {
-		projectID, sandboxID, client, err = a.selectSandbox(cmd, opts.sandboxArg)
-		editorArgs = opts.args
-	} else {
-		projectID, sandboxID, client, editorArgs, err = a.resolveShellTarget(cmd, opts.args)
-	}
+	targets, err := vscodeFamily.sshTargets(cmd.Context(), editor, notes)
 	if err != nil {
 		return err
 	}
 
-	remote, err := a.sandboxSSHRemote(cmd.Context(), targets, client, projectID, sandboxID, opts.source, notes)
+	remote, editorArgs, err := a.editorRemote(cmd, targets, opts.sandboxArg, opts.source, opts.args, notes)
 	if err != nil {
 		return err
 	}
@@ -157,17 +134,7 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 	full = append(full, editorArgs...)
 
 	fmt.Fprintf(cmd.ErrOrStderr(), "opening %s in %s\n", remote.describe(), editor)
-	session := exec.CommandContext(cmd.Context(), editor, full...) //nolint:gosec // G204: this command's own arguments, plus the user's own editor arguments.
-	session.Env = append(os.Environ(), vscodeQuietWSLPrompt)
-	session.Stdin, session.Stdout, session.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
-	if err := session.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return fmt.Errorf("%s exited %d", editor, exitErr.ExitCode())
-		}
-		return fmt.Errorf("run %s: %w", editor, err)
-	}
-	return nil
+	return vscodeFamily.launch(cmd, editor, full)
 }
 
 // vscodeFolderURI is the folder as VS Code's own remote URI: the authority
@@ -177,27 +144,4 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 func vscodeFolderURI(host, folder string) string {
 	uri := url.URL{Scheme: "vscode-remote", Host: "ssh-remote+" + host, Path: folder}
 	return uri.String()
-}
-
-// resolveVSCodeEditor finds the editor binary to run: what was named, or the
-// first VS Code build on PATH.
-func resolveVSCodeEditor(named string) (string, error) {
-	if strings.TrimSpace(named) == "" {
-		named = strings.TrimSpace(os.Getenv(vscodeEditorEnv))
-	}
-	if named != "" {
-		path, err := exec.LookPath(named)
-		if err != nil {
-			return "", fmt.Errorf("%s is not installed, or not on PATH: %w", named, err)
-		}
-		return path, nil
-	}
-	for _, candidate := range vscodeEditors {
-		if path, err := exec.LookPath(candidate); err == nil {
-			return path, nil
-		}
-	}
-	return "", fmt.Errorf("no VS Code command found on PATH (looked for %s); "+
-		"install VS Code's shell command, or name yours with --editor or $%s",
-		strings.Join(vscodeEditors, ", "), vscodeEditorEnv)
 }
