@@ -660,13 +660,8 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	if exchange.StreamFile == "" || exchange.StreamFormat != audit.UpgradeStreamFormatRawFrames {
 		t.Fatalf("stream metadata file=%q format=%q", exchange.StreamFile, exchange.StreamFormat)
 	}
-	streamBytes, err := os.ReadFile(filepath.Join(dir, "streams", filepath.FromSlash(exchange.StreamFile)))
-	if err != nil {
-		t.Fatalf("read stream spool: %v", err)
-	}
-	if !bytes.Contains(streamBytes, []byte("ping")) || !bytes.Contains(streamBytes, []byte("pong")) {
-		t.Fatal("stream spool did not contain upgraded payloads")
-	}
+	streamPath := filepath.Join(dir, "streams", filepath.FromSlash(exchange.StreamFile))
+	streamBytes := waitForStreamSpool(t, streamPath, []byte("ping"), []byte("pong"))
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+strconv.FormatUint(uint64(exchange.ID), 10)+"/stream?client_id=sandbox-1", nil)
 	rec := httptest.NewRecorder()
 	server.ControlHandler().ServeHTTP(rec, req)
@@ -857,6 +852,38 @@ func waitForHTTPExchange(t *testing.T, dsn, query string, args ...any) audit.HTT
 	}
 	t.Fatal("timed out waiting for audit exchange")
 	return audit.HTTPExchange{}
+}
+
+// waitForStreamSpool reads the spool until it holds every payload. The exchange
+// row and the spool file are finished by different goroutines and the row lands
+// first, so a read taken as soon as the row appears can catch the file
+// mid-flush — which fails as a spool that is simply missing the bytes.
+func waitForStreamSpool(t *testing.T, path string, payloads ...[]byte) []byte {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var last []byte
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("read stream spool: %v", err)
+		}
+		if err == nil {
+			last = data
+			complete := true
+			for _, payload := range payloads {
+				if !bytes.Contains(data, payload) {
+					complete = false
+					break
+				}
+			}
+			if complete {
+				return data
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for the stream spool to hold the upgraded payloads; got %q", last)
+	return nil
 }
 
 func closeProxyServer(t *testing.T, server *Server, errCh <-chan error) func() {
