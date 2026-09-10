@@ -207,19 +207,51 @@ and no cgo, so its binary is cross-compiled from the Linux job. Agent images are
 built once for both architectures by `depot build`, falling back to emulated
 `docker buildx`.
 
-Two package channels are fed from those assets, both stable-only — each serves
-one channel, so a prerelease reaches neither without being asked for out loud.
-They are fed in opposite directions, and the difference is ownership.
+A release passes through three states, and only the first is decided by the tag
+(ADR 0105). Pushing a tag publishes a GitHub **prerelease** and nothing more:
+whether a build turned out to be good is not knowable at push time, so nothing
+at push time claims it.
+
+```mermaid
+flowchart LR
+    tag["push vX.Y.Z<br/>release.yml"] --> pre["GitHub prerelease"]
+    pre --> latest["latest channel<br/>ghcr :latest<br/>brew discobox-dev"]
+    pre -.->|"a human unticks<br/>“Set as a pre-release”"| stable
+    stable["stable channel<br/>brew discobox<br/>winget"]
+    rc["push vX.Y.Z-rc1"] --> only["that tag only"]
+```
+
+- **`DOT_RELEASE`** — exactly `vMAJOR.MINOR.PATCH` — is the *latest* channel's
+  rule, and the only thing the tag itself decides. A dot release moves ghcr's
+  `:latest` (`dockerworker.DefaultPoolImage`, what a pool boots when nothing
+  named a version) and the `discobox-dev` formula the moment it is cut. An
+  explicit prerelease tag moves neither: it is a build you reach by naming it.
+- **Stable** is a human clearing the prerelease box on a GitHub release, which
+  runs `promote.yml`. That is the only thing that moves `brew install discobox`
+  and winget, and `release:require-dot` refuses to promote anything that is not
+  a dot release. It triggers on `released`, `edited`, and `published` and gates
+  on `release.prerelease == false`, because which activity type a checkbox-only
+  edit emits is not something GitHub documents plainly. There is no un-promote —
+  both stable channels are recomputed from the newest blessed release, so
+  backing one out means blessing a different one.
+
+The two package channels are fed in opposite directions, and the difference is
+ownership.
 
 The Homebrew tap is ours, so it **pulls**: `discobox-ai/homebrew-tap` generates
-its own formula from this repository's public releases with
-`scripts/brew-formula.sh`, needing no credential of ours to read them and its
-own `GITHUB_TOKEN` to commit. `brew:refresh` starts it, and is the only thing
-that does — the tap polled on a cron once, and that was removed deliberately: a
-backstop that covers for a broken release step is a backstop that stops anyone
-noticing the step is broken. So a release that cannot reach the tap fails rather
-than quietly leaving `brew install` a version behind. `brew:publish` remains the
-by-hand override for a tag the tap's own rule will not take.
+both formulae from this repository's public releases with
+`scripts/brew-formula.sh` — `discobox` from the newest blessed release,
+`discobox-dev` (`--dev`) from the newest dot release — needing no credential of
+ours to read them and its own `GITHUB_TOKEN` to commit. They are two formulae
+rather than one because Homebrew will not link two that install the same file,
+and holding both at once is the point; `discobox-dev` installs its command under
+that name, and the CLI reads which one it is off `argv[0]`. `brew:refresh` is
+one dispatch that recomputes both, and is the only thing that starts the tap —
+it polled on a cron once, and that was removed deliberately: a backstop that
+covers for a broken release step is a backstop that stops anyone noticing the
+step is broken. So a release that cannot reach the tap fails rather than quietly
+leaving `brew install` a version behind. `brew:publish -- [--dev] TAG` remains
+the by-hand override for a tag the tap's own rule will not take.
 
 winget cannot be inverted, because `microsoft/winget-pkgs` is not ours and
 nothing there can pull from us. So `winget:publish` **pushes**: it opens a pull

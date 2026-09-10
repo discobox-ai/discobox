@@ -54,7 +54,7 @@ vars:
       printf %s "$repo"
   # The tag being acted on, in order: `task <target> -- v1.2.3`, RELEASE_TAG=,
   # then the tag a workflow is running for. Resolved once so a tag typed on the
-  # command line reaches STABLE_RELEASE below as well as the task using it —
+  # command line reaches DOT_RELEASE below as well as the task using it —
   # they disagreeing is how `task brew:publish -- v1.2.3` would quietly decide
   # v1.2.3 was a prerelease.
   # The release tag: `-- v1.2.3` on the command line, else RELEASE_TAG, else the
@@ -75,9 +75,10 @@ vars:
       if [ -z "$tag" ]; then tag="${RELEASE_TAG:-}"; fi
       if [ -z "$tag" ]; then tag="${GITHUB_REF_NAME:-}"; fi
       printf %s "$tag"
-  # Publishing a prerelease to the tap, said out loud: `task brew:publish --
-  # --prerelease v1.2.3-alpha.4`. Nothing automatic sets it, which is the point
-  # — an alpha reaches the tap only because somebody typed the flag.
+  # Publishing a prerelease to a package channel, said out loud: `task
+  # brew:publish -- --prerelease v1.2.3-alpha.4`. Nothing automatic sets it,
+  # which is the point — an alpha reaches a channel only because somebody typed
+  # the flag.
   ALLOW_PRERELEASE:
     sh: |
       args="{{.CLI_ARGS}}"
@@ -86,15 +87,30 @@ vars:
           --prerelease) printf yes ;;
         esac
       done
-  # Whether that tag is a stable release: exactly vMAJOR.MINOR.PATCH.
-  # A prerelease (v1.2.3-rc1), a partial tag (v1.2), or anything else is not.
+  # Which Homebrew channel a brew: target acts on: `task brew:publish -- --dev
+  # v1.2.3` writes discobox-dev.rb rather than discobox.rb (ADR 0105).
+  BREW_DEV:
+    sh: |
+      args="{{.CLI_ARGS}}"
+      for word in $args; do
+        case "$word" in
+          --dev) printf yes ;;
+        esac
+      done
+  # Whether that tag is a dot release: exactly vMAJOR.MINOR.PATCH.
+  # An explicit prerelease (v1.2.3-rc1), a partial tag (v1.2), or anything else
+  # is not.
   #
-  # Computed once because three things treat the two differently — whether
-  # :latest moves, whether the GitHub release is marked prerelease, and whether
-  # the Homebrew formula is updated — and three copies of the rule would drift.
-  # Pure shell: this is evaluated on every invocation, including on the Windows
-  # runner, which has neither sed nor grep.
-  STABLE_RELEASE:
+  # This is the *latest* channel's rule, not the stable one (ADR 0105). A dot
+  # release moves ghcr's :latest and the discobox-dev formula the moment it is
+  # cut; an explicit prerelease exists only under its own tag, reachable by
+  # pinning. Whether a release is *stable* is not a property of its tag at all —
+  # it is a human clearing the prerelease box on GitHub, later.
+  #
+  # Computed once because several things ask it and copies of the rule would
+  # drift. Pure shell: this is evaluated on every invocation, including on the
+  # Windows runner, which has neither sed nor grep.
+  DOT_RELEASE:
     sh: |
       tag="{{.TAG}}"
       case "$tag" in
@@ -1131,7 +1147,7 @@ tasks:
         [ "$found" -gt 0 ] || { echo "release:verify: no binaries found" >&2; exit 1; }
 
   brew:publish:
-    desc: Push the Homebrew formula for a tag to the tap (task brew:publish -- [--prerelease] TAG)
+    desc: Push a Homebrew formula for a tag to the tap (task brew:publish -- [--dev] [--prerelease] TAG)
     # Nothing automatic runs this. The tap updates itself from this repository's
     # public releases (see its update-formula workflow), which is why no token
     # for it is stored here; this is the button for publishing a tag the tap's
@@ -1141,7 +1157,9 @@ tasks:
     # it requires being someone who may already write to the tap.
     vars:
       TAP_REPO: '{{.TAP_REPO | default "discobox-ai/homebrew-tap"}}'
-      FORMULA: '{{.BREW_OUT | default "build/discobox.rb"}}'
+      # Which of the tap's two formulae this writes (ADR 0105).
+      NAME: '{{if .BREW_DEV}}discobox-dev{{else}}discobox{{end}}'
+      FORMULA: '{{.BREW_OUT | default (printf "build/%s.rb" .NAME)}}'
     cmds:
       # Before generating: refusing after downloading a release's assets wastes
       # the download and reads like a failure rather than a decision.
@@ -1152,12 +1170,13 @@ tasks:
           v*) ;;
           *) echo "brew:publish: expected a v* tag, got '$tag'" >&2; exit 1 ;;
         esac
-        # The tap has one channel, and `brew install discobox` should give the
-        # version people are meant to run — so a prerelease reaching it is a
-        # decision somebody makes out loud, not a default.
-        if [ -z "{{.STABLE_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
-          echo "brew:publish: $tag is a prerelease and the tap serves one channel." >&2
-          echo "Publish it anyway with: task brew:publish -- --prerelease $tag" >&2
+        # Neither channel serves an explicit prerelease: discobox-dev tracks the
+        # newest dot release, not every tag that ever built, and `brew install
+        # discobox` should give the version people are meant to run. So a
+        # v1.2.3-rc1 reaching either is a decision somebody makes out loud.
+        if [ -z "{{.DOT_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
+          echo "brew:publish: $tag is a prerelease, and neither tap channel serves one." >&2
+          echo "Publish it anyway with: task brew:publish -- {{if .BREW_DEV}}--dev {{end}}--prerelease $tag" >&2
           exit 1
         fi
       - task: brew:formula
@@ -1176,20 +1195,20 @@ tasks:
         export GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1='!gh auth git-credential'
         git clone --depth 1 "https://github.com/{{.TAP_REPO}}.git" "$work/tap"
         mkdir -p "$work/tap/Formula"
-        cp "{{.FORMULA}}" "$work/tap/Formula/discobox.rb"
+        cp "{{.FORMULA}}" "$work/tap/Formula/{{.NAME}}.rb"
         # Staged before comparing: git does not track empty directories, so on a
         # tap that has never carried a formula this is an untracked file, and an
         # unstaged diff of one is empty — which once reported a push that never
         # happened.
-        git -C "$work/tap" add Formula/discobox.rb
+        git -C "$work/tap" add "Formula/{{.NAME}}.rb"
         if git -C "$work/tap" diff --cached --quiet; then
-          echo "the tap already serves $tag"
+          echo "the tap already serves {{.NAME}} $tag"
           exit 0
         fi
         git -C "$work/tap" -c user.name="discobox release" -c user.email="noreply@discobox.ai" \
-          commit -q -m "discobox $tag" -m "Generated by \`task brew:publish\` from the assets $tag uploaded."
+          commit -q -m "{{.NAME}} $tag" -m "Generated by \`task brew:publish\` from the assets $tag uploaded."
         git -C "$work/tap" push -q origin HEAD:main
-        echo "the tap now serves $tag"
+        echo "the tap now serves {{.NAME}} $tag"
   release:publish:
     desc: Create the GitHub release for RELEASE_TAG and upload build/release/bin
     # Consumes whatever populated build/release/bin, so the fan-out that fills
@@ -1206,27 +1225,43 @@ tasks:
           echo "release:publish: build/release/bin is empty; run release:build first" >&2
           exit 1
         fi
-        # A prerelease is marked as one. Without this gh publishes v1.2.3-rc1 as
-        # the latest stable release, which is what every `latest` link and the
-        # repository's own header then point at. The test is the one
-        # release:image already uses to decide whether to move :latest, so the
-        # release object and the image tags cannot disagree about what a tag is.
-        prerelease=""
-        if [ -z "{{.STABLE_RELEASE}}" ]; then
-          prerelease="--prerelease"
-        fi
+        # Every release is created as a prerelease, dot releases included
+        # (ADR 0105). Nothing this workflow knows makes a release stable: a tag
+        # is a thing that built, and blessing one is a human clearing this box
+        # afterwards, which is what feeds `brew install discobox` and winget.
+        # Until then GitHub's own "Latest release" header keeps pointing at the
+        # last blessed one, which is the right answer for someone landing on the
+        # repository.
         gh release view "$tag" >/dev/null 2>&1 ||
-          gh release create "$tag" --verify-tag --title "$tag" --generate-notes $prerelease
+          gh release create "$tag" --verify-tag --title "$tag" --generate-notes --prerelease
         gh release upload "$tag" build/release/bin/* --clobber
 
-  release:stable:
-    desc: Print yes when the release tag is a stable release, nothing otherwise
+  release:dot:
+    desc: Print yes when the release tag is a dot release, nothing otherwise
     # So a workflow can ask the question the publish targets already ask, rather
     # than a second copy of the rule in YAML — which could not express it
     # anyway, since GitHub expressions have no pattern matching (ADR 0066 §1).
     silent: true
     cmds:
-      - printf %s '{{.STABLE_RELEASE}}'
+      - printf %s '{{.DOT_RELEASE}}'
+
+  release:require-dot:
+    desc: Fail unless the release tag is a dot release
+    # The gate on promoting a release to stable (ADR 0105). winget sorts
+    # semantic and string versions differently, so a package that publishes both
+    # v1.2.3 and 1.2.3-rc1 ends up pinned to whichever comparison wins and the
+    # only fix is deleting the odd one out — and a formula named `discobox`
+    # serving an rc is the same mistake in the other package manager. Clearing
+    # the prerelease box on an rc is a mis-click, not a plan, so it stops here.
+    silent: true
+    cmds:
+      - |
+        set -eu
+        if [ -z "{{.DOT_RELEASE}}" ]; then
+          echo "release:require-dot: {{.TAG}} is not a vMAJOR.MINOR.PATCH tag, so it cannot be promoted to stable" >&2
+          exit 1
+        fi
+        echo "{{.TAG}} is a dot release"
 
   winget:manifests:
     desc: Write the winget manifests for a released tag to WINGET_OUT
@@ -1239,11 +1274,15 @@ tasks:
 
   winget:publish:
     desc: Open the winget-pkgs pull request for a tag (task winget:publish -- [--prerelease] TAG)
-    # Nothing automatic runs this, and the asymmetry with brew:publish is not an
-    # oversight. The tap is ours and a push to it is the publish; the Windows
-    # Package Manager Community Repository is Microsoft's, and every version is
-    # a pull request that a validation pipeline runs and a moderator merges. So
-    # this opens the request and stops. Somebody watches it land.
+    # Run by promote.yml, when a human marks a release stable — never by cutting
+    # a tag, because winget is a stable channel and a tag is not yet a stable
+    # release (ADR 0105).
+    #
+    # The asymmetry with brew:publish is not an oversight. The tap is ours and a
+    # push to it is the publish; the Windows Package Manager Community
+    # Repository is Microsoft's, and every version is a pull request that a
+    # validation pipeline runs and a moderator merges. So this opens the request
+    # and stops. Somebody watches it land.
     #
     # Writing uses the operator's own GitHub credentials through gh, and the
     # first pull request from an account has to sign Microsoft's CLA, which is
@@ -1268,7 +1307,7 @@ tasks:
         # `winget install discobox` gives everyone. Same rule as the tap, and
         # for the same reason — an alpha goes out only because somebody typed
         # the flag.
-        if [ -z "{{.STABLE_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
+        if [ -z "{{.DOT_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
           echo "winget:publish: $tag is a prerelease and winget serves one channel." >&2
           echo "Publish it anyway with: task winget:publish -- --prerelease $tag" >&2
           exit 1
@@ -1369,7 +1408,13 @@ tasks:
             "- Not validated on Windows: this project releases from Linux and macOS.")"
 
   brew:refresh:
-    desc: Tell the tap to regenerate its formula from the newest stable release
+    desc: Tell the tap to regenerate both formulae from this repository's releases
+    # One dispatch, both channels: the tap recomputes discobox-dev from the
+    # newest dot release and discobox from the newest release a human has
+    # marked stable, and commits whichever actually moved (ADR 0105). So the
+    # same call is right after a tag is cut and after a release is blessed, and
+    # neither caller has to know which formula it is about to change.
+    #
     # This is the *only* thing that updates the tap. It used to poll on a cron;
     # that was deleted deliberately, because a backstop that quietly covers for
     # a broken release step is a backstop that stops anyone noticing the step is
@@ -1392,13 +1437,15 @@ tasks:
       - echo "asked {{.TAP_REPO}} to update its formula"
 
   brew:formula:
-    desc: Write the Homebrew formula for a released tag to BREW_OUT
+    desc: Write a Homebrew formula for a released tag to BREW_OUT (task brew:formula -- [--dev] TAG)
     # The rule lives in scripts/brew-formula.sh so the tap's own update workflow
-    # runs exactly this, without needing a Go toolchain to reach it.
+    # runs exactly this, without needing a Go toolchain to reach it — including
+    # which of the two formulae it is writing.
     vars:
-      BREW_OUT: '{{.BREW_OUT | default "build/discobox.rb"}}'
+      NAME: '{{if .BREW_DEV}}discobox-dev{{else}}discobox{{end}}'
+      BREW_OUT: '{{.BREW_OUT | default (printf "build/%s.rb" .NAME)}}'
     cmds:
-      - scripts/brew-formula.sh "{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
+      - scripts/brew-formula.sh {{if .BREW_DEV}}--dev {{end}}"{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
 
   release:images:
     desc: Build and push the multi-arch agent and harness images for RELEASE_TAG
@@ -1496,13 +1543,17 @@ tasks:
         ref="{{.REGISTRY}}/discobox-{{.IMAGE}}:$tag"
 
         # dockerworker.DefaultPoolImage names :latest, so a release that pushes
-        # only the version tag leaves that default unresolvable. Only a stable
-        # release moves it: v1.2.3-rc1 is not what a fresh pool should boot.
+        # only the version tag leaves that default unresolvable. Every dot
+        # release moves it, whether or not anyone later marks it stable: :latest
+        # means the newest release, and the CLI pins its own tag anyway, so the
+        # only thing reading :latest is something that asked for no version.
+        # v1.2.3-rc1 still does not move it — an explicit prerelease is not the
+        # newest release, it is one you have to name.
         tags="-t $ref"
-        if [ -n "{{.STABLE_RELEASE}}" ]; then
+        if [ -n "{{.DOT_RELEASE}}" ]; then
           tags="$tags -t {{.REGISTRY}}/discobox-{{.IMAGE}}:latest"
         else
-          echo "$tag is not a stable release; not moving :latest" >&2
+          echo "$tag is an explicit prerelease; not moving :latest" >&2
         fi
 
         # depot builds each architecture on a native machine, so there is no

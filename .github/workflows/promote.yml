@@ -1,0 +1,124 @@
+# Blessing a release stable.
+#
+# Cutting a tag publishes a prerelease and nothing more (ADR 0105). This is the
+# other half: somebody has run that build, decided it is the one people should
+# get, and cleared the pre-release box on its GitHub release. That is the only
+# thing that moves the stable channels — `brew install discobox` and
+# `winget install discobox`.
+#
+# A release event carries the tag as GITHUB_REF, so both the workflow file that
+# runs and what `actions/checkout` fetches come from **the tagged commit**, not
+# from `main`. Two consequences worth knowing:
+#
+#   - Each release is promoted by the Taskfile it was cut with, which is the
+#     right one: the formula and manifests describe that release's assets.
+#   - A tag cut before this file existed cannot be promoted by the checkbox at
+#     all, because its tree has no promote.yml. Use the workflow_dispatch below,
+#     which runs from the default branch.
+#
+# There is no un-promote. The stable channels are recomputed from whatever the
+# newest blessed release now is, so backing one out means blessing a different
+# release, not undoing this.
+name: Promote
+
+on:
+  # Three activity types, one gate. `released` is the one this is *about* — a
+  # pre-release changed to a release — but GitHub's own documentation does not
+  # state plainly that unticking the box alone emits it rather than `edited`,
+  # and there are reports of a checkbox-only edit emitting neither reliably. So
+  # rather than bet the whole mechanism on which one arrives, listen for all
+  # three and let the payload decide: `if` below runs only when the release is
+  # no longer a prerelease. `published` covers a release created stable outright.
+  #
+  # Duplicates are fine if more than one arrives. `brew:refresh` asks the tap to
+  # recompute and it commits only what changed; `winget:publish` says "winget
+  # already serves <version>" rather than opening a second request; and the
+  # concurrency group below serialises them.
+  release:
+    types: [released, edited, published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v* tag to promote
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+env:
+  # A release event sets GITHUB_REF to the tag, so TAG would resolve anyway —
+  # but a workflow_dispatch runs off a branch and would resolve `main`. Naming
+  # it here covers both.
+  RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+
+jobs:
+  # The gate and the tap, in one job. Both are seconds of work behind a Nix
+  # install, so splitting them would spend a runner to save nothing — and the
+  # gate has to be in front of both channels anyway, which is what `winget`
+  # depending on this job buys.
+  brew:
+    if: github.event_name == 'workflow_dispatch' || (github.event.release.prerelease == false && github.event.release.draft == false)
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      # The only place the tag itself is judged, and it comes first: nothing
+      # below should run for a tag that cannot be promoted. The rule is the
+      # Taskfile's, since a GitHub expression cannot express it (ADR 0066 §1).
+      - uses: ./.github/actions/task
+        with:
+          target: release:require-dot
+      # Nothing else updates the tap — it has no cron any more — so a missing
+      # token means `brew install discobox` silently stays on the previous
+      # version. Fail instead.
+      - if: env.GH_TOKEN == ''
+        run: |
+          echo "::error::HOMEBREW_TAP_TOKEN is not set, so the tap was not told about $RELEASE_TAG"
+          exit 1
+      # A plain run, because Nix is already installed by the step above
+      # (ADR 0066 §2). One dispatch updates both formulae; only `discobox` can
+      # have moved here, since the release that just became stable was already
+      # the newest dot release when it was cut — unless it was not, which is
+      # exactly the case where letting the tap recompute both beats telling it
+      # which one to write.
+      - run: nix develop -c go tool task brew:refresh
+
+  # Unlike the tap, which is ours to push to, the Windows Package Manager
+  # Community Repository takes a pull request per version from a fork — so this
+  # cannot use GITHUB_TOKEN, which may only write to this repository.
+  # WINGET_TOKEN is a classic PAT (fine-grained tokens are not accepted) with
+  # `public_repo`, belonging to the account the pull request comes from. That
+  # account forks microsoft/winget-pkgs and signs Microsoft's CLA once, on its
+  # first pull request, and submits unattended after that.
+  #
+  # Opening the request is all that is automated. A validation pipeline runs it
+  # and a moderator merges it, so a version is pending until someone sees it
+  # land.
+  winget:
+    needs: brew
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      # Without the token there is nothing to submit with, and nothing else
+      # submits — so this fails rather than passing quietly and leaving winget a
+      # version behind that only a user would discover.
+      - if: env.GH_TOKEN == ''
+        run: |
+          echo "::error::WINGET_TOKEN is not set, so $RELEASE_TAG was not submitted to winget"
+          exit 1
+      - uses: ./.github/actions/task
+        with:
+          target: winget:publish
