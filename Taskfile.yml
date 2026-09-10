@@ -1695,6 +1695,11 @@ tasks:
         fi
         ref="{{.REGISTRY}}/{{.PUSH_IMAGE}}:$tag"
         metadata="build/{{.PUSH_IMAGE}}-push.json"
+        # The publish jobs check out fresh and build nothing locally, so
+        # nothing has made build/ by the time the builder writes its metadata
+        # there. Without this the push itself succeeds and the task still
+        # fails, leaving an image published and no digest reported.
+        mkdir -p "$(dirname "$metadata")"
 
         # depot builds each architecture on a native machine, so there is no
         # per-arch fan-out and no manifest list to assemble (ADR 0066 §6). The
