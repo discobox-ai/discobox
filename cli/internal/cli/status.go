@@ -62,8 +62,8 @@ func (a *App) newStatusCommand() *cobra.Command {
 		Long: "Check the connection to the server and report where it stops.\n\n" +
 			"Each layer is reported separately — the address, this machine's identity, the\n" +
 			"socket, the relay, the connection to the peer, whether the server admits this\n" +
-			"machine, and whether it is ready — so a failure names the layer to fix rather\n" +
-			"than the one on top of it.\n\n" +
+			"machine, whether it is ready, and the route traffic ends up taking — so a\n" +
+			"failure names the layer to fix rather than the one on top of it.\n\n" +
 			"This never starts a server: it reports what is there. For a running account of\n" +
 			"the same layers while another command connects, use --iroh-log=debug.",
 		Args: cobra.NoArgs,

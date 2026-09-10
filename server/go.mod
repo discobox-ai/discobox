@@ -141,15 +141,15 @@ require (
 	github.com/dave/dst v0.27.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
-	github.com/discobox-ai/iroh-go v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_amd64_musl v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_arm64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64_musl v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.3.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/docker/cli v28.2.2+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect

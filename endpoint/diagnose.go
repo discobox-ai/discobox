@@ -83,6 +83,17 @@ const (
 	DiagnosisLayerAdmission = "admission"
 	// DiagnosisLayerServer is the server's own readiness, read from /healthz.
 	DiagnosisLayerServer = "server"
+	// DiagnosisLayerRoute is how the connection actually reaches the peer:
+	// straight to its socket, or through a relay, and at what address.
+	//
+	// It is last because its answer settles last. iroh opens a connection on a
+	// relay and moves it onto a direct path when hole punching succeeds, so a
+	// route read at the handshake reports where the connection started rather
+	// than where it ended up. Reading it once the connection has carried a full
+	// request attempt is what makes it the route traffic is taking — which is
+	// also true of the peer that accepted the connection and then said nothing,
+	// so that is reported rather than skipped.
+	DiagnosisLayerRoute = "route"
 )
 
 // DiagnosisStep is one layer's answer.
@@ -222,7 +233,7 @@ func Diagnose(ctx context.Context, raw string, opts DiagnoseOptions) Diagnosis {
 			diagnosis.fail(DiagnosisLayerIdentity, time.Time{}, "this process has no peer identity", configErr,
 				"Only a command that dials an iroh address installs one. This is a bug if the address above is one.")
 			diagnosis.skipRest(DiagnosisLayerBind, DiagnosisLayerRelay, DiagnosisLayerConnect,
-				DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer)
+				DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 			return *diagnosis
 		}
 		return configured.Diagnose(ctx, raw, opts)
@@ -381,7 +392,7 @@ func diagnoseIroh(ctx context.Context, diagnosis *Diagnosis, configured *IrohEnd
 		diagnosis.fail(DiagnosisLayerRuntime, started, "the iroh library did not load", err,
 			"Every build ships this library and extracts it on first use. Set IROH_GO_CACHE_DIR if the default cache directory is read-only or mounted noexec.")
 		diagnosis.skipRest(DiagnosisLayerIdentity, DiagnosisLayerBind, DiagnosisLayerRelay,
-			DiagnosisLayerConnect, DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer)
+			DiagnosisLayerConnect, DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
 	var platformDetail, libraryDetail string
@@ -398,7 +409,7 @@ func diagnoseIroh(ctx context.Context, diagnosis *Diagnosis, configured *IrohEnd
 	if err != nil {
 		diagnosis.fail(DiagnosisLayerIdentity, started, "this machine's identity is unreadable", err, "")
 		diagnosis.skipRest(DiagnosisLayerBind, DiagnosisLayerRelay, DiagnosisLayerConnect,
-			DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer)
+			DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
 	diagnosis.ok(DiagnosisLayerIdentity, started, "this machine is "+local.String())
@@ -409,7 +420,7 @@ func diagnoseIroh(ctx context.Context, diagnosis *Diagnosis, configured *IrohEnd
 		diagnosis.fail(DiagnosisLayerBind, started, "no local socket", err,
 			"iroh needs a UDP socket. Something else holding the port, or a sandbox with no network, is what stops this.")
 		diagnosis.skipRest(DiagnosisLayerRelay, DiagnosisLayerConnect, DiagnosisLayerStream,
-			DiagnosisLayerAdmission, DiagnosisLayerServer)
+			DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
 	boundSummary := "bound"
@@ -476,7 +487,7 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	if err != nil {
 		diagnosis.fail(DiagnosisLayerConnect, started, "an ?addr= parameter on this address is unusable", err,
 			"Each ?addr= is an ip:port, as the server prints them in its \"without discovery, dial …\" line.")
-		diagnosis.skipRest(DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer)
+		diagnosis.skipRest(DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
 	addr := iroh.AddrOf(iroh.EndpointID(peer)).WithDirectAddrs(parsedAddrs...)
@@ -487,7 +498,7 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	if err != nil {
 		diagnosis.fail(DiagnosisLayerConnect, started, "the peer could not be reached", err,
 			connectHint(len(parsedAddrs) > 0, relayReached))
-		diagnosis.skipRest(DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer)
+		diagnosis.skipRest(DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
 	defer func() { _ = conn.CloseWithError(0, "") }()
@@ -512,10 +523,11 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 			diagnosis.fail(DiagnosisLayerAdmission, started, "the server closed the connection: "+reason, nil,
 				admissionHint(reason, local))
 			diagnosis.skip(DiagnosisLayerServer, "the connection was closed before the server answered")
+			diagnosis.skip(DiagnosisLayerRoute, "the server closed the connection, and its paths went with it")
 			return
 		}
 		diagnosis.fail(DiagnosisLayerStream, started, "no stream on the connection", err, "")
-		diagnosis.skipRest(DiagnosisLayerAdmission, DiagnosisLayerServer)
+		diagnosis.skipRest(DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 		return
 	}
 	defer func() { _ = stream.Close() }()
@@ -534,6 +546,7 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 			diagnosis.fail(DiagnosisLayerAdmission, started, "the server closed the connection: "+reason, nil,
 				admissionHint(reason, local))
 			diagnosis.skip(DiagnosisLayerServer, "the connection was closed before the server answered")
+			diagnosis.skip(DiagnosisLayerRoute, "the server closed the connection, and its paths went with it")
 			return
 		}
 		diagnosis.add(DiagnosisStep{
@@ -542,10 +555,115 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 			Summary: "the server neither answered nor closed the connection",
 		})
 		diagnosis.fail(DiagnosisLayerServer, started, "no answer to "+health.Path, err, "")
+		// The connection is still open here — it is the server that said
+		// nothing — so the route is both askable and worth asking: how this
+		// client reached a peer that will not answer is the next thing to
+		// look at.
+		diagnoseIrohRoute(diagnosis, conn)
 		return
 	}
 	diagnosis.ok(DiagnosisLayerAdmission, started, "this peer is admitted")
 	reportHealth(diagnosis, started, status)
+	diagnoseIrohRoute(diagnosis, conn)
+}
+
+// diagnoseIrohRoute reports the path the connection settled on: direct to the
+// peer's socket, or through a relay, and at what address.
+//
+// This is the question an operator asks first and the one the layers above
+// cannot answer. "Connected" is the same word whether the packets are going
+// straight to the machine or through a relay on another continent, and the two
+// have completely different latency, completely different failure modes, and
+// completely different things to check when something is slow.
+//
+// A connection usually has more than one path open: iroh races the direct
+// addresses it knows against the relay and moves application data onto the
+// best one that answers. The selected path is what traffic is on, and the rest
+// are reported beside it, because a direct path sitting open and unselected is
+// a different situation from no direct path at all.
+//
+// It carries no duration: reading the paths is a local call into the
+// transport, so timing it would report how long this process took to ask
+// itself a question.
+func diagnoseIrohRoute(diagnosis *Diagnosis, conn *iroh.Conn) {
+	paths, err := conn.Paths()
+	if err != nil {
+		diagnosis.add(DiagnosisStep{
+			Layer:   DiagnosisLayerRoute,
+			Status:  DiagnosisUnknown,
+			Summary: "the transport did not report its paths",
+			Error:   errorText(err),
+		})
+		return
+	}
+	selected, ok := selectedPath(paths)
+	if !ok {
+		// Not a failure of anything. The connection carried a request attempt
+		// to get here, so it had a path: a snapshot that catches none is one
+		// taken between two of them, or one taken as the last of them went
+		// away. Reporting no route rather than guessing at one is the honest
+		// answer to either.
+		diagnosis.add(DiagnosisStep{
+			Layer:   DiagnosisLayerRoute,
+			Status:  DiagnosisUnknown,
+			Summary: "the connection reports no path carrying traffic",
+		})
+		return
+	}
+	diagnosis.ok(DiagnosisLayerRoute, time.Time{}, routeSummary(selected), routeDetail(selected, paths)...)
+}
+
+func selectedPath(paths []iroh.Path) (iroh.Path, bool) {
+	for _, path := range paths {
+		if path.Selected {
+			return path, true
+		}
+	}
+	return iroh.Path{}, false
+}
+
+// routeSummary names the route in the two words an operator is looking for,
+// then the address that backs them up.
+func routeSummary(path iroh.Path) string {
+	switch path.Kind {
+	case iroh.PathIP:
+		return "direct · " + path.Remote
+	case iroh.PathRelay:
+		return "relayed · " + path.Remote
+	default:
+		return string(path.Kind) + " · " + path.Remote
+	}
+}
+
+// routeDetail is what the summary leaves out: how far away the peer is, and
+// what else this connection could be using.
+func routeDetail(selected iroh.Path, paths []iroh.Path) []string {
+	others := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if path.Selected {
+			continue
+		}
+		others = append(others, string(path.Kind)+" "+path.Remote)
+	}
+	var alsoOpen string
+	if len(others) > 0 {
+		alsoOpen = "also open: " + strings.Join(others, ", ")
+	}
+	return details(routeRTT(selected.RTT), alsoOpen)
+}
+
+// routeRTT prints the round trip at the scale it happens to be on. A relay on
+// another continent and a peer on this machine are three orders of magnitude
+// apart, and rounding both to milliseconds reports the second one as zero.
+func routeRTT(rtt time.Duration) string {
+	switch {
+	case rtt <= 0:
+		return ""
+	case rtt < time.Millisecond:
+		return "rtt " + rtt.Round(time.Microsecond).String()
+	default:
+		return "rtt " + rtt.Round(time.Millisecond).String()
+	}
 }
 
 func connectHint(hasDirect, relayReached bool) string {

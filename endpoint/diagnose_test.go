@@ -93,7 +93,9 @@ func TestDiagnoseStopsAtTheConnectLayer(t *testing.T) {
 	if failure.Layer != DiagnosisLayerConnect {
 		t.Fatalf("failed at %s (%s), want the connect layer", failure.Layer, failure.Summary)
 	}
-	for _, layer := range []string{DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer} {
+	for _, layer := range []string{
+		DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute,
+	} {
 		if step := stepFor(t, diagnosis, layer); step.Status != DiagnosisSkipped {
 			t.Fatalf("%s = %s, want skipped", layer, step.Status)
 		}
@@ -233,4 +235,38 @@ func stepFor(t *testing.T, diagnosis Diagnosis, layer string) DiagnosisStep {
 	}
 	t.Fatalf("the report has no %s layer: %+v", layer, diagnosis.Steps)
 	return DiagnosisStep{}
+}
+
+// The route layer is the one an operator reads first: "connected" is the same
+// word whether the packets go straight to the machine or through a relay on
+// another continent. These endpoints are two sockets on this host, so the only
+// honest answer is a direct one, at a loopback address.
+func TestDiagnoseReportsTheRouteTaken(t *testing.T) {
+	server, client := irohPair(t, admitAll)
+	serveHealth(t, server, health.Status{Status: health.StatusReady})
+
+	diagnosis := client.Diagnose(t.Context(), irohTestURL(t, server), fastDiagnose())
+	if !diagnosis.OK() {
+		t.Fatalf("Diagnose() failed at %s: %+v", diagnosis.FirstFailure().Layer, *diagnosis.FirstFailure())
+	}
+	route := stepFor(t, diagnosis, DiagnosisLayerRoute)
+	if route.Status != DiagnosisOK {
+		t.Fatalf("route = %s (%s), want ok", route.Status, route.Summary)
+	}
+	if !strings.HasPrefix(route.Summary, "direct · ") {
+		t.Fatalf("route summary = %q, want a direct route: these endpoints have no relay to take", route.Summary)
+	}
+	addr, ok := strings.CutPrefix(route.Summary, "direct · ")
+	if !ok || !strings.HasPrefix(addr, "127.0.0.1:") {
+		t.Fatalf("route summary = %q, want the loopback socket the server is bound to", route.Summary)
+	}
+	// The rtt is what says the route is a measurement rather than a guess, and
+	// on this host it is well under a millisecond — which is exactly the scale
+	// that rounds away to nothing if it is reported in milliseconds.
+	if len(route.Detail) == 0 || !strings.HasPrefix(route.Detail[0], "rtt ") {
+		t.Fatalf("route detail = %v, want it to lead with the round trip", route.Detail)
+	}
+	if strings.HasPrefix(route.Detail[0], "rtt 0s") {
+		t.Fatalf("route detail = %q, want a round trip at the scale it happened on", route.Detail[0])
+	}
 }

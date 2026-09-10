@@ -7,7 +7,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
-	github.com/discobox-ai/iroh-go v0.2.0
+	github.com/discobox-ai/iroh-go v0.3.0
 	github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16
 	github.com/elazarl/goproxy v1.9.0
 	github.com/go-faster/errors v0.7.1
@@ -330,14 +330,14 @@ require (
 	aidanwoods.dev/go-result v0.3.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/discobox-ai/hooks v0.0.0-20260901000815-a2b5db14cd78 // indirect
-	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_amd64_musl v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_arm64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.2.0 // indirect
-	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64_musl v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.3.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.3.0 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c // indirect

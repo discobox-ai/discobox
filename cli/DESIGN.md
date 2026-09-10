@@ -1758,6 +1758,27 @@ Three properties are deliberate:
   check in a script. The message on stderr is one short line, because the
   report on stdout has already said everything.
 
+The **route** layer is the last of the transport's own, below the `api` row
+this command adds, and its position is deliberate. It says whether
+traffic reaches the peer directly or through a relay, at what address, and at
+what round trip — the first thing an operator asks and the one thing "connected"
+never says, since the word is identical whether the packets go straight to the
+machine or through a relay on another continent. It is last because its answer
+settles last: iroh opens a connection on a relay and moves it onto a direct path
+once hole punching succeeds, so a route read at the handshake reports where the
+connection started rather than where it ended up. Reading it once the connection
+has carried a full request attempt is what makes it the route traffic is taking.
+Paths that are open but unselected are listed beside the selected one, because a
+direct path sitting open and unused is a different situation from no direct path
+at all.
+
+Route is also the one row that can be green under a red one, which is a
+deliberate exception to the property above. It is reported whenever the
+connection is still open to be asked — including under a failed server row, when
+the peer accepted the connection and then said nothing, and how this client
+reached a server that will not answer is the next question — and skipped when
+the peer closed the connection, because its paths went with it.
+
 Admission is the layer that looks least like itself, and it is the reason the
 command exists. A server refuses a peer by *accepting* the connection and then
 closing it with the reason (ADR 0095 §4), so the handshake succeeds and the
