@@ -34,7 +34,7 @@ flowchart TD
     local["docker.LocalDriver\nVM CRUD no-op · host socket ·\npublished loopback agent port"]
     do["digitalocean.Driver\ndroplet CRUD by pool tag ·\ndocker over SSH · agent at public IP"]
     execd["execvm.Driver\ndelegates every op to an external\ncommand (shell-script backends)"]
-    libkrun["libkrun.Driver\nlibkrun process · persistent disks ·\nUnix/VSOCK connection leases"]
+    libkrun["libkrun.Driver (Linux)\nre-executed launcher child ·\nregistry-seeded guest · Unix/VSOCK leases"]
     vz["vz.Driver (macOS)\nVirtualization.framework VM ·\nregistry-seeded guest · VSOCK leases"]
     wslc["wslc.Driver (Windows)\nWSL Containers VM ·\nrelay-multiplexed leases"]
     future["(later) k8s / ec2\nsame shape; pool runs as a pod on k8s"]
@@ -89,6 +89,27 @@ the engine":
 
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
 deadline), so drivers never implement boot polling.
+
+## VM Lifetime
+
+Every VM-backed driver — `vz`, `wslc`, `libkrun` — obeys one rule: **the VM dies
+with the server, the disks do not.** It is stated here rather than argued by
+each driver, because it is one rule with three different reasons for holding.
+
+For `vz` it is a property: a Virtualization.framework VM is an in-process
+object. For `wslc` it is the session's. For `libkrun` it is arranged, because
+`krun_start_enter` consumes its calling process and the VM therefore lives in a
+child: the launcher is spawned with `PR_SET_PDEATHSIG` and a watchdog pipe whose
+write end the server holds (ADR 0062 §9).
+
+So nothing is re-adopted across a server restart, and no driver carries a
+runtime lock, a recorded process identity, or an adoption protocol. What
+survives is `StopVM`'s guarantee — the pool's data and cache disks — which is
+sufficient, because the guest keeps all image, container, and volume state on
+them. The cost is restart latency, not data.
+
+`DeleteVM` is the only thing that removes a disk, and it is reserved for an
+authorized pool deletion; `StopVM` is what repair uses.
 
 ## Reporting What Bringing a Pool Up Is Doing
 
@@ -322,7 +343,6 @@ stream carries that description to the operator:
 | Driver | Log | How |
 | --- | --- | --- |
 | `vz`, `libkrun` | guest serial console | the file the VM appends across every boot, in the pool's state (vz) or runtime (libkrun) directory |
-
 | `docker` | Docker daemon journal | `journalctl` on the control plane's own machine |
 | `digitalocean` | droplet's Docker daemon journal | `journalctl` over the SSH connection the driver already uses for Docker (`sshdocker.Dialer.StreamCommand`) |
 | `wslc` | guest journal, else its kernel ring buffer | a guest process over the session, since the platform owns the guest's boot and the host captures no console |
@@ -486,9 +506,16 @@ kernel, initrd, root filesystem — from an OCI image, with no Docker daemon on
 the host (ADR 0052 §5). It pulls by digest with go-containerregistry, caches one
 directory per digest, and accepts a local override directory instead.
 
-It is provider-neutral on purpose. Today only `vz` uses it; libkrun builds its
-root image and kernel on the host with `docker-buildx`, and adopting this is
-part of its convergence.
+It is provider-neutral on purpose, and both VM backends use it. `vz` and
+`libkrun` resolve the same published guest image — one build, two architectures
+(ADR 0101 §1) — and `libkrun` resolves a second image for the libkrunfw-patched
+kernel, which is the one artifact a shared guest cannot carry for it.
+
+Resolution is by platform, and a stated mismatch is refused. `remote.WithPlatform`
+selects a child of an index and does nothing to a single-architecture manifest,
+so with one image name carrying two architectures the image's own config is what
+gets checked; the alternative is a VM that starts and panics on its first
+instruction.
 
 Two properties are load-bearing rather than incidental:
 

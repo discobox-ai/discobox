@@ -73,7 +73,7 @@ const (
 // guestImageDockerfile is the Dockerfile in a discobox checkout that produces
 // the whole artifact set, in the path form BuildKit's frontend wants. Its
 // context is the repository root, which is why the path is spelled from there.
-const guestImageDockerfile = "server/providers/vz/image/Dockerfile"
+const guestImageDockerfile = "vm-image/Dockerfile"
 
 // guestImagePlatform is what the guest runs on, which is the Mac's own
 // architecture: the artifacts boot on Virtualization.framework, and the
@@ -84,19 +84,14 @@ func guestImagePlatform() string {
 	return "linux/" + runtime.GOARCH
 }
 
-// DefaultGuestImage is the published VM image. It is released and versioned on
-// its own line, independently of the discobox release, because it is a
-// distribution userland that boots dockerd and changes when the distribution
-// does rather than when Discobox does (ADR 0062 §3). A release pins this to a
-// digest; a tag here means whoever runs the server decides which build they
-// get.
+// DefaultGuestImage is the published guest image this backend boots.
 //
-// Published as discobox-vm, with no backend in the name: vz is the only driver
-// that boots it today, but libkrun is expected to boot the same artifacts once
-// ADR 0062 §9 lands. It is deliberately not called a pool image — that already
-// means the pool-agent container (dockerworker.DefaultPoolImage), which every
-// VM provider exposes as workerImage alongside this one.
-const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vm@sha256:689cb9bc05c1304358209ae9afeec70d2ee7b5d0cda786c558e2bcef6f4a76dd"
+// The pin itself lives in guestimage, because the image is shared: one
+// Dockerfile (vm-image/Dockerfile) produces the artifact set for every VM
+// backend, and vz takes its linux/arm64 variant while libkrun takes the
+// linux/amd64 one. Two constants would be two things to re-pin after one
+// publish, which is how a backend ends up quietly booting last release's guest.
+const DefaultGuestImage = guestimage.DefaultVMImage
 
 // Config is the persisted vz provider configuration.
 type Config struct {
@@ -110,7 +105,7 @@ type Config struct {
 	GuestImageDir string `json:"guestImageDir,omitempty"`
 	// GuestImageLocalDir is the conventional output of a local guest image
 	// build, preferred over the published image when it is complete and ignored
-	// when it is not. Defaulted, so `task build:vz-guest` is the entire act of
+	// when it is not. Defaulted, so `task build:vm-guest` is the entire act of
 	// adopting a locally built guest and deleting its directory is the entire
 	// act of going back.
 	GuestImageLocalDir string `json:"guestImageLocalDir,omitempty"`
@@ -297,7 +292,7 @@ func effectiveGuestImage(configured string) string {
 }
 
 // effectiveGuestLocalDir names where a local guest image build lands. It is
-// the same path `task build:vz-guest` writes, and that agreement is the whole
+// the same path `task build:vm-guest` writes, and that agreement is the whole
 // mechanism: nothing is configured to adopt a local build.
 func effectiveGuestLocalDir(configured string) string {
 	if value := strings.TrimSpace(configured); value != "" {

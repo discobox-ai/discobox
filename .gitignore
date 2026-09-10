@@ -51,3 +51,10 @@ server/providers/wslc/relay/artifacts/*.gz
 *.swp
 *.swo
 *~
+
+# `nix build` drops its output symlink here, and it points into /nix/store —
+# committed, it is a dangling link on every other machine. `nix build
+# .#libkrun-runtime` is a documented step for running libkrun pools, so this is
+# a file the next person following those instructions will also produce.
+/result
+/result-*

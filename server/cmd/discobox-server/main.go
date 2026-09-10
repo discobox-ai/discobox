@@ -22,6 +22,12 @@ func main() {
 		fmt.Println(version.String())
 		return
 	}
+
+	// Then this: the same binary is also a pool VM, re-executed into a hidden
+	// subcommand, and a launcher must do nothing a server does — no database,
+	// no listener, no configuration read.
+	server.RunVMLauncherIfInvoked()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := server.Run(ctx); err != nil {

@@ -5,6 +5,9 @@
 - Root module `github.com/discobox-ai/discobox`: stable contracts/API module.
 - `base-image`: the shared Debian/Docker/systemd image every other Discobox
   container image is built FROM.
+- `vm-image`: the pool VM guest image every VM-backed provider boots, plus the
+  libkrunfw-patched kernel libkrun alone needs. Both are released on their own
+  lines and pulled from a registry at run time.
 - `api`: server API definitions and tests, pending schema-first conversion.
 - `cli`: nested Go module for the `discobox` CLI.
 - `cli/cmd/discobox`: CLI entrypoint.

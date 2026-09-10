@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -454,4 +455,60 @@ func TestResolveReportsNothingForACacheHit(t *testing.T) {
 	if reported {
 		t.Error("a cache hit reported fetch progress")
 	}
+}
+
+// A single-architecture manifest is returned whatever platform was asked for:
+// remote.WithPlatform only ever selects a child of an index. The guest image is
+// published for two architectures and its artifacts are a kernel and a root
+// filesystem, so booting the wrong one is a guest that panics on its first
+// instruction with nothing in the log to say why.
+func TestResolveRefusesAnImageBuiltForAnotherArchitecture(t *testing.T) {
+	reference, _ := pushGuestImageForPlatform(t,
+		map[string][]byte{"root.ext4": []byte("arm64 root")},
+		&v1.Platform{OS: "linux", Architecture: "arm64"})
+	resolver, err := New(Config{
+		Reference: reference,
+		CacheDir:  t.TempDir(),
+		Platform:  linuxAMD64(),
+		Artifacts: []Artifact{{Name: "root.ext4"}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = resolver.Resolve(context.Background(), nil)
+	if err == nil {
+		t.Fatal("Resolve accepted an arm64 image on an amd64 host")
+	}
+	if !strings.Contains(err.Error(), "arm64") || !strings.Contains(err.Error(), "amd64") {
+		t.Fatalf("error = %v, want both architectures named", err)
+	}
+}
+
+// pushGuestImage's images declare no architecture at all, which is the case
+// this one is not: here the image says what it is, and says the wrong thing.
+func pushGuestImageForPlatform(t *testing.T, contents map[string][]byte, platform *v1.Platform) (string, *atomic.Int64) {
+	t.Helper()
+	reference, requests := pushGuestImage(t, contents)
+	ref, err := name.NewDigest(reference)
+	if err != nil {
+		t.Fatalf("parse pushed reference: %v", err)
+	}
+	image, err := remote.Image(ref)
+	if err != nil {
+		t.Fatalf("read pushed image: %v", err)
+	}
+	stamped, err := mutate.ConfigFile(image, &v1.ConfigFile{OS: platform.OS, Architecture: platform.Architecture})
+	if err != nil {
+		t.Fatalf("stamp platform: %v", err)
+	}
+	tag := ref.Context().Tag("stamped")
+	if err := remote.Write(tag, stamped); err != nil {
+		t.Fatalf("push stamped image: %v", err)
+	}
+	digest, err := stamped.Digest()
+	if err != nil {
+		t.Fatalf("stamped digest: %v", err)
+	}
+	requests.Store(0)
+	return tag.Repository.Name() + "@" + digest.String(), requests
 }

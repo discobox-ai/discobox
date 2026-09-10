@@ -11,6 +11,7 @@ require (
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16
 	github.com/distribution/reference v0.6.0
+	github.com/ebitengine/purego v0.10.2
 	github.com/go-faster/jx v1.2.0
 	github.com/google/go-containerregistry v0.20.6
 	github.com/google/uuid v1.6.0
@@ -157,7 +158,6 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dominikbraun/graph v0.23.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/elazarl/goproxy v1.9.0 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect

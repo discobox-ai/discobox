@@ -30,23 +30,33 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/guestimage"
 )
 
 const (
-	libkrunE2ERootImageEnv = "DISCOBOX_LIBKRUN_E2E_ROOT_IMAGE"
-	libkrunE2EKernelEnv    = "DISCOBOX_LIBKRUN_E2E_KERNEL"
-	libkrunE2ELauncherEnv  = "DISCOBOX_LIBKRUN_E2E_LAUNCHER"
+	libkrunE2EGuestDirEnv  = "DISCOBOX_LIBKRUN_E2E_GUEST_DIR"
+	libkrunE2EKernelDirEnv = "DISCOBOX_LIBKRUN_E2E_KERNEL_DIR"
 	libkrunE2EPoolImageEnv = "DISCOBOX_LIBKRUN_E2E_POOL_IMAGE"
 	libkrunE2EDockerEnv    = "DISCOBOX_LIBKRUN_E2E_DOCKER"
 )
+
+// TestMain makes this test binary a valid launcher host.
+//
+// The driver starts a VM by re-executing os.Executable(), which under `go test`
+// is this binary. Without this the test would exercise a re-exec into a process
+// that does not know what the launcher argv means — and the point of the test
+// is the real path, including that one (ADR 0062 §9).
+func TestMain(m *testing.M) {
+	RunLauncherIfInvoked()
+	os.Exit(m.Run())
+}
 
 // TestLibkrunEndToEnd exercises the real KVM, libkrun, passt, VSOCK, storage,
 // Docker, and pool-agent path. It is opt-in because it requires /dev/kvm and
 // host-built VM and pool-agent images.
 func TestLibkrunEndToEnd(t *testing.T) {
-	rootImage := requireE2EEnv(t, libkrunE2ERootImageEnv)
-	kernelImage := requireE2EEnv(t, libkrunE2EKernelEnv)
-	launcher := requireE2EEnv(t, libkrunE2ELauncherEnv)
+	guestDir := requireE2EEnv(t, libkrunE2EGuestDirEnv)
+	kernelDir := requireE2EEnv(t, libkrunE2EKernelDirEnv)
 	poolImage := requireE2EValue(t, libkrunE2EPoolImageEnv)
 	dockerCLI := strings.TrimSpace(os.Getenv(libkrunE2EDockerEnv))
 	if dockerCLI == "" {
@@ -103,17 +113,30 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		_ = controlPlaneListener.Close()
 	})
 
+	guest, err := guestimage.New(guestimage.Config{
+		OverrideDir: guestDir,
+		Artifacts:   []guestimage.Artifact{{Name: rootArtifact}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernel, err := guestimage.New(guestimage.Config{
+		OverrideDir: kernelDir,
+		Artifacts:   []guestimage.Artifact{{Name: kernelArtifact}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	driver, err := NewDriver(DriverConfig{
-		RootImage:          rootImage,
-		KernelImage:        kernelImage,
+		Guest:              guest,
+		Kernel:             kernel,
 		StateDir:           filepath.Join(testRoot, "state"),
 		RuntimeDir:         filepath.Join(testRoot, "run"),
 		ControlPlaneSocket: controlPlaneSocket,
-		LauncherPath:       launcher,
 		VCPUs:              2,
 		MemoryMiB:          1024,
-		DataDiskGiB:        1,
-		CacheDiskGiB:       1,
+		DataDiskGiB:        4,
+		CacheDiskGiB:       2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +166,7 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		t.Fatalf("VM boot added host interfaces: %v", got)
 	}
 
-	dockerSocket := filepath.Join(driver.poolRuntimeDir(poolID), "docker.sock")
+	dockerSocket := filepath.Join(driver.poolRuntimeDir(poolID), dockerSocketName)
 	loadImageIntoGuest(ctx, t, dockerCLI, dockerSocket, poolImage)
 	loadImageIntoGuest(ctx, t, dockerCLI, dockerSocket, "busybox:1.37.0")
 	guestDocker(ctx, t, dockerCLI, dockerSocket, "image", "rm", "busybox:1.37.0")

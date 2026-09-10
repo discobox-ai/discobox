@@ -11,9 +11,6 @@
   fix it at the binding, not with a method that lies.
 - **The root disk is shared and read-only.** Never attach it writable and never
   add `rw` to the kernel command line: every pool on the host has it open.
-- **Disk order is a contract.** Root, data, cache map to `vda`, `vdb`, `vdc`,
-  and the guest's storage unit hard-codes that. Reordering or inserting a disk
-  silently mounts the wrong filesystem.
 - **`StopVM` keeps the disks; only `DeleteVM` removes them.** Repair calls
   `StopVM`, and a pool's images, volumes, and containers all live on `data.raw`.
 - **Ask the guest to shut down before stopping it.** A hard stop is a dirty
@@ -34,35 +31,15 @@
   `discobox admin pool build-guest` and a pool recreate; for a release it is a
   `vm/v*` tag and a re-pinned `DefaultGuestImage`, shipped before or with the
   server-side mount, never after.
-- **A guest build must not disturb a working guest until it has one.** Export to
-  a staging directory beside the destination and swap; never write into the
-  directory a VM may be booting from, and never publish a build that exported
-  nothing — the resolver skips an incomplete local build silently and boots the
-  published image instead, which looks like a build that did nothing.
 - **Pool IDs become directory names.** Anything reaching `filepath.Join` with
   the state directory goes through `validatePoolID` first.
 - **Signing is not optional.** A change to how `discobox-server` is built must
   keep `task sign` in the path, or macOS pools stop starting with an opaque
   framework error. It is the only binary that needs it: the CLI runs the server
   as a separate process (ADR 0099), so nothing it does creates a VM.
-- **Do not replace the clock step with NTP, or make it conditional.** The guest
-  is hours off precisely when the Mac has slept, which is the case an NTP
-  daemon refuses to correct on its own. Every 401 in both directions traces
-  back here.
-- **A new guest device is three edits, not one.** The image ships drivers for
-  the seven virtio devices `vzvm.Start` attaches and deletes the rest, so
-  attaching a device the guest has never had also means keeping its module class
-  in `image/Dockerfile` and, if the root depends on it, adding it to
-  `/etc/initramfs-tools/modules`. A missing module is a guest that boots to no
-  device or does not boot at all.
-- **Guest image changes are a separate release.** Editing `image/` does not ship
-  with the server; it ships when a `vm/v*` tag is cut and `DefaultGuestImage` is
-  re-pinned to the new `discobox-vm` digest.
-- **Do not mask `systemd-networkd-wait-online.service`.** It is the only thing
-  that makes `network-online.target` mean anything under networkd, and
-  `docker.service` orders itself after that target. Masking it does not remove
-  the dependency, it silently satisfies it, and `dockerd` then races the DHCP
-  lease this guest takes its address, route, *and* resolver from — a race it
-  loses often enough to fail the pool's first registry pull and mark the pool
-  offline. It belongs with the units the guest enables, not with the ones a
-  headless guest masks.
+- **The guest image is not vz's to change alone.** Everything under `vm-image/`
+  boots libkrun pools too, and its rules live in `vm-image/REVIEW.md` where the
+  drill-down reaches them. A change there that only makes sense on a Mac is a
+  change in the wrong place — including the clock step, which is conditioned on
+  the RTC rather than on the backend, and the virtio module set, which follows
+  what a driver attaches rather than what `vzvm.Start` alone does.

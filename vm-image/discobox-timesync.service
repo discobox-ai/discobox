@@ -1,0 +1,14 @@
+[Unit]
+Description=Resynchronise the guest clock from the host-backed RTC
+After=discobox-storage.service
+# Only a host-backed RTC can answer this, and only some hypervisors present one.
+# Without the condition the timer would write "no host-backed RTC" to the serial
+# console every 30 seconds — on the one surface an operator reads to find out
+# why a guest never came up.
+ConditionPathExists=/sys/class/rtc/rtc0/since_epoch
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/discobox-sync-clock
+StandardOutput=journal+console
+StandardError=journal+console

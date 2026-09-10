@@ -228,30 +228,69 @@ tasks:
       # and a gzip whose stdout reaches a console refuses to write at all.
       - go run ./internal/cmd/discobox-gzip {{.RELAY_BIN}} {{.RELAY_OUT}}
 
-  build:vz-guest:
-    desc: Build the macOS pool guest image and stage it where the vz provider finds it
+  build:vm-guest:
+    desc: Build the pool VM guest image and stage it where this host's provider finds it
     # Docker is required to *build* a guest image; it is never required to run
     # one. This is the bootstrap of the bootstrap: with no guest published yet,
-    # or with local changes to image/, build it here and every vz pool picks it
-    # up. Delete the directory to go back to the published image.
-    platforms: [darwin]
+    # or with local changes to vm-image/, build it here and every pool on this
+    # machine picks it up. Delete the directory to go back to the published
+    # image.
+    #
+    # One image serves both backends, so this is one target: the platform only
+    # decides which architecture to build and which provider's local directory
+    # to stage it into.
     vars:
-      GUEST_DIR: '{{.GUEST_DIR | default "$HOME/Library/Application Support/discobox/vz/guest/local"}}'
+      GUEST_PLATFORM: '{{.GUEST_PLATFORM | default (printf "linux/%s" (eq OS "darwin" | ternary "arm64" ARCH))}}'
+      GUEST_DIR: '{{.GUEST_DIR | default (eq OS "darwin" | ternary "$HOME/Library/Application Support/discobox/vz/guest/local" "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/guest/local")}}'
+    cmds:
+      - task: stage-vm-artifacts
+        vars:
+          STAGE_DOCKERFILE: vm-image/Dockerfile
+          STAGE_PLATFORM: '{{.GUEST_PLATFORM}}'
+          STAGE_DIR: '{{.GUEST_DIR}}'
+          STAGE_WHAT: guest
+
+  build:vm-kernel:
+    desc: Build the libkrun guest kernel and stage it where the libkrun provider finds it
+    # Only libkrun needs this, and only libkrun can use it: it is the
+    # libkrunfw-patched kernel, which no other hypervisor boots. It compiles
+    # Linux, so it is slow the first time and a BuildKit cache hit afterwards —
+    # which is exactly why it is not a stage of the guest image.
+    platforms: [linux]
+    vars:
+      KERNEL_DIR: '{{.KERNEL_DIR | default "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/kernel/local"}}'
+    cmds:
+      - task: stage-vm-artifacts
+        vars:
+          STAGE_DOCKERFILE: vm-image/kernel/Dockerfile
+          STAGE_PLATFORM: linux/amd64
+          STAGE_DIR: '{{.KERNEL_DIR}}'
+          STAGE_WHAT: kernel
+
+  stage-vm-artifacts:
+    internal: true
+    # A pool may be booting from the destination right now, so the artifacts are
+    # built aside and swapped in rather than written in place: a build writing
+    # directly would replace a kernel underneath a VM reading it.
+    requires:
+      vars: [STAGE_DOCKERFILE, STAGE_PLATFORM, STAGE_DIR, STAGE_WHAT]
     cmds:
       - |
         set -eu
-        dest="{{.GUEST_DIR}}"
-        staging="$(mktemp -d "${TMPDIR:-/tmp}/discobox-vz-guest.XXXXXX")"
+        dest="{{.STAGE_DIR}}"
+        staging="$(mktemp -d "${TMPDIR:-/tmp}/discobox-vm-{{.STAGE_WHAT}}.XXXXXX")"
         trap 'rm -rf "$staging"' EXIT
-        # A pool may be booting from $dest right now, so the artifacts are built
-        # aside and swapped in rather than written in place.
-        docker build           --platform linux/arm64           --file server/providers/vz/image/Dockerfile           --output "type=local,dest=$staging"           .
+        docker build \
+          --platform {{.STAGE_PLATFORM}} \
+          --file {{.STAGE_DOCKERFILE}} \
+          --output "type=local,dest=$staging" \
+          .
         mkdir -p "$(dirname "$dest")"
         rm -rf "$dest"
         mv "$staging" "$dest"
         trap - EXIT
         ls -l "$dest"
-        echo "staged guest artifacts in $dest; recreate a vz pool to boot them"
+        echo "staged {{.STAGE_WHAT}} artifacts in $dest; recreate a pool to boot them"
 
   build:base-image:
     desc: Build the shared Debian/Docker/systemd base both agent images build FROM
@@ -516,14 +555,18 @@ tasks:
       - cd server && DISCOBOX_E2E=1 go test ./providers/poolruntime -count=1 -v
 
   test:e2e:libkrun:
-    desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM plus the five DISCOBOX_LIBKRUN_E2E_* variables"
+    desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM, libkrun and passt on the path, plus the DISCOBOX_LIBKRUN_E2E_* variables"
     cmds:
       # Unlike the other suites this one needs artifacts the repository does not
       # build, so it fails loudly listing what is missing rather than skipping
-      # silently and looking like a pass.
+      # silently and looking like a pass. The two directories are what
+      # `vm:build` and `vm:build-kernel` write on an amd64 Linux machine:
+      # build/vm and build/vm-kernel. Both have to be amd64 — that is the only
+      # architecture libkrun boots — and an override directory carries no
+      # platform, so nothing downstream can catch an arm64 root filesystem.
       - |
         missing=""
-        for v in DISCOBOX_LIBKRUN_E2E_LAUNCHER DISCOBOX_LIBKRUN_E2E_KERNEL DISCOBOX_LIBKRUN_E2E_ROOT_IMAGE DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
+        for v in DISCOBOX_LIBKRUN_E2E_GUEST_DIR DISCOBOX_LIBKRUN_E2E_KERNEL_DIR DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
           eval "value=\${$v:-}"
           if [ -z "$value" ]; then missing="$missing $v"; fi
         done
@@ -635,7 +678,8 @@ tasks:
           base-image/Dockerfile:base-image \
           pool-agent/Dockerfile:. \
           sandbox-agent/Dockerfile:. \
-          server/providers/vz/image/Dockerfile:. \
+          vm-image/Dockerfile:. \
+          vm-image/kernel/Dockerfile:. \
           harness/claude-code/Dockerfile:harness/claude-code \
           harness/codex-cli/Dockerfile:harness/codex-cli \
           harness/shell/Dockerfile:harness/shell; do
@@ -1479,18 +1523,37 @@ tasks:
         fi
 
   vm:build:
-    desc: Build the pool VM's boot artifacts into build/vm
+    desc: Build the pool VM's boot artifacts into build/vm (VM_PLATFORM= picks the architecture)
     # The VM image has its own release line (ADR 0062 §3); this is its build
     # step, runnable locally so its verification is too.
+    #
+    # It defaults to this machine's architecture, not to a fixed one: the guest
+    # is built for two now, and the artifacts a developer wants locally are the
+    # ones their own hypervisor can boot. CI names the platform explicitly.
     deps:
       - buildx:builder
+    vars:
+      VM_PLATFORM: '{{.VM_PLATFORM | default (printf "linux/%s" ARCH)}}'
     cmds:
       - rm -rf build/vm
       - >-
         docker buildx build --builder {{.BUILDX_BUILDER}}
-        --platform linux/arm64
-        --file server/providers/vz/image/Dockerfile
+        --platform {{.VM_PLATFORM}}
+        --file vm-image/Dockerfile
         --output type=local,dest=build/vm
+        .
+
+  vm:build-kernel:
+    desc: Build the libkrun guest kernel into build/vm-kernel
+    deps:
+      - buildx:builder
+    cmds:
+      - rm -rf build/vm-kernel
+      - >-
+        docker buildx build --builder {{.BUILDX_BUILDER}}
+        --platform linux/amd64
+        --file vm-image/kernel/Dockerfile
+        --output type=local,dest=build/vm-kernel
         .
 
   vm:verify:
@@ -1498,74 +1561,167 @@ tasks:
     # A guest that publishes a kernel the hypervisor cannot load, or a root
     # filesystem that will not mount, fails silently: the VM boots to a blank
     # console. Both are cheap to check here and impossible to diagnose from
-    # macOS.
+    # inside a VM that never came up.
+    vars:
+      VM_PLATFORM: '{{.VM_PLATFORM | default (printf "linux/%s" ARCH)}}'
     cmds:
       - |
         set -eu
+        arch="{{.VM_PLATFORM}}"
+        arch="${arch#linux/}"
         cd build/vm
         ls -l
-        for artifact in vmlinux initrd.img root.ext4; do
+        for artifact in initrd.img root.ext4; do
           test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
         done
-        # Virtualization.framework requires an uncompressed arm64 Image, which
-        # carries "ARMd" at offset 0x38.
-        magic=$(dd if=vmlinux bs=1 skip=56 count=4 status=none)
-        test "$magic" = "ARMd" || { echo "vmlinux is not an uncompressed arm64 kernel Image" >&2; exit 1; }
+        # Only arm64 publishes a kernel. amd64 is booted by libkrun, which needs
+        # the patched kernel from vm-image/kernel and would not load Debian's;
+        # see assemble-guest-image.
+        if [ "$arch" = arm64 ]; then
+          test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
+          # A hypervisor that loads a kernel directly requires an uncompressed
+          # arm64 Image, which carries "ARMd" at offset 0x38.
+          magic=$(dd if=vmlinux bs=1 skip=56 count=4 status=none)
+          test "$magic" = "ARMd" || { echo "vmlinux is not an uncompressed arm64 kernel Image" >&2; exit 1; }
+        else
+          test ! -e vmlinux || { echo "amd64 published a vmlinux; libkrun boots its own kernel" >&2; exit 1; }
+        fi
         dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root"
         # The guest's own name. The Debian base image ships /etc/hostname
         # saying "debuerreotype" and a container never sees it, so this is only
         # ever wrong in the artifact that boots — the one place nothing looks.
         hostname=$(debugfs -R "cat /etc/hostname" root.ext4 2>/dev/null | tr -d '\0\r\n ')
         test "$hostname" = "discobox" || { echo "root.ext4 boots as '$hostname', not discobox" >&2; exit 1; }
-        echo "VM artifacts verified (hostname $hostname)"
+        # One guest for every backend, so the network configuration has to be
+        # the one both can use: passt and Virtualization.framework's NAT both
+        # serve DHCP, and a guest that configured an address by hand would boot
+        # on exactly one of them.
+        network=$(debugfs -R "cat /etc/systemd/network/10-discobox.network" root.ext4 2>/dev/null)
+        echo "$network" | grep -q "DHCP=ipv4" \
+          || { echo "root.ext4 does not take its address from DHCP" >&2; exit 1; }
+        # And it has to match the interface both backends actually present:
+        # virtio-pci is enp0s*, libkrun's virtio-mmio NIC stays eth0.
+        echo "$network" | grep -q "Name=.*en\*.*eth\*" \
+          || { echo "root.ext4 matches only some of the interface names a backend presents" >&2; exit 1; }
+        # systemd-networkd-wait-online is what gives network-online.target a
+        # meaning under networkd, and docker.service orders itself after that
+        # target. Masked, the target is satisfied vacuously and dockerd races
+        # the lease this guest takes its address, route and resolver from. That
+        # failure is worse than getting the address wrong: not dead on one
+        # backend, but intermittent on both.
+        if debugfs -R "stat /etc/systemd/system/systemd-networkd-wait-online.service" root.ext4 2>/dev/null | grep -q "/dev/null"; then
+          echo "systemd-networkd-wait-online.service is masked; dockerd will race the DHCP lease" >&2
+          exit 1
+        fi
+        if ! debugfs -R "ls /etc/systemd/system/network-online.target.wants" root.ext4 2>/dev/null | grep -q "systemd-networkd-wait-online.service"; then
+          echo "systemd-networkd-wait-online.service is not enabled" >&2
+          exit 1
+        fi
+        echo "VM artifacts verified for $arch (hostname $hostname)"
+
+  vm:verify-kernel:
+    desc: Verify the built libkrun kernel is one libkrun can load
+    cmds:
+      - |
+        set -eu
+        cd build/vm-kernel
+        ls -l
+        test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
+        # libkrun loads this with KRUN_KERNEL_FORMAT_ELF, so an ELF header is
+        # the difference between a VM that boots and one that dies with EINVAL.
+        magic=$(dd if=vmlinux bs=4 count=1 status=none | od -An -tx1 | tr -d ' \n')
+        test "$magic" = "7f454c46" || { echo "vmlinux is not an ELF image" >&2; exit 1; }
+        # Docker's iptables-nft frontend needs these built in, not modular:
+        # libkrunfw ships a compact nftables-only kernel and a guest missing
+        # them starts every container with no network rules and no error.
+        # CONFIG_PACKET is the DHCP client's socket family: the guest takes its
+        # address from a lease on every backend (ADR 0101 §2), so a kernel
+        # without it boots a guest that runs dockerd and never gets an address.
+        for required in CONFIG_PACKET=y CONFIG_NFT_COMPAT=y CONFIG_BRIDGE=y CONFIG_VETH=y CONFIG_OVERLAY_FS=y; do
+          grep -qx "$required" kernel.config || { echo "kernel is missing $required" >&2; exit 1; }
+        done
+        echo "kernel verified"
 
   vm:publish:
-    desc: Push the VM image for VM_TAG and report the digest to pin
+    desc: Push the multi-architecture VM image for VM_TAG and report the digest to pin
     deps:
       - buildx:builder
+    cmds:
+      - task: vm:push
+        vars:
+          PUSH_IMAGE: discobox-vm
+          PUSH_DOCKERFILE: vm-image/Dockerfile
+          PUSH_PLATFORMS: linux/arm64,linux/amd64
+          PUSH_FILE: server/providers/guestimage/image.go
+          PUSH_CONST: DefaultVMImage
+
+  vm:publish-kernel:
+    desc: Push the libkrun guest kernel for VM_TAG and report the digest to pin
+    deps:
+      - buildx:builder
+    cmds:
+      - task: vm:push
+        vars:
+          PUSH_IMAGE: discobox-vm-kernel
+          PUSH_DOCKERFILE: vm-image/kernel/Dockerfile
+          PUSH_PLATFORMS: linux/amd64
+          PUSH_FILE: server/providers/libkrun/provider.go
+          PUSH_CONST: DefaultKernelImage
+
+  vm:push:
+    internal: true
+    requires:
+      vars: [PUSH_IMAGE, PUSH_DOCKERFILE, PUSH_PLATFORMS, PUSH_FILE, PUSH_CONST]
     cmds:
       - |
         set -eu
         tag="{{.VM_TAG}}"
         if [ -z "$tag" ]; then
           # A git tag of vm/v1.2.3 carries a slash, which is not a legal Docker
-          # tag. The prefix scopes the VM image's release line in the git tag
-          # namespace; the image tag is the version alone.
+          # tag. The prefix scopes each VM artifact's release line in the git
+          # tag namespace; the image tag is the version alone.
           case "${GITHUB_REF_NAME:-}" in
             vm/v*) tag="${GITHUB_REF_NAME#vm/}" ;;
+            vm-kernel/v*) tag="${GITHUB_REF_NAME#vm-kernel/}" ;;
           esac
         fi
         case "$tag" in
           v*) ;;
-          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v* tag)" >&2; exit 1 ;;
+          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v* or vm-kernel/v* tag)" >&2; exit 1 ;;
         esac
         if [ -z "{{.REGISTRY}}" ]; then
           echo "vm:publish: could not resolve a registry from the origin remote; pass REGISTRY=ghcr.io/<owner>" >&2
           exit 1
         fi
-        # discobox-vm, with no backend in the name: libkrun is expected to boot
-        # the same artifacts once ADR 0062 §9 lands, and "pool image" already
-        # means the pool-agent container (dockerworker.DefaultPoolImage).
-        ref="{{.REGISTRY}}/discobox-vm:$tag"
+        ref="{{.REGISTRY}}/{{.PUSH_IMAGE}}:$tag"
+        metadata="build/{{.PUSH_IMAGE}}-push.json"
 
-        # Run after vm:build in the same session and every stage is a cache
-        # hit in the builder; only the push is new work.
-        docker buildx build --builder {{.BUILDX_BUILDER}} \
-          --platform linux/arm64 \
-          --file server/providers/vz/image/Dockerfile \
-          --tag "$ref" --push \
-          --metadata-file build/vm-push.json \
-          .
-        digest="$(jq -r '."containerimage.digest"' build/vm-push.json)"
+        # depot builds each architecture on a native machine, so there is no
+        # per-arch fan-out and no manifest list to assemble (ADR 0066 §6). The
+        # buildx fallback emulates, which for a build that runs apt and
+        # mkfs.ext4 over a whole root filesystem is slow rather than broken.
+        if command -v depot >/dev/null 2>&1; then
+          depot build --platform {{.PUSH_PLATFORMS}} \
+            -f {{.PUSH_DOCKERFILE}} -t "$ref" --push \
+            --metadata-file "$metadata" .
+        else
+          echo "depot not found; falling back to emulated docker buildx." >&2
+          docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 >/dev/null
+          docker buildx build --builder {{.BUILDX_BUILDER}} \
+            --platform {{.PUSH_PLATFORMS}} \
+            -f {{.PUSH_DOCKERFILE}} -t "$ref" --push \
+            --metadata-file "$metadata" .
+        fi
+        digest="$(jq -r '."containerimage.digest"' "$metadata")"
 
         # The tag is a convenience; the server pins the digest.
         report() {
-          echo "### VM image published"
+          echo "### {{.PUSH_IMAGE}} published"
           echo
-          echo 'Pin this in `server/providers/vz/provider.go` (`DefaultGuestImage`):'
+          echo 'Pin this in `{{.PUSH_FILE}}`:'
           echo
           echo '```go'
-          echo "const DefaultGuestImage = \"{{.REGISTRY}}/discobox-vm@$digest\""
+          echo "const {{.PUSH_CONST}} = \"{{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest\""
           echo '```'
         }
         report

@@ -1,0 +1,19 @@
+[Unit]
+Description=Expose the Docker Unix socket over VSOCK
+Requires=discobox-storage.service docker.socket
+After=discobox-storage.service docker.socket
+
+[Service]
+Type=simple
+# The transport this listens on is a module in a distribution kernel and built
+# in to libkrun's patched one, so the load is attempted and its failure ignored
+# (the leading "-"). Doing it here rather than in modules-load.d is what keeps a
+# guest whose kernel already has it from booting into a failed unit — and it
+# orders the load before the socket that needs it, which modules-load.d does not.
+ExecStartPre=-/sbin/modprobe vmw_vsock_virtio_transport
+ExecStart=/usr/local/bin/discobox-vsock-guest docker-proxy --port 3004 --socket /var/run/docker.sock
+Restart=on-failure
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target

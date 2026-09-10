@@ -50,7 +50,7 @@ func TestPoolLogsExplainsAMissingConsole(t *testing.T) {
 	if err == nil {
 		t.Fatal("PoolLogs on a pool with no VM succeeded")
 	}
-	if !strings.Contains(err.Error(), "has not been started on this host") {
+	if !strings.Contains(err.Error(), "has not been started by this server") {
 		t.Fatalf("error = %v", err)
 	}
 }

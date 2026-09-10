@@ -305,6 +305,9 @@ func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, e
 	if err != nil {
 		return nil, fmt.Errorf("guestimage: read %s: %w", r.cfg.Reference, err)
 	}
+	if err := r.checkPlatform(image); err != nil {
+		return nil, err
+	}
 	if err := r.extract(ctx, image, dir, report); err != nil {
 		return nil, err
 	}
@@ -315,6 +318,31 @@ func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, e
 	slog.InfoContext(ctx, "extracted guest image artifacts",
 		"reference", r.cfg.Reference, "digest", digest, "dir", dir)
 	return bundle, nil
+}
+
+// checkPlatform refuses an image built for another architecture.
+//
+// remote.WithPlatform selects a child of an index and does nothing at all to a
+// plain single-architecture manifest, which is returned whatever was asked for.
+// That is a silent failure with no good symptom: the artifacts extract, the VM
+// boots, and the guest panics on its first instruction. The image's own config
+// is the authority, so it is what gets checked.
+//
+// Only a stated mismatch is refused. An image that declares no architecture
+// makes no claim to contradict, and refusing it would reject a hand-assembled
+// artifact set that boots perfectly well.
+func (r *Resolver) checkPlatform(image v1.Image) error {
+	config, err := image.ConfigFile()
+	if err != nil {
+		return fmt.Errorf("guestimage: read %s configuration: %w", r.cfg.Reference, err)
+	}
+	want := r.platform()
+	if (config.Architecture == "" || config.Architecture == want.Architecture) &&
+		(config.OS == "" || config.OS == want.OS) {
+		return nil
+	}
+	return fmt.Errorf("guestimage: %s is built for %s/%s, but this host needs %s/%s",
+		r.cfg.Reference, config.OS, config.Architecture, want.OS, want.Architecture)
 }
 
 // extract flattens the image and writes the wanted artifacts into dir. It

@@ -105,7 +105,7 @@ the last of those, which never passes through the host-mount prefix.
 Read-only is the whole of the write policy. A sandbox clones from the
 developer's checkout and works in its own copy on the pool's data disk; nothing
 in a sandbox may write to files on the Mac. The host enforces it — the guest's
-`ro` in `image/fstab` is a second statement of the same thing, not the one that
+`ro` in `vm-image/fstab` is a second statement of the same thing, not the one that
 counts.
 
 The share stops at the pool. The guest and the pool-agent container see all of
@@ -163,41 +163,16 @@ The root is shared read-only by every pool on the host. Each pool owns
 `data.raw` and `cache.raw`, created sparse and formatted by the guest on first
 boot. Only raw images exist here: Virtualization.framework has no QCOW2 path.
 
-`image/Dockerfile` produces all three in a final `FROM scratch` stage.
-Filesystem assembly runs inside the build, because `mkfs.ext4 -d` needs no loop
-device and no privileges — which is what lets the same Dockerfile be built by
-CI, by a Linux developer, and by BuildKit inside a running pool VM.
+The guest itself is not vz's. `vm-image/` builds one image for every VM
+backend, and `vz` boots its `linux/arm64` variant while libkrun boots the
+`linux/amd64` one (ADR 0101 §1); `vm-image/DESIGN.md` is where its scope rule,
+its assembly, and its compatibility surface are described. Nothing in it names
+either backend, and the one difference that could have — how the guest gets an
+address — is answered the same way for both, because passt serves DHCP as
+Virtualization.framework's NAT attachment does.
 
-The guest carries only what boots Docker: `dockerd`, the two
-`discobox-vsock-guest` services, a storage unit that mounts the data and cache
-disks and bind-mounts `/var/lib/docker` and `/var/lib/containerd` onto them, and
-`systemd-networkd`/`systemd-resolved` for the DHCP lease. Anything a sandbox
-needs belongs in a container on that daemon, never here. That scope rule is
-what keeps the image small enough to ship on first boot and stable enough to
-version on its own line.
-
-`systemd-networkd-wait-online` is enabled with it, and deliberately so: it is
-the only thing that gives `network-online.target` a meaning under networkd, and
-`docker.service` orders itself after that target. Masked — as it once was, among
-units a headless guest genuinely does not need — the target was reached
-vacuously and `dockerd` could start before the lease landed, with no resolver
-and no route, failing its first registry pull. The drop-in narrows the wait to
-`--any` with a timeout, because `docker0` and the per-sandbox bridges are
-networkd-managed too and only exist once `dockerd` is already running.
-
-The same rule applies to hardware, and the build enforces it: `vzvm.Start`
-attaches seven virtio devices and nothing else can ever appear, so the Dockerfile
-deletes the driver classes Debian's kernel package ships for the rest of the
-world and the initrd is built from a list rather than `MODULES=most`. `/boot` is
-deleted once the kernel and initrd are lifted out as artifacts of their own.
-Sizing follows from the same premise: the root is read-only, so it is built with
-no journal, no reserved blocks, and only the inodes its own files need.
-
-Its image assets duplicate libkrun's rather than sharing them. That is
-deliberate: libkrun's guest is slated for rework, and coupling to it first would
-make that rework harder. The *pipeline* — `guestimage` and
-`dockerworker.BuildArtifacts` — is shared from the start; the image content is
-not (ADR 0062 §5).
+What is vz's is which artifacts it asks the resolver for and how it attaches
+them, above.
 
 ## Guest build loop
 
@@ -232,16 +207,18 @@ pool.
 
 The guest image is built and released on its own line
 (`.github/workflows/vm-image.yml`, tags `vm/v*`), not with the discobox release.
-`DefaultGuestImage` pins what a server build boots. Its inputs change when
+`DefaultGuestImage` is `guestimage.DefaultVMImage`, and the pin lives there
+rather than here because the image is shared: one publish has to be one edit, or
+a backend quietly keeps booting the release before last. Its inputs change when
 Debian, the kernel, or Docker changes rather than when Discobox does, so tying
 the two would make a guest fix require a product release and a product release
 imply a new guest.
 
 It publishes as `discobox-vm`. The name carries no backend because the artifacts
-are not vz's to own — libkrun is expected to boot the same set once ADR 0062 §9
-lands — and it is not called a pool image because that already means the
-pool-agent container (`dockerworker.DefaultPoolImage`), which this provider
-exposes as `workerImage` beside `guestImage`.
+are not vz's to own — libkrun boots the same image on amd64 — and it is not
+called a pool image because that already means the pool-agent container
+(`dockerworker.DefaultPoolImage`), which this provider exposes as `workerImage`
+beside `guestImage`.
 
 The compatibility surface between the two lines is narrow by construction — the
 VSOCK port map, the storage layout, the `discobox-users` share tag and where the
@@ -249,9 +226,10 @@ guest mounts it, and `discobox-vsock-guest`, which is built from `pool-agent`
 sources into the guest image. Keeping it narrow is what makes independent
 versioning safe; a change to it is a coordinated release.
 
-In development neither line is what runs: `build-guest` builds the guest from
-the checkout and the local build wins over both. That is the intended way to
-work on `image/` — and the way to adopt a guest-side change, such as the
+In development neither line is what runs: `task build:vm-guest` (or
+`discobox admin pool build-guest`, on a Mac with no daemon) builds the guest
+from the checkout and the local build wins over both. That is the intended way
+to work on `vm-image/` — and the way to adopt a guest-side change, such as the
 `/Users` mount point, without cutting a release for it.
 
 The share is the one place that ordering is not symmetric. A guest whose host

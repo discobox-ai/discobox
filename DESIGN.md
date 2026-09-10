@@ -186,9 +186,11 @@ flowchart TD
 - `flake.nix` owns the toolchain. `nix develop` (or direnv via `.envrc`) is the
   entry point; its `shellHook` exports the `DISCOBOX_*` environment and
   regenerates CLI completions. `GOTOOLCHAIN=auto` means Nix supplies a bootstrap
-  Go and `go.mod` names the one that compiles. `devShells.libkrun` is the
-  separate shell for launcher work; the libkrun artifacts themselves are
-  `nix build .#discobox-krun`.
+  Go and `go.mod` names the one that compiles. `devShells.libkrun` adds the two
+  things a machine running libkrun pools needs installed — libkrun and passt —
+  and stays out of the default shell because that libkrun build is not in
+  cache.nixos.org; `nix build .#libkrun-runtime` is the same closure for a
+  machine that is not in a dev shell.
 - `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
   `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
   by Nix.
@@ -258,8 +260,10 @@ Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
 a running development server.
 
-The pool VM image — the kernel, initrd, and root filesystem a VM-backed pool
-boots — is a separate release line with its own `vm/v*` tags and its own
-workflow (ADR 0062 §3); the server pins its digest. It publishes as
-`discobox-vm` rather than under a backend name because only `vz` boots it today
-and libkrun is expected to boot the same artifacts (ADR 0062 §9).
+The pool VM guest — the kernel, initrd, and root filesystem a VM-backed pool
+boots — is built from [`vm-image/`](vm-image/DESIGN.md) and released on its own
+`vm/v*` line with its own workflow (ADR 0062 §3); the server pins its digest. It
+is one image for every VM backend: `vz` boots its `linux/arm64` variant and
+`libkrun` the `linux/amd64` one (ADR 0101). The libkrunfw-patched kernel libkrun
+needs is the one artifact it cannot take from there, so it has a third line of
+its own, `vm-kernel/v*`.

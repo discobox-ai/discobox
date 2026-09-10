@@ -1,0 +1,22 @@
+# The guest takes its address, route, and resolver from a DHCP lease, whichever
+# user-mode network its host runs: Virtualization.framework's NAT attachment
+# serves DHCP, and so does passt, which is what backs a libkrun guest. One unit
+# covers both, so the guest image has no per-backend network configuration and
+# nothing in it has to be told which hypervisor it woke up on.
+#
+# Both name globs are load-bearing. The interface name is the kernel's and
+# udev's to choose, and the two backends do not choose the same one: a
+# virtio-pci NIC gets a predictable `enp0s*` name, while libkrun's virtio-mmio
+# NIC has no topology to derive one from and keeps `eth0`. Matching only `en*`
+# is a libkrun guest that boots with no address at all — which looks like a pool
+# whose agent never registers, not like a network problem.
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=ipv4
+IPv6AcceptRA=no
+
+[DHCPv4]
+UseDNS=yes
+UseDomains=yes

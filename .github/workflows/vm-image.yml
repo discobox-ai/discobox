@@ -1,18 +1,27 @@
-# The pool VM image has its own build and its own release line (ADR 0062 §3).
+# The pool VM artifacts have their own builds and their own release lines
+# (ADR 0062 §3).
 #
-# It is not cut with the discobox release. It is a Debian userland that boots
-# dockerd and two VSOCK helpers, so its inputs change when Debian, the kernel,
-# or Docker changes — not when Discobox does. Publishing it per discobox tag
-# would push hundreds of megabytes per release and, worse, would make a VM fix
-# require a product release and a product release imply a new VM image.
+# They are not cut with the discobox release. The guest image is a Debian
+# userland that boots dockerd and two VSOCK helpers, so its inputs change when
+# Debian, the kernel, or Docker changes — not when Discobox does. Publishing it
+# per discobox tag would push hundreds of megabytes per release and, worse,
+# would make a VM fix require a product release and a product release imply a
+# new VM image.
 #
-# It is published as `discobox-vm`, with no backend in the name: only `vz` boots
-# it today, but libkrun is expected to boot the same artifacts once ADR 0062 §9
-# lands. "Pool image" is deliberately not used — that already means the
+# There are two artifacts, on two tag lines, because they move on unrelated
+# clocks:
+#
+#   vm/v*         discobox-vm         one guest, linux/arm64 + linux/amd64.
+#                                     `vz` boots the arm64 variant and `libkrun`
+#                                     the amd64 one, from one Dockerfile.
+#   vm-kernel/v*  discobox-vm-kernel  the libkrunfw-patched kernel — a separate
+#                                     workflow, because it compiles Linux and
+#                                     must not run on a guest change.
+#
+# "Pool image" is deliberately not used for either — that already means the
 # pool-agent container (dockerworker.DefaultPoolImage).
 #
-# The server pins a digest, so the two lines move independently in both
-# directions.
+# The server pins digests, so every line moves independently in both directions.
 name: VM image
 
 on:
@@ -21,7 +30,10 @@ on:
       - "vm/v*"
   pull_request:
     paths:
-      - "server/providers/vz/image/**"
+      - "vm-image/**"
+      # The kernel is built by vm-kernel.yml and changes on its own clock;
+      # nothing under it reaches this build.
+      - "!vm-image/kernel/**"
       - "pool-agent/vsock/**"
       - "pool-agent/cmd/discobox-vsock-guest/**"
       - ".github/workflows/vm-image.yml"
@@ -41,33 +53,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    # A native arm64 runner, not QEMU: the build installs an arm64 kernel,
-    # generates an initrd, and runs mkfs.ext4 over the whole root filesystem.
-    # Emulating that costs an hour to save nothing.
-    runs-on: depot-ubuntu-24.04-arm-4
+  guest:
+    # One guest image, so one build matrix rather than one job per backend.
+    # Native runners, not QEMU: the build installs a kernel, generates an
+    # initrd, and runs mkfs.ext4 over the whole root filesystem. Emulating that
+    # costs an hour to save nothing.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/arm64
+            runner: depot-ubuntu-24.04-arm-4
+          - platform: linux/amd64
+            runner: depot-ubuntu-24.04-4
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: ./.github/actions/task
+        with:
+          target: vm:build VM_PLATFORM=${{ matrix.platform }}
+
+      - run: nix develop -c go tool task vm:verify VM_PLATFORM=${{ matrix.platform }}
+
+  publish-guest:
+    needs: guest
+    if: startsWith(github.ref, 'refs/tags/vm/v')
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 90
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v6.0.2
-
-      - uses: ./.github/actions/task
-        with:
-          target: vm:build
-
-      - run: nix develop -c go tool task vm:verify
-
       - uses: docker/login-action@v3.6.0
-        if: startsWith(github.ref, 'refs/tags/vm/v')
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Re-runs the build to get an image instead of a directory of artifacts.
-      # Every stage is a cache hit in the builder vm:build already used, so only
-      # the push is new work.
-      - run: nix develop -c go tool task vm:publish
-        if: startsWith(github.ref, 'refs/tags/vm/v')
+      # depot builds each architecture on a native machine, so the two-platform
+      # push is one command and no manifest list has to be assembled by hand.
+      - uses: ./.github/actions/task
+        with:
+          target: vm:publish

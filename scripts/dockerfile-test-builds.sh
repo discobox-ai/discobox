@@ -105,23 +105,16 @@ build_dockerfile() {
         --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")" \
         --file "$dockerfile" "$(dirname "$dockerfile")"
       ;;
-    server/providers/vz/image/Dockerfile)
-      # arm64-only (ADR 0052 defers Intel Macs), and it installs a kernel,
-      # generates an initrd, and runs mkfs.ext4 over the whole root filesystem.
-      # Building that under emulation costs far more than this is for, and
-      # building it natively is what .github/workflows/vm-image.yml already does
-      # on an arm64 runner.
-      echo "[dockerfile-test-builds] skipping $dockerfile (arm64-only; built by the VM image workflow)"
+    vm-image/Dockerfile)
+      # It installs a kernel, generates an initrd, and runs mkfs.ext4 over the
+      # whole root filesystem, for two architectures. Building that here costs
+      # far more than this is for, and building it natively on both is what
+      # .github/workflows/vm-image.yml already does.
+      echo "[dockerfile-test-builds] skipping $dockerfile (built by the VM image workflow)"
       ;;
-    server/providers/libkrun/*/Dockerfile)
-      # No build target: these produce artifacts the repository deliberately
-      # does not build for anyone (see test:e2e:libkrun, which fails listing
-      # what is missing rather than building it). Both read from the repository
-      # root, unlike everything else with no target.
-      echo "[dockerfile-test-builds] building $dockerfile with context ."
-      DOCKER_BUILDKIT=1 docker build --pull=false \
-        --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")" \
-        --file "$dockerfile" .
+    vm-image/kernel/Dockerfile)
+      # This one compiles Linux. Same reasoning, more so.
+      echo "[dockerfile-test-builds] skipping $dockerfile (built by the VM image workflow)"
       ;;
     *)
       # Test fixtures and anything new: a self-contained image whose context is

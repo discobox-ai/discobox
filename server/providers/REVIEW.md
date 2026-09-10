@@ -51,3 +51,22 @@
   tag; a drift check written against `cfg.Image` reads that as drift and
   removes and recreates a working pool agent on every reconcile until the
   registry answers. The same rule covers the console.
+- Do not reintroduce VM adoption. `vz`, `wslc`, and `libkrun` all end their VMs
+  with the server process (see [VM Lifetime](DESIGN.md#vm-lifetime)); a runtime
+  lock, a recorded PID, or an "is that launcher still mine" check is the
+  protocol ADR 0062 §9 removed. A libkrun launcher must keep both lifetime
+  mechanisms — `PR_SET_PDEATHSIG` *and* the watchdog pipe — because each covers
+  what the other cannot.
+- The guest image belongs to no provider. `vm-image/` is one build for every VM
+  backend, pinned once in `guestimage.DefaultVMImage`. A change that a backend
+  needs and the other cannot take belongs in a separate artifact with its own
+  release line, as libkrun's kernel is — not in a build arg or an architecture
+  branch in that Dockerfile (ADR 0101).
+- A driver that resolves a guest image asks for the artifacts it boots and no
+  others. Extracting a kernel this backend cannot load costs every host that
+  runs it hundreds of megabytes of cache to hold something nothing reads.
+- **A guest build must not disturb a working guest until it has one.** Export to
+  a staging directory beside the destination and swap; never write into the
+  directory a VM may be booting from, and never publish a build that exported
+  nothing — the resolver skips an incomplete local build silently and boots the
+  published image instead, which looks like a build that did nothing.

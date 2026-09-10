@@ -1,6 +1,13 @@
 // Package libkrun registers the Linux libkrun provider. Each pool gets one
 // microVM while dockerworker.Engine continues to own the pool-agent container
 // and Docker behavior inside that VM.
+//
+// The VM boots the same guest image a vz pool does, pulled straight from a
+// registry by server/providers/guestimage, plus a libkrunfw-patched kernel that
+// is libkrun's alone. Nothing is built on the host to start a pool, and libkrun
+// itself is dlopened by the launcher child rather than linked into the server,
+// so a machine that never enables this provider needs none of it installed
+// (ADR 0013, ADR 0062 §9).
 package libkrun
 
 import (
@@ -18,20 +25,24 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/guestimage"
+	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 const (
 	ProviderType = "libkrun"
 
-	defaultVCPUs        = 2
-	defaultMemoryMiB    = 4096
-	defaultDataDiskGiB  = 64
+	// Disk sizes are ceilings, not allocations: both images are sparse and the
+	// guest grows into them. The data disk holds everything that survives a
+	// pool restart — images, layers, volumes, containers — so it is sized for a
+	// real workload rather than for the first sandbox.
+	defaultDataDiskGiB  = 100
 	defaultCacheDiskGiB = 32
 
 	storageNamespace = "libkrun"
-	// Preserve the original default directory namespace so existing launchers
-	// and writable disks remain adoptable after the provider-type rename.
+	// Preserve the original default directory namespace so writable disks
+	// created before the provider-type rename are still found.
 	legacyStorageNamespace = "local-vm"
 
 	controlPlaneVSOCKPort = 3001
@@ -42,22 +53,67 @@ const (
 	labelProviderType = "discobox.provider_type"
 )
 
+// The artifacts each image carries. The guest image publishes a kernel and an
+// initrd too, and this backend wants neither: libkrun boots the patched kernel
+// from its own image, which has every driver this guest needs built in.
+const (
+	rootArtifact   = "root.ext4"
+	kernelArtifact = "vmlinux"
+)
+
+// DefaultKernelImage is the published libkrun guest kernel.
+//
+// It is a second release line rather than a file in the guest image because the
+// two move on unrelated clocks: this changes when libkrunfw or upstream Linux
+// does, the guest when Debian or Docker does. Folding them together would make
+// every guest rebuild compile a kernel and every kernel bump republish a
+// userland.
+//
+// It is a tag until the first vm-kernel/v* release is cut, at which point it is
+// re-pinned to that digest. Until then a machine either builds the kernel
+// locally (`task build:vm-kernel`) or names an image itself.
+const DefaultKernelImage = "ghcr.io/discobox-ai/discobox-vm-kernel:v0"
+
+// guestImageDockerfile is the Dockerfile in a discobox checkout that produces
+// the guest artifact set, in the path form BuildKit's frontend wants. Its
+// context is the repository root, which is why the path is spelled from there.
+const guestImageDockerfile = "vm-image/Dockerfile"
+
+// guestImagePlatform is what a libkrun guest runs on. It is pinned rather than
+// left to the builder because the builder may be a Docker daemon inside the VM,
+// whose idea of "native" is the same only by coincidence.
+const guestImagePlatform = "linux/amd64"
+
 // Config is the persisted libkrun provider configuration.
 type Config struct {
 	poolruntime.PoolPolicy
 
-	RootImage          string `json:"rootImage,omitempty"`
-	KernelImage        string `json:"kernelImage,omitempty"`
+	// GuestImage and KernelImage override the published images. Each has a
+	// directory pair with the same meaning as vz's: an override that is an
+	// assertion, and a local build that wins when it is complete.
+	GuestImage          string `json:"guestImage,omitempty"`
+	GuestImageDir       string `json:"guestImageDir,omitempty"`
+	GuestImageLocalDir  string `json:"guestImageLocalDir,omitempty"`
+	KernelImage         string `json:"kernelImage,omitempty"`
+	KernelImageDir      string `json:"kernelImageDir,omitempty"`
+	KernelImageLocalDir string `json:"kernelImageLocalDir,omitempty"`
+	// ImageCacheDir holds one directory per pulled image digest, for both.
+	// Sharing it is safe and deliberate: the cache is content-addressed.
+	ImageCacheDir string `json:"imageCacheDir,omitempty"`
+
 	StateDir           string `json:"stateDir,omitempty"`
 	RuntimeDir         string `json:"runtimeDir,omitempty"`
 	ControlPlaneSocket string `json:"controlPlaneSocket,omitempty"`
-	LauncherPath       string `json:"launcherPath,omitempty"`
-	MkfsPath           string `json:"mkfsPath,omitempty"`
-	WorkerImage        string `json:"workerImage,omitempty"`
-	VCPUs              int    `json:"vcpus,omitempty"`
-	MemoryMiB          int    `json:"memoryMiB,omitempty"`
-	DataDiskGiB        int64  `json:"dataDiskGiB,omitempty"`
-	CacheDiskGiB       int64  `json:"cacheDiskGiB,omitempty"`
+	// PasstPath and LibkrunPath name the two host dependencies this backend
+	// has. Both are resolved by the loader or PATH when unset, which is what
+	// installing the runtime environment is for.
+	PasstPath    string `json:"passtPath,omitempty"`
+	LibkrunPath  string `json:"libkrunPath,omitempty"`
+	WorkerImage  string `json:"workerImage,omitempty"`
+	VCPUs        int    `json:"vcpus,omitempty"`
+	MemoryMiB    int    `json:"memoryMiB,omitempty"`
+	DataDiskGiB  int64  `json:"dataDiskGiB,omitempty"`
+	CacheDiskGiB int64  `json:"cacheDiskGiB,omitempty"`
 }
 
 func Decode(data json.RawMessage) (Config, error) {
@@ -69,18 +125,19 @@ func Validate(data json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	if !filepath.IsAbs(strings.TrimSpace(cfg.RootImage)) {
-		return fmt.Errorf("libkrun rootImage must be an absolute path")
-	}
-	if !filepath.IsAbs(strings.TrimSpace(cfg.KernelImage)) {
-		return fmt.Errorf("libkrun kernelImage must be an absolute path")
-	}
-	for name, value := range map[string]string{
-		"stateDir":   cfg.StateDir,
-		"runtimeDir": cfg.RuntimeDir,
+	for field, value := range map[string]string{
+		"guestImageDir":       cfg.GuestImageDir,
+		"guestImageLocalDir":  cfg.GuestImageLocalDir,
+		"kernelImageDir":      cfg.KernelImageDir,
+		"kernelImageLocalDir": cfg.KernelImageLocalDir,
+		"imageCacheDir":       cfg.ImageCacheDir,
+		"stateDir":            cfg.StateDir,
+		"runtimeDir":          cfg.RuntimeDir,
+		"passtPath":           cfg.PasstPath,
+		"libkrunPath":         cfg.LibkrunPath,
 	} {
-		if strings.TrimSpace(value) != "" && !filepath.IsAbs(value) {
-			return fmt.Errorf("libkrun %s must be an absolute path", name)
+		if path := strings.TrimSpace(value); path != "" && !filepath.IsAbs(path) {
+			return fmt.Errorf("libkrun %s must be an absolute path", field)
 		}
 	}
 	socket := effectiveControlPlaneSocket(cfg.ControlPlaneSocket)
@@ -103,6 +160,14 @@ func Validate(data json.RawMessage) error {
 	if cfg.DataDiskGiB > 4096 || cfg.CacheDiskGiB > 4096 {
 		return fmt.Errorf("libkrun disk sizes must not exceed 4096 GiB")
 	}
+	// Building the resolvers is the configuration check: it is what rejects an
+	// unparseable reference or a relative path, and it touches no network.
+	if _, err := guestResolver(cfg); err != nil {
+		return err
+	}
+	if _, err := kernelResolver(cfg); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -117,11 +182,32 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	driver, err := NewDriver(driverConfig(cfg))
+	guest, err := guestResolver(cfg)
 	if err != nil {
 		return nil, err
 	}
-	engine, err := dockerworker.New(dockerworker.Config{
+	kernel, err := kernelResolver(cfg)
+	if err != nil {
+		return nil, err
+	}
+	progress := sandbox.PoolProgressReporterFor(poolManager)
+	driver, err := NewDriver(driverConfig(cfg, guest, kernel, progress))
+	if err != nil {
+		return nil, err
+	}
+	engine, err := dockerworker.New(engineConfig(cfg, imageSync, progress, serverDefaults), driver)
+	if err != nil {
+		_ = driver.Close()
+		return nil, err
+	}
+	return poolruntime.New(engine, Definition(), poolManager), nil
+}
+
+// engineConfig renders the pool engine configuration for one provider instance.
+// It is separate from newFromInstance so the transport invariants can be
+// asserted without a VM or a pool manager.
+func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer, progress sandbox.PoolProgressReporter, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
+	return dockerworker.Config{
 		// Both directions are VSOCK for a libkrun microVM: the guest dials host
 		// CID 2 for the control plane, and the agent listens on its own VSOCK
 		// port. The schemes are the whole configuration.
@@ -131,31 +217,51 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		ImageRetention:       serverDefaults.ImageRetention,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
-		ProgressReporter:     sandbox.PoolProgressReporterFor(poolManager),
+		ProgressReporter:     progress,
 		ProxyAuditRetention:  cfg.ProxyAuditRetention.Value(),
-	}, driver)
-	if err != nil {
-		_ = driver.Close()
-		return nil, err
 	}
-	return poolruntime.New(engine, Definition(), poolManager), nil
 }
 
-func driverConfig(cfg Config) DriverConfig {
+func driverConfig(cfg Config, guest, kernel *guestimage.Resolver, progress sandbox.PoolProgressReporter) DriverConfig {
 	parsed, _ := endpoint.Parse(effectiveControlPlaneSocket(cfg.ControlPlaneSocket))
 	return DriverConfig{
-		RootImage:          cfg.RootImage,
-		KernelImage:        cfg.KernelImage,
+		Guest:              guest,
+		Kernel:             kernel,
 		StateDir:           effectiveStateDir(cfg.StateDir),
 		RuntimeDir:         effectiveRuntimeDir(cfg.RuntimeDir),
 		ControlPlaneSocket: parsed.Value,
-		LauncherPath:       cfg.LauncherPath,
-		MkfsPath:           cfg.MkfsPath,
-		VCPUs:              effectiveInt(cfg.VCPUs, defaultVCPUs),
-		MemoryMiB:          effectiveInt(cfg.MemoryMiB, defaultMemoryMiB),
-		DataDiskGiB:        effectiveInt64(cfg.DataDiskGiB, defaultDataDiskGiB),
-		CacheDiskGiB:       effectiveInt64(cfg.CacheDiskGiB, defaultCacheDiskGiB),
+		PasstPath:          cfg.PasstPath,
+		LibraryPath:        cfg.LibkrunPath,
+		VCPUs:              cfg.VCPUs,
+		MemoryMiB:          cfg.MemoryMiB,
+		DataDiskGiB:        cfg.DataDiskGiB,
+		CacheDiskGiB:       cfg.CacheDiskGiB,
+		ProgressReporter:   progress,
 	}
+}
+
+// guestResolver builds the root filesystem resolver. Only the root is asked
+// for: the guest image's kernel and initrd belong to backends that boot a
+// distribution kernel, and extracting artifacts this VM will never load would
+// cost a machine hundreds of megabytes of cache for nothing.
+func guestResolver(cfg Config) (*guestimage.Resolver, error) {
+	return guestimage.New(guestimage.Config{
+		Reference:   defaultString(cfg.GuestImage, guestimage.DefaultVMImage),
+		OverrideDir: strings.TrimSpace(cfg.GuestImageDir),
+		LocalDir:    defaultString(cfg.GuestImageLocalDir, effectiveGuestLocalDir("")),
+		CacheDir:    effectiveImageCacheDir(cfg.ImageCacheDir, "guest"),
+		Artifacts:   []guestimage.Artifact{{Name: rootArtifact}},
+	})
+}
+
+func kernelResolver(cfg Config) (*guestimage.Resolver, error) {
+	return guestimage.New(guestimage.Config{
+		Reference:   defaultString(cfg.KernelImage, DefaultKernelImage),
+		OverrideDir: strings.TrimSpace(cfg.KernelImageDir),
+		LocalDir:    defaultString(cfg.KernelImageLocalDir, effectiveKernelLocalDir("")),
+		CacheDir:    effectiveImageCacheDir(cfg.ImageCacheDir, "kernel"),
+		Artifacts:   []guestimage.Artifact{{Name: kernelArtifact}},
+	})
 }
 
 func effectiveControlPlaneSocket(value string) string {
@@ -163,6 +269,13 @@ func effectiveControlPlaneSocket(value string) string {
 		return endpoint.DefaultEndpoint()
 	}
 	return strings.TrimSpace(value)
+}
+
+func defaultString(value, fallback string) string {
+	if trimmed := strings.TrimSpace(value); trimmed != "" {
+		return trimmed
+	}
+	return fallback
 }
 
 func effectiveInt(value, fallback int) int {
@@ -179,6 +292,17 @@ func effectiveInt64(value, fallback int64) int64 {
 	return value
 }
 
+// defaultVCPUs and defaultMemoryMiB size a pool VM from the host: every vCPU,
+// and half the memory (see krunvm.DefaultHostResources). They are functions
+// rather than constants because the answer depends on the machine.
+func defaultVCPUs() int {
+	return int(krunvm.DefaultHostResources().CPUCount)
+}
+
+func defaultMemoryMiB() int {
+	return int(krunvm.DefaultHostResources().MemoryBytes / (1024 * 1024))
+}
+
 // Definition describes the libkrun provider for provider catalogs.
 func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
@@ -186,18 +310,23 @@ func Definition() sandbox.ProviderDefinition {
 		Icon:        "server",
 		Description: "Runs one Linux KVM-backed libkrun microVM per pool with VSOCK control traffic and outbound-only user-mode networking.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			{Key: "rootImage", Label: "Root QCOW2 Image", Type: "string", Required: true, Description: "Absolute path to the immutable root image built by the libkrun image builder."},
-			{Key: "kernelImage", Label: "Linux Kernel Image", Type: "string", Required: true, Description: "Absolute path to the Docker-built Discobox libkrun kernel."},
+			{Key: "guestImage", Label: "Guest Image", Type: "string", Placeholder: guestimage.DefaultVMImage, Description: "Published guest image carrying the root filesystem.", Advanced: true},
+			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
+			{Key: "guestImageLocalDir", Label: "Local Guest Build", Type: "string", Placeholder: effectiveGuestLocalDir(""), Description: "Where a local guest image build lands; used automatically when complete.", Advanced: true},
+			{Key: "kernelImage", Label: "Kernel Image", Type: "string", Placeholder: DefaultKernelImage, Description: "Published image carrying the libkrunfw-patched kernel.", Advanced: true},
+			{Key: "kernelImageDir", Label: "Kernel Artifact Directory", Type: "string", Description: "Boot this kernel instead of the published image, and fail if it is missing.", Advanced: true},
+			{Key: "kernelImageLocalDir", Label: "Local Kernel Build", Type: "string", Placeholder: effectiveKernelLocalDir(""), Advanced: true},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs)},
-			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB)},
+			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU."},
+			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory."},
 			{Key: "dataDiskGiB", Label: "Data Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultDataDiskGiB, 10)},
 			{Key: "cacheDiskGiB", Label: "Cache Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultCacheDiskGiB, 10)},
-			{Key: "stateDir", Label: "VM State Directory", Type: "string", Placeholder: defaultStateDir(), Advanced: true},
+			{Key: "stateDir", Label: "Pool Disk Directory", Type: "string", Placeholder: defaultStateDir(), Advanced: true},
 			{Key: "runtimeDir", Label: "VM Runtime Directory", Type: "string", Placeholder: defaultRuntimeDir(), Advanced: true},
+			{Key: "imageCacheDir", Label: "Image Cache", Type: "string", Placeholder: defaultImageRoot(), Advanced: true},
 			{Key: "controlPlaneSocket", Label: "Control Plane Unix Socket", Type: "string", Placeholder: endpoint.DefaultEndpoint(), Advanced: true},
-			{Key: "launcherPath", Label: "discobox-krun Path", Type: "string", Placeholder: "discobox-krun", Advanced: true},
-			{Key: "mkfsPath", Label: "mkfs.ext4 Path", Type: "string", Placeholder: "mkfs.ext4", Advanced: true},
+			{Key: "passtPath", Label: "passt Path", Type: "string", Placeholder: "passt", Advanced: true},
+			{Key: "libkrunPath", Label: "libkrun Library Path", Type: "string", Placeholder: "libkrun.so.1", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }
@@ -236,6 +365,45 @@ func runtimeDir(namespace string) string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("discobox-%d", os.Getuid()), namespace)
 }
 
+// defaultImageRoot holds the pulled guest and kernel images.
+//
+// It is a dotted directory inside the pool disk root rather than a sibling of
+// it, and the dot is what makes that safe: a pool's disks live at
+// <stateDir>/<poolID>, and a pool ID has to start with a letter or a digit, so
+// no pool can ever be given this name.
+//
+// It is rooted at the canonical state directory and never at the pre-rename
+// one. The legacy path exists to find disks that were created under it; nothing
+// ever cached an image there, so following it would only put the cache
+// somewhere `task build:vm-guest` does not write.
+func defaultImageRoot() string {
+	return filepath.Join(defaultStateDir(), ".images")
+}
+
+func effectiveImageCacheDir(configured, kind string) string {
+	if value := strings.TrimSpace(configured); value != "" {
+		return filepath.Join(value, kind)
+	}
+	return filepath.Join(defaultImageRoot(), kind)
+}
+
+// effectiveGuestLocalDir names where a local guest image build lands. It is the
+// same path `task build:vm-guest` writes, and that agreement is the whole
+// mechanism: nothing is configured to adopt a local build.
+func effectiveGuestLocalDir(configured string) string {
+	if value := strings.TrimSpace(configured); value != "" {
+		return value
+	}
+	return filepath.Join(defaultImageRoot(), "guest", "local")
+}
+
+func effectiveKernelLocalDir(configured string) string {
+	if value := strings.TrimSpace(configured); value != "" {
+		return value
+	}
+	return filepath.Join(defaultImageRoot(), "kernel", "local")
+}
+
 func effectiveStateDir(configured string) string {
 	return effectiveStorageDir(configured, defaultStateDir(), legacyStateDir())
 }
@@ -244,6 +412,8 @@ func effectiveRuntimeDir(configured string) string {
 	return effectiveStorageDir(configured, defaultRuntimeDir(), legacyRuntimeDir())
 }
 
+// effectiveStorageDir keeps using a pre-rename directory when one exists, so a
+// machine that ran the provider under its old name still finds its pool disks.
 func effectiveStorageDir(configured, canonical, legacy string) string {
 	if configured = strings.TrimSpace(configured); configured != "" {
 		return configured
