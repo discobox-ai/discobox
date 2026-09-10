@@ -266,6 +266,22 @@ steps therefore hold a token, and both are scoped to the least each needs: the
 tap's may only start a workflow already defined there, and winget's may only
 write public repositories as the submitting account.
 
+Release assets are also mirrored at `assets.discobox.ai`, a Cloudflare Worker
+caching them in R2 on first request — a short, CORS-enabled, range-capable URL
+for programmatic downloads. The Worker is generic
+(`discobox-ai/release-asset-mirror`); the deployment, its scheduled smoke
+tests, and the secrets it needs belong to `discobox-ai/infra`. It fills from
+published releases and is never something a release pushes to, so it cannot
+break one. No consumer here names it — the server manifest, both formulae and
+the winget manifest all resolve `github.com` directly — and ADR 0106 holds the
+rule for when that may change.
+
+Its aliases read the same prerelease bit the channels above do, which makes
+`/{namespace}/latest/` the newest blessed release and `/{namespace}/prerelease/`
+the newest unblessed one. Neither is a channel: `prerelease` is not
+`discobox-dev`, which follows the newest dot release whether or not it has been
+blessed.
+
 Windows is the one platform whose asset is an archive rather than a bare binary.
 winget resolves a portable package's command from the file name whenever it
 cannot create a symlink, so `release:windows-zip` repackages the same binary as
