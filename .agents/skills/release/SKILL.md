@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a discobox release — infer the next version, get main green, tag it, watch the release workflow, publish the Homebrew formula, and open the winget pull request. Use when the user wants to tag, release, ship a version, push a formula to the tap, or submit a version to winget.
+description: Cut a discobox release — infer the next version, get main green, tag it, watch the release workflow, and land it on the dev Homebrew channel; separately, mark an already-cut release stable so it reaches `brew install discobox` and winget. Use when the user wants to tag, release, ship a version, push a formula to the tap, promote or mark a release stable, or submit a version to winget.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, AskUserQuestion
 metadata:
   argument-hint: "[version-or-tag]"
@@ -15,6 +15,20 @@ tag.
 The gate is a green CI run **on the exact commit being tagged**. A tag is
 public the moment it is pushed, and the release built from it cannot be
 un-published cleanly — so the order is: green, then tag. Never the reverse.
+
+## Three states, and only one of them is this skill
+
+Cutting a tag does **not** ship to users (ADR 0105). It publishes a GitHub
+prerelease and moves the *latest* channel — ghcr's `:latest` and
+`brew install discobox-dev`. `brew install discobox` and winget do not move.
+
+They move when a human opens the GitHub release and unticks **"Set as a
+pre-release"**. That fires `promote.yml`, and it is a separate, deliberate act.
+
+So this skill ends at a published prerelease. Say so when you hand back: name
+the version, say it is on the dev channel, and say that promoting it is the
+user's call. Do not untick that box for them and do not run `promote.yml`
+unless they ask for it in those terms — see §7.
 
 ## Running this
 
@@ -55,10 +69,15 @@ those version the VM guest image, not the CLI.
   Whether it does is a product decision, not an arithmetic one; ask.
 - Nothing to go on → ask rather than invent a base.
 
-The `v0.1.0-alpha.N` tags below `v0.1.0` were a temporary scheme and are not a
-pattern to continue. A prerelease is now a deliberate exception, and everything
-downstream treats it as one: neither the tap nor winget serves a prerelease, so
-reaching either with one takes `--prerelease` typed out.
+Dot releases are now cheap: every one publishes as a GitHub prerelease and only
+reaches people who installed `discobox-dev`, so cutting one does not need the
+ceremony it used to. Take the patch bump without asking.
+
+An explicit `-rc`/`-alpha` tag is a further step down and is rarely what you
+want, because it moves nothing at all — not `:latest`, not `discobox-dev` — and
+cannot be promoted to stable. The `v0.1.0-alpha.N` tags below `v0.1.0` were a
+temporary scheme and are not a pattern to continue. Reaching any channel with
+one takes `--prerelease` typed out.
 
 ## Remotes
 
@@ -203,85 +222,93 @@ this is another 20-plus-minute wait. The next step downloads the assets it
 uploads, so running early just fails.
 
 Do not write the release notes by hand. `release:publish` creates the release
-with `--generate-notes`, and marks it `--prerelease` for anything that is not
-exactly `vMAJOR.MINOR.PATCH` — the same test `release:image` uses to decide
-whether `:latest` moves, so the release object and the image tags cannot
-disagree about what a tag is. Confirm the result rather than reproducing it:
+with `--generate-notes` and `--prerelease`, always — every release is cut as a
+prerelease and blessed later (ADR 0105). `isPrerelease: true` here is the
+expected result, not a problem to fix. Confirm it rather than reproducing it:
 
 ```bash
 gh release view vX.Y.Z --repo discobox-ai/discobox \
   --json isPrerelease,assets -q '"prerelease=\(.isPrerelease) assets=\(.assets|length)"'
 ```
 
+`release:image` separately decides whether ghcr's `:latest` moves, from
+`release:dot` — exactly `vMAJOR.MINOR.PATCH`. A dot release moves it; a
+`-rc`/`-alpha` tag does not.
+
 Every step is a Taskfile target that also runs locally (ADR 0066 §1):
 `release:build`, `release:images`, `release:publish`.
 
 ## 5. The Homebrew tap
 
-**For a stable tag this is automatic.** The release workflow's `publish` job
-dispatches `update-formula.yml` in `discobox-ai/homebrew-tap` as soon as the
-GitHub release exists (`brew:refresh`, using `HOMEBREW_TAP_TOKEN`). The tap then
-takes the newest non-prerelease release, regenerates the formula with this
-repository's `scripts/brew-formula.sh`, and commits if the result changed.
+**For a dot release this is automatic, and it feeds `discobox-dev` only.** The
+release workflow's `publish` job dispatches `update-formula.yml` in
+`discobox-ai/homebrew-tap` as soon as the GitHub release exists (`brew:refresh`,
+using `HOMEBREW_TAP_TOKEN`). The tap regenerates **both** formulae with this
+repository's `scripts/brew-formula.sh` and commits whichever changed:
+
+- `discobox-dev.rb` from the newest dot release — which is what you just cut.
+- `discobox.rb` from the newest release a human has marked stable — which this
+  is not, so it does not move here.
+
+Check the one that should have moved:
+
+```bash
+gh api repos/discobox-ai/homebrew-tap/contents/Formula/discobox-dev.rb \
+  -q '.content' | base64 -d | grep -m1 version
+```
 
 **That dispatch is the only thing that updates the tap.** It had a 30 minute
 cron; that was deleted on purpose. A backstop that quietly covers for a broken
 release step is a backstop that stops anyone noticing the step is broken, so the
 release fails instead — a missing or expired `HOMEBREW_TAP_TOKEN` turns the
-`publish` job red rather than leaving `brew install discobox` a version behind.
+`publish` job red rather than leaving `brew install discobox-dev` a version
+behind.
 
 The consequence for this skill: **a red `publish` step here is a real failure and
-the tap is genuinely stale.** Do not wait it out. Fix the token, then run the
-dispatch by hand.
-
-Confirm it landed rather than assuming:
-
-```bash
-gh api repos/discobox-ai/homebrew-tap/contents/Formula/discobox.rb \
-  -q '.content' | base64 -d | grep -m1 version
-```
-
-If it has not, send the dispatch by hand — the same one the release workflow
-sends, and safe to repeat:
+the tap is genuinely stale.** Do not wait it out. Fix the token, then send the
+dispatch by hand — the same one the release workflow sends, and safe to repeat:
 
 ```bash
 go tool task brew:refresh
 ```
 
-And the override, which regenerates and pushes the formula directly rather than
+And the override, which regenerates and pushes one formula directly rather than
 asking the tap to, for a tag the tap's own rule will not take at all:
 
 ```bash
-go tool task brew:publish -- vX.Y.Z                        # stable
-go tool task brew:publish -- --prerelease vX.Y.Z-rc1       # prerelease
+go tool task brew:publish -- --dev vX.Y.Z                   # discobox-dev
+go tool task brew:publish -- vX.Y.Z                         # discobox (stable)
+go tool task brew:publish -- --dev --prerelease vX.Y.Z-rc1  # an rc, said out loud
 ```
 
-`--prerelease` is required for anything that is not exactly `vMAJOR.MINOR.PATCH`,
-and nothing sets it automatically: the tap serves one channel, so a prerelease
-reaching `brew install discobox` is a decision somebody makes out loud. The task
-refuses first and downloads second, so a missing flag costs nothing.
+`--dev` picks the formula; without it you are writing `discobox.rb`, which is
+the stable channel and not this skill's to move. `--prerelease` is required for
+anything that is not exactly `vMAJOR.MINOR.PATCH`, and nothing sets it
+automatically: neither channel serves an rc, so one reaching either is a
+decision somebody makes out loud. The task refuses first and downloads second,
+so a missing flag costs nothing.
 
 It writes to `discobox-ai/homebrew-tap` using the operator's own `gh`
-credentials. `go tool task brew:formula` generates the formula without pushing,
-which is the safe dry run.
+credentials. `go tool task brew:formula -- [--dev] vX.Y.Z` generates a formula
+without pushing, which is the safe dry run.
 
 ## 6. The winget pull request
 
-**For a stable tag this is automatic.** The release workflow's `winget` job runs
-after `publish` and opens the request itself. Nothing to do but watch it.
+**Not part of cutting a release.** winget is a stable channel, so its submission
+belongs to `promote.yml` (§7) and does not run here. Cutting a tag never opens a
+winget pull request, and its absence from the release run is correct.
 
-It skips anything that is not exactly `vMAJOR.MINOR.PATCH`, so a prerelease
-needs the target by hand — and saying so out loud, exactly as the tap does,
-because winget has no notion of a channel and whatever is published is what
-`winget install discobox` gives everyone:
+Run it by hand only when promotion's `winget` job skipped for a missing token or
+a first attempt failed — it is idempotent, and says `winget already serves
+<version>` rather than opening a second request:
 
 ```bash
-go tool task winget:publish -- --prerelease vX.Y.Z-rc1
+go tool task winget:publish -- vX.Y.Z
 ```
 
-Run it by hand for a stable tag too when the job skipped for a missing token,
-or when a first attempt failed — it is idempotent, and says `winget already
-serves <version>` rather than opening a second request.
+It refuses anything that is not exactly `vMAJOR.MINOR.PATCH`. An rc reaching
+winget takes `--prerelease` typed out, because winget has no notion of a channel
+and whatever is published is what `winget install discobox` gives everyone.
 
 Only after the GitHub release exists, either way: the checksum is of the
 `discobox-windows-amd64.zip` the release uploaded.
@@ -302,8 +329,9 @@ The job needs `WINGET_TOKEN`: a **classic** PAT with `public_repo` (fine-grained
 tokens are not accepted), for an account that has forked
 `microsoft/winget-pkgs`. `GITHUB_TOKEN` cannot do this — it may only write to
 this repository, and the submission is a pull request from a fork of somebody
-else's. Without the secret the job warns and ends green rather than failing a
-release that otherwise succeeded.
+else's. Without the secret the `winget` job fails: nothing else submits, so a
+missing token is a version winget silently never gets, and that is worth a red
+run.
 
 `go tool task winget:manifests` generates the three manifests without opening
 anything, which is the safe dry run. Nothing about the submission is validated
@@ -324,6 +352,54 @@ its `v`. Neither may drift: winget sorts semantic and string versions
 differently, so a package that publishes both forms ends up pinned to whichever
 version wins the wrong comparison, and the only fix is deleting the odd one out.
 
+## 7. Marking a release stable
+
+**This is not part of cutting a release, and it is not yours to do.** A tag you
+just pushed is on the dev channel; it becomes stable when a human decides it
+did. Hand back at the end of §5 and say so.
+
+When the user does ask for it in those terms — "mark v0.3.1 stable", "promote
+it", "push it to the real brew" — the act is on GitHub: open the release and
+untick **"Set as a pre-release"**. That runs `promote.yml`, which gates on
+`release:require-dot` and then updates `brew install discobox` and opens the
+winget request.
+
+```bash
+gh release edit vX.Y.Z --repo discobox-ai/discobox --prerelease=false --latest
+gh run list --repo discobox-ai/discobox --workflow promote.yml --limit 1
+```
+
+**Confirm the run actually started**, and do not report the promotion as done
+until it has. `promote.yml` listens on three activity types and gates on the
+release's own `prerelease` field, precisely because which type a checkbox-only
+edit emits is not something GitHub documents plainly. If no run appears within a
+minute, that is the case it was hedged against — dispatch it by hand rather than
+waiting:
+
+```bash
+gh workflow run promote.yml --repo discobox-ai/discobox -f tag=vX.Y.Z
+```
+
+Four things to know before running any of it:
+
+- **It is outward-facing and effectively one-way.** Both stable channels
+  recompute from the newest blessed release, so backing it out means blessing a
+  different release, not undoing this one — and a winget pull request, once
+  opened, is Microsoft's to merge. Confirm the version out loud first.
+- **Only a `vMAJOR.MINOR.PATCH` tag can be promoted.** `promote.yml` refuses an
+  rc, because winget sorts semantic and string versions differently and a
+  package serving both forms ends up pinned to the wrong one.
+- **`--latest` is a separate GitHub flag** from `--prerelease=false`, and it is
+  the repository header rather than any channel. Pass it unless the user is
+  blessing something older than the current stable release.
+- **A release is promoted by the Taskfile it was cut with.** A release event
+  carries the tag as `GITHUB_REF`, so the workflow file that runs is the tagged
+  commit's — which means a tag cut before `promote.yml` existed cannot be
+  promoted by the checkbox at all, and no run will appear. Use the dispatch.
+
+The `workflow_dispatch` above is also how to re-run a half-failed promotion
+without touching the release again.
+
 ## If a tag was pushed on a red commit
 
 Decide immediately, while the release workflow is still building — it is much
@@ -331,10 +407,14 @@ cheaper before `publish` creates the GitHub release. Ask the user which:
 
 - **Cancel and delete** (`gh run cancel`, `git push upstream :refs/tags/<tag>`),
   then re-tag that number on the green commit. Nothing red is ever published.
-- **Let it finish and supersede it** with the next number. The bad prerelease
-  stays in the release list, and only the good tag reaches the tap and winget.
+- **Let it finish and supersede it** with the next number. The bad release stays
+  in the release list as a prerelease, which is what every release is until
+  somebody blesses it — so nothing about it reaches `brew install discobox` or
+  winget, and the only channel to correct is `discobox-dev`, which the next tag
+  moves anyway.
 
-Deleting a pushed tag is outward-facing. Do not choose it unprompted.
+That second option is cheaper than it used to be, and usually right. Deleting a
+pushed tag is outward-facing; do not choose it unprompted.
 
 ## Waiting
 

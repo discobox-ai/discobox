@@ -245,6 +245,21 @@ The toolchain comes from the Nix flake — `nix develop`, or let direnv do it.
 See [CLAUDE.md](CLAUDE.md) for repository conventions and
 [Taskfile.yml](Taskfile.yml) for build targets.
 
+### Testing a release before it ships
+
+`brew install discobox` serves the release that has been marked stable. Every
+tagged build is published before that, and the tap serves the newest one as a
+second formula:
+
+```bash
+brew install discobox-ai/tap/discobox-dev
+```
+
+It installs beside the stable one and runs as `discobox-dev` — the same CLI,
+which calls itself by whichever name you installed it under. Both share one
+state directory and one server, so only one of them can be running a server at a
+time; stop one before starting the other.
+
 ## License
 
 See [LICENSE](LICENSE).
