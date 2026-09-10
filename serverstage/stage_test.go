@@ -53,7 +53,7 @@ func (a *assets) manifest(version, command string, names ...string) Manifest {
 		sum := sha256.Sum256(a.files[name])
 		m.Assets = append(m.Assets, Asset{
 			Name:       name,
-			URL:        a.server.URL + "/" + name,
+			URLs:       []string{a.server.URL + "/" + name},
 			SHA256:     hex.EncodeToString(sum[:]),
 			Size:       int64(len(a.files[name])),
 			Executable: name == command,
@@ -240,7 +240,7 @@ func TestStageReportsProgress(t *testing.T) {
 func TestStageReportsAMissingAsset(t *testing.T) {
 	served := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
 	manifest := served.manifest("v1", "discobox-server", "discobox-server")
-	manifest.Assets[0].URL = served.server.URL + "/gone"
+	manifest.Assets[0].URLs = []string{served.server.URL + "/gone"}
 	_, err := Stage(context.Background(), manifest, Options{Root: t.TempDir()})
 	if err == nil {
 		t.Fatal("staging a missing asset succeeded")
@@ -289,7 +289,7 @@ func TestStageReportsATotalWithoutAContentLength(t *testing.T) {
 	manifest := Manifest{
 		Version: "v1", OS: runtime.GOOS, Arch: runtime.GOARCH, Command: "discobox-server",
 		Assets: []Asset{{
-			Name: "discobox-server", URL: server.URL + "/discobox-server",
+			Name: "discobox-server", URLs: []string{server.URL + "/discobox-server"},
 			SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body)), Executable: true,
 		}},
 	}
@@ -425,7 +425,7 @@ func TestStageEndsADownloadThatStopsArriving(t *testing.T) {
 	manifest := Manifest{
 		Version: "v1", OS: runtime.GOOS, Arch: runtime.GOARCH, Command: "discobox-server",
 		Assets: []Asset{{
-			Name: "discobox-server", URL: server.URL + "/discobox-server",
+			Name: "discobox-server", URLs: []string{server.URL + "/discobox-server"},
 			SHA256: strings.Repeat("ab", 32), Size: 94 << 20, Executable: true,
 		}},
 	}
@@ -520,7 +520,7 @@ func TestStageSweepsWhereItCreatesItsTemporary(t *testing.T) {
 
 	stalling := manifest
 	stalling.Assets = []Asset{{
-		Name: "discobox-server", URL: server.URL + "/discobox-server",
+		Name: "discobox-server", URLs: []string{server.URL + "/discobox-server"},
 		SHA256: strings.Repeat("ab", 32), Size: 94 << 20, Executable: true,
 	}}
 	seen := make(chan string, 1)
@@ -802,5 +802,73 @@ func requireModeBits(t *testing.T) {
 	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the directory permissions this provokes the failure with")
+	}
+}
+
+// A source that is missing or serving something else costs a retry, not the
+// stage. Every entry is checked against the same digest, so falling through to
+// the next one is never falling back to something less verified (ADR 0106 §2).
+func TestStageFallsBackToTheNextSource(t *testing.T) {
+	served := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
+	wrong := serveAssets(t, map[string][]byte{"discobox-server": []byte("a different build")})
+
+	manifest := served.manifest("v1.2.3", "discobox-server", "discobox-server")
+	// Missing, then serving the wrong bytes, then the one the digest names.
+	manifest.Assets[0].URLs = append([]string{
+		served.server.URL + "/gone",
+		wrong.server.URL + "/discobox-server",
+	}, manifest.Assets[0].URLs...)
+
+	dir, err := Stage(context.Background(), manifest, Options{Root: t.TempDir()})
+	if err != nil {
+		t.Fatalf("staging past two unusable sources failed: %v", err)
+	}
+	staged, err := os.ReadFile(filepath.Join(dir, "discobox-server"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(staged) != "the server" {
+		t.Fatalf("staged %q, which is not the bytes the digest names", staged)
+	}
+}
+
+// Order is the manifest's and a working source ends it: a mirror that answers
+// is not followed by a request to the release URL sitting behind it.
+func TestStageStopsAtTheFirstSourceThatWorks(t *testing.T) {
+	first := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
+	second := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
+
+	manifest := first.manifest("v1.2.3", "discobox-server", "discobox-server")
+	manifest.Assets[0].URLs = []string{
+		first.server.URL + "/discobox-server",
+		second.server.URL + "/discobox-server",
+	}
+	if _, err := Stage(context.Background(), manifest, Options{Root: t.TempDir()}); err != nil {
+		t.Fatalf("staging from the first source failed: %v", err)
+	}
+	if n := second.fetched.Load(); n != 0 {
+		t.Fatalf("the fallback was fetched %d times while the first source was working", n)
+	}
+}
+
+// When nothing works, the error names every source tried. One that reports only
+// the last is indistinguishable from a manifest that had one URL all along, and
+// sends whoever reads it looking at the wrong host.
+func TestStageReportsEverySourceItTried(t *testing.T) {
+	served := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
+	manifest := served.manifest("v1.2.3", "discobox-server", "discobox-server")
+	manifest.Assets[0].URLs = []string{
+		served.server.URL + "/from-the-mirror",
+		served.server.URL + "/from-the-release",
+	}
+
+	_, err := Stage(context.Background(), manifest, Options{Root: t.TempDir()})
+	if err == nil {
+		t.Fatal("staging with no usable source succeeded")
+	}
+	for _, want := range []string{"/from-the-mirror", "/from-the-release"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not name the source %s", err, want)
+		}
 	}
 }

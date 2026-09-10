@@ -151,7 +151,7 @@ func (a *App) stageServer(cmd *cobra.Command) error {
 				"name":   asset.Name,
 				"path":   filepath.Join(dir, asset.Name),
 				"sha256": asset.SHA256,
-				"url":    asset.URL,
+				"urls":   asset.URLs,
 			})
 		}
 		return writeJSON(cmd.OutOrStdout(), map[string]any{

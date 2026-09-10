@@ -52,6 +52,13 @@ vars:
         repo="${repo%.git}"
       fi
       printf %s "$repo"
+  # The asset mirror a staged server is fetched from before the release URL
+  # (ADR 0106 §2), and the one repository whose releases it fronts. A fork
+  # releases from GitHub alone: the mirror resolves namespaces its operator
+  # listed, so pointing a fork's manifest at it would name assets that are not
+  # there — caught by the digest, but only after a pointless round trip.
+  ASSET_MIRROR_REPO: discobox-ai/discobox
+  ASSET_MIRROR_BASE: https://assets.discobox.ai/discobox
   # The tag being acted on, in order: `task <target> -- v1.2.3`, RELEASE_TAG=,
   # then the tag a workflow is running for. Resolved once so a tag typed on the
   # command line reaches DOT_RELEASE below as well as the task using it —
@@ -989,11 +996,17 @@ tasks:
         set -eu
         manifest=""
         if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.RELEASE_REPO}}" ]; then
-          manifest="$(go run ./internal/cmd/discobox-server-manifest \
-            -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
-            -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}" \
+          set -- -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
             -command "{{.SERVER_NAME}}" \
-            -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}")"
+            -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}"
+          # Order is the fallback order. The mirror is tried first because
+          # staging a server is the heaviest download we serve; the release URL
+          # is last because it is the one that outlives everything else.
+          if [ "{{.RELEASE_REPO}}" = "{{.ASSET_MIRROR_REPO}}" ]; then
+            set -- "$@" -base-url "{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"
+          fi
+          set -- "$@" -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}"
+          manifest="$(go run ./internal/cmd/discobox-server-manifest "$@")"
         fi
         cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
           go build -trimpath \

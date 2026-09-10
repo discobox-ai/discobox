@@ -409,7 +409,39 @@ func migrateLegacyLayout(root string) {
 // download fetches one asset, hashing it as it is written. The digest is
 // compared before the file is anything but a temporary name, so a mismatch
 // leaves nothing behind that could be run.
+// download fetches an asset, trying its URLs in order and stopping at the
+// first whose bytes match the manifest's digest (ADR 0106 §2).
+//
+// Order is the manifest's, so which source is preferred is a decision the
+// release made rather than one taken here. A source that fails costs the time
+// it took to fail; the digest decides success either way, so falling through
+// to the next one is never a fall back to something less verified.
 func download(ctx context.Context, client *http.Client, asset Asset, path string, report func(current, total int64)) error {
+	var failures []error
+	for _, source := range asset.URLs {
+		err := downloadFrom(ctx, client, asset, source, path, report)
+		if err == nil {
+			return nil
+		}
+		failures = append(failures, err)
+		// The caller giving up is not this source failing, and trying the rest
+		// against a dead context would turn one cancellation into a list of
+		// them.
+		if ctx.Err() != nil {
+			break
+		}
+		// A failed attempt leaves a partial file and the next one creates with
+		// O_EXCL. Nothing here resumes: a new source is a new file, because a
+		// digest over two sources' bytes spliced together means nothing.
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			failures = append(failures, err)
+			break
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func downloadFrom(ctx context.Context, client *http.Client, asset Asset, source, path string, report func(current, total int64)) error {
 	if client == nil {
 		client = defaultClient()
 	}
@@ -419,7 +451,7 @@ func download(ctx context.Context, client *http.Client, asset Asset, path string
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var stalled atomic.Bool
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
 		return err
 	}
@@ -429,7 +461,7 @@ func download(ctx context.Context, client *http.Client, asset Asset, path string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: %s: %s", asset.Name, asset.URL, resp.Status)
+		return fmt.Errorf("download %s: %s: %s", asset.Name, source, resp.Status)
 	}
 
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, assetMode(asset))
@@ -464,7 +496,7 @@ func download(ctx context.Context, client *http.Client, asset Asset, path string
 	switch {
 	case copyErr != nil:
 		if stalled.Load() {
-			return fmt.Errorf("download %s: %s stopped sending after %s", asset.Name, asset.URL, stallTimeout)
+			return fmt.Errorf("download %s: %s stopped sending after %s", asset.Name, source, stallTimeout)
 		}
 		return fmt.Errorf("download %s: %w", asset.Name, copyErr)
 	case syncErr != nil:
@@ -477,10 +509,10 @@ func download(ctx context.Context, client *http.Client, asset Asset, path string
 	// something else entirely — and a digest mismatch says only that the bytes
 	// differ.
 	if got := counted.current.Load(); got != asset.Size {
-		return fmt.Errorf("%s from %s is %d bytes, not the %d this build expects", asset.Name, asset.URL, got, asset.Size)
+		return fmt.Errorf("%s from %s is %d bytes, not the %d this build expects", asset.Name, source, got, asset.Size)
 	}
 	if got := hex.EncodeToString(digest.Sum(nil)); !strings.EqualFold(got, asset.SHA256) {
-		return fmt.Errorf("%s from %s has digest %s, not the %s this build expects", asset.Name, asset.URL, got, asset.SHA256)
+		return fmt.Errorf("%s from %s has digest %s, not the %s this build expects", asset.Name, source, got, asset.SHA256)
 	}
 	// The mode again, because the umask took bits off the create. An asset is
 	// this user's alone: everything under the state directory is, and this one

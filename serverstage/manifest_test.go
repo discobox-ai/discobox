@@ -19,7 +19,7 @@ func validManifest() Manifest {
 		Command: "discobox-server",
 		Assets: []Asset{{
 			Name:       "discobox-server",
-			URL:        "https://example.invalid/discobox-server-linux-amd64",
+			URLs:       []string{"https://example.invalid/discobox-server-linux-amd64"},
 			SHA256:     strings.Repeat("ab", 32),
 			Size:       94 << 20,
 			Executable: true,
@@ -64,8 +64,14 @@ func TestManifestValidationRejects(t *testing.T) {
 		"no size":                  func(m *Manifest) { m.Assets[0].Size = 0 },
 		"a negative size":          func(m *Manifest) { m.Assets[0].Size = -1 },
 		"a truncated digest":       func(m *Manifest) { m.Assets[0].SHA256 = "abcd" },
-		"a scheme it cannot fetch": func(m *Manifest) { m.Assets[0].URL = "file:///etc/passwd" },
-		"a URL with no host":       func(m *Manifest) { m.Assets[0].URL = "https:///discobox-server" },
+		"a scheme it cannot fetch": func(m *Manifest) { m.Assets[0].URLs = []string{"file:///etc/passwd"} },
+		"a URL with no host":       func(m *Manifest) { m.Assets[0].URLs = []string{"https:///discobox-server"} },
+		"nowhere to download from": func(m *Manifest) { m.Assets[0].URLs = nil },
+		// Only the first entry is reachable in the manifest above, so a
+		// fallback checked lazily would validate here and fail at stage time.
+		"a bad URL behind a good one": func(m *Manifest) {
+			m.Assets[0].URLs = append(m.Assets[0].URLs, "file:///etc/passwd")
+		},
 	}
 	for name, breakIt := range tests {
 		t.Run(name, func(t *testing.T) {

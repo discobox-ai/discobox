@@ -2,7 +2,7 @@
 //
 // A release CLI does not carry the control plane; it carries a description of
 // where to get it — a manifest naming, for this binary's own platform, every
-// asset the server is made of, each with a URL and a SHA-256. Staging turns
+// asset the server is made of, each with its URLs and a SHA-256. Staging turns
 // that description into files on disk: downloaded, hashed as they are written,
 // and moved into place as a set only once every digest matches.
 //
@@ -35,8 +35,17 @@ type Asset struct {
 	// Name is the file's name inside the staged directory. A bare filename:
 	// a manifest does not get to write outside the directory it is staged in.
 	Name string `json:"name"`
-	// URL is where the asset is downloaded from.
-	URL string `json:"url"`
+	// URLs are where the asset can be downloaded from, tried in the order
+	// given. Staging stops at the first whose bytes match SHA256, so a source
+	// that is unreachable, stale, or serving something else costs a retry
+	// rather than the stage.
+	//
+	// More than one because a release names a mirror ahead of the release URL
+	// (ADR 0106). Every entry is checked against the same digest, so an extra
+	// source is somewhere else to find one known artifact and not a location
+	// this has to trust — which is what lets a mirror take the traffic without
+	// becoming something a shipped binary depends on.
+	URLs []string `json:"urls"`
 	// SHA256 is the digest the download must have, lowercase hex. It is what
 	// makes the download trustworthy rather than the transport it arrived over.
 	SHA256 string `json:"sha256"`
@@ -204,21 +213,30 @@ func (a Asset) validate() error {
 	if a.Size <= 0 {
 		return fmt.Errorf("server manifest asset %q declares no size", a.Name)
 	}
-	parsed, err := url.Parse(a.URL)
-	if err != nil {
-		return fmt.Errorf("server manifest asset %q: %w", a.Name, err)
+	if len(a.URLs) == 0 {
+		return fmt.Errorf("server manifest asset %q names nowhere to download from", a.Name)
 	}
-	// Integrity is the digest's job, not the transport's, so plain HTTP is
-	// accepted rather than refused — it is what a mirror on a build network or
-	// a test server speaks. What is refused is a scheme this does not fetch at
-	// all, which would otherwise fail as a confusing transport error.
-	switch parsed.Scheme {
-	case "http", "https":
-	default:
-		return fmt.Errorf("server manifest asset %q has URL scheme %q; expected http or https", a.Name, parsed.Scheme)
-	}
-	if parsed.Host == "" {
-		return fmt.Errorf("server manifest asset %q has no host in its URL", a.Name)
+	// Every entry, not just the first: a fallback that is only discovered to be
+	// unusable once the one in front of it has failed is a fallback that works
+	// exactly until it is needed.
+	for _, source := range a.URLs {
+		parsed, err := url.Parse(source)
+		if err != nil {
+			return fmt.Errorf("server manifest asset %q: %w", a.Name, err)
+		}
+		// Integrity is the digest's job, not the transport's, so plain HTTP is
+		// accepted rather than refused — it is what a mirror on a build network
+		// or a test server speaks. What is refused is a scheme this does not
+		// fetch at all, which would otherwise fail as a confusing transport
+		// error.
+		switch parsed.Scheme {
+		case "http", "https":
+		default:
+			return fmt.Errorf("server manifest asset %q has URL scheme %q; expected http or https", a.Name, parsed.Scheme)
+		}
+		if parsed.Host == "" {
+			return fmt.Errorf("server manifest asset %q has no host in URL %q", a.Name, source)
+		}
 	}
 	return nil
 }

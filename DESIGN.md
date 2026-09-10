@@ -272,9 +272,14 @@ for programmatic downloads. The Worker is generic
 (`discobox-ai/release-asset-mirror`); the deployment, its scheduled smoke
 tests, and the secrets it needs belong to `discobox-ai/infra`. It fills from
 published releases and is never something a release pushes to, so it cannot
-break one. No consumer here names it — the server manifest, both formulae and
-the winget manifest all resolve `github.com` directly — and ADR 0106 holds the
-rule for when that may change.
+break one.
+
+The server manifest names it first and the release URL last: staging tries each
+against the single digest the manifest carries and stops at the first whose
+bytes match, so the mirror takes the heaviest download we serve without a
+shipped binary coming to depend on it (ADR 0106). Both formulae and the winget
+manifest resolve `github.com` directly, because neither format has a fallback to
+express and a winget manifest, once merged, is permanent and not ours to amend.
 
 Its aliases read the same prerelease bit the channels above do, which makes
 `/{namespace}/latest/` the newest blessed release and `/{namespace}/prerelease/`

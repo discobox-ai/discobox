@@ -9,9 +9,16 @@
 //
 //	discobox-server-manifest \
 //	  -version v1.2.3 -os linux -arch amd64 \
+//	  -base-url https://assets.discobox.ai/discobox/v1.2.3 \
 //	  -base-url https://github.com/discobox-ai/discobox/releases/download/v1.2.3 \
 //	  -command discobox-server \
 //	  -asset discobox-server=build/release/bin/discobox-server-linux-amd64
+//
+// -base-url is repeatable and order is meaningful: every asset is published
+// under each one, and staging tries them in that order against the single
+// digest this computes (ADR 0106). A mirror goes first and the release URL
+// last, so the release URL is what a stage falls back to and never what it
+// depends on being fast.
 //
 // The staged name and the published name are deliberately separate: a release
 // asset has to say which platform it is for, and a staged file has to be called
@@ -60,11 +67,12 @@ func run() error {
 		version    = flag.String("version", "", "release version the assets belong to")
 		targetOS   = flag.String("os", "", "GOOS the assets are for")
 		targetArch = flag.String("arch", "", "GOARCH the assets are for")
-		baseURL    = flag.String("base-url", "", "URL the assets are published under, without a trailing slash")
 		command    = flag.String("command", "", "staged name of the asset to run")
+		baseURLs   stringList
 		assets     stringList
 		executable stringList
 	)
+	flag.Var(&baseURLs, "base-url", "URL the assets are published under, without a trailing slash (repeatable; tried in the order given)")
 	flag.Var(&assets, "asset", "staged name=path of a built asset (repeatable)")
 	flag.Var(&executable, "executable", "staged name of an asset to stage with the execute bit (repeatable; the command always is)")
 	flag.Parse()
@@ -84,9 +92,13 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		urls := make([]string, 0, len(baseURLs))
+		for _, base := range baseURLs {
+			urls = append(urls, strings.TrimSuffix(base, "/")+"/"+filepath.Base(path))
+		}
 		manifest.Assets = append(manifest.Assets, serverstage.Asset{
 			Name:       name,
-			URL:        strings.TrimSuffix(*baseURL, "/") + "/" + filepath.Base(path),
+			URLs:       urls,
 			SHA256:     digest,
 			Size:       size,
 			Executable: name == *command || slices.Contains(executable, name),
