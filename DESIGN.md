@@ -225,7 +225,9 @@ flowchart LR
   rule, and the only thing the tag itself decides. A dot release moves ghcr's
   `:latest` (`dockerworker.DefaultPoolImage`, what a pool boots when nothing
   named a version) and the `discobox-dev` formula the moment it is cut. An
-  explicit prerelease tag moves neither: it is a build you reach by naming it.
+  explicit prerelease tag (`-alpha`, `-beta`, `-rc`) moves neither, deliberately:
+  it is the lowest confidence level — a real release build, signed and pushed,
+  that reaches no brew channel at all and is had by pinning the version.
 - **Stable** is a human clearing the prerelease box on a GitHub release, which
   runs `promote.yml`. That is the only thing that moves `brew install discobox`
   and winget, and `release:require-dot` refuses to promote anything that is not

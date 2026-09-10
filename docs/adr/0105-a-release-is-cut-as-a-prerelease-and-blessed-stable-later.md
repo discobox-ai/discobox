@@ -61,10 +61,23 @@ A dot release joins the latest channel the moment it is cut. That is what feeds:
   answer to that.
 - The `discobox-dev` Homebrew formula.
 
-An explicit prerelease tag — `v1.2.3-rc1`, `v1.2.3-alpha.4` — moves neither. It
-is not the newest release; it is one you have to name. So the tag-shape test
-survives, renamed `DOT_RELEASE`, and it now decides one thing (does this join
-the latest channel) rather than four.
+An explicit prerelease tag — `v1.2.3-rc1`, `v1.2.3-alpha.4`, `v1.2.3-beta.1` —
+moves neither, and that is its purpose rather than its limitation. It is the
+lowest confidence level: a genuine release build, signed and pushed and
+uploaded, that reaches no `brew install` of either name. You get at it by
+pinning the version, and nothing promotes it later — when the build earns
+trust, a dot release is cut.
+
+So the ladder has three rungs, and the tag picks the first two:
+
+| tag | reaches |
+| --- | --- |
+| `v1.2.3-alpha.4` | its own assets and images, and nothing else |
+| `v1.2.3` | ghcr `:latest`, `brew install discobox-dev` |
+| `v1.2.3`, blessed | `brew install discobox`, winget |
+
+The tag-shape test survives as `DOT_RELEASE` and now decides one thing — does
+this join the latest channel — rather than four.
 
 ### 3. `stable` is a human clearing the prerelease box
 

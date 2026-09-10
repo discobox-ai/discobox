@@ -72,19 +72,33 @@ The scheme is plain `vMAJOR.MINOR.PATCH`.
   Whether it does is a product decision, not an arithmetic one; ask.
 - Nothing to go on → ask rather than invent a base.
 
-Dot releases are now cheap: every one publishes as a GitHub prerelease and only
-reaches people who installed `discobox-dev`, so cutting one does not need the
-ceremony it used to. Take the patch bump without asking.
+### The tag says how much you trust the build
 
-**The newest tags are alphas, and the alpha scheme is retired.** `v0.6.0-alpha.1`
-through `.3` sit above `v0.5.2` in that list. They are exactly what the dev
-channel replaces (ADR 0105): an alpha moves nothing at all — not `:latest`, not
-`discobox-dev` — and cannot be promoted to stable. Do not continue the series,
-and do not bump from it as though it were a release. **The next tag is the dot
-release those alphas were heading for**: after `v0.6.0-alpha.3` that is
-`v0.6.0` — not `v0.6.1`, and not `v0.6.0-alpha.4`.
+Three levels, each reaching one step further (ADR 0105). The shape of the tag
+picks the first two; a human picks the third.
 
-Reaching any channel with an `-rc`/`-alpha` tag takes `--prerelease` typed out.
+| tag | reaches | when |
+| --- | --- | --- |
+| `v0.6.0-alpha.2`, `-beta.1`, `-rc.1` | that tag's own assets and images, and **nothing else** — neither brew formula, no `:latest`, no winget | lowest confidence. You want a real release build that cannot land in front of anyone. |
+| `v0.6.0` | GitHub prerelease, ghcr `:latest`, `brew install discobox-dev` | the normal case, and what a dot release is for |
+| the same release, blessed | `brew install discobox`, winget | §7 — a human's decision, later |
+
+A dot release is the default; take the patch bump without asking. It is cheap
+now, because it only reaches people who went and installed `discobox-dev`.
+
+**An `-alpha`/`-beta`/`-rc` tag is a deliberate choice, not a lesser one.** It is
+how you get a genuine release build — signed darwin binary, multi-arch images
+pushed, assets uploaded — that reaches no `brew install` of either name. You
+reach it by pinning the version, and nothing promotes it later: when you trust
+it, cut the dot release. Overriding that to push one at a channel anyway takes
+`--prerelease` typed out.
+
+**One consequence right now:** the three newest tags are `v0.6.0-alpha.1`
+through `.3`, from before the dev channel existed, when an alpha was the only
+way to try a build. Do not continue that series and do not bump from it as
+though it were a release. **The next tag is the dot release those alphas were
+heading for**: after `v0.6.0-alpha.3` that is `v0.6.0` — not `v0.6.1`, and not
+`v0.6.0-alpha.4`.
 
 ## Remotes
 
