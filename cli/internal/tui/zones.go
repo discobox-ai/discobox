@@ -69,6 +69,13 @@ const (
 	// opens the diff tool, the same as the leader's tools, diff chord.
 	hitGit
 
+	// hitURL is a link the header draws — the desktop, a forwarded web port.
+	// The text already carries the URL as an OSC 8 link, which is what a
+	// Ctrl-click follows; pressing it opens the same URL through this
+	// machine's own URL handler, so the ordinary click does what the
+	// underline promises. See links.go.
+	hitURL
+
 	// hitPrompt is the composer's text area, where a press places the caret
 	// and a drag selects rather than meaning anything about the window.
 	hitPrompt
@@ -89,7 +96,12 @@ type hit struct {
 	// them, and pressed in order: an offer on the leader's line stands for two
 	// presses, and a click on it is those two presses.
 	keys []string
+	// url is what a link opens.
+	url string
 }
+
+// urlHit is a link made pressable, opening the URL its text already carries.
+func urlHit(url string) hit { return hit{kind: hitURL, url: url} }
 
 // keyHit is a hint made pressable where the keyboard already is.
 func keyHit(keys ...string) hit { return hit{kind: hitKey, keys: keys} }

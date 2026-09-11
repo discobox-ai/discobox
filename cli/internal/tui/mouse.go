@@ -137,6 +137,19 @@ func (m *Model) leftPress(ev tea.MouseClickMsg) tea.Cmd {
 	m.statusGen++
 
 	where, _ := m.zones.at(ev.X, ev.Y)
+	// Ctrl-click on a link is the terminal's gesture: it follows the OSC 8 the
+	// link is drawn with. A terminal that also reports the press would have
+	// the page opened twice if the window answered it as well.
+	//
+	// The cost is deliberate. A terminal that reports Ctrl-click while the
+	// window tracks the mouse, rather than following the link, gets nothing
+	// from it here — which is what Ctrl-click did there before links were
+	// pressable at all. The plain click is the gesture that works everywhere,
+	// and a page opened twice is the worse failure of the two.
+	if where.what.kind == hitURL && ev.Mod&tea.ModCtrl != 0 {
+		m.clearSelections()
+		return nil
+	}
 	clicks := m.countClick(ev.X, ev.Y)
 
 	// The composer is a field, and a press in it is the caret moving rather
@@ -329,12 +342,40 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		_ = m.openTools()
 		return m.updateKey(keyPress("d")), true
 
+	case hitURL:
+		// The text carries the URL as an OSC 8 link, which is what the
+		// terminal's own Ctrl-click follows. A plain click is the gesture
+		// people actually make at something that looks like a link, and it
+		// opens the same URL from here.
+		//
+		// Once: a link is where a double click is reflexive, and nothing the
+		// first press does changes what the second lands on, so answering it
+		// would be a second tab nobody meant. It is still taken, so it does
+		// not start a word selection over the label either.
+		if clicks > 1 {
+			return nil, true
+		}
+		return m.openLink(what.url), true
+
 	case hitChips:
 		// The strip names the run options, so it is the way into them.
 		m.optionsOpen = true
 		return nil, true
 	}
 	return nil, false
+}
+
+// openLink opens one of the header's links through this machine's own URL
+// handler, and says which URL it opened: the browser comes up in front of the
+// terminal, so the line is there for the case where it does not.
+func (m *Model) openLink(url string) tea.Cmd {
+	open := m.openOS
+	return func() tea.Msg {
+		if err := open(url); err != nil {
+			return statusMsg{text: "cannot open " + url + ": " + err.Error(), err: true}
+		}
+		return statusMsg{text: "opening " + url}
+	}
 }
 
 // pressKeys hands a hint's keystrokes to the same handler the keyboard reaches,

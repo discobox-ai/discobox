@@ -1719,9 +1719,69 @@ func (m *Model) viewPaneHeader(w int) string {
 	return spreadCenter(bare[0], fields.render(m, bare[0], right, w), right, w)
 }
 
+// headerSpan is one piece of a header field: the text as it is drawn, and,
+// when that piece is a link, the URL behind it with the bare label to redraw
+// it from.
+//
+// A field is drawn in pieces because parts of one can be separately
+// pressable: the port groups are one field, and every forwarded web port in
+// them is its own link. The label is kept beside the styled text because
+// lighting a span under the pointer means rendering it again rather than
+// styling the run it already is — the colors it carries contain their own
+// resets, and a reset cancels the hover from there on.
+type headerSpan struct {
+	// text is the span as it is drawn, styling and all; label is the same
+	// span bare, which is what redrawing it in another style has to start
+	// from.
+	text  string
+	label string
+	url   string
+}
+
+// paneHeaderField is one field of the workspace banner: what it draws, whether
+// it is part of the git summary, and — through its spans — whatever in it can
+// be pressed.
 type paneHeaderField struct {
-	text string
-	git  bool
+	spans []headerSpan
+	git   bool
+}
+
+// textField is a field with nothing in it to press, which is most of them. It
+// takes the text already styled, and keeps the bare text beside it: a field
+// that is redrawn as live is redrawn from that.
+func textField(text string) paneHeaderField {
+	return paneHeaderField{spans: []headerSpan{{text: text, label: ansi.Strip(text)}}}
+}
+
+// gitField is one piece of the git summary: several fields drawn separately
+// that answer a press as the one control they read as.
+func gitField(text string) paneHeaderField {
+	field := textField(text)
+	field.git = true
+	return field
+}
+
+func (f paneHeaderField) text() string {
+	var out strings.Builder
+	for _, span := range f.spans {
+		out.WriteString(span.text)
+	}
+	return out.String()
+}
+
+func (f paneHeaderField) empty() bool { return len(f.spans) == 0 }
+
+// shade redraws a whole field as live, for the control that is more than one
+// field. The normal colors contain their own resets, and styling that ANSI run
+// from outside lets those resets cancel the hover partway across it, so each
+// span is rendered again from its bare label.
+func (f paneHeaderField) shade(st *styles) paneHeaderField {
+	spans := make([]headerSpan, len(f.spans))
+	for i, span := range f.spans {
+		spans[i] = span
+		spans[i].text = st.hover.Render(span.label)
+	}
+	return paneHeaderField{spans: spans, git: f.git}
 }
 
 type paneHeaderFields []paneHeaderField
@@ -1729,7 +1789,7 @@ type paneHeaderFields []paneHeaderField
 func (f paneHeaderFields) text() string {
 	fields := make([]string, len(f))
 	for i := range f {
-		fields[i] = f[i].text
+		fields[i] = f[i].text()
 	}
 	return strings.Join(fields, "  ")
 }
@@ -1741,16 +1801,38 @@ func (f paneHeaderFields) fit(room int) paneHeaderFields {
 	return f
 }
 
-// render marks and shades the git fields from the same joined text and center
-// position that viewPaneHeader gives spreadCenter. The spaces between those
-// fields belong to the one control too: the header presents one git summary,
-// and any part of it opens the diff.
+// render marks and shades this row's controls from the same joined text and
+// center position that viewPaneHeader gives spreadCenter: the links in it, span
+// by span, and the git summary, whose several fields are one control — the
+// spaces between them included, because the header presents one git summary and
+// any part of it opens the diff.
+//
+// Marking is a walk over the widths the draw is made of rather than a second
+// pass over the layout, which is the rule the hit map is built on: styling costs
+// no cells, so a span lit under the pointer sits exactly where the mark for it
+// went. See zones.go.
 func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 	middle := f.text()
+	start := centerStart(lipgloss.Width(left), lipgloss.Width(middle), lipgloss.Width(right), w)
+
 	first, last, offset := -1, -1, 0
-	for _, field := range f {
-		fieldW := lipgloss.Width(field.text)
-		if field.git {
+	for i := range f {
+		fieldW := 0
+		for j, span := range f[i].spans {
+			width := lipgloss.Width(span.text)
+			if span.url != "" {
+				x := start + offset + fieldW
+				m.zones.mark(urlHit(span.url), x, 0, width, 1)
+				if m.zones.hovering(x, 0, width, 1) {
+					// The link stays a link while it is lit: the OSC 8 is what
+					// a Ctrl-click follows, and losing it under the pointer
+					// would take that away exactly where the pointer is.
+					f[i].spans[j].text = hyperlink(span.url, m.st.hover.Render(span.label))
+				}
+			}
+			fieldW += width
+		}
+		if f[i].git {
 			if first < 0 {
 				first = offset
 			}
@@ -1758,20 +1840,16 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 		}
 		offset += fieldW + 2
 	}
-	if first < 0 {
-		return middle
-	}
-	x := centerStart(lipgloss.Width(left), lipgloss.Width(middle), lipgloss.Width(right), w) + first
-	m.zones.mark(hit{kind: hitGit}, x, 0, last-first, 1)
-	if !m.zones.hovering(x, 0, last-first, 1) {
-		return middle
-	}
-	for i := range f {
-		if f[i].git {
-			// The normal git colors contain their own resets. Styling that ANSI
-			// run from outside lets those resets cancel the hover, so the live
-			// state owns the visible text while the pointer is over it.
-			f[i].text = m.st.hover.Render(ansi.Strip(f[i].text))
+
+	if first >= 0 {
+		x := start + first
+		m.zones.mark(hit{kind: hitGit}, x, 0, last-first, 1)
+		if m.zones.hovering(x, 0, last-first, 1) {
+			for i := range f {
+				if f[i].git {
+					f[i] = f[i].shade(m.st)
+				}
+			}
 		}
 	}
 	return f.text()
@@ -1809,26 +1887,26 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	box := m.currentBox()
 	git := gitStyle(m.st, box)
 
-	fields := paneHeaderFields{{text: m.st.dimText.Render(box.ID)}}
+	fields := paneHeaderFields{textField(m.st.dimText.Render(box.ID))}
 	if base := box.base(); base != "" {
-		fields = append(fields, paneHeaderField{text: git.Render(base), git: true})
+		fields = append(fields, gitField(git.Render(base)))
 	}
 	// The list pads this into a column, so it spells the empty answer as a
 	// dash; here there is no column to fill and nothing to say, so it is left
 	// off entirely.
 	if changes := box.changes(); changes != "-" {
-		fields = append(fields, paneHeaderField{text: git.Render(changes), git: true})
+		fields = append(fields, gitField(git.Render(changes)))
 	}
 	if stat := diffText(m.st, box); stat != "" {
-		fields = append(fields, paneHeaderField{text: stat, git: true})
+		fields = append(fields, gitField(stat))
 	}
 	// Ahead of the ports, because it is the one thing in this header a person
 	// opens rather than reads.
-	if desktop := desktopText(m.st, box, m.forwardedPorts()); desktop != "" {
-		fields = append(fields, paneHeaderField{text: desktop})
+	if desktop := desktopField(m.st, box, m.forwardedPorts()); !desktop.empty() {
+		fields = append(fields, desktop)
 	}
-	if listening := portsText(m.st, box, m.forwardedPorts()); listening != "" {
-		fields = append(fields, paneHeaderField{text: listening})
+	if listening := portsField(m.st, box, m.forwardedPorts()); !listening.empty() {
+		fields = append(fields, listening)
 	}
 	return fields
 }

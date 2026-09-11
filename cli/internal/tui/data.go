@@ -970,7 +970,7 @@ type Binding struct {
 // held open at a local port for as long as the workspace showing it is.
 //
 // The window does not drive it. It has no address to dial with — a Port drops
-// the bind address for the reason portsText gives — and nothing to decide: the
+// the bind address for the reason portsField gives — and nothing to decide: the
 // set follows what the sandbox announces, which is the same thing the header is
 // already drawn from. So the seam is "start one, draw what it bound, close it".
 type Forward interface {

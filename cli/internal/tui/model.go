@@ -317,6 +317,11 @@ type Model struct {
 	// a test copy must not clobber the developer's actual clipboard.
 	copyOS func(string) error
 
+	// openOS hands a URL to this machine's URL handler, for the header's
+	// links. A field for the same reason copyOS is: a test press must not
+	// open a browser on the developer's screen.
+	openOS func(string) error
+
 	// statusGen counts messages, so a timer can tell whether it is the last one
 	// out.
 	statusGen int
@@ -433,6 +438,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		session:     session,
 		exec:        tea.Exec,
 		copyOS:      func(text string) error { return osClipboard(ctx, text) },
+		openOS:      func(url string) error { return openURL(context.WithoutCancel(ctx), url) },
 		chromeGrid:  &frameGrid{},
 		noise:       newNoise(),
 		now:         time.Now,

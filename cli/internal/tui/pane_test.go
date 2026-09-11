@@ -21,8 +21,10 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 	m := New(t.Context(), ds)
 	m.logo = logo{}
 	m.expanded = true
-	// A test copy must not clobber the developer's actual clipboard.
+	// A test copy must not clobber the developer's actual clipboard, and a
+	// test press on a header link must not open a browser on their screen.
 	m.copyOS = func(string) error { return nil }
+	m.openOS = func(string) error { return nil }
 	// The runtime is what releases the terminal around an action; there is none
 	// here, so the action is simply run and its result handed back.
 	m.exec = func(c tea.ExecCommand, done tea.ExecCallback) tea.Cmd {

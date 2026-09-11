@@ -24,6 +24,14 @@
   as live somewhere other than where it is pressed is a button that lies about
   itself.
 
+- **A link is a control, not just an escape sequence.** An OSC 8 link in the
+  chrome answers Ctrl-click through the terminal; a plain click reaches the
+  window instead, so the span it occupies is marked (`urlHit`) and lit from the
+  same walk that draws it (`paneHeaderFields.render`). Adding a link to a
+  header field means adding it as a `headerSpan` with its URL, not as more
+  text in an existing span — an unmarked one is a link that silently does
+  nothing when it is clicked the way links are clicked.
+
 - **A control that answers a press outright must take the gesture**, so it does
   not also start a drag-select of its own label (`press` returns whether it did).
   One that only points at something — a row — must not, or the row's text stops

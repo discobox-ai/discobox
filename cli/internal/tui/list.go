@@ -618,7 +618,7 @@ func diffText(st *styles, s Sandbox) string {
 	return st.add.Render("+"+itoa(s.Diff.Added)) + " " + st.del.Render("−"+itoa(s.Diff.Deleted))
 }
 
-// portsText is what the sandbox is serving, grouped by protocol:
+// portsField is what the sandbox is serving, grouped by protocol:
 //
 //	http:3000,5173,8080 · https:8443 · tcp:22,5432,6379
 //
@@ -652,15 +652,15 @@ func diffText(st *styles, s Sandbox) string {
 // you can do; the local port, which is the one you can type, is the half worth
 // the space.
 //
-// The desktop is not among them: it has its own header field (desktopText), so
+// The desktop is not among them: it has its own header field (desktopField), so
 // a sandbox serving nothing else renders no port group at all.
 //
 // Empty when nothing is listening, which is also what a sandbox whose agent has
 // not reported yet looks like — there is no third thing to say and no room to
 // say it in.
-func portsText(st *styles, s Sandbox, forwarded map[int]int) string {
+func portsField(st *styles, s Sandbox, forwarded map[int]int) paneHeaderField {
 	if len(s.Ports) == 0 {
-		return ""
+		return paneHeaderField{}
 	}
 	groups := map[string][]Port{}
 	var order []string
@@ -679,26 +679,44 @@ func portsText(st *styles, s Sandbox, forwarded map[int]int) string {
 		groups[port.Protocol] = append(groups[port.Protocol], port)
 	}
 	if len(order) == 0 {
-		return ""
+		return paneHeaderField{}
 	}
 	sort.SliceStable(order, func(i, j int) bool {
 		return protocolRank(order[i]) < protocolRank(order[j])
 	})
 
-	parts := make([]string, 0, len(order))
+	// Drawn span by span rather than as one string, because the numbers in it
+	// are separately pressable: every forwarded web port is a link of its own,
+	// and the header lights and opens the one under the pointer. The rest of
+	// the row — the protocol labels, the commas, the separators — is text.
+	field := paneHeaderField{}
 	for _, protocol := range order {
+		if len(field.spans) > 0 {
+			field.spans = append(field.spans, portSpan(st, " · ", ""))
+		}
 		ports := groups[protocol]
 		sort.Slice(ports, func(i, j int) bool { return ports[i].Number < ports[j].Number })
-		text := make([]string, 0, len(ports))
-		for _, port := range ports {
-			text = append(text, portEntry(port, forwarded))
+		field.spans = append(field.spans, portSpan(st, protocolLabel(protocol)+":", ""))
+		for i, port := range ports {
+			if i > 0 {
+				field.spans = append(field.spans, portSpan(st, ",", ""))
+			}
+			field.spans = append(field.spans, portEntry(st, port, forwarded))
 		}
-		parts = append(parts, protocolLabel(protocol)+":"+strings.Join(text, ","))
 	}
-	return st.info.Render(strings.Join(parts, " · "))
+	return field
 }
 
-// desktopText is the sandbox's graphical desktop, as a link to the local end of
+// portSpan is one piece of the ports field: the text in the field's own color,
+// linked when there is somewhere for it to point.
+func portSpan(st *styles, text, url string) headerSpan {
+	if url == "" {
+		return headerSpan{text: st.info.Render(text), label: text}
+	}
+	return headerSpan{text: st.info.Render(hyperlink(url, text)), label: text, url: url}
+}
+
+// desktopField is the sandbox's graphical desktop, as a link to the local end of
 // its forward.
 //
 // Its own field rather than a number in the protocol groups, because it is a
@@ -711,26 +729,26 @@ func portsText(st *styles, s Sandbox, forwarded map[int]int) string {
 // forwarded ports: an offer to open a desktop that cannot be reached is worse
 // than not offering. The label is the declaration's own name, so the sandbox
 // says what to call it.
-func desktopText(st *styles, s Sandbox, forwarded map[int]int) string {
+func desktopField(st *styles, s Sandbox, forwarded map[int]int) paneHeaderField {
 	for _, port := range s.Ports {
 		if port.ServiceID != sandboxservices.DesktopID {
 			continue
 		}
 		local, ok := forwarded[port.Number]
 		if !ok {
-			return ""
+			return paneHeaderField{}
 		}
 		scheme, web := portScheme(port.Protocol)
 		if !web {
-			return ""
+			return paneHeaderField{}
 		}
 		label := port.ServiceName
 		if label == "" {
 			label = "Desktop"
 		}
-		return st.info.Render(hyperlink(scheme+"://localhost:"+itoa(local), label))
+		return paneHeaderField{spans: []headerSpan{portSpan(st, label, scheme+"://localhost:"+itoa(local))}}
 	}
-	return ""
+	return paneHeaderField{}
 }
 
 // portEntry is one port in its group: the number on its own, or `local->remote`
@@ -742,15 +760,17 @@ func desktopText(st *styles, s Sandbox, forwarded map[int]int) string {
 // header width to say the same number twice.
 //
 // A web port is also a link to the local end of it, so the port a sandbox is
-// serving is one click away rather than a URL to assemble by hand. Only the
+// serving is one click away rather than a URL to assemble by hand — an OSC 8
+// link for the terminal's Ctrl-click, and a marked span the header opens
+// itself when it is clicked plainly (see paneHeaderFields.render). Only the
 // forwarded ones: a link to a port nothing is listening on is worse than no
 // link. Only the web ones: OSC 8 hands the URL to whatever opens
 // `http://`, and there is nothing sensible for a browser to do with a Postgres
 // socket.
-func portEntry(port Port, forwarded map[int]int) string {
+func portEntry(st *styles, port Port, forwarded map[int]int) headerSpan {
 	local, ok := forwarded[port.Number]
 	if !ok {
-		return itoa(port.Number)
+		return portSpan(st, itoa(port.Number), "")
 	}
 	text := itoa(local)
 	if local != port.Number {
@@ -758,9 +778,9 @@ func portEntry(port Port, forwarded map[int]int) string {
 	}
 	scheme, web := portScheme(port.Protocol)
 	if !web {
-		return text
+		return portSpan(st, text, "")
 	}
-	return hyperlink(scheme+"://localhost:"+itoa(local), text)
+	return portSpan(st, text, scheme+"://localhost:"+itoa(local))
 }
 
 // portScheme is the URL scheme a protocol is reachable under, and whether it is

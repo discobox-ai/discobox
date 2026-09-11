@@ -398,7 +398,7 @@ A sandbox that ships a graphical desktop declares it as a service with the id
 `sandboxservices.DesktopID` ([ADR 0094](../../../docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md)),
 and the workspace header draws it as its own field — the declaration's own name,
 hyperlinked to the local end of its forward — rather than as a number in
-`portsText`'s protocol groups.
+`portsField`'s protocol groups.
 
 It is a different offer. `http:6900` beside a dev server invites opening it as
 if it were one, and the port number is not the useful thing about a desktop:
@@ -1107,7 +1107,7 @@ banner already said there was something to apply. It costs no request — the
 agent pushes git state and the diffstat through the control plane with the
 listing.
 
-**What the discobox is serving rides at the end of them** (`portsText`), from
+**What the discobox is serving rides at the end of them** (`portsField`), from
 the same push
 ([ADR 0048](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
 grouped by protocol — `http:3000,5173,8080 · https:8443 · tcp:22,5432,6379`.
@@ -1153,6 +1153,40 @@ on this row goes on working on the text; a terminal that does not know OSC 8
 shows `8082->8080` and drops the rest, which is why the label is the numbers
 rather than a word like "open" that would only mean something where the link
 works.
+
+**The window opens those links itself as well** (`hitURL`, `Model.openLink`,
+`openURL`). The OSC 8 is what a terminal's Ctrl-click follows; the gesture
+people actually make at something that looks like a link is a plain click, and
+while the window is asking for the mouse that click arrives here rather than at
+the terminal. So each link is a marked span that lights under the pointer and
+opens on a press, exactly as a key hint is a button for its key — and it stays
+an OSC 8 link while it is lit, because taking the Ctrl-click away where the
+pointer is would be the wrong half to lose. What opens it is the platform's own
+URL handler (`open`, `rundll32`, `xdg-open`, and PowerShell from WSL, whose
+browser is Windows' — the same boundary the links cross by naming `localhost`
+rather than an address) on the machine the window runs on; a Ctrl-click opens
+it on the terminal's instead, and the two differ over SSH. The launcher is
+waited on briefly (`launch`), because its exit status is the only word on
+whether anything opened — `xdg-open` with no desktop session starts fine and
+exits 3 — and one still running past that is the browser it exec'd, taken as
+opened. It runs on the window's context with the cancellation taken off: a
+page opened from here should outlive the window that opened it. A double click
+opens the page once.
+
+**A press with Ctrl held is left to the terminal**, which is following the OSC 8
+itself; answering it too would open the page twice wherever the terminal also
+reports the press. The trade-off is deliberate: a terminal that reports
+Ctrl-click to an application tracking the mouse, rather than following the
+link, gets nothing from it — which is what Ctrl-click did there before the
+links were pressable — and the plain click is the gesture that works
+everywhere. Of the two failures, a page opened twice is the worse one.
+
+This is why the banner is drawn in spans (`headerSpan`, `paneHeaderField`)
+rather than as one string per field. A field's parts can be separately
+pressable — the port groups are one field and every forwarded web port in it is
+its own link — and `paneHeaderFields.render` walks those spans once to mark
+them, light the one under the pointer, and mark the git summary, from the same
+widths and the same centered origin the row is drawn at.
 
 **The panes' own links are pointed at the local end too** (`forwardedURL`,
 `termpane.WithLinkRewrite`). A server prints the address it bound —
@@ -1325,7 +1359,8 @@ the last selection, which is what the middle button pastes everywhere else
 
 Every screen the window draws marks its own controls: the rows of all four
 lists (`markList`), the folder filter, the workspace header's git summary
-(which opens discobox-review), the composer and the strip under it, the
+(which opens discobox-review) and its links (the desktop and the forwarded web
+ports), the composer and the strip under it, the
 title band's two offers, a menu's rows and a card's, the run options and the
 arrows on them, the confirmation's two answers, and the introduction's one
 instruction. `.` opens the same menu the right button does, on the discobox
