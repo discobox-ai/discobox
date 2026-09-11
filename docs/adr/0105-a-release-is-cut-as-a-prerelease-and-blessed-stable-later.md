@@ -1,6 +1,9 @@
 # 0105 — A release is cut as a prerelease and blessed stable by hand
 
-- **Status**: Accepted
+- **Status**: Accepted (§2 amended by
+  [0109](0109-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md):
+  an explicit prerelease tag reaches the opt-in `edge` channel; everything else
+  stands)
 - **Date**: 2026-09-10
 
 ## Context

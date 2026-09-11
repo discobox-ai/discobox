@@ -1,6 +1,8 @@
 # 0106 — A consumer points at the asset mirror only if it can fall back
 
-- **Status**: Accepted
+- **Status**: Accepted (§4 superseded by
+  [0109](0109-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md)
+  for the installer's two addresses; §§1–3 and §5 stand)
 - **Amends**: [0099](0099-the-cli-downloads-the-server-it-starts.md) §3 in one respect — a manifest asset names an ordered list of URLs rather than one. Everything else in §3 stands, including that the manifest states a URL and a digest or neither: every entry in the list is checked against the same digest, so more sources is more places to find one verified artifact and never a location the binary trusts.
 - **Date**: 2026-09-10
 

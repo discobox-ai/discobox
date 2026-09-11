@@ -1,6 +1,6 @@
 # 0109 — The install script is a release asset, and a channel names which one runs
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-11
 - **Amends**: [0105](0105-a-release-is-cut-as-a-prerelease-and-blessed-stable-later.md)
   §2 in one respect — an explicit prerelease tag reaches one channel, `edge`,
