@@ -513,6 +513,26 @@ const (
 	paneTool
 )
 
+// paneKeymap is the keymap the panes this window opens are given, and it is
+// this window's decision rather than the pane's.
+//
+// A pane is a terminal, and a terminal's Enter chords are a matter of
+// configuration everywhere: no keyboard protocol below Kitty and xterm's
+// modifyOtherKeys can encode a modified Enter at all, and the programs people
+// press these at negotiate neither — Claude Code turns both off on the way in.
+// A terminal that reported the chords faithfully would report them as a plain
+// return, which submits the prompt the key is pressed to avoid submitting.
+//
+// So the mapping is the one Claude Code's own /terminal-setup writes into
+// iTerm2, VS Code, Zed and Alacritty: escape then return. Ctrl-Enter is the
+// traditional line feed. Both are read as a newline by the programs a discobox
+// runs, and are what those programs ask users to configure their own terminals
+// with.
+var paneKeymap = map[string]string{
+	"shift+enter": "\x1b\r",
+	"ctrl+enter":  "\n",
+}
+
 // paneOptions are the keys a pane keeps for the window rather than passing on.
 //
 // A workspace terminal carries the whole key map, because every one of them is
@@ -537,6 +557,7 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		// A URL printed in here was printed on the other side of the forward,
 		// where the port it names is the sandbox's own. See forwardedURL.
 		termpane.WithLinkRewrite(m.forwardedURL),
+		termpane.WithKeys(paneKeymap),
 	}
 	if readOnly {
 		opts = append(opts, termpane.WithReadOnly())

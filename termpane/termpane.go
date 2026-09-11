@@ -135,6 +135,7 @@ type options struct {
 	prefix     string
 	detach     string
 	bindings   map[string]prefixBinding
+	keys       map[string]string
 	highlight  func(uv.Style) uv.Style
 	wheelLines int
 	// linkRewrite is where a link in the pane points; see WithLinkRewrite.
@@ -203,6 +204,39 @@ func WithReadOnly() Option {
 // [tea.KeyPressMsg.String] reports them: "ctrl+a", "ctrl+c", "d".
 func WithPrefix(prefix, detach string) Option {
 	return func(o *options) { o.prefix, o.detach = prefix, detach }
+}
+
+// WithKeys is the pane's keymap: a key name, as [tea.KeyPressMsg.String]
+// spells it, sent as the given bytes instead of whatever the encoder would have
+// made of it.
+//
+// This is a terminal's keymap, and it exists for the same reason every
+// terminal has one. The encoder answers the protocol the application
+// negotiated, and that is all it does; a key with no encoding in that protocol
+// has no encoding, and no amount of care in the encoder invents one. Windows
+// Terminal and iTerm2 answer that with a configurable keymap, and so does this
+// — declared by the host, where it can be read, changed, or left out.
+//
+// A bound key is taken before the encoder, and after everything the pane
+// reserves for itself: the prefix, the detach key, a chord lead and the
+// selection copy chord are all matched in Update and never reach here. Neither
+// do the keys the pane types literally on their behalf, nor the arrow presses
+// the wheel synthesizes to scroll an alternate screen — those go straight to
+// the encoder, because each is the pane spelling out a keystroke rather than
+// the user pressing one.
+//
+// So binding one of those does nothing, which is the safe way round: the prefix
+// is the way out of a pane, and a keymap that could shadow it could lock the
+// pane shut.
+func WithKeys(keys map[string]string) Option {
+	return func(o *options) {
+		if o.keys == nil {
+			o.keys = make(map[string]string, len(keys))
+		}
+		for name, seq := range keys {
+			o.keys[name] = seq
+		}
+	}
 }
 
 // WithPrefixBinding reserves one more key behind the prefix, emitting msg
@@ -638,8 +672,8 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		}
 		// A chord that selected nothing was three keystrokes like any others.
-		m.SendKey(prefixKey(m.opts.prefix))
-		m.SendKey(prefixKey(lead))
+		m.sendEncoded(prefixKey(m.opts.prefix))
+		m.sendEncoded(prefixKey(lead))
 		m.SendKey(msg)
 		return nil
 	}
@@ -668,13 +702,13 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			// exactly, where everything after the prefix tolerates a held
 			// Ctrl: the bare form is a letter a binding can have, and with a
 			// leader like Ctrl-A that letter is one a host will want.
-			m.SendKey(prefixKey(m.opts.prefix))
+			m.sendEncoded(prefixKey(m.opts.prefix))
 			return nil
 		case afterPrefix(name, m.opts.detach):
 			// The detach key typed after the prefix is that key, sent on: it is
 			// how the application gets the one keystroke the pane has taken —
 			// its own interrupt, most of the time.
-			m.SendKey(prefixKey(m.opts.detach))
+			m.sendEncoded(prefixKey(m.opts.detach))
 			return nil
 		}
 		for key, bound := range m.opts.bindings {
@@ -696,7 +730,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		// A prefix that qualified nothing was a keystroke like any other, so it
 		// is delivered along with the key that followed it.
-		m.SendKey(prefixKey(m.opts.prefix))
+		m.sendEncoded(prefixKey(m.opts.prefix))
 		m.SendKey(msg)
 		return nil
 	}
@@ -806,6 +840,29 @@ func (m *Model) PrefixPending() bool { return m.prefixArmed || m.chordLead != ""
 // because the key encoder works from the unshifted code: routed as a key, an
 // uppercase letter arrives lowercase and "!" arrives as "1".
 func (m *Model) SendKey(msg tea.KeyPressMsg) {
+	if m.emu == nil || m.opts.readOnly {
+		return
+	}
+	// The keymap is the terminal's own and comes before its encoder: a bound
+	// key is what the host says it is, not what the protocol would have made
+	// of it.
+	if seq, ok := m.opts.keys[msg.String()]; ok {
+		m.emu.SendText(seq)
+		return
+	}
+	m.sendEncoded(msg)
+}
+
+// sendEncoded is SendKey without the keymap, for the keys the pane spells out
+// itself rather than taking from the user: the reserved keys it undertakes to
+// type literally, and the arrows the wheel stands in for on an alternate
+// screen.
+//
+// These go around the keymap because a keymap answers a keypress, and none of
+// these is one. A host that bound its own leader would otherwise get the
+// binding where the pane promised the keystroke, which makes the way out of a
+// pane the one key that cannot be typed into it.
+func (m *Model) sendEncoded(msg tea.KeyPressMsg) {
 	if m.emu == nil || m.opts.readOnly {
 		return
 	}

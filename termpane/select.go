@@ -184,7 +184,11 @@ func (m *Model) wheel(ev tea.MouseWheelMsg) {
 		}
 		key := tea.Key{Code: code}
 		for range lines {
-			m.SendKey(tea.KeyPressMsg(key))
+			// Encoded rather than sent through the keymap: the wheel is
+			// standing in for the arrow key at the protocol level — xterm's
+			// alternate-scroll bargain — not pressing one. A host that bound
+			// "up" would otherwise have the wheel type its binding.
+			m.sendEncoded(tea.KeyPressMsg(key))
 		}
 		return
 	}

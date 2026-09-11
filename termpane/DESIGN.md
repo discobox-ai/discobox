@@ -67,6 +67,29 @@ is readline's backward-word), but a special key prefixed that way arrives as
 literal text `[A`. xterm sends `\x1b[1;3A` for Alt-Up. Keys with no CSI form
 still fall through to the emulator and keep the prefix.
 
+**The encoder decides nothing** (`keys.go`). It answers the protocol the
+application negotiated and stops there. Below Kitty and modifyOtherKeys no
+protocol encodes a modified Enter at all, so a modified Enter is a plain
+return — accurate, and a submission in any prompt it is pressed at. The encoder
+does not invent a sequence to fix that, because inventing one is a decision, and
+decisions here are the host's.
+
+**The keymap is where a decision goes** (`WithKeys`). A key name, as
+`tea.KeyPressMsg.String` spells it, sent as the bytes the host names. This is
+not mediation; it is what a terminal is. Windows Terminal and iTerm2 both
+answer an unencodable chord with a configurable keymap, and Claude Code's
+`/terminal-setup` is a program asking users to edit exactly that. A pane offers
+the same thing, in the open, where the host declares it and can leave it out.
+
+It is taken before the encoder and *after* everything the pane reserves — the
+prefix, the detach key, a chord lead, the copy chord — none of which reach it,
+and neither do the keys the pane spells out itself: the reserved keys it types
+literally, and the arrows the wheel stands in for on an alternate screen. Those
+call `sendEncoded`, which is `SendKey` without the keymap, because a keymap
+answers a keypress and none of those is one. Binding a reserved key therefore
+does nothing, which is the safe way round: a keymap that could shadow the prefix
+could lock the pane shut.
+
 **A modifier with no encoding costs the modifier, not the keystroke**
 (`foldToEncodable`). Exact-equality matching means every modifier the emulator
 has no case for is silence — Ctrl-Tab, Ctrl-Backspace, Shift-Escape and

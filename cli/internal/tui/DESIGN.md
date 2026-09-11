@@ -1576,6 +1576,15 @@ Ctrl-J all keep the prompt open and split the line. Enhanced terminals report
 the Enter chords distinctly; Ctrl-J also covers terminals that encode
 Ctrl-Enter as the traditional line-feed control byte.
 
+**The panes carry this window's keymap** (`paneKeymap`, `pane.go`). A pane's
+encoder answers only what the program inside it negotiated, and nothing
+negotiates a modified Enter — Claude Code disables both keyboard protocols on
+the way in — so a faithful pane reports Shift-Enter as a plain return and
+submits the prompt. The window binds the chords instead, to what
+`/terminal-setup` writes into iTerm2, VS Code and Alacritty: `\x1b\r` for
+Shift-Enter, a line feed for Ctrl-Enter. The decision is the window's, declared
+where it can be read and changed; see `termpane`'s `WithKeys`.
+
 **The composer is a readline** (`readline.go`). The field answers GNU readline's
 emacs mode, because anyone who has typed at a shell prompt has those motions in
 their fingers and a field that answers Ctrl-A but not Ctrl-Y invites the muscle
