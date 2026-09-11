@@ -1365,26 +1365,32 @@ tasks:
         # given, and adds no remote in that case anyway.
         gh repo fork "$upstream" --clone=false >/dev/null
 
-        # Based on *upstream's* master rather than the fork's, so the fork's own
-        # master is never synced and may be arbitrarily stale.
+        # The fork's own master, which is allowed to be thousands of commits
+        # behind upstream's. It is a clean ancestor rather than a divergence —
+        # nothing ever commits to it — so it is the pull request's merge base
+        # and the diff is exactly the files added here. A new version directory
+        # cannot conflict with whatever upstream changed meanwhile, so the
+        # staleness costs nothing.
         #
-        # `gh repo sync "$fork" --branch master --force` was here, and could not
-        # work: it goes through the merge-upstream API, which refuses any
-        # incoming commit that touches .github/workflows unless the token
-        # carries `workflow` scope — and winget-pkgs changes its workflows
-        # constantly, so this failed the moment a fork had any catching up to
-        # do. Granting that scope is the wrong trade: it would buy write access
-        # to every workflow in every public repository the submitting account
-        # can reach, in order to read a SHA that upstream hands out
-        # unauthenticated.
+        # Two things that do not work, both tried:
         #
-        # A fork shares object storage with its upstream, so a ref created in
-        # the fork may point at a commit only upstream has, and a tree built
-        # here may name upstream's tree as its base. Cutting the branch straight
-        # from upstream is also simply more correct: the pull request is based
-        # on what master is now, not on whatever the fork last saw.
-        base="$(gh api "repos/$upstream/git/ref/heads/master" -q .object.sha)"
-        base_tree="$(gh api "repos/$upstream/git/commits/$base" -q .tree.sha)"
+        #   `gh repo sync "$fork" --branch master --force`, which used to sit
+        #   here, goes through the merge-upstream API. That refuses any incoming
+        #   commit touching .github/workflows unless the token carries
+        #   `workflow` scope, and winget-pkgs changes its workflows constantly —
+        #   so it broke as soon as the fork had any catching up to do. Granting
+        #   the scope would buy write access to every workflow in every public
+        #   repository the submitting account can reach, to tidy a fork whose
+        #   staleness does not matter.
+        #
+        #   Reading the base from *upstream* instead, to skip the fork's master
+        #   entirely, fails further along: a fork shares object storage with its
+        #   upstream for reads, but tree creation validates base_tree against
+        #   the repository being written, so `POST repos/$fork/git/trees`
+        #   answers "base_tree is not a valid tree oid" (422) for a tree only
+        #   upstream has.
+        base="$(gh api "repos/$fork/git/ref/heads/master" -q .object.sha)"
+        base_tree="$(gh api "repos/$fork/git/commits/$base" -q .tree.sha)"
 
         # The title format the repository's pull request template asks for; the
         # moderation tooling reads it.
