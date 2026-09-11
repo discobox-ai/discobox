@@ -1,6 +1,6 @@
 # 0109 — A bound UDP port is listed, and forwarded as datagrams
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-11
 - **Relates to**: [ADR 0046](0046-listening-ports-are-polled-and-probed-in-the-background.md),
   whose deferred "Unix domain sockets and UDP" this settles for UDP;
