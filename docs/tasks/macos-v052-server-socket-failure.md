@@ -1,5 +1,120 @@
 # macOS v0.5.2 server socket failure investigation
 
+## Result (2026-09-10)
+
+**Listener EBADF reproduced and fixed.** A sleep/wake trigger was not tested.
+
+Environment: macOS 26.6.2 (25G83, the reported version), arm64, go1.27.1,
+`Code-Hex/vz/v3 v3.7.1`, guest `discobox-vm@sha256:af1d6ee4…` (the v0.6.0
+pin), 4 vCPU / 4 GiB, throwaway disks. The workload is 8 workers each churning
+VSOCK host→guest (Docker relay, port 3004; every fourth connection dropped
+with the request in flight), plus 8 workers probing a Unix HTTP listener
+opened before the VM, one new connection per probe.
+
+Reproduce: `go tool task test:vz-stress GUEST=<guest image dir>`, or `NO_VM=1`
+for the control. `CYCLES`, `DURATION`, `WORKERS` bound it; `PAUSE=90s` pauses
+the guest through the framework partway through and reports its clock lag.
+Artifacts go to `build/vz-stress`.
+
+| Run | Binding | Serve outcome | VSOCK cycles | Probes | FDs before / after / teardown |
+| --- | --- | --- | --- | --- | --- |
+| control ×1 | no VM | ok | 0 | 20,001, 0 errors | 6 / 6 / 6 |
+| baseline 1 | v3.7.1 | `accept unix …: bad file descriptor` at 23 ms | 144 | 355, 4 errors | 7 / 6 / 6 |
+| baseline 2 | v3.7.1 | `accept unix …: bad file descriptor` at 7 ms | 45 | 104 | 7 / 6 / 6 |
+| baseline 3 | v3.7.1 | `accept unix …: setnonblock: bad file descriptor` at 7 ms | 42 | 111, 3 errors | 7 / 6 / 6 |
+| baseline 4 | v3.7.1 | `accept unix …: setnonblock: bad file descriptor` at 34 ms | 222 | 479, 7 errors | 7 / 6 / 6 |
+| candidate ×4 | patched (local) | ok, ~1.4 s each | 10,000 each | 20,765–22,258, 0 errors | 7 / 7 / 7 |
+| fork ×2 | `discobox-ai/vz` `cfc8ce37` | ok, ~1.4 s each | 10,000 each | 20,715–20,875, 0 errors | 7 / 7 / 7 |
+
+Baseline side errors include probe `read: bad file descriptor` and
+`dial unix …: bad file descriptor`, and a VSOCK `fcntl: bad file descriptor`
+(the framework's own fd already gone when vz dup'd it). Each run is one
+process; nothing restarted.
+
+Mechanism:
+
+- Apple's header: the `VZVirtioSocketConnection` fd "is owned by the
+  VZVirtioSocketConnection. It is automatically closed when the object is
+  destroyed." vz's `newVirtioSocketConnection` dups it through `net.FileConn`,
+  then closes the original. The framework's later close hits whatever reused
+  the number. Upstream main (26 commits past v3.7.1) is unchanged here.
+- The listener is never the victim. The error form identifies the fd that is.
+  In Go (same code in 1.26.1, v0.5.2's toolchain, and 1.27.1), a dead
+  listener prints `accept unix P: accept: bad file descriptor`. If the
+  just-accepted fd vanishes before `SetNonblock`, it prints
+  `…: setnonblock: bad file descriptor`. The incident's bare
+  `accept unix P: bad file descriptor` comes from `netFD.init`, meaning
+  kqueue registration of the **just-accepted** fd failed: another thread
+  closed it between `accept(2)` and registration. `http.Server.Serve` treats
+  that as fatal, so `serveAll` exits.
+
+Fix: `discobox-ai/vz`, branch `discobox`, commit `cfc8ce37` on `v3.7.1`. It
+dups the fd inside the completion handler or listener delegate, while the
+object is alive, and leaves the original to the framework. `server/go.mod`
+replaces the upstream module with it. No upstream PR has been opened yet, by
+decision.
+
+### Fixed server, full application
+
+This checkout's `discobox-server` (with the fork) was built with the release
+image flags pinned to `v0.6.0`. It ran with its own data, config, cache and
+state directories and no env file, listening only on `/tmp/dbxfix/s.sock`. It
+had its own vz pool, guest `discobox-vm@sha256:af1d6ee4…`, pool agent
+`discobox-pool-agent:v0.6.0` (which predates the auth reporting fix), and one
+shell-harness box. Every CLI call passed `--auto-start-server=false`. The
+driver scripts were ad hoc and are not committed.
+
+| Phase | Traffic | Result |
+| --- | --- | --- |
+| Awake | 5 min, 4 workers looping `admin exec create` (64 KiB of output each) | 3,133 execs, 0 failures |
+| Freeze | 12 min of the same traffic; 60 s in, the server and its VM process SIGSTOPped together for 400 s | 1,660 execs, 0 failures |
+
+- **Server:** PID 79160 throughout. `/healthz` was probed on a new connection
+  every 0.5 s: 2,402 × 200. The only non-200s were the 109 probes during the
+  freeze, and the first probe after resume succeeded.
+- **Log:** no `server failed`, `bad file descriptor`, pool-sync failure or
+  401. Server fds went 33 → 58 at peak → 34 at the end.
+- **Execs during the freeze:** they waited in the socket backlog and completed
+  after resume. The scripts' client timeout never fired, because the Go CLI
+  ignores SIGALRM.
+- **The clock:** SIGSTOP is not sleep. The first host/guest skew sample after
+  resume came 91 s later, after the guest's 30 s clock step, so this run says
+  nothing about clock lag or the post-wake 401 path.
+
+### Framework pause
+
+Command: `go tool task test:vz-stress GUEST=… WORKERS=2 CYCLES=400000
+DURATION=5m PAUSE=90s`, run with the fork. Ten seconds into the churn, the
+guest was paused through Virtualization.framework, held for 90 s, then resumed.
+
+- **The guest clock froze with it.** The guest was 89.5 s behind the host
+  from resume until its RTC step at about +18 s, then 0.4 s off.
+- **Unix listener:** 4,233,597 probes, 0 errors. `Serve` never failed, and
+  fds stayed 7 / 7 / 7.
+- **VSOCK:** 400,000 cycles, 16,433 errors. The 500 errors recorded are the
+  framework refusing connections while the VM was `pausing` or `paused`
+  ("must be running to connect"). The total is consistent with two workers
+  retrying every 10 ms for 90 s. Churn resumed after the pause.
+
+Not covered:
+
+- **Real sleep/wake.** The process freeze and the framework pause are stand-ins;
+  what macOS itself does to the host during sleep is untested. The race needs
+  no sleep: a VSOCK connection only has to be created in the instant between a
+  Unix accept and its registration. The burst of concurrent VSOCK and CLI
+  connections on wake is a plausible link, but it was not measured.
+- **Guest→host churn (port 3001).** It ran only as the live pool agent's own
+  control-plane traffic in the full-app run. That path calls the same fixed
+  function, but it was not churned deliberately.
+- **Pool lifecycle** (stop/start under traffic) and native close stacks. The
+  evidence is the error form plus 4 failing unpatched runs vs 6 passing
+  patched runs on the same workload.
+- **Post-wake 401s.** A paused guest's clock stays behind until its next
+  30-second RTC step. So a sleep longer than the five-minute token lifetime
+  would put the guest past that lifetime for up to 30 s after wake, which fits
+  transient pool-sync 401s. This was not reproduced, and the pool agent image
+  used lacked the auth reporting fix below.
+
 ## Objective and incident evidence
 
 Reproduce or narrow down a server exit on macOS, then fix and verify the cause
