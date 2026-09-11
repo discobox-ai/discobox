@@ -120,6 +120,20 @@ type Server struct {
 	releaseOnce sync.Once
 }
 
+// PrepareSession makes the X server agree with the scale the desktop session is
+// about to start at. It is xfce4-session@.service's ExecStartPre, run as the
+// session's user with its display and bus; see Display.prepareSession.
+func PrepareSession(ctx context.Context, cfg Config) (int, error) {
+	cfg.applyDefaults()
+	envDir, err := expandHome(cfg.ScaleEnvDir)
+	if err != nil {
+		return 0, err
+	}
+	display := NewDisplay(cfg.Display)
+	display.EnvDir = envDir
+	return display.prepareSession(ctx)
+}
+
 // New builds the server. It does not bind anything.
 func New(log *slog.Logger, cfg Config) (*Server, error) {
 	cfg.applyDefaults()
@@ -266,18 +280,16 @@ func Serve(ctx context.Context, log *slog.Logger, cfg Config, listener net.Liste
 // page and asking for a size, or opening the VNC socket, or any program in the
 // sandbox talking to DISPLAY=:0. Not before.
 func (s *Server) settleScale() {
-	scale, remembered := RememberedScale(s.display.EnvDir)
-	if !remembered {
-		// Nothing to remember: the session starts at 1x, and a viewer that
-		// turns out to be HiDPI says so and restarts it. That costs one
-		// restart on a sandbox's first ever desktop, and it costs no X server
-		// on every sandbox that never opens one.
-		scale = 1
-	}
+	// Nothing remembered is rare in the image, where the boot flow has already
+	// written the starting scale; it is the case of a viewer run anywhere else.
+	// Either way the session starts at the default, and a viewer on an ordinary
+	// screen says so and restarts it -- one restart on a sandbox's first ever
+	// desktop, against no X server at all on every sandbox that never opens one.
+	scale, remembered := StartingScale(s.display.EnvDir)
 	if err := s.display.AdoptScale(scale); err != nil {
 		s.log.Warn("write the desktop scale", "scale", scale, "error", err)
 	}
-	reason := "no scale was remembered, so the session starts at 1x"
+	reason := "no scale was remembered, so the session starts at the default"
 	if remembered {
 		reason = "the remembered scale was written out"
 	}

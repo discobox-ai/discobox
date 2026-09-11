@@ -419,12 +419,27 @@ func TestTheScaleIsRememberedAcrossRuns(t *testing.T) {
 	if _, ok := RememberedScale(dir); ok {
 		t.Fatalf("an empty directory remembered a scale")
 	}
-	if _, err := writeScaleEnv(dir, 2); err != nil {
-		t.Fatalf("writeScaleEnv: %v", err)
+	if _, err := WriteScaleEnv(dir, 2); err != nil {
+		t.Fatalf("WriteScaleEnv: %v", err)
 	}
 	scale, ok := RememberedScale(dir)
 	if !ok || scale != 2 {
 		t.Fatalf("RememberedScale = %d, %v; want 2, true", scale, ok)
+	}
+}
+
+// Nothing remembered starts at the default, and a remembered scale starts at
+// itself -- whichever of the boot flow, the viewer or the session is asking.
+func TestTheStartingScaleIsTheRememberedOneOrTheDefault(t *testing.T) {
+	dir := t.TempDir()
+	if scale, remembered := StartingScale(dir); scale != DefaultScale || remembered {
+		t.Fatalf("StartingScale with nothing written = %d, %v; want %d, false", scale, remembered, DefaultScale)
+	}
+	if _, err := WriteScaleEnv(dir, 1); err != nil {
+		t.Fatalf("WriteScaleEnv: %v", err)
+	}
+	if scale, remembered := StartingScale(dir); scale != 1 || !remembered {
+		t.Fatalf("StartingScale after writing 1 = %d, %v; want 1, true", scale, remembered)
 	}
 }
 
@@ -459,9 +474,9 @@ func TestAnUnchangedScaleIsStillWrittenOnce(t *testing.T) {
 // takes as an EnvironmentFile, so its format has to stay sourceable.
 func TestScaleEnvIsPlainKeyValue(t *testing.T) {
 	dir := t.TempDir()
-	path, err := writeScaleEnv(dir, 2)
+	path, err := WriteScaleEnv(dir, 2)
 	if err != nil {
-		t.Fatalf("writeScaleEnv: %v", err)
+		t.Fatalf("WriteScaleEnv: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -590,8 +605,8 @@ func TestSettlingTheScaleNeverTouchesTheDisplay(t *testing.T) {
 
 	// The session's environment is written, which is the whole job.
 	scale, ok := RememberedScale(server.display.EnvDir)
-	if !ok || scale != 1 {
-		t.Fatalf("settleScale did not write the scale: %d, %v", scale, ok)
+	if !ok || scale != DefaultScale {
+		t.Fatalf("settleScale did not write the default scale: %d, %v", scale, ok)
 	}
 	// And nothing has talked to X, so a read-only caller still gets "no
 	// display" rather than a geometry conjured by asking for one.
@@ -606,8 +621,8 @@ func TestARememberedScaleIsAdoptedWithoutADisplay(t *testing.T) {
 	server, dir := newTestServer(t)
 	server.display = NewDisplay(":91")
 	server.display.EnvDir = filepath.Join(dir, "env")
-	if _, err := writeScaleEnv(server.display.EnvDir, 2); err != nil {
-		t.Fatalf("writeScaleEnv: %v", err)
+	if _, err := WriteScaleEnv(server.display.EnvDir, 2); err != nil {
+		t.Fatalf("WriteScaleEnv: %v", err)
 	}
 
 	server.settleScale()

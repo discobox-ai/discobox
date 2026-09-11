@@ -10,9 +10,35 @@
 # wrapper that sources every file in /etc/chromium.d and appends $CHROMIUM_FLAGS,
 # which is the supported way in and the reason scale.env carries the scale as a
 # plain number as well as as toolkit variables.
-if [ -n "${HOME:-}" ] && [ -r "$HOME/.discobox/desktop/scale.env" ]; then
-    . "$HOME/.discobox/desktop/scale.env"
-fi
-if [ -n "${DISCOBOX_DESKTOP_SCALE:-}" ]; then
-    CHROMIUM_FLAGS="$CHROMIUM_FLAGS --force-device-scale-factor=$DISCOBOX_DESKTOP_SCALE"
+#
+# Only for a browser with a window on the desktop. The scale is :0's, and the
+# file exists in every sandbox from its first boot: a headless Chromium -- a
+# screenshot, chromedriver, a test runner -- draws nowhere, so a forced factor
+# only doubles its pixels, and one on another X server (xvfb-run's) is not at
+# this density at all. The launcher sources this file with its own arguments
+# still in "$@", which is what lets it tell. Gated as a whole rather than only
+# the sourcing, because a login shell has already exported the scale.
+#
+# Anywhere else the desktop's toolkit variables are dropped as well, not just
+# left unforced: Chromium multiplies GDK_SCALE into its own scale, so a headed
+# browser on :99 that inherits the login shell's 2 comes out at 2x anyway --
+# measured on a private Xvfb, devicePixelRatio 2 with them and 1 without.
+discobox_on_desktop=
+case "${DISPLAY:-}" in
+    :0|:0.*) discobox_on_desktop=1 ;;
+esac
+for arg in "$@"; do
+    case "$arg" in
+        --headless|--headless=*) discobox_on_desktop= ;;
+    esac
+done
+if [ -n "$discobox_on_desktop" ]; then
+    if [ -n "${HOME:-}" ] && [ -r "$HOME/.discobox/desktop/scale.env" ]; then
+        . "$HOME/.discobox/desktop/scale.env"
+    fi
+    if [ -n "${DISCOBOX_DESKTOP_SCALE:-}" ]; then
+        CHROMIUM_FLAGS="$CHROMIUM_FLAGS --force-device-scale-factor=$DISCOBOX_DESKTOP_SCALE"
+    fi
+else
+    unset GDK_SCALE GDK_DPI_SCALE
 fi

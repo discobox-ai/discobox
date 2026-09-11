@@ -124,13 +124,28 @@ const (
 	// BaseDPI is the density this X server actually reports — the dummy driver
 	// logs `DPI set to (96, 96)` and sets a 338x270mm screen for 1280x1024,
 	// which is 96 to within a rounding error. It is the native value, not a
-	// convention borrowed from elsewhere, and the default the desktop runs at.
+	// convention borrowed from elsewhere, and the density at scale 1.
 	BaseDPI = 96
 
 	// MinScale and MaxScale bound the device scale. 1 is a normal screen; 2 is
 	// every current HiDPI laptop; 3 exists because some phones report it.
 	MinScale = 1
 	MaxScale = 3
+
+	// DefaultScale is the scale a desktop starts at before anybody has said
+	// what screen it is watched on. 2, not 1, for two reasons. HiDPI is the
+	// ordinary screen to watch from, so the common case starts right and never
+	// pays the restart a change costs. And the scale is not only the desktop's:
+	// every shell the agent starts sources it, at boot, long before anybody
+	// opens the viewer and with no way to be told when it later moves — so the
+	// default is the scale the agent's own programs draw at. A viewer on an
+	// ordinary screen reports 1 and moves it down.
+	//
+	// It is :0's scale and nothing else's. Chromium's launcher forces it only
+	// on a headed browser on :0, but the toolkit variables in a login shell
+	// cannot be scoped to one X server: a GTK program run against another one
+	// (xvfb-run's) inherits them. See desktop/DESIGN.md.
+	DefaultScale = 2
 
 	refreshRate    = 60
 	commandTimeout = 5 * time.Second
@@ -271,19 +286,12 @@ func (d *Display) SetScale(ctx context.Context, scale int, auto bool) (Geometry,
 	// mixed-channel state REVIEW.md forbids -- 2x widgets around 1x text, from a
 	// scale change whose X half timed out against a cold display.
 	if d.EnvDir != "" {
-		if _, err := writeScaleEnv(d.EnvDir, scale); err != nil {
+		if _, err := WriteScaleEnv(d.EnvDir, scale); err != nil {
 			return Geometry{}, false, err
 		}
 	}
 	d.scale = scale
-	output, err := d.connectedOutput(ctx)
-	if err != nil {
-		return Geometry{}, false, err
-	}
-	if _, err := d.run(ctx, "--output", output, "--dpi", strconv.Itoa(BaseDPI*scale)); err != nil {
-		return Geometry{}, false, err
-	}
-	if err := d.applyLiveScale(ctx, scale); err != nil {
+	if err := d.applyServerScale(ctx, scale); err != nil {
 		return Geometry{}, false, err
 	}
 
@@ -361,7 +369,7 @@ func (d *Display) AdoptScale(scale int) error {
 	if d.EnvDir == "" {
 		return nil
 	}
-	_, err := writeScaleEnv(d.EnvDir, scale)
+	_, err := WriteScaleEnv(d.EnvDir, scale)
 	return err
 }
 

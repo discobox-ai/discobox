@@ -88,3 +88,19 @@ func TestTheViewerDoesNotPullUpTheDisplay(t *testing.T) {
 		}
 	}
 }
+
+// The session brings the server to its scale before it starts anything.
+// scale.env carries only the launch-time half of a scale, and the viewer that
+// applies the rest is not running when a program talking to :0 is what started
+// X -- so without this, such a session starts GDK_SCALE=2 programs against a
+// 96 DPI server: 2x widgets around 1x text.
+func TestTheSessionPreparesTheServerScaleBeforeStarting(t *testing.T) {
+	session := readUnit(t, "xfce4-session@.service")
+	pre := directive(session, "ExecStartPre")
+	for _, command := range pre {
+		if strings.HasSuffix(strings.TrimPrefix(command, "-"), "discobox-sandbox-agent desktop prepare-session") {
+			return
+		}
+	}
+	t.Fatalf("xfce4-session@.service ExecStartPre = %q, want `discobox-sandbox-agent desktop prepare-session`", pre)
+}

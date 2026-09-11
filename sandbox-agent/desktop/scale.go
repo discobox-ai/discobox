@@ -57,6 +57,10 @@ const (
 	dpiProperty        = "/Xft/DPI"
 	cursorSizeProperty = "/Gtk/CursorThemeSize"
 
+	// prepareRounds bounds prepareSession's re-reads. A scale changes when a
+	// page loads or a person picks one, so a second round is already rare.
+	prepareRounds = 3
+
 	// decorationThemeProperty is on the xfwm4 channel rather than xsettings,
 	// and is the window manager's half of a scale change. See decorationTheme.
 	decorationThemeProperty = "/general/theme"
@@ -124,13 +128,16 @@ func trimFloat(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-// writeScaleEnv writes the environment file for scale.
+// WriteScaleEnv writes the environment file for scale.
 //
 // The format is plain KEY=VALUE, which is systemd's EnvironmentFile format and
 // is also what `set -a; . file; set +a` exports from a shell — so one file
 // serves the window manager's unit and every login shell, with no second
 // representation to keep in step.
-func writeScaleEnv(dir string, scale int) (string, error) {
+//
+// Exported for the boot flow, which writes the starting scale before anything
+// in the sandbox runs. See StartingScale.
+func WriteScaleEnv(dir string, scale int) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("desktop: create scale env directory: %w", err)
 	}
@@ -188,6 +195,21 @@ func RememberedScale(dir string) (int, bool) {
 		return scale, true
 	}
 	return 0, false
+}
+
+// StartingScale is the scale a desktop comes up at: the one the environment
+// file remembers, or DefaultScale when it remembers none.
+//
+// Three things start from it, and they must agree. The boot flow writes it out
+// before systemd starts, so the harness and every login shell source it; the
+// viewer adopts it when it starts; and the session applies it to the X server
+// before its first program starts. One rule, so none of them can come up at a
+// different scale than the others.
+func StartingScale(dir string) (scale int, remembered bool) {
+	if scale, ok := RememberedScale(dir); ok {
+		return scale, true
+	}
+	return DefaultScale, false
 }
 
 // xresources is what goes into the X resource database for a scale.
@@ -254,6 +276,55 @@ func (d *Display) restartSession(ctx context.Context) error {
 		return fmt.Errorf("desktop: restart the desktop session: %w", err)
 	}
 	return nil
+}
+
+// applyServerScale is the X half of a scale: the server's own DPI through RandR,
+// which is what anything reading the screen's physical size derives a density
+// from, and then everything applyLiveScale hands the session.
+func (d *Display) applyServerScale(ctx context.Context, scale int) error {
+	output, err := d.connectedOutput(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := d.run(ctx, "--output", output, "--dpi", strconv.Itoa(BaseDPI*scale)); err != nil {
+		return err
+	}
+	return d.applyLiveScale(ctx, scale)
+}
+
+// prepareSession makes the X server agree with the environment file before the
+// desktop session starts, and reports the scale it applied. See PrepareSession,
+// which runs it as the session unit's ExecStartPre.
+//
+// The environment file is only the launch-time half of a scale. The density,
+// the cursor size and the window decorations live in xfconf and on the server,
+// and SetScale is the only other thing that puts them there — which it does
+// only when a viewer is watching. So a session brought up by a program talking
+// to :0, with nobody looking, would start from a file saying GDK_SCALE=2 against
+// a server still at the image's 96 DPI: 2x widgets around 1x text, the
+// mixed-channel state REVIEW.md forbids. Running this before every session
+// start closes that, whoever started X.
+//
+// A viewer can change the scale while this runs. SetScale writes the file
+// before it applies anything, so a change that lands mid-way is in the file by
+// the time this finishes; re-reading and applying again until the file holds
+// still means the last values on the server are the file's, however the two
+// processes' commands interleaved. (One SetScale at a time: the viewer holds
+// its lock across the write and the apply.) It does not size the framebuffer —
+// that is the viewer's, and a restart racing its resize must not undo it.
+func (d *Display) prepareSession(ctx context.Context) (int, error) {
+	scale, _ := StartingScale(d.EnvDir)
+	for range prepareRounds {
+		if err := d.applyServerScale(ctx, scale); err != nil {
+			return scale, err
+		}
+		now, _ := StartingScale(d.EnvDir)
+		if now == scale {
+			return scale, nil
+		}
+		scale = now
+	}
+	return scale, fmt.Errorf("desktop: the scale kept changing while the session was being prepared")
 }
 
 // applyLiveScale hands the density to the running session: it merges the X

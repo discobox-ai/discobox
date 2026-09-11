@@ -129,6 +129,39 @@ Integer only. A fractional scale is a fractional downscale in the browser —
 soft, which is the opposite of the point — and `GDK_SCALE` takes integers
 anyway, so 1.5 would scale text and not widgets.
 
+**The starting scale is 2×**, or whatever `scale.env` remembers
+(`StartingScale`). 2 because HiDPI is the ordinary screen to watch from, so the
+common case never pays a restart, and because the scale is not only the
+desktop's: every shell the agent starts sources `scale.env`, so the default is
+what the agent's own programs draw at. The boot flow writes it before systemd
+starts (`boot.seedDesktopScale`), keeping whatever value the file already holds
+— including a 1 an earlier image wrote as its default, which the file cannot tell
+from a settled scale; existing sandboxes are deliberately left where they are.
+The viewer cannot be the first writer: it is
+socket-activated and starts only when a browser or an X client first reaches
+the desktop, seconds after the harness's login shell has sourced `profile.d`
+and found no file.
+
+Two consequences are accepted rather than fixed, because both come from the
+scale travelling as environment, which nothing can take back from a running
+process or scope to one X server:
+
+- **A later change does not reach the agent's shells.** When a viewer on an
+  ordinary screen moves the desktop to 1×, a GTK program the agent launches
+  afterwards still holds `GDK_SCALE=2` and `GDK_DPI_SCALE=0.5` against a 96 DPI
+  server: 2× widgets around 1× text, the mixed state nothing else may cause.
+  Chromium follows the file (its launcher re-reads it) and xterm and Qt follow
+  the server, so it is GTK that goes wrong. The session is restarted for exactly
+  this; an agent's shell cannot be restarted under it.
+- **Another X server inherits the desktop's toolkit variables.** A GTK program
+  under `xvfb-run` or an Xvfb of its own gets them too, at that server's 96 DPI,
+  so it draws the same mixed state; `GDK_SCALE=1 GDK_DPI_SCALE=1` on that
+  command is the way out. Chromium is scoped: its launcher forces the factor
+  only for a headed browser on `:0`, and anywhere else drops the inherited
+  `GDK_SCALE`/`GDK_DPI_SCALE` before it starts, because Chromium multiplies
+  `GDK_SCALE` into its own scale — on a private Xvfb, devicePixelRatio 2 with
+  them inherited and 1 without.
+
 `SetScale` writes the durable half first and commits `d.applied` last.
 `scale.env` is written before anything that needs an X server, because that file
 is what the session and every login shell read when they start and a scale asked
@@ -211,10 +244,14 @@ written `scale.env` — which is what the session reads `GDK_SCALE` from. The
 handshake is purely about that file. It costs nothing and waits for nothing,
 because the viewer signals ready as soon as the file is written.
 
-A sandbox whose first ever desktop is HiDPI starts its session at 1× and
-restarts it when the browser says otherwise. That is one restart on one boot,
-against not starting an X server at all in every sandbox that never opens a
-desktop.
+In the image the boot flow has already written the same value, so this
+ordering is a backstop for a viewer run anywhere else rather than the source of
+the file.
+
+A sandbox whose first ever desktop is watched from an ordinary screen starts its
+session at 2× and restarts it at 1× when the browser says so. That is one
+restart on one boot, against not starting an X server at all in every sandbox
+that never opens a desktop.
 
 ### Changing the scale afterwards
 
@@ -231,6 +268,23 @@ fixed-size pixmaps and its only built-in HiDPI accommodation is a hardcoded
 the art pre-scaled and `decorationTheme` picks the variant. That is a single
 live channel with no launch-time half, so the decorations follow a scale change
 on the windows already open.
+
+### The session applies the server half itself
+
+`scale.env` is only the launch-time half of a scale. The density, the cursor
+size and the decoration theme live in xfconf and on the server, and `SetScale`
+puts them there only when a viewer calls it. X also starts when any program
+talks to `:0` with no viewer at all, and a session started that way would run
+`GDK_SCALE=2` programs against the image's 96 DPI.
+
+So `xfce4-session@.service` runs `discobox-sandbox-agent desktop
+prepare-session` as an `ExecStartPre`: it reads the starting scale and applies
+the server half before the session's first program starts. It writes what
+`SetScale` writes, from the same file, so a session restarted by a scale change
+just re-applies it. It never sizes the framebuffer, which is the viewer's, and a
+restart racing the viewer's resize must not undo it. The `-` prefix keeps a
+failure from costing the desktop.
+`TestTheSessionPreparesTheServerScaleBeforeStarting` pins the unit.
 
 ### Verified
 
@@ -326,7 +380,10 @@ launcher sources:
   *and* from `GDK_SCALE` and multiplies them, so a 2× desktop would launch a
   4× browser. `GDK_DPI_SCALE` corrects the same double-count for GTK's text, but
   Chromium does not read it. Naming the scale outright stops the inference, and
-  is why `scale.env` carries it as a plain number.
+  is why `scale.env` carries it as a plain number. Only for a headed browser on
+  `:0`: the file exists in every sandbox, and a headless one would otherwise
+  come back with twice the pixels it asked for. Anywhere else the launcher also
+  drops the desktop's `GDK_SCALE`, which Chromium would otherwise multiply in.
 - **`--no-sandbox`, but only when probed.** `chromium-sandbox` is a Recommends,
   which `--no-install-recommends` leaves out, and without it Chromium refuses
   to start at all, so the Dockerfile names it. The flag is added only where

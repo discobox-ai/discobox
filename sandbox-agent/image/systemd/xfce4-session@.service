@@ -2,11 +2,12 @@
 Description=Xfce desktop session on display :0
 Requires=xvfb.service discobox-desktop-bus.service
 After=xvfb.service discobox-desktop-bus.service
-# The session reads the desktop scale from an environment file the viewer
-# writes, and GDK_SCALE is read once per process -- so the session must not
-# start until the viewer says the scale is settled. That is what the viewer's
-# Type=notify readiness means. Ordering only, not Requires: an image or a boot
-# where the viewer fails still gets a desktop, just at 1x.
+# The session reads the desktop scale from an environment file, and GDK_SCALE is
+# read once per process. The boot flow writes that file before systemd starts;
+# the viewer rewrites it when the scale changes. Ordering after the viewer's
+# Type=notify readiness is a backstop for a viewer run where boot has not
+# written it. Ordering only, not Requires: a boot where the viewer fails still
+# gets a desktop, at the scale boot wrote.
 After=discobox-desktop.service
 PartOf=xvfb.service
 
@@ -15,6 +16,15 @@ Type=simple
 User=%i
 Environment=DISPLAY=:0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/desktop/bus
+# The server has to agree with scale.env before anything in the session
+# starts: that file is only the launch-time half of the scale, and the density,
+# cursor size and window decorations it goes with are otherwise applied only by
+# the viewer -- which is not running when a program talking to :0 is what
+# brought X up. See desktop.PrepareSession. `-`: a failure leaves a
+# desktop at mismatched density, which beats no desktop at all -- until the
+# next session start or scale change, since the viewer already counts the
+# scale as applied and does not redo it.
+ExecStartPre=-/usr/local/bin/discobox-sandbox-agent desktop prepare-session
 # xfce4-session, not startxfce4: the wrapper's job is to start an X server, a
 # D-Bus session and then the session manager, and all three of those are units
 # here already.

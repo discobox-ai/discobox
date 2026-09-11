@@ -246,6 +246,9 @@ func runRenderProxyEnv(args []string) int {
 // draws on the desktop somewhere the agent working in this sandbox can read it.
 // See the desktop package.
 func runDesktop(args []string) int {
+	if len(args) > 0 && args[0] == "prepare-session" {
+		return runDesktopPrepareSession(args[1:])
+	}
 	var cfg desktop.Config
 	flags := flag.NewFlagSet("discobox-sandbox-agent desktop", flag.ContinueOnError)
 	flags.StringVar(&cfg.Addr, "addr", desktop.DefaultAddr, "address to serve on when systemd passes no socket")
@@ -274,6 +277,24 @@ func runDesktop(args []string) int {
 		slog.Error("serve desktop viewer", "error", err)
 		return 1
 	}
+	return 0
+}
+
+// runDesktopPrepareSession is the desktop session's ExecStartPre: it brings the
+// X server to the scale the session is about to start at.
+func runDesktopPrepareSession(args []string) int {
+	var cfg desktop.Config
+	flags := flag.NewFlagSet("discobox-sandbox-agent desktop prepare-session", flag.ContinueOnError)
+	flags.StringVar(&cfg.Display, "display", ":0", "X display to prepare")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	scale, err := desktop.PrepareSession(context.Background(), cfg)
+	if err != nil {
+		slog.Error("prepare the desktop session", "scale", scale, "error", err)
+		return 1
+	}
+	slog.Info("desktop session prepared", "scale", scale)
 	return 0
 }
 

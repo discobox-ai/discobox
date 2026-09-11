@@ -55,11 +55,11 @@ func writeDesktopDropins(id identity) error {
 			return err
 		}
 	}
-	// The Xfce session also reads the toolkit environment the viewer writes at
-	// startup and whenever the desktop scale changes, so the window manager and
-	// the panel are drawn at the same scale as everything launched from a
-	// shell. It is optional (`-`) so a session started without the viewer
-	// having written it still starts, at the default scale.
+	// The Xfce session also reads the toolkit environment, so the window
+	// manager and the panel are drawn at the same scale as everything launched
+	// from a shell. seedDesktopScale writes it before systemd starts, but a
+	// failure there is logged rather than fatal, and `-` is what lets the
+	// session start without the file.
 	if fileExists("/etc/systemd/system/xfce4-session@.service") {
 		if err := installFile("/etc/systemd/system/xfce4-session@.service.d/discobox-desktop-user.conf", 0o644,
 			fmt.Sprintf("[Service]\nEnvironmentFile=-%s\n",
@@ -74,6 +74,46 @@ func writeDesktopDropins(id identity) error {
 		}
 	}
 	return nil
+}
+
+// seedDesktopScale writes the desktop's starting scale into the sandbox user's
+// home before systemd starts, and so before anything in the sandbox runs.
+//
+// The file is not only the desktop's. Every login shell sources it through
+// /etc/profile.d, which is how GDK_SCALE reaches a program an agent launches —
+// and the harness is a login shell started at boot. The viewer writes the same
+// file, but it is socket-activated and starts only when a browser or an X
+// client first reaches for the desktop, which is seconds after the harness has
+// already read its environment and found nothing. Written here, the file is in
+// place for the first shell of the boot.
+//
+// It is rewritten every boot rather than seeded once: the value is kept, but
+// the variables around it are this image's, so a release that changes what
+// the scale is delivered as reaches sandboxes that already have the file.
+// Kept means any value, not only one somebody settled on -- the file cannot
+// tell those from a default an earlier image wrote -- so a sandbox written at
+// the old 1x default stays there until a HiDPI viewer opens it. That is a
+// decision, not an oversight: existing sandboxes are left where they are.
+func seedDesktopScale(id identity) error {
+	envDir := filepath.Join(id.home, desktop.ScaleEnvDir)
+	// Each component is created here and chowned, rather than by MkdirAll
+	// alone: boot writes as root, and the viewer, running as the sandbox user,
+	// rewrites this file by renaming into the directory -- and creates
+	// siblings of it under ~/.discobox.
+	for _, dir := range []string{filepath.Dir(envDir), envDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		if err := os.Chown(dir, id.uid, id.gid); err != nil {
+			return err
+		}
+	}
+	scale, _ := desktop.StartingScale(envDir)
+	path, err := desktop.WriteScaleEnv(envDir, scale)
+	if err != nil {
+		return err
+	}
+	return os.Chown(path, id.uid, id.gid)
 }
 
 func fileExists(path string) bool {

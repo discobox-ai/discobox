@@ -32,6 +32,13 @@ func Init(logger *slog.Logger, args []string) int {
 			logger.Error("write desktop drop-ins", "error", err)
 			return 1
 		}
+		if fileExists("/etc/systemd/system/xfce4-session@.service") {
+			// Not fatal. Everything that reads the file tolerates its absence,
+			// and a sandbox must not fail to start over a HiDPI hint.
+			if err := seedDesktopScale(id); err != nil {
+				logger.Warn("seed desktop scale", "error", err)
+			}
+		}
 	}
 	if err := execInit(argv, env); err != nil {
 		logger.Error("exec init", "argv", argv, "error", err)
