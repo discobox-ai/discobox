@@ -1,14 +1,17 @@
 # Harness Design
 
-This package owns the shared harness image contract and hook registration for
-sandbox terminals.
+This package owns the shared harness image contract (the manifest labels and
+their layering, volume and env resolution, the configure-flow paths) and the
+built-in harness images: their manifests, image-owned hook definitions,
+launchers, and configure scripts.
 
 ## Image Contract
 
 - One sandbox image contains at most one harness. Its identity, seed files,
   secret declarations, optional config command, env defaults, declarative
-  volumes, and any command overrides are published in OCI image labels
-  (`harness.ImageMetadata`) for server-side registration. There is no baked-in
+  volumes, supplementary groups (`additionalGroups`), and any command overrides
+  are published in OCI image labels (`harness.ImageMetadata`) for server-side
+  registration. There is no baked-in
   file inside the image carrying this data — `image.json` is the build-time
   authoring source a label is compacted from (see `Taskfile.yml`), not a
   runtime artifact.
@@ -19,8 +22,20 @@ sandbox terminals.
   parent's labels and a `LABEL` replaces only the key it names, so a layer set
   by `sandbox-agent/Dockerfile` is present on every image built from it at any
   depth. Layers merge by identity — `env` per key, `volumes`/`files` by path,
-  `secrets` by name, groups by union — and none of them may unset.
-  `00`–`49` is reserved for layers Discobox ships.
+  `secrets` by name, groups by union; a harness's scalar fields, commands, and
+  `config` go to the last layer that sets them — and none of them may unset.
+  A layer is a fragment: only the merged result is validated, at registration.
+  `00`–`49` is reserved for layers Discobox ships (`LayerNumberReserved`).
+  The same inheritance carries `ReclaimLabel`, which marks every image built
+  from the base as one Discobox may reclaim (ADR 0040).
+- A declared volume says which primary volume backs it (`data` or `cache`),
+  and `path` may use `%HOME%` and `uid`/`gid` `%UID%`/`%GID%`; `ResolveVolumes`
+  expands them against the sandbox user and judges the path as a Linux path on
+  every host. A cache path is per sandbox user unless it declares
+  `scope: shared`, which is refused on a `data` path (`ValidateVolumeScope`,
+  [ADR 0094](../docs/adr/0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)).
+  An env value's `%HOME%` is expanded by `ExpandEnvHomeTokens`, and left in
+  place when the home is not yet known.
 - A volume's `mode` is a POSIX mode word, and `ResolveVolumes` converts it to
   `os.FileMode` rather than casting: the two agree only on the low nine bits,
   and setuid/setgid/sticky sit far higher up in Go's encoding than in POSIX's.
@@ -56,17 +71,19 @@ sandbox terminals.
   to "fix". This is the wrapper's half of the convention and part of what a
   third-party harness image signs up for; the runtime types the words as the
   user's shell split them and does not rejoin them, because what is on screen
-  is an editable command line the user may extend.
+  is an editable command line the user may extend. Each included `launch.sh` is
+  tested by running it under a POSIX shell with a stubbed agent
+  (`internal/launchertest`).
 - **The prompt trails every launch**, relaunch included (ADR 0086 §4). A
   wrapper resuming a session ignores it — both included launchers replace it
   with their own resume flags — but because the command is *typed* (ADR 0027),
   a sandbox whose first launch failed still shows what it was asked to do, as
   an editable command line.
 - The resolved manifest is snapshotted onto the harness config at registration
-  and re-snapshotted when the image's config digest changes — by `SeedBuiltIns`
-  for built-ins, by `RefreshHarnessConfigImage` for user-registered images. A
-  snapshot is a cache of a mutable tag's current contents, not a permanent
-  record (ADR 0016).
+  and re-snapshotted later — by `SeedBuiltIns` whenever a built-in's image
+  reference or digest has moved, and by `RefreshHarnessConfigImage` when an
+  owner re-inspects a user-registered image. A snapshot is a cache of a mutable
+  tag's current contents, not a permanent record (ADR 0016).
 - Harness CLIs are installed at image build time. Runtime commands are never
   supplied by the server or pool-agent.
 - Each harness folder owns its `Dockerfile`, `image.json` (when it needs one),
@@ -89,24 +106,32 @@ sandbox terminals.
     Without it nothing in a sandbox can open a window: `DISPLAY` reaches an exec
     only through `sandbox.json`'s env, which is where the image layer lands. It
     is safe to declare always because nothing runs until something connects —
-    `xvfb.service` is `static`, pulled up on demand by `x11-display.socket` — so
+    `xvfb.service` is `static`, pulled up on demand by the proxy service
+    `x11-display.socket` activates — so
     an unused `DISPLAY` starts no X server.
-  - The three `/nix` volumes: `/nix` on `cache`, with `/nix/var/nix/profiles`
-    and `/nix/var/nix/gcroots` carved back onto `data`. The store is
-    pool-shared, so a closure one sandbox realizes is free for the next; the
+  - The three `/nix` volumes: `/nix` on `cache` with `scope: shared`, with
+    `/nix/var/nix/profiles` and `/nix/var/nix/gcroots` carved back onto
+    `data`. The store is pool-shared, so a closure one sandbox realizes is
+    free for the next; the
     per-user profile state is not, because both are keyed by username and every
     sandbox in a pool runs the same user. The base image ships its own store
     aside and leaves `/nix` empty precisely so this cache bind hides nothing — a
     cache path is always a plain bind. See ADR 0075.
-  - The rest of the persistent and cached paths, the `docker` supplementary
-    group, the `NIX_*`/`PATH`/`NPM_CONFIG_PREFIX` env, and the pnpm `storeDir`
-    seed file.
+  - The Homebrew prefix, `/home/linuxbrew/.linuxbrew`, as a `data` volume:
+    the image ships content there, so boot wires it as an overlay and a
+    sandbox's own installs persist. The tree is handed to the `brew` group
+    rather than to a uid
+    ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)).
+  - The rest of the persistent and cached paths, the `brew`, `docker`, and
+    `kvm` supplementary groups, the `NIX_*`/`HOMEBREW_*`/`PATH`/
+    `NPM_CONFIG_PREFIX` env, and the pnpm `storeDir` seed file.
 - Every harness image provides **`/usr/local/bin/discobox-prompt`**, a one-shot
   prompting interface in-sandbox tools ask for a model through
   ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
   `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]`,
   answering on stdout and exiting 0 only when the model answered. `--model`
-  names a *role* (`judge` today), never a model id — the caller does not know
+  names a *role* (`judge`, which pins a named model, or `fast`), never a model
+  id — the caller does not know
   what the image installed, so mapping the role is the wrapper's job, and it is
   version-coupled to a CLI the image pins the way the hook and launch wrappers
   are. `--no-tools` means the model answers from its prompt and executes
@@ -141,8 +166,10 @@ sandbox terminals.
 ## Driver Model
 
 - `harness.Driver` identifies one built-in harness's included image through
-  `Definition()`, and nothing else. The public definition catalog is an image
-  shortcut; runtime metadata comes from the registered image label. A driver
+  `ID()` and `Definition()`, and nothing else. The definition catalog is an
+  image shortcut — seeding reads only a definition's `ID` (the slug), `Name`,
+  and `Image` (`harnessdefs.Seeds`); runtime metadata comes from the
+  registered image label. A driver
   holds no behavior a harness image cannot declare for itself — that is what
   keeps a third-party harness a pure image-registration story.
 - A `Definition` names its image through `harness.ImageRef`, never as a
@@ -152,13 +179,14 @@ sandbox terminals.
   are the images that shipped with it. One pair rather than a reference per
   harness: a release publishes them together, and three independent references
   could disagree about which release a sandbox is running.
-- A `Definition` sets `Configure` to enable an ephemeral sandbox the CLI
-  runs interactively after registering a `HarnessConfig`. The configure process
-  writes files and collected secret values to `ConfigureOutputPath`; definitions
-  without interactive setup leave it nil. Configure files use the same
-  home-relative contract as all harness files; configure commands run from the
-  sandbox workdir and must use `$HOME` when invoking one of those files. Both
-  included harnesses support config mode — see
+- Whether a harness has an interactive configure flow is the image's
+  declaration (`config.command`), snapshotted as the config's config command;
+  a `Definition`'s `Configure` field (set by `claude-code` and `codex-cli`, nil
+  for `shell`) is read by nothing. The configure process writes files and
+  collected secret values to `ConfigureOutputPath`. Configure files use the
+  same home-relative contract as all harness files; configure commands run from
+  the sandbox workdir and must use `$HOME` when invoking one of those files.
+  Both included coding harnesses support config mode — see
   [Configure flows](#configure-flows).
 - Provider-specific implementations live in one folder per harness:
   - `claude-code`
@@ -191,10 +219,10 @@ subject to repo trust prompts or user/project override:
   or merge Codex's hook format. Every configured lifecycle event invokes the
   generic publisher with its provider and event name while its stdin payload is
   stored unchanged. System hooks are treated as managed and trusted by policy.
-  Codex's hook definition is likewise an image-owned compatibility unit.
 
-Drivers must be idempotent and preserve unrelated settings where the harness uses
-a single shared JSON object.
+Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
+the sandbox agent's generic publisher; no Go code in this package writes or
+merges a harness's settings.
 
 ## Source-scoped memory
 
@@ -306,8 +334,7 @@ there once the user leaves the session (`/exit` or Ctrl-D).
   seeded session carries the same scopes the real login had. There is no
   keep-or-replace question — the answer is whatever the user does in the
   session. Reconfigure is usually about a setting (model, theme, statusline),
-  and a flow that either kept the credential without launching `claude` or
-  launched it signed out made changing one cost a fresh login.
+  and changing one should not cost a fresh login.
 - Afterwards `detect_credential` decides what changed by comparing what it finds
   against the sentinel it seeded. The sentinel is a value the script chose, so
   finding it still in place proves nothing re-authenticated, and the credential
@@ -319,7 +346,7 @@ there once the user leaves the session (`/exit` or Ctrl-D).
 - A seeded credential that fails verification stops being seeded. Another round
   would sign the session back in with it and detect "unchanged" again, offering
   a retry that cannot succeed until the user signs in afresh.
-- Otherwise the script prints an instruction banner and waits for Enter
+- Every round prints an instruction banner and waits for Enter
   (`confirm_launch`) before starting anything. Two things the banner has to do,
   because the failure mode is a confused user rather than a broken script:
   - Say **this is configuration, not a session**. The user is dropped into a CLI
@@ -327,7 +354,9 @@ there once the user leaves the session (`/exit` or Ctrl-D).
     default reading — "my working session has started" — is the wrong one.
   - Separate the **required** steps (`/login`, then `/exit`; setup captures
     nothing without the first and cannot finish before the second) from the
-    optional ones (`/model`, `/config`). Color carries that split — the heading
+    optional ones (`/model`, `/config`). A seeded session says it is already
+    signed in instead, and lists `/login` as optional, for switching accounts
+    only. Color carries that split — the heading
     and the required steps are emphasized, commands are cyan — degrading to
     identical wording when `NO_COLOR` is set or either stream is not a terminal,
     since this also lands in logs.
@@ -378,23 +407,23 @@ there once the user leaves the session (`/exit` or Ctrl-D).
   minutes later, and `.claude.json` is not returned as a harness file. That is
   what makes this harness the simple case — nothing a configure run captures
   can overlay the template, unlike codex's `config.toml` below.
-- `.claude.json` is `createOnly`, and home is a persistent data volume, so this
-  settles trust for a sandbox's **first** launch only. A sandbox created before
-  the template trusted `.workingDir` keeps the `.claude.json` it already has;
-  upgrading its image does not rewrite it, and it takes one trust dialog, once,
-  which Claude Code then records itself. Repairing it in place is deliberately
-  not done: `createOnly` says the harness owns the file after the first write,
-  and reaching back into it is what that flag exists to forbid.
+- `.claude.json` is `createOnly`, and home is a persistent data volume, so the
+  template settles trust for a sandbox's **first** launch only. A sandbox that
+  already has a `.claude.json` keeps it; upgrading its image does not rewrite
+  it, and a change to the template reaches it only as one trust dialog, which
+  Claude Code then records itself. Nothing repairs the file in place:
+  `createOnly` says the harness owns the file after the first write, and
+  reaching back into it is what that flag exists to forbid.
 - The image's baseline `.claude/settings.json` sets
   `permissions.defaultMode: bypassPermissions`, which Claude Code refuses to
   honor as root. That is why the configure sandbox runs as a non-root account
   (`harness.ConfigureUserName`, uid `ConfigureUserUID`) rather than the image's
-  root — see `resources/harnessconfigs/DESIGN.md` → configure flow.
+  root — see `resources/harnessconfigs/DESIGN.md` → Configured lifecycle.
 - Every path ends in a `claude -p` check with only the chosen variable in the
   environment (and the credentials file moved aside), so a credential that
   cannot actually talk to the API never reaches a `HarnessConfig`. The script
-  exits non-zero rather than looping when stdin is closed — at the keep/replace
-  prompt or at `confirm_retry` — which fails the configure flow.
+  exits non-zero rather than looping when stdin is closed — at
+  `confirm_launch` or at `confirm_retry` — which fails the configure flow.
 - It returns **one file**: a snapshot of `~/.claude/settings.json`, exactly as
   the user left it (theme, model, statusline, ... — whatever they touched
   during the session, or nothing, if they touched nothing). This is
@@ -477,18 +506,18 @@ image's `unavailable` message.
   the sandbox's terminals start in.
   - The stanza is **guarded** on `.workingDir` rather than rendered bare. Unlike
     claude's, this file is persisted in the harness config and delivered to
-    whatever sandbox uses it, which may run an image whose agent predates that
-    key; bare, `missingkey=zero` renders `[projects.null]` — valid TOML that
-    silently trusts a project named `null`. Guarded, it degrades to no trust,
-    which is the older and visible failure.
+    whatever sandbox uses it, which may run an image whose agent does not set
+    that key; bare, `missingkey=zero` renders `[projects.null]` — valid TOML
+    that silently trusts a project named `null`. Guarded, it degrades to no
+    trust, a visible failure.
   - The script still trusts the workspace before launching (`ensure_workspace_trusted`).
     A configured harness delivers its captured `config.toml` into the configure
-    sandbox, so a copy taken before trust followed `.workingDir` shadows the
-    image's fixed template — in the very run that would refresh it. Whatever the
-    script writes is stripped back out by `write_output`, so the returned file is
-    the fixed one either way.
-  - A codex harness config configured before this **keeps its stale stanza until
-    it is reconfigured**: `ConfiguredFiles` overlay the image's `Files` by path
-    and nothing migrates them. Run sandboxes on such a config trust their primary
-    source, as before, and a source-less one trusts nothing until a reconfigure
-    rewrites the file.
+    sandbox, and a captured copy whose stanza does not follow `.workingDir`
+    shadows the image's fixed template — in the very run that would refresh it.
+    Whatever the script writes is stripped back out by `write_output`, so the
+    returned file is the fixed one either way.
+  - A captured `config.toml` **keeps whatever stanza it was captured with until
+    the harness is reconfigured**: `ConfiguredFiles` overlay the image's `Files`
+    by path and nothing migrates them. A stanza that names a fixed path trusts
+    only that path, so a source-less sandbox on such a config trusts nothing
+    until a reconfigure rewrites the file.

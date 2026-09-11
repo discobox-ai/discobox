@@ -9,18 +9,19 @@ definition. Every harness in the registry is seeded as a built-in config
 `shell` is one of those registry harnesses, not a different kind of thing
 (ADR 0043): `harness/shell`, built on the sandbox agent base like its siblings,
 inspected and seeded by the same code path with no branch of its own. What is
-still true of it, and true *by rule* rather than by slug:
+true of it, and true *by rule* rather than by slug:
 
-- Its slug is reserved so nothing else can claim it (ADR 0032 §3). It is no
-  longer the end of the resolution chain: create resolves an explicit harness or
-  the project default and refuses when it has neither (ADR 0048). `shell` is
-  reached by being named or by being the default, like any other harness — what
-  still ends at it is the upgrade of sandboxes made before every sandbox carried
-  a harness config, which adopt it.
-- It carries **no run command**, which is a declaration and not a gap: the
-  sandbox resolves the run user's login shell, the only place that knows whether
-  that is bash, zsh, or fish. `sandbox-agent`'s terminal layer treats a declared
-  harness with no command as that shell, keeping the declared harness identity.
+- Its slug is reserved so nothing else can claim it (ADR 0032 §3). It is not a
+  fallback: create resolves an explicit harness or the project default and
+  refuses when it has neither (ADR 0048). `shell` is reached by being named or
+  by being the default, like any other harness. The one path that ends at it is
+  the upgrade of a legacy sandbox that carries no harness config, which adopts
+  it (`resources/sandboxes.fallbackHarnessConfig`).
+- It carries **no run or relaunch command**, which is a declaration and not a
+  gap: the sandbox resolves the run user's login shell, the only place that
+  knows whether that is bash, zsh, or fish. `sandbox-agent`'s terminal layer
+  treats a declared harness with no command as that shell, keeping the declared
+  harness identity.
 - It is born `Configured` — because it declares no secrets, which is the rule
   for every built-in. A harness with no credentials to collect is ready when
   seeded, and a fresh project has to be usable before anyone configures
@@ -37,11 +38,21 @@ still true of it, and true *by rule* rather than by slug:
   `io.discobox.image.v1.<NN>-<name>` layer, then the image's own
   `io.discobox.image.v1` — before validating the merged result and snapshotting
   the digest, run/relaunch/configure argv, configure reminder and ports, files,
-  and secret declarations onto the config (`snapshotImageMetadata`). Nothing
-  re-reads the labels afterward. Configure ports (`harness.ConfigPort`) are
-  validated as a port number each, declared once; the forward they ask for is
-  the CLI's, not this service's — see `cli/internal/cli` →
+  secret declarations, env, volumes, and additional groups onto the config
+  (`snapshotImageMetadata`). Nothing re-reads the labels afterward. Configure
+  ports (`harness.ConfigPort`) are validated as a port number each, declared
+  once; the forward they ask for is the CLI's, not this service's — see `cli/internal/cli` →
   `forwardConfigurePorts`.
+- The recorded digest is the one a daemon reports in `RepoDigests`, so the pool
+  can compare it on either image store: from a registry, the digest the tag is
+  served under (an index digest for a multi-platform image), fetched with one
+  `remote.Get` for `linux/<control plane GOARCH>` (`poolPlatform`); from the
+  local daemon, the `RepoDigests` entry, or the image ID for a never-pushed
+  local build.
+- In build-mode dev (`SetDevelopmentImages`), `devImageInspector` answers first:
+  it rebuilds the label set, inherited base layer included, from the dev image
+  manifest's build args, because the image does not exist anywhere until a pool
+  builds it. The reference itself stands in for the digest.
 - Registration **requires the base layer**. An image carrying no
   `10-sandbox-base` layer was not built `FROM discobox-sandbox-agent`, and is
   rejected saying so: the runtime contract lives in that image's filesystem, so
@@ -50,7 +61,8 @@ still true of it, and true *by rule* rather than by slug:
   under the caller's `--name`/`--slug`, inherits its env and volumes from the
   base layer, and takes the harness-run convention for its commands.
 - `runCommand` is **optional**, and omitting it means "type
-  `discobox-harness-run`" (ADR 0086 §3) — `conventionCommands` resolves that
+  `discobox-harness-run`" (ADR 0086 §3); an omitted `relaunchCommand` means
+  `discobox-harness-run --resume`. `conventionCommands` resolves both
   here, at registration, because this is where the reserved `shell` slug is
   known, and `shell` is the one harness that must get no command at all. A
   *blank* command is still rejected: declaring nothing and declaring an empty
@@ -81,8 +93,9 @@ still true of it, and true *by rule* rather than by slug:
 `applyResolvedImageDigest` is the one place a newly resolved image reaches the
 sandboxes on that config (ADR 0082). The rule is stated on the field rather than
 on a list of callers: **wherever `ImageDigest` is written to a value different
-from the one it replaced**, the config's stopped sandboxes are re-pinned onto it
-through `SandboxRuntime.UpgradeHarnessConfigSandboxes`.
+from the one it replaced**, the config's eligible stopped sandboxes are
+re-pinned onto it through `SandboxRuntime.UpgradeHarnessConfigSandboxes`, which
+does nothing when the project's automatic-upgrade policy is off (ADR 0082 §3).
 
 Both writers funnel through it, and they are the same event to a sandbox:
 `SeedBuiltIns` carries a dev rebuild of a stable tag, and
@@ -116,14 +129,17 @@ sequenceDiagram
     S->>B: seed previous config (granted secrets only)
     C->>B: attach exec "primary" → launches configure command
     C->>S: POST .../configure/commit
-    S->>B: read primary exit status (read-only)
-    alt exit 0
+    S->>B: read primary exec status (read-only)
+    alt still running
+        S-->>C: 409, flow stays in flight
+    else exited 0
         S->>B: cat ConfigureOutputPath
         S->>S: apply files + secrets + grants, Configured=true
-    else non-zero
-        S->>S: ConfigureError set, stays unconfigured
+        S->>B: delete sandbox
+    else non-zero, failed, or lost
+        S->>S: ConfigureError set, Configured unchanged
+        S->>B: delete sandbox
     end
-    S->>B: delete sandbox
 ```
 
 - **Every agent call happens inside a user request**, using the caller's
@@ -138,8 +154,10 @@ sequenceDiagram
 - In config mode the sandbox-agent defers the primary until attach, so seeding
   always precedes the configure command.
 - Re-configuring is allowed and clobbers any in-flight attempt, so an abandoned
-  run cannot wedge a harness. The reconciler is a **janitor only**: it reaps
-  configure sandboxes left uncommitted past `configureTTL`, and touches no agent.
+  run cannot wedge a harness. The reconciler (resource type `harnessConfig`) is
+  a **janitor only**: it reaps a configure sandbox once the config has gone
+  `configureTTL` (1h) since its last update without a commit, records that as
+  `ConfigureError`, and touches no agent.
 - The configure sandbox runs as `harness.ConfigureUserName`/`ConfigureUserUID`
   (`discobox`, 10000), **not root**. A run sandbox mirrors the caller's own user
   (ADR 0025 §5); this one has no source and no caller identity to mirror, so the
@@ -189,7 +207,11 @@ sentinel.
 Applying output mints the grant for a newly collected secret — a binding alone is
 not a grant, so without it the secret would not be usable at run time. A secret
 returned with `usePrevious` (or as its own sentinel) keeps its existing row,
-binding, and grant, and stays out of the replacement sweep. See
+binding, and grant, and stays out of the replacement sweep. A new value for an
+env name a configure-created secret already binds updates that secret in place,
+so its ID and every sentinel keyed on it stay stable; a changed host moves the
+config-scoped grant's host with it. Any other previously configured secret is
+deleted, and `RebindHarnessConfigSecrets` then repoints existing sandboxes. See
 `harness/DESIGN.md` for the command-side contract.
 
 ## OAuth (rotating) secrets
@@ -271,9 +293,11 @@ rule (image and runtime entries merge by path, a matching path replaces):
 
 ## Deconfigure
 
-Deconfigure deletes exactly the secrets and their bindings the configure flow
-created, clears `ConfiguredFiles`, and sets `Configured=false` — leaving the
-baseline intact so the harness can simply be configured again.
+Deconfigure deletes the secrets the configure flow created (cascading their
+bindings and grants), removes every remaining secret binding on the config — a
+hand-bound secret survives, its binding does not — clears `ConfiguredFiles` and
+`ConfigureError`, and sets `Configured=false`, leaving the image baseline intact
+so the harness can simply be configured again.
 `UpdateHarnessConfig` can replace either file set (`files`, `configuredFiles`),
 which is how the CLI's file editing (`harnesses edit`, and `f` on the launcher's
 harnesses screen) applies hand edits without a reconfigure; edited configured
@@ -293,9 +317,10 @@ point at a configured harness, or `run` with no explicit harness would resolve t
 an unconfigured one and be rejected at sandbox create. The client releases the
 default first — `UnsetDefaultHarnessConfig` (`DELETE .../default`) clears it, and
 the CLI's harnesses screen does this automatically when disabling the default.
-Deleting a default harness is fine: the store cascade clears the pointer, and a
-project with no default refuses a create that names no harness (ADR 0048) rather
-than resolving to one nobody chose.
+Deleting a default harness is fine: `store.DeleteHarnessConfig` clears the
+pointer in the same transaction, and a project with no default refuses a create
+that names no harness (ADR 0048) rather than resolving to one nobody chose.
+Delete is refused (409) while any sandbox still references the config.
 
 ## Boundaries
 
@@ -316,9 +341,10 @@ than resolving to one nobody chose.
   a harness that opens on its own trust prompt for the directory it was just
   launched in. See `sandbox-agent/DESIGN.md`.
 - `SandboxRuntime` is this package's whole seam onto sandboxes, and it carries
-  two unrelated duties: the configure flow's agent access, and the two fan-outs
-  that follow a config change — `RebindHarnessConfigSecrets` when a binding
-  moves, `UpgradeHarnessConfigSandboxes` when the image does.
+  two unrelated duties: the configure flow's sandbox lifecycle and agent access
+  (`CreateSandbox`, `DeleteSandbox`, `AcquireSandboxHTTPClient`), and the two
+  fan-outs that follow a config change — `RebindHarnessConfigSecrets` when a
+  binding moves, `UpgradeHarnessConfigSandboxes` when the image does.
 - The configure flow reaches the sandbox agent through `SandboxRuntime`
   (`AcquireSandboxHTTPClient`), which authorizes the caller's scopes — so it only
   works from inside a user request, which is the point.

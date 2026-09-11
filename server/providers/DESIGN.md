@@ -9,8 +9,12 @@ the pool-agent package for pool host boot metadata.
 Providers own runtime mechanics only; services own persistence, authorization,
 orchestration, and API shape.
 
-A pool is its own runtime host (ADR-0006): one container, VM, or pod runs the
-pool agent and hosts the pool's sandboxes.
+A pool is its own runtime host (ADR-0006): one container or VM runs the pool
+agent and hosts the pool's sandboxes.
+
+`providers.RegisterBuiltInSandboxProviderFactories` registers the portable
+providers (`docker`, `digitalocean`, `exec`, `libkrun`) everywhere, plus one
+build-tagged platform provider: `vz` on macOS, `wslc` on Windows.
 
 ## Runtime References
 
@@ -23,24 +27,24 @@ pool agent and hosts the pool's sandboxes.
 ## Provider Layers
 
 Docker container management is the invariant: every backend ends with "run the
-pool-agent container in some Docker daemon." Backends differ only in VM CRUD
-and how to reach that daemon and the pool-agent API.
+pool-agent container in some Docker daemon." Backends differ only in VM CRUD,
+how to reach that daemon and the pool-agent API, where the host's log lives,
+and what guest image (if any) they boot.
 
 ```mermaid
 flowchart TD
     pool["poolruntime.Provider\nimplements sandbox.Provider\nplacement gate · pool-agent API (docker-free)"]
     engine["dockerworker.Engine\nthe one poolruntime.RuntimeProvider\npool-agent container, networks, volumes, drift"]
-    driver["dockerworker.Driver\nVM lifecycle + two connection leases"]
+    driver["dockerworker.Driver\nVM lifecycle · two connection leases ·\nhost log · guest build spec"]
     local["docker.LocalDriver\nVM CRUD no-op · host socket ·\npublished loopback agent port"]
     do["digitalocean.Driver\ndroplet CRUD by pool tag ·\ndocker over SSH · agent at public IP"]
     execd["execvm.Driver\ndelegates every op to an external\ncommand (shell-script backends)"]
     libkrun["libkrun.Driver (Linux)\nre-executed launcher child ·\nregistry-seeded guest · Unix/VSOCK leases"]
     vz["vz.Driver (macOS)\nVirtualization.framework VM ·\nregistry-seeded guest · VSOCK leases"]
     wslc["wslc.Driver (Windows)\nWSL Containers VM ·\nrelay-multiplexed leases"]
-    future["(later) k8s / ec2\nsame shape; pool runs as a pod on k8s"]
 
     pool --> engine --> driver
-    driver --> local & do & execd & libkrun & vz & wslc & future
+    driver --> local & do & execd & libkrun & vz & wslc
 ```
 
 `server/providers/poolruntime.Provider` is the registered `sandbox.Provider`
@@ -55,20 +59,20 @@ contract downward is the `poolruntime.RuntimeProvider` interface, and the
 runtime contract for sandboxes is the pool-agent HTTP API reached through
 `transport.HTTPClientLease`.
 
-`poolruntime.RuntimeProvider` is a six-method interface: `Close`,
-`EnsurePool`, `RepairPool`, `RemovePool`, `AcquirePoolAgentClient`, and
-`OpenConsole`.
+`poolruntime.RuntimeProvider` is a nine-method interface: `Close`,
+`EnsurePool`, `RepairPool`, `RemovePool`, `StageImages`,
+`AcquirePoolAgentClient`, `OpenConsole`, `OpenLogs`, and `BuildGuestImage`.
 `dockerworker.Engine` is its only implementation. The engine owns everything
 Docker: launching the pool-agent container with boot env, socket bind and host
 mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
 config-revision drift detection, container replacement during repair, and
 applying the pool envelope (CPU/memory) as the container limit. A sandbox
 container created inside it gets no nested CPU/memory limit of its own — it
-shares the worker container's cgroup with its siblings (docs/adr/0025). It
+shares the worker container's cgroup with its siblings (docs/adr/0029). It
 obtains Docker access exclusively through the driver.
 
-`dockerworker.Driver` is the backend seam sized for "add EC2 without reading
-the engine":
+`dockerworker.Driver` is the backend seam, sized so a backend is added without
+reading the engine:
 
 - `EnsureVM` / `StopVM` / `DeleteVM` / `InspectVM`: idempotent VM lifecycle
   keyed by pool ID. `StopVM` preserves driver-owned persistent state for
@@ -76,16 +80,21 @@ the engine":
   Docker driver resolves every pool to the host and lifecycle is a no-op.
 - `AcquireDockerClient`: a Docker API client lease for the daemon hosting the
   pool's containers — the host socket locally, the in-VM daemon over SSH for
-  DigitalOcean, or VSOCK terminated at a private Unix socket for local libkrun
-  VMs. `NewDockerClientForDialer` adapts any `net.Conn`
+  DigitalOcean, VSOCK terminated at a private Unix socket for libkrun, a VSOCK
+  connection to the VM for `vz`, or a guest Unix-socket dial over the WSL
+  session for `wslc`. `NewDockerClientForDialer` adapts any `net.Conn`
   dialer; `dockerworker/sshdocker` is the shared pure-Go SSH-to-docker-socket
   dialer for cloud VM drivers and for `ssh://` endpoints from the exec driver.
 - `AcquirePoolAgentClient`: an HTTP lease reaching the pool-agent API — the
   container's published loopback port locally, `http://<public-ip>:<agent
-  port>` for cloud VMs, or VSOCK terminated at a private Unix socket for local
-  libkrun VMs.
+  port>` for cloud VMs, VSOCK (via a private Unix socket for libkrun, directly
+  for `vz`), or the relay-multiplexed session for `wslc`.
 - `PoolLogs`: the backend's own record of the host — see
   [Pool Host Logs](#pool-host-logs).
+- `GuestImageBuildSpec`: which Dockerfile builds the guest this driver boots,
+  its platform, and where a local build must land; drivers that boot no guest
+  return `sandbox.ErrGuestImageBuildUnsupported` — see
+  [Guest Image Artifacts](#guest-image-artifacts).
 
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
 deadline), so drivers never implement boot polling.
@@ -119,16 +128,16 @@ and extracted, a machine boots, Docker comes up inside it, and the pool-agent
 image is pulled — none of which the sandbox knows anything about.
 
 So the driver doing the work records it. `sandbox.PoolProgressReporter` is a
-nil-safe sink on the engine's config and on the vz driver's; every provider
-builds one from its pool manager. Reports land on the pool row's
-`provisionProgress`, and a client reading a pending sandbox asks its pool what
-it is doing instead.
+nil-safe sink on the engine's config and on the vz and libkrun drivers'; every
+provider builds one from its pool manager (`sandbox.PoolProgressReporterFor`).
+Reports land on the pool row's `provisionProgress`, and a client reading a
+pending sandbox asks its pool what it is doing instead.
 
 The engine reports the phases every backend shares — starting the VM, waiting
 for Docker, preparing the development images, pulling the pool image, starting
-and waiting for the agent — around the calls that perform them. A driver refines
-that from inside: `vz` reports fetching the VM image, which the engine can only
-see as part of starting a VM.
+and waiting for the agent, and preloading sandbox images — around the calls that
+perform them. A driver refines that from inside: `vz` and `libkrun` report
+fetching the VM image, which the engine can only see as part of starting a VM.
 
 A phase with a denominator reports it, and a phase without one is held. The two
 are exclusive: `Hold` restates a bare phase on a heartbeat, so holding a phase
@@ -137,21 +146,19 @@ fired. A pull is its own heartbeat instead — the Docker pulls report as their
 stream advances, and the guest image fetch reports on a ticker so a stalled
 download keeps the phase fresh rather than aging out mid-fetch.
 
-Phases exist wherever the wait does. Two stretches of a cold macOS start have no
-Docker mechanic behind them and were therefore silent until named: the guest
-image fetch, which is hundreds of megabytes before there is a VM at all, and the
-development image build, which runs on the pool's own BuildKit after the machine
-is up and before its agent can be started.
+Phases exist wherever the wait does, including stretches with no Docker
+mechanic behind them: the guest image fetch, which is hundreds of megabytes
+before there is a VM at all, and the development image build, which runs on the
+pool's own BuildKit after the machine is up and before its agent can be started.
 
 The record has a second reader. Placement waits for the sandbox's pool to become
-schedulable, and that wait used to spend one fixed 30s budget whether the pool
-was on its way up or stuck — so a cold VM pool, which fetches a disk image,
-boots, waits for Docker and pulls the pool-agent image, failed with "no sandbox
-capacity" every time while all of it was working. The wait now extends whenever
-the pool's progress stamp moves, and only silence spends it. A pool that has
-actually failed is still caught immediately, by its settled failure rather than
-by a clock. A create reaching the agent of the pool it was placed on spends the
-same budget; see [Pool-agent client leases](#pool-agent-client-leases).
+schedulable on a plain budget (`poolCapacityWaitTimeout`) that is renewed, up to
+`poolProvisionStallTimeout` at a time, whenever the pool's progress stamp moves:
+only silence spends it, so a cold VM pool that is fetching, booting, and pulling
+is not mistaken for a stuck one. A pool that has actually failed is caught
+immediately, by its settled failure rather than by a clock. A create reaching
+the agent of the pool it was placed on spends the same budget; see
+[Pool-agent client leases](#pool-agent-client-leases).
 
 Two rules make it cheap enough to write from a hot path. Reports are a narrow
 two-column update, so they never race the reconcile writing the rest of the row;
@@ -226,15 +233,16 @@ backend depends on to build its own pool image after the guest boots.
 The engine also reclaims what it put on a daemon. Discobox images are labeled at
 build time (`harness.ReclaimLabel`), and a labeled image is removed once no
 container refers to it and it has been on the daemon longer than the retention
-window. The rules live in `imagereap`, shared with the pool agent, which applies
+window. The rules live in `pool-agent/imagereap`, shared with the pool agent, which applies
 the same pass to its own daemon; ADR 0040 covers why local arrival time rather
 than the image's `Created` timestamp decides staleness.
 
 The window is 24h, or 15m when `DevelopmentImageSync` is set — the image watcher
 supersedes an image every few minutes, so the production window would reclaim
 nothing before the disk filled. That field is the whole development signal;
-there is no separate mode flag. An explicit `DISCOBOX_IMAGE_RETENTION` overrides
-both, and the engine propagates whatever it resolves into the pool container's
+there is no separate mode flag. The server's explicit `imageRetention` setting
+(`DISCOBOX_IMAGE_RETENTION`, delivered as `dockerworker.ServerDefaults`)
+overrides both, and the engine propagates whatever it resolves into the pool container's
 environment, so one setting governs the host daemon and every pool daemon under
 it. The sweep interval is derived from the window (half of it, clamped to
 [1m, 1h]) rather than configured, which is also how a pool inherits the
@@ -258,6 +266,22 @@ That keep set is a startup snapshot, so it cannot be the only protection: an
 image built after the server started is in no keep set at all. `imagereap` never
 reclaims the newest image of a repository for exactly this reason — see ADR 0040
 §5.
+
+## Image Staging
+
+`RuntimeProvider.StageImages` (`Engine.StageImages`) pulls the images a
+sandbox will want onto a pool that is already up, so the first sandbox there
+does not wait for them. It creates nothing and reports under the
+`preloading_images` phase. Failures are collected rather than stopping at the
+first, and a pool whose images are not staged is still healthy and schedulable:
+staging is a head start, not a precondition.
+
+The engine does the pulling because it owns what is on a pool daemon; *when* to
+stage is not a provider decision. The pools service drives it as its own
+reconciled resource (`poolImages`, `server/internal/resources/pools`), marked
+when a pool becomes active and refreshed periodically.
+
+## Pool Runtime Lifecycle
 
 Pool runtime lifecycle is not the same as pool row deletion. The engine
 replaces the pool-agent container (and a VM driver may replace the VM) for an
@@ -408,8 +432,10 @@ runtime volumes and assigned sandboxes, so the control plane makes every
 effort to reconcile it back to health instead of abandoning it.
 
 - A failed reconcile of a never-created pool latches the terminal `failed`
-  phase; a created pool drops to the non-terminal `offline` phase, not ready
-  and not schedulable, and is re-driven (`SchedulePoolRepair` bumps the
+  phase and clears ready/schedulable. A created pool keeps its state and
+  records the failure as its error message against that generation; it reads
+  `offline` only when its agent's heartbeat is also stale, since `offline` is a
+  liveness verdict. Either way it is re-driven (`SchedulePoolRepair` bumps the
   generation so schedulers can tell a pending retry from a settled failure).
 - A reconcile failure while sandboxes are assigned repairs the runtime in
   place rather than recording the failure.
@@ -492,11 +518,13 @@ Values reach the pool the way bootstrap identity does, as pool-container
 environment rendered by the engine (`poolContainerEnv`). An unset policy field
 must serialize away entirely: `Config` is hashed into `configRevision`, so
 materializing a default would recreate every pool already running at upgrade
-for a policy nobody asked for. `ImageRetention` and `ProxyAuditRetention` both
-follow that rule.
+for a policy nobody asked for. `ProxyAuditRetention` follows that rule, and so
+does the engine's `ImageRetention`, which comes from the server's setting rather
+than from `PoolPolicy`.
 
 `ProxyAuditRetention` governs how long the pool proxy keeps an audit row and
-the recorded body or upgraded stream it names (`proxy/DESIGN.md`, Retention).
+the recorded body or upgraded stream it names
+([proxy/DESIGN.md](../../proxy/DESIGN.md#retention)).
 It does not govern the proxy's response cache, which is content-addressed and
 bounded by bytes rather than time.
 
@@ -512,7 +540,7 @@ pool at its next reconcile; saving the provider instance does not trigger one.
 
 `server/providers/guestimage` resolves the boot artifacts a VM driver needs —
 kernel, initrd, root filesystem — from an OCI image, with no Docker daemon on
-the host (ADR 0052 §5). It pulls by digest with go-containerregistry, caches one
+the host (ADR 0062 §5). It pulls by digest with go-containerregistry, caches one
 directory per digest, and accepts a local override directory instead.
 
 It is provider-neutral on purpose, and both VM backends use it. `vz` and
@@ -535,12 +563,14 @@ Two properties are load-bearing rather than incidental:
   artifact, not a tree to search.
 
 The override directory is how a guest image built from local sources is booted.
-`dockerworker.BuildArtifacts` produces one: it builds a Dockerfile on a pool's
-own Docker daemon through the same BuildKit session that carries development
-image builds, and streams the final `FROM scratch` stage back to a host
-directory. That is what closes the bootstrap loop — the registry seeds the first
-VM on a machine, and from then on a pool VM is the builder for its own successor
-(ADR 0052 §6, §7).
+`Engine.BuildGuestImage` (`sandbox.PoolRuntime.BuildGuestImage`, reached by
+`discobox admin pool build-guest`) produces one: it takes the Dockerfile,
+platform, and destination from the driver's `GuestImageBuildSpec`, builds on the
+pool's own Docker daemon through the same BuildKit session that carries
+development image builds (`dockerworker.BuildArtifacts`), and streams the final
+`FROM scratch` stage back to that host directory. That is what closes the
+bootstrap loop — the registry seeds the first VM on a machine, and from then on
+a pool VM is the builder for its own successor (ADR 0062 §6, §7).
 
 ## macOS (vz) Driver
 
@@ -576,8 +606,9 @@ COM class is what a pool needs, this program only stands in for it, and a
 stand-in that invents a failure the real thing would not have is worse than no
 check. Not finding it at all is the one condition strong enough to act on.
 
-`DISCOBOX_WSLC_COMMAND` (`wslc.WSLCCommandEnv`) names the program the check
-looks for, and skips the install-directory fallback when it is set. Naming
+The server's `wslcCommand` setting (`DISCOBOX_WSLC_COMMAND`, passed as
+`FactoryOptions.WSLCCommand`) names the program the check looks for, and skips
+the install-directory fallback when it is set. Naming
 something that does not exist is how the refusal gets exercised on a host that
 does have WSL Containers, which is the only host anyone develops this on; a full
 path is how a wslc installed somewhere unexpected is accepted. It must be set
@@ -604,8 +635,8 @@ nothing Docker-shaped.
 ## Placement
 
 Placement is a gate, not a search: `SchedulablePoolForSandbox` verifies the
-sandbox's pool is active, ready, schedulable, unrevoked, and that the request
-fits the pool's agent-reported capacity. When the gate fails, the provider
+sandbox's pool is desired present, unrevoked, not `offline`, and agent-reported
+ready and schedulable. No capacity is gated (docs/adr/0029). When the gate fails, the provider
 kicks the pool reconcile and waits bounded time for the agent to report
 schedulable, surfacing a settled pool failure (latest intent attempted and
 lost) with its recorded cause instead of a bare capacity error.

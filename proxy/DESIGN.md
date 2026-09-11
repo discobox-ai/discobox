@@ -2,46 +2,56 @@
 
 ## Package Role
 
-`proxy` is the reusable pool-scoped network proxy component. The pool-agent
-will run it and use its certificate preparation output when launching sandboxes,
-but the proxy package owns certificates, traffic policy, HTTP/SOCKS handling,
-disk response caching, and audit persistence.
+`proxy` is the reusable pool-scoped network proxy component.
+`pool-agent/proxyagent` runs it and uses its certificate preparation output when
+launching sandboxes, but the proxy package owns certificates, traffic policy,
+HTTP/SOCKS handling, sentinel secret swapping, disk response caching, and audit
+persistence.
 
-The component lives in the root module so pool-agent and future launch wiring
-can share stable configuration and certificate material contracts without
-depending on server internals.
+The component lives in the root module so pool-agent and sandbox-agent share its
+configuration and certificate material contracts without depending on server
+internals. It has no logger of its own: the datapath, cache, audit writer, and
+retention sweep report through OpenTelemetry spans (`proxy.*`).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    sandbox["Sandbox processes"] -->|"HTTP_PROXY / HTTPS_PROXY / ALL_PROXY"| local["sandbox-local proxy"]
-    local -->|"mTLS client cert"| pool["pool proxy"]
-    pool --> mitm["HTTP/HTTPS MITM"]
+    sandbox["Sandbox processes"] -->|"HTTP_PROXY / HTTPS_PROXY / ALL_PROXY"| local["sandbox-local bridge"]
+    local -->|"mTLS client cert"| pool["pool proxy (first-byte protocol detect)"]
+    pool --> mitm["HTTP/HTTPS MITM (goproxy)"]
     pool --> socks["SOCKS5"]
     mitm --> cache["disk cache"]
     mitm --> audit["async audit writer"]
+    mitm --> spool["body / stream spool files"]
     socks --> audit
     audit --> sqlite["gormdb SQLite"]
+    mitm -->|"optional"| upstream["upstream proxy"]
 ```
 
-The pool proxy requires client certificates. Client identity is derived from
-the verified mTLS certificate and is attached to every HTTP audit row, SOCKS
-connect row, header injection decision, destination policy decision, cache event,
-and upgraded-stream audit row. The sandbox-local proxy is the intended place to
-accept localhost traffic from sandbox processes and forward to the shared pool
-proxy with the sandbox's client certificate.
+The pool proxy requires client certificates. Client identity is the verified
+mTLS certificate's CommonName (the sandbox ID; the serial when the CN is empty)
+and is attached to every HTTP audit row, SOCKS connect row, header injection
+decision, destination policy decision, cache event, and upgraded-stream audit
+row. The listener sniffs each connection's first byte: `0x05` is served as
+SOCKS5, an ASCII capital letter as HTTP, and anything else (SOCKS4 included) is
+closed. Every allowed `CONNECT` is MITM'd with a per-host certificate from the
+MITM CA; there is no passthrough tunnel.
 
-The sandbox-local forwarder lives in the dependency-light `proxy/bridge`
-subpackage so the `sandbox-agent` binary can embed it without pulling in the
-full pool proxy stack (goproxy, gormdb, cache, audit). Pool-agent wiring
+The sandbox-local bridge accepts localhost traffic from sandbox processes and
+splices it, protocol-agnostic, onto an mTLS connection to the pool proxy
+carrying the sandbox's client certificate. It lives in the dependency-light
+`proxy/bridge` subpackage so the `sandbox-agent` binary (and
+`pool-agent/buildkitagent`'s per-build forwarder) can embed it without pulling
+in the full pool proxy stack (goproxy, gormdb, cache, audit). Pool-agent wiring
 (`pool-agent/proxyagent`) runs the pool host proxy as a systemd unit, prepares
-certificates, and stages per-sandbox client material.
+certificates, stages per-sandbox client material, and publishes sentinel sets
+through `ApplyConfig`.
 
 Client identity is the tenant boundary. Rules that can expose or restrict data
 must support `ClientIDs`, and audit reads must support querying by client ID so
-pool-agent code can retrieve data for a specific sandbox without scanning or
-mixing unrelated sandbox traffic.
+a caller can retrieve data for a specific sandbox without scanning or mixing
+unrelated sandbox traffic.
 
 ## Certificate Model
 
@@ -51,12 +61,15 @@ Certificate preparation is independent of running the proxy:
 - mTLS CA: signs the pool host proxy server certificate and per-client
   certificates.
 - Pool server certificate: presented by the pool host proxy listener.
-- Client certificates: issued per sandbox/client identity and distributed with
-  sandbox launch metadata.
+- Client certificates: issued per sandbox/client identity (CN = client ID) and
+  staged into the sandbox by pool-agent.
 
-`PrepareCertificates` creates or reuses this material and returns filesystem
-paths plus proxy environment values. Callers may run it before the proxy process
-starts so certificates can be distributed during sandbox setup.
+`PrepareCertificates` creates or reuses this material — reissuing anything within
+`RenewBefore` of expiry, and the server certificate when it no longer covers
+`ServerHosts` — and returns the `CertificateBundle` plus per-client
+`ClientMaterial` (filesystem paths and proxy/CA environment values). Callers may
+run it before the proxy process starts so certificates can be distributed during
+sandbox setup.
 
 ## Persistence
 
@@ -65,8 +78,9 @@ schema migration and repository behavior. `gormdb` owns pool construction and
 SQLite pragmas.
 
 The HTTP request path must not block on audit database writes. Audit calls enqueue
-bounded events to a background writer. If the queue is full, the recorder drops
-the event and increments drop counters instead of stalling network traffic.
+bounded events to a background writer (`Recording.QueueSize`, shared by HTTP and
+SOCKS rows). If the queue is full, the recorder drops the event and increments
+its drop counter instead of stalling network traffic.
 
 Normal HTTP request and response bodies are streamed to disk spool files. SQLite
 stores only relative spool paths, byte counts, format names, metadata, redacted
@@ -78,7 +92,8 @@ response assets remain in the disk cache, not SQLite.
 Audit rows, recorded bodies, and upgraded-stream captures are kept for
 `Recording.Retention` and then reclaimed. Zero opts out, for an embedder that
 manages the database itself; every Discobox pool sets a window, because nothing
-else bounds these trees.
+else bounds these trees — `DefaultRetention` (48h) unless the pool container's
+`DISCOBOX_PROXY_AUDIT_RETENTION` overrides it.
 
 Deleting a sandbox deliberately does **not** reclaim its audit trail. What a
 sandbox sent is the question the trail exists to answer, and it is most often
@@ -108,6 +123,8 @@ that was down longer than its window reclaims on the way up.
 The response cache is not swept. See [Response Cache](#response-cache): its
 entries are keyed by content digest and bounded by a byte ceiling, so age says
 nothing about what belongs in it.
+
+## Upgraded Streams
 
 HTTP 101 upgrades are supported as generic upgraded streams. The proxy preserves
 the upgraded tunnel, spools raw bidirectional payload frames to disk, and audits
@@ -155,8 +172,9 @@ Key properties:
   provider key format. Sentinels are non-secret and carry no embedded identifier.
 - **The proxy stays server-agnostic.** It owns detection, substitution, TTL
   caching, and audit redaction. The real value comes from an injected
-  `secrets.Resolver` (implemented by pool-agent, which calls the server). A nil
-  resolver disables swapping.
+  `SecretResolver` passed to `NewServer` (implemented by pool-agent, which calls
+  the server). A nil resolver disables swapping; the resolver is a construction
+  dependency preserved across `ApplyConfig`.
 - **Host authorization happens at resolve time.** The sentinel carries no host;
   each distinct destination triggers an on-demand resolution the server maps to a
   secret request that is approved or denied per `(secretID, host)`. Exfiltration
@@ -164,10 +182,11 @@ Key properties:
 - **Fail-closed on the secret, fail-open on the request.** On denial, pending
   approval, or resolver error, the sentinel is left in place; the upstream
   receives the placeholder and rejects it. The real value is never leaked.
-- **Scope is headers and query parameters.** Request bodies are not scanned in
-  this phase because the request-body audit spool would capture the swapped
-  value. When a value is swapped into a query parameter, the audit records the
-  pre-swap URL so the real value never lands in an audit row.
+- **Scope is headers, plus query parameters when `Secrets.ScanQuery` is set**
+  (pool-agent leaves it off). Request bodies are not scanned because the
+  request-body audit spool would capture the swapped value. When a value is
+  swapped into a query parameter, the audit records the pre-swap URL so the real
+  value never lands in an audit row.
 - **A sentinel is also matched through base64.** Git's HTTP transport sends a
   credential as `Authorization: Basic base64(user:password)`, so a sentinel
   traveling that way is invisible to a literal scan and the upstream is handed
@@ -189,10 +208,17 @@ Key properties:
   reshaped; the default is only visible on a token that was rewritten, when the
   real credential needs padding or a 62/63 character the sentinel did not.
 - **Caching.** Resolved values are cached per `(clientID, sentinel, host)` until
-  the grant expiry (capped by `PositiveTTLSeconds`); denials are cached briefly
-  (`NegativeTTLSeconds`); transient resolver errors are not cached. A resolver
-  may shorten that bound by returning an earlier `ExpiresAt` — which is how an
-  ephemeral sentinel's use window is honored, since its grant outlives it.
+  the grant expiry (capped by `PositiveTTLSeconds`, 300s by default); a result
+  with no `ExpiresAt` is used once and not cached; denials are cached briefly
+  (`NegativeTTLSeconds`, 10s by default); transient resolver errors are not
+  cached. A resolver may shorten that bound by returning an earlier `ExpiresAt`
+  — which is how an ephemeral sentinel's use window is honored, since its grant
+  outlives it.
+- **Stale-while-revalidate.** Past `RefreshIntervalSeconds` (30s by default) a
+  cached value keeps serving while one deduplicated background refresh runs: a
+  new value replaces it, a denial replaces it with a cached denial, and a
+  transient failure keeps it until its hard expiry, so a control-plane outage
+  does not stop a running sandbox's credentials early.
 - **A rejected credential is retried once, with a different one.** A swapped
   request that comes back `401` is not the sandbox's error — it holds a
   sentinel, and everything behind it belongs to the control plane — so the proxy
@@ -201,8 +227,8 @@ Key properties:
   the last rotation displaced, still within `previousValueGrace` (the proxy
   moved onto a credential the upstream has not started honouring yet). If
   neither differs from what was rejected there is nothing new to send, and the
-  401 is passed through. Only header swaps with a body small enough to hold are
-  retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
+  401 is passed through. Only header swaps with a body small enough to hold
+  (8 MiB) are retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
 - **Ephemeral sentinels are just sentinels here.** Pool-agent mints short-lived
   sentinels per agent-credential use and registers them in the same per-client
   set, so this package needs no concept of them: it matches a string and asks
@@ -223,8 +249,8 @@ cache ever sees — see
 Admission has two arms, and as wired by `pool-agent/proxyagent` both are
 restricted to URLs that name their own content:
 
-- **Content-aware**: any registry request whose path contains `sha256:` and
-  whose `Accept` is a Docker media type. This covers blobs and
+- **Content-aware**: any registry `GET` whose path contains `sha256:` and
+  whose `Accept` names a Docker or OCI media type. This covers blobs and
   digest-addressed manifests alike.
 - **Patterns**: the two blob spellings a pull actually sees — the v2 API's
   `/v2/<name>/blobs/sha256:<hex>` and the storage layout's
@@ -243,12 +269,17 @@ credentials. Cache events still carry the requesting client's identity for
 audit.
 
 Entries are keyed by digest rather than by full URL, so the same content fetched
-through different registry mirrors or paths hits once. A partial response is
-never stored: a `206` body is a fragment, and storing it under a key that claims
-to be the whole object would serve truncated content to the next reader.
+through different registry mirrors or paths hits once; a URL with no digest keys
+on host and path, never the query. Only a `2xx` response without
+`Cache-Control: no-store` is stored — with content-aware on, one that also looks
+like registry content — and a body whose SHA-256 differs from the digest its URL
+names is discarded. A partial response is never stored: a `206` body is a
+fragment, and storing it under a key that claims to be the whole object would
+serve truncated content to the next reader.
 
-The cache is bounded by an LRU byte ceiling rather than by time, which only
-holds while every file on disk is described by the index. Three kinds of file
+The cache is bounded by an LRU byte ceiling (`Cache.MaxSizeBytes`, 20 GiB by
+default) rather than by time, which only holds while every file on disk is
+described by the index. Three kinds of file
 outlive a crash and are not: a `.tmp-*` entry whose writer is gone, an entry
 whose `.meta` sidecar was never written, and a sidecar whose entry was never
 renamed into place. The middle one is the dangerous one — the index is keyed by
@@ -263,28 +294,58 @@ without waiting for a store that may never come.
 
 ## Runtime Policy
 
-Header rewrite rules are deterministic. Exact host matches win before wildcard
-rules; wildcard rules are sorted by specificity and then pattern text. Audit
-records store applied header names and rule identifiers, not injected secret
-values.
+Header rewrite rules are deterministic, and at most one applies per request:
+the first match in a fixed order. Rules sort by a specificity score — exact
+hosts far above wildcards (`*.suffix`, `prefix.*`, `*`), longer patterns higher,
+plus weight for each method, path regex, client ID, and header condition — then
+by pattern text. Audit records store applied header names and rule identifiers,
+not injected secret values.
 
-Runtime policy updates are file-driven. The proxy exposes `ApplyConfig` and a
-JSON config file watcher that hot-swap allowlist and header rules. It does not
-expose an HTTP configuration API; listener, certificate, audit database, and
-cache settings remain startup-only.
+Destination policy (`Allowlist`) allows everything unless enabled. Enabled, a
+host passes only if it matches a global domain/IP/CIDR entry or an entry in a
+rule scoped to the requesting client, so an enabled allowlist with no entries
+denies everything. HTTP requests it denies are answered `403`; denied `CONNECT`s
+and SOCKS connects are refused. All are audited as `host denied`.
+
+Runtime policy changes only through `ApplyConfig`, which hot-swaps the allowlist,
+header rules, and the sentinel set with its swap tuning. `WatchConfigFile` polls
+a JSON config file into it; pool-agent instead calls it directly to publish
+sentinel sets. The proxy does not expose an HTTP configuration API; listener,
+certificate, audit database, recording, cache, control, and upstream settings
+remain startup-only.
 
 Header audit redaction covers both credential-like header names and every header
 name touched by a rewrite rule. This prevents injected secret values from being
 persisted even when a configured header name does not look sensitive.
 
-The control API is read-only and exists for pool-agent audit retrieval. It
-lists HTTP and SOCKS audit rows by client ID, reports dropped audit counters,
-and serves body and upgraded-stream spool files only through the owning HTTP
-audit row and client ID. When `Control.TrustPublicKey` is configured, every
-control request must use a PASETO v4.public bearer token for audience
-`discobox-proxy-control` with `audit:read` scope. The proxy stores only the
-public verification key; pool-agent owns the private signing key.
+The control API (`ControlHandler`, served by `ListenAndServeControl` only when
+`Control.ListenAddress` is set) is read-only. It lists HTTP and SOCKS audit rows
+(`GET /audit/http`, `/audit/socks`, filtered by `client_id` and `host`, `limit`
+up to 1000), reports the dropped-event counter (`/audit/dropped`), and serves
+body and upgraded-stream spool files only through the owning HTTP audit row
+(`/audit/http/{id}/{request-body|response-body|stream}`), never by path; every
+read is narrowed to `client_id` when one is given. When `Control.TrustPublicKey` is configured, every control
+request must use a PASETO v4.public bearer token for audience
+`discobox-proxy-control` with `audit:read` scope, matching `Control.ProjectID`
+and `WorkerID` when set; a token carrying `sandbox_id` is refused for any other
+`client_id`. The proxy stores only the public verification key;
+`CreateControlToken` signs with the private key its caller holds.
+`pool-agent/proxyagent` sets no `Control` config, so a Discobox pool proxy serves
+no control API.
 
-SOCKS5 remains a TCP tunnel. It is authenticated by the same mTLS listener and
-records connect attempts, destination, allow/deny, and client identity, but it
-does not inspect tunneled payloads.
+SOCKS5 is a TCP tunnel (no-auth method). It is authenticated by the same mTLS
+listener and records connect attempts, destination, allow/deny, and client
+identity, but it does not inspect tunneled payloads.
+
+## Upstream Egress
+
+The proxy dials origins directly unless `Config.UpstreamProxy` — or, when that
+is empty, the first set variable in `UpstreamProxyEnvVars` (`HTTPS_PROXY`,
+`HTTP_PROXY`, `ALL_PROXY`, each upper then lower case) — names an upstream. That
+is the nested case: a pool proxy inside a Discobox sandbox has no route off-box
+and must hand its egress to the sandbox's own forwarder. Both goproxy egress
+hooks (`Transport.Proxy` and `ConnectDial`) route through it, and both honor
+`UpstreamNoProxy` (falling back to `NO_PROXY`) with standard `NO_PROXY` matching,
+so loopback and control-plane traffic stay direct. `pool-agent/proxyagent`
+forwards those variables into the proxy unit rather than setting the fields.
+SOCKS5 connects always dial directly.

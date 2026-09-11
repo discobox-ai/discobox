@@ -16,26 +16,29 @@ flowchart LR
     DS --> M["Model"]
     M --> P["prompt (composer)"]
     M --> L["sandboxList"]
-    M --> O["optionSet (Shift-Tab)"]
+    M --> O["optionSet (Ctrl-O)"]
     M --> A["harnessList (F3)"]
     M --> D["dialog (menu, confirm, input, form, help, wait)"]
     M --> W["welcome (once per project)"]
     W -->|Enter| MW["DataSource.MarkWelcomed"]
     P -->|Enter| Run["DataSource.Run → attach"]
-    L -->|u t T x U P| Verb["DataSource.Do"]
+    L -->|u R t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
-    L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
+    L -->|Enter a s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
     WS -->|leader S0| SvcMenu["services menu → DoService"]
-    L -->|C| Cred["credential dialog → Secrets / CreateSecret / UpdateSecret / Approve / Deny"]
+    WS -->|open| Fwd["port forward → DataSource.Forward"]
+    WS -->|beat| Push["automatic push → PushSources"]
+    L -->|C| Cred["credential dialog → Secrets / CreateSecret / UpdateSecret / ApproveCredentialRequest / DenyCredentialRequest"]
     M --> S["secretList (F4)"]
     S -->|n e d enter p| SVerb["Secrets / Grants / CreateSecret / UpdateSecret / CreateGrant / RevokeGrant / DeleteSecret"]
     S -->|C| Cred
-    WS -->|leader C| Cred
+    WS -->|leader g| Cred
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
     WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor / Addresses"]
     A -->|d s| AVerb["DataSource.DoHarness"]
+    A -->|v| ACard["config card → HarnessSecrets"]
     A -->|e| ACfg["configuration overlay pane → OpenHarnessConfigure"]
     A -->|f| AExec["tea.Exec → EditHarnessFile"]
 ```
@@ -108,11 +111,11 @@ request waiting anywhere in the project — including one no discobox owns, whic
 the list's row mark cannot carry and which would otherwise have no home.
 
 **A decision is one card, not a run of questions** (`form.go`, `dlgForm`). A
-pre-approval was seven dialogs and a new secret up to eight, and a sequence of
+pre-approval or a new secret has seven or eight parts, and a sequence of
 modals is the wrong shape for a decision whose parts are read against each
-other: nothing could be revised without abandoning the run, the answers already
-given were off screen by the third question, and the shape of what was being
-granted was only visible once it had been granted. A form asks everything at
+other: nothing can be revised without abandoning the run, the answers already
+given are off screen by the third question, and the shape of what is being
+granted is only visible once it has been granted. A form asks everything at
 once, in the same label/value column a card is read as — the thing being built
 looks like the thing it will be when it is read back.
 
@@ -122,8 +125,7 @@ knew were coming, and a card that reflowed under the cursor would be a card that
 moved the row being answered. An unanswerable row says which it is: not yet
 applicable (`only for an OAuth credential`), or not editable at all
 (`unchanged — type to replace it`). One `hint` line under the form carries the
-sentence for the row — or the picker option — under the cursor, which is what a
-card each used to be spent on saying.
+sentence for the row — or the picker option — under the cursor.
 
 That line keeps **`hintRows` rows whether or not it has anything to say**. A
 dialog is drawn from its content and a sentence wraps to as many rows as it
@@ -156,10 +158,10 @@ credential means its access token too`. The renewal fields are prefilled from
 the stored credential, because those *are* readable, so rotating tokens does not
 mean retyping the endpoint.
 
-**One form, one call** (`DataSource.UpdateSecret`, `SecretUpdate`). `SetSecretHost`
-and `SetSecretMaxGrantTTL` were two wrappers over one endpoint, and a card whose
-rows were saved by a call each would half-apply when the second failed and
-report two things where a person did one. Every field of `SecretUpdate` is a
+**One form, one call** (`DataSource.UpdateSecret`, `SecretUpdate`). The host,
+the limit, the name and the value are one endpoint, and a card whose rows were
+saved by a call each would half-apply when the second failed and report two
+things where a person did one. Every field of `SecretUpdate` is a
 pointer, because absence has to be spelled differently from the values: an empty
 host releases a binding and a zero limit allows grants that never expire, so
 neither can stand for "unchanged".
@@ -290,12 +292,12 @@ it with.
 a card of its own — 1 hour, 1 day, 1 week, 1 month, forever, and `custom…` for a
 typed one — with the cursor on **1 hour**, so Enter is the default answer. It
 is a step rather than a field on the request card because it is the half of an
-approval nobody thinks to look for: the lifetime used to be left out of the
-call entirely, which asked the server for the credential's own ceiling — a
-ceiling most credentials do not have — so the window handed out permanent
-credentials without ever saying the word. A card that has to be answered is one
-that gets read. `Approval.TTLSeconds` is now always sent, zero included, and
-zero means forever rather than "whatever the secret allows". The hour is
+approval nobody thinks to look for: leaving it out of the call asks the server
+for the credential's own ceiling — a ceiling most credentials do not have — so
+a window that did not ask would hand out permanent credentials without ever
+saying the word. A card that has to be answered is one that gets read.
+`Approval.TTLSeconds` is always sent, zero included, and zero means forever
+rather than "whatever the secret allows". The hour is
 `lifetime.Default`, and `discobox secret request approve` sends the same one
 when `--grant-ttl` is left out, so approving a request mints the same grant from
 either side.
@@ -400,7 +402,7 @@ frame, the panes are re-laid out when one appears or goes — and the geometry i
 - `bannerCost` (0 or 2) is how much shorter the boxes are, which is what
   `paneRows` spends.
 
-They were one number while there was one band. A single number answering both
+A single number answering both
 "how far down did the boxes move" and "how much shorter are they" is exactly the
 shape that puts a terminal's cursor a row away from the cell it is drawn in, for
 the rest of the session — so they are separate functions, and the one that means
@@ -533,20 +535,19 @@ before comes back when it exits. The list fills whatever rows the composer and
 chrome leave it rather than shrinking to its contents, so the frame is always
 exactly the terminal's height.
 
-This replaced an inline window, and took two mechanisms with it: a settle-timer
-that cleared the screen after a resize, because an inline frame is reflowed by
-the terminal while the renderer still counts pre-reflow lines; and a row-reclaim
-before `tea.Exec`, because an inline frame stayed painted above whatever the
-action printed. On the alternate screen the runtime handles both — it drops to
-the primary screen around an exec and repaints on resize.
+On the alternate screen the runtime drops to the primary screen around an exec
+and repaints on resize, so the window keeps no settle-timer after a resize and
+reclaims no rows before `tea.Exec` — the two things an inline window would
+need, since an inline frame is reflowed by the terminal while the renderer
+still counts pre-reflow lines, and stays painted above whatever an exec prints.
 
 **The prompt comes off the screen before the window takes it**
 (`clearPrinted`). The opening prompt is printed on the primary screen;
 everything else the window draws is on the alternate one, and switching screens
 does not take the printed rows with it. They stay where they were, behind the
 window, and whatever the window later drops back onto the primary screen lands
-in the middle of them — a harness setup run through `tea.Exec` prints straight
-over the old prompt. So the first frame that takes the whole terminal — opening
+in the middle of them — `$EDITOR` run through `tea.Exec` prints straight over
+the old prompt. So the first frame that takes the whole terminal — opening
 out, a modal, the options panel, a pane — is held back for one empty inline
 frame, which is how the renderer is asked to erase the rows it printed; it is
 the only thing that knows where they are, which is why this is a frame of
@@ -574,9 +575,9 @@ the workspace screen onto the discobox's own terminals, and apply is an overlay
 pane over whichever screen asked for it. Every interaction takes exactly one
 discobox, which is what a pane shows, and says so on the menu with the reason
 when a selection holds more. The window never steps aside for a discobox
-action; the `exec` field is the `tea.Exec` handoff the *harnesses* screen still
-needs, and exists as a field only so a test can run one without a terminal to
-release.
+action; the `exec` field is the `tea.Exec` handoff `$EDITOR` still needs — on a
+harness's file or a tool's config — and exists as a field only so a test can
+run one without a terminal to release.
 
 **The row carries both of the server's state axes** (`Sandbox.State`,
 `Sandbox.HasRuntime`). Existence and power are separate fields on the server
@@ -594,13 +595,13 @@ arrives (ADR 0017 §12), and only archived — no container by intent — and a 
 nothing ever reported on are refused. An errored discobox with a live container
 attaches, and `attachWhy` sends the one that has nothing behind it to repair
 (ADR 0035) rather than naming its state back at it. Guards written as a list of
-states are the wedge ADR 0017 §4 describes; this one used to be exactly that.
+states are the wedge ADR 0017 §4 describes.
 
 `repairable` is that pair read the other way, and is what puts repair (`R`,
 `VerbRepair`) on the list: a latched error, or no container ever reported, are
 the two shapes ADR 0035 exists for, and they are exactly where `attachWhy`
 already points. So the reason the list gives for refusing attach names an action
-the list now offers. Repair rebuilds on the current image (ADR 0062), which is
+the list offers. Repair rebuilds on the current image (ADR 0064), which is
 why its detail says so and why it is not merely a heavier upgrade: upgrade needs
 a newer image to exist, repair needs the discobox to be broken.
 
@@ -626,7 +627,7 @@ configured name, the one rename edits and every `discobox` command takes, is
 exactly what goes missing while a box is working; and the id was on no screen
 but the workspace banner, which meant attaching to read it. The row carries
 both names (`Sandbox.Name`, `Sandbox.ConfigName`), which is also what the
-rename guard now asks rather than a flag computed for it on the way in.
+rename guard asks rather than a flag computed for it on the way in.
 
 The id leads and the name follows, in the banner's own colors — muted for the
 id, which is there to be looked up rather than read, plain text for the name —
@@ -637,7 +638,7 @@ It is drawn only while the list has focus, because only then is a cursor drawn
 on a row, and it is pinned there (`spreadPin`): a row too narrow for both gives
 up key hints rather than the one thing on the line that is written down nowhere
 else — F1 spells every key out. `statusLine` takes the room it has and drops
-whole offers from the tail to fit it (`dropToFit`), on the workspace's copy of
+whole offers from the tail to fit it (`fitFields`), on the workspace's copy of
 the line as well: half a key hint is not one. A message is the exception — it
 is one thing with nothing to drop — and it displaces the keys, never the right
 end: what is true is not what was said.
@@ -681,7 +682,7 @@ teaching the tab strip, the focus, the mouse and the layout about a second kind
 would buy none of that.
 
 **A service pane opens on its history, and never on the keys.** A plain exec
-has no screen to repaint from (`shimruntime.EnableScreen` installs the replayer
+has no screen to repaint from (`shimruntime.Runtime.EnableScreen` installs the replayer
 for TTY execs only), so attaching to a running service starts at "now" and the
 pane sits empty until it next says something — which for a server that has
 finished booting is a long time. The transcript is played in ahead of the live
@@ -746,7 +747,7 @@ and `S2` have to mean.
 Two things follow from a service running on pipes rather than a PTY: the pane
 sends nothing and translates bare line feeds (`termpane.WithReadOnly` — there
 is no stdin at the far end to reach, and no line discipline to have supplied
-the carriage returns), and a column is no longer only TTY sessions, the one
+the carriage returns), and a column is not only TTY sessions, the one
 clause of ADR 0054 §2 this widens, and only for sessions the sandbox itself
 records as services.
 
@@ -786,7 +787,7 @@ column.
 **The primary is pane 0, always, and always the leftmost terminal tab.** It is
 attached under the virtual id, which carries no creation time, so it sorts to
 the head of the terminals whatever order the attaches land in — and it is the
-one pane whose ending ends the workspace (`pane.primary`). It is no longer the
+one pane whose ending ends the workspace (`pane.primary`). It is not the
 head of its *column*, which the services take, so `Model.primary` finds it by
 its flag and `a` focuses it by pointer.
 
@@ -797,10 +798,10 @@ start — and that is what the leader's digits jump along (`numbered`,
 `jumpPane`). A service wears `S1`, `S2`, counted within the left column from
 one, and answers to the leader's `S` chord (`services`, `jumpService`).
 
-One shared set of numbers is what this replaces. A service starts and stops on
-the discobox's schedule rather than yours, so one appearing renumbered every
-shell to its right: the digit you were reaching for moved while you were
-reaching for it. Split, a shell's number depends only on the terminals, which
+One shared set of numbers would not hold still. A service starts and stops on
+the discobox's schedule rather than yours, so one appearing would renumber
+every shell to its right: the digit you were reaching for would move while you
+were reaching for it. Split, a shell's number depends only on the terminals, which
 you create yourself.
 
 The arrows are the exception and still walk the whole strip in drawn order,
@@ -815,9 +816,8 @@ deduped by exec id against open tabs and in-flight attaches (`connecting`) —
 which is also what folds the leader-`s` optimistic tab and its listing entry
 into one. It is a poll rather than a subscription because the control plane has
 no exec event stream: exec state lives on the sandbox-agent and `/execs` is a
-raw proxy, so there is nothing server-side to subscribe to yet. The seam is a
-snapshot so that a real stream, when one exists, replaces the tick loop and
-nothing else. The poll only ever *adds*: the attach streams deliver their own
+raw proxy, so there is nothing server-side to subscribe to. The seam is a
+snapshot, so the tick loop is the only thing a stream would have to replace. The poll only ever *adds*: the attach streams deliver their own
 exits (`termpane.ClosedMsg` is the sole driver of the exited transition), so
 each tab transition has exactly one writer. Detach (`leader d`) leaves the
 whole workspace — every stream closed at once, every session still running —
@@ -970,7 +970,7 @@ asked `overlay != nil` asks it instead.
 out of the panes — and a hints line that grew by a fragment would resize every
 attached terminal, then resize it back when it shrank. So the parts arrive
 most-worth-keeping first and the tail goes instead, the way the banner gives up
-its edges (`paneHeaderFields`, `dropToFit`). What survives at any width is the
+its edges (`paneHeaderFields`, `fitFields`). What survives at any width is the
 way out.
 
 **Either column can take the whole window** (`maximized`, `toggleMaximized`).
@@ -1083,7 +1083,11 @@ is to exit it — there is deliberately no kill-tab key.
 
 A successful apply is the useful exception to the generic finished-pane flow:
 its report stays on screen and immediately opens a two-choice menu over it.
-Archive is selected by default; detach leaves the discobox running. Either
+Archive is selected by default; detach leaves the discobox running. The menu's
+body names every destination the apply wrote and the local commits it created
+there (`appliedSourceSections`), read from the structured report the child
+`discobox apply` leaves beside its terminal output (`ApplyResultReporter`)
+rather than parsed off the screen. Either
 choice detaches from the workspace, while Esc dismisses only the menu and
 returns to the readable apply result. The choice is carried out as it is made,
 not posted back as a message, so a key typed after it reads the screen the
@@ -1130,7 +1134,7 @@ listing.
 
 **What the discobox is serving rides at the end of them** (`portsField`), from
 the same push
-([ADR 0048](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
+([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
 grouped by protocol — `http:3000,5173,8080 · https:8443 · tcp:22,5432,6379`.
 Grouped rather than one `protocol/port` per port because the protocol is the
 repetitive half: a sandbox running three dev servers said "http" three times for
@@ -1252,8 +1256,9 @@ Only a middle that still does not fit drops its own fields, whole from the
 right — the ports first, since they are the only field with no bound on their
 width (a compose stack brings up as many as it likes), then, in the list's own
 order, the diffstat, which the apply report gives you anyway, then the word,
-whose mark is on the position regardless. The id never goes. `dropToFit` is the
-shared step and `centerRoom` is what it measures against, the same width
+whose mark is on the position regardless. The id never goes. `paneHeaderFields.fit` is the
+step — `fitFields`' drop-whole-from-the-right rule, over spans — and
+`centerRoom` is what it measures against, the same width
 `spreadCenter` would have cut them to, which is what keeps the two from
 disagreeing about what fits.
 
@@ -1274,10 +1279,10 @@ except the reserved ones — and which those are depends on what is in the pane
 **Ctrl-C is the application's, in every pane.** Nothing the window reserves
 stands between a program and its own interrupt, so `paneOptions` passes an empty
 detach key to `termpane.WithPrefix` and the ways out are `leader d` — the
-key screen, tmux and a plain `discobox attach` all detach on, free again now that
-diff has left the CLI — and `leader q`, which quits the whole window, the exit
-Ctrl-C is everywhere else. Both sit in the header's top right. An attach used to take
-Ctrl-C as "back out of this", which reads well right up until it is wrong:
+key screen, tmux and a plain `discobox attach` all detach on — and `leader q`,
+which quits the whole window, the exit Ctrl-C is everywhere else. Both sit in
+the header's top right. Taking Ctrl-C in an attach as "back out of this" reads
+well right up until it is wrong:
 someone who types it to stop an agent and gets a detached session instead has
 not stopped anything, and nothing on the screen says so. One key with two
 meanings depending on what is in the pane is worse than the keystroke it saved.
@@ -1346,7 +1351,10 @@ that one is never the window's to take, and a leader that took it would take it
 from every program the window ever draws. Its default and its spelling live in
 `internal/keys` rather than here, because a plain `discobox attach` detaches behind
 the same key: one leader for both terminals discobox shows you is one thing to
-learn and one thing to change.
+learn and one thing to change. Outside a pane the window arms the leader itself
+(`leaderArmed`), so `leader q` quits from every screen but the prompt, where
+Ctrl-A stays the composer's start of line; a leader followed by any other key
+is as though it had not been pressed.
 
 **The window answers the mouse on every screen it draws over the terminal**
 (`mouseMode`, `mouse.go`, ADR 0088). Native selection is traded for the
@@ -1361,10 +1369,10 @@ screen rather than this frame.
 strings — so each renderer marks the controls it drew, in the coordinates it
 drew them in, and whatever places the block pushes the origin it placed it at
 (`zones.push`/`pop`; a modal is rendered before it can be centered, so `place`
-shifts its marks once instead). Positions are never computed a second time:
-that is how the column header came to drift off its own rows before
-`tailColumns`, and a hit map that drifts is invisible until someone reports a
-click landing on the wrong thing. A list records which rows it actually drew
+shifts its marks once instead). Positions are never computed a second time: a
+column header budgeted apart from its rows drifts off them, which is why
+`tailColumns` budgets both, and a hit map that drifts is invisible until
+someone reports a click landing on the wrong thing. A list records which rows it actually drew
 (`drawn`) in the loop that drew them, for the same reason.
 
 A press on a row points at it and focuses its list, then goes on into the
@@ -1437,7 +1445,9 @@ key presses through the handler the keyboard reaches, so the two cannot come to
 mean different things.
 
 **A control the pointer is resting on is drawn as live** (`styles.hover` — the
-window's one accent, underlined so a terminal with no color shows it too). The
+window's one accent, bold so a terminal with no color shows it too; not
+underlined, which lipgloss renders one escape per character on a hint redrawn
+at every mouse move). The
 window asks for all-motion (`mouseMode`) and answers a bare move itself
 (`Model.hover`): a sandbox is sent the move only when it asked for motion, so
 one subscribed to buttons alone gets no more than before. The renderer asks
@@ -1529,13 +1539,6 @@ as the box — and a re-wrapped terminal grid shifts every row below the wrap,
 putting the hardware cursor on the wrong line for the rest of the session.
 `paneCursor`'s offsets are exact for the same reason.
 
-**An action takes the window's rows, not the ones under them.** The runtime
-flushes and leaves the cursor on the frame's last row, so `interactExec.Run`
-walks back up `frame` rows and erases below before the action starts. Without it
-every attach opens under a frozen copy of the launcher and leaves it in the
-scrollback. `Model.frame` is recorded in `View`, the only place the height is
-known.
-
 **The window is a box.** A rounded border in the mark's own purple (`colMark`)
 all the way round. Everything inside is laid out at `inner()` —
 `width - boxChrome`, the two edges plus a padding cell each side — and the
@@ -1579,11 +1582,11 @@ accelerator and the only one of the two ever drawn; a menu whose rows have none
 has no key column at all.
 
 **A dialog with no answer is how a wait is drawn** (`dlgStatus`,
-`statusDialog`). Submitting a prompt used to leave the launcher on screen with a
-line under it while a pool came up and gigabytes arrived — the window looked
-idle beside a list you could still act on, and the next thing that happened was
-a terminal appearing without warning. The window goes to the discobox being made
-instead, and the provisioning narration (`narration.go`) reports into the
+`statusDialog`). A launcher left on screen with a line under it while a pool
+comes up and gigabytes arrive looks idle beside a list you can still act on,
+and the next thing that happens is a terminal appearing without warning. So
+once the create returns, the window goes to the discobox being made
+(`created`, "Starting <name>"), and the provisioning narration (`narration.go`) reports into the
 dialog's body rather than only onto the busy line. Enter does not dismiss it:
 there is nothing to answer, and closing it would drop the user onto a pane that
 has not attached. `provisioningDoneMsg` takes it down; Esc gives up the view of
@@ -1592,8 +1595,8 @@ the discobox, not the discobox.
 **A paste is routed like a keystroke** (`updatePaste`, `dialog.paste`). A
 terminal reports a bracketed paste as one message of its own rather than as the
 keys it would have taken to type, so it reaches nothing that only handles
-`tea.KeyPressMsg` — which is how "Paste the token" was a question that could not
-be pasted into, with the token landing in the composer behind the dialog. It
+`tea.KeyPressMsg`, and a dialog asking for a token would be one that could not
+be pasted into, with the token landing in the composer behind it. It
 follows the same layering typing does: the modal first, then the focused pane,
 then the composer, and nothing at all on a screen drawn in place of the composer.
 Input dialogs carry no character limit, because a credential is as long as
@@ -1614,7 +1617,7 @@ It stands in front of `discobox run`'s window too, when the project has not
 been welcomed: the run this window was opened to make proceeds behind it the
 same way every other load does, and Enter uncovers whatever it has gotten to —
 still waiting, or already the workspace. `discobox attach` is the one window it
-never covers (`Model.New`): there is nothing behind the workspace it opens
+never covers (`New`): there is nothing behind the workspace it opens
 directly on for the introduction to hand over to.
 
 **A scrolling body is searched with `/`** (`updateText`, `viewBody`). The help
@@ -1678,12 +1681,11 @@ report: it is the only account on screen of a wait nothing else explains, while
 F1 spells the keys out anyway. `withReport` makes the same trade against the
 pinned identity when both cannot fit.
 
-A row of its own under the border is what this was. It cost a row every screen
-that fills the terminal then had to be told about, and being outside the frame
-is what let it scroll the alternate screen — stranding the hardware cursor a row
-from the grid — and hand its own presses to the border above it, because
-`paintChrome` had already parsed the selection grid from a frame that did not
-include it. On the status row it is inside the frame like everything else and
+It is not a row of its own under the border. That would cost a row every
+screen that fills the terminal has to be told about, and being outside the
+frame would let it scroll the alternate screen — stranding the hardware cursor
+a row from the grid — and hand its own presses to the border above it, because
+`paintChrome` parses the selection grid from a frame that does not include it. On the status row it is inside the frame like everything else and
 none of that is a question that can be got wrong.
 
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
@@ -1762,8 +1764,8 @@ reading as a caption on it. The art's own rows stay aligned to each other: it is
 a picture, so the block moves, not the lines within it.
 
 **The harnesses are the window's, not another program's** (`harnesses.go`).
-`discobox configure` was a menu of its own over the same harnesses. It is this
-screen now — `WithHarnesses()` opens the window straight onto it — because
+`discobox configure` is this screen — `WithHarnesses()` opens the window
+straight onto it — rather than a menu of its own over the same harnesses, because
 choosing a harness to run and setting one up are the same job from two ends, and
 two lists of harnesses with two sets of keys is one too many. `F3` opens it from
 anywhere in the window, including from the run options, whose harness row names
@@ -1777,16 +1779,17 @@ deletes what the setup wrote, and releasing the project default when the target
 holds it), `s` makes it the default, `v` reads the whole configuration, `f`
 edits one of its files.
 
-It stops short of two of the list's keys. There is no `.` action menu: that
-answers eleven verbs over a multi-selection, and five actions on one row are
-already all on the hint line. There is no `r` either — the screen re-reads
-itself on the tick while it is up, and after every action, so a key for it would
-ask for what is already happening.
+`.` — and the right button on a row — opens those five as a menu
+(`harnessMenu`), each one that does not apply kept on it with the reason, and
+Enter is `e`. It stops short of one of the list's keys: there is no `r` — the
+screen re-reads itself on the tick while it is up, and after every action, so a
+key for it would ask for what is already happening.
 
-The two that need a terminal — the harness's own setup and `$EDITOR` — go
-through `tea.Exec` (`harnessExec`) rather than a pane: they are programs that ask
-questions and draw their own screen to ask them on, and unlike apply they are
-not one of this CLI's own commands with a discobox to name. `F3` is a function key because the prompt takes every
+The setup runs in the configuration pane described at the top of this doc.
+`$EDITOR` — on one of a harness's files, and on a tool's config (`tools.go`) —
+goes through `tea.Exec` (`harnessExec`) rather than a pane: it is a local
+program that draws its own screen, and unlike apply it is not one of this CLI's
+own commands with a discobox to name. `F3` is a function key because the prompt takes every
 letter as text and the list has spent them on its own actions, and it is inert
 inside a pane, where every key is the sandbox's.
 
@@ -1890,8 +1893,8 @@ discobox is often exactly the one whose disk is worth seeing — so the agent
 walks a stopped discobox's trees, and the row draws what it finds. Each cell draws a dot rather than a zero where it is unmeasured:
 `0 B` reads as holding nothing, which is a claim about the discobox where a dot
 is a claim about what we know. Measured and unmeasured share one layout, so a
-dot sits in the cell its figure would have — two layouts is how the dots came to
-sit under the wrong columns when the cells were resized.
+dot sits in the cell its figure would have — with two layouts, resizing the
+cells puts the dots under the wrong columns.
 
 **The folder is a header control, not a column.** The path in the header is
 which folder's sandboxes are listed (`folder.go`). It opens on the directory the
@@ -1901,8 +1904,6 @@ listing itself, so the only folders offered are ones with something in them
 (plus the current directory, always, since that is where a new sandbox would
 go). Because every row on screen has already been filtered to one folder, the
 row carries no folder column: it would repeat one value down the whole list.
-This replaced the old `f` "only the ones started here" toggle, which was the
-same filter with all but one of its choices missing.
 
 **A discobox created on another machine says so beside its name**
 (`Sandbox.elsewhere`). The folder cannot say it: a folder is a path, two
@@ -1998,13 +1999,12 @@ entry counts as unchanged is carried by `option.unchanged` instead — so the pa
 can stay silent about a source the header already names without the ordering
 being what says it.
 
-The harness is on the strip by the same rule, and used not to be: it was lit
-whether or not it was chosen, on the reasoning that it is what the sandbox will
-*be* rather than a setting. That named the project default as though someone had
-picked it, which is both a line you stop reading and a claim the window cannot
-stand behind — an unset harness emits no `--harness` at all, and what it
-resolves to is settled by the server at create, from the default as it is then
-rather than as this listing last saw it. Only a chosen one is named now.
+The harness is on the strip by the same rule: only a chosen one is named.
+Lighting it whether or not it was chosen would name the project default as
+though someone had picked it, which is both a line you stop reading and a claim
+the window cannot stand behind — an unset harness emits no `--harness` at all,
+and what it resolves to is settled by the server at create, from the default as
+it is then rather than as this listing last saw it.
 
 The strip goes with it: with nothing chosen there is nothing to introduce, so
 the `⏵⏵` marker is not drawn either and the line is empty. A marker that is
@@ -2053,6 +2053,17 @@ nothing to do about it; yes runs the same flow `e` runs on the harnesses screen.
 A harness that declares no setup is told apart from one that is merely missing
 it — there is nothing to offer, so the window says so rather than asking a
 question whose yes does nothing.
+
+**What a create carries in is asked before it is made** (`DataSource.Workspace`,
+`workspaceChecked`). Enter first reads what the source directory would carry. A
+repository with uncommitted changes asks whether to include them as a snapshot,
+naming a few of the paths; a directory that is not a repository asks whether to
+copy it in at all (`askToCopyDirectory`), with the size counted while the
+question is up (`DataSource.MeasureDirectory`) rather than before it, because
+walking a home directory takes long enough that waiting for the number would be
+the thing the question exists to avoid. Both are `includeDirtyDialog`: the
+excluding answer leads and Esc means no, since the discobox is created either
+way.
 
 **Focus is a ladder, and its ends stop.** The folder filter sits above the list
 sits above the prompt, and the arrows climb it: Up off the top of the list
@@ -2110,9 +2121,8 @@ a word (`dirty` / `ready` / `applied` / `clean`), from the same
 forwarded to the merge base with upstream once the sandbox has fetched so
 pulled commits do not count (ADR 0018's base rule, carried into the agent by
 ADR 0037), and reports the counts with the rest of its status — so the column
-costs the list nothing and no git runs anywhere on its behalf. This replaced
-a fetch-per-row through `DataSource.DiffStat`, whose exec woke every stopped
-sandbox just to draw a column. `DiffStat.Known` separates "nothing changed"
+costs the list nothing and no git runs anywhere on its behalf — a fetch per
+row would be an exec waking every stopped sandbox just to draw a column. `DiffStat.Known` separates "nothing changed"
 from "nothing reported yet", which is what keeps apply available on a row
 whose report has not landed.
 
@@ -2174,7 +2184,7 @@ the newest one where the busy line goes.
 | `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
-| `editor.go` | Alt-E: the prompt in `$EDITOR` |
+| `editor.go` | Alt-E or F2: the prompt in `$EDITOR` |
 | `readline.go` | the composer's emacs mode: the word keys, the kill ring, undo, transpose words |
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
@@ -2186,6 +2196,18 @@ the newest one where the busy line goes.
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |
 | `tools.go` | the tools: the catalog, the picker, the tool window and its `[-]`/`[x]` |
 | `narration.go` | what a slow operation is doing, on the busy line |
+| `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
+| `secrets.go` | the secrets screen (`F4`): the secrets table, a secret's card and grants, the secret and grant forms |
+| `requests.go` | the secrets screen's lower table: the credential requests waiting on a person |
+| `welcome.go` | the once-per-project introduction |
+| `draft.go` | the unsent prompt, saved per folder and restored |
+| `initializing.go` | the server-setup report pinned to the status row |
+| `mouse.go` | the mouse: mode, routing, presses, hover, the wheel |
+| `zones.go` | the hit map a frame records as it draws |
+| `chrome.go` | the chrome selection over the composed frame |
+| `clipboard.go` | the OS clipboard, WSL included |
+| `links.go` | where a pane's URLs and the header's links point, and opening one |
+| `util.go` | row helpers: padding, spreading, centering, fitting fields to a row |
 
 ## Looking at it without a terminal
 

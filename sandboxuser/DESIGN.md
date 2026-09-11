@@ -22,14 +22,29 @@ the build graph rather than by a rule someone has to remember.
 ```mermaid
 graph TD
     SU["sandboxuser<br/>(root module)<br/>type · precedence · Fields"]
+    SC["sandboxconfig<br/>(root module)<br/>manifest User = alias"]
     RU["sandbox-agent/runuser<br/>completion vs /etc"]
     PA["pool-agent<br/>Merge only"]
-    EX["sandbox-agent/execs · boot · terminal"]
+    EX["sandbox-agent/boot · execs<br/>(terminal via execs)"]
+    SU --> SC
     SU --> RU
     SU --> PA
     RU --> EX
     PA -. "cannot import" .-> RU
 ```
+
+## The API
+
+| Name | What it is |
+| --- | --- |
+| `User` | The identity. Ids are `*int64`; `GroupName` is the primary group by name, exclusive with `GID`. |
+| `Layers{Image, Manifest, Request}` | The descriptions, most general to most specific: the image's own account, `sandbox.json`, one exec/terminal call. |
+| `Merge(Layers) User` | Precedence only, per facet. No lookups. |
+| `Named` · `NamesIdentity` · `NamesPrimaryGroup` · `NamesGroups` | Whether a layer says anything, overall or per facet. |
+| `Fields` · `Credential` · `Complete` | Which fields a caller requires. `Credential` is uid+gid+groups (enough to `setuid`); `Complete` adds name and home. |
+| `UnresolvedError` · `Unresolved` | A required field that could not be determined, naming it. Built by `runuser`. |
+| `(*User).Validate` | Rejects the one in-layer contradiction: both `GID` and `GroupName`. |
+| `(*User).Clone` · `ID` | Deep copy that trims strings; pointer to a known id. |
 
 ## The three facets
 
@@ -57,9 +72,11 @@ reach rather than who it is, so naming a user must not silently strip them.
   `NamesPrimaryGroup` / `NamesGroups`) is the only test for "did this layer say
   anything". Adding a field to `User` means teaching that function, not five
   call sites.
-- **Absent is nil.** Never `0` (which is root), never `-1`, never `""`. `-1`
-  appears only as an argument to `chown(2)`, whose own vocabulary it is.
+- **Absent is nil for an id.** Never `0` (which is root), never `-1`. `-1`
+  appears only as an argument to `chown(2)`, whose own vocabulary it is. A
+  string field is absent when empty after trimming, so whitespace never reads
+  as present.
 - **An empty group list is not a choice.** Groups are all-or-nothing, so "none
   named" inherits and only a non-empty list replaces.
 - **Merge cannot guess**, because it cannot look anything up. That is the point
-  of it being a separate function from `Resolve`.
+  of it being a separate function from `runuser.Resolve`.

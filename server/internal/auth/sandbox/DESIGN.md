@@ -1,13 +1,23 @@
 # Sandbox Auth Design
 
-`internal/auth/sandbox` owns token and key helpers for sandbox access delegation
-and pool identity flows. It should not decide API authorization policy; it
-issues or validates credentials that other server layers scope to projects,
-sandboxes, and pools.
+`internal/auth/sandbox` (package `sandboxauth`) owns the sandbox access issuer:
+the per-project, per-user Ed25519 trust key and the short-lived sandbox access
+tokens signed with it. It does not decide API authorization policy; it issues
+credentials that other server layers scope to projects, sandboxes, and users.
+
+This doc also records the sibling credential flows that share its shape but
+are owned elsewhere:
+
+- Pool identity: [`pool-agent/poolauth`](../../../../pool-agent/poolauth/assertion.go)
+  (assertions), `PoolAuthenticator` in [`internal/auth`](../DESIGN.md)
+  (verification), and [`internal/resources/pools`](../../resources/pools/DESIGN.md)
+  (registration).
+- Pool-agent request tokens: [`internal/auth/poolagent`](../poolagent/auth.go)
+  (package `poolagentauth`).
 
 ## Auth Shape
 
-Both sandbox access and pool identity follow the same pattern:
+Every flow follows the same pattern:
 
 ```text
 long-lived key identity -> proof or issuer use -> short-lived scoped token
@@ -27,78 +37,118 @@ move that identity into the URL or another request attribute.
 
 The only intentional exception is pool bootstrap registration. A booting
 pool has no runtime principal yet, so `POST /api/pools/register` redeems a
-body-provided project ID, sandbox ID, one-time bootstrap token, and public key
-for the first pool runtime token. This is safe only because the control plane
-created the bootstrap token for a preassigned sandbox pool, stores it as a
-short-lived one-time hash, and validates it before issuing runtime credentials.
-After registration, pool authorization must use the authenticated pool
-principal and request attributes, not body fields.
+body-provided project ID, pool ID, one-time bootstrap token, and public key
+(plus optional key type). This is safe only because the control plane created
+the bootstrap token for that pool, stores only its hash with a short expiry,
+and validates it before recording the key. After registration, pool
+authorization must use the authenticated pool principal and request
+attributes, not body fields.
 
 ## Sandbox Auth: Access Delegation
 
 Sandbox auth is delegated access. The control plane owns a sandbox access issuer
-key for a user/project and signs short-lived tokens accepted by the sandbox side.
+key for a project/user and signs short-lived tokens for the sandbox side.
 
-The current implementation stores this as `ProjectUserKey`; the design-level
-name is `SandboxAccessIssuerKey`.
+The row is `model.SandboxAccessIssuerKey` (table `sandbox_access_issuer_keys`);
+this package's `UserStore` interface refers to it by its alias
+`model.ProjectUserKey`.
 
 ```text
-1. A sandbox is created by a user in a project.
-2. When the sandbox starts, the control plane ensures a SandboxAccessIssuerKey
-   exists for that project/user.
-3. If missing, the control plane generates an Ed25519 keypair.
+1. A user creates a sandbox in a project.
+2. When the sandbox reconciler creates the sandbox runtime, it calls
+   Manager.EnsureTrustKey for (project, sandbox creator).
+3. If no key row exists, the manager generates an Ed25519 keypair.
 4. The public key is stored on the issuer key row.
-5. The private key is encrypted and stored on the issuer key row.
-6. The sandbox runtime receives the public trust key as DISCOBOX_TRUST_KEY.
-7. When sandbox access is needed, the control plane decrypts the private key.
-8. The control plane signs a short-lived PASETO token with that private key.
-9. The token can be used with the sandbox side that trusts the matching public key.
+5. The private key is sealed and stored on the same row
+   (CreateProjectUserKeyIfMissing; a concurrent loser reloads the winner).
+6. The runtime receives the public key in its create env as DISCOBOX_TRUST_KEY.
+7. Manager.CreateToken (via sandboxes Service.CreateSandboxAuthToken) opens
+   the sealed private key.
+8. It signs a short-lived PASETO v4.public token with that key.
+9. A verifier holding the matching public key can check the token.
 ```
 
 Current details:
 
-- Token TTL is 12 hours.
+- The manager is wired only when the server has a secret sealer. Without a
+  store or sealer, `EnsureTrustKey` and `CreateToken` return an empty string
+  and no error, and no `DISCOBOX_TRUST_KEY` is injected.
+- Token TTL is 12 hours (`TokenTTL`).
 - Signing key type is Ed25519 / PASETO v4 public.
+- `iat` and `nbf` are both backdated one minute (`clockSkew`) for pool VM
+  clock drift; each token carries a random `jti`.
 - Key scope is `(projectID, userID)`, not individual sandbox.
-- Encryption associated data binds ciphertext to the `projectID/userID` identity.
-- Issued sandbox access tokens include `project_id`, `sandbox_id`, and `user_id` claims.
+- The sealer purpose is `sandbox_access_issuer_keys.private_key`, and the
+  resource ID `projectID/userID` binds the ciphertext to that identity.
+- Tokens carry `project_id` and `user_id` claims, and `sandbox_id` when set.
+- A key row missing its public or sealed private key is an error, never
+  regenerated. The row's `rotated_at` and `revoked_at` columns are not read.
+- No component in this repository reads `DISCOBOX_TRUST_KEY` or verifies these
+  tokens, and `CreateSandboxAuthToken` has no callers. Sandbox-agent requests
+  use pool-agent request tokens instead (below).
 
 ## Pool Auth: Workload Identity
 
-Workers have their own identity. The pool private key stays on the pool host.
+Pools have their own identity. The pool private key stays on the pool host.
 
 ```text
-1. Control plane creates Pool + one-time WorkerBootstrapToken.
-2. Pool boots with project ID, sandbox ID, bootstrap token, control plane URL, and the assigned pool ID for subsequent pool-scoped routes.
-3. Pool generates a keypair locally.
-4. Pool registers its public key using project ID, sandbox ID, and the bootstrap token in the registration body; the control plane derives the pool ID from the sandbox assignment.
-5. Control plane validates the token for that assigned pool, stores the public key, and marks the bootstrap token used.
-6. Pool signs each pool-to-control-plane runtime request with its private key.
-7. Control plane validates the short-lived assertion against the stored public
-   key, project ID, pool ID, route pool ID, and pool revocation state.
+1. When a runtime provider creates a pool runtime, poolruntime mints a one-time
+   PoolBootstrapToken for that pool and the bootstrap metadata.
+2. The pool agent boots with the control plane URL, project ID, pool ID,
+   bootstrap token, and control-plane public key (DISCOBOX_CONTROL_PLANE_URL,
+   DISCOBOX_PROJECT_ID, DISCOBOX_POOL_ID, DISCOBOX_POOL_BOOTSTRAP_TOKEN,
+   DISCOBOX_CONTROL_PLANE_PUBLIC_KEY).
+3. The pool agent generates an Ed25519 keypair locally, or loads the one it
+   kept on durable pool storage.
+4. With a new key, the agent calls POST /api/pools/register with project ID,
+   pool ID, bootstrap token, and public key. With a key loaded from disk it
+   skips registration and authenticates directly.
+5. The control plane checks that the token hash belongs to that pool and is
+   unexpired, unused, and unrevoked, then records the public key and key type,
+   stamps the pool registered, and marks the token used.
+6. The pool agent signs each pool-to-control-plane runtime request with a
+   poolauth assertion (audience discobox-control-plane).
+7. PoolAuthenticator verifies the assertion against the stored public key and
+   key type, and requires the pool to be unrevoked and the claimed project ID
+   and pool ID to match the pool row and the route pool ID.
 ```
 
 Rules:
 
-- Bootstrap tokens are short-lived, one-time use, and stored only as hashes.
-- Runtime assertions use PASETO v4.public with Ed25519, a short TTL, and a
-  backwards `nbf` skew allowance for local VM clocks.
+- Bootstrap tokens expire after 30 minutes, are one-time use, and are stored
+  only as SHA-256 hashes. Spent tokens are purged periodically.
+- Runtime assertions use PASETO v4.public with Ed25519, a 5-minute TTL, and
+  `iat`/`nbf` backdated 5 minutes for local VM clocks.
 - Pool authorization should be scoped to assigned work and provider/sandbox
   scope.
 
 ## Pool-Agent Request Tokens
 
-Control-plane calls to a pool host agent use a separate server-owned issuer key.
-The public key is delivered to the pool host in bootstrap metadata as
-`DISCOBOX_CONTROL_PLANE_PUBLIC_KEY`; the private key remains on the control
-plane and is stored in `server_state` as encrypted-at-rest key material when a
-sealer is configured.
+Control-plane calls to a pool agent, and to the sandbox agents behind it, use a
+separate server-owned issuer key managed by `poolagentauth.Manager`. The public
+key is delivered to the pool host in bootstrap metadata as
+`DISCOBOX_CONTROL_PLANE_PUBLIC_KEY`, and the pool agent passes it on to the
+sandbox agents it runs. The private key remains on the control plane in
+`server_state` under `worker_agent_request_issuer`. It is sealed at rest when a
+sealer is configured and stored in plaintext otherwise.
 
-The workerpool layer mints short-lived PASETO v4.public bearer tokens when it
-builds pool-agent clients or reverse-proxy requests. Tokens are audience-bound
-to `pool-agent`, include `project_id`, `worker_id`, optional `sandbox_id`, and
-operation scopes, and backdate `nbf` to tolerate local VM clock skew. Driver
-HTTP leases should carry routing/connectivity only; they should not cache or
+`server/providers/poolruntime` mints short-lived PASETO v4.public bearer tokens
+through an auth token provider on each pool-agent client lease. Tokens are:
+
+- audience-bound to `pool-agent` (verified by `pool-agent/server`) or
+  `sandbox-agent` (verified by `sandbox-agent/server`; exec, terminal, and TCP
+  scopes need one);
+- carry `project_id`, `pool_id`, optional `sandbox_id`, and operation `scopes`;
+- valid for 15 minutes, with `iat`/`nbf` backdated 5 minutes for local VM
+  clock skew.
+
+The pool agent rejects tokens whose project and pool do not match its own
+identity and the route. A pool principal can also obtain `status:read`-only
+sandbox-agent tokens for sandboxes it hosts, through
+`MintSandboxAgentStatusTokens`.
+
+Driver HTTP leases (`transport.HTTPClientLease`) should carry
+routing/connectivity and a token provider only; they should not cache or
 persist pool-agent request tokens.
 
 ## Key Ownership
@@ -106,4 +156,5 @@ persist pool-agent request tokens.
 | Flow | Private key owner | Purpose |
 | --- | --- | --- |
 | Pool auth | Pool | Proves workload identity to the control plane. |
-| Sandbox auth | Control plane | Issues delegated sandbox access tokens. |
+| Sandbox auth | Control plane (`sandbox_access_issuer_keys`) | Issues delegated sandbox access tokens. |
+| Pool-agent requests | Control plane (`server_state`) | Signs control-plane requests to pool and sandbox agents. |

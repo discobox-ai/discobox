@@ -21,7 +21,7 @@ flowchart TD
     wsock --> wsvc["websockify@user.service :6081"]
     wsvc --> vsock["x11vnc.socket :5900"]
     vsock --> vnc["x11vnc@.service"]
-    dsvc -->|"xrandr"| xorg
+    dsvc -->|"xrandr"| xsock
     dsvc -->|"xfconf-query"| bus["discobox-desktop-bus.service<br/>session D-Bus"]
     vnc --> xorg["xvfb.service<br/>Xorg dummy on :0"]
     app(["any program on DISPLAY=:0"]) --> xsock["x11-display.socket"]
@@ -44,9 +44,9 @@ Two edges are the point of the arrangement:
   `After=` is kept only so the reverse case, where X came up first and pulled
   this service in as its companion, does not race.
 
-The service runs as the sandbox user, from the same drop-in, because the
-annotation record lives under that user's home and the agent that reads it back
-runs as the same user.
+The unit runs `discobox-sandbox-agent desktop` as the sandbox user, through a
+`User=` drop-in the same `boot` flow writes, because the annotation record lives
+under that user's home and the agent that reads it back runs as the same user.
 
 ## One session bus
 
@@ -65,7 +65,7 @@ its own stale socket.
 
 It is not exported into the sandbox's environment. A program a person starts
 from a terminal inside the desktop inherits it from the session; one started
-from a sandbox terminal gets no session bus, exactly as before, rather than an
+from a sandbox terminal gets no session bus, as in an image with no desktop, rather than an
 address that would be dead whenever nobody had opened the desktop.
 
 ## One port
@@ -73,6 +73,15 @@ address that would be dead whenever nobody had opened the desktop.
 The page, the noVNC client, the brand assets, the VNC websocket and the
 annotation API are all on 6900. `/websockify` is a reverse proxy onto the
 existing 6080 socket rather than a second connection the page opens itself.
+
+| Route | Does |
+| --- | --- |
+| `GET /api/session` | Limits, handoff prompt and record path; geometry only if X is already up. |
+| `POST /api/display` | CSS box in, framebuffer out (`Display.Resize`). |
+| `POST /api/scale` | Device scale; `auto` marks the viewer's detection (`Display.SetScale`). |
+| `GET` `POST /api/feedback`, `PATCH` `DELETE /api/feedback/{id}` | List, capture, edit or tick, delete a note. |
+| `GET /shots/{name}` | A note's pictures. |
+| `/websockify` | Reverse proxy onto 6080. |
 
 That is a deliberate cost — one more hop on the pixel path — bought for one
 property: **the desktop is one port to forward and one URL to open.** A page on
@@ -107,14 +116,14 @@ to delete a mode in use. A mode the server kept is found again by the existing
 `known` check, which re-attaches it instead of recreating it.
 
 **Scale** is an integer, decided once per session, and it is the desktop's
-HiDPI-ness. It drives three things that must agree:
+HiDPI-ness. It drives four things that must agree:
 
 | | set through | reaches |
 | --- | --- | --- |
 | framebuffer × scale | `xrandr` | the browser, which draws it back down onto physical pixels 1:1 |
-| `Xft/DPI` = 96 × scale | xfconf → xfsettingsd | Xft text, Chromium, Qt |
-| `GDK_SCALE` / `GDK_DPI_SCALE` / `XCURSOR_SIZE` | `scale.env` | GTK, at process start |
-| xfwm4 theme `Discobox-Nx` | xfconf | window decorations, live |
+| `Xft/DPI` = 96 × scale | `xrandr --dpi`, xfconf → xfsettingsd | Xft text, Chromium, Qt |
+| `GDK_SCALE` / `GDK_DPI_SCALE` / `QT_AUTO_SCREEN_SCALE_FACTOR` / `XCURSOR_SIZE` / `DISCOBOX_DESKTOP_SCALE` | `scale.env` | GTK, Qt, the cursor, Chromium's flags — at process start |
+| xfwm4 theme `Discobox` / `Discobox-Nx` | xfconf | window decorations, live |
 
 Integer only. A fractional scale is a fractional downscale in the browser —
 soft, which is the opposite of the point — and `GDK_SCALE` takes integers
@@ -128,7 +137,8 @@ committed with the file, not after the X work** — the two are one fact read by
 different consumers, the file becoming `GDK_SCALE` for the session while
 `d.scale` is what `Resize` multiplies the framebuffer by and what the DPI is
 asserted from, and a change whose X half times out against a cold display must
-not leave them disagreeing. That is the mixed-channel state REVIEW.md forbids:
+not leave them disagreeing. That is the mixed-channel state
+[`sandbox-agent/REVIEW.md`](../REVIEW.md) forbids:
 2× widgets around 1× text.
 
 `d.applied` is what waits for all of it, and it is the flag that makes a failure
@@ -149,31 +159,29 @@ times it said it.
 ### The viewer must not start the desktop
 
 `discobox-desktop.service` is socket-activated, so a TCP connection to 6900
-starts the *viewer*. That is correct — but for a while it also started
-everything else, because `settleScale` waited for X at startup (through a
-readiness loop since deleted) and `xrandr` connects to `/tmp/.X11-unix/X0`,
-which socket-activates the X server,
-and `xvfb.service` pulls the Xfce session up behind it.
-
-So anything that opened a connection to 6900 and went away — a health check, a
-port scan, a stray probe — brought up an X server, a window manager, a panel and
-a VNC server in a sandbox where nobody had asked to see a desktop. It was
-intermittent, which made it worse: some sandboxes came up cold and some did not.
+starts the *viewer*, and it must start nothing else. Any `xrandr` call connects
+to `/tmp/.X11-unix/X0`, which socket-activates the X server, and `xvfb.service`
+pulls the Xfce session up behind it — so a viewer that touched X while starting
+would let anything that opened a connection to 6900 and went away (a health
+check, a port scan, a stray probe) bring up an X server, a window manager, a
+panel and a VNC server in a sandbox where nobody had asked to see a desktop.
 
 **Nothing on the viewer's startup path may touch X.** The scale it needs at boot
 is a file, not a screen: `scale.env` records what the last run settled on, and
 `AdoptScale` writes it back without an X server anywhere in the call. Reading
 the display is behind `GeometryIfUp`, which answers "there is none" rather than
 conjuring one, so describing the desktop over `/api/session` starts nothing
-either. Three tests pin this against a display that does not exist.
+either. `TestSettlingTheScaleNeverTouchesTheDisplay`,
+`TestARememberedScaleIsAdoptedWithoutADisplay` and
+`TestTheSessionEndpointDoesNotStartADisplay` pin this against a display that
+does not exist.
 
 X starts when something genuinely needs pixels: a browser that has loaded the
 page asking for a size, the VNC socket being opened, or any program in the
 sandbox talking to `DISPLAY=:0`. That last one is the case the whole
-socket-activated stack exists for, and it is unchanged.
+socket-activated stack exists for.
 
-Verified in a live sandbox, resetting the units between each: a bare TCP connect
-to 6900, a `GET /` and a `GET /api/session` all leave `xvfb.service` and
+So a bare TCP connect to 6900, a `GET /` and a `GET /api/session` all leave `xvfb.service` and
 `xfce4-session@` inactive, while `POST /api/display` and a plain `DISPLAY=:0
 xrandr` each bring the whole desktop up.
 
@@ -186,13 +194,12 @@ for a desktop; the thing that must not start one is a connection that never
 became a page.
 
 **The X server must not delete its own activation socket.** `x11-display.socket`
-binds `/tmp/.X11-unix/X0`, and `xvfb.service` used to sweep that path in an
-`ExecStartPre` as stale state — unlinking the file systemd had already bound.
-The socket unit still reported itself listening, the first client through (the
-one whose connection started the server) still worked, and every later
-`DISPLAY=:0` got `Can't open display :0` until something restarted the socket
-unit. Xorg runs `-nolisten local` and never creates that path, so only
-`/tmp/.X0-lock` is its to clean up. `TestTheXServerDoesNotDeleteItsActivationSocket`
+binds `/tmp/.X11-unix/X0`; Xorg runs `-nolisten local` and never creates that
+path, so `xvfb.service`'s `ExecStartPre` cleans up only `/tmp/.X0-lock`.
+Sweeping the socket path as stale state would unlink the file systemd had
+already bound: the socket unit would still report itself listening and the
+first client through would still work, but every later `DISPLAY=:0` would get
+`Can't open display :0` until something restarted the socket unit. `TestTheXServerDoesNotDeleteItsActivationSocket`
 reads the units and pins it; `TestTheViewerDoesNotPullUpTheDisplay` pins the
 absence of a `Requires=` in the other direction.
 
@@ -201,7 +208,7 @@ absence of a `Requires=` in the other direction.
 `xfce4-session@.service` is ordered `After=discobox-desktop.service`, and the
 viewer is `Type=notify`, so the session cannot start until the viewer has
 written `scale.env` — which is what the session reads `GDK_SCALE` from. The
-handshake is now purely about that file. It costs nothing and waits for nothing,
+handshake is purely about that file. It costs nothing and waits for nothing,
 because the viewer signals ready as soon as the file is written.
 
 A sandbox whose first ever desktop is HiDPI starts its session at 1× and
@@ -222,8 +229,8 @@ The window decorations are the exception that proves the rule. xfwm4 draws from
 fixed-size pixmaps and its only built-in HiDPI accommodation is a hardcoded
 `Default-xhdpi` substitution that reaches no custom theme, so the image ships
 the art pre-scaled and `decorationTheme` picks the variant. That is a single
-live channel with no launch-time half — which is why decorations were the one
-thing that stayed correct while everything else was wrong.
+live channel with no launch-time half, so the decorations follow a scale change
+on the windows already open.
 
 ### Verified
 
@@ -249,6 +256,7 @@ format a repository's `.discobox/services` uses and read by the same code
 #---
 # id: ai.discobox.desktop
 # name: Desktop
+# description: The sandbox's graphical desktop, in a browser tab.
 # port: 6900
 # protocol: http
 # start: never
@@ -265,8 +273,9 @@ client matches on: the port arrives as `serviceId: ai.discobox.desktop` with
 `serviceName: Desktop`, so a client draws a Desktop link in its chrome instead
 of listing an HTTP port on 6900. Renaming the file must not change it, and the
 `ai.discobox.` namespace is reserved so a repository cannot declare it and take
-the link. `services.DesktopServiceID` is the constant inside the sandbox; the
-string itself is part of the API contract for clients outside it.
+the link. The constants are `sandboxservices.DesktopID` and
+`sandboxservices.IDPrefix` in the root module; the string itself is part of the
+API contract for clients outside the sandbox.
 
 The cost of declaring it in the image's filesystem rather than its manifest
 label is that the control plane cannot know a harness has a desktop until a
@@ -314,14 +323,14 @@ Two things Chromium needs beyond that, both in `/etc/chromium.d`, which Debian's
 launcher sources:
 
 - **`--force-device-scale-factor`.** Chromium derives a scale from `Xft/DPI`
-  *and* from `GDK_SCALE` and multiplies them, so a 2× desktop launched a 4×
-  browser. `GDK_DPI_SCALE` corrects the same double-count for GTK's text, but
+  *and* from `GDK_SCALE` and multiplies them, so a 2× desktop would launch a
+  4× browser. `GDK_DPI_SCALE` corrects the same double-count for GTK's text, but
   Chromium does not read it. Naming the scale outright stops the inference, and
   is why `scale.env` carries it as a plain number.
 - **`--no-sandbox`, but only when probed.** `chromium-sandbox` is a Recommends,
-  so `--no-install-recommends` left it out and Chromium refused to start at all.
-  It is installed now, and the flag is added only where `unshare --user --pid`
-  fails — a container's seccomp profile commonly refuses the namespace clone
+  which `--no-install-recommends` leaves out, and without it Chromium refuses
+  to start at all, so the Dockerfile names it. The flag is added only where
+  `unshare --user --pid` fails — a container's seccomp profile commonly refuses the namespace clone
   even to the setuid helper. Nothing is given up where the probe succeeds.
 
 ## The annotation record
@@ -331,8 +340,9 @@ shows up in `git status`, and on the home data volume, so notes survive a
 sandbox restart.
 
 ```
-feedback.md        one section per note, checkbox in the heading
-shots/df-0001.png  the marked region, cropped from the framebuffer
+feedback.md               one section per note, checkbox in the heading
+shots/df-0001.png         the marked region, cropped from the framebuffer
+shots/df-0001-screen.png  the whole desktop, the region outlined on it
 ```
 
 **The Markdown is the store, not a rendering of one.** There is no sidecar
@@ -378,14 +388,15 @@ Both are drawn by `web/capture.js`, which is a module of its own rather than
 part of `app.js` for one reason: it is the only code on the page that produces
 something durable, so it is the only code on the page worth testing directly.
 
-**How it is tested.** `capture_e2e_test.go` runs headless Chromium against the
+**How it is tested.** `TestTheCapturesABrowserDrawsAreTheBytesTheStoreKeeps`
+(`capture_e2e_test.go`) runs headless Chromium against the
 real server, imports `/capture.js` the way the page does, paints a framebuffer
 with a known pattern, and posts what the real functions return through the real
 `POST /api/feedback`. Go then decodes the PNG the store wrote and asserts
 pixels. Nothing is stubbed, so the drawing, the data-URL encoding, the handler's
 decode and the file on disk are all inside one test — which matters here because
-canvas drawing is unreachable from Go and jsdom has no canvas, so before this
-the pictures were the one part of the feature nobody had ever checked.
+canvas drawing is unreachable from Go and jsdom has no canvas, so no other test
+reaches the pictures.
 
 The assertions are about the properties that make the picture usable, not about
 an exact image: the region is left **exactly** as it was, everything outside it
@@ -412,13 +423,13 @@ literal character, and the parser undoes it on the way back.
 
 - **`#` is a heading**, and any heading that is not an item ends the item —
   otherwise prose an agent wrote under a heading of its own is read back as the
-  previous note's comment. A note reading `# TODO` truncated its own section and
-  orphaned every note after it, permanently, since the next write splices around
-  a section that now ends in the wrong place.
-- **`>` is a reply**, and prose after a reply belongs to it — so one pasted
-  blockquote, quoted email or diff context line moved the whole remainder of the
-  comment out of the comment, permanently from the first read, because the next
-  write re-emits it as a real reply.
+  previous note's comment. Unescaped, a note reading `# TODO` would truncate its
+  own section and orphan every note after it, permanently, since the next write
+  splices around a section that then ends in the wrong place.
+- **`>` is a reply**, and prose after a reply belongs to it — so, unescaped, one
+  pasted blockquote, quoted email or diff context line would move the whole
+  remainder of the comment out of the comment, permanently from the first read,
+  because the next write re-emits it as a real reply.
 
 The unescape happens in `splitReplies`, on the person's words only, and not while
 the body is collected: the `>` has to still be hidden when that switch reads the
@@ -430,19 +441,19 @@ nobody asked it to touch.
 Both rules are tested on the **untrimmed** line, and the header's reply example
 is shown at column 1 for the same reason. These are one contract with two sides:
 the reader decides what a reply is, and the header is the only place the agent
-writing one is told. When they drifted apart the failure was silent twice over —
-an indented reply landed in the person's comment, and `Update` then deleted it
-outright, since it replaces the comment wholesale and re-renders with no
-replies. `TestTheReplyFormatTheHeaderTeachesIsTheOneTheReaderAccepts` reads the
-example out of `header` itself, so the two cannot drift again.
+writing one is told. If they drift apart the failure is silent twice over — an
+indented reply lands in the person's comment, and `Update` then deletes it
+outright, since it replaces the comment wholesale.
+`TestTheReplyFormatTheHeaderTeachesIsTheOneTheReaderAccepts` reads the example
+out of `header` itself, so the two cannot drift.
 
 ### A note is a moment, not a place
 
-Saved notes are **not** drawn back onto the desktop. An earlier version placed
-each one's rectangle on the live framebuffer, which quietly claimed the note
-still applied there — and by then a window has been dragged, a page has
-scrolled, the resolution has changed, so the box pointed at whatever happened to
-be under those coordinates rather than at what the note was about.
+Saved notes are **not** drawn back onto the desktop. A rectangle placed on the
+live framebuffer would quietly claim the note still applied there — and by then
+a window has been dragged, a page has scrolled, the resolution has changed, so
+the box would point at whatever happened to be under those coordinates rather
+than at what the note was about.
 
 The screenshot is the record. Opening a note from the list opens a dialog
 showing that picture, the region it was cut from, and the framebuffer size it
@@ -476,8 +487,8 @@ The agent writes them by writing Markdown, which is its whole interface here —
 there is no endpoint for it. `splitReplies` divides a section's body at the
 first blockquote, so replies are never read as part of the person's own words,
 and `renderState` re-emits them, so the person rewording their note does not
-delete the answer to it. Before this they were absorbed and lost, which a test
-now pins.
+delete the answer to it; `TestAnAgentReplySurvivesThePersonEditingTheirNote`
+pins that.
 
 That is also why this record is **not** a `discobox-review` review, despite the
 obvious kinship. A review comment is located by `path:line` in a diff measured
@@ -494,9 +505,10 @@ absolute path. Nothing notifies the agent; a person does.
 
 | Path | Served from | Why not embedded |
 | --- | --- | --- |
-| `/` `/app.css` `/app.js` | `go:embed web` | Owned here, versioned with the code. |
+| `/` `/app.css` `/app.js` `/capture.js` | `go:embed web` | Owned here, versioned with the code. `TestEveryModuleThePageImportsIsServed` keeps the routes in step with `app.js`'s imports. |
 | `/novnc/` | `/usr/share/novnc` | Debian's `novnc` package, 1.7MB of ESM the page imports directly. |
 | `/brand/` | `/usr/local/share/discobox/brand` | The repository's `assets/brand`, which this nested module's `go:embed` cannot reach up to. A second copy would be a second thing to keep in step with Illustrator. |
+| `/shots/` | the annotation record's `shots/` | Written at run time, into the sandbox user's home. |
 
 ## The desktop inside the frame
 

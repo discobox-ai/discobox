@@ -2,8 +2,57 @@
 
 `resume` owns one logical exec attach across replaceable physical connections.
 It retains positioned client actions until the host acknowledges applying them,
-restores idempotent state after reconnect, emits connection and timing events
-separately from terminal bytes, and exposes an opt-in per-action profiling hook.
+restores resize and readiness state after reconnect, emits connection and timing
+events separately from terminal bytes, and exposes an opt-in per-action
+profiling hook. It holds both halves: the client `Conn` (an `execstream.Conn`
+decorator) and the host's `Server`/`Receiver`, which `execstream/host` uses.
+
+## Protocol
+
+The RSocket-resumption model: an opaque session token, monotonically
+increasing action positions, cumulative host acknowledgement after apply, and
+client retention of unacknowledged actions for retransmission.
+
+```mermaid
+sequenceDiagram
+    participant C as resume.Conn
+    participant H as execstream/host + resume.Server
+    C->>H: Session(firstAvailable = lastAck+1, token)
+    H-->>C: SessionOK(highest applied position)
+    loop each retained action
+        C->>H: Action(position, Input/Signal/CloseInput)
+        H-->>C: Ack(cumulative position), after the host applied it
+    end
+    C->>H: Resize (latest) and Ready, if set
+    Note over C,H: attach live, each new Action acked the same way
+```
+
+- Frame classes (`WriteFrame`):
+  - `Input`, `Signal`, `CloseInput` are actions: positioned, retained until
+    acknowledged, retransmitted on the next connection.
+  - `Resize` and `Ready` are unpositioned state: the latest resize is coalesced
+    and both are re-sent after every re-establishment.
+  - `Repaint` is unpositioned and not retained. A reconnect repaints on its own,
+    so a held repaint would land behind that one.
+- `Server.Accept` opens or resumes a session; `Receiver.Apply` applies each
+  position at most once, serialized per logical session, so a retransmit after
+  a lost `Ack` is deduplicated. The server keeps `MaxSessions` (64) session
+  positions per hosted process and evicts the least-recently-used inactive
+  one. Active sessions are never evicted.
+- `Options.MaxPendingBytes` (default `DefaultMaxPendingBytes`, 256 KiB) bounds
+  retained action bytes. `WriteFrame` blocks for space instead of dropping.
+- A write accepted with no usable connection still succeeds. The action stays
+  pending and a reconnect starts in the background.
+- Reconnect: `Options.Dial` opens a replacement; nil makes the stream
+  non-reconnecting, and a lost connection ends it. `Options.Done` is consulted
+  before every redial so an ended process stops the loop. Backoff starts at
+  100 ms and doubles to a 5 s cap. `Options.Event` receives
+  `ConnectionReconnecting`/`ConnectionReconnected`, never mixed into terminal
+  output.
+- `ErrRejected` (the host lacks the state to resume safely) and `ErrProtocol`
+  are terminal. Other establishment failures redial.
+- An attach that never sends `Session` stays a plain direct attach. Once a
+  session exists, the host rejects an unpositioned action frame.
 
 ## Timing Events
 
@@ -63,8 +112,8 @@ returns.
   acknowledged action and remaining client backlog.
 - RTT includes time disconnected and reconnecting when an action was accepted
   without a usable physical connection.
-- A successful acknowledgement currently has no `Err`; a terminal stream
-  failure is reported through normal stream and connection events.
+- An acknowledgement sample never sets `Err`; a terminal stream failure is
+  reported through normal stream and connection events.
 
 Defaults are a two-second heartbeat interval, a two-second heartbeat timeout,
 and a 250 ms slow threshold. They are defaults, not a UI policy. A consumer
@@ -103,9 +152,9 @@ a slow round-trip can be attributed to a layer instead of merely measured.
 - A diagnostic annotation point, not wire protocol. Frames, positions, and
   acknowledgement behavior are identical whether or not an observer is
   installed.
-- Callbacks run synchronously on the stream read or write goroutine and never
-  while the connection lock is held. The same promptness and no-reentry rules as
-  `TimingOptions.Observe` apply.
+- Callbacks run synchronously on the stream read, write, or reconnect path and
+  never while the connection lock is held. The same promptness and no-reentry
+  rules as `TimingOptions.Observe` apply.
 - Prefer this over a span per keystroke. `test/performance/terminal-latency`
   uses it to get exact monotonic phase timestamps with no exporter; an
   OpenTelemetry adapter can aggregate the same events into histograms without
@@ -159,4 +208,4 @@ or use action position, exec ID, or sandbox ID as unbounded metric labels.
 
 Timing probes are diagnostic only. A failed probe does not itself replace the
 physical connection; WebSocket keepalive and the resumable stream's ordinary
-read/write failures continue to own liveness and reconnect behavior.
+read/write failures own liveness and reconnect behavior.

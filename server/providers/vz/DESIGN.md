@@ -15,12 +15,14 @@ Everything is ordered off that:
 
 1. `guestimage` pulls the guest boot artifacts by digest and caches them.
 2. The VM boots and its Docker daemon comes up.
-3. The engine's development image build-mode builds the pool, sandbox-base, and
-   harness images on that daemon's BuildKit, from the local checkout.
-4. The engine starts the pool-agent container from the image it just built.
+3. The pool-agent image reaches that daemon. A release pulls its pinned image
+   from the registry; in development, build-mode (`DevelopmentImageSync`)
+   builds the base, pool-agent, sandbox-agent, and harness images on the
+   daemon's own BuildKit, from the local checkout.
+4. The engine starts the pool-agent container.
 
-The registry is load-bearing only for the first boot on a machine, and only
-until a locally built guest exists.
+For the guest, the registry is load-bearing only for a machine's first boot of
+each pinned digest, and not at all once a locally built guest exists.
 
 ## Process boundary
 
@@ -43,11 +45,12 @@ connections while a real guest churns VSOCK.
 compile and run on every platform. The bindings are built `darwin && cgo` —
 `Code-Hex/vz` is an entirely cgo package, so a darwin build with cgo off has no
 framework to call — and the stub covers `!darwin || !cgo`. Every stub entry
-point returns `ErrUnsupported` wrapped with which build it is: off macOS the
-framework does not exist, on macOS the binary was built `CGO_ENABLED=0`. That
-second build still registers the provider, since `platform_darwin.go` is
-selected by GOOS alone, so it fails at `NewDriver`'s `Supported` check — on
-first use, with the fix named, rather than at init or silently.
+point that can fail returns `ErrUnsupported` wrapped with which build it is
+(`Running` reports false, `Close` succeeds): off macOS the framework does not
+exist, on macOS the binary was built `CGO_ENABLED=0`. That second build still
+registers the provider, since `platform_darwin.go` is selected by GOOS alone,
+so it fails at `NewDriver`'s `Supported` check — on first use, with the fix
+named, rather than at init or silently.
 
 A VM is an in-process object, so **the VM dies with the server** — a property,
 not a policy. There is nothing to re-adopt after a restart. `StopVM` and
@@ -60,11 +63,11 @@ signed binary. `task sign` re-signs after every build and is wired into
 `build:server`, `release:binary`, and the watchnbuild dev loop. `go run` cannot
 start a server that runs pools.
 
-`discobox-server` is the only binary signed. The CLI ran the server in-process
-and needed the entitlement for it (ADR 0066 §5); it now runs the server as a
-separate program it downloads (ADR 0099), so the process that creates the VM is
-the server again. A staged server is copied byte for byte from the release
-asset, and the signature lives inside the Mach-O, so it survives the download.
+`discobox-server` is the only binary signed (`vz.entitlements`). The CLI runs
+the server as a separate program it downloads (ADR 0099), so the server is the
+process that creates the VM. The signature lives inside the Mach-O and the
+release digest is taken after signing, so a staged server — verified against
+that digest — arrives signed.
 
 ## Transport boundary
 
@@ -133,9 +136,10 @@ costs a source push rather than a pool.
 
 ## Clock
 
-The guest steps its clock to the host's every 30s, reading
-`/sys/class/rtc/rtc0/since_epoch` — Virtualization.framework's PL031 RTC is the
-host's clock, live, so this needs no NTP server and no network.
+The guest steps its clock to the host's every 30s (`vm-image`'s
+`discobox-timesync.timer`), reading `/sys/class/rtc/rtc0/since_epoch` —
+Virtualization.framework's PL031 RTC is the host's clock, live, so this needs
+no NTP server and no network.
 
 It is not optional bookkeeping. Linux reads the RTC once at boot, and nothing
 tells the guest that the Mac suspended, so a laptop that sleeps wakes a guest
@@ -148,22 +152,24 @@ directions at once.
 
 Two mechanics are load-bearing. `hwclock --hctosys` cannot do this: it waits for
 an RTC update interrupt that PL031 never raises, times out, and exits without
-setting anything. And the step is unconditional — NTP daemons refuse a large
-offset without operator intervention, which is precisely backwards here, since
-the offset is large exactly because the Mac slept.
+setting anything. And the step has no upper bound — it skips only drift of 2s
+or less, as jitter — because NTP daemons refuse a large offset without operator
+intervention, which is precisely backwards here, since the offset is large
+exactly because the Mac slept.
 
 ## Guest artifact boundary
 
 Three artifacts, resolved by `server/providers/guestimage`: an uncompressed
-kernel (`vmlinux`), an initrd (`initrd.img`), and a read-only raw ext4 root
-(`root.ext4`). Disks are attached in a fixed order the guest depends on — root,
-data, cache become `/dev/vda`, `/dev/vdb`, `/dev/vdc`.
+kernel (`vmlinux`), an initrd (`initrd.img`, declared optional so a guest with
+virtio built in still boots), and a read-only raw ext4 root (`root.ext4`).
+Disks are attached in a fixed order the guest depends on — root, data, cache
+become `/dev/vda`, `/dev/vdb`, `/dev/vdc`.
 
 Sizing comes from the host, not from constants: every vCPU, half the memory
 (`vzvm.DefaultHostResources`, clamped to the range Virtualization.framework
-reports), and a 100 GiB data disk. None of it is a reservation — vCPUs are
-shared with macOS by the scheduler, the guest has a memory balloon, and both
-disks are sparse, costing only what the guest writes.
+reports), a 100 GiB data disk, and a 32 GiB cache disk. None of it is a
+reservation — vCPUs are shared with macOS by the scheduler, the guest has a
+memory balloon, and both disks are sparse, costing only what the guest writes.
 
 Disk sizes are therefore ceilings a pool can be given more of. `ensureDisks`
 grows an existing image when the configured size is raised and never shrinks
@@ -172,6 +178,13 @@ one, and the guest runs `resize2fs` on each mount so the filesystem follows.
 The root is shared read-only by every pool on the host. Each pool owns
 `data.raw` and `cache.raw`, created sparse and formatted by the guest on first
 boot. Only raw images exist here: Virtualization.framework has no QCOW2 path.
+
+Everything lives under the XDG data home (`~/Library/Application
+Support/discobox/vz`): `guest/` caches one directory per pulled digest,
+`guest/local/` is where a local guest build lands (`guestImageLocalDir`), and
+`pools/<poolID>/` holds `data.raw`, `cache.raw`, and `console.log`.
+`guestImageDir` bypasses resolution and boots a directory as-is, failing rather
+than falling back.
 
 The guest itself is not vz's. `vm-image/` builds one image for every VM
 backend, and `vz` boots its `linux/arm64` variant while libkrun boots the
@@ -184,14 +197,27 @@ Virtualization.framework's NAT attachment does.
 What is vz's is which artifacts it asks the resolver for and how it attaches
 them, above.
 
+## Progress and pool logs
+
+`EnsureVM` resolves the guest outside the driver lock and reports
+`PoolPhaseFetchingVMImage` — once up front, then restated with byte counts while
+a pull moves bytes, never held. `PoolLogs` tails `console.log`, the serial
+console the VM appends to across every boot, so a guest that never reached
+Docker still leaves a record. The rules shared with other drivers are in
+[`../DESIGN.md`](../DESIGN.md).
+
 ## Guest build loop
 
 A Mac has no Docker daemon, so the only builder that can produce a guest image
 is the one inside a pool VM — a VM booted from the guest image being replaced.
-`BuildGuestImage` closes that loop (ADR 0062 §7): the running guest builds its
-successor on its own BuildKit, the artifacts come back over the same Docker
-transport as a `local` export, and they land in `GuestImageLocalDir`, which the
-resolver already prefers over the published image.
+The engine's `BuildGuestImage` closes that loop (ADR 0062 §7) from the driver's
+`GuestImageBuildSpec` — `vm-image/Dockerfile`, `linux/<host GOARCH>`, and the
+resolver's local directory: the running guest builds its successor on its own
+BuildKit, the artifacts come back over the same Docker transport as a `local`
+export, and they land in `GuestImageLocalDir`, which the resolver already
+prefers over the published image. An instance configured with `guestImageDir`
+has no local directory to adopt into, so it reports
+`ErrGuestImageBuildUnsupported`.
 
 Three things make it work rather than merely run:
 
@@ -209,9 +235,11 @@ Three things make it work rather than merely run:
   this. Without it the server keeps booting the guest it resolved first for as
   long as it runs, and the build appears to have done nothing.
 
-A running VM keeps the artifacts it started with, so adopting a new guest is a
-pool recreate. That is deliberately not automatic: it stops every sandbox on the
-pool.
+A running VM keeps the artifacts it started with, so adopting a new guest means
+restarting the pool's host. `discobox admin pool build-guest --restart` does it
+once the build lands: the engine calls `StopVM`, the disks survive, and the
+pool's reconcile boots the new guest. It is opt-in because it stops everything
+running on the pool.
 
 ## Release boundary
 
@@ -239,12 +267,13 @@ versioning safe; a change to it is a coordinated release.
 In development neither line is what runs: `task build:vm-guest` (or
 `discobox admin pool build-guest`, on a Mac with no daemon) builds the guest
 from the checkout and the local build wins over both. That is the intended way
-to work on `vm-image/` — and the way to adopt a guest-side change, such as the
-`/Users` mount point, without cutting a release for it.
+to work on `vm-image/`, and to run a guest-side change without cutting a release
+for it.
 
 The share is the one place that ordering is not symmetric. A guest whose host
 attaches nothing comes up with an empty `/Users` (`nofail`), but a server that
 declares the host mount against a guest with no `/Users` at all cannot start a
-pool container: Docker will not bind a source the daemon does not have. So the
-guest ships first — a `vm/v*` tag and a re-pinned `DefaultGuestImage` — and the
-provider's host mount lands with or after it.
+pool container: Docker will not bind a source the daemon does not have. So a
+change to a share ships guest first — a `vm/v*` tag and a re-pinned
+`guestimage.DefaultVMImage` — and the provider's host mount lands with or after
+it.

@@ -6,7 +6,7 @@ Docker behavior, while this package owns one local libkrun microVM per pool.
 
 ## The invariant
 
-A Linux machine needs `discobox-server`, KVM, and two things the launcher
+A linux/amd64 machine needs `discobox-server`, KVM, and two things the launcher
 reaches at run time: `passt` on `PATH`, and `libkrun.so.1` somewhere the dynamic
 loader looks. Nothing else, including for guest artifacts: the root filesystem
 and the kernel are pulled by digest from a registry, and no image is built on
@@ -22,11 +22,15 @@ provider's `libkrunPath` or puts it on the loader's path itself.
 Everything is ordered off that:
 
 1. `guestimage` pulls `root.ext4` from the shared guest image and `vmlinux` from
-   the kernel image, and caches both by digest.
+   the kernel image, and caches both by digest. The pool reports this as
+   `sandbox.PoolPhaseFetchingVMImage`, with byte counts.
 2. The launcher child boots the VM and its Docker daemon comes up.
-3. The engine's development image build-mode builds the pool, sandbox-base, and
-   harness images on that daemon's BuildKit, from the local checkout.
-4. The engine starts the pool-agent container from the image it just built.
+3. With development image sync on, the engine converges the watcher's pool,
+   sandbox-base, and harness images onto that daemon — copied from the host
+   daemon (copy-mode, the Linux default) or built on the guest daemon's
+   BuildKit from the local checkout (build-mode). See
+   [Development Image Convergence](../DESIGN.md#development-image-convergence).
+4. The engine starts the pool-agent container.
 
 ## Process boundary
 
@@ -47,6 +51,17 @@ surface — the manifest, the KVM check, passt, and the purego bindings — isol
 exactly as `vz/internal/vzvm` is, so the driver, its configuration, and its
 tests compile and run on every platform.
 
+The two halves meet at a manifest file, `config.json` in the pool's runtime
+directory, versioned by `krunvm.ConfigVersion` and validated on both sides.
+Before starting a launcher the driver deletes the sockets the VM owns
+(`Config.OwnedSockets`); their reappearance is the readiness signal, and a
+launcher that exits first fails `EnsureVM` with the tail of `launcher.log`.
+
+`krunvm.Supported` is a platform gate only: the provider is registered
+everywhere, `NewDriver` refuses off linux/amd64 with `krunvm.ErrUnsupported`,
+and `/dev/kvm` is checked by the launcher immediately before boot, never at
+configuration time.
+
 **The VM dies with the server.** Two mechanisms, both needed:
 `PR_SET_PDEATHSIG` is armed by the kernel and survives anything the server does
 afterwards, including being `SIGKILL`ed, but cannot cover the window between
@@ -56,9 +71,12 @@ VM outlives its server. There is no runtime lock, no recorded process identity,
 and no re-adoption — the lifetime rule `vz` and `wslc` get for free by keeping
 the VM in the server process.
 
-`StopVM` requests an orderly poweroff and preserves `data.raw` and `cache.raw`
-for repair. `DeleteVM` is reserved for an authorized pool deletion and removes
-them.
+`StopVM` requests an orderly poweroff over the lifecycle socket, escalating to
+`SIGTERM` and then `SIGKILL`, and preserves `data.raw` and `cache.raw` for
+repair. `InspectVM` reports a pool with no running VM but a data disk as
+stopped, so the engine replaces the VM in place and keeps its disks. `DeleteVM`
+is reserved for an authorized pool deletion and removes the disks and the
+runtime directory.
 
 ## Transport boundary
 
@@ -102,8 +120,7 @@ Two images, resolved by `server/providers/guestimage`:
   guest image's own kernel and initrd are never asked for.
 
 Disks are attached in a fixed order the guest depends on — root, data, cache
-become `/dev/vda`, `/dev/vdb`, `/dev/vdc` — and all three are raw. Nothing here
-reads QCOW2 any more.
+become `/dev/vda`, `/dev/vdb`, `/dev/vdc` — and all three are raw.
 
 Sizing comes from the host: every vCPU and half the memory
 (`krunvm.DefaultHostResources`), a 100 GiB data disk, a 32 GiB cache disk. None
@@ -113,18 +130,18 @@ existing image when the configured size is raised and never shrinks one, the
 guest formats each disk on first boot, and runs `resize2fs` on every mount so
 the filesystem follows. No `mkfs.ext4` runs on the host.
 
-Both pins are ahead of their publishes. `discobox-vm` has only ever been cut for
-arm64, so resolving it on amd64 fails saying exactly that — `guestimage` checks
-the image's declared architecture, because a single-architecture manifest is
-returned whatever platform was asked for — and `discobox-vm-kernel` has not been
-cut at all. Until a `vm/v*` release carries both architectures and a
-`vm-kernel/v*` release exists, a machine runs `task build:vm-guest` and
-`task build:vm-kernel`, whose output the resolver prefers over anything
-published. That is the ordinary ordering for a separately released guest: the
-artifact ships first, then the pin moves.
+Both are pinned by digest — `guestimage.DefaultVMImage` from the `vm/v*` line,
+`DefaultKernelImage` from `vm-kernel/v*` — and `guestimage` checks the image's
+declared architecture, because a single-architecture manifest is returned
+whatever platform was asked for. A complete local build from
+`task build:vm-guest` or `task build:vm-kernel` lands in the `local/` directory
+the resolver prefers over the published image, and a resolve failure names the
+task that answers it. `guestImageDir` and `kernelImageDir` instead assert a
+directory and fail when it is incomplete.
 
-`GuestImageBuildSpec` builds the guest image on the pool's own Docker and
-exports it back, the same loop macOS needs (ADR 0062 §7). It is not
+`GuestImageBuildSpec` builds the guest image (`vm-image/Dockerfile`,
+`linux/amd64`) on the pool's own Docker and exports it into the guest
+resolver's `local/` directory, the same loop macOS needs (ADR 0062 §7). It is not
 macOS-specific: it answers on a pool whose agent never started, which is the
 pool a broken guest image produces. The kernel is not buildable this way — it
 has its own image and its own clock.
@@ -135,20 +152,23 @@ has its own image and its own clock.
 | --- | --- |
 | `<stateDir>/<poolID>/{data,cache}.raw` | the pool's durable and disposable disks |
 | `<default stateDir>/.images/{guest,kernel}/` | pulled images, one directory per digest, and `local/` for a local build |
-| `<runtimeDir>/<poolID>/` | sockets, the manifest, `console.log`, `launcher.log`, `passt.log` |
+| `<runtimeDir>/<poolID>/` | `passt.sock` and the host-listening VSOCK sockets, the manifest `config.json`, `console.log`, `launcher.log`, `passt.log` |
 
-`stateDir` defaults under `XDG_DATA_HOME` and keeps using a pre-rename
-`local-vm` directory when one exists, so disks created under the old provider
-name are still found.
+`stateDir` defaults under `XDG_DATA_HOME` and `runtimeDir` under
+`XDG_RUNTIME_DIR`; each keeps using a pre-rename `local-vm` directory when one
+exists, so disks created under the old provider name are still found.
 
 The image cache follows neither that fallback nor a configured `stateDir`: it is
 always under the default directory, because `task build:vm-guest` has to write
 where the resolver reads and a task cannot know one provider instance's
-configuration. Configure `imageCacheDir` to move it. The leading dot is what
+configuration. Configure `imageCacheDir` to move the digest cache; the `local/`
+build directories move separately, with `guestImageLocalDir` and
+`kernelImageLocalDir`. The leading dot is what
 keeps `.images` from colliding with a pool in the default layout — a pool ID
 must start with a letter or a digit, so no pool can take that name — and where
 `stateDir` is configured elsewhere the two are not in the same directory at all.
 
 `runtimeDir` is expected to be tmpfs. Nothing under it outlives a reboot and
 nothing under it needs to; the console log survives the VM, which is the point,
-because the boot worth reading is the one that did not finish.
+because the boot worth reading is the one that did not finish. `PoolLogs`
+tails it.

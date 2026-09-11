@@ -16,25 +16,31 @@ flowchart LR
     reconciler --> providers
     reconciler --> auth[internal/auth/sandbox]
     agent[pool agent] -->|"observed state"| service
+    hc[resources/harnessconfigs] -->|"image digest moved"| service
 ```
 
 - `Service` exposes sandbox API use cases and may call store directly for simple
   reads or non-orchestrated updates.
-- Every sandbox carries a harness config (ADR 0025). Resolution at create is
-  one chain that always terminates: explicit `--harness` → the project default
-  → the reserved `shell` built-in, which is also where a deleted default lands.
-  There is no second image path: a sandbox's image is its harness config's.
-- Sandboxes created before that rule converge by *upgrade*, not by migration.
-  One with no harness config reports `available` regardless of its digest —
-  what the upgrade changes for it is adopting the config — and taking the
-  upgrade writes the config as well as re-pinning the image. Until it does, it
-  says so in its own listing.
+- Every sandbox carries a harness config (ADR 0032, as amended by ADR 0048).
+  `resolveHarnessConfigID` resolves it at create: an explicit
+  `harnessConfigId`, or a `--harness` name (slug first, then display name) →
+  the project default → 409. A deleted default counts as no default. A
+  sandbox's image is its harness config's pinned `Image`/`ImageDigest`; the
+  server default image (`SetDefaultSandboxImage`) applies only when no harness
+  image does, which means config mode without a caller image, or a config that
+  declares none.
+- Sandboxes that have no harness config converge by *upgrade*, not by
+  migration. The target comes from the reserved `shell` built-in
+  (`fallbackHarnessConfig`). Such a sandbox reports `available` regardless of
+  its digest, because what the upgrade changes for it is adopting the config.
+  Taking the upgrade writes the config as well as re-pinning the image, and
+  until it does, the sandbox says so in its own listing.
 - The upgrade rule has exactly one implementation,
-  `services.SandboxUpgradeTarget`, called both by the read path that reports an
-  available upgrade and by `Service.currentImageRepin`, which resolves the
-  change `UpgradeSandbox`, `RepairSandbox`, and
-  `UpgradeHarnessConfigSandboxes` apply. They were separate implementations and
-  drifted: a sandbox could accept an upgrade the listing said it did not have.
+  `services.SandboxUpgradeTarget`. Two callers use it: the read path that
+  reports an available upgrade, and `Service.currentImageRepin`, which resolves
+  the change that `UpgradeSandbox`, `RepairSandbox`, and
+  `UpgradeHarnessConfigSandboxes` apply. Sharing it means a sandbox cannot
+  accept an upgrade its listing says it does not have.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
   label: `discobox admin ssh-config` emits it as an `ssh_config` `Host` alias, and
@@ -52,9 +58,10 @@ flowchart LR
 ## Power is not orchestrated
 
 `start`, `stop`, and `restart` are instructions forwarded to the pool agent
-(`power.go`). They write no lifecycle state and bump no generation, and their
-responses carry no state — a caller learns the outcome by re-reading the sandbox
-once the agent's report has landed. `DesiredState` answers existence only: `present`,
+(`power.go`). They write no lifecycle state and bump no generation. Their
+responses carry the sandbox as it read *before* the instruction took effect, so
+a caller learns the outcome by re-reading the sandbox once the agent's report
+has landed. `DesiredState` answers existence only: `present`,
 `archived`, or `deleted`. Start, stop, and restart are refused with 409 on an
 archived sandbox — it has no container to power.
 
@@ -69,7 +76,7 @@ It waits for a sandbox that is still being provisioned instead of refusing it,
 which is what lets a client create a sandbox and attach to it in the next call
 rather than polling for readiness (ADR 0039 tier 1).
 
-- The wait polls, because what it waits on is a row (ADR 0083). Every pass
+- The wait polls, because what it waits on is a row (ADR 0081). Every pass
   re-reads authoritative state and asks again, so the transition that opens the
   gate has no window to land in unseen.
 - Its stall budget is restarted by `provisioningMark`: the gate (the sandbox's
@@ -146,7 +153,7 @@ drives the reconcile inline so the caller gets the verdict; unlike everything
 else here, a clean converge is followed by the same start instruction an
 explicit start sends — still an instruction, never stored intent.
 
-That same intent carries the re-pin an upgrade would (ADR 0062): repair always
+That same intent carries the re-pin an upgrade would (ADR 0064): repair always
 rebuilds on the harness config's current image. `currentImageRepin` is the one
 resolver both operations write through, so they cannot pin differently, and
 `imageRepin.apply` is what each hands `recordSandboxIntent`. The two differ only
@@ -155,7 +162,7 @@ it was asked for; repair proceeds on the pin it has, because the re-pin is a
 rider on a rebuild that is happening anyway.
 
 `UpgradeHarnessConfigSandboxes` is the automatic author of that same upgrade
-(ADR 0083). `resources/harnessconfigs` calls it wherever a harness config's
+(ADR 0082). `resources/harnessconfigs` calls it wherever a harness config's
 `ImageDigest` moves, and it re-pins the config's sandboxes that are converged at
 `ready`, observed `stopped`, unerrored, and present — the eligibility query is
 `Store.ListStoppedSandboxesForHarnessConfig`, and whether each is actually
@@ -176,8 +183,10 @@ a project out; empty means the server default, which is `automatic`.
 
 Retention: an archived sandbox is purged once it has been archived longer than
 `Project.ArchiveRetentionSeconds`. A project that has not set one follows the
-server-wide default — `DISCOBOX_ARCHIVE_RETENTION`, else `DefaultArchiveRetention`
-(24h) — as it changes, rather than being frozen to whatever it was at creation.
+server-wide default as it changes, rather than being frozen to whatever it was
+at creation. That default is the server config's `archiveRetention`
+(`DISCOBOX_ARCHIVE_RETENTION` takes precedence), else `DefaultArchiveRetention`
+(24h), and it reaches the reconciler through `WithArchiveRetention`.
 `task dev` sets that variable to 15m, because a development tree costs as much
 disk as a production one and is discarded many times a day; the setting is a
 default and not a ceiling, so a project that chose its own keeps it. The
@@ -223,11 +232,12 @@ nothing about power; empty `RuntimeState` means no agent has reported yet,
 which is not `stopped`.
 
 The rule is enforced in the store, not by convention: `Store.UpdateSandbox`
-omits `observedSandboxColumns` (the runtime state, its anchor, and the report
-watermark) from every write. Without that, any caller that loads a sandbox,
-performs a slow operation, and saves it back replays a stale observation — the
-reconciler did exactly that across a ~5s `provider.Create`, pushing a sandbox
-observed `running` back to `pending` until the next 60s complete sync.
+omits `observedSandboxColumns` from every write. Those are the runtime state,
+its anchor, the report watermark, provisioning progress, and resource
+accounting. Without that rule, any caller that loads a sandbox, performs a slow
+operation, and saves it back replays a stale observation. A reconcile saving
+across a slow `provider.Create`, for example, would push a sandbox observed
+`running` back to its pre-create value until the next 60s complete sync.
 
 Two consequences worth stating:
 
@@ -271,7 +281,9 @@ source-code references get independent identities from their own roots. An
 incomplete host/source identity opts out rather than sharing under an ambiguous
 key. The pool runtime uses the key only to select durable pool-local storage and
 exposes that storage inside a sandbox by source slug; no control-plane or
-runtime component interprets its contents.
+runtime component interprets its contents. The keys are folded into the
+create's spec fingerprint (`sourceDataFingerprint`), so a container built
+without those mounts is rebuilt.
 
 A sandbox's source reaches it one of two ways, stated on `GitSource.Delivery`
 and decided by the server. Delivery is never inferred from which source fields
@@ -281,12 +293,16 @@ are set: a source with nothing to clone from is a malformed request and fails.
   local directory bind-mounted into the pool host.
 - `push` — the client pushes the source into the sandbox's own Git repository.
 
-`sourceNeedsPush` requires **both** that the provider instance exposes the
-source's path to its sandboxes (the directory lies under one of
-`ProviderDefinition.LocalSourceRoots`) and that the client is on this machine
-(`Origin.HostID` equals the server's, via `internal/hostid`). Neither implies
-the other — a Docker provider on a remote server binds fine, just not to the
-caller's files. Unknowns resolve to `push`: a needless push is slow, a bind of
+A remote URL always clones. A local directory clones only when **both** of these
+hold, and `sourceNeedsPush` answers `push` otherwise:
+
+- the provider instance exposes the source's path to its sandboxes (the
+  directory lies under one of `ProviderDefinition.LocalSourceRoots`);
+- the client is on this machine (`Origin.HostID` equals the server's, via
+  `internal/hostid`).
+
+Neither implies the other — a Docker provider on a remote server binds fine,
+just not to the caller's files. Unknowns resolve to `push`: a needless push is slow, a bind of
 an unreachable path fails.
 
 Reachability is a property of the path, not of the provider. A Docker instance
@@ -332,20 +348,21 @@ sequenceDiagram
     C->>S: create (origin, checkout.commit)
     S->>S: delivery = push
     S->>W: create (no url/localDirectory)
-    W->>W: git init -b <branch>
+    W->>W: git init --bare origin repository
     S->>S: state = awaiting_source
     loop every push-delivered source
         C->>S: git push <commit>:refs/heads/<branch> (+ snapshot ref)
         S->>W: proxied git-receive-pack
     end
     C->>S: complete-source-push (confirms every source's commit)
-    S->>W: create again → materialize → checkout + restore
+    S->>W: create again → origin HEAD → clone → checkout + restore
     W->>W: start harness
 ```
 
-The push transport is the pre-existing sandbox Git proxy
+The push transport is the sandbox Git proxy
 (`internal/server/sandbox_git_proxy.go` → `pool-agent/githttp`); delivery adds
-no transport. Each source has its own repository there, addressed by its slug.
+no transport of its own. Each source has its own repository there, addressed by
+its slug.
 The commit is fixed at create in `Checkout.Commit`; `complete-source-push` only
 confirms it, and a mismatch is refused.
 
@@ -358,8 +375,9 @@ or a commit that is not the one the source names all leave the sandbox parked.
 `SourceDeliveredAt` therefore stays one timestamp: it records that the client
 finished delivering, which is the only moment the sandbox can act on.
 
-Waiting is bounded: `StateChangedAt` anchors the deadline and the reconcile
-returns it as `reconcile.Result.RequeueAt`, which wakes the sandbox to fail it.
+Waiting is bounded (`sourcePushTimeout`, 30m): `StateChangedAt` anchors the
+deadline and the reconcile returns it as `reconcile.Result.RequeueAt`, which
+wakes the sandbox to fail it.
 The anchor is stamped only on a real state change, so neither a reconcile that
 re-parks nor a repeated runtime report can push the deadline out.
 
@@ -406,3 +424,8 @@ nothing re-pushes the primary harness's sentinels to a running sandbox. For the
 same reason the reconciler fails the reconcile when it cannot read the
 assignments or the harness config, rather than degrading to a secretless
 launch.
+
+`ensure` also rebinds the sandbox's assignments to its harness config's current
+bindings (`rebindSandboxSecretRows`) before building the create options. That
+catches a binding change the live fan-out (`RebindHarnessConfigSecrets`) missed
+while the sandbox was down.

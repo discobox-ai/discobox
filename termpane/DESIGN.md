@@ -27,7 +27,7 @@ flowchart LR
     S -->|output bytes| R["reader goroutine"]
     R -->|outputMsg| M
     M -->|Write| E["vt.Emulator"]
-    E -->|Render| Host
+    E -->|Render| M
     M -->|SendKey/SendText/Paste| E
     E -->|input side| D["drain goroutine"]
     D -->|backlog| W["writer goroutine"]
@@ -42,8 +42,7 @@ That is not indirection for its own sake: the emulator encodes keys the way the
 application has asked for them (cursor-key mode, keypad mode, alt prefixing),
 and it answers the queries applications make about the terminal they are running
 in. Those replies are input like any other. An emulator whose replies are never
-collected fills its buffer and wedges on the first query — which is exactly the
-deadlock this codebase hit before.
+collected fills its buffer and wedges on the first query.
 
 **Printable text is sent as text, not as a key.** The emulator's key encoder
 works from the unshifted code, so an uppercase `A` routed as a key arrives as
@@ -69,10 +68,10 @@ still fall through to the emulator and keep the prefix.
 
 **The encoder decides nothing** (`keys.go`). It answers the protocol the
 application negotiated and stops there. Below Kitty and modifyOtherKeys no
-protocol encodes a modified Enter at all, so a modified Enter is a plain
-return — accurate, and a submission in any prompt it is pressed at. The encoder
-does not invent a sequence to fix that, because inventing one is a decision, and
-decisions here are the host's.
+protocol encodes a modified Enter at all, so a Shift- or Ctrl-Enter is a plain
+return (Alt-Enter keeps its escape prefix) — accurate, and a submission in any
+prompt it is pressed at. The encoder does not invent a sequence to fix that,
+because inventing one is a decision, and decisions here are the host's.
 
 **The keymap is where a decision goes** (`WithKeys`). A key name, as
 `tea.KeyPressMsg.String` spells it, sent as the bytes the host names. This is
@@ -156,8 +155,9 @@ forwarding the byte, and only then is the emulator closed. See `stopForwarder`.
 
 **A read-only pane also supplies the line discipline** (`WithReadOnly`). The
 option is for a far end with no input side to reach — a process on pipes rather
-than a PTY — so it drops keys, text and pastes, and stops sending resizes:
-there is no terminal there whose size could be wrong.
+than a PTY — so it drops keys, text and pastes, and sends neither resizes nor
+repaints: there is no terminal there whose size could be wrong. The emulator's
+own query replies still go out; they are not input in this sense.
 
 Being on pipes has a second consequence that is easy to miss. A pipe has no
 line discipline, so nothing has turned the program's `\n` into `\r\n`, and a
@@ -190,12 +190,15 @@ below the wrap and desyncs the hardware cursor from the screen the application
 believes it is drawing on — which is why the host is given rows rather than a
 rendered block.
 
-**Chrome state is exposed, not acted on.** Title, alt-screen, cursor visibility
-and shape, and a bell count come from the emulator's callbacks and are readable
-by the host. The callbacks run on whichever goroutine is feeding the emulator,
-so everything they touch is behind a mutex; the bell is a count rather than a
-callback so a host can notice one without being interrupted on someone else's
-goroutine.
+**Chrome state is exposed, not acted on.** Title, alt-screen, cursor visibility,
+shape, blink and colour (through `Cursor`), and a bell count come from the
+emulator's callbacks and are readable by the host; the title is cleared on each
+attach, since it belongs to the stream. The callbacks run on whichever
+goroutine is feeding the emulator, so everything they touch is behind a mutex;
+the bell is a count rather than a callback so a host can notice one without
+being interrupted on someone else's goroutine. `OutputSeq` counts the batches
+of output drawn — not how much — so a host can tell whether a pane it is not
+showing has moved on.
 
 **The reserved keys are optional and the policy is the host's.** `WithPrefix`
 implements the screen/tmux escape hatch, with the detach key promoted to a press
@@ -204,7 +207,8 @@ key to the application; prefix then anything else sends both, so a mistyped
 prefix costs nothing. Promoting detach is what lets a host reserve a key the
 application also wants — Ctrl-C being the obvious one — while leaving a way to
 type it. What *happens* on detach is the host's decision; the pane keeps
-running.
+running. `WithPrefixBinding` reserves further keys behind the prefix, each
+emitting a host message instead of reaching the application.
 
 **A repaint is a question for the far end, not a redraw here** (`Model.Repaint`,
 `Stream.Repaint`). Nothing local fixes a pane whose screen is wrong: the
@@ -231,7 +235,10 @@ mirrors it into its own mouse reporting, so the user only loses native
 selection while something is actually using the mouse. `SendMouse` takes
 coordinates relative to the grid — the same origin as `Cursor` — and drops
 anything outside it; the emulator drops anything the application never asked
-for, so forwarding can be unconditional.
+for, so forwarding can be unconditional. Reading modes off the stream also means
+it makes no difference whether a mode arrived from the application just now or
+from a reattach snapshot replaying what it set before this client existed. They
+are the same bytes.
 
 `HandleMouse` is the router over that (`select.go`): while the application has
 the mouse and the host has not called `SetSeized(true)`, every event forwards
@@ -244,7 +251,8 @@ be answerable from the chrome. The wheel goes to whoever can actually scroll: an
 application with the mouse is forwarded the event; one without it on the
 alternate screen is sent arrow keys — xterm's alternate-scroll bargain, and
 the only scrolling a pager understands, there being no scrollback there to
-offer — and everything else scrolls the pane's own scrollback. The right
+offer — and everything else scrolls the pane's own scrollback, three lines a
+tick unless `WithWheelLines` says otherwise. The right
 button copies a showing selection, below. A host with a
 different wheel policy keeps those events instead of delegating them.
 
@@ -261,7 +269,8 @@ it, so a link the application made itself lands where it meant. And plain text
 that looks like a URL is linked when — and only when — the function moves it:
 the terminal drawing the pane does its own URL detection, so linking everything
 would take a working link away to hand back a copy of it, while a URL whose port
-is a lie is the one case that detection cannot get right. The text on the screen
+is a lie is the one case that detection cannot get right. Text the application
+already linked is left under its own (rewritten) link. The text on the screen
 is the application's and stays exactly as printed; only the click is redirected.
 
 It runs on the rendered row, in `View`, before the fit. Cells are the wrong
@@ -279,7 +288,10 @@ across the right edge is not one.
 **Selection is a cell-space overlay, mouse only** (ADR 0036). The gesture
 machine and extraction are not here at all: they live in
 [`discobox-ai/x/selection`](https://github.com/discobox-ai/x/tree/main/selection),
-against a small `Grid` interface, because nothing in them is about terminals.
+against a small `Grid` interface, because nothing in them is about terminals:
+press-drag-release, double-click for a word, triple-click for a line, Alt-drag
+for a block, and dragging past the top or bottom edge scrolls and keeps
+selecting.
 A double-click's idea of a word is vte-shaped: letters, digits, the
 underscore, and a configurable set of gluing punctuation
 (`WithWordChars`), whose default — xfce4-terminal's effective set less the
@@ -306,8 +318,9 @@ clears, which is what Windows terminals do and what a hand already on the
 mouse reaches for. With nothing selected it is inert — the other half of that
 gesture is paste, and a pane has no clipboard to paste from, so a host that
 wants it handles the button itself.
-Extraction joins soft-wrapped rows without a newline, detected for now by the
-full-width heuristic behind `Grid.Wrapped` until the upstream wrap flag lands.
+Extraction joins soft-wrapped rows without a newline. The emulator records no
+wrap, so `Grid.Wrapped` is a full-width heuristic: a row whose last cell holds
+content wrapped, and a hard line exactly the pane's width reads as wrapped.
 A selection whose coordinates stop meaning what they meant is cleared, never
 left to slide: content overwritten in place (the post-output text no longer
 reads back identical), a resize (no reflow, so columns are meaningless), an
@@ -332,10 +345,6 @@ terminal to send back what is on the clipboard, which would let anything that
 can print inside the pane collect whatever the user last copied for something
 else. xterm ships it disabled, and a pane has no way to ask the host's
 permission, so the sequence is consumed and nothing is written back.
-
-Reading modes off the stream also means it makes no difference whether a mode
-arrived from the application just now or from a reattach snapshot replaying what
-it set before this client existed. They are the same bytes.
 
 **A held Ctrl after the prefix is tolerated.** `afterPrefix` matches the second
 keystroke with or without Ctrl, because the prefix is a Ctrl chord and letting
@@ -377,9 +386,11 @@ second key nothing claims is treated the way an unqualified prefix is, with the
 prefix, the lead and the key all delivered to the application, so a mistyped
 chord costs nothing.
 
-**Scrollback can be looked at.** `Scroll` moves the view back through what has
-scrolled off, and `View` draws those rows in place of the screen's. While the
-view is back there, new output grows beneath it: the offset advances by the
+**Scrollback can be looked at.** `WithScrollback` sets how much is kept (the
+emulator's 10,000 lines by default). `Scroll` moves the view back through what
+has scrolled off, and `View` draws those rows in place of the screen's; `Cursor`
+moves down with the live screen and is nil once scrolled below the pane. While
+the view is back there, new output grows beneath it: the offset advances by the
 number of lines added to scrollback so the buffer rows being read stay put.
 Returning to the live screen is an explicit scroll down, except that entering
 or leaving the alternate screen resets the view because alternate screens have

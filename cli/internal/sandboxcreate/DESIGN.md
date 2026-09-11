@@ -5,8 +5,9 @@ sandbox create requests.
 
 - Frontends provide typed options; this package resolves source refs, snapshots
   dirty local workspaces, captures local user identity, captures the local Git
-  authorship, classifies environment and secret inputs, builds the API body, and
-  submits prompt sandbox creates.
+  authorship, resolves the origin (`ResolveOrigin`; `OriginKey` is the matching
+  `discobox ls` filter), classifies environment and secret inputs, builds the
+  API body, and submits prompt sandbox creates.
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is
   the authority on whether an identity is configured, and a `$USER@$(hostname)`
@@ -23,12 +24,14 @@ sandbox create requests.
   local machine, because there is no local answer to get wrong.
 - A local source keeps its own absolute path inside the sandbox **when that path
   is one a sandbox may hold** — a child of `/home`, `/Users`, `/mnt`,
-  `/workspace`, `/Volumes`, `/media`, `/srv`, `/opt` or `/data`
+  `/workspace`, `/Volumes`, `/media`, `/srv`, `/opt`, `/data` or `/var/home`
+  (the real home path on an ostree system, where `/home` is a symlink)
   (`mirrorableSourceRoots`), minus the paths the image itself occupies
   (`sandboxOwnedPaths`, which is `/opt/discobox`) — so a path means the same
   thing on both sides of the boundary. Anywhere else it is placed
   where a source with no host path goes: the primary at `/workspace/source`, a
-  reference at `/workspace/<name>`, with the requested subdirectory honored by
+  reference at `/workspace/<name>` (a declared one at the sibling path its
+  checkout would have had), with the requested subdirectory honored by
   its position within the repository. The destination is a mount target — the
   sandbox-agent binds `/.discobox/sources/<slug>` onto it — and the sandbox is a
   systemd machine that owns some of those directories: a source targeted at
@@ -36,6 +39,10 @@ sandbox create requests.
   comes up healthy with nothing in it. It is a placement rule and not a refusal,
   because the host directory is the caller's and the mount point is ours; see
   [ADR 0096](../../../docs/adr/0096-a-source-keeps-its-host-path-only-where-a-sandbox-may-hold-it.md).
+  The roots are not a guarantee: a repository rooted exactly at the sandbox
+  user's home (`/home/<name>`) is mirrored over it and the harness volumes
+  under it, a known collision the client cannot see because it does not know
+  which user the image resolves to (ADR 0096 §1).
   On Windows it keeps that path in
   the spelling WSL gives it: `E:\src\project` becomes `/mnt/e/src/project`, the
   drive letter lowercased because that is how `/mnt` is spelled and the rest left
@@ -65,8 +72,10 @@ sandbox create requests.
 - Resolution can answer "no source": declining that question returns the zero
   `resolvedRunSource` (`resolved()` reports it), and the request is built with no
   `config.source` exactly as `NoSource` builds it. A reference that answers the
-  same way is dropped instead. An empty directory is a different case — it is not
-  asked about and keeps its source at its own path.
+  same way is dropped instead
+  ([ADR 0077](../../../docs/adr/0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md)).
+  An empty directory is a different case — it is not asked about and becomes an
+  empty source, placed by the same rule as any other local one.
 - `PromptOptions.NoSource` builds a request with no `config.source` at all —
   the shape the harness configure sandbox already had, reached deliberately.
   `Source` is then only what the origin and the Git authorship are read from, so
@@ -86,6 +95,15 @@ sandbox create requests.
   (`ReportDeclaredSource`); this package prints nothing. See the CLI design
   doc's "Declared Sources" and
   [ADR 0056](../../../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
+- `DeliverSource` pushes the sources the server marked push-delivered — the
+  server decides that per source — out of the `LocalSources` the create
+  returned, records each delivered commit as the origin lease ref a later
+  `discobox push` leases against
+  ([ADR 0058](../../../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md)
+  §6), and reports completion only once every push has landed, since that
+  report resumes the sandbox. It is a no-op when nothing awaits a push, so
+  callers invoke it unconditionally. See the CLI design doc's "Origin and
+  Source Delivery".
 - Delivery is also reachable from outside a create: `PendingSourcePushes`,
   `NewLocalSources`, and `CheckDeliverable` let `discobox push` hand a discobox
   parked in `awaiting_source` the source its create never delivered, out of the
@@ -122,12 +140,21 @@ sandbox create requests.
   stage differently; where the line is drawn and when it is cleared is theirs.
 - Not every line is a step this client takes. `ProvisionStatus` renders what the
   pool agent recorded on the discobox — a phase, and for a pull its byte and
-  layer counts — and `awaitSourceRequested` reports it through the same `Report`
-  as it waits, out of the reads that wait is making anyway. It lives here rather
-  than in a frontend for the same reason the `Step` constants do, and because
-  the other narrated wait — `internal/cli`'s attach watch — renders from it too.
+  layer counts — ignoring a phase older than `ProvisionProgressFresh`. `Status`
+  is the entry point every narrated wait uses: when the sandbox's answer is only
+  `StepWaitingForPool`, it reads the pool (`PoolReader`) and renders what the
+  pool's driver recorded instead (`PoolProvisionStatus`). `awaitSourceRequested`
+  reports it through the same `Report` as it waits, out of the reads that wait is
+  making anyway. It lives here rather than in a frontend for the same reason the
+  `Step` constants do, and because `internal/cli`'s other narrated waits — the
+  attach watch and the wait for a provisioned sandbox — render from it too.
   A discobox with nothing left to provision renders nothing, which leaves the
   caller's own step standing rather than blanking it.
+- Waits on a discobox are bounded by silence, not total time (`StallClock`):
+  the deadline restarts whenever the reported status changes.
+  `awaitSourceRequested` gives up after five minutes with no progress, and
+  `internal/cli`'s provisioned-sandbox and pool-staging waits use the same
+  clock.
 - The sandbox name is generated here (`randomname`), and sandbox names are
   unique within a project, so `CreatePromptSandbox` retries a 409 with a fresh
   name a bounded number of times. Only a generated name is replaced this way: a

@@ -13,58 +13,104 @@ very different kinds of caller:
 flowchart LR
     handlers[HTTP handlers] --> svc["pools.Service<br/>(untrusted API surface)"]
     drivers["provider drivers<br/>(poolruntime, docker)"] -- sandbox.PoolManager --> cp["pools.ControlPlane<br/>(trusted control plane)"]
+    provsvc[providers.Service] -- SchedulePoolReconciliation --> cp
     svc --> store[(store)]
-    svc -- SubmitPoolDelete / SchedulePoolReconciliation --> cp
+    svc -- "SubmitPoolDelete / SchedulePoolReconciliation /<br/>CreateSandboxAgentToken" --> cp
+    svc -- "OpenConsole / OpenLogs / BuildGuestImage" --> drivers
     cp --> store
     cp --> engine[(reconcile engine)]
-    engine --> rec[PoolReconciler]
+    engine -- pool --> rec[PoolReconciler]
+    engine -- poolImages --> img[PoolImagesReconciler]
     rec --> store
-    rec -- runtime calls --> drivers
+    rec -- "ReconcilePool / RepairPool / RemovePool" --> drivers
+    rec -- mark poolImages dirty --> engine
+    img --> store
+    img -- StageImages --> drivers
 ```
 
 ## Responsibilities
 
-- `service.go` — pool CRUD plus intent submission. Create validates the
-  backing provider instance and schedules the first reconcile; update never
-  touches `ProviderInstanceID` (immutable) and re-schedules the reconcile so
-  envelope changes converge. Delete requires the pool to be empty of
-  sandboxes (assignment is immutable, so there is nothing to drain to),
-  refuses the project's default pool, and submits delete intent; the
-  reconciler removes the runtime, then deletes the row. The seeded pool is
-  not otherwise special — after first install it is an ordinary pool.
-  `OpenPoolConsole` also lives here, and is the one pool operation that checks
-  nothing: it resolves the pool's provider and asks for an administrative
-  console on the pool host, without requiring the pool to be ready, registered,
-  or its provider instance enabled (`server/providers/DESIGN.md`).
+- `service.go` — pool CRUD, the project default pool, and intent submission.
+  Create validates the backing provider instance and schedules the first
+  reconcile; update never touches `ProviderInstanceID` (immutable) and
+  re-schedules the reconcile so envelope changes converge.
+  `SetDefaultPool`/`UnsetDefaultPool` point the project's `DefaultPoolID` at a
+  pool or clear it (unset rejects a pool that is not the default). Delete
+  requires the pool to be empty of sandboxes (assignment is immutable, so
+  there is nothing to drain to), refuses the project's default pool, and
+  submits delete intent; the reconciler removes the runtime, then deletes the
+  row. The seeded pool is not otherwise special — it is seeded once, at first
+  install, and is an ordinary pool afterwards.
+  `OpenPoolConsole`, `OpenPoolLogs`, and `BuildPoolGuestImage` also live here
+  and check nothing beyond the pool and its provider-instance rows existing:
+  they resolve the provider's `sandbox.PoolRuntime` directly, without
+  requiring the pool to be ready, registered, or its provider instance
+  enabled, because they are asked for when the pool is broken
+  (`server/providers/DESIGN.md`). A backend with no pool runtime, no host log
+  (`ErrPoolLogsUnsupported`), or no guest image
+  (`ErrGuestImageBuildUnsupported`) answers 501.
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
-  (`RegisterPool`), heartbeats (`UpdatePoolStatus`), sandbox-state reports
-  (`ReportPoolSandboxStates`, ADR 0017 §10), and (ADR 0030)
-  `MintSandboxAgentStatusTokens`/`ReportSandboxAgentStatus` for
-  the pool's standing sandbox-agent status poller — each verifying the
-  authenticated **pool principal**, and each additionally checking that any
-  sandbox ID named belongs to that pool before acting on it.
+  (`RegisterPool`, authenticated by the token itself), heartbeats
+  (`UpdatePoolStatus`), sandbox-state and sandbox provisioning-progress
+  reports (`ReportPoolSandboxStates`, ADR 0017 §10, relayed to the sandbox
+  control plane through `SandboxStateReporter`, which owns sandbox rows),
+  resource accounting (`ReportPoolResources`, ADR 0071), and (ADR 0030)
+  `MintSandboxAgentStatusTokens`/`ReportSandboxAgentStatus` for the pool's
+  standing sandbox-agent status poller. Every call after registration
+  verifies the authenticated **pool principal** for that pool, and any
+  sandbox ID named is acted on only if that pool hosts it (skipped here, or
+  by the store for state/progress batches).
   `MintSandboxAgentStatusTokens` always mints the hardcoded `status:read`
   scope via `ControlPlane.CreateSandboxAgentToken`, never a caller-supplied
   one, so this endpoint can never be used to obtain a broader sandbox-agent
-  token. `ReportSandboxAgentStatus` writes only the two new agent-status
-  columns via `store.UpdateSandboxAgentStatus` (`UpdateColumns`, not
+  token. `ReportSandboxAgentStatus` and `ReportPoolResources` write their
+  sandbox columns through narrow column updates
+  (`store.UpdateSandboxAgentStatus`, `store.UpdateSandboxResources`), not
   `UpdateSandbox`/`WithGeneration` — this telemetry is outside the
   desired/observed generation contract and a whole-row save would risk
-  clobbering concurrent desired-state writes).
+  clobbering concurrent desired-state writes. Agent status also moves a
+  sandbox's `LastActiveAt` forward from the reported session access.
+  `ReportPoolResources` stores the pool-wide half on the pool row and each
+  sandbox's half on that sandbox's row. `ReconcilePool` (a manual reconcile
+  request from the API) also lives here.
 - `controlplane.go` — trusted operations implementing `sandbox.PoolManager`:
   reads for drivers, bootstrap/agent token minting, the schedulable-pool
-  placement gate, dirty marks (`SchedulePoolReconciliation`/`...At`), and
-  repair intent (`SchedulePoolRepair`: generation bump + mark, so schedulers
-  can tell a pending retry from a settled failure).
-- `reconciler.go` — `PoolReconciler`: converges the pool's single runtime
-  host (container/VM/pod) toward its desired state through the provider's
-  `PoolRuntime`. Active pools are drift-checked and repaired in
-  place when sandboxes are assigned; a runtime whose agent never registers
-  within the timeout is repaired with a fresh bootstrap token; delete removes
-  the runtime and then the row. Failure latching follows `EverCreated`:
-  never-registered pools may fail terminally; a created pool keeps its state
-  and records the failure as `ErrorMessage` — its runtime keeps serving what
-  it already hosts, so a failed convergence is not a phase.
+  placement gate, drift marks (`SchedulePoolReconciliation`, via
+  `MarkDirtyDrift`, so it never shortens a failure backoff), intent
+  (`SubmitPoolDelete`, and `SchedulePoolRepair`: generation bump + mark, so
+  schedulers can tell a pending retry from a settled failure), and
+  display-only driver provisioning progress (`ReportPoolProvisionProgress`,
+  ADR 0060). There is deliberately no timer form of the pool mark: a
+  reconciler's own re-check belongs in its `reconcile.Result`
+  (`reconcile.ErrSelfMark`). It also registers both reconcilers
+  (`RegisterJobs`), records the server-resolved default sandbox image for
+  staging (`SetDefaultSandboxImage`), and purges spent bootstrap tokens hourly
+  (`StartBootstrapTokenCleanup`).
+- `reconciler.go` — `PoolReconciler` (resource type `pool`, dirty ID
+  `projectID/poolID`): converges the pool's single runtime host
+  (container/VM/pod) toward its desired state through the provider's
+  `PoolRuntime`. A missing or disabled provider instance, or one with no pool
+  runtime, converges trivially. A failed `ReconcilePool` on a pool with
+  assigned sandboxes is repaired in place (`RepairPool`); a runtime whose
+  agent never registers within `poolRegistrationTimeout` (2m, armed with
+  `RequeueAt` only while waiting) is repaired with a fresh bootstrap token;
+  delete refuses while sandboxes are assigned, removes the runtime, and then
+  the row. Failure latching follows `EverCreated` (`RegisteredAt` set):
+  never-registered pools fail terminally (`failed`, `Ready`/`Schedulable`
+  cleared); a created pool keeps its state and records the failure as
+  `ErrorMessage` — its runtime keeps serving what it already hosts, so a
+  failed convergence is not a phase. An `active` pool that is not yet staged
+  gets its `poolImages` resource marked dirty.
+- `imagestage.go` — `PoolImagesReconciler` (resource type `poolImages`, dirty
+  ID the pool ID): stages the images a sandbox on the project might run — the
+  server-resolved default sandbox image plus every harness config's image,
+  deduped, minus `:local` tags — onto a ready pool via
+  `PoolRuntime.StageImages`. It is its own claimed and leased resource, not
+  part of the pool reconcile. Staging is a condition (`ImagesStaged`), never a
+  health state: an unstaged pool is active and schedulable. A failure is
+  recorded on `ImageStage` and retried after 5m, never returned as a reconcile
+  error; a staged pool re-stages every 6h. `ScanDirty` returns only ready,
+  unstaged pools.
 
 ## Offline is a liveness verdict
 
@@ -87,29 +133,36 @@ every pool as the drift and lost-mark backstop.
 
 ## Who owns which status field
 
-A pool's status has two writers, and they must not overlap:
+Every pool status field has exactly one writer, and writers must not overlap:
 
 | Fields | Owner | Written by |
 | --- | --- | --- |
-| `PublicKey`, `KeyType`, `RegisteredAt` | pool agent | `RegisterPool` (bootstrap-token redemption) |
+| `PublicKey`, `KeyType`, `RegisteredAt` | pool agent | `RegisterPool` (bootstrap-token redemption; also stamps `LastSeenAt`) |
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt` | pool agent | `UpdatePoolStatus` heartbeats |
-| `State`, `ErrorMessage`, `ObservedGeneration` | reconciler | `PoolReconciler`, and nothing else |
+| `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
+| `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |
+| `ImagesStaged`, `ImageStage`, `ImageStagedAt` | image staging | `PoolImagesReconciler` |
+| `State`, `ErrorMessage`, `ObservedGeneration`, `RuntimeState` | reconciler | `PoolReconciler`, and nothing else |
 
 Health answers "can this host take work right now"; `State`/`ErrorMessage` are
 the reconciler's verdict on whether the runtime converged, and
 `ObservedGeneration` says the reconciler finished acting on a generation.
-Scheduling gates on the health flags (`SchedulablePoolForSandbox`), so no agent
-call has any reason to write the reconciler's fields.
+Scheduling gates on the health flags plus the offline verdict
+(`SchedulablePoolForSandbox`), so no agent call has any reason to write the
+reconciler's fields. The telemetry writers (resources, provisioning progress,
+image stage) use narrow column updates, never a whole-row save, so they cannot
+clobber a concurrent reconcile.
 
 The rule that keeps the split honest: **agent calls write facts and mark the
 pool dirty; the reconciler alone writes `State`, `ErrorMessage`, and
 `ObservedGeneration`** (ADR 0017 §10 — a report is an observation, never
 intent). Registration marks the pool dirty for exactly this reason.
 
-Two consequences worth stating, because both were bugs:
+Two rules follow from it:
 
-- Every successful reconcile clears `ErrorMessage`. Nothing else clears it, and
-  no path may skip the clear — skipping it because an error is already recorded
+- Every successful reconcile clears `ErrorMessage` (the offline derivation may
+  then record a fresh one for the same pass). Nothing else clears it, and no
+  path may skip the clear — skipping it because an error is already recorded
   makes the field a one-way latch.
 - The reconciler *derives* `State` on success (`registering` until
   `RegisteredAt`/`Ready`, then `active`) rather than carrying the recorded

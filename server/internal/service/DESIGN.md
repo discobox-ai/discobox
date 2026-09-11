@@ -1,31 +1,45 @@
 # Service Design
 
 `internal/service` aggregates API-facing resource services and owns process-level
-service startup. Resource-specific API behavior lives in resource packages under
-`internal/resources`.
+service startup, shutdown, and default data. Resource-specific API behavior lives
+in resource packages under `internal/resources`.
 
 ## Boundaries
 
 ```mermaid
 flowchart LR
-    api[internal/services or internal/handlers] --> service[internal/service]
-    service --> projects[internal/resources/projects.Service]
-    service --> harnessconfigs[internal/resources/harnessconfigs.Service]
-    service --> sandboxes[internal/resources/sandboxes.Service]
-    service --> pools[internal/resources/pools.Service]
-    service --> providers[internal/resources/providers.Service]
-    service --> jobsvc[internal/resources/jobs.Service]
+    server[internal/server] -->|"New(store, engine, Options)"| service[internal/service.Service]
+    handlers[internal/handlers] -->|services.Services fields| service
+    service --> registry["server/providers (built-in factories)"]
+    service --> pm[sandbox.ProviderManager]
+    service --> projects[resources/projects.Service]
+    service --> harnessconfigs[resources/harnessconfigs.Service]
+    service --> sandboxes[resources/sandboxes.Service]
+    service --> pools["resources/pools.Service + ControlPlane"]
+    service --> providers[resources/providers.Service]
+    service --> jobs[resources/jobs.Service]
+    service --> others["resources/{secrets,sshkeys,peers}.Service"]
+    service --> engine[internal/reconcile.Engine]
     service --> store[internal/store]
-    service --> jobs[internal/resources/jobs.Manager]
 ```
+
+`Service` embeds one implementation of each `internal/services` contract
+(`ProjectService`, `HarnessConfigService`, `SandboxService` via
+`*sandboxes.Service`, `SandboxProviderInstanceService`, `PoolService`,
+`JobService`, `SecretService`, `SSHKeyService`, `PeerService`).
+`internal/server.NewApp` assigns the one `*Service` to every field of
+`services.Services`, so API calls reach the resource package directly.
 
 The root service should:
 
-1. Compose resource services and managers.
-2. Initialize default project/user/config data.
-3. Register resource executors with `internal/resources/jobs.Manager`.
-4. Start the job manager, then run startup reconciliation.
-5. Provide compatibility wrappers required by `internal/services.Services`.
+1. Build the `sandbox.ProviderManager`, `pools.ControlPlane`, and built-in
+   provider factories, then compose the resource services around them.
+2. Initialize default user/project/harness/provider/pool data.
+3. Register resource reconcilers with the injected `reconcile.Engine`.
+4. Start the engine, then run startup reconciliation.
+5. Fan process-wide settings out to the resource types that need them
+   (`SetDefaultSandboxImage`, `SetHostID`, `SetSandboxAuthManager`,
+   `SetWorkerAgentAuthManager`).
 
 Keep these responsibilities out of `internal/service`:
 
@@ -36,20 +50,19 @@ Keep these responsibilities out of `internal/service`:
 
 ## Resource Services
 
-Resource packages expose their own service/manager/executor types:
+Resource packages expose their own service/control-plane/reconciler types:
 
 ```text
-internal/resources/sandboxes.Service
-internal/resources/sandboxes.SandboxReconcileExecutor
+internal/resources/sandboxes.Service            (+ SandboxReconciler)
 internal/resources/pools.Service
-internal/resources/pools.Manager
-internal/resources/pools.WorkerReconcileExecutor
+internal/resources/pools.ControlPlane           (+ PoolReconciler, PoolImagesReconciler)
 internal/resources/providers.Service
-internal/resources/providers.WorkerProviderReconcileExecutor
-internal/resources/harnessconfigs.Service
-internal/resources/events.Service
+internal/resources/harnessconfigs.Service       (also the harnessConfig reconciler)
 internal/resources/jobs.Service
 internal/resources/projects.Service
+internal/resources/secrets.Service
+internal/resources/sshkeys.Service
+internal/resources/peers.Service
 ```
 
 The root `internal/service.Service` should stay a thin aggregator. It may call
@@ -58,84 +71,104 @@ belong to the resource package that owns that resource.
 
 ## Startup Lifecycle
 
-`Service.Start(ctx)` owns service-level startup work. It should register
-application job executors with the injected job manager, start that manager, and
-then evaluate startup reconciliation such as existing sandbox provider
-instances. `internal/server` may construct `internal/resources/jobs.Manager` and
-pass it in, but the job manager should not depend on `*service.Service` or know
-which executors the service needs.
+`internal/server.NewApp` constructs the `reconcile.Engine` and passes it to
+`New`; the engine does not depend on `*service.Service` or know which
+reconcilers the service needs. `NewApp` then applies the setters, calls
+`InitializeDefaults`, and calls `Start`.
 
-The job manager remains dispatcher infrastructure: start/stop, registration
-storage, and wakeup notification. Startup reconciliation decisions belong in the
-resource service because they are application policy, not dispatcher behavior.
+`Service.Start(ctx)`:
+
+1. Registers reconcilers: `sandbox` (`sandboxes.Service.RegisterJobs`, with
+   `Options.SandboxReconcileJobConcurrency`), `harnessConfig`
+   (`harnessconfigs.Service`, so in-flight configure flows survive a restart),
+   and `pool` plus `poolImages` (`pools.ControlPlane.RegisterJobs`).
+2. Starts the engine.
+3. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`.
+4. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving
+   every enabled provider instance; on failure it stops the engine and returns
+   the error.
+
+`Service.Stop(ctx)` stops the engine first, waiting for in-flight reconciles,
+then shuts down the provider manager so providers release backend resources
+(for example a wslc pool VM session) deterministically.
+
+The engine is runner infrastructure: registration, claiming, and wakeup
+([`internal/reconcile/DESIGN.md`](../reconcile/DESIGN.md)). Startup
+reconciliation decisions belong in the resource service because they are
+application policy, not engine behavior.
+
+## Default Data
+
+`InitializeDefaults(ctx, userID, ...)` runs on every boot and is idempotent:
+
+- Upserts the local user and resolves the user's default project by membership
+  and the `Default` flag, creating it with a generated ID on first boot.
+- Seeds the built-in harness configs (`harnessconfigs.Service.SeedBuiltIns`).
+- Installs a default sandbox provider instance and a `Default` pool (set as the
+  project's `DefaultPoolID`) exactly once, gated on the
+  `defaults.default_sandbox_provider.installed` `server_state` row rather than on
+  the records. After that they are ordinary user-owned records; deleting them is
+  permanent. The provider type follows the host OS: `docker` on Linux, `vz` on
+  macOS, `wslc` on Windows, and a disabled `unsupported` instance elsewhere.
+  `WithoutDefaultProviderInstallation` skips this step.
+
+`EnsureHarnessAvailable` delegates to `harnessconfigs`; `internal/server` calls
+it after `NewApp` and refuses to serve when the default project has no harness.
 
 ## Intent Transactions
 
-Accepted API intent must be committed atomically with the durable reconcile job
-that observes it.
+Accepted API intent is committed atomically with the reconcile engine's dirty
+mark that drives it (transactional outbox).
 
 ```mermaid
 sequenceDiagram
     participant Handler
-    participant Service
-    participant Manager as resource manager
-    participant Jobs as internal/resources/jobs.Manager
-    participant Dispatcher as orchestration.Dispatcher
+    participant Resource as resource Service / ControlPlane
+    participant Store as internal/store
+    participant Engine as internal/reconcile.Engine
+    participant Reconciler as resource Reconciler
 
-    Handler->>Service: create/start/stop/delete request
-    Service->>Manager: typed lifecycle method
-    Manager->>Jobs: Submit(payload, transaction)
-    Jobs->>Dispatcher: Submit(payload, transaction)
-    Dispatcher-->>Manager: durable job ID
-    Manager-->>Service: committed resource
-    Service-->>Handler: API response
+    Handler->>Resource: create/update/delete request (via service.Service)
+    Resource->>Store: transaction: generation bump + desired state + MarkDirtyTx
+    Store-->>Resource: committed intent
+    Resource-->>Handler: API response
+    Engine->>Reconciler: Reconcile(id)
+    Reconciler->>Store: load latest desired + observed state
+    Reconciler->>Store: observed state, ObservedGeneration
 ```
 
-Do not publish live-only events for accepted intent without also writing the
-resource state and durable job record.
+Each resource package owns its intent writes; `internal/resources/jobs` only
+projects the pending dirty set as API jobs
+([`internal/resources/jobs/DESIGN.md`](../resources/jobs/DESIGN.md)).
 
 ## Sandbox Lifecycle Intent
 
-Sandbox lifecycle is modeled as desired-state reconciliation. The API records the
-user's desired steady state, the observed phase, and the latest user intent that
-requested reconciliation.
-
-| Field | Meaning |
-| --- | --- |
-| `desiredState` | User intent: `running`, `stopped`, or `deleted`. |
-| `phase` | Observed lifecycle phase displayed to clients. |
-| `activeOperation` | Operation currently queued or running. |
-| `lastOperationStatus` | State of the latest lifecycle operation/job. |
-| `generation` | Monotonic desired-state generation. |
-| `observedGeneration` | Latest generation fully handled by reconciliation. |
-| `restartGeneration` | Monotonic user intent counter for restarts. |
-| `restartedGeneration` | Latest restart generation completed by reconciliation. |
-
-Operation intent mapping:
-
-| API action | Desired state | Initial phase | Active operation |
-| --- | --- | --- | --- |
-| create | `running` | `pending` | `create` |
-| start | `running` | `starting` | `start` |
-| stop | `stopped` | `stopping` | `stop` |
-| restart | `running` with `restartGeneration++` | `starting` | `restart` |
-| delete | `deleted` | `deleting` | `delete` |
-
-Restart is not a steady desired state. It increments `restartGeneration` while
-keeping `desiredState=running`.
+Sandbox lifecycle is desired-state reconciliation over the shared
+`model.ResourceLifecycle` fields: `desiredState` (existence only: `present`,
+`archived`, or `deleted`), `state`, `generation`, `observedGeneration`,
+`stateChangedAt`, and `errorMessage`. Power (start, stop, restart) is not
+orchestrated: those are instructions forwarded to the pool agent and bump no
+generation. The intent mapping, archive/purge/repair, and power rules are owned by
+[`internal/resources/sandboxes/DESIGN.md`](../resources/sandboxes/DESIGN.md).
 
 ## Provider Catalog and Pool Wiring
 
-`internal/service` may compose provider catalogs and pool managers because it
-sits at the application boundary. Provider implementations must receive narrow
-interfaces or root contracts; they must not depend on `server/internal` packages.
+`internal/service` composes the provider catalog and pool control plane because
+it sits at the application boundary. `New` calls
+`server/providers.RegisterBuiltInSandboxProviderFactories` with the provider
+manager, the `pools.ControlPlane`, and the provider-facing `Options`
+(development image sync, control-plane streams, listen endpoints, server
+defaults, wslc command).
 
-Pool-backed provider support should go through
-`internal/resources/pools.Manager`, which adapts `internal/store` and typed
-pool job-manager methods to the narrow interfaces expected by provider code.
+Pool-backed providers reach the control plane only through
+`pools.ControlPlane`, which implements the narrow `sandbox.PoolManager`
+interface handed to provider drivers
+([`internal/resources/pools/DESIGN.md`](../resources/pools/DESIGN.md)). Providers
+must not depend on resource services.
 
 ## Error Mapping
 
-Use root/shared sentinel errors for cross-module conditions and map persistence
-errors to API errors at the service boundary. Do not leak database-specific errors
-or GORM errors to handlers.
+Server-owned sentinels live in `internal/apperrors`. Resource packages map store
+errors to API errors (`apperrors.NotFound`, see
+[`internal/resources/DESIGN.md`](../resources/DESIGN.md#not-found-mapping)). Do not
+leak database-specific errors or GORM errors to handlers.

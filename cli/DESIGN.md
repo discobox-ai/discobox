@@ -10,13 +10,16 @@ transport helpers where OpenAPI does not model the stream.
 | --- | --- |
 | `cmd/discobox` | Binary entrypoint. |
 | `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. Staging itself is the root module's `serverstage`. |
-| `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
+| `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. See [`internal/sandboxcreate/DESIGN.md`](internal/sandboxcreate/DESIGN.md). |
+| `internal/sandboxapply` | `discobox apply`'s fetch: a source's sandbox commits fetched into the local repository under `refs/discobox/apply/<sandbox>/<slug>` (ADR 0014). |
+| `internal/gitapply` | Landing a fetched range on the local branch by cherry-pick in a disposable worktree (`Attempt`), and onto a repository with no commits (`AttemptRoot`, ADR 0084). |
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
 | `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 0095). |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
 | `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local listeners kept in sync with a remote's announced ports, over a caller-supplied dialer. |
+| `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a launcher pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
 
@@ -35,8 +38,12 @@ transport helpers where OpenAPI does not model the stream.
   is the child's *controlling* terminal, so anything reading its keys from
   `/dev/tty` reads them from the pane rather than from the real terminal, out
   from under the window drawing it. The child inherits this invocation's
-  `--server`, `--project` and `--chdir`; the token goes through the environment
-  rather than the argument list, which every process on the machine can read.
+  `--server`, `--project` and `--chdir` (and an explicit `--auto-start-server`,
+  `App.globalFlags`); the token goes through the environment rather than the
+  argument list, which every process on the machine can read. A harness's
+  configure flow is drawn the same way: the harnesses screen's
+  `OpenHarnessConfigure` spawns `discobox admin harnesses configure <id>` in a
+  pane (`openLocalHarnessConfigure`).
 - Where that pty comes from is `internal/localpty`, whose `PTY` is everything a
   pane needs of one: read, write, resize, close, and `io.EOF` when the command
   exits. Unix opens a pty pair through `creack/pty`; Windows creates a
@@ -76,8 +83,8 @@ transport helpers where OpenAPI does not model the stream.
   that one — an example whose point is that a shell splits the words, such as
   the wrapper convention in [`harness/DESIGN.md`](../harness/DESIGN.md), says
   `discobox run <words>`, which is where those words still exist. What no
-  example may spell is a form that is gone. This is why `-p` could not stay
-  `--project`'s shorthand — `--project` now has a long form only.
+  example may spell is a form that is gone. `-p` is therefore not `--project`'s
+  shorthand: `--project` has a long form only.
 - Otherwise, bare `discobox` runs the launcher when stdin and stdout are both
   terminals, and prints its help when they are not (`App.runTUI`, also reached
   from `discobox tui`). Typing a program's name is how you ask for it, and the
@@ -86,17 +93,17 @@ transport helpers where OpenAPI does not model the stream.
   answer to that. The leader there comes from the environment only: a flag
   would have to be persistent to be reachable, and every subcommand would carry
   one that means nothing to it.
-- **Words after the bare command are subcommands, not a prompt.** The root
-  leaves `Args` unset, which is what keeps cobra's root-only `legacyArgs`
-  check: `discobox lst` reports `unknown command "lst"` and suggests `ls`.
-  A prompt is words and a misspelling is a word, so nothing can tell the two
-  apart once they share a spelling — the prompt takes a flag instead, and the
-  words go back to naming commands. `legacyArgs` is not all of it: cobra's
-  `stripFlags` stops at a `--`, so the check never sees what follows one and
-  `RunE` refuses any positional word that reaches it, naming `-p`. Dropping
-  them would put the silent create back — `discobox -d -- fix the failing
-  tests` with an empty prompt — by the one spelling `run`'s help teaches. See
-  [ADR 0104](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
+- **Words after the bare command are subcommands, not a prompt.** A prompt is
+  words and a misspelling is a word, so nothing can tell the two apart once
+  they share a spelling — the prompt takes a flag instead, and the words name
+  commands. The root's `Args` is `rootArgs` (`internal/cli/root.go`):
+  `discobox lst` reports `unknown command "lst"` and suggests `ls`, and a word
+  past a `--` is refused naming `-p`. Dropping those would put the silent
+  create back — `discobox -d -- fix the failing tests` with an empty prompt —
+  by the one spelling `run`'s help teaches. Cobra's own check does not run
+  under `TraverseChildren`; see
+  [Where a Global Flag Is Parsed](#where-a-global-flag-is-parsed). See
+  [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
   which supersedes [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
   trade on that point; `run` keeps its trailing prompt, where the name in front
   of the words says what they are.
@@ -129,9 +136,8 @@ transport helpers where OpenAPI does not model the stream.
   attach that never came up ends the window with its own failure, which
   `tui.Run` hands back as the command's error. Detaching still leaves every
   session running.
-- `--raw` creates the discobox on this side and streams its terminal, which is
-  what both commands always were: for a pipe, a recording, or a terminal to
-  keep as it is. It is also what a run or attach with no terminal to draw a
+- `--raw` creates the discobox on this side and streams its terminal: for a
+  pipe, a recording, or a terminal to keep as it is. It is also what a run or attach with no terminal to draw a
   window on gets (`canOpenWindow`), the same rule bare `discobox` follows, and
   what `-d` implies — it prints the discobox on stdout, which a window would be
   sitting on.
@@ -146,19 +152,22 @@ transport helpers where OpenAPI does not model the stream.
   `discobox tui --leader` overrides it for the launcher; nothing else takes a flag.
   It is one key for both the launcher's panes and a plain attach's detach chord.
 - Attach and shell are terminals rather than commands, and are drawn inside the
-  window by the `termpane` module. `apiDataSource.Open` connects one:
-  `framedTerminal` (`internal/cli/tui_terminal.go`) presents the framed exec
-  attach as the byte stream a pane draws. Attach targets the virtual primary
-  exec id and needs no start — the agent resolves the sandbox's current primary
-  terminal and relaunches it if it has stopped. A shell creates a new
-  interactive TTY exec, the same one `discobox shell` with no command runs, carrying
+  window by the `termpane` module. `apiDataSource.Open` handles only the local
+  commands above; a discobox's sessions come through `OpenExec` (an existing
+  exec) and `NewShell`/`NewTerminal`/`NewTool` (a new one), all of which end in
+  `openFramedTerminal`: `framedTerminal` (`internal/cli/tui_terminal.go`)
+  presents the reconnecting, replaying framed exec attach as the byte stream a
+  pane draws. The primary terminal is the virtual primary exec id and needs no
+  start — the agent resolves the sandbox's current primary terminal and
+  relaunches it if it has stopped. A shell creates a new interactive TTY exec,
+  the same one `discobox shell` with no command runs; every new session carries
   `COLORTERM` and `NO_COLOR` from this terminal (`paneTerminalEnv`) so the
   sandbox knows how much color to use. `TERM` is deliberately not forwarded: the
   terminal on the client side of a pane is an emulator, not the user's, and the
   sandbox's own `xterm-256color` default describes it — a forwarded
   `xterm-kitty` names a terminal the sandbox has no terminfo for. A created exec
   is not a running one: it is started only after the attach is up
-  and sized, the order `attachSandboxExec` uses. Started first, its opening
+  and sized (`newSandboxSession`), the order `attachSandboxExec` uses. Started first, its opening
   output would go out before anything was listening. `TestPaneTerminalsE2E`
   (opt-in, `DISCOBOX_PANE_E2E=1`) is what catches the omission, since a pane
   attached to an unstarted exec draws an empty screen forever with no error.
@@ -171,27 +180,26 @@ that key (ADR 0104). `irohTransportIdentity` (`internal/cli/peer_identity.go`)
 makes both, and the certificate travels on its own stream the moment a
 connection is up.
 
-The enrolled key is unchanged in every way an operator sees it: the same file,
-the same value `discobox admin peer id` prints, the same thing
-`discobox admin peer add` enrolls. It is now the certificate's issuer instead of
-the address this client dials from.
+The enrolled key is what an operator sees: the file under `<state>/iroh/`, the
+value `discobox admin peer id` prints, the thing `discobox admin peer add`
+enrolls. It is the certificate's issuer, not the address this client dials
+from.
 
-That split exists because one key could not do both jobs. A relay keeps **one
+The split exists because one key cannot do both jobs. A relay keeps **one
 active connection per endpoint ID** and hands the newest one all inbound
-traffic, so every discobox process on a machine — sharing one identity from one
-file — took the relay slot from the others. It is invisible while direct paths
-carry the traffic, and it bites the moment everything is forced back onto the
-relay at once, which is exactly what a server restart does: the new server has a
-new port, every direct path dies, and hole punching needs the relay to rebuild
-them. The processes then starve each other mid-handshake and none of them
-reconnects.
+traffic, so discobox processes on one machine sharing one identity would take
+the relay slot from each other. That is invisible while direct paths carry the
+traffic, and bites the moment everything is forced back onto the relay at once,
+which is exactly what a server restart does: every direct path dies, and hole
+punching needs the relay to rebuild them. The processes would then starve each
+other mid-handshake and none of them would reconnect.
 
 The ALPN carries the negotiation. A client that has a certificate dials
 `discobox/http/1+cert`; one that does not dials `discobox/http/1`; a server
-serves both. So an old client is admitted by its own endpoint ID exactly as
-before with no stream read, and a new client meeting an old server is refused at
-the TLS layer — an unambiguous "this server has no certificates" rather than a
-misleading "not enrolled".
+serves both. So a client without certificates is admitted by its own endpoint
+ID with no stream read, and a certificate-carrying client meeting a server
+without certificate support is refused at the TLS layer — an unambiguous "this
+server has no certificates" rather than a misleading "not enrolled".
 
 ## A Client Remembers Where a Server Answered
 
@@ -267,7 +275,7 @@ it on every private key written underneath. `restrictToUser`
 (`statedir_windows.go`) replaces the inherited list with this user, SYSTEM and
 Administrators, and takes ownership; on Unix it is a no-op, because the mode
 bits already said it. Files are restricted individually as well as inheriting
-from the directory, since a run before the fix may have left one readable.
+from the directory, since a file may predate its directory's restriction.
 
 This is not cosmetic: OpenSSH refuses to read a config, a `known_hosts` or a
 private key another principal can reach, and reports only "Bad owner or
@@ -294,7 +302,7 @@ unwritable or corrupt file costs the convenience and never the command.
 The CLI does not contain the control plane. `discobox admin server` resolves a
 `discobox-server` binary and runs it as a child, passing through its stdio and
 its exit status; the autolaunch starts the same binary in the background
-(ADR 0099). Nothing re-invokes `discobox` to get a server any more.
+(ADR 0099). The CLI never re-invokes itself to get a server.
 
 Resolution (`serverResolver`, `server_resolve.go`) is, in order:
 
@@ -321,8 +329,11 @@ guesses at a URL.
 
 `serverstage` (root module) holds the format and the staging. A release CLI
 carries `serverstage.DefaultManifest`, base64 JSON describing the server assets
-for *its own* platform: a name, a URL, a SHA-256 and a size each, plus which one
-is the command. One platform's, because the release fans out natively (ADR 0066 §4) and
+for *its own* platform: a name, an ordered list of URLs, a SHA-256 and a size
+each, plus which one is the command. The URLs are tried in order — a mirror
+ahead of the release URL (ADR 0106) — and every one is checked against the same
+digest, so an extra source is somewhere else to find a known artifact, not
+something the binary trusts. One platform's, because the release fans out natively (ADR 0066 §4) and
 no link step sees every platform's digest — but the runner that builds a
 target's server links its CLI moments later, which is the pairing that matters.
 `discobox admin server manifest` prints it, which is both how a user asks what
@@ -422,9 +433,9 @@ environment answer rather than inheriting a stale one.
 An invocation autolaunches at most once, at the first client it builds
 (`App.ensureLocalServerOnce`). Starting a server is a startup step, not
 something to reach for again whenever a request fails: everything that retries
-asks for a client on every pass, so a command that outlived its server used to
-spend the rest of its life spawning replacements, each losing the race for the
-data directory's singleton lock and exiting. Only the caller that made the
+asks for a client on every pass, so a command that outlived its server would
+otherwise spend the rest of its life spawning replacements, each losing the race
+for the data directory's singleton lock and exiting. Only the caller that made the
 attempt is told how it went; a later one dials the endpoint and reports the
 connection error, rather than being handed a stale failure it cannot act on.
 
@@ -449,8 +460,8 @@ one status line — rewritten in place and taken back down before the command th
 wanted the server writes anything — so the wait says what it is waiting for
 without leaving a phase per line scrolled above unrelated output. The child's output goes to a log file
 (`endpoint.ServerLogPath`), and the last launch's tail is what a failed wait
-reports — the alternative, discarding it, is what made a server dying on startup
-indistinguishable from one that was merely slow.
+reports — discarding it would make a server dying on startup indistinguishable
+from one that was merely slow.
 
 Neither deadline is what ends the wait for a server that is already gone.
 `EnsureRunning` watches the process it started and reports it the moment it
@@ -474,20 +485,22 @@ so where a server's output lives does not depend on whether this machine had
 `--tail`, `--previous`, and `--path`.
 
 Advanced configuration and low-level resource commands are grouped beneath the
-visible `discobox admin` command: `project`, `sandbox`, `terminal`, `exec`,
-`provider`, `pool`, `job`, `harnesses`, and `hooks` are not root commands.
+visible `discobox admin` command (`internal/cli/admin.go`): `project`, `box`,
+`terminal`, `exec`, `services`, `provider`, `pool`, `job`, `harnesses`,
+`hooks`, `server`, `peer`, `ssh-key`, `ssh-config` and `ssh-proxy` are not root
+commands.
 
-The global `--project`/`-p` flag is hidden from help alongside `--chdir`: it
+The global `--project` flag is hidden from help alongside `--chdir`: it
 still works everywhere, and the launcher and scripts still pass it, but a
 project is advanced configuration and belongs with the rest of it under
 `discobox admin`.
 
 `discobox admin project` is the only command group not scoped by the global
 `--project` flag: its arguments name the project being acted on, resolved by
-`resolveProjectID` from the same selectors `-p` accepts (the `default` alias, a
-full or short ID, or the display name). `set-default` moves the flag
-`default` resolves to, so it is how `-p`'s own default is chosen; there is no
-unset. `create --from` copies an existing project's configuration
+`resolveProjectID` from the same selectors `--project` accepts (the `default`
+alias, a full or short ID, or the display name). `set-default` moves the flag
+`default` resolves to, so it is how `--project`'s own default is chosen; there
+is no unset. `create --from` copies an existing project's configuration
 ([ADR 0023](../docs/adr/0023-projects-are-created-by-copy-and-deleted-only-when-empty.md)),
 with `--copy` selecting what comes across and `--copy none` taking nothing.
 
@@ -532,7 +545,7 @@ identity the exec runs as. `admin exec create --shell` is the same request in
 raw form.
 
 `discobox tools` groups the everyday development tools run *against* a sandbox —
-`git`, `ssh`, `vscode`, and `zed` today. Which sandbox is the one thing every
+`git`, `ssh`, `vscode`, and `zed`. Which sandbox is the one thing every
 tool has in common, so `--discobox-id` is a persistent flag on `tools` itself and every
 subcommand inherits it. Everything else belongs to the subcommand that means it,
 including where the tool runs: `git` runs inside the sandbox and takes
@@ -551,7 +564,8 @@ not need.
 `discobox tools ssh` needs no SSH port on the server. The session is carried over
 the endpoint the CLI already uses: a loopback TCP port opened for the life of
 the command splices each connection to a `GET /ssh/connect` websocket, whose
-byte stream the server hands to the same sshd its TCP listener feeds.
+byte stream the server hands to its in-process sshd — which binds no listener
+of its own; `/ssh/connect` is the only way in (ADR 0057).
 `endpoint.StartLoopbackProxy` cannot serve this — it is an HTTP reverse proxy,
 and these are not HTTP bytes.
 
@@ -580,9 +594,8 @@ Appending everything after the host only works on glibc, whose getopt permutes
 argv; anywhere else every option would be sent to the remote as a command.
 
 `ssh -f` is refused rather than passed through. It forks and returns, and the
-bridge lives in this process, so honouring it would tear the connection down
-under the backgrounded ssh — which is exactly what it did before the check
-existed, silently. Backgrounding the whole command keeps both lifetimes
+bridge lives in this process, so honouring it would silently tear the
+connection down under the backgrounded ssh. Backgrounding the whole command keeps both lifetimes
 together and leaves one process to kill.
 
 `discobox cp` is `scp`, pointed at the same bridge (`internal/cli/cp.go`). It is
@@ -628,8 +641,8 @@ tree: every SSH session channel asks for `workdir: "~"`
 mean what it means everywhere else.
 
 Flag parsing is off here for the reason it is off for `tools ssh`: after the
-command name every flag is scp's, and `-p` and `-o` are both a global shorthand
-and an scp option, so they have to be. What stands *in front* of the command is
+command name every flag is scp's, and `-o` (this CLI's `--output`) and `-p`
+(run's prompt) are scp options too, so they have to be. What stands *in front* of the command is
 still this CLI's, and is parsed by the root — see
 [Where a Global Flag Is Parsed](#where-a-global-flag-is-parsed).
 
@@ -753,13 +766,13 @@ Three things follow, all worth knowing before adding a command:
 - What is written in front of a subcommand and belongs only to the root is
   refused by `refuseRootOnlyArguments`, from the root's `PersistentPreRunE`.
   Two things land there, both otherwise silent: the words a `--` hides from the
-  command scan, which does not stop at one the way `stripFlags` did, and run's
+  command scan, which does not stop at one, and run's
   own flags, which are the root's *local* flags and are parsed wherever they
   stand. `discobox -- please run the tests` would otherwise dispatch to `run`
   from the middle of a sentence, and `discobox -p '…' ls` would list with the
   prompt dropped.
-- A flag belonging to a subcommand must be written after it. The default
-  accepted `discobox --wait admin server shutdown`; the root now parses that
+- A flag belonging to a subcommand must be written after it. Cobra's default
+  accepts `discobox --wait admin server shutdown`; here the root parses that
   `--wait` and does not know it.
 
 `admin provider create` and `update` are the other side of the same coin: their
@@ -804,7 +817,7 @@ the name on screen is the terminal's, and a rename would change nothing there.
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —
 as `--discobox-id` (`admin exec`, `admin terminal`), an optional positional
-`DISCOBOX_ID` (`apply`, `attach`, `admin get`), or a leading
+`DISCOBOX_ID` (`apply`, `attach`, `admin box get`), or a leading
 positional argument shared with the command itself (`shell`, resolved by
 `resolveShellTarget` rather than `selectSandbox`) — and fall back to
 `selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
@@ -926,12 +939,12 @@ session, `execstream/client`.
   each tier for what only that tier can see — the control plane for the sandbox
   to be dispatched to a live pool and to be usable rather than mid-delivery, the
   pool agent for the container, the sandbox agent for the primary terminal's
-  launch and install (ADR 0039). The two loops that used to sit here — poll
-  until `displayState: running`, then poll the exec list until a primary exists
-  past `installing` — cost a request per second of provisioning for facts the
-  server knew the instant they changed, and every client had to reimplement
-  them. `--wait` on `admin box create` is a different thing and stays: there
-  the wait *is* what was asked for.
+  launch and install (ADR 0039). A client-side readiness poll — for
+  `displayState: running`, then for a primary past `installing` — would cost a
+  request per second of provisioning for facts the server knows the instant
+  they change, and every client would reimplement it. `--wait` on
+  `admin box create` is a different thing: there the wait *is* what was asked
+  for.
 - The wait is narrated, and the narration never gates it. `attachSandboxTerminal`
   starts `watchProvisioning` before the dial and takes it down the moment the
   dial returns — which is exactly when there is nothing left to wait for, since
@@ -967,9 +980,8 @@ session, `execstream/client`.
   reconnecting forever — the stop is observable, so the client acts on it instead
   of looping against a runtime that is gone. No attach restarts the sandbox;
   `discobox attach --raw` (`internal/cli/attach.go`) is deliberately a thin wrapper
-  over `attachSandboxTerminal` with the virtual primary id and nothing else — sandbox
-  autostart is a possible future addition to it, and until then the client never
-  starts a sandbox to keep an attach alive.
+  over `attachSandboxTerminal` with the virtual primary id and nothing else, and
+  the client never starts a sandbox to keep an attach alive.
 - The way out of a terminal attach is the leader then `d` (`detachFilter`,
   `internal/cli/sandbox_terminals.go`), matched over the raw input bytes and
   nothing else: `execstream/client` never learns the chord, and never learns
@@ -980,9 +992,9 @@ session, `execstream/client`.
   the second key alongside a bare `d`, the leader typed twice sends one literal
   leader, and a leader that qualified nothing is delivered with the key that
   followed it — the same bargain `termpane` makes in a pane, so the keystrokes
-  mean the same thing either way. It replaced Docker's Ctrl-P Ctrl-Q, which took
-  a key programs want (Ctrl-P is history-back everywhere) and matched nothing
-  the launcher did.
+  mean the same thing either way. Docker's Ctrl-P Ctrl-Q is not used: it takes
+  a key programs want (Ctrl-P is history-back everywhere) and matches nothing
+  the launcher does.
 - The other way out is repeated Ctrl-C, and it is the session's, not this
   module's: `execstream/client` owns the escape because the evidence it needs
   is the stream's own (`execstream.Delivery` acknowledgements), and because a
@@ -1018,7 +1030,8 @@ session, `execstream/client`.
   `tui.TerminalEvent`), because a reconnect never appears in the output — the
   stream simply carries on — so it is reported there or not at all.
 - Resumable attaches can subscribe to timing events without parsing terminal
-  output. A websocket heartbeat measures the physical proxy path to the
+  output (`execAttachOptions.timing`); no CLI or launcher path subscribes, and
+  only tests set it. A websocket heartbeat measures the physical proxy path to the
   sandbox-agent; an action-acknowledgement sample measures from client
   acceptance until the exec host applied the positioned input at the PTY
   boundary. These are separate sources because a healthy websocket alone does
@@ -1038,7 +1051,8 @@ accepting, splicing, and reporting. `internal/cli/proxy.go` supplies the two
 sandbox-shaped halves — the listing (`sandboxPortTargets`, the same agent
 report the launcher's rows are drawn from) and the transport
 (`sandboxTCPDialer`, `internal/cli/tcp_tunnel.go`) — and prints the events. The
-launcher will supply the same two halves and draw them instead.
+launcher runs the same forwarder over the same transport and draws the events
+instead (below).
 
 - The transport is the control plane's `/api/projects/{p}/sandboxes/{s}/tcp/attach`
   websocket, which is ADR 0024 §3's tunnel exposed at the HTTP edge. Each
@@ -1080,8 +1094,7 @@ launcher will supply the same two halves and draw them instead.
   Nothing here treats it specially: a port with no reported address is dialed at
   the default host, which is the answer for a published or activated one.
 - The listing is polled rather than streamed. There is no project event stream
-  to subscribe to — the one that existed promised a resumable list-then-watch it
-  could not deliver and was removed (ADR 0061) — and the ports themselves reach
+  to subscribe to (ADR 0061), and the ports themselves reach
   the control plane on the sandbox-agent's own cadence (ADR 0046), which is what
   bounds freshness either way.
 
@@ -1237,7 +1250,7 @@ level or layering on the attach transports above.
   applies the *first* matching block and would otherwise silently reach the
   wrong one. Patterns are counted across the whole emitted config and any
   claimed twice is dropped from every stanza that wanted it. Server-side name
-  uniqueness (`idx_sandbox_project_name`) means this no longer fires for
+  uniqueness (`idx_sandbox_project_name`) means this does not fire for
   name-versus-name; what it still catches is a name that spells another
   sandbox's ID, which claims both that sandbox's ID patterns at once. Names
   with whitespace or glob metacharacters never become patterns at all
@@ -1323,13 +1336,12 @@ level or layering on the attach transports above.
   inside the distribution answers as a `\\wsl.localhost` UNC share. What the
   boundary costs is in `internal/cli/wsl.go`; each write names the file it
   wrote, so which side is which is visible without knowing the layout.
-- Two things about that boundary are counter-intuitive enough that the first
-  implementation got both wrong, and neither failure names itself. Both are
-  ADR 0078. **Quoting**: `wsl.exe` does not strip the double
+- Two things about that boundary are counter-intuitive, and neither failure
+  names itself. **Quoting** (ADR 0078): `wsl.exe` does not strip the double
   quotes `cmd.exe` leaves in place, so a word it reads itself carries none, and
   the command goes to `sh -c` as one double-quoted argument with POSIX quoting
-  inside. Quoting each word the Windows way got the Linux side an `execvp` of a
-  program named `"…"`, and ssh a UTF-16 error message where the banner belonged
+  inside. Quoting each word the Windows way gets the Linux side an `execvp` of a
+  program named `"…"`, and ssh a UTF-16 error message where the banner belongs
   — which it reports as "banner line contains invalid characters".
   **The key's ACL**: set with `icacls` and read back, never inherited. A file
   written from WSL onto a drive mount carries an explicit `S-1-5-32` ACE, one
@@ -1342,7 +1354,7 @@ level or layering on the attach transports above.
   nothing else, and a fourth is an explicit entry that survived
   `/inheritance:r`, which is what reading back exists to catch. A copy this
   cannot vouch for is removed again — a wide ACL, or an `icacls` that could not
-  be run at all — because the failure is a warning now, and a key left behind
+  be run at all — because the failure is only a warning, and a key left behind
   under permissions nothing confirmed is what reading back is for.
 - Paths are spelled for ssh's config parser, not printed: `sshConfigPath`
   quotes what contains a space and escapes what contains a percent sign, and
@@ -1481,9 +1493,9 @@ as `origin/<that branch>`, leaving the branch it tracks alone.
 fail after the discobox is already provisioned — the push itself failed, or the
 pool was wedged while it ran — and what is left is a discobox that is correct in
 every way except that nobody handed it its source. It sits in `awaiting_source`
-forever: the resume is `CompleteSandboxSourcePush`, which only the create path
-called, so a rebase-time push would send commits into its origin and leave it
-exactly as parked as it found it.
+forever: the resume is `CompleteSandboxSourcePush`, which otherwise only the
+create path calls, so a rebase-time push would send commits into its origin and
+leave it exactly as parked as it found it.
 
 So when the discobox is in `awaiting_source`, `discobox push` performs the
 create's own delivery instead of the rebase-time one: each source is pushed at
@@ -1520,7 +1532,7 @@ Both front ends run the same rule, over one resolver (`App.pushSandboxSources`,
   it opens, through `DataSource.PushSources` (`internal/cli/tui_push.go`) on a
   loop guarded by the workspace generation (`internal/tui/push.go`);
 - a **raw attach** — `attach --raw`, `run --raw`, `admin terminal attach`,
-  `admin terminal start --attach` — from the one choke point they share
+  `admin terminal create --attach` — from the one choke point they share
   (`attachSandboxTerminal` → `App.autoPushWhileAttached`). The one attach there
   that is not somebody working in a discobox says so
   (`execAttachOptions.notWorkingHere`): a harness's configure flow attaches to a
@@ -1564,10 +1576,9 @@ mechanisms fill that in, and they cover disjoint halves of the wait
 **Provisioning** is the pool agent's work, recorded on the discobox as
 `runtime.provisionProgress`. It is read by polling, deliberately: each read is
 the current truth, so a missed update is not a lost one and there is no gap to
-recover from. This is not the readiness poll ADR 0039 removed — that one gated
-the attach and cost a round trip per second for an answer the server
-volunteered; this one runs beside a wait that is already correct, ends when that
-wait does, and its worst failure is a late line.
+recover from. It is not a readiness poll (ADR 0039) — it gates nothing; it runs
+beside a wait that is already correct, ends when that wait does, and its worst
+failure is a late line.
 
 `sandboxcreate.ProvisionStatus` turns one discobox into one line, most specific
 answer first: a settled failure or a parked source push is an answer, a recorded
@@ -1579,8 +1590,15 @@ then is the harness install and the terminal launch, which no channel reports
 upward. A phase this build does not know is spelled out rather than dropped,
 because a CLI is routinely older than the control plane it talks to.
 
-Two waits narrate from it, and the difference between them is only where the
-reads come from.
+Every narrated wait calls `sandboxcreate.Status` rather than `ProvisionStatus`
+directly: when the discobox's own answer is `StepWaitingForPool` — the longest
+stretch of a cold start — it reads the pool (`PoolReader`) and says what the
+pool host is doing instead (`PoolProvisionStatus`).
+
+Three waits narrate from it, and the difference between them is only where the
+reads come from. The two that wait on their own reads are bounded by silence
+rather than total time (`sandboxcreate.StallClock`): each new phase resets the
+clock, so a long pull that keeps reporting is not cut off.
 
 - **The attach** has `watchProvisioning`, a loop that exists to read. Its first
   read waits one interval, so an attach onto a running discobox connects inside
@@ -1591,7 +1609,11 @@ reads come from.
   and everything it is waiting for — the image pull above all, since the
   container is created before the discobox parks — is on the record it already
   has. Its phases replace `StepAwaitingSource` on the line as they are recorded,
-  which is why the longest step in a create is no longer the quietest one.
+  so the longest step in a create is not a silent one.
+- **The harness configure flow's wait** (`waitForProvisionedSandbox`,
+  `internal/cli/waitprovisioned.go`) is one loop that both waits and narrates,
+  because two loops would read the same discobox at different moments to answer
+  questions about the same thing.
 
 `statusLine` is where it lands for the commands: one rewritable line on a
 terminal, appended lines off one, and cleared before the stream is handed to
@@ -1618,8 +1640,8 @@ way anyway, for the same reason the grammar is shared.
 
 **That total is the manifest's, not the response's.** GitHub serves a release
 asset with no `Content-Length` at all, so a download that asked the transport how
-big the file was got `-1` and could only count upwards — which is what
-v0.6.0-alpha.1 actually did, and what `httptest` hid, because it sets the header.
+big the file was would get `-1` and could only count upwards — which `httptest`
+hides, because it sets the header.
 The size is declared beside the digest instead: the build knows it, having just
 hashed the file, so it is known before the first byte and cannot be a different
 claim about the same file. It is checked after the download too, before the
@@ -1922,8 +1944,8 @@ Reaching a server is a stack, and the error a client is handed names only the
 top of it. Over iroh, `dial iroh endpoint d1-…: iroh: connect failed` is the
 same sentence whether the native library never loaded, this machine cannot
 reach a relay, the peer ID names a server that is switched off, or the server
-is running and does not admit this machine — four problems with four fixes and,
-before this command, one message.
+is running and does not admit this machine — four problems with four fixes and
+one message.
 
 `discobox status` (`internal/cli/status.go`) prints
 `endpoint.Diagnose`'s answer: one row per layer, in the order a connection
@@ -1986,16 +2008,17 @@ answer. The server has the same knob as `iroh.logLevel`.
 ## Git Transport to the Server
 
 `git` is a subprocess that only understands URLs, so it cannot use the CLI's
-local-IPC transport. `App.gitServerURL` bridges the gap: for a `unix://` or
-`npipe://` endpoint it starts `endpoint.StartLoopbackProxy`, a loopback HTTP
+transport. `App.gitServerURL` bridges the gap: for any endpoint that is not
+`http(s)` (`Endpoint.DirectlyDialable`) — a unix socket, a named pipe, or a
+`discobox://` peer — it starts `endpoint.StartLoopbackProxy`, a loopback HTTP
 listener that reverse-proxies onto the same server the API client uses, and
 returns that address for the duration of the command. An `http(s)` endpoint is
 already addressable and is returned unchanged.
 
 Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
 (push at create), `sandboxapply.FetchSource` (fetch at apply) and
-`sandboxpush.Push` (re-push) — so the local socket, which is the default
-endpoint, is not a server only half the CLI can reach.
+`sandboxpush.Push` (re-push) — so neither the local socket, which is the default endpoint, nor a peer address
+is a server only half the CLI can reach.
 
 ## Apply Output
 
@@ -2134,6 +2157,11 @@ the round trip back. See
 interactive configure flow. The server owns applying the result; the CLI only
 sequences the calls and hands the user the terminal in between:
 
+0. The ports the harness image declares for its flow are bound on this machine
+   and forwarded into the configure sandbox (`forwardConfigurePorts`,
+   `harness_configure_ports.go`) — exactly, or reported as unavailable in the
+   image's own words, because a sign-in callback is sent to that number and no
+   other.
 1. `POST .../configure` — the server creates the ephemeral `harnessMode: config`
    sandbox and returns it.
 2. `POST .../configure/attach` — the server seeds the previous configuration into
@@ -2145,9 +2173,10 @@ sequences the calls and hands the user the terminal in between:
 4. `POST .../configure/commit` — the server reads the command's real exit status,
    applies the secrets and files it wrote, and deletes the sandbox.
 
-`runHarnessConfigure` takes streams rather than a `*cobra.Command` so its caller
-can hand it the real terminal via `tea.Exec`: the launcher's harnesses screen
-does exactly that, through `apiDataSource.ConfigureHarness`.
+The launcher's harnesses screen does not call `runHarnessConfigure` itself: it
+runs this command in a pane (`apiDataSource.OpenHarnessConfigure` →
+`openLocalHarnessConfigure`, see *UI Dependency Direction*), so the flow the
+window draws is the one a shell gets.
 
 `discobox configure` (aliases `config`, `conf`, `c`, `init`) is the launcher opened
 on that screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` —
@@ -2158,8 +2187,9 @@ one set of keys is what the window already provides.
 The window's half of the data seam lives in `internal/cli/tui_harnesses.go`:
 `Harnesses`/`HarnessSecrets` map harness configs (plus the project's default
 pointer and secret bindings) onto `tui.Harness`, `DoHarness` runs disable and
-set-default, and `ConfigureHarness`/`EditHarnessFile` are the two that need the
-real terminal and reuse `runHarnessConfigure` and `editHarnessFile` unchanged.
+set-default, `OpenHarnessConfigure` opens the configure pane, and
+`EditHarnessFile` is the one that needs the real terminal (handed over with
+`tea.Exec`) and reuses `editHarnessFile` unchanged.
 Disable releases the project default first when the target holds it, since the
 server refuses to deconfigure a default harness.
 
