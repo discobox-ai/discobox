@@ -2,9 +2,12 @@ package tui
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -40,6 +43,24 @@ func sourceWithRequest(t *testing.T) (*Model, *fakeSource) {
 		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Host: "api.openai.com"},
 	}
 	return newTestModel(t, ds), ds
+}
+
+// grantFor answers the lifetime step — the second of every approval — with one
+// of its presets.
+func grantFor(t *testing.T, m *Model, d time.Duration) {
+	t.Helper()
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
+	}
+	drain(t, m, m.dialog.action(strconv.FormatInt(lifetime.Seconds(d), 10)), 0)
+}
+
+func onLifetimeStep(m *Model) bool {
+	return m.dialog != nil && m.dialog.kind == dlgActions && m.dialog.title == "How long?"
+}
+
+func onRequestCard(m *Model) bool {
+	return m.dialog != nil && m.dialog.kind == dlgActions && m.dialog.title == "Credential request"
 }
 
 func TestARowWithAWaitingRequestIsMarked(t *testing.T) {
@@ -201,11 +222,17 @@ func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
 	if !strings.Contains(dialogText(m), "bind gh to github.com instead") {
 		t.Fatalf("question = %q, want it to offer the binding that covers both", dialogText(m))
 	}
-	if !strings.Contains(dialogText(m), "no leaves the request waiting") {
+	if !strings.Contains(dialogText(m), "no goes back to the request") {
 		t.Fatalf("question = %q, want it to say what No does", dialogText(m))
 	}
 
+	// Yes is agreed to, not yet done: the lifetime is still to be chosen, and
+	// going back from it must find the secret as it was.
 	drain(t, m, m.dialog.action("yes"), 0)
+	if len(ds.bound) != 0 {
+		t.Fatal("the binding moved before the approval was finished")
+	}
+	grantFor(t, m, time.Hour)
 	if len(ds.bound) != 1 || ds.bound[0] != "sec_gh=github.com" {
 		t.Fatalf("bound = %v, want the secret moved to the host that covers both", ds.bound)
 	}
@@ -214,14 +241,15 @@ func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
 	}
 }
 
-// A secret bound to the host being asked for is approved straight away: there
-// is nothing to ask about.
+// A secret bound to the host being asked for goes straight on to the lifetime:
+// there is nothing about the binding to ask.
 func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
 
 	if len(ds.unbound) != 0 {
 		t.Fatal("a matching secret was unbound")
@@ -240,6 +268,7 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 		t.Fatal("no dialog")
 	}
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
 
 	if len(ds.approvals) != 1 {
 		t.Fatalf("approvals = %#v, want one", ds.approvals)
@@ -254,6 +283,263 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	// guessed at, so the row follows the server.
 	if len(m.requests["sbx_one"]) != 0 {
 		t.Fatalf("requests = %#v, want the answered one gone", m.requests)
+	}
+}
+
+// How long a credential is handed out for is the half of an approval nobody
+// thinks to look for — until it was asked, the window minted whatever the
+// credential's own ceiling happened to be, which for most credentials was
+// forever. So it is a step of its own, after the secret, and it has to be
+// answered.
+func TestChoosingASecretAsksHowLongNext(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	// The request card asks one thing: which secret.
+	if strings.Contains(dialogText(m), "granted for") || strings.Contains(dialogText(m), "1 hour") {
+		t.Fatalf("card = %q, want no lifetime on it; that is the next step", dialogText(m))
+	}
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
+	}
+	if len(ds.approvals) != 0 {
+		t.Fatal("it approved before asking how long")
+	}
+	var labels []string
+	for _, item := range m.dialog.items {
+		labels = append(labels, item.label)
+	}
+	if want := []string{"1 hour", "1 day", "1 week", "1 month", "forever", "custom…"}; strings.Join(labels, ",") != strings.Join(want, ",") {
+		t.Fatalf("offered = %v, want %v", labels, want)
+	}
+	// It says what the lifetime is for: the credential, what answers it, and
+	// where it may go.
+	for _, want := range []string{"github", "GitHub token", "api.github.com"} {
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("step = %q, want it to name %q", dialogText(m), want)
+		}
+	}
+
+	// It opens on an hour, so Enter is the default answer.
+	send(t, m, keyPress("enter"))
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
+		t.Fatalf("approvals = %#v, want the hour it opened on", ds.approvals)
+	}
+}
+
+// Forever is offered, and says what it means rather than leaving the word to
+// do it alone.
+func TestForeverIsAnAnswerThatSaysSo(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	for _, item := range m.dialog.items {
+		if item.label == "forever" && !strings.Contains(item.detail, "never expires") {
+			t.Fatalf("forever = %q, want it to say it never expires", item.detail)
+		}
+	}
+	grantFor(t, m, lifetime.Forever)
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 0 {
+		t.Fatalf("approvals = %#v, want the zero that means it never expires", ds.approvals)
+	}
+}
+
+// Esc on the lifetime is "not that secret", not "never mind": it goes back to
+// the request, which is still waiting.
+func TestEscOnTheLifetimeGoesBackToTheRequest(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	send(t, m, keyPress("esc"))
+
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request back", describe(m.dialog))
+	}
+	if len(ds.approvals) != 0 {
+		t.Fatal("going back approved something")
+	}
+}
+
+// When the secret raised a question on the way to the lifetime, that question
+// is the dialog before it, and Esc goes back there — with nothing it agreed to
+// done yet.
+func TestEscOnTheLifetimeGoesBackToTheBindingQuestion(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	req.Host = "github.com"
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "gh", Type: "bearer", Host: "api.github.com"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	drain(t, m, m.dialog.action("yes"), 0)
+	send(t, m, keyPress("esc"))
+
+	if m.dialog == nil || m.dialog.kind != dlgConfirm || m.dialog.title != "Bound to another host" {
+		t.Fatalf("dialog = %s, want the binding question back", describe(m.dialog))
+	}
+	if len(ds.bound) != 0 || len(ds.approvals) != 0 {
+		t.Fatal("going back changed something")
+	}
+	// And agreeing a second time binds once, not twice.
+	drain(t, m, m.dialog.action("yes"), 0)
+	grantFor(t, m, time.Hour)
+	if len(ds.bound) != 1 || len(ds.updated) != 1 {
+		t.Fatalf("bound = %v, updates = %d, want the one change agreed to", ds.bound, len(ds.updated))
+	}
+}
+
+// Every lifetime offered is one the `discobox secret` flags parse: the window
+// and the CLI mint the same grant from the same words.
+func TestTheOfferedLifetimesAreTheOnesTheFlagsTake(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	for _, item := range m.dialog.items {
+		if item.key == lifetimeCustom {
+			continue
+		}
+		d, err := lifetime.Parse(item.label)
+		if err != nil {
+			t.Fatalf("%q is offered and cannot be typed back: %v", item.label, err)
+		}
+		if got := strconv.FormatInt(lifetime.Seconds(d), 10); got != item.key {
+			t.Fatalf("%q means %s seconds, and the step would grant %s", item.label, got, item.key)
+		}
+	}
+}
+
+// The presets are the common answers, not every answer.
+func TestALifetimeCanBeTypedIn(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	drain(t, m, m.dialog.action(lifetimeCustom), 0)
+	if m.dialog == nil || m.dialog.kind != dlgInput {
+		t.Fatalf("dialog = %s, want somewhere to type a lifetime", describe(m.dialog))
+	}
+	// Esc goes back to the presets, one step, not to the request.
+	send(t, m, keyPress("esc"))
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the presets back", describe(m.dialog))
+	}
+
+	drain(t, m, m.dialog.action(lifetimeCustom), 0)
+	// Not a lifetime: the card stays up saying what one looks like, rather
+	// than closing onto the screen behind it having granted nothing.
+	drain(t, m, m.dialog.action("a while"), 0)
+	if m.dialog == nil || m.dialog.kind != dlgInput {
+		t.Fatalf("dialog = %s, want the question still up", describe(m.dialog))
+	}
+	// The refusal is the one thing on the re-ask that the first ask did not
+	// carry; the footer naming the spellings is on both.
+	if !strings.Contains(dialogText(m), `"a while" is not a lifetime`) {
+		t.Fatalf("card = %q, want the refusal of what was typed", dialogText(m))
+	}
+
+	drain(t, m, m.dialog.action("36h"), 0)
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 36*3600 {
+		t.Fatalf("approvals = %#v, want the typed lifetime", ds.approvals)
+	}
+}
+
+// A credential that caps how long its grants may live is one the server would
+// refuse the grant on. The window says so before the choice — on the secret's
+// row, and on the lifetimes it does not allow — and asks, in the words the
+// server would use, when one of those is chosen anyway.
+func TestALifetimeLongerThanTheCredentialAllowsAsksFirst(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.mu.Lock()
+	ds.projectSecrets[0].MaxTTL = time.Hour
+	ds.mu.Unlock()
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !strings.Contains(dialogText(m), "at most 1 hour") {
+		t.Fatalf("card = %q, want the credential's limit on its row", dialogText(m))
+	}
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	for _, item := range m.dialog.items {
+		over := item.label != "1 hour" && item.key != lifetimeCustom
+		if over != strings.Contains(item.detail, "asks first") {
+			t.Fatalf("%s = %q, want only the lifetimes over the limit to say they ask", item.label, item.detail)
+		}
+	}
+	grantFor(t, m, lifetime.Day)
+
+	if m.dialog == nil || m.dialog.kind != dlgConfirm {
+		t.Fatalf("dialog = %s, want the question about the limit", describe(m.dialog))
+	}
+	if !m.dialog.defaultNo {
+		t.Fatal("raising how long every grant on a credential may live is not an Enter away")
+	}
+	if len(ds.approvals) != 0 {
+		t.Fatal("it approved before asking")
+	}
+	for _, want := range []string{"1 hour", "1 day", "GitHub token"} {
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("question = %q, want it to name %q", dialogText(m), want)
+		}
+	}
+
+	drain(t, m, m.dialog.action("yes"), 0)
+	if len(ds.limited) != 1 || ds.limited[0] != "sec_gh=86400" {
+		t.Fatalf("limited = %v, want the credential's limit raised to what was granted", ds.limited)
+	}
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 86400 {
+		t.Fatalf("approvals = %#v, want the day it asked about", ds.approvals)
+	}
+}
+
+// No goes back to the lifetime, where a shorter one can be chosen instead.
+func TestDecliningTheLimitReturnsToTheLifetime(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.mu.Lock()
+	ds.projectSecrets[0].MaxTTL = time.Hour
+	ds.mu.Unlock()
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, lifetime.Day)
+	send(t, m, keyPress("esc"))
+
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the lifetime back", describe(m.dialog))
+	}
+	if len(ds.limited) != 0 || len(ds.approvals) != 0 {
+		t.Fatal("declining changed something")
+	}
+	grantFor(t, m, time.Hour)
+	if len(ds.limited) != 0 || len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
+		t.Fatalf("limited = %v, approvals = %#v, want the hour granted and the limit left alone", ds.limited, ds.approvals)
+	}
+}
+
+// The report is the only place the lifetime is said after the dialogs are gone.
+func TestTheApprovalSaysHowLongItGrantedFor(t *testing.T) {
+	t.Parallel()
+	m, _ := sourceWithRequest(t)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, lifetime.Day)
+
+	if !strings.Contains(strings.Join(frame(m), "\n"), "approved github for 1 day") {
+		t.Fatalf("the window did not say what it granted:\n%s", strings.Join(frame(m), "\n"))
 	}
 }
 
@@ -280,9 +566,26 @@ func TestANewCredentialIsStoredThenApproved(t *testing.T) {
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("new"), 0)
+	// How long comes before the token, so going back never has to hold a
+	// token that was already typed.
+	grantFor(t, m, lifetime.Week)
 	if m.dialog == nil || m.dialog.kind != dlgInput {
 		t.Fatal("choosing a new credential did not ask for one")
 	}
+	if !strings.Contains(dialogText(m), "1 week") {
+		t.Fatalf("card = %q, want it to say how long it is being granted for", dialogText(m))
+	}
+	// Esc goes back one step, to the lifetime; and from there to the request.
+	send(t, m, keyPress("esc"))
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the lifetime back", describe(m.dialog))
+	}
+	send(t, m, keyPress("esc"))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request back", describe(m.dialog))
+	}
+	drain(t, m, m.dialog.action("new"), 0)
+	grantFor(t, m, lifetime.Week)
 	// A credential is not drawn back as it is typed.
 	if m.dialog.input.EchoMode == 0 {
 		t.Fatal("the token is echoed in the clear")
@@ -304,6 +607,9 @@ func TestANewCredentialIsStoredThenApproved(t *testing.T) {
 	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_new" {
 		t.Fatalf("approvals = %#v, want the request approved with what was just stored", ds.approvals)
 	}
+	if ds.approvals[0].TTLSeconds != 604800 {
+		t.Fatalf("ttl = %d, want the week that was chosen", ds.approvals[0].TTLSeconds)
+	}
 }
 
 func TestAnEmptyTokenLeavesTheRequestWaiting(t *testing.T) {
@@ -312,6 +618,7 @@ func TestAnEmptyTokenLeavesTheRequestWaiting(t *testing.T) {
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("new"), 0)
+	grantFor(t, m, time.Hour)
 	drain(t, m, m.dialog.action("   "), 0)
 
 	if len(ds.createdSecrets) != 0 || len(ds.approvals) != 0 {
@@ -527,6 +834,7 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
 
 	if m.dialog == nil {
 		t.Fatal("the failure closed the dialog and left nothing on screen")
@@ -544,6 +852,51 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	}
 	if len(m.requests["sbx_one"]) != 1 {
 		t.Fatal("the request stopped waiting after a failed approval")
+	}
+}
+
+// A change agreed to on the way through is applied before the grant is minted —
+// the server checks the ceiling at minting — so an approval that fails after it
+// leaves a changed credential behind. The failure says so, since nothing else
+// on screen will.
+func TestAFailedApprovalSaysWhatWasAlreadyChanged(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.mu.Lock()
+	ds.projectSecrets[0].MaxTTL = time.Hour
+	ds.approveErr = errors.New("secret request status changed concurrently; refresh and try again")
+	ds.mu.Unlock()
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, lifetime.Forever)
+	drain(t, m, m.dialog.action("yes"), 0)
+
+	if m.dialog == nil || !m.dialog.err {
+		t.Fatalf("dialog = %s, want the failure", describe(m.dialog))
+	}
+	text := dialogText(m)
+	for _, want := range []string{"changed concurrently", "already done", "GitHub token's limit was lifted", "forever"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("failure = %q, want it to say %q", text, want)
+		}
+	}
+}
+
+// A failure that changed nothing says nothing about changes.
+func TestAFailedApprovalThatChangedNothingSaysNothingOfChanges(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.mu.Lock()
+	ds.approveErr = errTestRefused
+	ds.mu.Unlock()
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+
+	if strings.Contains(dialogText(m), "already done") {
+		t.Fatalf("failure = %q, want no changes claimed when there were none", dialogText(m))
 	}
 }
 
@@ -568,8 +921,8 @@ func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
 
 	// Esc is the same answer as no, and it is the one a hurried reader gives.
 	drain(t, m, m.dialog.onCancel(), 0)
-	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatalf("dialog = %#v, want the picker back", m.dialog)
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the picker back", describe(m.dialog))
 	}
 	if !strings.Contains(dialogText(m), "github.com") {
 		t.Fatalf("body = %q, want the request still in front of you", dialogText(m))

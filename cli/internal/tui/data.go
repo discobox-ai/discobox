@@ -1158,8 +1158,11 @@ type SecretUpdate struct {
 type Approval struct {
 	RequestID string
 	SecretID  string
-	// TTLSeconds is how long the grant lives; zero takes the secret's limit,
-	// which is also the lifetime nobody has to choose.
+	// TTLSeconds is how long the grant lives, and it is always said: zero is
+	// forever, not "whatever the secret's limit happens to be". An approval
+	// that left it out was minting a grant whose lifetime nobody on this side
+	// had seen — most credentials cap nothing, so most of those grants never
+	// expired. See credentials.go.
 	TTLSeconds int64
 }
 

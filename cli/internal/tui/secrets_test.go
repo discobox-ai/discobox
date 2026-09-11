@@ -650,13 +650,13 @@ func chooseTTL(t *testing.T, m *Model, row, preset string) {
 	}
 }
 
-// customTTL takes the picker to custom and types a number of seconds into the
-// row that appears behind it.
-func customTTL(t *testing.T, m *Model, row, seconds string) {
+// customTTL takes the picker to custom and types a lifetime into the row that
+// appears behind it.
+func customTTL(t *testing.T, m *Model, row, howLong string) {
 	t.Helper()
 	chooseTTL(t, m, row, ttlCustom)
 	clearRow(t, m, row+"Custom")
-	send(t, m, typeString(seconds)...)
+	send(t, m, typeString(howLong)...)
 }
 
 // rowShown is whether the form is taking an answer for a row. A row it is not
@@ -686,7 +686,7 @@ func TestAnUnreadableLifetimeGrantsNothing(t *testing.T) {
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("dialog = %s, want the form still up", describe(m.dialog))
 	}
-	if !strings.Contains(dialogText(m), "a number of seconds") {
+	if !strings.Contains(dialogText(m), "a lifetime is 1h, 90m, 3d, 2w, 1mo, or forever") {
 		t.Fatalf("the form does not say what it could not read:\n%s", dialogText(m))
 	}
 }
@@ -1085,6 +1085,46 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	}
 }
 
+// A limit that is not a preset is prefilled on the custom row in the words it
+// reads back in, and those words have to be ones the row accepts: a secret
+// capped at a second was refused on a field nobody touched, because "1 second"
+// was read as a count of days ending in "d".
+func TestAnOddLimitSurvivesAnEditThatDoesNotTouchIt(t *testing.T) {
+	t.Parallel()
+	m, ds := secretsFixture(t)
+	m.secrets.all[0].MaxTTL = time.Second
+
+	send(t, m, keyPress("e"))
+	if got := m.dialog.form.chosen("ttl"); got != ttlCustom {
+		t.Fatalf("ttl row = %q, want a limit that is no preset on the custom row", got)
+	}
+	send(t, m, keyPress("enter"))
+	if m.dialog != nil && m.dialog.kind == dlgForm {
+		t.Fatalf("the form refused a limit nobody touched: %q", m.dialog.form.err)
+	}
+	// And it is not rewritten either: nothing about it changed.
+	if len(ds.limited) != 0 {
+		t.Fatalf("limited = %v, want the untouched limit left alone", ds.limited)
+	}
+}
+
+// A limit that cannot be read says what one looks like — the words the row
+// takes now, not the seconds it used to.
+func TestAnUnreadableLimitSaysWhatOneLooksLike(t *testing.T) {
+	t.Parallel()
+	m, _ := secretsFixture(t)
+
+	send(t, m, keyPress("e"))
+	customTTL(t, m, "ttl", "a while")
+	send(t, m, keyPress("enter"))
+	if m.dialog == nil || m.dialog.kind != dlgForm {
+		t.Fatalf("dialog = %s, want the form still up", describe(m.dialog))
+	}
+	if !strings.Contains(dialogText(m), "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit") {
+		t.Fatalf("the form does not say what a limit looks like:\n%s", dialogText(m))
+	}
+}
+
 // The limit is a ceiling on how long consent to a credential may last, and zero
 // is the meaningful answer "no limit" rather than an empty field. Both have to
 // be sayable in the window, and both have to read as what they are.
@@ -1196,7 +1236,7 @@ func TestTheGrantLifetimeRowNamesTheSecretsLimit(t *testing.T) {
 		t.Fatal("no grant form was opened")
 	}
 	onRow(t, m, "ttl")
-	if text := dialogText(m); !strings.Contains(text, "at most 1h") || !strings.Contains(text, "cannot be granted forever") {
+	if text := dialogText(m); !strings.Contains(text, "at most 1 hour") || !strings.Contains(text, "cannot be granted forever") {
 		t.Fatalf("form = %q, want the secret's limit said before it is exceeded", text)
 	}
 

@@ -188,10 +188,12 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, secretID string, updat
 
 // ApproveCredentialRequest mints the grant that answers a request.
 func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, approval tui.Approval) error {
+	// The lifetime is always sent, zero included: zero is a grant that never
+	// expires, and leaving it out would ask the server for the secret's own
+	// limit instead — a different grant from the one the window said it was
+	// minting.
 	body := &apimodel.ApproveSecretRequestBody{SecretId: approval.SecretID}
-	if approval.TTLSeconds > 0 {
-		body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
-	}
+	body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
 		RequestId: approval.RequestID,

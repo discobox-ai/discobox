@@ -165,9 +165,12 @@ host releases a binding and a zero limit allows grants that never expire, so
 neither can stand for "unchanged".
 
 **A lifetime is asked as the answers people give** (`ttlRows`, `ttlSeconds`):
-1 hour, 1 day, 1 week, forever, and a seconds field behind `custom…`. Seconds
-alone was a field nobody could answer without arithmetic, and `604800` is not a
-week to anyone reading it back. On a secret the row is labelled **grant limit**,
+1 hour, 1 day, 1 week, 1 month, forever, and a typed one behind `custom…`.
+Seconds alone was a field nobody could answer without arithmetic, and `604800`
+is not a week to anyone reading it back. The presets, their spelling and what
+the typed row accepts all come from `cli/internal/lifetime`, which is also what
+the `discobox secret` flags parse — a window offering a month the flags could
+not express would be a second vocabulary for one decision. On a secret the row is labelled **grant limit**,
 not "grants last": the value is a ceiling, and "grants last 1 day" states it as
 the lifetime every grant on the credential gets, which is the opposite of what
 it does. Reading the credential says it the same way. A new credential is stored with **no limit** unless one is
@@ -180,7 +183,7 @@ secret limited by whatever the server's default happens to be, and zero is sent
 explicitly since leaving it out would mean exactly that.
 
 **A form that is not answered stays up, holding what was typed.** A missing
-required row or a lifetime that is not a number puts the reason on the hint line
+required row or a lifetime that cannot be read puts the reason on the hint line
 and the cursor on the row; closing the card and reporting onto the screen behind
 it would throw away everything already entered.
 
@@ -274,12 +277,50 @@ it is the letter of the thing it does.
 
 **The dialog decides nothing.** It shows what was asked — the credential, the
 env var, the host, the justification, and the uses the agent declared — and
-collects one answer: a project secret, a credential typed in on the spot
-(masked, stored, and approved with), or a denial. Everything else follows the
-request on the server, which is what keeps this and `discobox secret request
-approve` the same act. Secrets bound to another host are listed but not
-offered: leaving them out would read as the project not having them, and
-choosing one would only mint a grant the server refuses.
+collects two answers, one per step: which secret answers it (a project secret,
+a credential typed in on the spot, or a denial), then how long the grant lives.
+Everything else follows the request on the server, which is what keeps this and
+`discobox secret request approve` the same act. Every secret is offered,
+including one bound to another host: greying those out left the one secret that
+plainly answers the request unpickable, so the binding is asked about on the
+way through instead (`confirmGrantHost`), in the words the server would refuse
+it with.
+
+**How long is a required second step** (`askLifetime`). Choosing a secret opens
+a card of its own — 1 hour, 1 day, 1 week, 1 month, forever, and `custom…` for a
+typed one — with the cursor on **1 hour**, so Enter is the default answer. It
+is a step rather than a field on the request card because it is the half of an
+approval nobody thinks to look for: the lifetime used to be left out of the
+call entirely, which asked the server for the credential's own ceiling — a
+ceiling most credentials do not have — so the window handed out permanent
+credentials without ever saying the word. A card that has to be answered is one
+that gets read. `Approval.TTLSeconds` is now always sent, zero included, and
+zero means forever rather than "whatever the secret allows". The hour is
+`lifetime.Default`, and `discobox secret request approve` sends the same one
+when `--grant-ttl` is left out, so approving a request mints the same grant from
+either side.
+
+The steps run: request → binding question, only when the secret is bound
+elsewhere → lifetime → limit question, only when the lifetime is over the
+secret's cap → approve. A new credential takes its lifetime *before* its token,
+so going back never has to hold a token that was already typed. **Esc, or No,
+goes back exactly one step**: from the lifetime to the binding question if one
+was asked, else to the request; from a typed lifetime to the presets; from the
+limit question to wherever the lifetime was chosen; from the token to the
+lifetime. The answers so far travel as one `approval` value, copied rather than
+changed at each step, so the dialog before is rebuilt from the approval as it
+stood when that dialog was asked — agreeing to a rebind, backing out of the
+lifetime, and agreeing again binds once.
+
+**A lifetime the credential does not allow asks before it is refused**
+(`confirmGrantLimit`). A secret's grant limit is a ceiling the server enforces
+at minting, so the request card names it on each secret's row, the lifetime
+step marks every choice over it, and choosing one anyway offers to raise it —
+one question, defaulting to No, since raising it is a decision about the
+credential rather than something a grant does in passing. Nothing any question
+agrees to is applied until the last step: the binding and the limit chain into
+one `SecretUpdate` and one approval (`finishApproval`), because a card whose
+answers were saved by a call each half-applies when the second fails.
 
 ## The attention band
 
@@ -2081,7 +2122,7 @@ the newest one where the busy line goes.
 | `readline.go` | the composer's emacs mode: the word keys, the kill ring, undo, transpose words |
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
-| `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers |
+| `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
 | `apply.go` | apply: the ready band, the question a click asks, and what is offered when it succeeds |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |

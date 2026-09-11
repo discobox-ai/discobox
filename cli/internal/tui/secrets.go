@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -224,19 +226,19 @@ func secretAge(s Secret, now time.Time) string {
 	return age + " ago"
 }
 
-// shortDuration renders a grant lifetime the way the row has room for: "1h",
-// "30m", "—" for one that never expires.
-// grantLimit is a secret's ceiling on grant lifetimes. Zero is not absence: it
-// is the answer "no limit", so it is spelled out rather than borrowing
-// shortDuration's "never", which in this column would read as the opposite of
-// what it means.
+// grantLimit is a secret's ceiling on grant lifetimes, said in the words it was
+// chosen in — a limit set as "1 month" reads back as one, not as 720h — since
+// the same limit is read on the credential dialog through the same package.
+// Zero is not absence: it is the answer "no limit", so it is spelled "forever"
+// rather than borrowing shortDuration's "never", which would read as the
+// opposite of what it means.
 func grantLimit(d time.Duration) string {
-	if d <= 0 {
-		return "forever"
-	}
-	return shortDuration(d)
+	return lifetime.Label(d)
 }
 
+// shortDuration renders the time left on a grant the way a column has room
+// for: "1h", "30m", "never" for one that does not expire. It is for countdowns,
+// not for a lifetime somebody chose — those are grantLimit's.
 func shortDuration(d time.Duration) string {
 	switch {
 	case d <= 0:
@@ -476,7 +478,7 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	d := formDialog("Grant "+secret.Name, newForm(rows...), func(f *form) tea.Cmd {
 		seconds, ok := ttlSeconds(f, "ttl")
 		if !ok {
-			f.err = "a lifetime is a number of seconds"
+			f.err = "a lifetime is 1h, 90m, 3d, 2w, 1mo, or forever"
 			return nil
 		}
 		grant := NewGrant{
@@ -631,7 +633,7 @@ func describeSecret(secret Secret, now time.Time) []section {
 	}
 	limit := "none — grants on it may live forever"
 	if secret.MaxTTL > 0 {
-		limit = "at most " + shortDuration(secret.MaxTTL)
+		limit = "at most " + grantLimit(secret.MaxTTL)
 	}
 	credential := section{label: "the credential", fields: []field{
 		{label: "kind", value: secret.Type},
@@ -840,16 +842,18 @@ func (m *Model) revokeGrant(grantID string) tea.Cmd {
 }
 
 // A lifetime is asked as the answers people actually give, with a way out to
-// any other: an hour, a day, a week, forever, or a number of seconds behind
+// any other: an hour, a day, a week, a month, forever, or one typed in behind
 // "custom". Seconds alone was a field nobody could answer without arithmetic,
 // and 604800 is not a week to anyone reading it back.
 //
-// The presets are the picker's keys, so reading one back is parsing what was
-// chosen rather than remembering which index meant what.
+// The presets and their spelling come from the lifetime package, which is also
+// what the `discobox secret` flags parse: a window offering a month that the
+// flags could not express would be a second vocabulary for one decision.
+//
+// The presets are the picker's keys — a lifetime in seconds — so reading one
+// back is parsing what was chosen rather than remembering which index meant
+// what.
 const (
-	ttlHour   = "3600"
-	ttlDay    = "86400"
-	ttlWeek   = "604800"
 	ttlNever  = "0"
 	ttlCustom = "custom"
 )
@@ -865,13 +869,20 @@ const ttlDefault = ttlNever
 // custom. The second only applies while the first is on custom, so the number
 // is there to be edited when it is wanted and out of the way when it is not.
 func ttlRows(key, label, section, forever string, seconds int64) []formRow {
-	pick := pickRow(key, label,
-		choice{key: ttlHour, label: "1 hour"},
-		choice{key: ttlDay, label: "1 day"},
-		choice{key: ttlWeek, label: "1 week"},
-		choice{key: ttlNever, label: forever},
-		choice{key: ttlCustom, label: "custom…"},
-	)
+	choices := make([]choice, 0, len(lifetime.Presets)+1)
+	for _, d := range lifetime.Presets {
+		// Forever is named by the caller: on a grant it never expires, and on
+		// a credential's ceiling it is no limit — the same zero, saying two
+		// different things about two different fields.
+		name := lifetime.Label(d)
+		if d == lifetime.Forever {
+			name = forever
+		}
+		choices = append(choices, choice{key: itoa(int(lifetime.Seconds(d))), label: name})
+	}
+	choices = append(choices, choice{key: ttlCustom, label: "custom…"})
+
+	pick := pickRow(key, label, choices...)
 	pick.section = section
 	pick.at = len(pick.choices) - 1
 	for i, c := range pick.choices {
@@ -879,9 +890,9 @@ func ttlRows(key, label, section, forever string, seconds int64) []formRow {
 			pick.at = i
 		}
 	}
-	// The seconds row reads as a continuation of the picker above it rather
-	// than as a second field with the same name.
-	custom := textRow(key+"Custom", "…in seconds", "e.g. 3600", itoa(int(seconds)))
+	// The typed row reads as a continuation of the picker above it rather than
+	// as a second field with the same name.
+	custom := textRow(key+"Custom", "…how long", "e.g. 90m, 3d, 6mo", lifetime.Label(time.Duration(seconds)*time.Second))
 	custom.section = section
 	custom.why = "the presets above cover it"
 	custom.when = func(f *form) bool { return f.chosen(key) == ttlCustom }
@@ -889,15 +900,19 @@ func ttlRows(key, label, section, forever string, seconds int64) []formRow {
 }
 
 // ttlSeconds reads a lifetime back off the two rows, refusing what is not a
-// number of seconds rather than quietly meaning something else.
+// lifetime rather than quietly meaning something else. The typed row takes
+// anything the flags take — 90m, 3d, 6mo, forever, or a bare number of seconds.
 func ttlSeconds(f *form, key string) (int64, bool) {
 	chosen := f.chosen(key)
 	if chosen != ttlCustom {
 		seconds, err := strconv.ParseInt(chosen, 10, 64)
 		return seconds, err == nil
 	}
-	seconds, err := strconv.ParseInt(f.value(key+"Custom"), 10, 64)
-	return seconds, err == nil && seconds >= 0
+	d, err := lifetime.Parse(f.value(key + "Custom"))
+	if err != nil {
+		return 0, false
+	}
+	return lifetime.Seconds(d), true
 }
 
 // secretForm is a credential on one card: the same rows for storing a new one
@@ -1046,7 +1061,7 @@ func (m *Model) newSecretForm() tea.Cmd {
 	d := formDialog("New secret", secretForm(nil), func(f *form) tea.Cmd {
 		seconds, ok := ttlSeconds(f, "ttl")
 		if !ok {
-			f.err = "a limit is a number of seconds"
+			f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
 			return nil
 		}
 		return m.storeSecret(NewSecret{
@@ -1106,7 +1121,7 @@ func (m *Model) editSecretForm() tea.Cmd {
 	d := formDialog("Edit "+secret.Name, secretForm(secret), func(f *form) tea.Cmd {
 		seconds, ok := ttlSeconds(f, "ttl")
 		if !ok {
-			f.err = "a limit is a number of seconds"
+			f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
 			return nil
 		}
 		update := SecretUpdate{}

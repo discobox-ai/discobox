@@ -385,7 +385,7 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 				return nil, true
 			}
 			cmd := d.submit(d.form)
-			// A submit that refused — a lifetime that is not a number — says so
+			// A submit that refused — a lifetime that cannot be read — says so
 			// on the form, and the form stays up holding everything typed.
 			if d.form.err != "" {
 				return nil, false
