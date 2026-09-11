@@ -119,6 +119,7 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	m.harnessesOpen = false
 	m.busy = "attach…"
 	m.connecting = map[string]bool{}
+	m.ending = map[string]bool{}
 	// Nothing is held against a workspace that is only now opening: a refusal
 	// belongs to the session it happened in, and the first thing this one does
 	// is try again. See push.go.
@@ -276,6 +277,11 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 				continue
 			}
 			if m.paneByExec(exec.ID) != nil {
+				continue
+			}
+			// Above the tool branch, because a tool is killed the same way a
+			// shell is and the listing is the same poll behind either one.
+			if m.ending[exec.ID] {
 				continue
 			}
 			if toolExec(exec) {
@@ -716,8 +722,12 @@ func (m *Model) paneByExec(execID string) *pane {
 
 // closeTab takes one pane off the screen: its stream is closed and it leaves
 // its column. It is how a held pane is dismissed and how an errored one is
-// dropped — never how a running session is ended, which is the session's own
-// to do.
+// dropped, and it kills nothing by itself: a session whose tab is closed here
+// is still running.
+//
+// endPane is the one caller that ends a running session, and it does so in two
+// parts — this, and the kill it sends after it. Everywhere else, closing a tab
+// is closing a view.
 func (m *Model) closeTab(p *pane) {
 	col, i := m.paneColumn(p)
 	if col == nil {
@@ -733,12 +743,94 @@ func (m *Model) closeTab(p *pane) {
 	m.layout()
 }
 
+// endablePane reports whether a pane's session is this window's to end, and
+// when it is not, what to say instead.
+//
+// The primary is not: it is the session the workspace is a view onto, and
+// ending it ends the screen — which is what detaching or quitting is for, and
+// neither of those kills anything. A service is not either: it starts and
+// stops on the discobox's schedule, and the keys that do that to it are the
+// two the pane already offers. What is left is what you opened yourself — a
+// shell, or a terminal beside the primary — which is exactly what nothing else
+// on this screen can close.
+func (m *Model) endablePane(p *pane) (why string, ok bool) {
+	switch {
+	case p == nil || p.execID == "":
+		return "nothing to end here", false
+	case p.primary:
+		return "the primary terminal is the workspace — " + m.detachHint() + " leaves it, and the session keeps running", false
+	case p.service != "":
+		return "a service is stopped rather than ended — " + m.leader() + " t stops it", false
+	}
+	return "", true
+}
+
+// endPane ends one session and takes its tab off the screen: the pane the key
+// was typed into or the button was drawn on, and no other. The tabs beside it
+// are other sessions, still running, still attached.
+//
+// The tab goes first and the kill is sent after it, the way a tool window's
+// [x] works: what the press asked for is that this session is gone, and a tab
+// that lingered until the server answered would leave the one thing the press
+// was about still on screen. A pane whose session is already over has nothing
+// to kill and is only dismissed.
+func (m *Model) endPane(p *pane) tea.Cmd {
+	if why, ok := m.endablePane(p); !ok {
+		return status("%s", why)
+	}
+	if p.exited {
+		return m.dismissPane(p)
+	}
+	name, execID, gen := p.name(), p.execID, m.wsGen
+	// The listing is a poll behind the act, so the session it still reports as
+	// live is one this window has already closed the tab for. Remembering it
+	// is what keeps the next tick from opening the tab straight back up — for
+	// the rest of the workspace, since two listings can be in flight at once
+	// and the older of them can land last.
+	if m.ending == nil {
+		m.ending = map[string]bool{}
+	}
+	m.ending[execID] = true
+	m.closeTab(p)
+	ctx, ds, box := m.ctx, m.ds, m.paneBox.ID
+	return tea.Batch(status("%s ended", name), func() tea.Msg {
+		if err := ds.EndExec(ctx, box, execID); err != nil {
+			return endExecFailedMsg{gen: gen, execID: execID, name: name, err: err}
+		}
+		return nil
+	})
+}
+
+// endExecFailedMsg is a kill the server refused: the pane is already off the
+// screen — a tab, or a tool window — and the session it was drawing is still
+// running.
+type endExecFailedMsg struct {
+	gen    int
+	execID string
+	name   string
+	err    error
+}
+
+// endExecFailed puts a session the server would not kill back where the poll
+// can find it — a shell's tab, or a tool's place in the strip. The view was
+// closed on the press, which is right while the kill is in flight and wrong the
+// moment it fails: the session is still running, and a workspace that hid it
+// would be one where the only way back to it is to detach and attach again.
+func (m *Model) endExecFailed(msg endExecFailedMsg) tea.Cmd {
+	if msg.gen != m.wsGen {
+		return nil
+	}
+	delete(m.ending, msg.execID)
+	return m.report(true, "could not end %s: %v — it is still running", msg.name, msg.err)
+}
+
 // closeWorkspace leaves the workspace: every stream is closed at once — the
 // overlay, the terminal, every tab — and every session keeps running. Bumping
 // the generation is what ends the poll and orphans any open still in flight.
 func (m *Model) closeWorkspace() {
 	m.wsGen++
 	m.connecting = nil
+	m.ending = nil
 	// The push loop ends with the generation, and what it was holding against
 	// this workspace goes with it.
 	m.pushHeld = nil
@@ -931,11 +1023,12 @@ func (m *Model) tabBase(shells bool) int {
 //
 // left is the screen column the box starts at, so a click on a label can be
 // routed back to the tab that drew it whichever side it is on, and control is
-// the box's already-drawn maximize button, which shares the line.
+// the box's already-drawn buttons, which share the line.
 func (m *Model) tabbedEdge(col *column, shells bool, left int, control string, edge lipgloss.Style, inner int) string {
 	rule := func(n int) string { return strings.Repeat("─", max(n, 0)) }
-	// The maximize button shares the line, at the far end; the strip gets what
-	// it leaves. See zoomControl.
+	// The box's own buttons share the line, at the far end, and there may be
+	// more than one of them — which is why what they cost is measured rather
+	// than assumed. The strip gets what they leave. See columnControls.
 	reserve := 0
 	if control != "" {
 		reserve = lipgloss.Width(control) + 1

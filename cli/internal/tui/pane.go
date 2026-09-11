@@ -55,6 +55,16 @@ const (
 	// everywhere else but belongs to the application inside a pane, so the
 	// leader carries the exit here — beside d, which only detaches.
 	paneQuitKey = "q"
+	// paneEndKey ends the session in front of you and takes its tab off the
+	// screen — the one thing on the workspace that kills something rather
+	// than closing a view onto it, which is why it is the shifted key beside
+	// none of the ones that only navigate.
+	//
+	// It is the same letter a tool window ends on (toolCloseKey), because it
+	// is the same act on the same screen: X ends what you are looking at. Only
+	// a shell or an extra terminal answers it — the primary ends the workspace
+	// and the services have their own verbs. See endPane.
+	paneEndKey = "X"
 	// paneInterruptKey is the application's everywhere, and never the window's.
 	// The one exception is a pane whose command has finished, where there is
 	// nothing left to interrupt and it means done like the rest of them.
@@ -254,6 +264,10 @@ var paneServiceVerbs = map[string]ServiceVerb{
 // or give the window back to the split.
 type zoomPaneMsg struct{}
 
+// endPaneMsg is the leader plus X, or the [x] button on a box's top border:
+// end the session this pane is drawing and take its tab with it.
+type endPaneMsg struct{}
+
 // quitPaneMsg is the leader plus q: quit the whole window, every session left
 // running. It is the same exit Ctrl-C is everywhere else, spelled behind the
 // leader because inside a pane Ctrl-C belongs to the application.
@@ -370,8 +384,12 @@ func (m *Model) focusedPane() *pane {
 
 // column is the side of the workspace the keys are in: the shells while the
 // focus is on them, the terminals otherwise.
-func (m *Model) column() *column {
-	if m.onShells {
+func (m *Model) column() *column { return m.columnFor(m.onShells) }
+
+// columnFor is one named side of the workspace, for the controls that say
+// which side they were drawn on rather than which side has the focus.
+func (m *Model) columnFor(shells bool) *column {
+	if shells {
 		return &m.shells
 	}
 	return &m.terminals
@@ -583,6 +601,7 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
 		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
 		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
+		termpane.WithPrefixBinding(paneEndKey, endPaneMsg{}),
 	)
 	// The digits jump straight to a pane by the number its label wears, the
 	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
@@ -823,6 +842,12 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		}
 		m.toggleMaximized(m.onShells)
 		return nil
+
+	case endPaneMsg:
+		// The pane the key was typed into, not the one with focus: they are
+		// the same pane, and saying so here is what keeps the key and the
+		// [x] button on the same code.
+		return m.endPane(p)
 
 	case quitPaneMsg:
 		// The same exit Ctrl-C is outside a pane: the window goes, and every
@@ -1130,9 +1155,10 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		// then continues into the chrome's selection either way, so border
 		// text stays drag-selectable.
 		if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
-			// A tool window's buttons are the one control that answers a press
-			// outright: the gesture asked for the window to go, not for the
-			// text under it to be selected.
+			// A control that acts outright takes the gesture with it — the
+			// banner, a tool window's two buttons, a column's [x]: the press
+			// asked for the thing to happen, not for the text under it to be
+			// selected. focusChromeAt is what decides which those are.
 			if cmd, taken := m.focusChromeAt(click.X, click.Y); taken {
 				return cmd
 			}
@@ -1236,24 +1262,77 @@ type tabSpan struct {
 	start, end int
 }
 
-// zoomSpan is where one box's maximize control sits on the boxes' top border
-// row, in absolute screen columns, both ends inclusive. shells says which of
-// the two columns it belongs to.
-type zoomSpan struct {
+// buttonAction is what a press on one of a box's bracketed top-border controls
+// means. The tool window draws two of them and a workspace column draws the
+// other two; the two kinds of box are never on screen at once, which is why
+// one span list carries them all.
+type buttonAction int
+
+const (
+	// buttonMinimize and buttonClose are the tool window's: put it away, or
+	// end it. See toolControls.
+	buttonMinimize buttonAction = iota
+	buttonClose
+	// buttonZoom and buttonEnd are a workspace column's: give that column the
+	// window or hand it back, and end the session the column is showing. See
+	// columnControls.
+	buttonZoom
+	buttonEnd
+)
+
+// buttonSpan is where one of those controls sits on the boxes' top border row,
+// in absolute screen columns, both ends inclusive. shells says which of the two
+// columns drew it, and means nothing for the tool window's own two.
+type buttonSpan struct {
+	action     buttonAction
 	shells     bool
 	start, end int
 }
 
-// focusChromeAt applies a press on the chrome to what the cell means: a tool
-// window's [-] and [x] are that window put away or ended, the maximize button
-// is that box taking the window or giving it back, a tab label is that tab, and
-// any other cell of a pane's box is that pane.
+// buttonAt is the control under a screen position, if any. The spans were
+// recorded when the border was drawn, so only a button actually on screen has
+// one.
+func (m *Model) buttonAt(x, y int) (buttonSpan, bool) {
+	if y != 1+m.bannerTop() {
+		return buttonSpan{}, false
+	}
+	for _, s := range m.buttonSpans {
+		if x >= s.start && x <= s.end {
+			return s, true
+		}
+	}
+	return buttonSpan{}, false
+}
+
+// pressButton applies a press on one of them, and reports whether it owns the
+// gesture: a button that acts outright takes it, so the press does not also
+// start a drag-select of its own label, while the zoom only rearranges the
+// screen and leaves the border selectable.
+func (m *Model) pressButton(span buttonSpan) (tea.Cmd, bool) {
+	switch span.action {
+	case buttonMinimize:
+		return m.minimizeTool(), true
+	case buttonClose:
+		return m.closeTool(), true
+	case buttonEnd:
+		return m.endPane(m.columnFor(span.shells).visible()), true
+	case buttonZoom:
+		m.toggleMaximized(span.shells)
+		return nil, false
+	}
+	return nil, false
+}
+
+// focusChromeAt applies a press on the chrome to what the cell means: a box's
+// bracketed controls are what they say — a window put away or ended, a session
+// ended, a column taking the window or giving it back — a tab label is that
+// tab, and any other cell of a pane's box is that pane.
 //
 // It reports what the press asked for — ending a session is a request to the
 // server rather than a change to the screen — and whether it owns the gesture.
-// Only the tool window's buttons do: everything else on the chrome moves focus
-// and lets the press go on into the chrome's own selection, so border text
-// stays drag-selectable.
+// Only the buttons that act outright do: everything else on the chrome moves
+// focus and lets the press go on into the chrome's own selection, so border
+// text stays drag-selectable.
 func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 	// The banner is a button spanning the window, and it is tested first: it
 	// is drawn over nothing else, and it is the one thing on this screen that
@@ -1263,22 +1342,12 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 	if m.bannerAt(x, y) {
 		return m.pressBanner(), true
 	}
-	if m.showingTool() != nil {
-		button, ok := m.buttonAt(x, y)
-		if !ok {
-			return nil, false
-		}
-		if button == buttonClose {
-			return m.closeTool(), true
-		}
-		return m.minimizeTool(), true
+	if span, ok := m.buttonAt(x, y); ok {
+		return m.pressButton(span)
 	}
-	if m.overlay != nil {
-		// One box with nothing beside it; a border press chooses nothing.
-		return nil, false
-	}
-	if shells, ok := m.zoomAt(x, y); ok {
-		m.toggleMaximized(shells)
+	if m.showingTool() != nil || m.overlay != nil {
+		// One box with the whole window and nothing beside it; a press
+		// anywhere else on its chrome chooses nothing.
 		return nil, false
 	}
 	if shells, i, ok := m.tabAt(x, y); ok {
@@ -1290,21 +1359,6 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 		m.focusPane(p)
 	}
 	return nil, false
-}
-
-// zoomAt is the box whose maximize control is under a screen position. The
-// spans were recorded when the boxes were drawn, and only a box actually on
-// screen records one.
-func (m *Model) zoomAt(x, y int) (shells, ok bool) {
-	if y != 1+m.bannerTop() {
-		return false, false
-	}
-	for _, s := range m.zoomSpans {
-		if x >= s.start && x <= s.end {
-			return s.shells, true
-		}
-	}
-	return false, false
 }
 
 // toggleMaximized gives one column the whole window, or hands the window back
@@ -1491,7 +1545,7 @@ func (m *Model) viewPaneWindow() string {
 	// The drawing pass owns where the border's controls landed: they are only
 	// there when they were drawn this frame, and a span left over from a box
 	// that is no longer on screen is a click target pointing at nothing.
-	m.tabSpans, m.zoomSpans, m.buttonSpans = m.tabSpans[:0], m.zoomSpans[:0], m.buttonSpans[:0]
+	m.tabSpans, m.buttonSpans = m.tabSpans[:0], m.buttonSpans[:0]
 	m.banner = bannerSpan{}
 
 	headerW := max(inner-2*boxPad, 1)
@@ -1806,10 +1860,10 @@ func (m *Model) viewColumnBox(col *column, shells bool, left, width int, focused
 	// The strip is built only when it is drawn: building it records where its
 	// labels landed, and a click target for a tab nobody can see points at
 	// nothing.
-	// The maximize button is the box's whichever way its top is drawn, and it
-	// is worked out once: drawing it records where it landed, and a second
-	// span for the same button is a click target nothing needs.
-	control := m.zoomControl(edge, shells, left, width)
+	// The box's own buttons are the box's whichever way its top is drawn, and
+	// they are worked out once: drawing them records where they landed, and a
+	// second span for the same button is a click target nothing needs.
+	control := m.columnControls(edge, p, shells, left, width)
 	top := titledEdge(m.st, edge, p.name(), control, inner)
 	if len(m.panes()) > 1 {
 		top = m.tabbedEdge(col, shells, left, control, edge, inner)
@@ -1854,33 +1908,65 @@ func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int)
 	return strings.Join(rows, "\n")
 }
 
-// zoomControl is a box's maximize button, set into the right end of its top
-// border the way the title is set into the middle of it — `[+]` to take the
-// window, `[-]` to give it back — and records where it landed so a click on it
-// can be routed back to the box that drew it.
+// columnControls is a column box's buttons, set into the right end of its top
+// border the way the title is set into the middle of it, and recording where
+// each landed so a click on one can be routed back to the box that drew it.
 //
-// It is drawn only when there are two columns to choose between: with a single
-// box on screen — an overlay, or a terminal with no tabs beside it — there is
-// nothing to maximize over, and a button whose two states look the same is a
-// button that lies about what it does.
+// There are two of them, in the order a window's own titlebar has them:
 //
-// zoomMinWidth is the box width below which the button goes rather than the
-// border: a control that overruns its own corner is worse than no control, and
-// the keys reach the same toggle at any width.
-func (m *Model) zoomControl(edge lipgloss.Style, shells bool, left, width int) string {
-	const zoomMinWidth = 12
-	if m.screenPane() != nil || m.shells.len() == 0 || width < zoomMinWidth {
+//   - `[+]` takes the window for this column and `[-]` gives it back. It is
+//     drawn only when there are two columns to choose between: with a single
+//     box on screen — an overlay, or a terminal with no tabs beside it — there
+//     is nothing to maximize over, and a button whose two states look the same
+//     is a button that lies about what it does.
+//   - `[x]` ends the session the box is showing, and only the visible one:
+//     the tabs beside it are other sessions, and a button that took them all
+//     would be one nobody dares press. It is drawn on a pane that is yours to
+//     end — a shell, or a terminal that is not the primary — and on nothing
+//     else, so what it is offered on is exactly what it works on. See endPane.
+//
+// columnControlMinWidth is the box width below which they go rather than the
+// border, the closer corner first: a control that overruns its own corner is
+// worse than no control, and the keys reach both at any width.
+func (m *Model) columnControls(edge lipgloss.Style, p *pane, shells bool, left, width int) string {
+	const columnControlMinWidth = 12
+	if m.screenPane() != nil {
 		return ""
 	}
-	glyph := "+"
-	if m.maximized {
-		glyph = "-"
+	var actions []buttonAction
+	if m.shells.len() > 0 {
+		actions = append(actions, buttonZoom)
 	}
-	// `…[+]─╮`: the bracketed cells end two columns short of the box's right
-	// edge, leaving the rule cell that keeps it off the corner.
-	end := left + width - 3
-	m.zoomSpans = append(m.zoomSpans, zoomSpan{shells: shells, start: end - 2, end: end})
-	return edge.Render("[") + m.st.dimText.Render(glyph) + edge.Render("]")
+	if _, ok := m.endablePane(p); ok {
+		actions = append(actions, buttonEnd)
+	}
+	for len(actions) > 0 && width < columnControlMinWidth+3*(len(actions)-1) {
+		actions = actions[:len(actions)-1]
+	}
+	if len(actions) == 0 {
+		return ""
+	}
+	// `…[+][x]─╮`: the bracketed cells end two columns short of the box's
+	// right edge, leaving the rule cell that keeps them off the corner.
+	end := left + width - 3 - 3*(len(actions)-1)
+	var out strings.Builder
+	for _, action := range actions {
+		glyph := "x"
+		if action == buttonZoom {
+			glyph = "+"
+			if m.maximized {
+				glyph = "-"
+			}
+		}
+		m.buttonSpans = append(m.buttonSpans, buttonSpan{
+			action: action, shells: shells, start: end - 2, end: end,
+		})
+		out.WriteString(edge.Render("["))
+		out.WriteString(m.st.dimText.Render(glyph))
+		out.WriteString(edge.Render("]"))
+		end += 3
+	}
+	return out.String()
 }
 
 // paneCursor is where the hardware cursor goes: the focused pane's own idea of

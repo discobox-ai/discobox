@@ -24,7 +24,7 @@ flowchart LR
     P -->|Enter| Run["DataSource.Run → attach"]
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
-    L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
+    L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
     WS -->|leader S0| SvcMenu["services menu → DoService"]
     L -->|C| Cred["credential dialog → Secrets / CreateSecret / UpdateSecret / Approve / Deny"]
@@ -833,9 +833,13 @@ asked `overlay != nil` asks it instead.
 - The two buttons are not the same button (`toolControls`). `[-]` puts the
   window away and leaves the session running with its stream attached, so
   choosing the tool again shows where it has got to — the leader's own way out
-  of a screen does the same. `[x]` calls `DataSource.EndExec`, which is the one
-  place this window ends a session rather than closing its view of one, and is
-  on the shifted `X` for that reason.
+  of a screen does the same. `[x]` calls `DataSource.EndExec` and is on the
+  shifted `X`, the same key and the same bracket a column's own end button
+  wears (`columnControls`): on this screen, `X` ends what you are looking at.
+  Like a column's, the kill goes out after the pane is already gone and the
+  exec id is recorded in `Model.ending`, so the poll that still lists the
+  session does not pick the tool straight back up — put away, into a strip the
+  press just emptied.
 - **A tool that exits takes its window with it** (`paneClosed`), unlike every
   other non-primary pane. Quitting discobox-review or fresh is how you say you
   are done with it, so a held screen captioned with its exit would be one more
@@ -847,7 +851,8 @@ asked `overlay != nil` asks it instead.
 - The sessions live in the discobox, so the poll picks up every labeled one it
   finds and puts it away rather than showing it: attaching to a discobox should
   show you the discobox. That is what makes a diff survive quitting the
-  launcher, and it needs no client-side state at all.
+  launcher, and the only client-side state it needs is `ending`, which says
+  which of them this window has just killed.
 - A tool can carry a **config** (`ToolFile`, `tui_tools.go`). The copy lives on
   this machine under `os.UserConfigDir()/discobox/tools/<tool>/<name>`, created
   from the tool's `Default` the first time anything reads it, and `e` in the
@@ -908,7 +913,7 @@ way out.
 
 **Either column can take the whole window** (`maximized`, `toggleMaximized`).
 Each box wears a `[+]`/`[-]` button at the right end of its top border
-(`zoomControl`, laid in by `titledEdge` and `tabbedEdge` the same way the
+(`columnControls`, laid in by `titledEdge` and `tabbedEdge` the same way the
 titles are), and `leader z` is the same toggle — a workspace control only a
 mouse can reach is one half the users cannot reach at all. `columns` is the one
 place the two widths are worked out, by tab count rather than off the model, so
@@ -924,6 +929,36 @@ moves the maximized view rather than typing into something off-screen. The last
 tab closing drops the maximize, since there is then nothing to maximize over.
 `onScreen` is what is actually drawn, and the mouse routes against it: the
 overlay alone, the two columns of a split, or the single maximized box.
+
+**A pane you opened is one you can end** (`endPane`, `endablePane`). Beside the
+maximize button, a column box wears an `[x]` when the pane it is showing is
+yours to end, and `leader X` is the same act — the same letter the tool window
+ends on, because it is the same act on the same screen. It ends *that* session
+and takes *that* tab: the tabs beside it are other sessions, and a button that
+took them all is one nobody dares press.
+
+The primary and the services wear none, which is what makes what the button is
+offered on exactly what it works on. The primary is the session the workspace
+is a view onto — ending it ends the screen, which is what detaching and
+quitting already are, and neither kills anything — and a service starts and
+stops on the discobox's schedule, on the two verbs its own pane already offers.
+
+It is the second place this window ends a session rather than closing a view of
+one (the tool window's `[x]` is the first), and both go the same way round: the
+pane goes first and `DataSource.EndExec` is sent after it, since what the press
+asked for is that this session is gone. Both then record the exec id in
+`Model.ending`, which `workspaceExecs` skips over — the poll runs behind the
+kill, and without it the very next tick would open the pane straight back up
+off a listing that still reports it live.
+
+An entry is never forgotten while the workspace lasts. The tick re-arms
+alongside `listExecs` rather than after its answer, so two listings can be in
+flight and the older can land last: an answer saying the session is gone is no
+proof that a later one will say the same. Exec ids are not reused, so holding
+the id costs nothing, `closeWorkspace` drops the map whole, and `endExecFailed`
+is the one thing that takes an id back out — a kill the server refused leaves a
+session still running, and hiding that would leave no way back to it short of
+attaching again.
 
 `Model.paneBox` is the discobox the screen is showing, and every one of the
 list's own keys is bound behind the leader against it (`paneOptions` over
@@ -1358,9 +1393,13 @@ too (`chrome.go`): a press nothing else claims drives a second
 (`parseChrome`), flat rows with nothing wrapped. Before the selection, the
 press means what the cell means (the hit map, and `focusChromeAt`): a tab label selects its
 tab — the strip records where each label landed as it is drawn
-(`tabbedEdge`, `Model.tabSpans`) — and any other cell of a pane's border
-focuses that pane; the gesture then continues into the chrome selection, so
-border text stays drag-selectable. The word rules make the
+(`tabbedEdge`, `Model.tabSpans`) — a bracketed control on a top border does what
+it says (`Model.buttonSpans`, one list for the tool window's `[-]`/`[x]` and a
+column's `[+]`/`[x]`, which are never on screen together), and any other cell of
+a pane's border focuses that pane; the gesture then continues into the chrome
+selection, so border text stays drag-selectable — except after a control that
+acted outright, which takes the gesture so it does not also drag-select its own
+label. The word rules make the
 sandbox id one double-click. One selection is on screen at a time — a pane
 press clears the chrome's and vice versa — and a chrome selection whose rows
 no longer read back identically is cleared rather than left highlighting

@@ -113,6 +113,12 @@ type Model struct {
 	// connecting is the exec ids with an attach in flight, so a poll that
 	// still lists them does not open a second pane onto the same session.
 	connecting map[string]bool
+	// ending is the exec ids this window has asked the server to kill, so the
+	// poll running behind the kill does not open the pane straight back up.
+	// Entries live for the workspace — exec ids are not reused, and the
+	// listings overlap, so no one answer is proof the kill has landed. See
+	// endPane and dropTool.
+	ending map[string]bool
 	// wsGen numbers workspaces. Detaching bumps it, and a poll tick or an
 	// open still in flight from the one that was left is stale and dropped.
 	wsGen int
@@ -233,18 +239,15 @@ type Model struct {
 	// [2 bash] can mean tab 2. Box-relative columns.
 	tabSpans []tabSpan
 
-	// zoomSpans is where each box's maximize control sits, recorded as the
-	// boxes are drawn (zoomControl) so a click on [+] can mean that box.
-	// Absolute screen columns.
-	zoomSpans []zoomSpan
-
 	// banner is where the workspace's attention band sits, and which band it
 	// is, recorded as it is drawn so a press can be matched against the frame
 	// on screen. See banner.go.
 	banner bannerSpan
 
-	// buttonSpans is where the showing tool window's [-] and [x] sit, recorded
-	// as its border is drawn (toolControls). Absolute screen columns.
+	// buttonSpans is where the boxes' bracketed top-border controls sit,
+	// recorded as their borders are drawn — the tool window's [-] and [x]
+	// (toolControls), or a column's [+] and [x] (columnControls). Absolute
+	// screen columns.
 	buttonSpans []buttonSpan
 
 	// leaderKey is the pane's prefix; empty takes the default. See Model.leader.
@@ -828,6 +831,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case workspaceExecsMsg:
 		return m.workspaceExecs(msg)
+
+	case endExecFailedMsg:
+		return m.endExecFailed(msg)
 
 	case workspaceTermMsg:
 		return m.workspaceTermOpened(msg)
@@ -2698,8 +2704,9 @@ func (m *Model) box(title string, rows []string) string {
 	return strings.Join(out, "\n")
 }
 
-// titledEdge draws a box's top edge with a title laid into it, and an already
-// rendered control — the maximize button, or nothing — laid into its right end.
+// titledEdge draws a box's top edge with a title laid into it, and the box's
+// already-rendered controls — a column's `[+][x]`, a tool window's `[-][x]`, or
+// nothing — laid into its right end.
 //
 // It goes on the border rather than above it because the border is a line the
 // eye already follows, so a word set into it costs no row at all — and because
@@ -2710,10 +2717,11 @@ func (m *Model) box(title string, rows []string) string {
 // in it: bare text with space either side leaves the border looking broken where
 // the title sits. A title with no room for rule on both sides is dropped.
 func titledEdge(st *styles, edge lipgloss.Style, title, control string, width int) string {
-	// The control keeps a cell of rule between it and the corner, the way the
-	// title keeps rule on both sides, and the title is centered in what it
-	// leaves rather than in the whole edge — a title that slid under the button
-	// as the box narrowed would read as one label.
+	// The controls keep a cell of rule between them and the corner, the way the
+	// title keeps rule on both sides, and the title is centered in what they
+	// leave rather than in the whole edge — a title that slid under them as the
+	// box narrowed would read as one label. What they cost is measured rather
+	// than assumed: there may be one of them or two.
 	tail := edge.Render("╮")
 	if control != "" {
 		tail = control + edge.Render("─╮")
@@ -3356,6 +3364,12 @@ func (m *Model) paneHints() []hint {
 	if p.service == "" {
 		hints = append(hints, pressing(leader+" s shell", leader, "s"))
 	}
+	// Beside it, because they are the pair: one opens a session and the other
+	// ends the one in front of you. Only on a pane that has one to end, so the
+	// offer and the [x] on its border appear and go together.
+	if _, ok := m.endablePane(p); ok {
+		hints = append(hints, pressing(leader+" "+paneEndKey+" end", leader, paneEndKey))
+	}
 	// The tools sit here for the same reason the services menu sits on a
 	// service's line: this is the only place they are advertised, and a picker
 	// nothing points at is a picker nobody opens.
@@ -3566,6 +3580,13 @@ func (m *Model) helpText() string {
 		"    " + leader + " " + paneTerminalKey + "       another terminal beside the primary: a fresh",
 		"                   session of the harness this discobox runs",
 		"    " + leader + " s       a new shell, in a new tab",
+		"    " + leader + " " + paneEndKey + "       end the shell or terminal you are looking at and",
+		"                   take its tab off the screen. Same as the [x]",
+		"                   button on its top border, and only ever the one",
+		"                   pane: the tabs beside it keep running. The",
+		"                   primary and the services have no [x] — detach or",
+		"                   quit leaves the workspace, and a service is",
+		"                   stopped with " + leader + " t",
 		"    " + leader + " ← / " + leader + " →  move along the screen — services, terminals,",
 		"                   then shells — or h and l. Hold Ctrl to keep",
 		"                   going: " + leader + " ^→ ^→ walks across without",

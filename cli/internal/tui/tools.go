@@ -779,7 +779,7 @@ func (m *Model) closeTool() tea.Cmd {
 // dropTool takes a tool off the screen and out of the strip, ending its session
 // when there is one still running.
 func (m *Model) dropTool(p *pane, kill bool) tea.Cmd {
-	execID := p.execID
+	execID, name, gen := p.execID, p.name(), m.wsGen
 	i := m.tools.index(p)
 	if i < 0 {
 		return nil
@@ -795,10 +795,18 @@ func (m *Model) dropTool(p *pane, kill bool) tea.Cmd {
 	if !kill || execID == "" {
 		return nil
 	}
+	// The listing is a poll behind the kill, so the next tick still reports
+	// this session live and would pick the tool back up off it — put away,
+	// into a strip the press just emptied. Remembering it is what keeps a
+	// closed tool closed. See endPane, which ends a session the same way.
+	if m.ending == nil {
+		m.ending = map[string]bool{}
+	}
+	m.ending[execID] = true
 	ctx, ds, box := m.ctx, m.ds, m.paneBox.ID
 	return func() tea.Msg {
 		if err := ds.EndExec(ctx, box, execID); err != nil {
-			return statusMsg{text: "could not end the session: " + err.Error(), err: true}
+			return endExecFailedMsg{gen: gen, execID: execID, name: name, err: err}
 		}
 		return nil
 	}
@@ -836,36 +844,6 @@ func (m *Model) toolControls(edge lipgloss.Style, width int) string {
 		return edge.Render("[") + m.st.dimText.Render(glyph) + edge.Render("]")
 	}
 	return button("-") + button("x")
-}
-
-// buttonAction is what a press on the tool window's chrome means.
-type buttonAction int
-
-const (
-	buttonMinimize buttonAction = iota
-	buttonClose
-)
-
-// buttonSpan is where one of those buttons sits on the box's top border row, in
-// absolute screen columns, both ends inclusive.
-type buttonSpan struct {
-	action     buttonAction
-	start, end int
-}
-
-// buttonAt is the tool window button under a screen position, if any. The spans
-// were recorded when the border was drawn, so only a button actually on screen
-// has one.
-func (m *Model) buttonAt(x, y int) (buttonAction, bool) {
-	if y != 1+m.bannerTop() {
-		return 0, false
-	}
-	for _, s := range m.buttonSpans {
-		if x >= s.start && x <= s.end {
-			return s.action, true
-		}
-	}
-	return 0, false
 }
 
 // toolHints is the bottom line while a tool has the screen: what it is, and the

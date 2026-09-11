@@ -214,3 +214,204 @@ func TestAFailedTerminalReports(t *testing.T) {
 		t.Fatalf("terminals = %d, want the workspace up with just the primary", m.terminals.len())
 	}
 }
+
+// The leader plus X ends the shell in front of you: the session is killed in
+// the discobox and its tab goes with it.
+func TestLeaderXEndsTheFocusedShell(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the shell", func() bool { return m.shells.len() == 1 })
+	execID := m.shells.panes[0].execID
+
+	d.key("ctrl+a")
+	d.key(paneEndKey)
+	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
+	if got := ds.endedExecs(); got[0] != execID {
+		t.Fatalf("ended = %v, want the focused shell %q", got, execID)
+	}
+	if m.shells.len() != 0 {
+		t.Fatalf("shells = %d, want the tab gone with the session", m.shells.len())
+	}
+	// The window goes back to the terminals, which take the width back.
+	if m.onShells {
+		t.Error("focus should leave a column with nothing left in it")
+	}
+	if got := m.paneWidthOf(m.primary()); got != m.width {
+		t.Fatalf("the terminal is %d cells wide, want the whole window (%d)", got, m.width)
+	}
+}
+
+// And only that one: the other tabs in the column are other sessions, still
+// running and still attached.
+func TestEndingAShellLeavesTheTabsBesideIt(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	for range 3 {
+		d.key("ctrl+a")
+		d.key("s")
+	}
+	d.wait("the shells", func() bool { return m.shells.len() == 3 })
+	m.shells.active = 1
+	ended := m.shells.panes[1].execID
+	kept := []string{m.shells.panes[0].execID, m.shells.panes[2].execID}
+
+	d.key("ctrl+a")
+	d.key(paneEndKey)
+	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
+	if got := ds.endedExecs(); got[0] != ended {
+		t.Fatalf("ended = %v, want only the visible shell %q", got, ended)
+	}
+	d.settle()
+	if m.shells.len() != 2 {
+		t.Fatalf("shells = %d, want the other two still open", m.shells.len())
+	}
+	for i, id := range kept {
+		if got := m.shells.panes[i].execID; got != id {
+			t.Fatalf("shell %d is %q, want %q left where it was", i, got, id)
+		}
+	}
+}
+
+// The poll runs behind the kill, so a listing already in flight still reports a
+// session this window has just ended. The tab must not come back up.
+func TestAnEndedShellIsNotReopenedByThePoll(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the shell", func() bool { return m.shells.len() == 1 })
+	execID := m.shells.panes[0].execID
+	// The answer a poll started before the kill comes back with.
+	stale, _ := ds.Execs(t.Context(), "")
+
+	d.key("ctrl+a")
+	d.key(paneEndKey)
+	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
+
+	d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})
+	d.settle()
+	if m.shells.len() != 0 {
+		t.Fatalf("shells = %d, want the tab to stay closed", m.shells.len())
+	}
+	if !m.ending[execID] {
+		t.Fatalf("ending = %v, want the killed session remembered", m.ending)
+	}
+
+	// It is remembered for as long as the workspace is, rather than until some
+	// answer says the session is gone: the answers overlap, so one of them
+	// saying so is no proof a later one will. Exec ids are not reused, and
+	// leaving the workspace drops the map whole.
+	current, _ := ds.Execs(t.Context(), "")
+	d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: current})
+	d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})
+	d.settle()
+	if m.shells.len() != 0 {
+		t.Fatalf("shells = %d, want an answer older than the kill still ignored", m.shells.len())
+	}
+	m.closeWorkspace()
+	if m.ending != nil {
+		t.Fatalf("ending = %v, want it dropped with the workspace", m.ending)
+	}
+}
+
+// A kill the server refuses gives the tab back: the session is still running,
+// and a workspace that hid it would be one there is no way back to it from.
+func TestAShellTheServerWillNotEndComesBack(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the shell", func() bool { return m.shells.len() == 1 })
+	execID := m.shells.panes[0].execID
+	ds.endExecErr = errors.New("still going")
+
+	d.key("ctrl+a")
+	d.key(paneEndKey)
+	d.wait("the refusal", func() bool { return strings.Contains(m.status, "could not end") })
+	if m.ending[execID] {
+		t.Fatalf("ending = %v, want a refused kill forgotten", m.ending)
+	}
+
+	listing, _ := ds.Execs(t.Context(), "")
+	d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: listing})
+	d.wait("the tab back", func() bool { return m.shells.len() == 1 })
+	if got := m.shells.panes[0].execID; got != execID {
+		t.Fatalf("shell = %q, want the session that is still running (%q)", got, execID)
+	}
+}
+
+// The primary is the workspace and a service is the discobox's own: neither is
+// ended this way, and neither wears the button that would say it is.
+func TestThePrimaryAndServicesHaveNoEndButton(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+
+	// The primary, which the workspace is a view onto.
+	d.key("ctrl+a")
+	d.key(paneEndKey)
+	d.wait("the report", func() bool { return strings.Contains(m.status, "primary terminal") })
+	if _, ok := m.endablePane(m.primary()); ok {
+		t.Error("the primary should wear no [x]")
+	}
+
+	// And the service, which the discobox starts and stops on its own.
+	service := m.terminals.panes[0]
+	if service.service == "" {
+		t.Fatalf("pane 0 is %q, want the service tab", service.name())
+	}
+	m.focusPane(service)
+	d.key("ctrl+a")
+	d.key(paneEndKey)
+	d.wait("the report", func() bool { return strings.Contains(m.status, "stopped rather than ended") })
+	if _, ok := m.endablePane(service); ok {
+		t.Error("a service should wear no [x]")
+	}
+
+	// Neither press reached the server.
+	if got := ds.endedExecs(); len(got) != 0 {
+		t.Fatalf("ended = %v, want both left alone", got)
+	}
+	// Nor does the box drawing one offer the button: the service is what the
+	// left column is showing, so its border is where an [x] would be.
+	_ = rawFrame(m)
+	if term, _ := endButtons(t, m); term != -1 {
+		t.Fatalf("the service's box drew an [x] at column %d, want none", term)
+	}
+}
+
+// A tool is ended the same way and has the same race behind it: the listing is
+// a poll behind the kill, and a tool picked back up off it would arrive put
+// away, into a strip the press just emptied.
+func TestAnEndedToolIsNotReopenedByThePoll(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.execs = []Exec{{
+		ID: "exec_diff", Command: []string{"discobox-review"}, Tool: "diff",
+		Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
+	}}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the running tool", func() bool { return m.toolPane("diff") != nil })
+	// The answer a poll started before the kill comes back with.
+	stale, _ := ds.Execs(t.Context(), "")
+
+	m.showTool(m.toolPane("diff"))
+	d.key("ctrl+a")
+	d.key(toolCloseKey)
+	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
+
+	d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})
+	d.settle()
+	if p := m.toolPane("diff"); p != nil {
+		t.Fatalf("the tool came back as %q, want a closed tool to stay closed", p.name())
+	}
+}

@@ -256,12 +256,71 @@ func TestAMaximizedShellBoxIsStillClickable(t *testing.T) {
 	}
 }
 
+// Clicking a box's [x] ends the session it is showing and takes its tab off
+// the screen — that one, and nothing beside it.
+func TestClickingTheEndButtonEndsThatPane(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	for range 2 {
+		d.key("ctrl+a")
+		d.key("s")
+	}
+	d.wait("the tabs", func() bool { return m.shells.len() == 2 })
+	m.shells.active = 0
+	ended, kept := m.shells.panes[0].execID, m.shells.panes[1].execID
+
+	// Drawing the boxes is what records where their buttons are. The terminal
+	// box shows the primary, which wears no [x] at all.
+	_ = rawFrame(m)
+	term, shells := endButtons(t, m)
+	if term != -1 {
+		t.Fatalf("the primary's box drew an [x] at column %d, want none", term)
+	}
+
+	clickAt(d, shells, 1)
+	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
+	if got := ds.endedExecs(); got[0] != ended {
+		t.Fatalf("ended = %v, want the visible shell %q", got, ended)
+	}
+	d.settle()
+	if m.shells.len() != 1 || m.shells.panes[0].execID != kept {
+		t.Fatalf("shells = %d, want only %q left", m.shells.len(), kept)
+	}
+	// The press was the button's own: it must not also have started a
+	// drag-select of the border it sits on.
+	if m.chromeSel.Active() {
+		t.Fatal("pressing [x] should take the gesture")
+	}
+}
+
+// endButtons is the middle column of each end button on screen, by the column
+// it belongs to. A button that is not drawn comes back as -1.
+func endButtons(t *testing.T, m *Model) (term, shells int) {
+	t.Helper()
+	term, shells = -1, -1
+	for _, s := range m.buttonSpans {
+		if s.action != buttonEnd {
+			continue
+		}
+		if s.shells {
+			shells = (s.start + s.end) / 2
+		} else {
+			term = (s.start + s.end) / 2
+		}
+	}
+	return term, shells
+}
+
 // zoomButtons is the middle column of each maximize button on screen, by the
 // column it belongs to. A button that is not drawn comes back as -1.
 func zoomButtons(t *testing.T, m *Model) (term, shells int) {
 	t.Helper()
 	term, shells = -1, -1
-	for _, s := range m.zoomSpans {
+	for _, s := range m.buttonSpans {
+		if s.action != buttonZoom {
+			continue
+		}
 		if s.shells {
 			shells = (s.start + s.end) / 2
 		} else {
