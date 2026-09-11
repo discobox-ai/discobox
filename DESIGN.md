@@ -258,7 +258,10 @@ the by-hand override for a tag the tap's own rule will not take.
 winget cannot be inverted, because `microsoft/winget-pkgs` is not ours and
 nothing there can pull from us. So `winget:publish` **pushes**: it opens a pull
 request from a fork, which is not something `GITHUB_TOKEN` can do, and ends
-there — a validation pipeline and a moderator decide the rest. Both cross-repo
+there — a validation pipeline and a moderator decide the rest. It is by hand
+only at the moment: promotion's `winget` job is removed while the first
+submission waits on a CLA signature and a moderator, since resubmitting per
+release re-queues the package rather than queueing the versions. Both cross-repo
 steps therefore hold a token, and both are scoped to the least each needs: the
 tap's may only start a workflow already defined there, and winget's may only
 write public repositories as the submitting account.

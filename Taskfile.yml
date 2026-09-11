@@ -1394,8 +1394,15 @@ tasks:
 
         # The title format the repository's pull request template asks for; the
         # moderation tooling reads it.
+        # The two titles winget-pkgs actually uses, and the moderation tooling
+        # reads them: "New package: <id> version <v>" the first time a package
+        # appears, "New version: <id> version <v>" every time after. Measured
+        # rather than guessed — of the last hundred pull requests there, 55 are
+        # "New version:" and 10 "New package:", against 4 using "Update:", which
+        # is what this said until the first submission proved it had never run
+        # down this branch.
         if gh api "repos/$upstream/contents/$package_dir" >/dev/null 2>&1; then
-          title="Update: $identifier to $version"
+          title="New version: $identifier version $version"
         else
           title="New package: $identifier version $version"
         fi

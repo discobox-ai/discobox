@@ -329,13 +329,23 @@ without pushing, which is the safe dry run.
 
 ## 6. The winget pull request
 
-**Not part of cutting a release.** winget is a stable channel, so its submission
-belongs to `promote.yml` (§7) and does not run here. Cutting a tag never opens a
-winget pull request, and its absence from the release run is correct.
+**Switched off, and nothing automatic opens one.** winget is a stable channel,
+so its submission belonged to `promote.yml` — and that job is currently removed.
+[microsoft/winget-pkgs#432935](https://github.com/microsoft/winget-pkgs/pull/432935),
+the first Discobox package, is open and waiting on the account's one-time CLA
+signature and a moderator. A pull request per release while that sits there puts
+the package at the back of the review queue each time rather than stacking
+versions behind it. Nothing is lost by waiting: winget has never served
+discobox, so no published version is going stale.
 
-Run it by hand only when promotion's `winget` job skipped for a missing token or
-a first attempt failed — it is idempotent, and says `winget already serves
-<version>` rather than opening a second request:
+So its absence from both the release run *and* the promote run is correct right
+now. Do not treat it as a failure, and do not open one to be helpful.
+
+Once 432935 merges, restore the `winget` job in `promote.yml` — the comment
+where it was says exactly what it contained.
+
+The by-hand path still works and is the only one: it is idempotent, and says
+`winget already serves <version>` rather than opening a second request:
 
 ```bash
 go tool task winget:publish -- vX.Y.Z
@@ -396,8 +406,8 @@ did. Hand back at the end of §5 and say so.
 When the user does ask for it in those terms — "mark v0.3.1 stable", "promote
 it", "push it to the real brew" — the act is on GitHub: open the release and
 untick **"Set as a pre-release"**. That runs `promote.yml`, which gates on
-`release:require-dot` and then updates `brew install discobox` and opens the
-winget request.
+`release:require-dot` and then updates `brew install discobox`. It does **not**
+open a winget request — that job is switched off (§6).
 
 ```bash
 gh release edit vX.Y.Z --repo discobox-ai/discobox --prerelease=false --latest
