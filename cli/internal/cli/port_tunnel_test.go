@@ -15,14 +15,14 @@ import (
 	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
-// tcpTunnelTestServer stands in for the control-plane route, speaking the
+// tunnelTestServer stands in for the control-plane route, speaking the
 // frames the sandbox-agent speaks: Input in, Stdout back, CloseInput for a
 // half-close.
-func tcpTunnelTestServer(t *testing.T, closedWrite chan<- struct{}) *httptest.Server {
+func tunnelTestServer(t *testing.T, closedWrite chan<- struct{}) *httptest.Server {
 	t.Helper()
 	var once sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/tcp/attach") {
+		if !strings.HasSuffix(r.URL.Path, "/tcp/attach") && !strings.HasSuffix(r.URL.Path, "/udp/attach") {
 			http.NotFound(w, r)
 			return
 		}
@@ -58,10 +58,10 @@ func tcpTunnelTestServer(t *testing.T, closedWrite chan<- struct{}) *httptest.Se
 
 func TestSandboxTCPDialerCarriesBytesAndAHalfClose(t *testing.T) {
 	closedWrite := make(chan struct{})
-	server := tcpTunnelTestServer(t, closedWrite)
+	server := tunnelTestServer(t, closedWrite)
 	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 
-	dialer, err := app.sandboxTCPDialer("proj-1", "sbx-1")
+	dialer, err := app.sandboxPortDialer("proj-1", "sbx-1")
 	if err != nil {
 		t.Fatalf("sandbox tcp dialer: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestSandboxTCPDialerCarriesBytesAndAHalfClose(t *testing.T) {
 		t.Fatalf("read %q%q, want hello", part, rest)
 	}
 
-	if err := conn.(*tcpTunnelConn).CloseWrite(); err != nil {
+	if err := conn.(*tunnelConn).CloseWrite(); err != nil {
 		t.Fatalf("close write: %v", err)
 	}
 	select {
@@ -113,10 +113,10 @@ func TestSandboxTCPDialerCarriesBytesAndAHalfClose(t *testing.T) {
 // place the reason exists, and it is gone once the dial error is returned.
 func TestSandboxTCPDialerReportsTheHandshakeError(t *testing.T) {
 	closedWrite := make(chan struct{})
-	server := tcpTunnelTestServer(t, closedWrite)
+	server := tunnelTestServer(t, closedWrite)
 	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 
-	dialer, err := app.sandboxTCPDialer("proj-1", "sbx-1")
+	dialer, err := app.sandboxPortDialer("proj-1", "sbx-1")
 	if err != nil {
 		t.Fatalf("sandbox tcp dialer: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestSandboxTCPDialerReportsTheFarEndsHalfClose(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
-	dialer, err := app.sandboxTCPDialer("proj-1", "sbx-1")
+	dialer, err := app.sandboxPortDialer("proj-1", "sbx-1")
 	if err != nil {
 		t.Fatalf("sandbox tcp dialer: %v", err)
 	}
@@ -177,5 +177,79 @@ func TestSandboxTCPDialerReportsTheFarEndsHalfClose(t *testing.T) {
 	// EOF on the read half says nothing about the write half.
 	if _, err := io.WriteString(conn, "still writing"); err != nil {
 		t.Fatalf("write after the far end's half-close: %v", err)
+	}
+}
+
+// A UDP tunnel is a connected UDP socket to its caller: each Write is one
+// datagram, each Read returns one, and two datagrams are never run together or
+// split across reads (ADR 0109 §4).
+func TestSandboxPortDialerKeepsDatagramsWholeOverTheUDPTunnel(t *testing.T) {
+	routes := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		routes <- r.URL.Path
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done")
+		stream := websocket.NetConn(r.Context(), conn, websocket.MessageBinary)
+		for {
+			read, err := frame.Read(stream)
+			if err != nil {
+				return
+			}
+			if read.Type == frame.Input {
+				if err := frame.Write(stream, frame.Stdout, read.Payload); err != nil {
+					return
+				}
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
+	dialer, err := app.sandboxPortDialer("proj-1", "sbx-1")
+	if err != nil {
+		t.Fatalf("sandbox port dialer: %v", err)
+	}
+	conn, err := dialer.DialPort(t.Context(), portforward.Target{Network: portforward.UDP, Host: "127.0.0.1", Port: 5353})
+	if err != nil {
+		t.Fatalf("dial port: %v", err)
+	}
+	defer conn.Close()
+	if route := <-routes; !strings.HasSuffix(route, "/udp/attach") {
+		t.Fatalf("dialed %q, want the UDP tunnel", route)
+	}
+
+	for _, datagram := range []string{"first", "second"} {
+		if _, err := io.WriteString(conn, datagram); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	buf := make([]byte, 64)
+	for _, want := range []string{"first", "second"} {
+		n, err := conn.Read(buf)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if got := string(buf[:n]); got != want {
+			t.Fatalf("read %q, want the datagram %q alone", got, want)
+		}
+	}
+
+	// A datagram longer than the buffer is truncated, as a UDP socket would
+	// truncate it, and the rest is not delivered as a datagram of its own.
+	if _, err := io.WriteString(conn, "truncated"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := io.WriteString(conn, "next"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	small := make([]byte, 5)
+	if n, err := conn.Read(small); err != nil || string(small[:n]) != "trunc" {
+		t.Fatalf("read = %q, %v; want the first 5 bytes", small[:n], err)
+	}
+	if n, err := conn.Read(buf); err != nil || string(buf[:n]) != "next" {
+		t.Fatalf("read = %q, %v; want the next datagram, not the rest of the last", buf[:n], err)
 	}
 }

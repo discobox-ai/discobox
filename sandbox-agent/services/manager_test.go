@@ -600,6 +600,29 @@ func declaredPortNumbers(declarations []portspkg.Declaration) []int {
 	return out
 }
 
+// A declaration stating udp names UDP ports, which are not the TCP ports of the
+// same numbers: declaring both is two ports, not a duplicate (ADR 0109).
+func TestAUDPDeclarationDoesNotShadowTheTCPPortOfItsNumber(t *testing.T) {
+	manager, _, root := newTestManager(t)
+	writeService(t, root, "10-dns.sh", "#!/bin/bash\n#---\n# port: 53\n# protocol: udp\n#---\nexec up\n", 0o755)
+	writeService(t, root, "20-dns-tcp.sh", "#!/bin/bash\n#---\n# port: 53\n# protocol: tcp\n#---\nexec up\n", 0o755)
+	writeService(t, root, "30-dns-again.sh", "#!/bin/bash\n#---\n# port: 53\n# protocol: udp\n#---\nexec up\n", 0o755)
+
+	declared, err := manager.Declarations()
+	if err != nil {
+		t.Fatalf("declared ports: %v", err)
+	}
+	if len(declared) != 2 {
+		t.Fatalf("declared = %+v, want udp 53 and tcp 53", declared)
+	}
+	if declared[0].Protocol != portspkg.ProtocolUDP || declared[0].ServiceID != "dns" {
+		t.Errorf("first = %+v, want the udp declaration", declared[0])
+	}
+	if declared[1].Protocol != portspkg.ProtocolTCP || declared[1].ServiceID != "dns-tcp" {
+		t.Errorf("second = %+v, want the tcp declaration", declared[1])
+	}
+}
+
 func TestDeclaredPortsWithNoDeclarations(t *testing.T) {
 	manager, _, _ := newTestManager(t)
 	ports, err := manager.Declarations()

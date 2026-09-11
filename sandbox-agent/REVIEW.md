@@ -111,8 +111,8 @@ user waits on every single start.
 ## Idle stop
 
 - **Every client connection this process serves must hold `autostop`** —
-  exec attach, one-shot attach and `tcp/attach` today — for as long as the
-  client is connected. The shims' attacher counts are not enough: a tunnel has
+  exec attach, one-shot attach, `tcp/attach` and `udp/attach` today — for as
+  long as the client is connected. The shims' attacher counts are not enough: a tunnel has
   no shim at all, and a shim's record of access ends with its exec, so a client
   that just finished a long command would count for nothing. Forgetting is
   silent until the sandbox powers off under someone (ADR 0108 §2).

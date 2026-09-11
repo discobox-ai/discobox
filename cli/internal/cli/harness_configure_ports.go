@@ -37,7 +37,7 @@ func (a *App) forwardConfigurePorts(ctx context.Context, projectID, sandboxID st
 	if len(ports) == 0 {
 		return nil, nil
 	}
-	dialer, err := a.sandboxTCPDialer(projectID, sandboxID)
+	dialer, err := a.sandboxPortDialer(projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}

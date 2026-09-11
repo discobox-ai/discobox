@@ -325,3 +325,58 @@ func TestSandboxTCPTunnelProxyForwardsWithTCPConnectScope(t *testing.T) {
 		t.Fatalf("upstream query = %q, want host/port forwarded", gotQuery)
 	}
 }
+
+// The UDP tunnel is its own route with its own scope: tcp:connect does not
+// reach it (ADR 0109 §4).
+func TestSandboxUDPTunnelProxyRequiresUDPConnectScope(t *testing.T) {
+	projectID := "project-1"
+	poolID := "pool-1"
+	sandboxID := "sandbox-1"
+	var gotPath, gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(upstream.Close)
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publicKey, sign := testPoolTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, PoolID: poolID},
+		Runtime:               proxyTestRuntime{MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(), baseURL: baseURL},
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	attach := func(scope string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/udp/attach?host=127.0.0.1&port=53", nil)
+		req.Header.Set("Authorization", "Bearer "+sign(projectID, poolID, sandboxID, scope))
+		req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		return resp
+	}
+
+	if resp := attach(ScopeTCPConnect); resp.Code != http.StatusForbidden {
+		t.Fatalf("udp/attach with tcp:connect status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if gotPath != "" {
+		t.Fatalf("a refused request reached the sandbox-agent at %q", gotPath)
+	}
+
+	if resp := attach(ScopeUDPConnect); resp.Code != http.StatusBadGateway {
+		t.Fatalf("udp/attach with udp:connect status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if gotPath != "/api/projects/project-1/sandboxes/sandbox-1/udp/attach" {
+		t.Fatalf("upstream path = %q", gotPath)
+	}
+	if gotQuery != "host=127.0.0.1&port=53" {
+		t.Fatalf("upstream query = %q, want host/port forwarded", gotQuery)
+	}
+}

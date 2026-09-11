@@ -35,6 +35,9 @@ const (
 	// dialing an arbitrary host:port from inside the sandbox's own network
 	// namespace, distinct from ScopeSandboxHTTP's container-IP-only reach.
 	ScopeTCPConnect = "tcp:connect"
+	// ScopeUDPConnect gates the UDP tunnel endpoint, the same reach as
+	// ScopeTCPConnect for datagrams (ADR 0109 §4).
+	ScopeUDPConnect = "udp:connect"
 	ScopePoolSync   = "pool:sync"
 	// ScopeStatusRead authorizes only the sandbox-agent status endpoint. It is
 	// the sole scope MintSandboxAgentStatusTokens ever mints, hardcoded there

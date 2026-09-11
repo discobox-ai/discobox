@@ -73,11 +73,35 @@ func (c *collector) observe(event Event) {
 // await waits for an event of kind on the remote port and returns it.
 func (c *collector) await(t *testing.T, kind Kind, port int) Event {
 	t.Helper()
+	return c.awaitWhere(t, kind, port, func(Event) bool { return true })
+}
+
+// awaitUDP is await for the UDP port of that number only.
+func (c *collector) awaitUDP(t *testing.T, kind Kind, port int) Event {
+	t.Helper()
+	return c.awaitWhere(t, kind, port, func(event Event) bool { return event.Target.Network == UDP })
+}
+
+// count is how many events of kind the remote port has seen so far.
+func (c *collector) count(kind Kind, port int) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var n int
+	for _, event := range c.events {
+		if event.Kind == kind && event.Target.Port == port {
+			n++
+		}
+	}
+	return n
+}
+
+func (c *collector) awaitWhere(t *testing.T, kind Kind, port int, match func(Event) bool) Event {
+	t.Helper()
 	deadline := time.After(5 * time.Second)
 	for {
 		c.mu.Lock()
 		for _, event := range c.events {
-			if event.Kind == kind && event.Target.Port == port {
+			if event.Kind == kind && event.Target.Port == port && match(event) {
 				c.mu.Unlock()
 				return event
 			}
@@ -386,6 +410,10 @@ func TestEventStringNamesTheMoveAndTheReason(t *testing.T) {
 		{Event{Kind: Gone, Target: Target{Port: 8080}, Local: 8081}, "discobox 8080 stopped listening; 8081 is held open"},
 		{Event{Kind: Accepted, Target: Target{Port: 8080}, Local: 8081, Peer: "127.0.0.1:5000"}, "8081 -> discobox 8080: connection from 127.0.0.1:5000"},
 		{Event{Kind: DialFailed, Target: Target{Port: 8080}, Local: 8081, Err: fmt.Errorf("refused")}, "8081 -> discobox 8080: refused"},
+		{Event{Kind: Bound, Target: Target{Network: UDP, Port: 5353, Protocol: "udp"}, Local: 5353}, "listening on 5353/udp -> discobox 5353/udp"},
+		{Event{Kind: Bound, Target: Target{Network: UDP, Port: 5353, Protocol: "udp"}, Local: 5354}, "listening on 5354/udp -> discobox 5353/udp (5353/udp was taken)"},
+		{Event{Kind: Accepted, Target: Target{Network: UDP, Port: 53}, Local: 8053, Peer: "127.0.0.1:5000"}, "8053/udp -> discobox 53/udp: flow from 127.0.0.1:5000"},
+		{Event{Kind: Closed, Target: Target{Network: UDP, Port: 53}, Local: 8053, Peer: "127.0.0.1:5000"}, "8053/udp -> discobox 53/udp: flow from 127.0.0.1:5000 ended"},
 	} {
 		if got := testCase.event.String(); got != testCase.want {
 			t.Errorf("String() = %q, want %q", got, testCase.want)

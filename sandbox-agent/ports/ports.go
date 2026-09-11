@@ -1,7 +1,8 @@
 // Package ports discovers the TCP ports the sandbox's own user processes are
 // listening on and classifies each one as http, https, or something else, so
 // the control plane can offer a forward onto a dev server without the user
-// having to know its number or its protocol (see ADR 0046).
+// having to know its number or its protocol (see ADR 0046). It reports the UDP
+// ports they have bound beside them, as udp and never probed (ADR 0109).
 //
 // Discovery is a procfs read filtered by uid, cheap enough to repeat on a short
 // interval. Classification is not: the only way to learn what a socket speaks
@@ -51,8 +52,12 @@ const DefaultInterval = 5 * time.Second
 // probe is a connection into a process that may be slow to answer.
 const probeConcurrency = 8
 
-// Port is one TCP port the sandbox user is listening on, with what it turned
-// out to speak.
+// Port is one port the sandbox user is serving — a listening TCP socket or a
+// bound UDP one — with what it turned out to speak.
+//
+// A TCP port and a UDP port with the same number are two entries. Which one an
+// entry is is its Protocol: ProtocolUDP is the UDP one, and every other value
+// is TCP (ADR 0109 §3).
 type Port struct {
 	Port int `json:"port"`
 	// Addresses are every local address bound to this port, as
@@ -98,10 +103,11 @@ type Config struct {
 	// the agent's own uid when the manifest names nobody, since that is what an
 	// exec then inherits (ADR 0025 §5).
 	UID int64
-	// ExcludePorts are ports never reported however they are bound. It exists
-	// for sandbox-agent's own listener, which the uid filter does not exclude
-	// when the sandbox user is root.
-	ExcludePorts []int
+	// ExcludeTCPPorts are TCP ports never reported however they are bound. It
+	// exists for sandbox-agent's own listener, which the uid filter does not
+	// exclude when the sandbox user is root. A UDP port of the same number is
+	// somebody else's and is reported as usual (ADR 0109 §1).
+	ExcludeTCPPorts []int
 	// ProcRoot defaults to /proc. Tests point it at a fixture directory.
 	ProcRoot string
 	// Interval defaults to DefaultInterval.
@@ -130,6 +136,9 @@ type Config struct {
 // That is the whole of ADR 0094 (image-declared services) — an image that knows
 // what its port speaks can
 // keep the sandbox from finding out the only way a probe can.
+//
+// It also says which port is meant: ProtocolUDP declares the UDP port of that
+// number, and anything else — including nothing — the TCP one (ADR 0109 §2).
 type Declaration struct {
 	Port        int
 	ServiceID   string
@@ -148,6 +157,34 @@ func (d Declaration) stated() bool {
 	return d.Protocol != "" && d.Protocol != ProtocolUnknown
 }
 
+func (d Declaration) endpoint() endpoint {
+	if d.Protocol == ProtocolUDP {
+		return endpoint{network: networkUDP, port: d.Port}
+	}
+	return endpoint{network: networkTCP, port: d.Port}
+}
+
+// endpoint is what a port is keyed by: its number, and which of the two port
+// spaces it is in.
+type endpoint struct {
+	network network
+	port    int
+}
+
+// less orders endpoints by number, and the UDP port of a number before its TCP
+// twin.
+//
+// That order is for clients older than UDP discovery, which key a port by its
+// number alone and keep the last entry they read for it. Listing UDP first
+// leaves them the TCP entry — the one they can forward, with the bind address
+// they need to dial it — rather than having the UDP one overwrite it.
+func (e endpoint) less(other endpoint) bool {
+	if e.port != other.port {
+		return e.port < other.port
+	}
+	return e.network == networkUDP && other.network == networkTCP
+}
+
 // Watcher keeps the current listening-port snapshot. The zero value is not
 // usable; call New. A nil *Watcher answers Snapshot with nothing, so a server
 // built without one (a test router) needs no nil check at the call site.
@@ -161,7 +198,7 @@ type Watcher struct {
 	logger   *slog.Logger
 
 	mu       sync.Mutex
-	state    map[int]*portState
+	state    map[endpoint]*portState
 	snapshot []Port
 }
 
@@ -202,8 +239,8 @@ func New(cfg Config) *Watcher {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	exclude := make(map[int]struct{}, len(cfg.ExcludePorts))
-	for _, port := range cfg.ExcludePorts {
+	exclude := make(map[int]struct{}, len(cfg.ExcludeTCPPorts))
+	for _, port := range cfg.ExcludeTCPPorts {
 		exclude[port] = struct{}{}
 	}
 	return &Watcher{
@@ -214,7 +251,7 @@ func New(cfg Config) *Watcher {
 		declared: cfg.Declared,
 		probe:    cfg.Probe,
 		logger:   cfg.Logger,
-		state:    map[int]*portState{},
+		state:    map[endpoint]*portState{},
 	}
 }
 
@@ -238,7 +275,8 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 }
 
-// Snapshot is the most recent observation, ordered by port.
+// Snapshot is the most recent observation, ordered by port, with a number's
+// UDP port before its TCP one (see endpoint.less).
 func (w *Watcher) Snapshot() []Port {
 	if w == nil {
 		return nil
@@ -286,46 +324,47 @@ func (w *Watcher) declaredPorts() []Declaration {
 // observe folds a scan and the declared set into the remembered state and
 // returns the ports whose protocol has to be established: newly appeared ones,
 // ones whose socket was replaced, and ones whose last probe could not reach
-// them.
+// them. A UDP port is never among them — it is udp from the tick it appears.
 //
 // The two inputs land in one state map rather than two. A declared port that is
 // also observed is an ordinary observed port that happens to be declared — it
 // has real binds and a real socket identity to key its probe cache on, and only
 // a port nothing visible is listening on is carried by its declaration alone.
-func (w *Watcher) observe(listeners []listener, declared []Declaration, now time.Time) []int {
-	grouped := map[int][]listener{}
+func (w *Watcher) observe(listeners []listener, declared []Declaration, now time.Time) []endpoint {
+	grouped := map[endpoint][]listener{}
 	for _, entry := range listeners {
-		if _, skip := w.exclude[entry.Port]; skip {
+		key := endpoint{network: entry.Network, port: entry.Port}
+		if w.excluded(key) {
 			continue
 		}
-		grouped[entry.Port] = append(grouped[entry.Port], entry)
+		grouped[key] = append(grouped[key], entry)
 	}
-	declaredSet := make(map[int]Declaration, len(declared))
+	declaredSet := make(map[endpoint]Declaration, len(declared))
 	for _, declaration := range declared {
 		if declaration.Port < 1 || declaration.Port > 65535 {
 			continue
 		}
 		// The exclusion is what it is for observed ports: the agent's own
 		// listener is not a service, and declaring it would not make it one.
-		if _, skip := w.exclude[declaration.Port]; skip {
+		if w.excluded(declaration.endpoint()) {
 			continue
 		}
 		// First declaration of a port wins, so two sources naming the same
 		// port cannot flip its protocol between ticks.
-		if _, ok := declaredSet[declaration.Port]; !ok {
-			declaredSet[declaration.Port] = declaration
+		if _, ok := declaredSet[declaration.endpoint()]; !ok {
+			declaredSet[declaration.endpoint()] = declaration
 		}
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	next := make(map[int]*portState, len(grouped)+len(declaredSet))
-	var pending []int
+	next := make(map[endpoint]*portState, len(grouped)+len(declaredSet))
+	var pending []endpoint
 	// fold carries forward what the previous tick knew about this port and
 	// queues a probe when the protocol is not already established for the
 	// socket — or the declaration — now behind it.
-	fold := func(port int, state *portState) {
-		if previous, ok := w.state[port]; ok {
+	fold := func(key endpoint, state *portState) {
+		if previous, ok := w.state[key]; ok {
 			state.firstSeenAt = previous.firstSeenAt
 			if previous.inodeKey == state.inodeKey {
 				state.protocol = previous.protocol
@@ -336,7 +375,7 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 		// every tick rather than only when the port is new, so a declaration
 		// edited while the sandbox is up takes effect the same way its port
 		// number does.
-		if declaration, ok := declaredSet[port]; ok {
+		if declaration, ok := declaredSet[key]; ok {
 			state.serviceID = declaration.ServiceID
 			state.serviceName = declaration.ServiceName
 			if declaration.stated() {
@@ -344,36 +383,56 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 			}
 		}
 		if state.protocol == ProtocolUnknown {
-			pending = append(pending, port)
+			pending = append(pending, key)
 		}
-		next[port] = state
+		next[key] = state
 	}
-	for port, entries := range grouped {
-		_, isDeclared := declaredSet[port]
-		fold(port, &portState{
+	for key, entries := range grouped {
+		_, isDeclared := declaredSet[key]
+		fold(key, &portState{
 			firstSeenAt: now,
 			inodeKey:    inodeKey(entries),
-			protocol:    ProtocolUnknown,
+			protocol:    initialProtocol(key),
 			addresses:   addressStrings(entries),
-			target:      netip.AddrPortFrom(probeAddr(entries), uint16(port)),
+			target:      netip.AddrPortFrom(probeAddr(entries), uint16(key.port)),
 			declared:    isDeclared,
 		})
 	}
-	for port := range declaredSet {
-		if _, observed := next[port]; observed {
+	for key := range declaredSet {
+		if _, observed := next[key]; observed {
 			continue
 		}
-		fold(port, &portState{
+		fold(key, &portState{
 			firstSeenAt: now,
 			inodeKey:    declaredInodeKey,
-			protocol:    ProtocolUnknown,
-			target:      netip.AddrPortFrom(declaredProbeAddr, uint16(port)),
+			protocol:    initialProtocol(key),
+			target:      netip.AddrPortFrom(declaredProbeAddr, uint16(key.port)),
 			declared:    true,
 		})
 	}
 	w.state = next
-	sort.Ints(pending)
+	sort.Slice(pending, func(i, j int) bool { return pending[i].less(pending[j]) })
 	return pending
+}
+
+// excluded reports whether a port is one the watcher never reports: the
+// agent's own TCP listener, by number.
+func (w *Watcher) excluded(key endpoint) bool {
+	if key.network != networkTCP {
+		return false
+	}
+	_, skip := w.exclude[key.port]
+	return skip
+}
+
+// initialProtocol is what a port is reported as before anything is learned
+// about it: unknown, which queues a probe, for TCP; udp, which does not, for
+// UDP — there is nothing a probe could learn (ADR 0109 §2).
+func initialProtocol(key endpoint) Protocol {
+	if key.network == networkUDP {
+		return ProtocolUDP
+	}
+	return ProtocolUnknown
 }
 
 // declaredProbeAddr is where a port with no observed bind is probed. There is
@@ -383,19 +442,19 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 // forwarded anyway: the forward dials by name and tries both families.
 var declaredProbeAddr = netip.AddrFrom4([4]byte{127, 0, 0, 1})
 
-func (w *Watcher) runProbes(ctx context.Context, pending []int) {
-	targets := make(map[int]probeTarget, len(pending))
+func (w *Watcher) runProbes(ctx context.Context, pending []endpoint) {
+	targets := make(map[endpoint]probeTarget, len(pending))
 	w.mu.Lock()
-	for _, port := range pending {
-		if state, ok := w.state[port]; ok {
-			targets[port] = probeTarget{addr: state.target, inodeKey: state.inodeKey}
+	for _, key := range pending {
+		if state, ok := w.state[key]; ok {
+			targets[key] = probeTarget{addr: state.target, inodeKey: state.inodeKey}
 		}
 	}
 	w.mu.Unlock()
 
 	slots := make(chan struct{}, probeConcurrency)
 	var wg sync.WaitGroup
-	for port, target := range targets {
+	for key, target := range targets {
 		if ctx.Err() != nil {
 			break
 		}
@@ -404,7 +463,7 @@ func (w *Watcher) runProbes(ctx context.Context, pending []int) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
-			w.record(port, target, w.probe(ctx, target.addr))
+			w.record(key, target, w.probe(ctx, target.addr))
 		}()
 	}
 	wg.Wait()
@@ -418,10 +477,10 @@ type probeTarget struct {
 // record stores a probe result only if the socket it describes is still the one
 // on that port: a server that restarted while its old socket was being probed
 // must not inherit the old answer.
-func (w *Watcher) record(port int, target probeTarget, protocol Protocol) {
+func (w *Watcher) record(key endpoint, target probeTarget, protocol Protocol) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	state, ok := w.state[port]
+	state, ok := w.state[key]
 	if !ok || state.inodeKey != target.inodeKey {
 		return
 	}
@@ -431,10 +490,16 @@ func (w *Watcher) record(port int, target probeTarget, protocol Protocol) {
 func (w *Watcher) publish() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	snapshot := make([]Port, 0, len(w.state))
-	for port, state := range w.state {
+	keys := make([]endpoint, 0, len(w.state))
+	for key := range w.state {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].less(keys[j]) })
+	snapshot := make([]Port, 0, len(keys))
+	for _, key := range keys {
+		state := w.state[key]
 		snapshot = append(snapshot, Port{
-			Port:        port,
+			Port:        key.port,
 			Addresses:   state.addresses,
 			Protocol:    state.protocol,
 			Declared:    state.declared,
@@ -443,7 +508,6 @@ func (w *Watcher) publish() {
 			FirstSeenAt: state.firstSeenAt,
 		})
 	}
-	sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].Port < snapshot[j].Port })
 	w.snapshot = snapshot
 }
 

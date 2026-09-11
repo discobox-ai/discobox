@@ -23,6 +23,14 @@ const (
 	// HTTP: a database, an SSH daemon, an HTTP/2-only server. Forwardable as
 	// raw bytes, not as a web endpoint.
 	ProtocolTCP Protocol = "tcp"
+	// ProtocolUDP means the port is a bound UDP socket (ADR 0109). It is known
+	// from the table the socket was found in, not from a probe, and it is never
+	// probed: there is no handshake to learn from, and a datagram a service
+	// does understand is one it acts on. Forwardable as datagrams.
+	//
+	// It is the one protocol that names the transport as well as the content:
+	// every other value is a TCP port.
+	ProtocolUDP Protocol = "udp"
 	// ProtocolUnknown means the port is listening but has not been classified:
 	// it was discovered this tick, or the probe could not connect. Retried on
 	// the next tick.

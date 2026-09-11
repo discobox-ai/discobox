@@ -207,6 +207,8 @@ func (s SandboxAgentListeningPortProtocol) Validate() error {
 		return nil
 	case "tcp":
 		return nil
+	case "udp":
+		return nil
 	case "unknown":
 		return nil
 	default:

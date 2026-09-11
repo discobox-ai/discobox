@@ -2457,6 +2457,8 @@ func (s *SandboxAgentListeningPortProtocol) Decode(d *jx.Decoder) error {
 		*s = SandboxAgentListeningPortProtocolHTTPS
 	case SandboxAgentListeningPortProtocolTCP:
 		*s = SandboxAgentListeningPortProtocolTCP
+	case SandboxAgentListeningPortProtocolUDP:
+		*s = SandboxAgentListeningPortProtocolUDP
 	case SandboxAgentListeningPortProtocolUnknown:
 		*s = SandboxAgentListeningPortProtocolUnknown
 	default:

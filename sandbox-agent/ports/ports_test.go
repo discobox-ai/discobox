@@ -93,6 +93,24 @@ func (p *recordingProbe) setAnswer(port int, protocol Protocol) {
 	p.answers[port] = protocol
 }
 
+// udpRow renders one bound, unconnected UDP socket the way /proc/net/udp does.
+func udpRow(index int, addrHex string, portHex string, uid int, inode uint64) string {
+	return "  " + strconv.Itoa(index) + ": " + addrHex + ":" + portHex +
+		" 00000000:0000 07 00000000:00000000 00:00000000 00000000  " +
+		strconv.Itoa(uid) + "        0 " + strconv.FormatUint(inode, 10) + " 2 0000000000000000 0\n"
+}
+
+func (f *procFixture) writeUDP(rows ...string) {
+	f.t.Helper()
+	table := procNetUDPHeader
+	for _, row := range rows {
+		table += row
+	}
+	if err := os.WriteFile(filepath.Join(f.root, "net", "udp"), []byte(table), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
 func snapshotByPort(t *testing.T, watcher *Watcher, port int) Port {
 	t.Helper()
 	for _, entry := range watcher.Snapshot() {
@@ -214,10 +232,10 @@ func TestWatcherIgnoresOtherUsersAndExcludedPorts(t *testing.T) {
 		row(2, "0100007F", "1435", 1000, 41003), // the sandbox user's dev server
 	)
 	watcher := New(Config{
-		UID:          1000,
-		ExcludePorts: []int{3003},
-		ProcRoot:     fixture.root,
-		Probe:        func(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP },
+		UID:             1000,
+		ExcludeTCPPorts: []int{3003},
+		ProcRoot:        fixture.root,
+		Probe:           func(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP },
 	})
 	watcher.tick(context.Background())
 
@@ -409,11 +427,11 @@ func TestWatcherExcludesADeclaredPortItMustNotReport(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write()
 	watcher := New(Config{
-		UID:          1000,
-		ProcRoot:     fixture.root,
-		ExcludePorts: []int{8558},
-		Probe:        newRecordingProbe(nil).probe,
-		Declared:     func() ([]Declaration, error) { return []Declaration{{Port: 8558}, {Port: 70000}, {Port: 0}}, nil },
+		UID:             1000,
+		ProcRoot:        fixture.root,
+		ExcludeTCPPorts: []int{8558},
+		Probe:           newRecordingProbe(nil).probe,
+		Declared:        func() ([]Declaration, error) { return []Declaration{{Port: 8558}, {Port: 70000}, {Port: 0}}, nil },
 	})
 
 	watcher.tick(context.Background())
@@ -541,5 +559,123 @@ func TestTheFirstDeclarationOfAPortWins(t *testing.T) {
 	}
 	if port := snapshotByPort(t, watcher, 6900); port.ServiceID != "ai.discobox.desktop" || port.Protocol != ProtocolHTTP {
 		t.Fatalf("port = %+v, want the first declaration's id and protocol", port)
+	}
+}
+
+// A bound UDP port is reported the tick it appears, as udp, and never
+// connected to: there is no question a probe could safely ask it (ADR 0109).
+func TestWatcherReportsABoundUDPPortWithoutProbingIt(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	fixture.writeUDP(udpRow(0, "00000000", "14E9", 1000, 51001))
+	probe := newRecordingProbe(nil)
+	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: probe.probe})
+
+	watcher.tick(context.Background())
+	watcher.tick(context.Background())
+
+	got := snapshotByPort(t, watcher, 5353)
+	if got.Protocol != ProtocolUDP {
+		t.Fatalf("protocol = %q, want udp", got.Protocol)
+	}
+	if len(got.Addresses) != 1 || got.Addresses[0] != "0.0.0.0" {
+		t.Errorf("addresses = %v, want the wildcard bind", got.Addresses)
+	}
+	if calls := probe.callCount(5353); calls != 0 {
+		t.Errorf("a UDP port was probed %d times, want never", calls)
+	}
+}
+
+// DNS is the everyday case of a number serving on both transports. They are two
+// ports: each is reported, each keeps its own protocol, and the TCP one is
+// still classified by its probe.
+func TestWatcherReportsTheTCPAndUDPPortsOfOneNumberSeparately(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write(row(0, "0100007F", "0035", 1000, 41001))
+	fixture.writeUDP(udpRow(0, "0100007F", "0035", 1000, 51001))
+	probe := newRecordingProbe(map[int]Protocol{53: ProtocolTCP})
+	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: probe.probe})
+
+	watcher.tick(context.Background())
+
+	snapshot := watcher.Snapshot()
+	if len(snapshot) != 2 {
+		t.Fatalf("snapshot = %+v, want the TCP and UDP ports of 53", snapshot)
+	}
+	// UDP first, so a client that keys ports by number alone — every CLI
+	// older than UDP discovery — keeps the TCP entry it read last.
+	if snapshot[0].Port != 53 || snapshot[0].Protocol != ProtocolUDP {
+		t.Errorf("first = %+v, want udp 53 first", snapshot[0])
+	}
+	if snapshot[1].Port != 53 || snapshot[1].Protocol != ProtocolTCP {
+		t.Errorf("second = %+v, want tcp 53 second", snapshot[1])
+	}
+	if calls := probe.callCount(53); calls != 1 {
+		t.Errorf("probe called %d times, want once, for the TCP port", calls)
+	}
+
+	// The UDP socket going away takes only the UDP port with it.
+	fixture.writeUDP()
+	watcher.tick(context.Background())
+	if snapshot := watcher.Snapshot(); len(snapshot) != 1 || snapshot[0].Protocol != ProtocolTCP {
+		t.Fatalf("snapshot = %+v, want only tcp 53 left", snapshot)
+	}
+}
+
+// A declaration stating udp names the UDP port of its number — the remedy for
+// a UDP server discovery cannot see, whether root holds it or it bound a
+// number inside the ephemeral range.
+func TestAUDPDeclarationDeclaresTheUDPPort(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write(row(0, "0100007F", "1F90", 1000, 41001))
+	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolHTTP})
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    probe.probe,
+		Declared: func() ([]Declaration, error) {
+			return []Declaration{{Port: 8080, ServiceID: "game", ServiceName: "Game", Protocol: ProtocolUDP}}, nil
+		},
+	})
+
+	watcher.tick(context.Background())
+
+	snapshot := watcher.Snapshot()
+	if len(snapshot) != 2 {
+		t.Fatalf("snapshot = %+v, want tcp 8080 observed and udp 8080 declared", snapshot)
+	}
+	udp, tcp := snapshot[0], snapshot[1]
+	if tcp.Protocol != ProtocolHTTP || tcp.Declared || tcp.ServiceID != "" {
+		t.Errorf("tcp 8080 = %+v, want the observed http port, undeclared", tcp)
+	}
+	if udp.Protocol != ProtocolUDP || !udp.Declared || udp.ServiceID != "game" || len(udp.Addresses) != 0 {
+		t.Errorf("udp 8080 = %+v, want the declared udp port with no observed bind", udp)
+	}
+	if calls := probe.callCount(8080); calls != 1 {
+		t.Errorf("probe called %d times, want once, for the TCP port only", calls)
+	}
+}
+
+// The agent's own listener is a TCP socket. A sandbox process's UDP socket on
+// the same number is not the agent, and is reported like any other.
+func TestTheExcludedPortIsExcludedForTCPOnly(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write(row(0, "00000000", "0BBB", 1000, 41001))
+	fixture.writeUDP(udpRow(0, "00000000", "0BBB", 1000, 51001))
+	watcher := New(Config{
+		UID:             1000,
+		ExcludeTCPPorts: []int{3003},
+		ProcRoot:        fixture.root,
+		Probe:           newRecordingProbe(nil).probe,
+		Declared: func() ([]Declaration, error) {
+			return []Declaration{{Port: 3003, Protocol: ProtocolUDP, ServiceID: "game"}}, nil
+		},
+	})
+
+	watcher.tick(context.Background())
+
+	snapshot := watcher.Snapshot()
+	if len(snapshot) != 1 || snapshot[0].Protocol != ProtocolUDP || snapshot[0].ServiceID != "game" {
+		t.Fatalf("snapshot = %+v, want only the declared, observed udp 3003", snapshot)
 	}
 }

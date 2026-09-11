@@ -12,24 +12,39 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
-var sandboxTCPProxyScopes = []string{poolagentauth.ScopeTCPConnect}
-
-// registerSandboxTCPRoutes exposes the sandbox-agent's TCP tunnel at the
-// control-plane edge, so a client that is not speaking SSH can open the same
-// direct-tcpip byte pipe `ssh -L` gets (ADR 0024 §3). The SSH ingress reaches
-// the tunnel in-process through the same lease chain; this is the route for
-// everything else, `discobox proxy` first among them.
-func registerSandboxTCPRoutes(router chi.Router, service services.SandboxService) {
-	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach", sandboxTCPProxyHandler(service))
+// sandboxTunnel is one of the sandbox-agent's tunnels: the path it is served
+// at, and the scope a lease onto it is minted with.
+type sandboxTunnel struct {
+	suffix string
+	scopes []string
 }
 
-// sandboxTCPProxyHandler forwards the upgrade to the sandbox-agent, which dials
+var (
+	// sandboxTCPTunnel is ADR 0024 §3's direct-tcpip tunnel.
+	sandboxTCPTunnel = sandboxTunnel{suffix: "/tcp/attach", scopes: []string{poolagentauth.ScopeTCPConnect}}
+	// sandboxUDPTunnel is its datagram twin (ADR 0109 §4).
+	sandboxUDPTunnel = sandboxTunnel{suffix: "/udp/attach", scopes: []string{poolagentauth.ScopeUDPConnect}}
+)
+
+// registerSandboxTunnelRoutes exposes the sandbox-agent's tunnels at the
+// control-plane edge, so a client that is not speaking SSH can open the same
+// direct-tcpip byte pipe `ssh -L` gets (ADR 0024 §3), and the UDP one SSH has
+// no counterpart for (ADR 0109). The SSH ingress reaches the TCP tunnel
+// in-process through the same lease chain; this is the route for everything
+// else, `discobox proxy` first among them.
+func registerSandboxTunnelRoutes(router chi.Router, service services.SandboxService) {
+	for _, tunnel := range []sandboxTunnel{sandboxTCPTunnel, sandboxUDPTunnel} {
+		router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}"+tunnel.suffix, sandboxTunnelProxyHandler(service, tunnel))
+	}
+}
+
+// sandboxTunnelProxyHandler forwards the upgrade to the sandbox-agent, which dials
 // host:port from inside the sandbox's network namespace and speaks
 // execstream/frame over the websocket. Everything past the handshake is the
 // tunnel's own framing, so the server owns only project authorization, scope
 // selection, and lease injection — the same division the other hand-wired
 // sandbox proxies keep.
-func sandboxTCPProxyHandler(service services.SandboxService) http.Handler {
+func sandboxTunnelProxyHandler(service services.SandboxService, tunnel sandboxTunnel) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if service == nil {
 			writeSandboxAgentProxyError(w, http.StatusServiceUnavailable, "sandbox service is not configured")
@@ -47,7 +62,7 @@ func sandboxTCPProxyHandler(service services.SandboxService) http.Handler {
 		// (ADR 0039 tier 3): a forwarded connection is a browser or a client
 		// library on the other end, and one that hangs for minutes is worse
 		// than one that is refused now and retried when the user reloads.
-		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, sandboxTCPProxyScopes)
+		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, tunnel.scopes)
 		if err != nil {
 			writeSandboxAgentProxyError(w, statusCodeForProxyError(err), err.Error())
 			return
@@ -62,7 +77,7 @@ func sandboxTCPProxyHandler(service services.SandboxService) http.Handler {
 			return
 		}
 
-		target, err := sandboxTCPProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxModel.ID)
+		target, err := sandboxTunnelTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxModel.ID, tunnel)
 		if err != nil {
 			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -72,9 +87,9 @@ func sandboxTCPProxyHandler(service services.SandboxService) http.Handler {
 	})
 }
 
-// sandboxTCPProxyTargetURL builds the pool-agent URL for the tunnel. It carries
+// sandboxTunnelTargetURL builds the pool-agent URL for the tunnel. It carries
 // no query: sandboxPoolReverseProxy forwards the incoming request's raw query
 // through, which is the host and port this handler just validated.
-func sandboxTCPProxyTargetURL(baseURL, projectID, poolID, sandboxID string) (*url.URL, error) {
-	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, "/tcp/attach")
+func sandboxTunnelTargetURL(baseURL, projectID, poolID, sandboxID string, tunnel sandboxTunnel) (*url.URL, error) {
+	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, tunnel.suffix)
 }

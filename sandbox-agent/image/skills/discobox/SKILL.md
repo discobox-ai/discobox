@@ -144,7 +144,10 @@ depends on which origin you have:
 - Ports you listen on are forwarded to their localhost automatically while that
   window is open, at the same number when it is free (8080 →
   `localhost:8080`), otherwise the nearest above; privileged ports get +8000,
-  so 80 → 8080.
+  so 80 → 8080. UDP ports you bind are forwarded too, but only ones outside
+  the ephemeral range (`/proc/sys/net/ipv4/ip_local_port_range`, normally
+  32768–60999) — inside it, a socket looks like a client's. Bind a fixed
+  number below it, or declare it (below).
 - They can also use `discobox shell`, `discobox cp`, `discobox tools`, or
   `ssh <box-id>` after `discobox admin ssh-config --write`. The id is
   `sandboxId` in `sandbox.json`; nothing sets it in your environment.
@@ -280,10 +283,14 @@ Read from the primary source's tree, versioned with it:
 
   Declare `ports` whenever the listening socket is not held by your own user —
   `docker compose up`, or anything socket-activated by systemd. Port discovery
-  filters `/proc/net/tcp` by your uid, so a root-held socket is invisible to it
-  and never gets forwarded; `ports` is how it reaches the user anyway. Adding
-  `protocol:` reports the port as speaking it instead of connecting to find
-  out, which matters when connecting is itself the activation.
+  filters `/proc/net/tcp` and `/proc/net/udp` by your uid, so a root-held
+  socket is invisible to it and never gets forwarded; `ports` is how it reaches
+  the user anyway. Adding `protocol:` reports the port as speaking it instead
+  of connecting to find out, which matters when connecting is itself the
+  activation. `protocol: udp` makes the declared ports UDP ones — the way to
+  list a UDP server discovery misses. A declaration's ports are all one
+  transport, so something serving both (DNS on 53/tcp and 53/udp) needs a
+  second file for the UDP side, saying `start: never` so it runs nothing.
 
   A declaration that only names ports — because something else already serves
   them — must say `start: never`. That is what makes it a declaration rather

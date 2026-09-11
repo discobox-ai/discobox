@@ -1135,7 +1135,7 @@ listing.
 **What the discobox is serving rides at the end of them** (`portsField`), from
 the same push
 ([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
-grouped by protocol — `http:3000,5173,8080 · https:8443 · tcp:22,5432,6379`.
+grouped by protocol — `http:3000,5173,8080 · https:8443 · tcp:22,5432,6379 · udp:53`.
 Grouped rather than one `protocol/port` per port because the protocol is the
 repetitive half: a sandbox running three dev servers said "http" three times for
 no information, on the row least able to spare it. The protocol leads its group
@@ -1160,7 +1160,12 @@ local ports live exactly as long as the screen that shows them; the mechanics
 are `internal/portforward`, the same forwarder `discobox proxy` runs, over the same
 tunnel. A port that gets bound while the screen is up appears on it with no key
 pressed: the forward wakes the window (`Forward.Events`) and the header redraws
-from `Forward.Bindings`.
+from `Forward.Bindings`. The forward is keyed by number *and* transport
+(`portKey`): a sandbox's `tcp:53` and `udp:53` are two ports, drawn in two
+groups, and the forward may have given them two local numbers
+([ADR 0109](../../../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)).
+A URL on a pane's screen is only ever a TCP port's, so the link rewriter looks
+up only those.
 
 Both numbers are drawn even when they match. `3000->3000` says the port is
 reachable *here*, which a bare `3000` — the shape every unforwarded port already

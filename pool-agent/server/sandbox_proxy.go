@@ -50,6 +50,9 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	// the ADR asks for, achieved by literally reusing autoStart rather than
 	// reimplementing it.
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/tcp/attach", service.autoStart(service.sandboxAgentProxyHandler()))
+	// Its datagram twin (ADR 0109 §4), registered the same way for the same
+	// reasons, and gated by udp:connect below.
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/udp/attach", service.autoStart(service.sandboxAgentProxyHandler()))
 }
 
 func (s *sandboxService) sandboxHTTPProxyHandler() http.Handler {
@@ -137,6 +140,12 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 	if strings.Contains(r.URL.Path, "/tcp/attach") {
 		if r.Method == http.MethodGet {
 			return ScopeTCPConnect
+		}
+		return ""
+	}
+	if strings.Contains(r.URL.Path, "/udp/attach") {
+		if r.Method == http.MethodGet {
+			return ScopeUDPConnect
 		}
 		return ""
 	}

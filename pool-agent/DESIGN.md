@@ -391,7 +391,9 @@ sandbox-agent proxy handler and `autoStart` wrapper unchanged, forwarding to
 the sandbox-agent's own `/tcp/attach` (`sandbox-agent/DESIGN.md`), which is
 where the actual `host:port` dial happens — inside the sandbox's own network
 namespace, not this one, so `localhost` in a forwarded connection means what
-the user meant.
+the user meant. `.../udp/attach` (scope `udp:connect`) is registered the same
+way for the datagram tunnel
+([ADR 0109](../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)).
 
 ## Worker Proxy Integration
 

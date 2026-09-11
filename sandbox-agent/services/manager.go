@@ -146,6 +146,8 @@ func declaredProtocol(declared string) ports.Protocol {
 		return ports.ProtocolHTTPS
 	case "tcp":
 		return ports.ProtocolTCP
+	case "udp":
+		return ports.ProtocolUDP
 	default:
 		return ports.ProtocolUnknown
 	}
@@ -173,18 +175,26 @@ func (m *Manager) Declarations() ([]ports.Declaration, error) {
 		return nil, err
 	}
 	var out []ports.Declaration
-	seen := map[int]struct{}{}
+	// A UDP port and a TCP port of the same number are two ports (ADR 0109),
+	// so a declaration of one does not shadow the other.
+	type declaredPort struct {
+		port int
+		udp  bool
+	}
+	seen := map[declaredPort]struct{}{}
 	for _, def := range defs {
+		protocol := declaredProtocol(def.Protocol)
 		for _, port := range def.Ports {
-			if _, duplicate := seen[port]; duplicate {
+			key := declaredPort{port: port, udp: protocol == ports.ProtocolUDP}
+			if _, duplicate := seen[key]; duplicate {
 				continue
 			}
-			seen[port] = struct{}{}
+			seen[key] = struct{}{}
 			out = append(out, ports.Declaration{
 				Port:        port,
 				ServiceID:   def.ID,
 				ServiceName: def.Name,
-				Protocol:    declaredProtocol(def.Protocol),
+				Protocol:    protocol,
 			})
 		}
 	}

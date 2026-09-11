@@ -25,6 +25,9 @@ const (
 	ScopeStatusRead = "status:read"
 	// ScopeTCPConnect gates the direct-tcpip tunnel endpoint (ADR 0024 §3).
 	ScopeTCPConnect = "tcp:connect"
+	// ScopeUDPConnect gates the UDP tunnel endpoint, its datagram twin
+	// (ADR 0109 §4).
+	ScopeUDPConnect = "udp:connect"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -51,6 +54,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			}
 		case "tcp:*":
 			if strings.HasPrefix(scope, "tcp:") {
+				return true
+			}
+		case "udp:*":
+			if strings.HasPrefix(scope, "udp:") {
 				return true
 			}
 		}
@@ -202,6 +209,12 @@ func requiredRequestScope(r *http.Request) string {
 	if strings.Contains(r.URL.Path, "/tcp/attach") {
 		if r.Method == http.MethodGet {
 			return ScopeTCPConnect
+		}
+		return ""
+	}
+	if strings.Contains(r.URL.Path, "/udp/attach") {
+		if r.Method == http.MethodGet {
+			return ScopeUDPConnect
 		}
 		return ""
 	}

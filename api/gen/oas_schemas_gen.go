@@ -11619,8 +11619,9 @@ type SandboxAgentListeningPort struct {
 	// Display name of the declaration this port came from, so a client can label it without a second
 	// request. Absent for a port only discovery found.
 	ServiceName OptString `json:"serviceName"`
-	// TCP port the sandbox serves - one its own processes were seen listening on, one a service declares,
-	//  or both.
+	// Port the sandbox serves - one its own processes were seen listening on or bound, one a service
+	// declares, or both. A TCP port and a UDP port with the same number are two entries, told apart by
+	// protocol.
 	Port int64 `json:"port"`
 	// Every local address bound to this port - a wildcard address for a wildcard bind, 127.0.0.1 for a
 	// loopback-only one. A port is reachable from inside the sandbox's network namespace either way, so
@@ -11636,7 +11637,9 @@ type SandboxAgentListeningPort struct {
 	// What the port turned out to speak, established by probing it once when it
 	// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
 	// HTTP/2-only server); unknown means not classified yet or unreachable when
-	// probed, and is retried.
+	// probed, and is retried. udp is a bound UDP socket, which is never probed
+	// (ADR 0109); it is the only value that is not a TCP port, so it is also what
+	// says which transport a forward of this port has to carry.
 	Protocol SandboxAgentListeningPortProtocol `json:"protocol"`
 	// When this port was first listed - first observed listening, or first declared. Survives a restart
 	// of whatever is behind it, as long as the port itself never went away in between.
@@ -11716,13 +11719,16 @@ func (s *SandboxAgentListeningPort) SetFirstSeenAt(val time.Time) {
 // What the port turned out to speak, established by probing it once when it
 // appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
 // HTTP/2-only server); unknown means not classified yet or unreachable when
-// probed, and is retried.
+// probed, and is retried. udp is a bound UDP socket, which is never probed
+// (ADR 0109); it is the only value that is not a TCP port, so it is also what
+// says which transport a forward of this port has to carry.
 type SandboxAgentListeningPortProtocol string
 
 const (
 	SandboxAgentListeningPortProtocolHTTP    SandboxAgentListeningPortProtocol = "http"
 	SandboxAgentListeningPortProtocolHTTPS   SandboxAgentListeningPortProtocol = "https"
 	SandboxAgentListeningPortProtocolTCP     SandboxAgentListeningPortProtocol = "tcp"
+	SandboxAgentListeningPortProtocolUDP     SandboxAgentListeningPortProtocol = "udp"
 	SandboxAgentListeningPortProtocolUnknown SandboxAgentListeningPortProtocol = "unknown"
 )
 
@@ -11732,6 +11738,7 @@ func (SandboxAgentListeningPortProtocol) AllValues() []SandboxAgentListeningPort
 		SandboxAgentListeningPortProtocolHTTP,
 		SandboxAgentListeningPortProtocolHTTPS,
 		SandboxAgentListeningPortProtocolTCP,
+		SandboxAgentListeningPortProtocolUDP,
 		SandboxAgentListeningPortProtocolUnknown,
 	}
 }
@@ -11744,6 +11751,8 @@ func (s SandboxAgentListeningPortProtocol) MarshalText() ([]byte, error) {
 	case SandboxAgentListeningPortProtocolHTTPS:
 		return []byte(s), nil
 	case SandboxAgentListeningPortProtocolTCP:
+		return []byte(s), nil
+	case SandboxAgentListeningPortProtocolUDP:
 		return []byte(s), nil
 	case SandboxAgentListeningPortProtocolUnknown:
 		return []byte(s), nil
@@ -11763,6 +11772,9 @@ func (s *SandboxAgentListeningPortProtocol) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxAgentListeningPortProtocolTCP:
 		*s = SandboxAgentListeningPortProtocolTCP
+		return nil
+	case SandboxAgentListeningPortProtocolUDP:
+		*s = SandboxAgentListeningPortProtocolUDP
 		return nil
 	case SandboxAgentListeningPortProtocolUnknown:
 		*s = SandboxAgentListeningPortProtocolUnknown
@@ -12240,10 +12252,10 @@ type SandboxAgentStatusResponse struct {
 	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
 	// just the primary. One-shot execs are not sessions and never appear.
 	Sessions []SandboxAgentSessionStatus `json:"sessions"`
-	// TCP ports the sandbox serves - those its own processes were seen listening on, plus those its
-	// services declare (ADR 0076). Unlike sources and sessions this is a snapshot from a standing
-	// watcher rather than computed per request, since classifying a port means connecting to it (ADR
-	// 0046); it can be up to one watcher interval stale.
+	// Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP
+	// ports they have bound (ADR 0109), plus those its services declare (ADR 0076). Unlike sources and
+	// sessions this is a snapshot from a standing watcher rather than computed per request, since
+	// classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
 	Ports []SandboxAgentListeningPort `json:"ports"`
 	// This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform
 	// where neither the cgroup nor procfs could be read.
@@ -15059,10 +15071,11 @@ type SandboxService struct {
 	// The declaring file's own name. It orders the listing, which is what the numeric prefix stripped
 	// from the ID is for.
 	FileName OptString `json:"fileName"`
-	// TCP ports the declaration says this service serves, in the order it names them. A declared port is
-	// reported and forwarded whether or not anything observable is listening on it (ADR 0076) - it
-	// exists for the ports discovery cannot find, published by a nested container or bound by a
-	// socket-activated unit, since discovery only sees sockets the sandbox user owns.
+	// Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP
+	// ones when the declaration states the udp protocol (ADR 0109). A declared port is reported and
+	// forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the
+	// ports discovery cannot find, published by a nested container or bound by a socket-activated unit,
+	// since discovery only sees sockets the sandbox user owns.
 	Ports []int64 `json:"ports"`
 	// Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A
 	// service with a problem is listed rather than dropped, because one that silently fails to appear is

@@ -103,8 +103,9 @@ type Definition struct {
 	// orders the listing: the `NN-` prefix stripped from the ID is a statement
 	// about where the file sits in the directory.
 	FileName string
-	// Ports are the TCP ports this service serves, in the order the file names
-	// them, empty when it names none.
+	// Ports are the ports this service serves, in the order the file names
+	// them, empty when it names none. They are TCP ports unless Protocol is
+	// udp (ADR 0109 §2).
 	//
 	// A declared port is reported and forwarded whether or not anything is
 	// observably listening on it (ADR 0076). It exists for the ports the
@@ -282,10 +283,10 @@ func parseFile(path, filename string) Definition {
 	// socket-activated service gets started by classification.
 	protocol := strings.ToLower(strings.TrimSpace(firstField(fields, "protocol")))
 	switch protocol {
-	case "", "http", "https", "tcp":
+	case "", "http", "https", "tcp", "udp":
 		def.Protocol = protocol
 	default:
-		def.Problem = fmt.Sprintf("front matter: protocol: %q is not http, https or tcp", protocol)
+		def.Problem = fmt.Sprintf("front matter: protocol: %q is not http, https, tcp or udp", protocol)
 		return def
 	}
 
@@ -322,7 +323,7 @@ func firstField(fields frontmatter.Fields, names ...string) string {
 // thing. `port` is accepted as the singular spelling of the same field, because
 // a file declaring one port will be written that way whatever the docs say.
 //
-// A value that is not a TCP port number is an error rather than a skipped
+// A value that is not a port number is an error rather than a skipped
 // entry: the author meant something specific by it, and a service that runs
 // without the port it declared is the invisible failure this package's listing
 // already refuses elsewhere.
@@ -333,7 +334,7 @@ func parsePorts(fields frontmatter.Fields) ([]int, error) {
 		for _, text := range strings.FieldsFunc(field, isPortSeparator) {
 			port, err := strconv.Atoi(text)
 			if err != nil || port < 1 || port > 65535 {
-				return nil, fmt.Errorf("ports: %q is not a TCP port number", text)
+				return nil, fmt.Errorf("ports: %q is not a port number (a declaration's ports are all TCP or, with protocol: udp, all UDP)", text)
 			}
 			if _, duplicate := seen[port]; duplicate {
 				continue

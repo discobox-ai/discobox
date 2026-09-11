@@ -160,8 +160,11 @@ type GitState struct {
 // reported port answers, so the number and the protocol are the whole of what
 // is actionable.
 type Port struct {
-	Number   int
-	Protocol string // http, https, tcp, or unknown while a probe has not answered
+	Number int
+	// UDP marks the UDP port of that number, which is a different port from
+	// the TCP one and may be forwarded to a different local port (ADR 0109).
+	UDP      bool
+	Protocol string // http, https, tcp, udp, or unknown while a probe has not answered
 	// ServiceID and ServiceName are the declaration this port came from, empty
 	// for a port only discovery found.
 	//
@@ -963,9 +966,22 @@ type AppliedCommit struct {
 // open. Local is what a browser on this machine connects to; Port is what the
 // sandbox is serving on inside itself.
 type Binding struct {
-	Port  int
+	Port int
+	// UDP marks a binding of the sandbox's UDP port Port rather than its TCP
+	// one.
+	UDP   bool
 	Local int
 }
+
+// portKey is how a forwarded port is looked up. A sandbox's TCP and UDP ports
+// of one number are two ports, and their forwards can land on two local ones.
+type portKey struct {
+	number int
+	udp    bool
+}
+
+func (p Port) key() portKey    { return portKey{number: p.Number, udp: p.UDP} }
+func (b Binding) key() portKey { return portKey{number: b.Port, udp: b.UDP} }
 
 // Forward is a running port forward onto one sandbox: every port it announces,
 // held open at a local port for as long as the workspace showing it is.

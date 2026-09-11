@@ -620,7 +620,7 @@ func diffText(st *styles, s Sandbox) string {
 
 // portsField is what the sandbox is serving, grouped by protocol:
 //
-//	http:3000,5173,8080 · https:8443 · tcp:22,5432,6379
+//	http:3000,5173,8080 · https:8443 · tcp:22,5432,6379 · udp:53,5353
 //
 // Grouped rather than one `protocol/port` per listening port, because the
 // protocol is the repetitive half: a sandbox running three dev servers said
@@ -658,7 +658,7 @@ func diffText(st *styles, s Sandbox) string {
 // Empty when nothing is listening, which is also what a sandbox whose agent has
 // not reported yet looks like — there is no third thing to say and no room to
 // say it in.
-func portsField(st *styles, s Sandbox, forwarded map[int]int) paneHeaderField {
+func portsField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderField {
 	if len(s.Ports) == 0 {
 		return paneHeaderField{}
 	}
@@ -729,12 +729,12 @@ func portSpan(st *styles, text, url string) headerSpan {
 // forwarded ports: an offer to open a desktop that cannot be reached is worse
 // than not offering. The label is the declaration's own name, so the sandbox
 // says what to call it.
-func desktopField(st *styles, s Sandbox, forwarded map[int]int) paneHeaderField {
+func desktopField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderField {
 	for _, port := range s.Ports {
 		if port.ServiceID != sandboxservices.DesktopID {
 			continue
 		}
-		local, ok := forwarded[port.Number]
+		local, ok := forwarded[port.key()]
 		if !ok {
 			return paneHeaderField{}
 		}
@@ -767,8 +767,8 @@ func desktopField(st *styles, s Sandbox, forwarded map[int]int) paneHeaderField 
 // link. Only the web ones: OSC 8 hands the URL to whatever opens
 // `http://`, and there is nothing sensible for a browser to do with a Postgres
 // socket.
-func portEntry(st *styles, port Port, forwarded map[int]int) headerSpan {
-	local, ok := forwarded[port.Number]
+func portEntry(st *styles, port Port, forwarded map[portKey]int) headerSpan {
+	local, ok := forwarded[port.key()]
 	if !ok {
 		return portSpan(st, itoa(port.Number), "")
 	}
@@ -798,7 +798,7 @@ func portScheme(protocol string) (string, bool) {
 
 // protocolOrder is the order the groups are drawn in: what you would act on
 // first. Anything not named here follows, in port order.
-var protocolOrder = []string{"http", "https", "tcp", "unknown"}
+var protocolOrder = []string{"http", "https", "tcp", "udp", "unknown"}
 
 func protocolRank(protocol string) int {
 	for rank, known := range protocolOrder {

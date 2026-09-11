@@ -22,6 +22,9 @@ import (
 // declared port reports no address — nothing visible is bound on it to report —
 // and so is dialed at the default host, which is the right answer for one
 // published by a nested container or a socket-activated unit.
+//
+// A UDP port is its own target, beside the TCP port of the same number if
+// there is one (ADR 0109 §3).
 func sandboxPortTargets(sb apimodel.Sandbox) []portforward.Target {
 	reported := reportedPorts(sb)
 	targets := make([]portforward.Target, 0, len(reported))
@@ -29,8 +32,10 @@ func sandboxPortTargets(sb apimodel.Sandbox) []portforward.Target {
 		if port.Port <= 0 || port.Port > 65535 {
 			continue
 		}
+		network := portNetwork(string(port.Protocol))
 		targets = append(targets, portforward.Target{
-			Host:     dialHostForPort(port.Addresses),
+			Network:  network,
+			Host:     dialHostForPort(port.Addresses, network),
 			Port:     int(port.Port),
 			Protocol: string(port.Protocol),
 		})
@@ -38,11 +43,30 @@ func sandboxPortTargets(sb apimodel.Sandbox) []portforward.Target {
 	return targets
 }
 
+// portNetwork is the transport a reported port is forwarded over. The report
+// says it through the protocol: udp is the one value that is not a TCP port
+// (ADR 0109 §3), which is also what an agent older than UDP discovery never
+// sends.
+func portNetwork(protocol string) portforward.Network {
+	if protocol == "udp" {
+		return portforward.UDP
+	}
+	return portforward.TCP
+}
+
 // dialHostForPort picks the host the tunnel dials. A wildcard or loopback bind
-// is reached on loopback — as a name, so both loopback families are tried,
-// since a v6-only listener refuses 127.0.0.1 outright; anything else is dialed
-// at the address it actually bound.
-func dialHostForPort(addresses []string) string {
+// is reached on loopback — for TCP as a name, so both loopback families are
+// tried, since a v6-only listener refuses 127.0.0.1 outright; anything else is
+// dialed at the address it actually bound.
+//
+// UDP cannot use the name. A TCP dial of "localhost" tries each address until
+// one connects, but connecting a UDP socket sends nothing and so never fails:
+// whichever family resolved first would be the one used, right or not. So a
+// UDP port is dialed at a literal loopback address in a family it is bound in.
+func dialHostForPort(addresses []string, network portforward.Network) string {
+	if network == portforward.UDP {
+		return udpDialHost(addresses)
+	}
 	for _, address := range addresses {
 		switch address {
 		case "0.0.0.0", "::", "[::]", "*", "127.0.0.1", "::1", "[::1]", "localhost":
@@ -55,6 +79,35 @@ func dialHostForPort(addresses []string) string {
 		}
 	}
 	return portforward.DefaultDialHost
+}
+
+// udpDialLoopback is where a UDP port with nothing better to go on is dialed:
+// IPv4 loopback, which a wildcard IPv6 socket that is not v6-only answers too.
+const udpDialLoopback = "127.0.0.1"
+
+// udpDialHost is dialHostForPort for a UDP port: IPv4 loopback for an IPv4
+// wildcard or loopback bind, IPv6 loopback for an IPv6-only one, and the
+// address itself for anything else. A declared port with no address is dialed
+// at IPv4 loopback, as the sandbox's own probe would be.
+func udpDialHost(addresses []string) string {
+	var v6Loopback bool
+	for _, address := range addresses {
+		switch address {
+		case "0.0.0.0", "127.0.0.1":
+			return udpDialLoopback
+		case "::", "[::]", "::1", "[::1]":
+			v6Loopback = true
+		}
+	}
+	if v6Loopback {
+		return "::1"
+	}
+	for _, address := range addresses {
+		if address != "" {
+			return address
+		}
+	}
+	return udpDialLoopback
 }
 
 // sandboxListeningPorts is the same listing narrowed to what fits beside a
@@ -72,6 +125,7 @@ func sandboxListeningPorts(sb apimodel.Sandbox) []tui.Port {
 		// does.
 		out = append(out, tui.Port{
 			Number:      int(port.Port),
+			UDP:         portNetwork(string(port.Protocol)) == portforward.UDP,
 			Protocol:    string(port.Protocol),
 			ServiceID:   port.ServiceId.Or(""),
 			ServiceName: port.ServiceName.Or(""),

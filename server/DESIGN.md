@@ -99,6 +99,10 @@ Current proxy routes:
   reaches the same endpoint in-process for `direct-tcpip` channels. Everything
   past the handshake is the tunnel's own framing, so the server validates the
   target, authorizes the project, and injects the lease, and owns nothing else.
+- `/api/projects/{projectId}/sandboxes/{sandboxId}/udp/attach?host=&port=` is
+  the same handler for the sandbox-agent's datagram tunnel (ADR 0109): one
+  datagram per frame, under `udp:connect`. SSH has no counterpart, so nothing
+  in-process reaches it.
 
 ### Pool Host Console
 
@@ -164,7 +168,8 @@ rather than accepting the broader sandbox read/write scopes. The exec proxy
 requests `exec:read` for reads (execs, services, harness hooks) and `exec:write`
 for create, delete, start, stop, and restart; attach requests both, because
 attach streams carry input, resize, and signal frames. The TCP tunnel proxy
-requests only `tcp:connect`, the scope ADR 0024 §3 defines for it.
+requests only `tcp:connect`, the scope ADR 0024 §3 defines for it, and the UDP
+tunnel proxy only `udp:connect` (ADR 0109).
 
 Authorization must be decidable from request attributes available before body
 interpretation: authenticated principal, method, route/path parameters, query

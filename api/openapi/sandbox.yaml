@@ -271,7 +271,7 @@ components:
                     format: date-time
                     type: string
                 port:
-                    description: TCP port the sandbox serves - one its own processes were seen listening on, one a service declares, or both.
+                    description: Port the sandbox serves - one its own processes were seen listening on or bound, one a service declares, or both. A TCP port and a UDP port with the same number are two entries, told apart by protocol.
                     format: int64
                     type: integer
                 protocol:
@@ -279,11 +279,14 @@ components:
                         What the port turned out to speak, established by probing it once when it
                         appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
                         HTTP/2-only server); unknown means not classified yet or unreachable when
-                        probed, and is retried.
+                        probed, and is retried. udp is a bound UDP socket, which is never probed
+                        (ADR 0109); it is the only value that is not a TCP port, so it is also what
+                        says which transport a forward of this port has to carry.
                     enum:
                         - http
                         - https
                         - tcp
+                        - udp
                         - unknown
                     type: string
                 serviceId:
@@ -462,7 +465,7 @@ components:
                     format: date-time
                     type: string
                 ports:
-                    description: TCP ports the sandbox serves - those its own processes were seen listening on, plus those its services declare (ADR 0076). Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
+                    description: Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP ports they have bound (ADR 0109), plus those its services declare (ADR 0076). Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
                     items:
                         $ref: '#/components/schemas/SandboxAgentListeningPort'
                     type: array
@@ -688,7 +691,7 @@ components:
                     format: int64
                     type: integer
                 ports:
-                    description: TCP ports the declaration says this service serves, in the order it names them. A declared port is reported and forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
+                    description: Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP ones when the declaration states the udp protocol (ADR 0109). A declared port is reported and forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
                     items:
                         format: int64
                         type: integer

@@ -250,7 +250,7 @@ func (p *poolAgentClient) sandboxAgentAuthTokenProvider(ref sandbox.SandboxRef, 
 func requiresSandboxAgentToken(scopes []string) bool {
 	for _, scope := range scopes {
 		switch scope {
-		case poolagentauth.ScopeTerminalRead, poolagentauth.ScopeTerminalWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite, poolagentauth.ScopeTCPConnect, "terminal:*", "exec:*", "tcp:*", "*":
+		case poolagentauth.ScopeTerminalRead, poolagentauth.ScopeTerminalWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite, poolagentauth.ScopeTCPConnect, poolagentauth.ScopeUDPConnect, "terminal:*", "exec:*", "tcp:*", "udp:*", "*":
 			return true
 		}
 	}

@@ -193,7 +193,7 @@ func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
 // forwardedPorts is what the header draws its arrows from: the sandbox port a
 // local one stands in for. Empty while nothing is forwarded, which is also what
 // every screen but the workspace sees.
-func (m *Model) forwardedPorts() map[int]int {
+func (m *Model) forwardedPorts() map[portKey]int {
 	if m.forward == nil {
 		return nil
 	}
@@ -201,9 +201,9 @@ func (m *Model) forwardedPorts() map[int]int {
 	if len(bindings) == 0 {
 		return nil
 	}
-	forwarded := make(map[int]int, len(bindings))
+	forwarded := make(map[portKey]int, len(bindings))
 	for _, binding := range bindings {
-		forwarded[binding.Port] = binding.Local
+		forwarded[binding.key()] = binding.Local
 	}
 	return forwarded
 }

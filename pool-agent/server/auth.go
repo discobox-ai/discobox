@@ -30,6 +30,9 @@ const (
 	// dialing an arbitrary host:port from inside the sandbox's own network
 	// namespace, distinct from ScopeSandboxHTTP's container-IP-only reach.
 	ScopeTCPConnect = "tcp:connect"
+	// ScopeUDPConnect gates the UDP tunnel endpoint, the same reach as
+	// ScopeTCPConnect for datagrams (ADR 0109 §4).
+	ScopeUDPConnect = "udp:connect"
 	// ScopePoolSync authorizes host-wide pool reconciliation (reaping pools not
 	// in the known set). Only the control-plane provider driver carries it.
 	ScopePoolSync = "pool:sync"
@@ -63,6 +66,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			}
 		case "tcp:*":
 			if strings.HasPrefix(scope, "tcp:") {
+				return true
+			}
+		case "udp:*":
+			if strings.HasPrefix(scope, "udp:") {
 				return true
 			}
 		}

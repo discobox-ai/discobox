@@ -270,6 +270,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 			handler.startExecHTTP(w, r, chi.URLParam(r, "execId"))
 		})
 		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach", handler.attachTCPTunnelHTTP)
+		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/udp/attach", handler.attachUDPTunnelHTTP)
 		protected.Mount("/", generated)
 	})
 	return agentRuntime{
@@ -322,8 +323,8 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 		uid = *user.UID
 	}
 	watcher := ports.Config{
-		UID:          uid,
-		ExcludePorts: listenPorts(cfg.ListenAddress),
+		UID:             uid,
+		ExcludeTCPPorts: listenPorts(cfg.ListenAddress),
 	}
 	// One seam, two directories behind it: the image's declarations and the
 	// repository's, which services.Discover already merges. A declaration that

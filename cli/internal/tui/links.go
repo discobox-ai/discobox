@@ -45,7 +45,9 @@ func (m *Model) forwardedURL(raw string) string {
 	if !ok {
 		return raw
 	}
-	local, ok := m.forwardedPorts()[remote]
+	// A URL's port is a TCP one: http and https are the only schemes this
+	// moves.
+	local, ok := m.forwardedPorts()[portKey{number: remote}]
 	if !ok {
 		return raw
 	}

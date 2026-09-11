@@ -29,11 +29,13 @@ func TestSandboxPortTargetsKeepsTheAddressToDial(t *testing.T) {
 		{Port: 5432, Addresses: []string{"127.0.0.1"}, Protocol: "tcp"},
 		{Port: 9000, Addresses: []string{"10.1.2.3"}, Protocol: "unknown"},
 		{Port: 0, Addresses: []string{"0.0.0.0"}, Protocol: "tcp"},
+		{Port: 5353, Addresses: []string{"0.0.0.0"}, Protocol: "udp"},
 	})
 	want := []portforward.Target{
-		{Host: "localhost", Port: 8080, Protocol: "http"},
-		{Host: "localhost", Port: 5432, Protocol: "tcp"},
-		{Host: "10.1.2.3", Port: 9000, Protocol: "unknown"},
+		{Network: portforward.TCP, Host: "localhost", Port: 8080, Protocol: "http"},
+		{Network: portforward.TCP, Host: "localhost", Port: 5432, Protocol: "tcp"},
+		{Network: portforward.TCP, Host: "10.1.2.3", Port: 9000, Protocol: "unknown"},
+		{Network: portforward.UDP, Host: "127.0.0.1", Port: 5353, Protocol: "udp"},
 	}
 	if got := sandboxPortTargets(sandbox); !reflect.DeepEqual(got, want) {
 		t.Fatalf("sandboxPortTargets = %#v, want %#v", got, want)
@@ -78,29 +80,78 @@ func TestDialHostForPortPrefersLoopback(t *testing.T) {
 		{[]string{"10.1.2.3"}, "10.1.2.3"},
 		{[]string{""}, "localhost"},
 	} {
-		if got := dialHostForPort(testCase.addresses); got != testCase.want {
+		if got := dialHostForPort(testCase.addresses, portforward.TCP); got != testCase.want {
 			t.Errorf("dialHostForPort(%v) = %q, want %q", testCase.addresses, got, testCase.want)
 		}
 	}
 }
 
-func TestSandboxTCPWebSocketURL(t *testing.T) {
+func TestSandboxTunnelWebSocketURL(t *testing.T) {
+	tcp := portforward.Target{Network: portforward.TCP, Host: "127.0.0.1", Port: 8080}
+	udp := portforward.Target{Network: portforward.UDP, Host: "127.0.0.1", Port: 5353}
 	for _, testCase := range []struct {
 		baseURL string
+		target  portforward.Target
 		want    string
 	}{
-		{"http://127.0.0.1:8080", "ws://127.0.0.1:8080/api/projects/proj-1/sandboxes/sbx-1/tcp/attach?host=127.0.0.1&port=8080"},
-		{"https://discobox.example/", "wss://discobox.example/api/projects/proj-1/sandboxes/sbx-1/tcp/attach?host=127.0.0.1&port=8080"},
+		{"http://127.0.0.1:8080", tcp, "ws://127.0.0.1:8080/api/projects/proj-1/sandboxes/sbx-1/tcp/attach?host=127.0.0.1&port=8080"},
+		{"https://discobox.example/", tcp, "wss://discobox.example/api/projects/proj-1/sandboxes/sbx-1/tcp/attach?host=127.0.0.1&port=8080"},
 		// A unix endpoint keeps its scheme-less host: the HTTP client dials the
 		// socket regardless of what the URL says.
-		{"http://localhost", "ws://localhost/api/projects/proj-1/sandboxes/sbx-1/tcp/attach?host=127.0.0.1&port=8080"},
+		{"http://localhost", tcp, "ws://localhost/api/projects/proj-1/sandboxes/sbx-1/tcp/attach?host=127.0.0.1&port=8080"},
+		// A UDP port rides its own tunnel (ADR 0109 §4).
+		{"http://127.0.0.1:8080", udp, "ws://127.0.0.1:8080/api/projects/proj-1/sandboxes/sbx-1/udp/attach?host=127.0.0.1&port=5353"},
 	} {
-		got, err := sandboxTCPWebSocketURL(testCase.baseURL, "proj-1", "sbx-1", "127.0.0.1", 8080)
+		got, err := sandboxTunnelWebSocketURL(testCase.baseURL, "proj-1", "sbx-1", testCase.target)
 		if err != nil {
-			t.Fatalf("sandboxTCPWebSocketURL(%q): %v", testCase.baseURL, err)
+			t.Fatalf("sandboxTunnelWebSocketURL(%q): %v", testCase.baseURL, err)
 		}
 		if got != testCase.want {
-			t.Errorf("sandboxTCPWebSocketURL(%q) = %q, want %q", testCase.baseURL, got, testCase.want)
+			t.Errorf("sandboxTunnelWebSocketURL(%q, %s) = %q, want %q", testCase.baseURL, testCase.target.Network, got, testCase.want)
+		}
+	}
+}
+
+// A UDP port cannot be dialed by name the way a TCP one is — connecting a UDP
+// socket never fails, so nothing would fall back to the other family — so it is
+// dialed at a literal loopback in a family it is bound in (ADR 0109 §5).
+func TestDialHostForAUDPPortIsALiteralLoopback(t *testing.T) {
+	for _, testCase := range []struct {
+		addresses []string
+		want      string
+	}{
+		{nil, "127.0.0.1"},
+		{[]string{"0.0.0.0"}, "127.0.0.1"},
+		{[]string{"127.0.0.1"}, "127.0.0.1"},
+		{[]string{"::"}, "::1"},
+		{[]string{"::1"}, "::1"},
+		{[]string{"::", "0.0.0.0"}, "127.0.0.1"},
+		{[]string{"10.1.2.3"}, "10.1.2.3"},
+		{[]string{"10.1.2.3", "::1"}, "::1"},
+	} {
+		if got := dialHostForPort(testCase.addresses, portforward.UDP); got != testCase.want {
+			t.Errorf("dialHostForPort(%v, udp) = %q, want %q", testCase.addresses, got, testCase.want)
+		}
+	}
+}
+
+func TestParseProxyPortsReadsATransportSuffix(t *testing.T) {
+	got, err := parseProxyPorts([]string{"8080", "5432/tcp", "5353/udp", "53/UDP"})
+	if err != nil {
+		t.Fatalf("parseProxyPorts: %v", err)
+	}
+	want := []portforward.Target{
+		{Network: portforward.TCP, Host: "localhost", Port: 8080},
+		{Network: portforward.TCP, Host: "localhost", Port: 5432},
+		{Network: portforward.UDP, Host: "127.0.0.1", Port: 5353},
+		{Network: portforward.UDP, Host: "127.0.0.1", Port: 53},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseProxyPorts = %#v, want %#v", got, want)
+	}
+	for _, bad := range []string{"http", "0", "70000", "53/sctp", "/udp"} {
+		if _, err := parseProxyPorts([]string{bad}); err == nil {
+			t.Errorf("parseProxyPorts(%q) accepted it", bad)
 		}
 	}
 }
@@ -113,17 +164,27 @@ func TestProxyTargetsForwardsEverythingReportedByDefault(t *testing.T) {
 }
 
 // A named port is forwarded before the sandbox has reported it, and keeps what
-// the report says about it once it has.
+// the report says about it once it has — matched on its transport as well as
+// its number, since the TCP and UDP ports of a number are two ports.
 func TestProxyTargetsForwardsNamedPortsWhetherOrNotReported(t *testing.T) {
-	reported := []portforward.Target{{Host: "10.1.2.3", Port: 5432, Protocol: "tcp"}}
-	want := []portforward.Target{
-		{Host: "10.1.2.3", Port: 5432, Protocol: "tcp"},
-		{Host: "localhost", Port: 9999},
+	reported := []portforward.Target{
+		{Network: portforward.TCP, Host: "10.1.2.3", Port: 5432, Protocol: "tcp"},
+		{Network: portforward.UDP, Host: "::1", Port: 53, Protocol: "udp"},
 	}
-	if got := proxyTargets(reported, []int{5432, 9999}); !reflect.DeepEqual(got, want) {
+	requested, err := parseProxyPorts([]string{"5432", "9999", "53/udp", "53"})
+	if err != nil {
+		t.Fatalf("parseProxyPorts: %v", err)
+	}
+	want := []portforward.Target{
+		{Network: portforward.TCP, Host: "10.1.2.3", Port: 5432, Protocol: "tcp"},
+		{Network: portforward.TCP, Host: "localhost", Port: 9999},
+		{Network: portforward.UDP, Host: "::1", Port: 53, Protocol: "udp"},
+		{Network: portforward.TCP, Host: "localhost", Port: 53},
+	}
+	if got := proxyTargets(reported, requested); !reflect.DeepEqual(got, want) {
 		t.Fatalf("proxyTargets = %#v, want %#v", got, want)
 	}
-	if got := proxyTargets(nil, []int{9999}); !reflect.DeepEqual(got, []portforward.Target{{Host: "localhost", Port: 9999}}) {
+	if got := proxyTargets(nil, requested[1:2]); !reflect.DeepEqual(got, []portforward.Target{{Network: portforward.TCP, Host: "localhost", Port: 9999}}) {
 		t.Fatalf("proxyTargets with no listing = %#v", got)
 	}
 }

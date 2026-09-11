@@ -20,7 +20,7 @@ import (
 // benefit — the workspace is where the ports are shown, so it is where they
 // are held.
 func (d *apiDataSource) Forward(ctx context.Context, sandboxID string) (tui.Forward, error) {
-	dialer, err := d.app.sandboxTCPDialer(d.projectID, sandboxID)
+	dialer, err := d.app.sandboxPortDialer(d.projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,11 @@ func (f *tuiForward) Bindings() []tui.Binding {
 	bound := f.forwarder.Bindings()
 	bindings := make([]tui.Binding, 0, len(bound))
 	for _, binding := range bound {
-		bindings = append(bindings, tui.Binding{Port: binding.Target.Port, Local: binding.Local})
+		bindings = append(bindings, tui.Binding{
+			Port:  binding.Target.Port,
+			UDP:   binding.Target.Network == portforward.UDP,
+			Local: binding.Local,
+		})
 	}
 	return bindings
 }

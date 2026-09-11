@@ -18,7 +18,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
 | `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
-| `internal/portforward` | Frontend-independent dynamic port forwarding: local listeners kept in sync with a remote's announced ports, over a caller-supplied dialer. |
+| `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a launcher pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
@@ -1050,18 +1050,38 @@ it is given a `Dialer` and a set of `Target`s, and owns picking local ports,
 accepting, splicing, and reporting. `internal/cli/proxy.go` supplies the two
 sandbox-shaped halves — the listing (`sandboxPortTargets`, the same agent
 report the launcher's rows are drawn from) and the transport
-(`sandboxTCPDialer`, `internal/cli/tcp_tunnel.go`) — and prints the events. The
+(`sandboxPortDialer`, `internal/cli/port_tunnel.go`) — and prints the events. The
 launcher runs the same forwarder over the same transport and draws the events
 instead (below).
 
 - The transport is the control plane's `/api/projects/{p}/sandboxes/{s}/tcp/attach`
   websocket, which is ADR 0024 §3's tunnel exposed at the HTTP edge. Each
-  forwarded connection is one websocket, and `tcpTunnelConn` presents its
+  forwarded connection is one websocket, and `tunnelConn`
+  (`internal/cli/port_tunnel.go`) presents its
   `Input`/`Stdout`/`CloseInput`/`CloseOutput` frames as a `net.Conn`, so
   everything above it is a plain TCP proxy and a half-close survives the trip
   in both directions (ADR 0024 §4): `CloseWrite` sends `CloseInput`, and an
   incoming `CloseOutput` is this conn's `io.EOF` — which says nothing about
   whether it can still be written to.
+- A UDP port ([ADR 0109](../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md))
+  is the report's `protocol: udp` — the one value that is not a TCP port, and
+  so the one `portNetwork` maps to `portforward.UDP`. It rides `/udp/attach`,
+  and the same `tunnelConn` in datagram mode: one `Write` is one `Input`
+  frame, one `Read` returns one `Stdout` frame and truncates rather than
+  spilling into the next, the contract a connected UDP socket keeps. The
+  forwarder binds it by the same nearest-number rule in UDP's own port space,
+  and invents flows: each local peer address gets its own tunnel — so its own
+  source port in the sandbox — ended after 60 seconds with nothing either way,
+  and a peer whose tunnel would not open is held off a second before its next
+  datagram tries again. A flow leaves its binding's table before teardown, and
+  a quiet one never while a datagram is queued for it, so a datagram sent as a
+  flow goes idle starts the next flow rather than being lost. A flow whose
+  tunnel breaks, or never opened, drops what was queued for it — a loss UDP
+  already allows for. It is dialed at a literal loopback address (`udpDialHost`), never
+  `localhost`: a UDP connect never fails, so a name would pin whichever family
+  resolved first. For the same reason a loopback UDP binding listens on both
+  `127.0.0.1` and `::1`, at one port — a local client of `localhost` may send
+  to either and cannot tell it chose wrong.
 - A port is bound at its own number when that is free and at the nearest one
   above it when it is not, so a sandbox's 8080 is `localhost:8081` when
   something local already has 8080. A privileged port gets one try at its own
@@ -1072,20 +1092,22 @@ instead (below).
   and is reported gone; the same number is reused when it comes back. A dev
   server restarting is the common case, and a URL the user has open must not
   move under them.
-- `--port` narrows the set to the ports named, and forwards them whether or not
-  the listing mentions them yet. Naming a port asserts it is there, and the
-  report is a poll behind (ADR 0046); a flag that waits for the listing to agree
-  is useless in the minute after a server starts, which is the minute it is
-  reached for. What the listing does say about a named port — the address to
+- `--port` narrows the set to the ports named — `8080`, `8080/tcp`, or
+  `5353/udp` — and forwards them whether or not the listing mentions them yet.
+  Naming a port asserts it is there, and the report is a poll behind
+  (ADR 0046); a flag that waits for the listing to agree is useless in the
+  minute after a server starts, which is the minute it is reached for. What the listing does say about a named port — the address to
   dial, what it speaks — is still used.
 - The launcher runs the same forwarder. Opening a workspace opens one
   (`apiDataSource.Forward`, `internal/cli/tui_forward.go`) and detaching closes
   it, so the local ports live as long as the screen showing them; the window
   sees only a `tui.Forward` — what is bound, and a wake-up when that changes —
   and draws the sandbox ports on its header as `8082->8080`, with the web ones
-  linked to `http://localhost:8082`. It binds loopback only, with no `--address`
-  to widen it: a window has no business opening a sandbox's ports to the network
-  on the strength of having been attached to.
+  linked to `http://localhost:8082`. A binding carries whether it is the UDP
+  one, because the TCP and UDP ports of a number can land on different local
+  ports. It binds loopback only, with no `--address` to widen it: a window has
+  no business opening a sandbox's ports to the network on the strength of
+  having been attached to.
 - The listing is what the sandbox says it serves, not only what it was seen
   listening on: a service may declare a port the sandbox cannot discover — one
   a nested container published or a socket-activated unit bound, root's socket

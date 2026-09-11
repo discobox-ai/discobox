@@ -37,37 +37,59 @@ type Event struct {
 
 // String is the one-line form the CLI prints. It is here rather than in the
 // command so every frontend describes the same event the same way.
+//
+// A UDP port is written `5353/udp` on both sides, and the per-connection kinds
+// say "flow" for it: a flow is what the forward made of datagrams from one
+// peer (ADR 0109 §5), and calling it a connection would claim a handshake
+// that never happened.
 func (e Event) String() string {
-	remote := fmt.Sprintf("%d", e.Target.Port)
+	remote := portLabel(e.Target, e.Target.Port)
+	local := portLabel(e.Target, e.Local)
+	from := "connection from"
+	if e.Target.network() == UDP {
+		from = "flow from"
+	}
 	switch e.Kind {
 	case Bound:
 		if e.Local == e.Target.Port {
-			return fmt.Sprintf("listening on %d -> discobox %s%s", e.Local, remote, protocolSuffix(e.Target))
+			return fmt.Sprintf("listening on %s -> discobox %s%s", local, remote, protocolSuffix(e.Target))
 		}
-		return fmt.Sprintf("listening on %d -> discobox %s%s (%s was taken)", e.Local, remote, protocolSuffix(e.Target), remote)
+		return fmt.Sprintf("listening on %s -> discobox %s%s (%s was taken)", local, remote, protocolSuffix(e.Target), remote)
 	case BindFailed:
 		return fmt.Sprintf("discobox %s could not be bound locally: %v", remote, e.Err)
 	case Gone:
-		return fmt.Sprintf("discobox %s stopped listening; %d is held open", remote, e.Local)
+		return fmt.Sprintf("discobox %s stopped listening; %s is held open", remote, local)
 	case Back:
-		return fmt.Sprintf("discobox %s is listening again on %d", remote, e.Local)
+		return fmt.Sprintf("discobox %s is listening again on %s", remote, local)
 	case Accepted:
-		return fmt.Sprintf("%d -> discobox %s: connection from %s", e.Local, remote, e.Peer)
+		return fmt.Sprintf("%s -> discobox %s: %s %s", local, remote, from, e.Peer)
 	case DialFailed:
-		return fmt.Sprintf("%d -> discobox %s: %v", e.Local, remote, e.Err)
+		return fmt.Sprintf("%s -> discobox %s: %v", local, remote, e.Err)
 	case Closed:
 		if e.Err != nil {
-			return fmt.Sprintf("%d -> discobox %s: connection from %s ended: %v", e.Local, remote, e.Peer, e.Err)
+			return fmt.Sprintf("%s -> discobox %s: %s %s ended: %v", local, remote, from, e.Peer, e.Err)
 		}
-		return fmt.Sprintf("%d -> discobox %s: connection from %s ended", e.Local, remote, e.Peer)
+		return fmt.Sprintf("%s -> discobox %s: %s %s ended", local, remote, from, e.Peer)
 	default:
 		return fmt.Sprintf("%s discobox %s", e.Kind, remote)
 	}
 }
 
+// portLabel is a port number as an event names it: bare for TCP, the default
+// everyone reads a bare number as, and `/udp` for the other one.
+func portLabel(target Target, port int) string {
+	if target.network() == UDP {
+		return fmt.Sprintf("%d/udp", port)
+	}
+	return fmt.Sprintf("%d", port)
+}
+
+// protocolSuffix names what a port speaks when that says more than its label
+// already does. tcp and unknown say nothing a bare number does not, and udp is
+// already in the label.
 func protocolSuffix(target Target) string {
 	switch target.Protocol {
-	case "", "unknown", "tcp":
+	case "", "unknown", "tcp", "udp":
 		return ""
 	default:
 		return " (" + target.Protocol + ")"
