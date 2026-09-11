@@ -2,10 +2,15 @@
   "apiVersion": "discobox.dev/image/v1",
   "env": {
     "DISPLAY": ":0",
+    "HOMEBREW_CELLAR": "/home/linuxbrew/.linuxbrew/Cellar",
+    "HOMEBREW_NO_ANALYTICS": "1",
+    "HOMEBREW_NO_AUTO_UPDATE": "1",
+    "HOMEBREW_PREFIX": "/home/linuxbrew/.linuxbrew",
+    "HOMEBREW_REPOSITORY": "/home/linuxbrew/.linuxbrew/Homebrew",
     "NIX_CONFIG": "experimental-features = nix-command flakes",
     "NIX_REMOTE": "daemon",
     "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
-    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
   },
   "volumes": [
     { "path": "%HOME%", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
@@ -21,9 +26,10 @@
     { "path": "%HOME%/.cargo/registry", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.cargo/git", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.rustup", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/.vscode-server", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
+    { "path": "%HOME%/.vscode-server", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "/home/linuxbrew/.linuxbrew", "volume": "data" }
   ],
-  "additionalGroups": ["docker", "kvm"],
+  "additionalGroups": ["brew", "docker", "kvm"],
   "harness": {
     "files": [
       {

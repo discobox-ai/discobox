@@ -129,6 +129,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         elementary-xfce-icon-theme \
         expect \
         extrepo \
+        file \
         greybird-gtk-theme \
         jq \
         less \
@@ -138,6 +139,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         openssh-client \
         openssh-sftp-server \
         passwd \
+        patch \
         poppler-utils \
         procps \
         psmisc \
@@ -274,6 +276,83 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN set -eux \
     && npm install -g pnpm \
     && rm -rf /root/.npm
+
+# Homebrew, at the one prefix its bottles are built for. Any other prefix turns
+# every formula into a source build, so `/home/linuxbrew/.linuxbrew` is not a
+# preference here — it is the whole reason this is worth shipping.
+#
+# The prefix is baked into the image and declared a `data` volume in image.json,
+# which is what makes it an overlay at boot (ADR 0007 §3): this tree is the
+# lower layer and a sandbox's own `brew install` persists to its data volume.
+# That is deliberately *not* the nix arrangement next door. ADR 0075's seed
+# unit, stamps and PATH shims exist because `/nix` had to be a pool-shared
+# *cache* volume, and a cache path is always a plain bind that would hide
+# whatever the image shipped underneath it. A data path gets the overlay for
+# free, so brew needs none of that machinery.
+#
+# Ownership is the part that needs care. The sandbox user's uid comes from the
+# manifest and is not known until a sandbox boots, so the prefix cannot be
+# chowned to it here — and chowning it at boot is worse, because a recursive
+# chown across an overlay copies every inode up into the sandbox's own volume.
+# So the tree is owned by a group instead: root:brew, group-writable, with
+# setgid directories so anything installed later keeps the group. image.json
+# lists `brew` in additionalGroups, and boot adds whatever uid the sandbox
+# turns out to run as to it. The group is `--system`, and what makes that safe
+# is that groupadd picks an unused gid at build time and nothing outside this
+# image ever names the number -- boot looks the group up by name. Not the range
+# it lands in: a manifest's gid is the client's own local gid, which on macOS is
+# staff's 20, so "below 1000" is where those live too rather than clear of them.
+#
+# A sandbox running as root -- a manifest that named no user (ADR 0025 §5) --
+# gets a working brew, not a refusal. Homebrew's own root guard stands down
+# when it sees /.dockerenv, /run/.containerenv or a container cgroup, on the
+# grounds that root is normal in a container, and every sandbox is one. So root
+# installs root-owned kegs into the overlay and everything works; the group
+# arrangement above is simply moot for it, since root can write the tree
+# whatever it is owned by.
+#
+# Pinned to a release tag, like neovim and fresh above: an unpinned clone makes
+# the build unreproducible. The tag is load-bearing twice over — brew derives
+# its version from `git describe --tags`, and a shallow clone with no tag
+# reachable reports "(shallow or no git repository)" instead of a version.
+ARG HOMEBREW_VERSION=6.0.22
+RUN set -eux \
+    && groupadd --system brew \
+    && git clone --depth 1 --branch "${HOMEBREW_VERSION}" \
+        https://github.com/Homebrew/brew /home/linuxbrew/.linuxbrew/Homebrew \
+    && mkdir -p /home/linuxbrew/.linuxbrew/bin \
+    && ln -s ../Homebrew/bin/brew /home/linuxbrew/.linuxbrew/bin/brew \
+    # git refuses to operate in a repository owned by another user, and every
+    # sandbox user is another user as far as this tree is concerned. The
+    # ownership split here is the design above, not the tampering that check
+    # is looking for.
+    && git config --system --add safe.directory /home/linuxbrew/.linuxbrew/Homebrew \
+    # Homebrew runs on its own vendored ruby and fetches it on first use.
+    # Left to first use, every sandbox would fetch it and copy it up into its
+    # own overlay; done here it is one layer they all share.
+    #
+    # A throwaway system account in the brew group runs it, and the ownership
+    # is reapplied afterwards over what it wrote. Not because brew refuses
+    # root -- above says why it does not at runtime -- but because during a
+    # build the answer is the builder's to give: BuildKit's runc executor
+    # creates no /.dockerenv, and whether /proc/1/cgroup looks like a container
+    # depends on the driver. Running as a real user is how the build stops
+    # depending on it either way.
+    && useradd --system --gid brew --no-create-home --home-dir /home/linuxbrew brew-build \
+    && chown -R root:brew /home/linuxbrew \
+    && chmod -R g+w /home/linuxbrew \
+    && setpriv --reuid brew-build --regid brew --clear-groups \
+        env HOME=/home/linuxbrew HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ANALYTICS=1 \
+        /home/linuxbrew/.linuxbrew/bin/brew vendor-install ruby \
+    && setpriv --reuid brew-build --regid brew --clear-groups \
+        env HOME=/home/linuxbrew /home/linuxbrew/.linuxbrew/bin/brew --version \
+    # The download cache that vendor-install just filled is build-time scratch,
+    # and it landed inside the prefix because that is where HOME pointed.
+    && rm -rf /home/linuxbrew/.cache \
+    && userdel brew-build \
+    && chown -R root:brew /home/linuxbrew \
+    && chmod -R g+w /home/linuxbrew \
+    && find /home/linuxbrew -type d -exec chmod g+s {} +
 
 # Unpinned upstream toolchains, last among the installers because each tracks
 # its own release and would otherwise invalidate everything below it.

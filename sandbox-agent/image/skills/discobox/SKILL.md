@@ -35,7 +35,12 @@ jq '{sandboxId, user, git, sources, harnessMode, prompt, volumes,
 ## What you may do without asking
 
 - `sudo`, with no password.
-- Install anything: apt, npm/pnpm/bun, pip/uv, cargo, go, mise, nix.
+- Install anything: apt, npm/pnpm/bun, pip/uv, cargo, go, mise, nix, brew.
+  Homebrew is already installed at `/home/linuxbrew/.linuxbrew` and on your
+  PATH; it works as whatever user you are, because the prefix is handed to a
+  `brew` group you are in rather than owned by a uid the image could not know.
+  Auto-update is off, so `brew update` is not how you refresh — formula data
+  comes from the JSON API and is current without it.
 - Docker, nested and real. `docker build` uses a pool-shared BuildKit builder,
   and the MITM CA is injected into every container you start, so nested builds
   and containers reach the network without trust wiring.
@@ -212,6 +217,7 @@ not.
 | `~/.cache`, `~/go/pkg/mod`, `~/.cargo/registry`, `~/.cargo/git`, `~/.rustup`, `~/.vscode-server`, `~/.local/share/pnpm` | pool cache, partitioned by the uid you run as: shared with pool boxes running the same uid, invisible to the rest |
 | `/nix` (the store) | pool cache, shared with every box in the pool whoever it runs as — the one path that declares that |
 | `/nix/var/nix/profiles`, `/nix/var/nix/gcroots` | carved back out of the shared store; this box's own |
+| `/home/linuxbrew/.linuxbrew` (what `brew install` puts there) | this box's own; the image's own tree shows through underneath it |
 
 None of your *work* outlives the box except the commits the user applies —
 though the pool keeps what the cache rows hold, and the proxy keeps its record
