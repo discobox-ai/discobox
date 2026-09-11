@@ -23,7 +23,7 @@ Nothing in this repository points at it. Every consumer names
 | Server manifest linked into a release CLI | `Taskfile.yml` `-base-url`, ADR [0099](0099-the-cli-downloads-the-server-it-starts.md) §3 | the release that built it |
 | `discobox` Homebrew formula | `scripts/brew-formula.sh` | `promote.yml`, newest blessed release |
 | `discobox-dev` Homebrew formula | `scripts/brew-formula.sh --dev` | `brew:refresh`, newest dot release |
-| winget manifest | `scripts/winget-manifests.sh` | `promote.yml` |
+| winget manifest | `scripts/winget-manifests.sh` | `winget:publish`, by hand for now |
 
 That is not an oversight to correct wholesale. The consumers differ in one
 respect that decides the question, and it is not integrity.
