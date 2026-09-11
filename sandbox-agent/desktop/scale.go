@@ -192,10 +192,12 @@ func RememberedScale(dir string) (int, bool) {
 
 // xresources is what goes into the X resource database for a scale.
 //
-// Only what xfsettingsd does not own. It holds the density and the cursor size
-// in xfconf and rewrites both resources at every refresh, so merging those here
-// is undone behind our back, which is why the cursor size is not in this list.
-// xterm's font is not one of xfsettingsd's, which is why it is.
+// xfsettingsd owns the density and the cursor size: it holds both in xfconf
+// and rewrites both resources at every refresh, so a value merged here that
+// disagrees is undone behind our back, which is why the cursor size is not in
+// this list. Xft.dpi is, at the BaseDPI*scale the xsettings channel is given,
+// so the merge and xfsettingsd's rewrite agree. xterm's font is not one of
+// xfsettingsd's, which is why it is here.
 func xresources(scale int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Xft.dpi: %d\n", BaseDPI*scale)
