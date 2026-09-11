@@ -9,9 +9,9 @@ import (
 // The report at the end of the status line saying the server is still setting
 // itself up.
 //
-// The work is one-time — staging the images a discobox runs — and it used to be
-// waited on before the window opened, which meant several minutes of a status
-// line before anything appeared. Nothing about the window needs it finished:
+// The work is one-time — staging the images a discobox runs — and waiting on
+// it before the window opened would mean several minutes of a status line
+// before anything appeared. Nothing about the window needs it finished:
 // the launcher lists, the composer takes input, and only actually running a
 // discobox wants those images.
 //
@@ -23,11 +23,11 @@ import (
 // have to be able to say their piece at the same time. See Model.viewStatus and
 // viewPaneWindow, which pin it, and statusLine, which draws the left.
 //
-// A row of its own, under the border, is what this used to be. It cost a row
-// the window then had to be told about — every screen that fills the terminal,
-// the pane geometry, the chrome selection's grid — and being outside all of
-// them is what let it scroll the alternate screen and hand its own presses to
-// the border above it. On the status row it is inside the frame like everything
+// It is not a row of its own under the border. That would cost a row the
+// window then has to be told about — every screen that fills the terminal, the
+// pane geometry, the chrome selection's grid — and being outside all of them
+// would let it scroll the alternate screen and hand its own presses to the
+// border above it. On the status row it is inside the frame like everything
 // else, and none of that is a question that can be got wrong.
 //
 // It removes itself when the work finishes, which is the whole shape of it — a

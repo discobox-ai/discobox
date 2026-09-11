@@ -87,14 +87,14 @@ var NoPromptEnv = map[string]string{"GIT_TERMINAL_PROMPT": "0"}
 // StallArgs make git give up on a transfer that has stopped moving, and only
 // on one that has stopped moving.
 //
-// A caller that cannot interrupt a push still needs it to end (ADR 0095 §6),
-// and a wall clock is the wrong instrument: the largest transfer this client
-// ever makes is a first push carrying everything committed since it last
-// pushed, which is exactly the one a deadline would cut in half — leaving the
-// origin ahead of a lease that was never written, which is the failure the
-// uninterruptible send exists to prevent. git measures the thing that actually
-// distinguishes big from wedged, so it is asked to: below 1 KiB/s for a minute
-// is a connection that has stopped, at any size.
+// A caller that cannot interrupt a push still needs it to end (ADR 0095 §6 on
+// automatic push), and a wall clock is the wrong instrument: the largest
+// transfer this client ever makes is a first push carrying everything committed
+// since it last pushed, which is exactly the one a deadline would cut in half —
+// leaving the origin ahead of a lease that was never written, which is the
+// failure the uninterruptible send exists to prevent. git measures the thing
+// that actually distinguishes big from wedged, so it is asked to: below 1 KiB/s
+// for a minute is a connection that has stopped, at any size.
 var StallArgs = []string{"-c", "http.lowSpeedLimit=1024", "-c", "http.lowSpeedTime=60"}
 
 // OriginLeaseRef is where a client records the commit it last pushed to one

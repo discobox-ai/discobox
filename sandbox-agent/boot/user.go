@@ -144,7 +144,7 @@ func envID(key string) (*int64, error) {
 }
 
 // ensureUser creates or aligns the sandbox user/group and grants passwordless
-// sudo, mirroring the retired entrypoint.sh. Root needs none of this.
+// sudo. Root needs none of this.
 func (b *booter) ensureUser(id identity) error {
 	if !id.configured || id.uid == 0 {
 		return nil

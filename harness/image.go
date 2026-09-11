@@ -49,7 +49,8 @@ const (
 
 // VolumeScope says who a cache path is shared with. It exists because sharing a
 // cache directory is safe exactly when nothing in it is owned by one particular
-// user, and only the image knows which of its paths are like that (ADR 0094).
+// user, and only the image knows which of its paths are like that (ADR 0094 on
+// the pool cache).
 //
 // The default is deliberately the safe one: a path that says nothing is scoped
 // to the sandbox user, because that is what a cache directory filled by the

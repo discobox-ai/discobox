@@ -8,9 +8,10 @@
 // to route, and burning one of Docker's fifteen default /16s per level.
 //
 // The cost of letting dockerd choose is that the bridge-facing proxy forwarder
-// can no longer pre-bind a known address before docker0 exists (which is what
-// docs/adr/0015 decision 7's ListenStream + FreeBind socket unit did). Instead
-// the forwarder is pulled up alongside dockerd, waits for the bridge to appear,
+// cannot pre-bind a known address before docker0 exists, which the ListenStream
+// + FreeBind socket unit of docs/adr/0015 decision 7 depended on (docs/adr/0020
+// §7 leaves the subnet to dockerd). Instead the forwarder is pulled up
+// alongside dockerd, waits for the bridge to appear,
 // binds whatever address dockerd chose, and publishes it here so the runc
 // wrapper injects a proxy address that is real rather than assumed.
 package nestedbridge

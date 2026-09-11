@@ -70,14 +70,14 @@ func Authorization(authorizers ...Authorizer) func(http.Handler) http.Handler {
 
 // IsPublicPath reports whether a path can be served without authentication.
 func IsPublicPath(path string) bool {
-	// /ssh (ADR 0024) serves the SSH endpoint discovery document — an address
-	// and the server's host *public* key, neither a credential — and it must
-	// be fetchable (discobox admin ssh-config) before any other credential exists,
+	// /ssh (ADR 0024) serves the SSH endpoint discovery document — only the
+	// server's host *public* key, which is not a credential — and it must be
+	// fetchable (discobox admin ssh-config) before any other credential exists,
 	// the same rule that puts docs/openapi/health here.
-	// /ssh/connect carries an SSH connection over this transport (ADR 0024).
-	// It is exempt for the same reason the TCP listener needs no HTTP auth:
-	// SSH authenticates inside its own protocol, by public key, before any
-	// channel exists.
+	// /ssh/connect carries an SSH connection over this transport, the only way
+	// SSH reaches the server (ADR 0024, ADR 0057). It needs no HTTP auth
+	// because SSH authenticates inside its own protocol, by public key, before
+	// any channel exists.
 	return path == "/healthz" || path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/") || path == "/ssh" || path == "/ssh/connect"
 }
 

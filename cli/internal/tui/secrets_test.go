@@ -767,7 +767,7 @@ func TestTheTablesHandFocusToEachOther(t *testing.T) {
 	if m.onRequests {
 		t.Fatal("tab did not cross back")
 	}
-	// Tab no longer leaves the screen; esc does.
+	// Tab does not leave the screen; esc does.
 	if !m.secretsOpen {
 		t.Fatal("tab closed the screen")
 	}
@@ -1109,7 +1109,7 @@ func TestAnOddLimitSurvivesAnEditThatDoesNotTouchIt(t *testing.T) {
 }
 
 // A limit that cannot be read says what one looks like — the words the row
-// takes now, not the seconds it used to.
+// takes, not a count of seconds.
 func TestAnUnreadableLimitSaysWhatOneLooksLike(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)

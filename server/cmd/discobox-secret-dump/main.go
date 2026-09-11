@@ -119,8 +119,8 @@ func run(ctx context.Context) error {
 }
 
 // findSecret looks a secret up by exact ID, falling back to a unique prefix
-// match so operators can pass a shortened ID. It reads soft-deleted rows too,
-// though DeleteSecret nulls the ciphertext, so those decrypt to nothing.
+// match so operators can pass a shortened ID. Deletes are hard (ADR 0010), so
+// a deleted secret is not found.
 func findSecret(ctx context.Context, read *gorm.DB, idOrPrefix string) (*model.Secret, error) {
 	var secret model.Secret
 	err := read.WithContext(ctx).Where("id = ?", idOrPrefix).First(&secret).Error

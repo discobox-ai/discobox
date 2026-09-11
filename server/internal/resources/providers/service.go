@@ -168,7 +168,7 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 
 func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error {
 	// Pools bind to a provider instance immutably, so a provider instance with
-	// pools cannot be deleted; workers and sandboxes hang off the pools.
+	// pools cannot be deleted; sandboxes hang off the pools.
 	pools, err := s.store.ListPoolsForProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		return err

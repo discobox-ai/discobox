@@ -13,9 +13,10 @@ package sandboxuser
 
 import "strings"
 
-// User is the identity a process runs as. It is one type across the API, the
-// manifest, the pool agent, and the launch path, so a field cannot mean one
-// thing at one layer and something else at the next (ADR 0025 §1).
+// User is the identity a process runs as. It is one type across the manifest,
+// the pool agent, and the sandbox's launch path, and the APIs' generated
+// SandboxUser types carry the same fields, so a field cannot mean one thing at
+// one layer and something else at the next (ADR 0025 §1).
 //
 // A nil *User named nobody. Within a User, every field is independently
 // optional and nil means absent -- never zero, which for a uid is root and for
@@ -116,10 +117,10 @@ type Layers struct {
 //
 // Choosing each facet whole is what makes a partial request expressible. "The
 // usual user, but in group docker" and "the usual user, plus these groups" both
-// say something about one facet and nothing about the others, and each used to
-// be mishandled in its own way -- a named group was dropped in silence, a
-// numeric one failed with "uid is required", because a single all-or-nothing
-// test decided all three at once.
+// say something about one facet and nothing about the others, and a single
+// all-or-nothing test deciding all three at once mishandles each in its own
+// way -- a named group dropped in silence, a numeric one failing with "uid is
+// required".
 //
 // The primary group is the one facet that does not outlive the identity above
 // it: a layer that names who to run as also decides which layers may still
@@ -169,10 +170,9 @@ func Merge(l Layers) User {
 // NamesIdentity reports whether a layer says who to run as.
 //
 // This is the predicate that decides whether a layer is answered or fallen
-// through, and it exists exactly once on purpose. It used to be written
-// per-site: boot asked one question, execs asked a subtly different one, and
-// the difference was invisible until an exec naming only a group ran as the
-// wrong one. A field added to User is taught to this function, not to five
+// through, and it exists exactly once on purpose. Written per site, boot and
+// execs each ask a subtly different question, and the difference stays
+// invisible until an exec naming only a group runs as the wrong one. A field added to User is taught to this function, not to five
 // call sites that each have to remember (ADR 0033 §1).
 func NamesIdentity(u *User) bool {
 	return u != nil && (strings.TrimSpace(u.Name) != "" ||
@@ -200,9 +200,9 @@ func Named(u *User) bool {
 }
 
 // Validate reports contradictions inside a single layer, which no amount of
-// merging can settle. It is checkable without an account database, so the
-// control plane and the pool agent reject a malformed request at the edge
-// rather than passing it inward to fail at launch.
+// merging can settle. It needs no account database. runuser.Resolve checks
+// every layer with it before merging, and boot checks the manifest's user with
+// it as it reads it.
 func (u *User) Validate() error {
 	if u == nil {
 		return nil

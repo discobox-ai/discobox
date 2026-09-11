@@ -1,5 +1,5 @@
 // Command genschema writes the JSON Schema for the server configuration file
-// from the tags on config.Config (ADR 0096 §2).
+// from the tags on config.Config (ADR 0096 §2, configuration file).
 //
 // The struct is the source of truth. This emits the artifact an operator's
 // editor reads, and `task verify` fails when the two have drifted, which is

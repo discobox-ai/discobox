@@ -339,11 +339,11 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, opts execAttachOptions, stdin io.Reader, stdout, stderr io.Writer) error {
 	opts.replay = true
 	// Going to work in a discobox is when the commits made here belong in its
-	// origin, and attaching a terminal is that moment (ADR 0095 §1). It runs
-	// beside the attach rather than before it: the dial below can block for
-	// minutes behind a cold image pull, and a push is not a reason to wait
-	// longer to see the terminal. Everything it does is silent until the
-	// stream is over — see autoPushWhileAttached.
+	// origin, and attaching a terminal is that moment (ADR 0095 §1 on automatic
+	// push). It runs beside the attach rather than before it: the dial below
+	// can block for minutes behind a cold image pull, and a push is not a
+	// reason to wait longer to see the terminal. Everything it does is silent
+	// until the stream is over — see autoPushWhileAttached.
 	//
 	// An attach that says it is not somebody working here does none of it, and
 	// does not even ask: a configure flow's throwaway sandbox holds no source

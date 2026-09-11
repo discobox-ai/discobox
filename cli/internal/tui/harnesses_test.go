@@ -391,9 +391,9 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 }
 
 // Enter on the harness row advances the choice, the way it does on every other
-// row of the panel. It used to leave for the harnesses screen, which made one
-// row of a picker behave unlike the rest of it; F3 is how that screen is
-// reached, and the row's own hint says so.
+// row of the panel. Leaving for the harnesses screen would make one row of a
+// picker behave unlike the rest of it; F3 is how that screen is reached, and
+// the row's own hint says so.
 func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())

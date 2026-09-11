@@ -295,7 +295,7 @@ func MergeEnv(base, override map[string]string) map[string]string {
 // overriding existing entries, and resolves sandboxconfig.LocalSubnetsToken
 // (pool-agent cannot know the sandbox's own directly-connected networks, so it
 // leaves this placeholder in NO_PROXY for the sandbox side to fill in). Image
-// env defaults are no longer applied here: pool-agent's Effective() call
+// env defaults are not applied here: pool-agent's Effective() call
 // already merges them into the sandbox's effective Env (ADR 0012 §2), so env
 // already carries them. Exported for the terminal layer.
 //
@@ -902,8 +902,8 @@ func expandHome(workdir, home string) (string, error) {
 }
 
 // HomeDir resolves the run user's home directory: the explicit or passwd value
-// runuser.NameAndHome yields, falling back to env HOME for a user that has no passwd
-// entry (a bare UID) but whose environment still names a home. It is the input
+// runuser.Resolve completed into the User, falling back to env HOME for a user
+// that has no passwd entry (a bare UID) but whose environment still names a home. It is the input
 // to ResolveWorkdir's `~` expansion, shared so the exec and terminal layers
 // cannot disagree about where home is.
 func HomeDir(user *User, env map[string]string) string {

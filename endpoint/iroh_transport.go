@@ -62,7 +62,7 @@ type IrohEndpoint struct {
 	// ctx bounds every admission check this endpoint runs, and cancel fires
 	// when it closes. IrohConfig.Authorize may wait for something the process
 	// has not built yet — the control plane's admission gate waits for its
-	// database (ADR 0095 §4) — and a waiter with no cancellation outlives a
+	// database (ADR 0095 enrolled iroh IDs §4) — and a waiter with no cancellation outlives a
 	// failed startup instead of being refused by it.
 	ctx    context.Context
 	cancel context.CancelFunc

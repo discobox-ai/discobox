@@ -15,7 +15,7 @@ const (
 	// resourceReportInterval paces the resource report. It is deliberately
 	// slower than the status poll it reads samples from: this loop walks every
 	// tree the pool owns on every report, with nothing cached, and that walk is
-	// what the wider interval pays for (ADR 0071 §7).
+	// what the wider interval pays for (ADR 0071 resource accounting §7).
 	resourceReportInterval = 30 * time.Second
 	// resourceReportTimeout bounds one report, for the same reason the status
 	// heartbeat is bounded: an unbounded post against a wedged control plane
@@ -34,7 +34,7 @@ type PoolResourceClient interface {
 }
 
 // PoolResourceReportRequest is one resource report: what this pool is using,
-// and what each sandbox on it is using, in one delivery (ADR 0071).
+// and what each sandbox on it is using, in one delivery (ADR 0071 resource accounting).
 //
 // Every rate here was computed by this agent, from cumulative counters, over
 // one tick. That is what makes the per-sandbox figures rankable: one component
@@ -65,7 +65,7 @@ type PoolResourceReportRequest struct {
 // It was originally the other way round: the pool figure was taken for a total
 // and the services derived by subtracting the sandboxes from it. On a live pool
 // that produced a pool total *smaller* than its own sandboxes' sum, because the
-// two sets never overlapped (ADR 0071 §6).
+// two sets never overlapped (ADR 0071 resource accounting §6).
 type PoolReport struct {
 	ReportedAt time.Time       `json:"reportedAt"`
 	CPU        PoolCPUUsage    `json:"cpu"`
@@ -163,7 +163,7 @@ type SandboxCPUUsage struct {
 }
 
 // SandboxMemoryUsage reports what the sandbox costs the pool and what its
-// processes hold, which are different numbers and both true (ADR 0071 §4).
+// processes hold, which are different numbers and both true (ADR 0071 resource accounting §4).
 type SandboxMemoryUsage struct {
 	CurrentBytes  int64 `json:"currentBytes"`
 	PeakBytes     int64 `json:"peakBytes,omitempty"`
@@ -219,7 +219,7 @@ func startPoolResourceReporter(
 	// The disk walk runs on its own adaptive schedule rather than this tick.
 	// Reading CPU and memory is a handful of small files; walking disk is one
 	// pass over every inode the pool owns, and a schedule that suits one suits
-	// the other only by accident (ADR 0071 §7).
+	// the other only by accident (ADR 0071 resource accounting §7).
 	reporter.storage = newStorageScanner(logger, bootstrap, func(ctx context.Context) []string {
 		ids, err := reporter.hostedSandboxIDs(ctx)
 		if err != nil {

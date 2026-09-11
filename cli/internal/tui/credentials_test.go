@@ -122,10 +122,9 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 			t.Fatalf("dialog body = %q, want it to carry %q", body, want)
 		}
 	}
-	// Every secret can be chosen. Greying one out is how the picker used to
-	// leave the only sensible answer unpickable while offering an unrelated
-	// one; what a binding costs is now said in the row and asked about on the
-	// way through.
+	// Every secret can be chosen. Greying one out can leave the only sensible
+	// answer unpickable while offering an unrelated one; what a binding costs
+	// is said in the row and asked about on the way through.
 	for _, item := range m.dialog.items {
 		if strings.HasPrefix(item.key, "secret:") && !item.enabled {
 			t.Fatalf("%q cannot be chosen; every secret is an answer somebody may mean", item.label)

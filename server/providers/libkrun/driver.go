@@ -327,9 +327,10 @@ func (d *Driver) resolveArtifacts(ctx context.Context, poolID string) (*guestima
 			},
 		})
 	}
-	// Both failures name the local build that answers them. Neither artifact is
-	// published for this backend yet, and a resolver error otherwise reports a
-	// registry problem to someone whose actual next step is a build.
+	// Both failures name the local build that answers them. Both artifacts are
+	// published and pinned by digest (guestimage.DefaultVMImage,
+	// DefaultKernelImage), but a resolver error on its own reports only a
+	// registry problem, and a local build is a way past one.
 	root, err := d.guest.Resolve(ctx, report)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w (build one from this checkout with `task build:vm-guest`)", err)

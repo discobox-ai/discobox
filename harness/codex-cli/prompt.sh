@@ -2,7 +2,7 @@
 set -eu
 
 # discobox-prompt: the one-shot prompting interface an in-sandbox tool uses to
-# ask this harness's model a question (ADR 0078). Its first consumer is the
+# ask this harness's model a question (ADR 0079). Its first consumer is the
 # credential CLI's judge, which will not run a wrapped command until a model
 # agrees the command is the use a human approved.
 #

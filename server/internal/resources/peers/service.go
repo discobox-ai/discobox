@@ -1,6 +1,6 @@
-// Package peers implements the enrolled peer resource (ADR 0095): a machine
-// permitted to connect to this server, managed through the API, beside the
-// server-wide authorized_ids file that is not.
+// Package peers implements the enrolled peer resource (ADR 0095, enrolled iroh
+// IDs): a machine permitted to connect to this server, managed through the API,
+// beside the server-wide authorized_ids file that is not.
 package peers
 
 import (

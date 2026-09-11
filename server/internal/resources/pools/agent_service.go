@@ -27,7 +27,7 @@ import (
 type SandboxStateReporter interface {
 	ReportSandboxStates(ctx context.Context, batch store.SandboxStateReportBatch) error
 	// ReportSandboxProgress records provisioning progress on sandboxes this
-	// pool hosts (ADR 0039). It rides the same channel as state but is applied
+	// pool hosts (ADR 0060). It rides the same channel as state but is applied
 	// separately: progress carries no observed state and takes no part in the
 	// complete-sync rule.
 	ReportSandboxProgress(ctx context.Context, poolID string, reportedAt time.Time, reports []store.SandboxProgressReport) error
@@ -189,7 +189,7 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 }
 
 // ReportPoolResources records what a pool and its sandboxes are consuming
-// (ADR 0071).
+// (ADR 0071, resource accounting).
 //
 // The pool-wide half — the pool's own totals and its disk — lands on the pool
 // row. Each sandbox's half lands on that sandbox's row, so a client looking at

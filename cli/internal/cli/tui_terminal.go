@@ -61,9 +61,9 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 		apiclientgen.SandboxExecStatusRunning:
 		live = true
 	}
-	// A service names itself in exec metadata, which is what lets the
-	// workspace draw its tab from this one listing rather than a poll of its
-	// own (ADR 0070 §7).
+	// A service names itself in exec metadata, which is how the workspace
+	// tells a service's exec from a terminal or a shell in this listing and
+	// pairs it with the services listing it polls beside it (ADR 0070 §2, §7).
 	metadata := map[string]string(exec.Metadata.Value)
 	return tui.Exec{
 		ID:          exec.ID,
@@ -92,7 +92,7 @@ const (
 // a shell in the listing, so every window that draws a workspace has to read
 // the same key — which is why it is spelled once, here, at the wire. Unlike the
 // service keys it is this client's own: the sandbox knows nothing about tools.
-// See ADR 0071.
+// See ADR 0071 on tool sessions.
 const execToolMetadataKey = "tool"
 
 // Services is the sandbox's declared services, running or not — what the

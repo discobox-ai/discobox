@@ -66,7 +66,7 @@ type ServiceConfig struct {
 	// terminals. The service creates terminal-mode execs on it and never owns a
 	// runtime of its own.
 	Execs *execs.Manager
-	// Harness is the sandbox's one fully-resolved harness (ADR 0012 §9): already
+	// Harness is the sandbox's one fully-resolved harness (ADR 0012 §2): already
 	// merged from the image and project layers by pool-agent's Effective() call.
 	// A zero-value Harness (empty ID) means the sandbox has no harness at all,
 	// which resolves to the shell fallback.
@@ -558,7 +558,7 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 //
 // Boot launches the primary in a goroutine started just before the HTTP server
 // begins serving, so boot and a first attach are concurrent by construction —
-// and with clients no longer polling for a primary before attaching (ADR 0039),
+// and since clients do not poll for a primary before attaching (ADR 0039),
 // the attach arrives squarely inside that window.
 //
 // The whole decision runs under the latch, not just the launch: the record
@@ -752,7 +752,7 @@ func primaryCreateRequest(harness config.Harness, harnessID string, prompt []str
 }
 
 // resolveHarness selects the harness for a terminal. The sandbox has exactly
-// one resolved harness (ADR 0012 §9, already merged by pool-agent's
+// one resolved harness (ADR 0012 §2, already merged by pool-agent's
 // Effective() call before boot) or none at all, in which case the shell
 // fallback is used. An explicit request must match the resolved harness (or
 // name the shell harness); there is nothing else left to resolve at boot.

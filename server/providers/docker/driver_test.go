@@ -129,8 +129,8 @@ func TestEngineConfigDoesNotPublishAgentPortPublicly(t *testing.T) {
 }
 
 // TestProviderConfigFieldsAffectWorkerConfigRevision ensures every persisted
-// provider config field either changes the engine config revision (so workers
-// get recreated) or is explicitly excluded.
+// provider config field either changes the engine config revision (so
+// pool-agent containers get recreated) or is explicitly excluded.
 func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 	falseValue := false
 	base := Config{ControlPlaneURL: "http://control.example", Image: "worker-image"}

@@ -55,15 +55,15 @@ func UserEnvDefaults(user *User) (map[string]string, error) {
 // userCredential turns a resolved identity into the credential the launch path
 // applies. It looks nothing up.
 //
-// It used to repeat Resolve's name->ids and uid->gid lookups here, as a last
-// line of defense against reaching setuid with an invented gid (ADR 0025 §6).
-// That defense only ever fired when an id was *absent*, so it caught a missing
-// gid and was blind to a wrong one -- an id invented upstream arrives fully
-// populated and passes straight through. Requiring the ids instead makes the
+// It deliberately does not repeat Resolve's name->ids and uid->gid lookups as a
+// last line of defense against reaching setuid with an invented gid (ADR 0025
+// §6). Such a defense fires only when an id is *absent*, so it catches a
+// missing gid and is blind to a wrong one -- an id invented upstream arrives
+// fully populated and passes straight through. Requiring the ids makes the
 // stronger claim: Resolve was asked for a credential, so both are filled or the
 // call failed, and anything else here is a broken invariant rather than
-// something to go and complete (ADR 0033 §6). It also puts this path behind the
-// test fixture, which a direct os/user call could never be.
+// something to go and complete (ADR 0033 §6). It also keeps this path behind
+// the test fixture, which a direct os/user call could never be.
 func userCredential(user *User) (*syscall.Credential, bool, error) {
 	if !sandboxuser.Named(user) {
 		return nil, false, nil

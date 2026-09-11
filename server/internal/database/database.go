@@ -299,9 +299,10 @@ func widenSecretUniquenessIndex(db *gorm.DB) error {
 // alone, so a git or ssh secret never resolved into a sandbox and nothing that
 // worked is being taken away.
 //
-// It runs before AutoMigrate for a reason the enum makes sharp: the API
-// validates it on the way out as well as in, so a single "git" row left behind
-// would fail to serialize and take the whole secret listing with it.
+// It runs on every startup, after AutoMigrate and before the API is served,
+// for a reason the enum makes sharp: the API validates it on the way out as
+// well as in, so a single "git" row left behind would fail to serialize and
+// take the whole secret listing with it.
 func migrateSecretTypes(db *gorm.DB) error {
 	if !db.Migrator().HasTable("secrets") {
 		return nil
@@ -334,11 +335,13 @@ func migrateSecretTypes(db *gorm.DB) error {
 // normalizeSecretHosts lowercases the destination hosts already stored on
 // secrets, requests, and grants.
 //
-// A grant is matched against the host the proxy observed, which it reports
-// lowercased, by SQL equality. So a row written with any other casing is an
-// approval nothing can ever use, and the symptom is a credential that behaves
-// as if it were revoked. New writes are normalized by the secrets service; this
-// repairs the rows written before it was.
+// Grant matching itself normalizes both sides (hostscope.Covers, in Go), but
+// stored hosts are still compared as written elsewhere: an open request is
+// found again by SQL equality on its host (FindPendingSecretRequest,
+// FindPendingAgentCredentialRequest), and the host is part of the secret
+// uniqueness index. A row written with any other casing therefore misses those
+// lookups and escapes that index. New writes are normalized by the secrets
+// service; this repairs the rows written before it was.
 //
 // It is a permanent, idempotent step rather than a one-shot: the WHERE clause
 // matches nothing once the data is clean, and it costs one indexless scan of

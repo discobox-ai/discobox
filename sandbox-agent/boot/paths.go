@@ -1,6 +1,6 @@
 // Package boot implements the sandbox-agent PID-1 init flow: it sets up the
 // sandbox user, wires the image-declared data/cache volumes and manifest
-// sources from the primary volumes the worker mounted, binds the config volume
+// sources from the primary volumes the pool agent mounted, binds the config volume
 // onto /etc/discobox, and then execs the container's real init (systemd). See
 // ADR 0007.
 package boot
@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// The worker mounts these primary volumes at fixed paths.
+	// The pool agent mounts these primary volumes at fixed paths.
 	dataMountPath    = "/.discobox/data"
 	cacheMountPath   = "/.discobox/cache"
 	configMountPath  = "/.discobox/config"
@@ -58,7 +58,7 @@ const cacheUsersDir = ".users"
 // directory leave each other files they cannot write, and re-chown the
 // mountpoints out from under each other on every boot. Two clients of one server
 // are two users whenever their local accounts differ, which is ordinary rather
-// than exotic (ADR 0094).
+// than exotic (ADR 0094, cache partition).
 //
 // The uid is the whole key. A name is not a uid, a gid does not decide who may
 // write a file, and a home directory is where files go rather than whose they

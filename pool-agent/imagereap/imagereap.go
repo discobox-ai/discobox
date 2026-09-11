@@ -98,14 +98,13 @@ func RetentionFromEnv() (time.Duration, error) {
 }
 
 // configuredRetention is RetentionFromEnv without the default applied: it
-// returns zero when RetentionEnv is unset.
+// returns zero when RetentionEnv is unset. RetentionFromEnv is its only caller.
 //
 // The distinction between "not configured" and "configured to the default
-// value" is load-bearing, but it is no longer load-bearing here: the server
-// keeps it in config.Config.ImageRetention, which records an override in each
-// pool container's configuration and would change every pool's revision if it
-// materialized a default (ADR 0096 §5). This is unexported because that was
-// its only caller outside this file.
+// value" is load-bearing in the server, not here: the server keeps it in
+// config.Config.ImageRetention, which records an override in each pool
+// container's configuration and would change every pool's revision if it
+// materialized a default (ADR 0096 server config §5).
 func configuredRetention() (time.Duration, error) {
 	value := strings.TrimSpace(os.Getenv(RetentionEnv))
 	if value == "" {

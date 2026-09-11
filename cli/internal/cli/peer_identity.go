@@ -142,7 +142,7 @@ const irohCertLifetime = 24 * time.Hour
 //
 // The enrolled key stays exactly what it was to an operator — the value
 // `discobox admin peer id` prints and `discobox admin peer add` enrolls. It is
-// now the certificate's issuer rather than the address this client dials from.
+// the certificate's issuer rather than the address this client dials from.
 func irohTransportIdentity(enrolled ed25519.PrivateKey) (ed25519.PrivateKey, *endpoint.PeerCert, error) {
 	_, transport, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

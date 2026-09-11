@@ -52,8 +52,8 @@ func TestCtrlArrowsMoveByWord(t *testing.T) {
 }
 
 // A kill is not a delete: readline puts what it took where Ctrl-Y can bring it
-// back from, and that is the half of the muscle memory the composer used to
-// drop on the floor.
+// back from, and that is the half of the muscle memory a composer that only
+// deletes drops on the floor.
 func TestKillAndYank(t *testing.T) {
 	t.Parallel()
 	m := promptWith(t, "one two three")

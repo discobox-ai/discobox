@@ -10,7 +10,7 @@ scripts_config="$kernel_dir/scripts/config"
 # those facilities in rather than relying on unavailable kernel modules.
 #
 # PACKET is here for a different reason: the guest image takes its address from
-# DHCP on every backend now (ADR 0101 §2), and a DHCP client is an AF_PACKET
+# DHCP on every backend (ADR 0101 §2), and a DHCP client is an AF_PACKET
 # socket. libkrunfw's baseline happens to enable it, which is exactly why it is
 # stated — an upstream trim would otherwise land as a guest that boots, runs
 # dockerd, and has no address.

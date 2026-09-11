@@ -6,8 +6,9 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
-// PushSources is the launcher's end of the automatic push (ADR 0095): the same
-// work a raw attach does for itself, addressed through the window's one seam.
+// PushSources is the launcher's end of the automatic push (ADR 0095 on
+// automatic push): the same work a raw attach does for itself, addressed
+// through the window's one seam.
 //
 // The window is a client with a terminal attached, so it pushes for the same
 // reason and by the same rule; what it adds is somewhere to say so. See

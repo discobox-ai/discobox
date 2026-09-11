@@ -43,7 +43,7 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 	}
 	// Built here and handed its store once NewApp returns: this runs before
 	// the database exists, so the managed layer cannot be captured (ADR 0095
-	// §4). Both layers are consulted per connection rather than cached, so
+	// §4, enrolled iroh IDs). Both layers are consulted per connection rather than cached, so
 	// enrolling or revoking takes effect on the next connection without a
 	// restart — the contract sshd's authorized_keys has.
 	admission := irohd.NewAdmission(dataDir)
@@ -55,7 +55,7 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 		// Empty keeps n0's public relays, which are free but rate-limited and
 		// carry no uptime guarantee. A deployment on its own relays has to
 		// configure its clients too: the address carries a peer ID and does
-		// not name ours (ADR 0096 §6).
+		// not name ours (ADR 0096 §6, configuration file).
 		RelayURLs: relayURLs,
 		// The ports of the last start, so the clients that remembered them
 		// can still dial this server directly after a restart.

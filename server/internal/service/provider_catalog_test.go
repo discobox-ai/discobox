@@ -477,7 +477,7 @@ func TestInitializeDefaultsLeavesEditedDefaultProviderConfigAlone(t *testing.T) 
 }
 
 // defaultProviderID returns the ID of the (single) provider instance seeded
-// for the project, since InitializeDefaults no longer uses a fixed ID.
+// for the project, since InitializeDefaults does not use a fixed ID.
 func defaultProviderID(ctx context.Context, t *testing.T, appStore *store.Store, projectID string) string {
 	t.Helper()
 	providers, err := appStore.ListSandboxProviderInstances(ctx, projectID)
@@ -698,9 +698,9 @@ func mustParseURL(t *testing.T, value string) url.URL {
 // Seeding inspects real images, so which built-ins exist depends on what this
 // machine's Docker daemon happens to hold — and a seeded config supplies the
 // sandbox's image, which is exactly what the tests around it are measuring.
-// A harness with no image is how the default sandbox image is still reached now
-// that a sandbox must resolve one (ADR 0048); these tests used to say "no
-// harness config at all", which create no longer allows.
+// A harness with no image is how the default sandbox image is reached, since a
+// sandbox must resolve a harness config (ADR 0048) and create refuses one with
+// none.
 func imagelessHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, projectID string) string {
 	t.Helper()
 	clearSeededHarnessConfigs(ctx, t, st, projectID)

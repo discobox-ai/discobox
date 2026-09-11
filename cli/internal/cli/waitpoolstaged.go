@@ -135,9 +135,9 @@ func stagedEverywhere(pools []apimodel.Pool) bool {
 // stagingLine says what first-time setup is doing, in the words of somebody who
 // has just installed this and does not yet know what any of it is.
 //
-// No pool is named, and the word "pool" does not appear. It used to lead with
-// one — "Default: waiting for Docker in the VM" — which named an internal
-// concept, gave it an internal identifier, and spent the whole line on both. A
+// No pool is named, and the word "pool" does not appear. Leading with one —
+// "Default: waiting for Docker in the VM" — names an internal concept, gives it
+// an internal identifier, and spends the whole line on both. A
 // user seeing this has run one command and is being told about a thing they
 // have never heard of.
 //
@@ -165,11 +165,11 @@ func stagingLine(pools []apimodel.Pool) string {
 
 // setupMessage is what a host still being built says about itself.
 //
-// "resource pool" rather than the bare "Initializing" it briefly was: on its
-// own that names no subject at all, and the reader is entitled to know what is
-// being initialized. It is also not the pool's own name, which is what this
-// used to lead with — "Default" identifies something the reader has never been
-// introduced to, where "resource pool" at least describes one.
+// "resource pool" rather than a bare "Initializing": on its own that names no
+// subject at all, and the reader is entitled to know what is being
+// initialized. It is also not the pool's own name — "Default" identifies
+// something the reader has never been introduced to, where "resource pool" at
+// least describes one.
 const setupMessage = "Initializing resource pool"
 
 // setupLine describes a host that is still being built.
@@ -234,14 +234,9 @@ func stageLine(stage apimodel.PoolImageStage) string {
 	}
 	// The image count leads, and says what it counts.
 	//
-	// It used to trail the whole line as a bare "(1 of 4)", after an image
-	// reference, a byte ratio and a layer ratio — three other pairs of numbers,
-	// none of them images. Which of the four it counted was anybody's guess.
-	// The image count leads, and says what it counts.
-	//
-	// It used to trail the whole line as a bare "(1 of 4)", after an image
-	// reference, a byte ratio and a layer ratio — three other pairs of numbers,
-	// none of them images. Which of the four it counted was anybody's guess.
+	// A bare "(1 of 4)" trailing the whole line, after an image reference, a
+	// byte ratio and a layer ratio — three other pairs of numbers, none of them
+	// images — would leave which of the four it counts anybody's guess.
 	line := "Downloading images"
 	if total := stage.GetTotal(); total > 0 {
 		line += fmt.Sprintf(" (%d of %d)", stage.GetDone()+1, total)

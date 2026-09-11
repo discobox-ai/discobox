@@ -1,4 +1,4 @@
-// Package poolagentauth manages control-plane signed requests to worker agents.
+// Package poolagentauth manages control-plane signed requests to pool agents.
 package poolagentauth
 
 import (

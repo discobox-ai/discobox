@@ -204,9 +204,9 @@ const lifetimeCustom = "custom"
 // askLifetime is the second step of every approval: how long the grant lives.
 //
 // It is a step of its own, and a required one, because it is the half of an
-// approval nobody thinks to look for. The lifetime used to be left out of the
-// call entirely, which asked the server for the credential's own ceiling — a
-// ceiling most credentials do not have — so the window handed out permanent
+// approval nobody thinks to look for. Leaving the lifetime out of the call
+// asks the server for the credential's own ceiling — a ceiling most
+// credentials do not have — so a window that did would hand out permanent
 // credentials without ever saying the word. A card that has to be answered is
 // one that gets read. It opens on lifetime.Default, an hour.
 //

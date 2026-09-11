@@ -10,7 +10,7 @@ Documentation=https://github.com/discobox-ai/discobox
 # xvfb.service pulls this in as its companion -- does not race it.
 After=xvfb.service
 # The session bus is how this service reaches xfconf, which is where the
-# desktop's UI density lives now that xfsettingsd owns it. See desktop/display.go.
+# desktop's UI density lives, since xfsettingsd owns it. See desktop/display.go.
 Requires=discobox-desktop-bus.service
 After=discobox-desktop-bus.service
 

@@ -21,7 +21,7 @@ const clockTicksPerSecond = 100
 // so a sandbox with fewer distinct offenders in each ranking reports fewer.
 //
 // It is a candidate list, not an answer: whoever differences two samples ranks
-// them by rate and keeps far fewer (ADR 0071 §3).
+// them by rate and keeps far fewer (ADR 0071, resource accounting, §3).
 const processCandidates = 15
 
 // Usage is the whole sandbox's resource consumption at one moment.
@@ -30,7 +30,7 @@ const processCandidates = 15
 // means is the difference between two samples divided by the time between
 // them, and the component that holds two samples is the pool agent, which
 // polls every sandbox in the pool on one tick and so measures all of them over
-// the same window (ADR 0071 §§1-2).
+// the same window (ADR 0071, resource accounting, §§1-2).
 type Usage struct {
 	ObservedAt time.Time `json:"observedAt"`
 	// Source names where the totals came from: "cgroup" when this sandbox's
@@ -52,12 +52,12 @@ type CPUUsage struct {
 	// LimitVCPUs is the cgroup's own quota in whole-CPU units, zero when the
 	// cgroup is unlimited. Sandbox containers are created with no CPU limit
 	// today, so this is normally zero and a rate has no ceiling to be read
-	// against (ADR 0071 context).
+	// against (ADR 0071, resource accounting, context).
 	LimitVCPUs float64 `json:"limitVcpus,omitempty"`
 }
 
 // MemoryUsage carries two different true answers, and neither substitutes for
-// the other (ADR 0071 §4).
+// the other (ADR 0071, resource accounting, §4).
 //
 // CurrentBytes is what the host charges this sandbox: anonymous memory, page
 // cache, and kernel memory together. VirtualBytes and ResidentBytes are what
@@ -82,7 +82,7 @@ type ProcessUsage struct {
 	// StartTicks is the process's start time in kernel ticks since boot. It is
 	// part of this process's identity, not decoration: PIDs are reused, and
 	// differencing a recycled PID against its predecessor's counter would
-	// difference into a nonsense spike (ADR 0071 §3).
+	// difference into a nonsense spike (ADR 0071, resource accounting, §3).
 	StartTicks    uint64 `json:"startTicks"`
 	CPUUsec       int64  `json:"cpuUsec"`
 	VirtualBytes  int64  `json:"virtualBytes"`

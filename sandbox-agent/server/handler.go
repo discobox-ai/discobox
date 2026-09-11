@@ -546,7 +546,8 @@ func sandboxAgentListeningPort(in ports.Port) sandboxapi.SandboxAgentListeningPo
 
 // sandboxAgentResourceUsage carries the sample onto the wire as it was read.
 // Nothing is derived here: every CPU figure is a cumulative counter, and the
-// rate is the pool agent's to compute across its tick (ADR 0071 §§1-2).
+// rate is the pool agent's to compute across its tick (ADR 0071, resource
+// accounting, §§1-2).
 //
 // A sample that found no processes at all means neither procfs nor the cgroup
 // could be read, which is a platform without this accounting rather than an

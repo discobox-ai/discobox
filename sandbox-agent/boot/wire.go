@@ -52,7 +52,8 @@ func WireSecrets() error {
 // primary volume onto its target.
 //
 // id is the identity this sandbox runs as, which decides the cache partition of
-// every path that did not declare itself shared (ADR 0094). It is the resolved
+// every path that did not declare itself shared (ADR 0094, cache partition).
+// It is the resolved
 // uid rather than the volume's declared owner: what makes sharing a cache
 // directory safe is who ends up writing in it, which is a claim the image makes
 // in its scope rather than something derivable from who owns the mountpoint.
@@ -162,22 +163,22 @@ func applyOwnership(target string, v harness.ResolvedVolume) error {
 	return nil
 }
 
-// wireSources bind-mounts each worker-materialized source from
+// wireSources bind-mounts each pool-agent-materialized source from
 // /.discobox/sources/<slug> onto its manifest target, owned by the sandbox user.
 //
 // Ownership comes from the manifest only when the pool agent actually knew it;
 // otherwise it comes from id, the identity this flow just resolved. The pool
 // agent cannot resolve a sandbox's account (ADR 0025 §4), so when the manifest
-// named no user there is nothing for it to publish -- and the previous shape,
-// where those fields were plain ints, could not say so. Absent arrived as 0 and
-// this chown handed the primary source tree to root, in precisely the case
-// where the sandbox is least likely to be running as root (ADR 0033 §5).
+// named no user there is nothing for it to publish -- which is why those
+// fields are optional rather than plain ints. Absent arriving as 0 would make
+// this chown hand the primary source tree to root, in precisely the case where
+// the sandbox is least likely to be running as root (ADR 0033 §5).
 func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error {
 	for _, s := range sources {
 		src := filepath.Join(sourcesMountPath, s.Slug)
 		if _, err := os.Stat(src); err != nil {
 			if os.IsNotExist(err) {
-				// Nothing to bind. The worker prepares a push-delivered
+				// Nothing to bind. The pool agent prepares a push-delivered
 				// source's directory before the container exists even though it
 				// parks empty until the push lands, precisely so this is not
 				// the parked case: the resume that fills it does not rebuild

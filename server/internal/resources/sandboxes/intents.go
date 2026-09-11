@@ -76,9 +76,9 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 
 // updateSandboxMetadata persists a mutation to an existing sandbox that
 // carries no lifecycle intent — client-reported bookkeeping only, such as
-// CompleteSandboxApply's applied-commit record. Unlike submitSandboxOperation
-// it does not bump the generation, record an operation, or mark the sandbox
-// dirty for reconciliation: nothing about desired or observed runtime state
+// CompleteSandboxApply's applied-commit record. Unlike recordSandboxIntent
+// it does not bump the generation or mark the sandbox dirty for
+// reconciliation: nothing about desired or observed runtime state
 // changed, so there is nothing for the reconcile engine to act on.
 func (s *Service) updateSandboxMetadata(ctx context.Context, projectID, sandboxID string, mutate func(*model.Sandbox)) (*model.Sandbox, error) {
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {

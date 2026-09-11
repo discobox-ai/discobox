@@ -11,7 +11,7 @@ import (
 
 // The lease is what makes `https://pool` mean this pool's agent. A client built
 // without one falls back to http.DefaultClient and dials that name for real,
-// so a spent poolAgentClient used to report `lookup pool: no such host` for
+// so a spent poolAgentClient would report `lookup pool: no such host` for
 // what is a caller reusing it.
 func TestPoolClientRefusesASpentLease(t *testing.T) {
 	released := 0

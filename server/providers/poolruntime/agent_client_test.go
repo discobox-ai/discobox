@@ -10,7 +10,7 @@ import (
 )
 
 // A volume's scope decides whether a cache path is one directory for the pool or
-// one per uid (ADR 0094), and it is declared at one end of a five-hop journey
+// one per uid (ADR 0094, pool cache), and it is declared at one end of a five-hop journey
 // and read at the other. This is the hop where the value leaves the control
 // plane; a converter that rebuilds the struct field by field drops it in silence
 // and every sandbox quietly partitions /nix.

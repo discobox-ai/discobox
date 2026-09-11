@@ -145,7 +145,7 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 		TraverseChildren: true,
 		// What rootArgs suggests a misspelled command from. Cobra fills this
 		// in when it makes the suggestions itself, which under
-		// TraverseChildren it no longer does.
+		// TraverseChildren it does not.
 		SuggestionsMinimumDistance: 2,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			app.errOut = cmd.ErrOrStderr()
@@ -192,7 +192,8 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", endpoint.DefaultEndpoint()), "Discobox API server endpoint")
 	// A client has to be told the same relays as the server it dials. An
 	// address carries a peer ID and nothing else, so a server moved off n0's
-	// public relays does not move its clients with it (ADR 0096 §6).
+	// public relays does not move its clients with it (ADR 0096 §6 on server
+	// configuration).
 	cmd.PersistentFlags().StringVar(&app.irohRelayURLs, "iroh-relay", envOrDefault("DISCOBOX_IROH_RELAY_URLS", ""), "Comma-separated iroh relay servers to use instead of the public ones; must match the server's")
 	// An iroh connection fails in layers and reports only the top one. This
 	// prints each layer as it happens — the socket, the relay, the dial, the
@@ -251,12 +252,12 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 // rootArgs refuses the words that follow a bare `discobox`, which are never a
 // prompt and never anything else this command can run.
 //
-// The prompt is -p, and words after the command are not a prompt. They were,
-// for a while (ADR 0089), and the price was that every subcommand name was one
-// typo away from a sandbox: `discobox lst` created a discobox prompted "lst"
-// rather than saying what was misspelled. Nothing can tell a typo from the
-// first word of a prompt — a prompt is words — so the prompt takes a flag and
-// the words go back to being subcommands (ADR 0100). Run keeps its trailing
+// The prompt is -p, and words after the command are not a prompt. Taking them
+// as one (ADR 0089, superseded by ADR 0100) makes every subcommand name one
+// typo away from a sandbox: `discobox lst` would create a discobox prompted
+// "lst" rather than saying what was misspelled. Nothing can tell a typo from
+// the first word of a prompt — a prompt is words — so the prompt takes a flag
+// and the words are subcommands (ADR 0100). Run keeps its trailing
 // prompt, where the name in front of it says what the words are.
 //
 // The word that named no command is reported here rather than by cobra, whose
@@ -326,8 +327,8 @@ func commandWords(cmd *cobra.Command) []string {
 // the tests' ls` would list, silently, with the prompt dropped; `discobox -p
 // 'fix the tests' run` would create a discobox with an empty prompt, since run
 // has its own copy of those flags and nothing was written after the name.
-// Cobra used to reject these as unknown flags for the subcommand, and this is
-// that loudness kept.
+// Without TraverseChildren, Cobra would reject these as unknown flags for the
+// subcommand, and this keeps that loudness.
 //
 // `version` carries an empty PersistentPreRunE and so reaches neither check, on
 // purpose: what somebody diagnosing a broken environment asks first is what
@@ -498,9 +499,9 @@ func (a *App) serverEndpoint() endpoint.Endpoint {
 //
 // Starting one is a startup step, not something to reach for again every time a
 // request fails. Anything that retries — a terminal attach reconnecting, a
-// watch loop — asks for a client on every pass, and each of those asks used to
-// be a fresh chance to launch a server. So a command that outlived its server
-// spent the rest of its life spawning replacements: one every few seconds, each
+// watch loop — asks for a client on every pass, and each of those asks would be
+// a fresh chance to launch a server. A command that outlived its server would
+// spend the rest of its life spawning replacements: one every few seconds, each
 // of them losing the race for the data directory's singleton lock and exiting,
 // for as long as the command ran. A server that was up and went away is a thing
 // to report, not to paper over.
@@ -525,8 +526,8 @@ func (a *App) ensureLocalServerOnce() error {
 func (a *App) ensureLocalServer(ctx context.Context) error {
 	// One line for the whole start, rewritten in place and taken back down
 	// before the command that wanted the server writes anything of its own.
-	// Every phase used to append a line, so a first run left five of them
-	// scrolled above output that had nothing to do with them.
+	// A line per phase would leave a first run five of them scrolled above
+	// output that had nothing to do with them.
 	progress := a.serverStartupLine()
 	started, err := endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
 		Endpoint: a.serverURL,
@@ -616,9 +617,9 @@ func (a *App) serverStartupLine() *statusLine {
 // serverStartupText says what the server this CLI just launched is doing.
 //
 // Starting one can take a while on a first run — a database to migrate, a
-// registry to reach for the built-in harness images — and the whole of that
-// used to be silent, so the only two outcomes a user saw were a prompt that
-// came back late and a timeout that explained nothing.
+// registry to reach for the built-in harness images — and were the whole of
+// that silent, the only two outcomes a user would see are a prompt that comes
+// back late and a timeout that explains nothing.
 //
 // The shape is the window's, and so is the grammar: sentence case, and the
 // phase after a colon as a detail of the one thing being narrated rather than a

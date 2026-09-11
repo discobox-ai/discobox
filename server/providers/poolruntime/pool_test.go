@@ -607,8 +607,8 @@ func poolRuntimeState(t *testing.T, runtimeSandbox *sandbox.Sandbox) []byte {
 }
 
 // A cold vz pool fetches a VM image, boots a machine, waits for Docker and
-// pulls the pool-agent image — minutes of work that used to fail against one
-// fixed 30s budget with "no sandbox capacity" while all of it was going fine.
+// pulls the pool-agent image — minutes of work that one fixed 30s budget would
+// fail with "no sandbox capacity" while all of it was going fine.
 // A pool that keeps saying what it is doing keeps being waited on.
 func TestSchedulablePoolKeepsWaitingWhileTheDriverReportsProgress(t *testing.T) {
 	oldTimeout, oldInterval, oldStall := poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout

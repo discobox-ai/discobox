@@ -54,10 +54,10 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 }
 
 // TestUpdatePoolStatusLeavesReconcilerVerdictAlone pins the ownership split: a
-// heartbeat reports health, and health alone. It used to also write
-// State=active whenever the agent reported ready, which repainted a recorded
-// `offline` every few seconds — so a pool whose reconcile kept failing read as
-// active with a stale error hanging off it.
+// heartbeat reports health, and health alone. Writing State=active whenever
+// the agent reported ready would repaint a recorded `offline` every few
+// seconds — so a pool whose reconcile kept failing would read as active with a
+// stale error hanging off it.
 func TestUpdatePoolStatusLeavesReconcilerVerdictAlone(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

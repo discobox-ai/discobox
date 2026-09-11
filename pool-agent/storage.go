@@ -15,7 +15,7 @@ import (
 //
 // It measures the whole backing filesystem, which on most hosts holds more than
 // Discobox: UsedBytes is the filesystem's, not this pool's. What Discobox
-// itself holds is the walked totals in PoolStorage (ADR 0071 consequences).
+// itself holds is the walked totals in PoolStorage (ADR 0071 resource accounting, consequences).
 type FilesystemUsage struct {
 	TotalBytes int64 `json:"totalBytes"`
 	UsedBytes  int64 `json:"usedBytes"`
@@ -47,10 +47,10 @@ func scaleBlocks(blocks, blockSize uint64) int64 {
 // There is deliberately no cache figure here. Cache is one pool-shared tree
 // keyed by the target path a harness declared and, for every path that did not
 // declare itself shared, by the sandbox user's uid above it -- never by which
-// sandbox wrote it (ADR 0007, ADR 0050, ADR 0094), so a per-sandbox cache size
+// sandbox wrote it (ADR 0007, ADR 0050, ADR 0094 cache partition), so a per-sandbox cache size
 // has no on-disk answer.
 // Repeating the shared total on every sandbox would make this column stop
-// summing to anything real, so cache is reported once, at the pool (ADR 0071 §5).
+// summing to anything real, so cache is reported once, at the pool (ADR 0071 resource accounting §5).
 type SandboxStorage struct {
 	SandboxID    string `json:"sandboxId"`
 	DataBytes    int64  `json:"dataBytes"`

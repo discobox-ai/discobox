@@ -9,20 +9,15 @@ import (
 )
 
 // RegisterConnectRoute serves SSH over the transport the API already answers
-// on: the websocket's byte stream is handed to the same handleConn the TCP
-// listener feeds, so both front doors are one server with one authentication
-// path.
+// on: the websocket's byte stream is handed to handleConn. It is the only way
+// into the SSH server — the server binds no SSH port and opens no TCP
+// listener (ADR 0057) — so `discobox tools ssh` reaches it the way the CLI
+// already reaches the server, and needs no new surface.
 //
-// This is what lets `discobox tools ssh` work against a server that binds no SSH
-// port. A machine-wide TCP listener is opted into (ADR 0024); reaching the
-// server the way the CLI already reaches it needs no new surface, because it
-// *is* the existing surface.
-//
-// The route is unauthenticated at the HTTP layer on purpose, exactly like the
-// TCP listener it mirrors: SSH authenticates inside its own protocol, by public
-// key, before any channel exists. Gating it with HTTP auth would not make it
-// safer — it would only mean a second credential in front of the one that
-// already decides.
+// The route is unauthenticated at the HTTP layer on purpose: SSH authenticates
+// inside its own protocol, by public key, before any channel exists. Gating it
+// with HTTP auth would not make it safer — it would only mean a second
+// credential in front of the one that already decides.
 func RegisterConnectRoute(router chi.Router, server *Server) {
 	router.Get("/ssh/connect", func(w http.ResponseWriter, r *http.Request) {
 		if server == nil {

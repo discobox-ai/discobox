@@ -93,7 +93,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.Port != 9090 {
 		t.Fatalf("Port = %d, want 9090", cfg.Port)
 	}
-	// PORT no longer implies a listener: it is only the port an explicitly
+	// PORT does not imply a listener: it is only the port an explicitly
 	// configured HTTP endpoint defaults to.
 	if !reflect.DeepEqual(cfg.Listen, defaultListen()) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListen())
@@ -378,7 +378,7 @@ func TestLoadArchiveRetention(t *testing.T) {
 // forever, and both are worth a loud failure.
 //
 // Image retention is checked alongside it because engine construction no
-// longer parses that value — the server does, here (ADR 0096 §5).
+// longer parses that value — the server does, here (ADR 0096 §5, configuration file).
 func TestLoadRejectsUnusableRetentions(t *testing.T) {
 	for _, key := range []string{"DISCOBOX_ARCHIVE_RETENTION", "DISCOBOX_IMAGE_RETENTION"} {
 		for _, value := range []string{"fifteen minutes", "0", "-5m"} {

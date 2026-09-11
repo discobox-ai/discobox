@@ -1,28 +1,28 @@
 // Package execvm implements a VM driver that delegates VM CRUD and
-// connection resolution to an external command, so a worker backend can be a
+// connection resolution to an external command, so a pool backend can be a
 // shell script.
 //
 // The command is invoked once per operation as:
 //
-//	<command> <op> <worker-id>
+//	<command> <op> <pool-id>
 //
 // with the environment of the control plane plus:
 //
-//	DISCOBOX_POOL_ID    the worker ID (same as argv)
+//	DISCOBOX_POOL_ID    the pool ID (same as argv)
 //	DISCOBOX_VM_NAME      suggested instance name (ensure-vm only)
 //	DISCOBOX_VM_METADATA  JSON object of labels/tags (ensure-vm only)
 //
 // Operations and their stdout contracts:
 //
 //	ensure-vm        JSON {"id":"...","status":"created|running|stopped|failed","address":"..."}
-//	                 Idempotent create/start of the worker's VM.
-//	inspect-vm       Same JSON. Exit code 3 when no VM exists for the worker.
+//	                 Idempotent create/start of the pool's VM.
+//	inspect-vm       Same JSON. Exit code 3 when no VM exists for the pool.
 //	stop-vm          No output. Stop the VM but preserve persistent state.
 //	delete-vm        No output. Must succeed when the VM is already gone.
 //	docker-endpoint  One line: how to reach the VM's Docker daemon:
 //	                 unix:///path, tcp://host:port, or ssh://[user@]host[:port]
 //	                 (ssh endpoints use the provider's configured private key).
-//	harness-endpoint   One line: http(s)://host:port of the worker-agent API.
+//	harness-endpoint   One line: http(s)://host:port of the pool-agent API.
 //	logs             Whatever the backend records about the VM's host: its
 //	                 serial console, its daemon journal. stdout and stderr are
 //	                 streamed to the operator as they are written, with

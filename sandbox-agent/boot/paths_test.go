@@ -29,7 +29,8 @@ func TestVolumeDir(t *testing.T) {
 
 // The bug this partition exists for: two clients of one server whose local
 // accounts have different uids run sandboxes in one pool, against one cache
-// directory that every declared path chowns to its own user (ADR 0094).
+// directory that every declared path chowns to its own user (ADR 0094, cache
+// partition).
 func TestVolumeDirPartitionsTheCacheByUID(t *testing.T) {
 	target := cacheVolume("/home/darren/.cache", harness.VolumeScopeUser)
 	darrenOnLinux := volumeDir(target, 1000)

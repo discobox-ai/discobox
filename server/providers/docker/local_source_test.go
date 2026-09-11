@@ -35,7 +35,7 @@ func TestLocalSourceBindSupported(t *testing.T) {
 }
 
 // The roots are the host mounts, and only when the daemon is one this process
-// shares a filesystem with. A pool worker sees a host directory only if it was
+// shares a filesystem with. A pool sees a host directory only if it was
 // mounted for it, so a directory outside them is as unreachable as one on
 // another machine — and the source has to be pushed instead of cloned.
 func TestLocalSourceRoots(t *testing.T) {

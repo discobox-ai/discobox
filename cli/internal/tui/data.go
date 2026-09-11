@@ -28,9 +28,10 @@ const (
 // Usage is what a sandbox is costing while it runs: cpu and memory as shares of
 // the host it runs on, and the disk as bytes.
 //
-// It comes from the pool agent's resource report (ADR 0071), which differences
-// every sandbox in a pool over one tick — so these shares are comparable
-// between rows in a way rates each sandbox computed for itself would not be.
+// It comes from the pool agent's resource report (ADR 0071 on resource
+// accounting), which differences every sandbox in a pool over one tick — so
+// these shares are comparable between rows in a way rates each sandbox computed
+// for itself would not be.
 //
 // The two Known flags are separate because the two figures are measured on
 // different schedules. CPU and memory arrive together every report; the disk is
@@ -248,9 +249,9 @@ type Sandbox struct {
 
 	// Pushable reports that new local commits here are this window's to send:
 	// the discobox has a source delivered by pushing it, this machine is the
-	// one it was pushed from, and it is in a state to take another push
-	// (ADR 0095 §2). Whether there are any new commits is a local question,
-	// asked by the push itself and never by the listing.
+	// one it was pushed from, and it is in a state to take another push (ADR
+	// 0095 §2 on automatic push). Whether there are any new commits is a local
+	// question, asked by the push itself and never by the listing.
 	//
 	// It is on the row because it is the gate the workspace's automatic push
 	// reads on every beat, and reading it here costs the listing nothing: the
@@ -504,9 +505,9 @@ func (s Sandbox) nameIsTitle() bool {
 // Error is deliberately not on that list. A settled failure latches on the row
 // and nothing clears it without new intent (ADR 0017 §4), so an errored box may
 // have a perfectly good container — a failure on a later generation, or a
-// transient one — and refusing it made archive/unarchive the only way to reach
-// work that was never unreachable. The x and the reason still show; they just
-// no longer bar the door. An error with no container is the case that is
+// transient one — and refusing it would make archive/unarchive the only way to
+// reach work that was never unreachable. The x and the reason still show; they
+// just do not bar the door. An error with no container is the case that is
 // genuinely stuck, and it is the one this still refuses.
 //
 // Spelling this as a list of states is what ADR 0017 §4 warns against — the
@@ -684,8 +685,8 @@ type Exec struct {
 	// for every session that is not one. A tool session is neither a terminal
 	// nor a shell: it is a window of its own, and the id is what reopens the
 	// right one after a minimize or a restart. It is a label the launcher put
-	// on the exec when it created it (ADR 0071); the sandbox knows nothing
-	// about tools.
+	// on the exec when it created it (ADR 0071 on tool sessions); the sandbox
+	// knows nothing about tools.
 	Tool string
 
 	// Primary marks the sandbox's primary harness terminal, which is the first
@@ -1271,10 +1272,10 @@ type DataSource interface {
 	// terminal and the editor are two views of one sandbox, open at once.
 	OpenEditor(ctx context.Context, sandboxID string) error
 
-	// PushSources sends this machine's new commits into the origin
-	// repositories the discobox's push-delivered sources fetch from — the
-	// transport `discobox push` performs, with no flags (ADR 0058 §5,
-	// ADR 0095 §3). Nothing in the discobox moves: it gains origin/<branch>,
+	// PushSources sends this machine's new commits into the origin repositories
+	// the discobox's push-delivered sources fetch from — the transport
+	// `discobox push` performs, with no flags (ADR 0058 §5, ADR 0095 §3 on
+	// automatic push). Nothing in the discobox moves: it gains origin/<branch>,
 	// and whoever is working in it rebases when they choose.
 	//
 	// held names, per source slug, a commit whose push has already failed.

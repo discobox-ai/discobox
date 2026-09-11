@@ -56,9 +56,9 @@ func identityFailure(err error) identityValue {
 
 // newIDCommand prints the two IDs an enrollment is made of.
 //
-// They are two halves of one setup step and they used to live in two different
-// places — one in a command, the other in a line of the server's startup log
-// (ADR 0098). Printing them together is the point: what a person does with
+// They are two halves of one setup step, printed together rather than one in a
+// command and the other in a line of the server's startup log (ADR 0098).
+// Printing them together is the point: what a person does with
 // these is compare them against what the other machine says.
 func (a *App) newIDCommand() *cobra.Command {
 	var irohForm bool

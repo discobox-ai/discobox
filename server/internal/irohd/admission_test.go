@@ -30,7 +30,7 @@ func testEndpointID(t *testing.T, first byte) endpoint.IrohID {
 }
 
 // The file layer answers before the store exists at all, which is what makes it
-// the way back in (ADR 0095 §3).
+// the way back in (ADR 0095 §3, enrolled iroh IDs).
 func TestAdmissionAdmitsFromTheFileBeforeTheStoreArrives(t *testing.T) {
 	dataDir := t.TempDir()
 	id := testEndpointID(t, 0xaa)
@@ -77,7 +77,7 @@ func TestAdmissionFailsClosedWhenTheStoreErrors(t *testing.T) {
 	}
 }
 
-// The decision in ADR 0095 §4: a peer arriving before the database is open
+// The decision in ADR 0095 §4 (enrolled iroh IDs): a peer arriving before the database is open
 // waits for it rather than being told it is not enrolled.
 func TestAdmissionWaitsForTheStore(t *testing.T) {
 	id := testEndpointID(t, 0xee)
@@ -126,7 +126,7 @@ func TestAdmissionCancellationRefusesWaiters(t *testing.T) {
 			t.Fatal("a canceled admission check admitted the peer")
 		}
 		// The peer reads this. "Shutting down" and "not enrolled" send an
-		// operator to different places (ADR 0095 §4).
+		// operator to different places (ADR 0095 §4, enrolled iroh IDs).
 		if !strings.Contains(err.Error(), "shutting down") {
 			t.Fatalf("refusal = %q, want it to say the server is going away", err)
 		}

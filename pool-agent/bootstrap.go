@@ -249,7 +249,7 @@ type MintSandboxAgentStatusTokensResponse struct {
 // forwarded, and it is deliberately not part of it. The relay is unaffected;
 // the counters are copied aside so the resource reporter can difference them
 // across its tick, and they travel to the control plane in that agent-authored
-// report instead (ADR 0071 §2).
+// report instead (ADR 0071 resource accounting §2).
 type SandboxAgentStatusEntry struct {
 	SandboxID  string          `json:"sandboxId"`
 	Status     json.RawMessage `json:"status"`

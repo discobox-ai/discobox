@@ -215,7 +215,7 @@ func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client,
 // An ID that names no discobox of this directory is still tried against the
 // whole project: a discobox started somewhere else is still a discobox, and an
 // ID says outright which one. A name is not, and stays matched per directory
-// even though the picker's "a" now *shows* names from the whole project: a
+// even though the picker's "a" *shows* names from the whole project: a
 // name is unique only within the directory that issued it, so two directories
 // can each hold a "docs", and resolving one project-wide would either pick a
 // discobox the user did not mean or fail as ambiguous. Picking such a row is

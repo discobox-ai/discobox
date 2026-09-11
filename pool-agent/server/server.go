@@ -29,8 +29,10 @@ type Config struct {
 	Runtime               sandboxruntime.Runtime
 	ControlPlanePublicKey string
 	Port                  int
-	// Listener overrides the TCP listener. Local libkrun pools inject an
-	// AF_VSOCK listener so the agent opens no IP port.
+	// Listener, when set, is served instead of a TCP listener on Port. The
+	// pool agent always sets it, binding DISCOBOX_AGENT_LISTEN_URL with
+	// wire.Listen: the URL's scheme picks the transport, VSOCK on libkrun and
+	// vz pools (so the agent opens no IP port) and TCP on the rest.
 	Listener net.Listener
 }
 

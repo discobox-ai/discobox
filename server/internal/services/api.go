@@ -113,22 +113,21 @@ type HarnessConfigService interface {
 	DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error
 }
 
-// AcquireSandboxHTTPClient no longer takes a set of acceptable states. It used
-// to refuse anything but a running sandbox (and, for the git-repositories
-// proxy, one awaiting its source), which made every caller responsible for
-// knowing the sandbox was up before it could talk to it.
+// AcquireSandboxHTTPClient takes no set of acceptable sandbox states, so no
+// caller has to know the sandbox is up before it can talk to it.
 //
 // Under ADR 0017 §12 the pool agent starts a stopped sandbox on demand, so the
-// only thing the server checks is that the sandbox still exists. Gating here
-// would refuse traffic that the pool agent would happily have served, and it
-// would only cover the routes that consult the server in the first place.
+// server checks only that the sandbox exists and is not being deleted, and
+// that its pool is reachable. Gating on power state would refuse traffic that
+// the pool agent would happily have served, and it would only cover the routes
+// that consult the server in the first place.
 
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
 	// FallbackHarnessConfig is the project's reserved `shell` config, which a
-	// sandbox with no harness config of its own upgrades to (ADR 0025 §4). The
-	// API mappers need it to report that upgrade. Nil when seeding has not
-	// created it.
+	// legacy sandbox with no harness config of its own upgrades to
+	// (ADR 0032 §4); create never ends at it (ADR 0048). The API mappers need
+	// it to report that upgrade. Nil when seeding has not created it.
 	FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error)
 	ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
@@ -205,7 +204,8 @@ type PoolService interface {
 	ReportPoolResources(ctx context.Context, poolID string, input ReportPoolResourcesBody) error
 }
 
-// JobService provides project-scoped durable job visibility.
+// JobService exposes a project's pending reconcile work as jobs: each is a
+// dirty mark in the reconcile engine, not a stored row.
 type JobService interface {
 	GetJob(ctx context.Context, projectID, jobID string) (*model.Job, error)
 	ForceJob(ctx context.Context, projectID, jobID string) (*model.Job, error)
@@ -258,7 +258,7 @@ type SSHKeyService interface {
 //
 // It is the managed half of two layers. The other is the authorized_ids file,
 // which is deliberately not reachable from here — it is what an operator falls
-// back to when the API is what they are trying to reach (ADR 0095 §3).
+// back to when the API is what they are trying to reach (ADR 0095 §3, enrolled iroh IDs).
 type PeerService interface {
 	ListPeers(ctx context.Context) ([]model.Peer, error)
 	CreatePeer(ctx context.Context, input CreatePeerBody) (*model.Peer, error)

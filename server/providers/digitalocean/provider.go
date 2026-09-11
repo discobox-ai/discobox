@@ -1,7 +1,7 @@
 // Package digitalocean registers the "digitalocean" provider type: one
-// Droplet per worker, running Docker. It is the reference VM driver for the
-// shared dockerworker engine: droplet CRUD keyed by worker tag, the in-VM
-// Docker daemon reached over SSH, and the worker-agent API reached at the
+// Droplet per pool, running Docker. It is the reference VM driver for the
+// shared dockerworker engine: droplet CRUD keyed by a per-pool tag, the in-VM
+// Docker daemon reached over SSH, and the pool-agent API reached at the
 // droplet's public address.
 package digitalocean
 
@@ -118,7 +118,7 @@ func driverConfigFrom(cfg Config) DriverConfig {
 }
 
 // engineConfig maps the DigitalOcean provider configuration to the shared
-// engine configuration. The worker-agent container publishes its port on all
+// engine configuration. The pool-agent container publishes its port on all
 // interfaces so the control plane reaches it at the droplet's public address.
 func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
 	return dockerworker.Config{

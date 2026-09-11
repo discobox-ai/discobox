@@ -10,7 +10,7 @@ import (
 )
 
 // BootEnv renders the pool-agent bootstrap contract as container environment
-// variables so the in-container worker agent can register itself with the
+// variables so the in-container pool agent can register itself with the
 // control plane after start.
 //
 // Both directions are a single URL: the scheme carries the transport, so adding

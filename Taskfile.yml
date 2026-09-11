@@ -2,7 +2,7 @@ version: "3"
 
 vars:
   # What `task dev` adds to the local socket the server always binds. Every
-  # build carries the transport now (ADR 0067), so this applies everywhere;
+  # build carries the transport (ADR 0067), so this applies everywhere;
   # DISCOBOX_DEV_IROH=0 drops it for anyone who wants the socket alone.
   DEV_LISTEN: '{{if ne .DISCOBOX_DEV_IROH "0"}}iroh://{{end}}'
   # Windows resolves an extensionless name through PATHEXT, so `discobox` there
@@ -177,10 +177,9 @@ tasks:
     # signing is enough locally; distribution needs Developer ID and
     # notarization. Task skips the whole target off darwin.
     #
-    # It takes a binary rather than naming one, which is what let the rule move
-    # when the code did: the CLI ran the server in-process and needed the
-    # entitlement for it (ADR 0066 §5), and now that the server is a separate
-    # program again (ADR 0099) discobox-server is the only thing signed.
+    # It takes a binary rather than naming one: the entitlement (ADR 0066 §5)
+    # belongs to whatever runs the server, and the server is a separate program
+    # (ADR 0099), so discobox-server is the only thing signed.
     platforms: [darwin]
     vars:
       ENTITLEMENTS: server/providers/vz/vz.entitlements
@@ -877,7 +876,7 @@ tasks:
 
   ci:test:
     desc: Run every module's tests the way CI does
-    # No Docker and no harness images: the suite that needed them now seeds its
+    # No Docker and no harness images: the suite that would need them seeds its
     # harness config directly (ADR 0066 §7's stated end state), so this is
     # test:all and runs identically on Linux, macOS, and Windows.
     cmds:
@@ -960,8 +959,8 @@ tasks:
       # Every image this release publishes is pinned to the release's own tag:
       # the two agent images, and the registry and tag the three built-in
       # harness images resolve through. They reach the server's link and not the
-      # CLI's, because an image is what the server runs and the CLI no longer
-      # contains one.
+      # CLI's, because an image is what the server runs and the CLI does not
+      # contain one.
       #
       # Their defaults are :latest and local tags, which is right for a
       # development build and wrong for a shipped one: a binary should run the
@@ -1419,8 +1418,8 @@ tasks:
         #
         # Two things that do not work, both tried:
         #
-        #   `gh repo sync "$fork" --branch master --force`, which used to sit
-        #   here, goes through the merge-upstream API. That refuses any incoming
+        #   `gh repo sync "$fork" --branch master --force` goes through the
+        #   merge-upstream API. That refuses any incoming
         #   commit touching .github/workflows unless the token carries
         #   `workflow` scope, and winget-pkgs changes its workflows constantly —
         #   so it broke as soon as the fork had any catching up to do. Granting
@@ -1512,9 +1511,9 @@ tasks:
     # same call is right after a tag is cut and after a release is blessed, and
     # neither caller has to know which formula it is about to change.
     #
-    # This is the *only* thing that updates the tap. It used to poll on a cron;
-    # that was deleted deliberately, because a backstop that quietly covers for
-    # a broken release step is a backstop that stops anyone noticing the step is
+    # This is the *only* thing that updates the tap. There is no cron poll
+    # behind it, deliberately: a backstop that quietly covers for a broken
+    # release step is a backstop that stops anyone noticing the step is
     # broken. If this does not run, the tap does not update, and the release
     # that failed to run it goes red.
     #
@@ -1676,7 +1675,7 @@ tasks:
     # step, runnable locally so its verification is too.
     #
     # It defaults to this machine's architecture, not to a fixed one: the guest
-    # is built for two now, and the artifacts a developer wants locally are the
+    # is built for two, and the artifacts a developer wants locally are the
     # ones their own hypervisor can boot. CI names the platform explicitly.
     deps:
       - buildx:builder

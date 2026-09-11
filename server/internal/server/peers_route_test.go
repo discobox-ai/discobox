@@ -17,7 +17,7 @@ import (
 // layer runs there — and that layer is the part most likely to be silently
 // wrong here: the resource is server-scoped, so neither ProjectAuthorizer nor
 // PoolRouteAuthorizer applies, and without an entry in
-// authenticatedAllowedPaths every one of these routes 403s (ADR 0095 §1).
+// authenticatedAllowedPaths every one of these routes 403s (ADR 0095 §1, enrolled iroh IDs).
 func TestPeerRoutesEnrollListAndRevoke(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()

@@ -20,9 +20,9 @@ import (
 // out verbatim (services.Convert JSON-marshals the domain model into the
 // generated API type), but json.Unmarshal into an ogen enum does NOT validate,
 // so a value the OpenAPI schema omits is only rejected when the CLIENT decodes
-// the response — far from the model change that introduced it. That is exactly
-// how "deleting" reached the worker phase enum: added to the model, missing from
-// server.yaml, invisible until `discobox pool ls` failed to decode.
+// the response — far from the model change that introduced it. That is how a
+// value slips through: added to the model, missing from server.yaml, invisible
+// until `discobox pool ls` fails to decode.
 //
 // This test makes the two lists fail CI the moment they diverge, in either
 // direction. When it fails: a value in the model but not the schema means the

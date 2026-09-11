@@ -26,7 +26,7 @@ const poolCgroupRoot = "/sys/fs/cgroup"
 // walk of this subtree on a live pool finds `buildkit/` and
 // `system.slice/discobox-*.service` and no sandbox at all. So this figure is
 // added to the per-sandbox figures to get the pool's load, never subtracted
-// from (ADR 0071 §6).
+// from (ADR 0071 resource accounting §6).
 type cgroupUsage struct {
 	CPUUsageUsec       int64
 	CPUUserUsec        int64

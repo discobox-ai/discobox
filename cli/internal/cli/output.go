@@ -362,9 +362,9 @@ func formatPoolCapacity(pool apimodel.Pool) string {
 
 // poolMessage surfaces the most relevant human-readable detail on the pool.
 //
-// Only the error remains: the status message it used to fall back to was
-// narration of an operation in flight, and operations are no longer a thing the
-// control plane records (ADR 0017 §2).
+// It is only ever the error: a status message would be narration of an
+// operation in flight, and operations are not a thing the control plane
+// records (ADR 0017 §2).
 func poolMessage(pool apimodel.Pool) string {
 	if message, ok := pool.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
 		return message

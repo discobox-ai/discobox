@@ -37,12 +37,12 @@ func splitSandboxDirtyID(id string) (projectID, sandboxID string, err error) {
 //   - missing sandbox: converged (settle).
 //   - superseded mid-run (generation conflict): settle; the newer intent's
 //     transactional mark re-runs us against current state.
-//   - failure RECORDED on the resource (LastOperationStatus == failed):
-//     converged-to-failed — one logical attempt, like the old MaxAttempts(1)
-//     jobs. New intent re-drives it.
-//   - failure NOT recorded (crash/timeout before the status write): return the
-//     error so the row stays dirty and retries with backoff. This replaces the
-//     old MarkSandboxJobFailed terminal latch with self-healing.
+//   - failure RECORDED on the resource (ErrorMessage set and the generation
+//     converged): converged-to-failed — one logical attempt per intent. New
+//     intent re-drives it.
+//   - failure NOT recorded (crash/timeout before the failure write): return the
+//     error so the row stays dirty and retries with backoff, which is what
+//     makes it self-healing.
 func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) (reconcile.Result, error) {
 	projectID, sandboxID, err := splitSandboxDirtyID(id)
 	if err != nil {

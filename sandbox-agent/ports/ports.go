@@ -18,7 +18,8 @@
 // marked Declared.
 //
 // A declaration may also state what its port speaks, and then it is believed
-// rather than measured (ADR 0094). That is not an optimization. Classifying a
+// rather than measured (ADR 0094, image-declared services). That is not an
+// optimization. Classifying a
 // port means connecting to it, and connecting to a socket-activated port is
 // what starts the service behind it — for the desktop, an X server, a window
 // manager and a VNC server, brought up by a classification probe in every
@@ -126,7 +127,8 @@ type Config struct {
 //
 // Protocol is the field that changes behavior: stated, it is reported as-is and
 // the port is never connected to; empty, the port is probed like any other.
-// That is the whole of ADR 0094 — an image that knows what its port speaks can
+// That is the whole of ADR 0094 (image-declared services) — an image that knows
+// what its port speaks can
 // keep the sandbox from finding out the only way a probe can.
 type Declaration struct {
 	Port        int

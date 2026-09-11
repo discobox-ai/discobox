@@ -134,10 +134,10 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 
 func (s *Service) SetDefaultSandboxImage(image, digest string) {
 	s.Service.SetDefaultSandboxImage(image, digest)
-	// The preloader needs the same answer. It used to read the package
-	// default instead, which is only the effective image when nothing
-	// overrode it — so a server told to run a different sandbox image
-	// prestaged the one it was not going to use.
+	// The preloader needs the same answer. The package default is the
+	// effective image only when nothing overrode it, so reading that instead
+	// would have a server told to run a different sandbox image prestage the
+	// one it is not going to use.
 	s.poolControlPlane.SetDefaultSandboxImage(image)
 }
 

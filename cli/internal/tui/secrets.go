@@ -23,8 +23,9 @@ import (
 // secret` commands make. A window that could approve something the CLI could
 // not would be a second policy.
 
-// secretsKey opens the screen. F1 is help, F2 the editor, F3 the harnesses —
-// the prompt takes every letter, so a screen of its own goes on a function key.
+// secretsKey opens the screen, after F1 help, F2 the editor and F3 the
+// harnesses — the prompt takes every letter, so a screen of its own goes on a
+// function key.
 const secretsKey = "f4"
 
 // SecretsKeyName is how that key is spelled to the user.

@@ -14,7 +14,7 @@ import (
 const SchemaID = "https://raw.githubusercontent.com/discobox-ai/discobox/main/server/config.schema.json"
 
 // Schema builds the JSON Schema for the configuration file from the tags on
-// Config (ADR 0096 §2).
+// Config (ADR 0096 §2, configuration file).
 //
 // It walks the same settings the loader binds, so a field cannot be loadable
 // and undocumented, or documented and unloadable. Objects are closed —

@@ -14,8 +14,8 @@ import (
 // hosts (ADR 0017 §10).
 //
 // This is the only path that writes a sandbox's RuntimeState, and it writes
-// nothing else: no generation bump, no desired state, no existence state, no
-// operation. What the agent saw is not a request.
+// nothing else: no generation bump, no desired state, no existence state. What
+// the agent saw is not a request.
 //
 // A state change is also an observation the reconciler may care about, so the
 // sandboxes whose state actually moved are marked dirty. The case that matters
@@ -68,7 +68,7 @@ func (s *Service) observationNeedsReconcile(sandbox *model.Sandbox) bool {
 // reconciler's idempotent ensure is what makes acting on one cheap.
 
 // ReportSandboxProgress records provisioning progress a pool agent observed on
-// the sandboxes it hosts (ADR 0039).
+// the sandboxes it hosts (ADR 0060).
 //
 // Nothing is marked dirty. Progress means work is proceeding — an image pull in
 // flight — which is the opposite of drift for the reconciler to repair; the

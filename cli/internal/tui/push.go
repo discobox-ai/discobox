@@ -10,7 +10,7 @@ import (
 
 // Push, in the window: while a workspace is open on a discobox, the commits
 // made here since it was created are sent into the origin it fetches from,
-// without anyone asking for it (ADR 0095).
+// without anyone asking for it (ADR 0095 on automatic push).
 //
 // It is the counterpart of apply.go and deliberately not shaped like it. Apply
 // writes the developer's own working tree, so it is offered on a band and run

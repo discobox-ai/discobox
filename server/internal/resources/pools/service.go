@@ -1,7 +1,7 @@
 // Package pools owns the Pool resource: the user-visible sharing boundary
 // sandboxes are scheduled into. A pool binds to one provider instance at
-// create time, immutably; capacity, cache, and worker sizing policy live on
-// the pool, while the provider instance is backend identity only.
+// create time, immutably; capacity and sizing policy live on the pool, while
+// the provider instance is backend identity only.
 package pools
 
 import (
@@ -105,7 +105,7 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	if err := s.store.UpdatePool(ctx, pool); err != nil {
 		return nil, err
 	}
-	// Sizing policy may have changed; let the pool reconciler converge workers.
+	// Sizing policy may have changed; let the pool reconciler converge it.
 	if s.pools != nil {
 		if err := s.pools.SchedulePoolReconciliation(ctx, projectID, pool.ID); err != nil {
 			return nil, err

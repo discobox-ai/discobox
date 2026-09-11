@@ -174,10 +174,10 @@ func TestHumanBytes(t *testing.T) {
 }
 
 // The wait polls a server that is not obliged to answer, on a client with no
-// timeout of its own. One that took the connection and went quiet used to park
-// the wait forever — the stall clock never runs, because it is only read once a
-// poll returns — and the first command on a new machine printed the line about
-// the server it had started and then nothing at all.
+// timeout of its own. One that takes the connection and goes quiet must not
+// park the wait forever — the stall clock never runs, because it is only read
+// once a poll returns — or the first command on a new machine prints the line
+// about the server it started and then nothing at all.
 func TestWaitForStagedPoolsEndsWhenTheServerStopsAnswering(t *testing.T) {
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

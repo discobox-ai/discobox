@@ -281,9 +281,10 @@ type execTarget struct {
 
 // attach is the shell/exec/subsystem dispatch (ADR 0024 §2). Only one is
 // legal per session channel, matching ordinary SSH semantics. It replies to
-// req only once the exec exists and the attach websocket is open, so a
-// create failure surfaces as SSH's ordinary "channel request failed" instead
-// of a silently hanging session.
+// req only once the exec exists and the attach websocket is open. A failure
+// before that is reported through failRequest rather than left as a silently
+// hanging session: a shell or exec request is accepted, the reason is written
+// to stderr, and the session exits 255; a subsystem request is refused.
 func (sess *sshSession) attach(ctx context.Context, req *ssh.Request, target execTarget) {
 	sess.mu.Lock()
 	if sess.attached {

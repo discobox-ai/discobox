@@ -19,10 +19,9 @@ import (
 // server that spawns it.
 //
 // The name is prefixed rather than hidden by a flag on a cobra command because
-// this has to be recognized before any argument parsing, in whichever binary
-// happens to be running the server: `discobox-server`, or `discobox` itself,
-// which runs the server in-process and is therefore the process that owns the
-// VM (ADR 0066 §5).
+// this has to be recognized before any argument parsing, in the binary running
+// the server. That is `discobox-server` alone: the CLI downloads and starts it
+// as a separate program (ADR 0099), so the server process owns the VM.
 const launcherCommand = "__pool-vm-launcher"
 
 // watchdogFD is the read end of a pipe the server holds open. It is the third

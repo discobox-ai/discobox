@@ -171,7 +171,7 @@ func TestIrohURLDialsTheID(t *testing.T) {
 }
 
 // The preset carries relays and discovery together, so a custom relay list has
-// to reach the right combination of both (ADR 0096 §6).
+// to reach the right combination of both (ADR 0096 server config §6).
 func TestIrohPresetSelectsCustomRelays(t *testing.T) {
 	custom := []string{"https://relay.example"}
 	for _, tc := range []struct {

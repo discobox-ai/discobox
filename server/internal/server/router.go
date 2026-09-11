@@ -81,7 +81,7 @@ type AppOptions struct {
 	ListenEndpoints []string
 
 	// ServerDefaults are the provider settings the server configures rather
-	// than any one provider instance (ADR 0096 §5).
+	// than any one provider instance (ADR 0096 §5, configuration file).
 	ServerDefaults dockerworker.ServerDefaults
 
 	// WSLCCommand overrides the WSL Containers program the Windows host is

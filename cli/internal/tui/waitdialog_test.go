@@ -7,8 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// Submitting a prompt used to leave the list on screen with a busy line under
-// it while a pool came up and gigabytes arrived. The window goes to the
+// Submitting a prompt does not leave the list on screen with a busy line under
+// it while a pool comes up and gigabytes arrive. The window goes to the
 // discobox being made instead, and reports there.
 func TestWaitingDialogFollowsTheNarration(t *testing.T) {
 	t.Parallel()

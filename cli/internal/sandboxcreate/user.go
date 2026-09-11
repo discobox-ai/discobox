@@ -107,8 +107,8 @@ func validRunUnixUserName(value string) bool {
 // A home like "C:\Users\alice" is not merely useless: sending it makes the
 // request carry a user whose every other field was already rejected as
 // unusable, and the sandbox then fails to start because nothing in it can
-// resolve a uid. Windows itself no longer reaches here -- it answers with
-// windowsRunUser instead -- but the check stays: it is the guard for a home
+// resolve a uid. Windows itself does not reach here -- it answers with
+// windowsRunUser instead -- but the check is kept: it is the guard for a home
 // this sandbox could not use, not a guard for one operating system.
 func validRunHomeDirectory(value string) bool {
 	return strings.HasPrefix(value, "/")

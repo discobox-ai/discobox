@@ -225,7 +225,8 @@ func TestPoolResourcesToleratesABlobFromAnotherVersion(t *testing.T) {
 	const stale = `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
 		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,` +
 		`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
-		// The pre-walk shape: cacheBytes flat on storage, where nothing expects it now.
+		// The pre-walk shape: cacheBytes flat on storage, where nothing expects
+		// it.
 		`"resources":{"reportedAt":"2026-08-27T12:00:00Z","cpu":{"usageUsec":1,"userUsec":1,"systemUsec":0},` +
 		`"memory":{"currentBytes":1},"storage":{"root":"/var/lib/discobox",` +
 		`"filesystem":{"totalBytes":1,"usedBytes":1,"freeBytes":0},"cacheBytes":99,"scanMillis":5}},` +

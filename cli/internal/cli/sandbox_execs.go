@@ -45,8 +45,8 @@ type sandboxExecCreateOptions struct {
 	terminal bool
 	// metadata labels the exec for whoever lists it later. The sandbox stores
 	// it and hands it back unread; it is how the launcher tells a tool session
-	// from a shell (ADR 0071). There is no flag for it either: a label nothing
-	// agrees on the meaning of is a label nothing can act on.
+	// from a shell (ADR 0071 on tool sessions). There is no flag for it either:
+	// a label nothing agrees on the meaning of is a label nothing can act on.
 	metadata map[string]string
 }
 
@@ -607,8 +607,8 @@ type execAttachOptions struct {
 	// notWorkingHere marks an attach to a discobox nobody's code is in — the
 	// throwaway sandbox a harness's configure flow runs in — so it does not
 	// push local commits into an origin the way every other terminal attach
-	// does (ADR 0095 §1). It is the attach saying what it is for; nothing else
-	// about the attach differs.
+	// does (ADR 0095 §1 on automatic push). It is the attach saying what it is
+	// for; nothing else about the attach differs.
 	notWorkingHere bool
 }
 

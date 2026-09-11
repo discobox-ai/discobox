@@ -1,5 +1,5 @@
-// Package dockerworker implements the shared worker runtime engine. Every
-// worker backend ends the same way: run the pool-agent container in some
+// Package dockerworker implements the shared pool runtime engine. Every
+// pool backend ends the same way: run the pool-agent container in some
 // Docker daemon. The engine owns that container management uniformly; a
 // Driver owns only VM lifecycle and how to reach the VM's Docker daemon and
 // pool-agent API.
@@ -17,36 +17,36 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
-// Driver is the VM abstraction beneath the docker worker engine.
+// Driver is the VM abstraction beneath the dockerworker engine.
 //
 // Implementations target local Docker (the host is the "VM"), cloud VMs such
 // as DigitalOcean or EC2, or local hypervisors. Adding a backend means
-// implementing VM lifecycle plus the two connection methods; the engine
-// handles everything Docker.
+// implementing VM lifecycle, the two connection methods, PoolLogs, and
+// GuestImageBuildSpec; the engine handles everything Docker.
 type Driver interface {
 	Close() error
 
-	// EnsureVM idempotently creates and starts the VM for a worker. The local
-	// driver is a no-op that resolves every worker to the host. Instance
+	// EnsureVM idempotently creates and starts the VM for a pool. The local
+	// driver is a no-op that resolves every pool to the host. Instance
 	// sizing, region, and image come from driver configuration, not the spec.
 	EnsureVM(ctx context.Context, poolID string, spec VMSpec) (*VMInfo, error)
-	// StopVM stops the worker's VM while preserving any driver-owned persistent
+	// StopVM stops the pool's VM while preserving any driver-owned persistent
 	// state needed by a later EnsureVM. Drivers without separately attached
 	// state may implement this by deleting the replaceable VM instance.
 	StopVM(ctx context.Context, poolID string) error
-	// DeleteVM removes the worker's VM and its local resources. It must
+	// DeleteVM removes the pool's VM and its local resources. It must
 	// succeed when the VM is already gone.
 	DeleteVM(ctx context.Context, poolID string) error
-	// InspectVM reports the worker's VM state. It returns sandbox.ErrNotFound
-	// when no VM exists for the worker.
+	// InspectVM reports the pool's VM state. It returns sandbox.ErrNotFound
+	// when no VM exists for the pool.
 	InspectVM(ctx context.Context, poolID string) (*VMInfo, error)
 
 	// AcquireDockerClient returns a Docker API client for the daemon that
-	// hosts this worker's containers: the host daemon for the local driver, or
+	// hosts this pool's containers: the host daemon for the local driver, or
 	// the in-VM daemon (for example dialed over SSH or vsock) for VM drivers.
 	AcquireDockerClient(ctx context.Context, poolID string) (*DockerClientLease, error)
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the
-	// pool-agent API inside the worker container.
+	// pool-agent API inside the pool-agent container.
 	AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error)
 
 	// PoolLogs opens what the backend itself recorded about the pool's host:
@@ -75,11 +75,11 @@ type Driver interface {
 	GuestImageBuildSpec() (GuestImageBuildSpec, error)
 }
 
-// VMSpec is the driver-neutral VM launch request for one worker.
+// VMSpec is the driver-neutral VM launch request for one pool.
 type VMSpec struct {
 	// Name is the suggested instance name.
 	Name string
-	// Metadata carries labels/tags, including the worker identity labels.
+	// Metadata carries labels/tags, including the pool identity labels.
 	Metadata map[string]string
 }
 

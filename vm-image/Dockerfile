@@ -168,8 +168,8 @@ COPY vm-image/10-discobox.network /etc/systemd/network/10-discobox.network
 COPY vm-image/fstab /etc/fstab
 
 # /Users is the mount point for the host's read-only virtiofs share (see
-# image/fstab). It has to exist in the read-only root: the guest cannot create
-# it later, and the pool-agent container binds paths under it.
+# vm-image/fstab). It has to exist in the read-only root: the guest cannot
+# create it later, and the pool-agent container binds paths under it.
 RUN mkdir -p \
         /Users \
         /var/lib/discobox \

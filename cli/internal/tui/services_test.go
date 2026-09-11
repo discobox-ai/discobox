@@ -583,7 +583,7 @@ func TestAServicePaneIsReadOnly(t *testing.T) {
 }
 
 // A plain exec with no TTY is not a session at all — a captured `disco exec` —
-// and must not become a tab just because services now can.
+// and must not become a tab just because services can.
 func TestANonTTYExecThatIsNotAServiceIsNotATab(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)

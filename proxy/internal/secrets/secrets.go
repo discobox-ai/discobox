@@ -37,7 +37,8 @@ type ResolveResult struct {
 }
 
 // Resolver resolves a sentinel to its real credential value. Implementations
-// live outside the proxy (worker-agent) so the proxy stays server-agnostic.
+// live outside the proxy (pool-agent/proxyagent) so the proxy stays
+// server-agnostic.
 type Resolver interface {
 	Resolve(ctx context.Context, req ResolveRequest) (ResolveResult, error)
 }

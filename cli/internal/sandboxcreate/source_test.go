@@ -784,9 +784,9 @@ func newUnbornRunSourceTestRepo(t *testing.T) string {
 
 // The rule itself: a source keeps its own path inside the sandbox only from a
 // root the sandbox may hold, and is placed at the default location otherwise
-// (ADR 0096). The unsafe half is what matters — /tmp is a tmpfs systemd mounts
-// over during boot, so a source targeted there is a mount point that comes up
-// empty.
+// (ADR 0096 on source host paths). The unsafe half is what matters — /tmp is a
+// tmpfs systemd mounts over during boot, so a source targeted there is a mount
+// point that comes up empty.
 func TestLocalRunDestinationMirrorsOnlySafeRoots(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX roots; the Windows mapping is TestLocalRunDestinationWindows*")

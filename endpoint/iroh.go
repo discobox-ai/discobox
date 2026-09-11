@@ -114,7 +114,7 @@ type IrohConfig struct {
 	// The returned error is the close reason the peer reads, so a refusal can
 	// say which one it is: "not enrolled" and "this server has not finished
 	// starting" send an operator to different places, and a bool could only
-	// ever produce the first (ADR 0095 §4).
+	// ever produce the first (ADR 0095 enrolled iroh IDs §4).
 	//
 	// The context is the listener's, not the connection's — iroh hands the
 	// accept hook a connection and nothing else. It is canceled when the
@@ -138,7 +138,7 @@ type IrohConfig struct {
 	Reached func(IrohID, []string)
 
 	// RelayURLs are the relay servers to use instead of the defaults, for a
-	// deployment running its own (ADR 0096 §6). Empty keeps n0's public
+	// deployment running its own (ADR 0096 server config §6). Empty keeps n0's public
 	// relays, which are free, rate-limited, and carry no uptime guarantee.
 	//
 	// Both ends of a connection need this. An address carries a peer ID and

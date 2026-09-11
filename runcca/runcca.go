@@ -3,12 +3,13 @@
 //
 // # Why a runc wrapper rather than an NRI plugin
 //
-// This replaces the NRI plugin of docs/adr/0015, which never ran: containerd
-// invokes NRI hooks only from its CRI path, and dockerd drives the plain
-// containerd client API instead, so CreateContainer was never called for any
-// container a sandbox user created. Enabling the containerd image store
-// unified where *layers* live, but not where containers are *executed*, so it
-// did not produce the single interception point that ADR assumed.
+// docs/adr/0020 chose this over the NRI plugin of docs/adr/0015, which cannot
+// work here: containerd invokes NRI hooks only from its CRI path, and dockerd
+// drives the plain containerd client API instead, so CreateContainer is never
+// called for any container a sandbox user creates. Enabling the containerd
+// image store unifies where *layers* live, but not where containers are
+// *executed*, so it does not produce the single interception point that ADR
+// assumed.
 //
 // The runc binary is the one place every path converges. Both routes reach it,
 // with different verbs, which is why both are handled:

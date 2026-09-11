@@ -122,7 +122,7 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 	}
 	// Stated in terms of the missing command rather than the slug: the reserved
 	// `shell` built-in is a login shell with no credentials to collect (ADR
-	// 0025 §2), and so is any other image that declares no configure command.
+	// 0043 §3), and so is any other image that declares no configure command.
 	if len(config.ConfigCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("harness %q has nothing to configure: its image declares no configure command", config.Slug))
@@ -449,8 +449,8 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			Host:      secret.Host,
 			// A configure-created secret belongs to this harness (bound, granted,
 			// and deleted with it), so it must not occupy the shared
-			// (project,type,host) uniqueness slot: two harnesses may each hold,
-			// say, a hostless bearer token.
+			// (project,name,type,host) uniqueness slot: two harnesses may each
+			// hold, say, a token of the same name bound to no host.
 			UniqueKey: secretID,
 			// No ceiling on the grants that stand on it, said rather than left
 			// to a default. The grant below never expires, because a harness
@@ -733,9 +733,9 @@ func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID s
 	}, lease.Release, nil
 }
 
-// leaseAuthTransport carries both tokens a worker-proxied sandbox-agent request
-// needs: the worker's own on Authorization, and the sandbox-agent's on
-// X-Discobox-Sandbox-Agent-Authorization for the worker to forward inward.
+// leaseAuthTransport carries both tokens a pool-agent-proxied sandbox-agent
+// request needs: the pool agent's own on Authorization, and the sandbox-agent's
+// on X-Discobox-Sandbox-Agent-Authorization for the pool agent to forward inward.
 type leaseAuthTransport struct {
 	base  http.RoundTripper
 	lease *services.HTTPClientLease
@@ -860,12 +860,13 @@ func readConfigureOutput(ctx context.Context, run *oneShotRunner) (*configureOut
 // form: POST the attach with the command's stdin as the body and read its output
 // back as the response.
 //
-// It addresses the worker, not the sandbox directly. A sandbox-agent lease points
-// at the worker that hosts the sandbox, and the worker passes exec routes through
-// to the agent under its own scheme — so requests carry two tokens: the worker's
-// on Authorization, and the sandbox-agent's on X-Discobox-Sandbox-Agent-Authorization
-// for the worker to forward inward. The generated sandbox client cannot express
-// that route shape, so these three calls are made directly.
+// It addresses the pool agent, not the sandbox directly. A sandbox-agent lease
+// points at the pool agent that hosts the sandbox, and the pool agent passes exec
+// routes through to the sandbox agent under its own scheme — so requests carry
+// two tokens: the pool agent's on Authorization, and the sandbox-agent's on
+// X-Discobox-Sandbox-Agent-Authorization for the pool agent to forward inward.
+// The generated sandbox client cannot express that route shape, so these three
+// calls are made directly.
 type oneShotRunner struct {
 	httpClient *http.Client
 	baseURL    string

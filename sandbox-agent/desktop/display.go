@@ -183,10 +183,10 @@ func NormalizeScale(scale float64) int {
 // pixels, which is what the browser draws back down onto physical pixels.
 //
 // It takes the CSS box rather than a framebuffer size so that this is the only
-// place the arithmetic lives. The page used to compute the framebuffer too, in
-// order to size its frame before asking; it now sizes the frame from what comes
-// back, which costs one loopback round trip and removes a pair of roundings
-// that had to agree forever.
+// place the arithmetic lives. The page does not compute the framebuffer to size
+// its frame before asking; it sizes the frame from what comes back, which costs
+// one loopback round trip and avoids a pair of roundings that would have to
+// agree forever.
 //
 // It does not change the scale: the size tracks the browser window and the
 // scale must not, so the standing value is re-asserted here rather than

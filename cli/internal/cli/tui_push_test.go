@@ -46,7 +46,7 @@ func pushDeliveredSandbox() apimodel.Sandbox {
 }
 
 // The row fact the window's automatic push reads: what it is true of, and every
-// reason it is not (ADR 0095 §2).
+// reason it is not (ADR 0095 §2 on automatic push).
 func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
 	remote := pushDeliveredSandbox()
 	remoteSource, _ := remote.Config.Source.Get()
@@ -304,9 +304,9 @@ func TestPushSourcesHoldsARefusedCommit(t *testing.T) {
 }
 
 // A raw attach has no window, so it pushes for itself: the same rule, for as
-// long as the stream lasts (ADR 0095 §1). It says nothing into the stream while
-// it runs, and reports what could not be pushed once the terminal is the
-// client's again.
+// long as the stream lasts (ADR 0095 §1 on automatic push). It says nothing
+// into the stream while it runs, and reports what could not be pushed once the
+// terminal is the client's again.
 func TestAutoPushWhileAttachedPushesAndReportsOnlyOnStop(t *testing.T) {
 	dir, _ := pushRepo(t)
 	ds, paths := pushDataSource(t, dir)
@@ -344,10 +344,11 @@ func TestAutoPushWhileAttachedPushesAndReportsOnlyOnStop(t *testing.T) {
 }
 
 // Stopping never produces a failure of its own. A transfer that has started
-// finishes and is reported whatever it says (ADR 0095 §6); what a stop can cut
-// short is the half that decides whether to send, and that half says nothing.
-// Without the distinction, an ordinary detach prints a push failure nobody
-// caused — and can leave the origin ahead of the lease that guards it.
+// finishes and is reported whatever it says (ADR 0095 §6 on automatic push);
+// what a stop can cut short is the half that decides whether to send, and that
+// half says nothing. Without the distinction, an ordinary detach prints a push
+// failure nobody caused — and can leave the origin ahead of the lease that
+// guards it.
 func TestAutoPushWhileAttachedDoesNotReportItsOwnStop(t *testing.T) {
 	dir, _ := pushRepo(t)
 	ds, paths := pushDataSource(t, dir)

@@ -14,14 +14,14 @@ import (
 // storeWait is how long an admission check waits for the store before giving
 // up on it. It bounds the cost of the wait: until the store arrives the gate
 // cannot tell an unenrolled peer from one that might be enrolled, so every
-// non-file peer parks, and the endpoint ID is not a secret (ADR 0095 §4).
+// non-file peer parks, and the endpoint ID is not a secret (ADR 0095 §4, enrolled iroh IDs).
 //
 // It is generous relative to what it covers — opening the database, migrating
 // it, building the services — because expiring early turns a slow start into a
 // wrong answer, which is the failure this wait exists to prevent.
 const storeWait = 60 * time.Second
 
-// PeerStore is the managed half of the allowlist: the peers ADR 0095 made a
+// PeerStore is the managed half of the allowlist: the peers ADR 0095 (enrolled iroh IDs) made a
 // resource. It is an interface rather than *store.Store because admission
 // needs exactly one question answered, and naming that question is what keeps
 // the gate auditable.
@@ -38,7 +38,7 @@ type PeerStore interface {
 // It exists as a value with a settable store because of the order the server
 // starts in: it binds before it initializes and answers while initializing, so
 // the listener — and this gate — are built before there is a database to ask
-// (ADR 0095 §4). The file layer answers immediately; the managed layer waits
+// (ADR 0095 §4, enrolled iroh IDs). The file layer answers immediately; the managed layer waits
 // for SetStore.
 type Admission struct {
 	dataDir string
@@ -105,7 +105,7 @@ func (a *Admission) Authorize(ctx context.Context, id endpoint.IrohID) error {
 
 // awaitStore returns the managed layer, waiting for startup to install it.
 //
-// Waiting rather than refusing is the decision in ADR 0095 §4: refusing would
+// Waiting rather than refusing is the decision in ADR 0095 §4 (enrolled iroh IDs): refusing would
 // tell a correctly enrolled peer it is not enrolled because the server was
 // still opening its database, and send its operator looking in the wrong file.
 // The wait ends three ways, and each says something different to the peer.

@@ -41,7 +41,7 @@ var yamlEnumAliases = map[string]string{
 	"ApproveSecretRequestBody.scope":      "SecretGrant.scope",
 	"ResolveSandboxSecretResponse.status": "SecretRequest.status",
 	// The sandbox owns the full existence vocabulary, so the tag on the embedded
-	// ResourceLifecycle is authoritative for it. The pool no longer matches:
+	// ResourceLifecycle is authoritative for it. The pool does not match:
 	// only a sandbox can be archived (ADR 0022 §1), so Pool.desiredState is a
 	// narrowing and moved to yamlOwnedEnums below.
 	"SandboxRuntime.desiredState": "ResourceLifecycle.desiredState",

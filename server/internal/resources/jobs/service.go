@@ -1,7 +1,7 @@
-// Package jobs also serves the jobs REST API. Job rows no longer exist: the
-// API is backed by the reconcile engine's dirty set. A "job" is a pending
-// reconcile mark; terminal history lives on the resources themselves
-// (operation status) and in project events.
+// Package jobs serves the jobs REST API from the reconcile engine's dirty set.
+// A "job" is a pending reconcile mark, not a stored row; the outcome of a
+// finished one lives on the resource itself (State, ObservedGeneration and
+// ErrorMessage in model.ResourceLifecycle).
 package jobs
 
 import (

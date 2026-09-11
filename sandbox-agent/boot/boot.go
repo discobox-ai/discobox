@@ -40,7 +40,7 @@ func Init(logger *slog.Logger, args []string) int {
 	return 0
 }
 
-// provision does the user setup and, when the worker has mounted the primary
+// provision does the user setup and, when the pool agent has mounted the primary
 // volumes, wires the declarative volumes and sources into place.
 func (b *booter) provision(logger *slog.Logger, id identity) error {
 	if err := b.ensureUser(id); err != nil {
@@ -49,9 +49,8 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 	worker := dirExists(configMountPath)
 	var effective sandboxconfig.Config
 	if worker {
-		// Both volumes and sources come from this one pre-bind read now that
-		// image.json is gone (ADR 0012 §6) — previously this required two
-		// separate reads (image.json for volumes, the manifest for sources).
+		// Both volumes and sources come from this one pre-bind read; there is
+		// no separate image-baked volume file (ADR 0012 §6).
 		var err error
 		if effective, err = loadEffectiveConfig(); err != nil {
 			return fmt.Errorf("load sandbox config: %w", err)
@@ -103,9 +102,9 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 	return nil
 }
 
-// execPlan mirrors the retired entrypoint.sh tail: systemd/init and root run
-// directly with the sandbox env; a non-root, non-init command is dropped to the
-// sandbox user via runuser.
+// execPlan decides what PID 1 execs: systemd/init and root run directly with
+// the sandbox env; a non-root, non-init command is dropped to the sandbox user
+// via runuser.
 func execPlan(id identity, args []string) (argv, env []string) {
 	if len(args) == 0 {
 		args = []string{"sleep", "infinity"}

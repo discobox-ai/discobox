@@ -36,7 +36,7 @@ const exampleHeader = `# yaml-language-server: $schema=` + SchemaID + `
 //
 // It is generated rather than written because a hand-kept reference is a
 // reference that is missing the setting somebody added last week, and the
-// whole claim of ADR 0096 is that the file holds all valid configuration.
+// whole claim of ADR 0096 (configuration file) is that the file holds all valid configuration.
 func ExampleYAML() ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteString(exampleHeader)

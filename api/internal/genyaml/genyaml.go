@@ -1,5 +1,5 @@
-// Package genyaml provides shared OpenAPI YAML loading helpers for the api
-// codegen tools (gensandboxopenapi, genmanifestmodels).
+// Package genyaml provides OpenAPI YAML loading helpers for the api codegen
+// tool gensandboxopenapi.
 package genyaml
 
 import (

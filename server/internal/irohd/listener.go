@@ -112,8 +112,8 @@ func (w *ListenerWatch) sample(ctx context.Context, first bool) {
 		log.Printf("iroh: no relay; this server is reachable only from networks that can route to it directly (%s)",
 			describeSockets(state))
 	default:
-		// The transition that used to happen in silence, and the one an
-		// operator is looking for when clients stop being able to dial in.
+		// Logged rather than left silent: this is the transition an operator
+		// is looking for when clients stop being able to dial in.
 		log.Printf("iroh: lost its relay; until it returns this server is reachable only from networks that can route to it directly (%s)",
 			describeSockets(state))
 	}

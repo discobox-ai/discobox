@@ -8,8 +8,8 @@ import (
 
 // newConfigureCommand opens the launcher on its harnesses screen.
 //
-// It used to be a small inline menu of its own. It is the launcher's screen now
-// — same window, same list, same keys — because managing the harnesses and
+// It is the launcher's screen rather than a small inline menu of its own —
+// same window, same list, same keys — because managing the harnesses and
 // running something on one are the same job seen from two ends, and two
 // programs with two ideas of what a harness list looks like is one too many.
 func (a *App) newConfigureCommand() *cobra.Command {

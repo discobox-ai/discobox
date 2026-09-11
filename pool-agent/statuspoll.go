@@ -83,7 +83,7 @@ type sandboxAgentStatusPoller struct {
 	tokens map[string]cachedSandboxAgentToken
 	// samples is the newest resource counters seen for each sandbox, handed to
 	// the resource reporter so the two loops share one poll of each sandbox
-	// rather than each making its own (ADR 0071 §2).
+	// rather than each making its own (ADR 0071 resource accounting §2).
 	samples map[string]sandboxResourceSample
 }
 

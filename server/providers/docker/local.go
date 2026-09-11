@@ -17,12 +17,12 @@ import (
 )
 
 // localVMID is the static instance identity the local driver reports: every
-// worker resolves to the host Docker daemon, so there is no per-worker VM.
+// pool resolves to the host Docker daemon, so there is no per-pool VM.
 const localVMID = "local"
 
 // LocalDriver is the local Docker VM driver. VM CRUD is a no-op because all
-// workers share the host daemon; connectivity resolves to the host socket and
-// the worker container's published loopback port.
+// pools share the host daemon; connectivity resolves to the host socket and
+// the pool-agent container's published loopback port.
 type LocalDriver struct {
 	client    *client.Client
 	agentPort int

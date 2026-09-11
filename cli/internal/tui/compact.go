@@ -66,9 +66,8 @@ const clearTimeout = 500 * time.Millisecond
 // everything else the window draws is on the alternate screen. Switching
 // screens does not take the printed rows along: they stay on the primary
 // screen, behind the window, and whatever the window later drops back onto it
-// lands in the middle of them — a harness setup run through tea.Exec prints
-// straight over the old prompt, or the shell prompt you get back on the way
-// out, which is what the leftovers are usually seen behind.
+// lands in the middle of them — the shell prompt you get back on the way out
+// is what the leftovers are usually seen behind.
 //
 // An empty inline frame is how the renderer is asked to erase the rows it
 // printed, and it is the only thing that knows where they are — hence a frame

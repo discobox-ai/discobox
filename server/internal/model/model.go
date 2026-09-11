@@ -80,7 +80,7 @@ const (
 
 	// SandboxUpgradePolicyAutomatic and SandboxUpgradePolicyManual are a
 	// project's answer to whether its stopped sandboxes follow their harness
-	// image (ADR 0083 §3).
+	// image (ADR 0082 §3).
 	//
 	// The empty value is the third member of this vocabulary and means *the
 	// server default*, which is automatic: a project that has never chosen
@@ -132,7 +132,7 @@ var (
 )
 
 // SandboxUpgradesAutomatically reports whether a project's stopped sandboxes
-// are moved onto their harness config's image when it changes (ADR 0083).
+// are moved onto their harness config's image when it changes (ADR 0082).
 //
 // Empty is automatic, which is what makes the default a server-side answer the
 // project follows rather than a value copied into every row at create.
@@ -224,7 +224,7 @@ type Project struct {
 	ArchiveRetentionSeconds int64 `gorm:"column:archive_retention_seconds;not null;default:0" json:"archiveRetentionSeconds,omitempty" doc:"How long archived sandboxes are kept before being purged, in seconds. Zero means the server default."`
 	// SandboxUpgradePolicy decides whether this project's stopped sandboxes are
 	// re-pinned onto their harness config's image when that image moves
-	// (ADR 0083 §3). Empty means the server default, which is `automatic`.
+	// (ADR 0082 §3). Empty means the server default, which is `automatic`.
 	//
 	// It is an opt-out rather than an opt-in because the upgrade is what a user
 	// wants almost always; what it buys is the ability to hold a discobox on
@@ -304,8 +304,8 @@ type SandboxAccessIssuerKey struct {
 
 func (SandboxAccessIssuerKey) TableName() string { return "sandbox_access_issuer_keys" }
 
-// ProjectUserKey is kept as a compatibility alias while callers migrate to the
-// design-level SandboxAccessIssuerKey name.
+// ProjectUserKey is an alias of SandboxAccessIssuerKey, and the name the
+// sandbox auth package's key store (auth/sandbox) is written against.
 type ProjectUserKey = SandboxAccessIssuerKey
 
 // HarnessConfig stores a project-scoped harness runtime configuration.
@@ -584,7 +584,7 @@ type Pool struct {
 	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the provider driver, such as a VM image fetch or an image pull in flight (ADR 0060)"`
 	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
 	// Resources is what this pool is consuming, reported by its agent every
-	// resource-report interval (ADR 0071). It is the pool's own totals plus its
+	// resource-report interval (ADR 0071, resource accounting). It is the pool's own totals plus its
 	// disk, and it is telemetry rather than a scheduling input: what placement
 	// reads is the Available* fields above.
 	//
@@ -792,7 +792,7 @@ type Sandbox struct {
 	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the hosting pool-agent, such as an image pull in flight (ADR 0039)"`
 	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
 	// Resources is this sandbox's CPU, memory and disk consumption, computed by
-	// the hosting pool agent and pushed on its own channel (ADR 0071) — a third
+	// the hosting pool agent and pushed on its own channel (ADR 0071, resource accounting) — a third
 	// observation channel alongside AgentStatus above and RuntimeState.
 	//
 	// The rates in it are comparable with every other sandbox in the same pool

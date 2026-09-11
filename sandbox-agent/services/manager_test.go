@@ -578,7 +578,8 @@ func TestDeclaredPortsReadsEveryDeclarationWhateverItsState(t *testing.T) {
 		t.Fatalf("declared ports = %v after a declaration was added, want it seen", ports)
 	}
 	// A repository declaration states no protocol, so its port is still probed.
-	// Only an image may claim what a port speaks (ADR 0094).
+	// Only an image may claim what a port speaks (ADR 0094, image-declared
+	// services).
 	for _, declaration := range ports {
 		if declaration.Protocol != portspkg.ProtocolUnknown {
 			t.Fatalf("%s declared protocol %q; a repository service must not claim one",

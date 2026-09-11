@@ -47,7 +47,7 @@ func enrollIrohIDs(t *testing.T, ids ...string) *store.Store {
 // ID has no `_` separator, so it takes that branch every time. Without the
 // charset check, `%` matches every row — and on a server with exactly one
 // enrollment the "unambiguous prefix" rule would then revoke a credential the
-// caller never named (ADR 0095 §2).
+// caller never named (ADR 0095 §2, enrolled iroh IDs).
 func TestGetPeerRejectsLikeWildcards(t *testing.T) {
 	s := enrollIrohIDs(t, testPeerA)
 

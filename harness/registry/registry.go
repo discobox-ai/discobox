@@ -11,9 +11,10 @@ func DefaultDrivers() []harness.Driver {
 	return []harness.Driver{
 		claudecode.Driver{},
 		codexcli.Driver{},
-		// Last because it is the one every sandbox falls back to rather than
-		// one anybody picks for its own sake; it is otherwise an ordinary
-		// registry harness (ADR 0043).
+		// Last because nobody picks it for an agent: its reserved slug withholds
+		// a run command. It is otherwise an ordinary registry harness (ADR
+		// 0043), and not a fallback (ADR 0048); the one path that ends at it is
+		// a legacy sandbox upgrading with no harness config.
 		shell.Driver{},
 	}
 }

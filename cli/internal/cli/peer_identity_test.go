@@ -97,7 +97,7 @@ func (b *testBuffer) Write(p []byte) (int, error) {
 func (b *testBuffer) String() string { return string(b.data) }
 
 // `discobox admin peer` is the name; the iroh spellings operators already have
-// in their notes keep working, hidden (ADR 0095 §5, ADR 0097 §7).
+// in their notes keep working, hidden (ADR 0095 §5 on iroh IDs, ADR 0097 §7).
 func TestAdminCarriesPeerAndTheOldIrohSpellings(t *testing.T) {
 	app := &App{}
 	admin := app.newAdminCommand()

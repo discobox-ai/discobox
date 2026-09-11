@@ -1,5 +1,5 @@
 // Package irohd owns the server's iroh identity and the endpoint IDs it will
-// accept connections from (ADR 0052 §5, ADR 0095).
+// accept connections from (ADR 0052 §5, ADR 0095, enrolled iroh IDs).
 //
 // It is the iroh counterpart of internal/sshd's host key and authorized_keys
 // handling, and for the same reasons: the identity is an address that must

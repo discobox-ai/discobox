@@ -9,7 +9,7 @@ import (
 )
 
 // createTestPool seeds the project, provider instance, and pool rows a sandbox
-// or worker fixture needs: pool references are enforced by foreign keys, so a
+// or pool fixture needs: pool references are enforced by foreign keys, so a
 // row cannot dangle from a pool that does not exist.
 func createTestPool(t *testing.T, s *store.Store, projectID, poolID string) {
 	t.Helper()

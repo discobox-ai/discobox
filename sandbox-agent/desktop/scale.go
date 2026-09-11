@@ -194,8 +194,8 @@ func RememberedScale(dir string) (int, bool) {
 //
 // Only what xfsettingsd does not own. It holds the density and the cursor size
 // in xfconf and rewrites both resources at every refresh, so merging those here
-// is undone behind our back — the cursor size used to be in this list and never
-// survived. xterm's font is not one of xfsettingsd's, which is why it is.
+// is undone behind our back, which is why the cursor size is not in this list.
+// xterm's font is not one of xfsettingsd's, which is why it is.
 func xresources(scale int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Xft.dpi: %d\n", BaseDPI*scale)

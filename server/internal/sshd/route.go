@@ -71,8 +71,8 @@ func cutLast(s, sep string) (before, after string, ok bool) {
 // method.
 //
 // A name is a key here rather than a label: it is unique per owner
-// (idx_project_owner_name). This used to try a slug first, which no longer
-// exists — a project is addressed by ID, and by name as a convenience.
+// (idx_project_owner_name). A project is addressed by ID, and by name as a
+// convenience.
 func resolveProject(ctx context.Context, db *store.Store, value string) (*model.Project, error) {
 	projects, err := db.ListProjects(ctx)
 	if err != nil {

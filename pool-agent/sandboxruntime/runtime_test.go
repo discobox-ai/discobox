@@ -332,7 +332,7 @@ func TestDockerSandboxRuntimeDaemonPathTranslatesOnlyRelocatedState(t *testing.T
 }
 
 // The far end of the same journey: what the agent writes into sandbox.json is
-// what boot reads to decide whether a cache path is partitioned (ADR 0094). The
+// what boot reads to decide whether a cache path is partitioned (ADR 0094 cache partition). The
 // scope has to survive this rebuild, and an unset one has to stay unset so
 // harness.ResolveVolumes applies the default rather than this hop inventing one.
 func TestDocumentVolumesKeepTheScope(t *testing.T) {

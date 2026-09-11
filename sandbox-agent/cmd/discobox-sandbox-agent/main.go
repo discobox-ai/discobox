@@ -121,8 +121,8 @@ func runHookPublish(args []string) int {
 	return 0
 }
 
-// bridgeConfig mirrors the on-disk config written by the worker harness into the
-// sandbox proxy material directory.
+// bridgeConfig mirrors the on-disk config the pool agent's proxyagent writes into
+// the sandbox proxy material directory.
 type bridgeConfig struct {
 	ListenAddress  string `json:"listenAddress"`
 	WorkerProxyURL string `json:"workerProxyUrl"`
@@ -132,7 +132,7 @@ type bridgeConfig struct {
 }
 
 // runProxyBridge runs the sandbox-local forwarder that routes sandbox proxy
-// traffic to the worker proxy over mTLS.
+// traffic to the pool proxy over mTLS.
 func runProxyBridge(args []string) int {
 	var configPath, bridgeInterface, publishPath string
 	var bridgeTimeout time.Duration

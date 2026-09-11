@@ -75,9 +75,10 @@ func (p Pending) UpToDate() bool { return p.HasLease && p.Lease == p.Commit }
 // Resolve answers "is there anything here to push", locally.
 //
 // It is two ref reads in a repository this machine already has open: the branch
-// tip and the lease. Nothing is dialed and nothing is transferred, which is what
-// makes it the whole cost of an automatic push on the ordinary tick where
-// nothing has been committed since the last one (ADR 0095 §4).
+// tip and the lease. Nothing is dialed and nothing is transferred, which is
+// what makes it the whole cost of an automatic push on the ordinary tick where
+// nothing has been committed since the last one (ADR 0095 §4 on automatic
+// push).
 //
 // It is also the head of the push itself, so what counts as "new commits" is
 // decided in one place rather than once for the asking and once for the doing.

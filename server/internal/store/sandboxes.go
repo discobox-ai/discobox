@@ -324,7 +324,7 @@ var observedSandboxColumns = []string{
 	"provision_progress",
 	"provision_progress_at",
 	// Resource accounting is observed on its own channel by the same agent and
-	// written only by its report path (ADR 0071), so it belongs to the same
+	// written only by its report path (ADR 0071, resource accounting), so it belongs to the same
 	// rule: a slow load-modify-save elsewhere must not replay a stale CPU rate
 	// over a newer one.
 	"resources",
@@ -406,7 +406,7 @@ func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandbox
 }
 
 // UpdateSandboxResources writes only the two resource columns, pushed
-// periodically by the hosting pool agent (ADR 0071).
+// periodically by the hosting pool agent (ADR 0071, resource accounting).
 //
 // Like UpdateSandboxAgentStatus above it deliberately bypasses
 // UpdateSandbox/WithGeneration: this is telemetry, not part of the
@@ -485,8 +485,9 @@ func deleteSandboxSecretsTx(tx *gorm.DB, projectID, sandboxID string) error {
 	if err := tx.Where("sandbox_id = ?", sandboxID).Delete(&model.SandboxSecret{}).Error; err != nil {
 		return err
 	}
-	// Nullify ciphertext before soft-deleting anonymous secrets so no secret
-	// value is retained even in a soft-deleted row.
+	// Null the anonymous secrets' ciphertext before deleting them, as
+	// DeleteSecret does, so the value is overwritten rather than only unlinked
+	// with its row.
 	if err := tx.Model(&model.Secret{}).
 		Where("project_id = ? AND anonymous = ? AND id IN ?", projectID, true, secretIDs).
 		Update("encrypted_value", nil).Error; err != nil {

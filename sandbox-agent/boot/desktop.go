@@ -23,8 +23,7 @@ var desktopUserUnits = []string{
 }
 
 // writeDesktopDropins binds the socket-activated desktop units to the resolved
-// sandbox user, reproducing what the retired entrypoint.sh generated. Each
-// drop-in is written only when its base unit is present in the image, so an
+// sandbox user. Each drop-in is written only when its base unit is present in the image, so an
 // image built without the desktop gets none of them.
 //
 // Two kinds are written: the user a unit runs as, and the companions that hang
@@ -56,10 +55,11 @@ func writeDesktopDropins(id identity) error {
 			return err
 		}
 	}
-	// The Xfce session also reads the toolkit environment the viewer writes when
-	// the desktop scale changes, so the window manager and the panel are drawn
-	// at the same scale as everything launched from a shell. It is optional
-	// (`-`): nothing has written it until somebody has changed the scale once.
+	// The Xfce session also reads the toolkit environment the viewer writes at
+	// startup and whenever the desktop scale changes, so the window manager and
+	// the panel are drawn at the same scale as everything launched from a
+	// shell. It is optional (`-`) so a session started without the viewer
+	// having written it still starts, at the default scale.
 	if fileExists("/etc/systemd/system/xfce4-session@.service") {
 		if err := installFile("/etc/systemd/system/xfce4-session@.service.d/discobox-desktop-user.conf", 0o644,
 			fmt.Sprintf("[Service]\nEnvironmentFile=-%s\n",

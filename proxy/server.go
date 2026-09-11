@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Server is the mTLS worker proxy server.
+// Server is the mTLS pool proxy server.
 type Server struct {
 	ctx         context.Context
 	cfg         Config
@@ -40,7 +40,7 @@ type Server struct {
 	closed   chan struct{}
 }
 
-// NewServer creates a worker-scoped proxy server. A nil resolver disables
+// NewServer creates a pool-scoped proxy server. A nil resolver disables
 // sentinel secret swapping; the resolver is a stable dependency preserved across
 // ApplyConfig reloads.
 func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolver secrets.Resolver) (*Server, error) {

@@ -64,7 +64,7 @@ iroh:
 }
 
 // The environment wins, which is what keeps an existing container or systemd
-// unit configuring the server exactly as it did before (ADR 0096 §4).
+// unit configuring the server exactly as it did before (ADR 0096 §4, configuration file).
 func TestEnvironmentOverridesTheFile(t *testing.T) {
 	clearConfigEnv(t)
 	writeConfigFile(t, "dataDir: /from/file\nport: 1111\n")
@@ -85,7 +85,7 @@ func TestEnvironmentOverridesTheFile(t *testing.T) {
 
 // The reason the file earns its place over the environment: a key nothing
 // defines is a failure that names it, rather than a silent default
-// (ADR 0096 §3).
+// (ADR 0096 §3, configuration file).
 func TestUnknownKeyFailsAndNamesItself(t *testing.T) {
 	clearConfigEnv(t)
 	path := writeConfigFile(t, "dataDirr: /typo\n")
@@ -152,9 +152,9 @@ func TestZeroRetentionInTheFileIsRejected(t *testing.T) {
 	}
 }
 
-// The settings that used to be read by the packages that use them are now
+// The settings the packages that use them would otherwise read themselves are
 // ordinary fields, which is what makes "all valid configuration is in the file"
-// true (ADR 0096 §5).
+// true (ADR 0096 §5, configuration file).
 func TestFileCarriesTheSettingsPackagesUsedToReadThemselves(t *testing.T) {
 	clearConfigEnv(t)
 	writeConfigFile(t, `
@@ -222,7 +222,7 @@ func TestPortDefaultTagMatchesTheConstant(t *testing.T) {
 // A named path that does not exist is a misconfiguration, not a default.
 //
 // It is the one setting no schema can check — it is what finds the schema — so
-// silently starting on defaults there is exactly the failure ADR 0096 §3 is
+// silently starting on defaults there is exactly the failure ADR 0096 §3 (configuration file) is
 // written against. A missing file at the *default* path stays fine: that is
 // the ordinary case of a server configured entirely by environment.
 func TestNamedConfigFileMustExist(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 )
 
 // fallbackHarnessConfig is the project's reserved `shell` config, which a
-// sandbox with no harness config of its own upgrades to (ADR 0025 §4). The
-// sandbox mappers need it to report that upgrade.
+// legacy sandbox with no harness config of its own upgrades to (ADR 0032 §4).
+// The sandbox mappers need it to report that upgrade.
 //
 // A lookup failure is logged and treated as absent rather than failing the
 // request: this decorates a sandbox with an available upgrade, and losing that

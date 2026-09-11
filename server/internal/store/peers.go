@@ -16,7 +16,7 @@ import (
 // It is enforced here and not only in the service because the prefix reaches a
 // LIKE pattern below, and `%` and `_` are wildcards there. A lookup for `%`
 // would otherwise match every row — and on a server with exactly one
-// enrollment, resolve to it (ADR 0095 §2). Validating at the edge of the store
+// enrollment, resolve to it (ADR 0095 §2, enrolled iroh IDs). Validating at the edge of the store
 // means no caller can reintroduce that, whatever it validated for itself.
 //
 // The alphabet is Crockford's, which ADR 0097 §5 names: callers normalize
@@ -108,7 +108,7 @@ func firstPeerByPrefix(db *gorm.DB, idOrPrefix string) (*model.Peer, error) {
 	// failure as the LIKE wildcard above, reached with an ordinary-looking
 	// string instead of a metacharacter, and worst on a fresh server where the
 	// one enrolled peer is the only way in. Revocation must never act on a row
-	// the operator did not name (ADR 0095 §2).
+	// the operator did not name (ADR 0095 §2, enrolled iroh IDs).
 	if len(idOrPrefix) <= len(endpoint.PeerIDVersion) {
 		return nil, ErrNotFound
 	}

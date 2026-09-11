@@ -20,7 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker/sshdocker"
 )
 
-// dockerInstallUserData brings up Docker on a fresh droplet. The worker-agent
+// dockerInstallUserData brings up Docker on a fresh droplet. The pool-agent
 // container is launched by the control plane over the droplet's Docker daemon,
 // so cloud-init only needs Docker itself.
 const dockerInstallUserData = `#cloud-config
@@ -62,7 +62,7 @@ type DriverConfig struct {
 	HTTPClient *http.Client
 }
 
-// Driver manages one Docker-enabled DigitalOcean Droplet per sandbox worker.
+// Driver manages one Docker-enabled DigitalOcean Droplet per pool.
 type Driver struct {
 	token      string
 	baseURL    string

@@ -19,8 +19,8 @@ const (
 )
 
 // SandboxDesiredStates and PoolDesiredStates are the desired-state vocabularies
-// of the two orchestrated resources. They were one shared slice until ADR 0022
-// §1: only a sandbox can be archived. A pool's data is many sandboxes' data, so
+// of the two orchestrated resources. They are separate slices because of
+// ADR 0022 §1: only a sandbox can be archived. A pool's data is many sandboxes' data, so
 // archiving one is a different decision that nothing converges — putting the
 // value in the pool's enum just to keep a single slice would advertise a state
 // the pool reconciler cannot reach.

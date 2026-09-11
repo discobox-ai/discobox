@@ -67,17 +67,16 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imag
 	// the registry serves the tag under — an index digest for a multi-platform
 	// image.
 	//
-	// It used to be the config digest, on the premise that a local Docker
-	// daemon reports that as an image ID. That was true of the classic image
-	// store and is false of the containerd one, which reports the index digest
-	// and is the default in current Docker. So the server recorded a value the
-	// daemon would never produce, and every sandbox on a published multi-arch
-	// image refused to launch: "pinned to sha256:6a5066…, now resolves to
-	// sha256:4a5726…" — the config digest and the index digest of one image
-	// that had not changed at all.
+	// Not the config digest. A local Docker daemon reports that as an image ID
+	// only under the classic image store; the containerd one, the default in
+	// current Docker, reports the index digest. A recorded config digest is
+	// therefore a value the daemon never produces, and every sandbox on a
+	// published multi-arch image would refuse to launch: "pinned to
+	// sha256:6a5066…, now resolves to sha256:4a5726…" — the config digest and
+	// the index digest of one unchanged image.
 	//
 	// Both store types put this value in RepoDigests, which is what the pool
-	// compares against, so one recorded digest now works on either.
+	// compares against, so one recorded digest works on either.
 	return parseImageMetadata(descriptor.Digest.String(), config.Config.Labels)
 }
 
@@ -231,13 +230,13 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 // pushed, so neither fallback can see it: the image exists only as a build
 // description until some pool's daemon builds it. The manifest already carries
 // the metadata verbatim, as the build arguments that become the labels, so
-// seeding reads it from there and no longer depends on the image existing yet.
+// seeding reads it from there and does not depend on the image existing yet.
 //
 // It reconstructs the label set the built image would carry, inherited layers
 // included, by walking the same edge the manifest already uses to order builds:
 // a harness entry's SANDBOX_AGENT_IMAGE argument names the base entry's
 // reference, whose own layer argument is the layer that image would label
-// (ADR 0086 §4). Without that walk a developer on Windows or macOS would
+// (ADR 0086 §2). Without that walk a developer on Windows or macOS would
 // resolve a manifest missing every inherited volume and env var, and every
 // harness image would be rejected as not built from the base.
 type devImageInspector struct {

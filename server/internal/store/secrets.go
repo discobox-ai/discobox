@@ -146,8 +146,8 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 		if err != nil {
 			return err
 		}
-		// Nullify the encrypted value before soft-deleting so ciphertext is not
-		// retained in the database even as a soft-deleted row.
+		// Null the encrypted value before the row is deleted below, so the
+		// ciphertext is overwritten rather than only unlinked with its row.
 		if err := tx.Model(sec).Update("encrypted_value", nil).Error; err != nil {
 			return err
 		}

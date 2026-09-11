@@ -98,7 +98,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		ProjectID:   sandbox.ProjectID,
 		RequestedBy: requestedBy,
 		SandboxID:   sandbox.ID,
-		// Every secret is a token now, and a token is what the swap carries:
+		// Every secret is a token, and a token is what the swap carries:
 		// ResolveSandboxSecret emits Value.Token, so nothing a request can name
 		// is a credential the proxy could not substitute.
 		Type:          model.SecretTypeToken,

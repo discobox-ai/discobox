@@ -12,7 +12,7 @@ var testRuntime = VolumeRuntime{Home: "/home/darren", UID: 1000, GID: 1000}
 // The default is the safe one. A cache path that says nothing about scope
 // belongs to the sandbox user, because that is what a directory the sandbox user
 // fills needs, and because an image that never considered the question must not
-// be answered with "share it" (ADR 0094 §3).
+// be answered with "share it" (ADR 0094 §3 on the pool cache).
 func TestResolveVolumesScopesToTheUserByDefault(t *testing.T) {
 	volumes, err := ResolveVolumes([]Volume{
 		{Path: "%HOME%/.cache", Volume: VolumeCache, UID: "%UID%", GID: "%GID%"},

@@ -6,8 +6,8 @@
 # /run/discobox/configure/harness-configure.json for discobox to apply to the
 # HarnessConfig.
 #
-# Claude Code's own onboarding already offers the choice this script used to
-# reimplement: sign in with a Claude subscription, or with an Anthropic
+# Claude Code's own onboarding already offers the choice, so this script does
+# not reimplement it: sign in with a Claude subscription, or with an Anthropic
 # Console account. Both write their result to disk, so this script does not
 # need to drive either flow itself — it launches a bare `claude`, then reads
 # whichever of these the user's session produced:
@@ -379,7 +379,7 @@ confirm_launch() {
 # claude refusing to start, say -- fails again the moment it is retried, and
 # looping on that is a busy loop, not a retry. End of input means nobody is
 # there to answer, which fails the configure flow rather than spinning, the same
-# rule the keep/replace prompt follows.
+# rule confirm_launch follows.
 confirm_retry() {
 	printf 'Try again? [Y/n] '
 	if ! read -r retry_choice; then
@@ -551,8 +551,8 @@ KEEP_PREVIOUS=""
 SEEDED_SENTINEL=""
 
 # Open the session already signed in when there is a credential to sign in with.
-# There is no keep-or-replace question any more: the answer is whatever the user
-# does in the session, and asking up front made changing a setting cost a login.
+# There is no keep-or-replace question: the answer is whatever the user does in
+# the session, and asking up front would make changing a setting cost a login.
 seed_previous_credential
 
 while [ -z "$ENV_NAME" ]; do

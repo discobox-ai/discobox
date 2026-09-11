@@ -14,7 +14,7 @@ import (
 //
 // Authorizers should assert that a request is in a positively identified scope,
 // not that it is outside another scope. Negative assertions such as "not a
-// worker route" can unintentionally authorize new or misspelled routes.
+// pool-agent route" can unintentionally authorize new or misspelled routes.
 type Authorizer interface {
 	Authorize(*http.Request) (bool, error)
 }
@@ -108,14 +108,14 @@ var authenticatedAllowedPaths = []string{
 	"/harness-definitions",
 	"/harness-definitions/",
 	"/api/pools/register",
-	// Enrolling and revoking peers (ADR 0095 §1). There is no
+	// Enrolling and revoking peers (ADR 0095 §1, enrolled iroh IDs). There is no
 	// resource-specific authorizer for it: the resource is server-scoped, so
 	// there is no project membership to check, and an enrolled peer
 	// authenticates as the default user rather than as a principal of its own.
 	//
 	// This authorizes any authenticated principal, which today is every caller
 	// the pipeline sees, on every listener the router serves — the carrier hub
-	// included. ADR 0095 §1 accepts that knowingly and says why: such a caller
+	// included. ADR 0095 §1 (enrolled iroh IDs) accepts that knowingly and says why: such a caller
 	// already holds ScopeAll, so this grants no new scope, but it does let
 	// transient reach become a durable external credential, and it lets that
 	// caller revoke every enrollment. Narrow this the moment a connection has

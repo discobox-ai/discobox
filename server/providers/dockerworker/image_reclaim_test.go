@@ -46,7 +46,7 @@ func TestUnsetImageRetentionLeavesPoolConfigurationUnchanged(t *testing.T) {
 
 func TestConfiguredImageRetentionReachesThePoolAgent(t *testing.T) {
 	// The window is server configuration now, so it arrives in Config rather
-	// than being read from the environment here (ADR 0096 §5).
+	// than being read from the environment here (ADR 0096 §5, configuration file).
 	engine, err := New(Config{Image: "pool:test", ImageRetention: 72 * time.Hour}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)

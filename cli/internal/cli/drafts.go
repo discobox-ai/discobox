@@ -14,7 +14,7 @@ import (
 // derived convenience state, not configuration, so it lives in the CLI's state
 // directory (statedir.go) beside the rest of it and is always best-effort: a
 // missing, unreadable or corrupt file means the window opens empty, which is
-// where it used to open every time.
+// where it opens without one.
 
 // promptDraftsFile is the state file, relative to the CLI's state directory.
 const promptDraftsFile = "prompt-drafts.json"

@@ -294,9 +294,9 @@ func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRe
 // sshHostKey is the server's host public key, which every emitted stanza pins
 // and nothing else in the document needs.
 //
-// `GET /ssh` used to answer two more questions — whether the server serves SSH,
-// and at what address — and answers neither now: it serves SSH over the
-// transport the API already answers on, and that is the only way in (ADR 0057).
+// `GET /ssh` does not say whether the server serves SSH, or at what address: it
+// serves SSH over the transport the API already answers on, and that is the
+// only way in (ADR 0057).
 func (a *App) sshHostKey(ctx context.Context, client *apiclientgen.Client) (string, error) {
 	res, err := client.GetSSHIngress(ctx)
 	if err != nil {
@@ -344,7 +344,7 @@ const hostAliasSuffix = ".discobox.internal"
 // is not unique is dropped from every stanza that wanted it.
 //
 // The server enforces unique names within a project
-// (idx_sandbox_project_name), so name-versus-name collisions no longer happen;
+// (idx_sandbox_project_name), so name-versus-name collisions do not happen;
 // what this still catches is a name that spells another sandbox's pattern, such
 // as one named exactly "<other id>.discobox.internal".
 func sshConfigHostPatterns(sandboxes []apimodel.Sandbox) [][]string {

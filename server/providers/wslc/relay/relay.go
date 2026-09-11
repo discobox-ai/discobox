@@ -12,9 +12,10 @@
 // itself pulls in.
 //
 // The compressed binary is a build artifact, not source. `task build:cp-relay`
-// produces it; the committed placeholder keeps `go build ./...` working in a
-// fresh checkout, and Extract reports a clear error rather than writing a
-// truncated file if the build step has not run.
+// produces it; the artifacts directory's committed README keeps `go build ./...`
+// working in a fresh checkout with no artifact present, and Extract reports a
+// clear error rather than writing a truncated file if the build step has not
+// run.
 package relay
 
 import (
@@ -71,7 +72,7 @@ const BinaryName = "discobox-cp-relay"
 // artifact, so no pool can start.
 var ErrNotBuilt = errors.New("wslc: guest control-plane relay was not built into this binary; run `task build:cp-relay`")
 
-// minimumSize guards against the placeholder or a truncated artifact being
+// minimumSize guards against a truncated or otherwise bogus artifact being
 // mistaken for a real binary.
 const minimumSize = 64 * 1024
 

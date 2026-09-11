@@ -81,8 +81,8 @@ func assertPrivateToUser(t *testing.T, path string) {
 }
 
 // State goes where Windows keeps state a program derives — %LOCALAPPDATA%, the
-// one that does not roam — rather than into the XDG path this used to build by
-// hand out of the home directory.
+// one that does not roam — rather than into an XDG path built by hand out of
+// the home directory.
 func TestStateDirIsLocalAppData(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("LOCALAPPDATA", `C:\Users\someone\AppData\Local`)

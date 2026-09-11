@@ -1,5 +1,5 @@
 // Package vsock provides the guest-side AF_VSOCK transport used by local
-// libkrun pools. HTTP remains the application protocol; this package only
+// libkrun and vz pools. HTTP remains the application protocol; this package only
 // supplies net.Listener and net.Conn implementations.
 package vsock
 

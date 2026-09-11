@@ -196,7 +196,7 @@ func (s *ControlPlane) SchedulePoolRepair(ctx context.Context, poolID, reason st
 }
 
 // SubmitPoolDelete records delete intent for the pool: generation bump,
-// delete operation, and dirty mark, atomically. The reconciler removes the
+// desiredState=deleted, and dirty mark, atomically. The reconciler removes the
 // runtime and then the row.
 func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID string) (*model.Pool, error) {
 	if s.engine == nil {

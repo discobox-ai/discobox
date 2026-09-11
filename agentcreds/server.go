@@ -9,9 +9,10 @@ import (
 	"strings"
 )
 
-// Service is the server half of the protocol. An implementation owns the three
+// Service is the server half of the protocol. An implementation owns the four
 // decisions the protocol does not make: whose credentials these are, what Get
-// returns, and how a request reaches a human.
+// returns, how a request reaches a human, and what becomes of a verdict (on
+// Get and on ReportDenial).
 type Service interface {
 	// List returns the credentials the caller may use and their approved uses.
 	// It never returns values.

@@ -18,8 +18,8 @@ import (
 )
 
 // openExecAttachConn is what attachSandboxExec calls to get its connection. A
-// TTY exec now gets the same reconnecting, replay transport a terminal attach
-// already uses, so a dropped websocket is recovered instead of ending the
+// TTY exec gets the same reconnecting, replay transport a terminal attach
+// uses, so a dropped websocket is recovered instead of ending the
 // attach: this drives the physical connection through a real host.Stream so
 // the resumable session handshake actually completes, then drops it and
 // checks for a second /attach request.

@@ -1,10 +1,12 @@
 // Package shell is the harness that is a plain login shell.
 //
-// It declares no run command, which is the contract for "the sandbox resolves
-// the user's login shell" — the control plane cannot know whether that is bash,
-// zsh, or fish, since the account lives in the image (ADR 0025 §3). Everything
-// else about it is an ordinary harness: its own image built on the sandbox
-// agent base, its own image.json, its own registry entry.
+// Its slug is the reserved harness.ShellSlug, and that is what withholds the
+// conventional run command when its image is registered: a harness with none is
+// the contract for "the sandbox resolves the user's login shell" (ADR 0043 §2)
+// — the control plane cannot know whether that is bash, zsh, or fish, since the
+// account lives in the image (ADR 0025). Everything else about it is an
+// ordinary harness: its own image built on the sandbox agent base, its own
+// registry entry. It has no image.json: it has nothing to override.
 package shell
 
 import "github.com/discobox-ai/discobox/harness"

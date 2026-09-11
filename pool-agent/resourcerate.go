@@ -9,7 +9,7 @@ import "time"
 // That unit is the whole point of reporting counters rather than percentages.
 // It is additive across sandboxes and comparable between them, so the column
 // sorts directly into "who is eating the pool" and sums to pool load, and
-// share-of-pool is just vcpus / Pool.CPUVCPUs (ADR 0071 §1).
+// share-of-pool is just vcpus / Pool.CPUVCPUs (ADR 0071 resource accounting §1).
 //
 // The window comes from the samples' own observation times, never from the
 // tick's wall clock, so skew inside a tick cannot distort a rate.
@@ -62,7 +62,7 @@ func windowSeconds(previousAt, currentAt time.Time) float64 {
 // recycled PID would be differenced against its predecessor's counter, and a
 // short-lived process reusing the PID of a long-lived one would difference into
 // a large negative — or, once the new process outran the old total, into a
-// spike that never happened (ADR 0071 §3).
+// spike that never happened (ADR 0071 resource accounting §3).
 type processKey struct {
 	pid        int64
 	startTicks int64

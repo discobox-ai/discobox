@@ -30,7 +30,7 @@ import (
 	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
-// The identity vocabulary is shared with everything outside the sandbox, so it
+// The identity vocabulary is shared with the manifest and the pool agent, so it
 // is one type rather than a parallel one that has to be converted (ADR 0025 §1).
 type (
 	User   = sandboxuser.User

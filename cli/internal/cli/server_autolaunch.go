@@ -50,8 +50,8 @@ func autoLaunchConfigured() bool {
 //
 // This is what lets a development build be told to launch one without
 // resorting to DISCOBOX_SERVER_AUTOLAUNCH: `--auto-start-server=true` starts
-// one for this invocation alone, `--auto-start-server=false` (or the bare
-// flag, which used to be `--no-start`) refuses to, and the development
+// one for this invocation alone, `--auto-start-server=false` refuses to, and
+// the development
 // default — off — is unchanged for anyone who never passes the flag.
 type autoStartServer string
 

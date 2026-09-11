@@ -56,7 +56,7 @@ func TestSSHIngressRouteServesTheHostKey(t *testing.T) {
 		t.Fatalf("hostKey = %v, want the server's host key", body["hostKey"])
 	}
 	// The address and the enabled flag are gone, not empty: a client that still
-	// reads them would be reading a distinction this server no longer draws.
+	// reads them would be reading a distinction this server does not draw.
 	for _, dropped := range []string{"address", "enabled"} {
 		if _, ok := body[dropped]; ok {
 			t.Fatalf("GET /ssh still carries %q: %v", dropped, body[dropped])

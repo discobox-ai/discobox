@@ -9,7 +9,7 @@ import (
 )
 
 // wslTestWindowsTools puts the Windows programs the bridge shells out to on
-// PATH: mirroring a key now sets its ACL, and that is icacls' job.
+// PATH: mirroring a key sets its ACL, and that is icacls' job.
 //
 // Like fakeWSLMachine, it is a set of shell scripts, and the bridge it stands
 // up only ever runs from inside a distribution: there is no WSL half on a

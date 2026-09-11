@@ -37,7 +37,7 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 	}{
 		{
 			// Not converged: the upgrade adopts the config, so it is available
-			// regardless of digest (ADR 0025 §4).
+			// regardless of digest (ADR 0032 §4).
 			name:          "harnessless upgrades to the fallback",
 			sandbox:       sandboxWithHarness("", "discobox-sandbox-agent:old", "sha256:old"),
 			config:        shell,

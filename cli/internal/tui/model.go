@@ -1154,7 +1154,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Not in the prompt. Ctrl-A is the composer's own "start of line", and
 	// taking an editing key away to save a quit that Ctrl-C already does there
 	// is the wrong trade. Ctrl-C still quits on every one of these screens; it
-	// is simply no longer what the window advertises.
+	// is simply not what the window advertises.
 	if m.leaderArmed {
 		m.leaderArmed = false
 		if keyName(msg) == paneQuitKey {

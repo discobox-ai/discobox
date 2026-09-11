@@ -16,11 +16,11 @@ import (
 // reason. A development build keeps :latest, and local development overrides
 // it with the server's `dockerPoolImage` setting — DISCOBOX_DOCKER_POOL_IMAGE
 // in the environment — which arrives here as ServerDefaults.PoolImage
-// (ADR 0096 §5).
+// (ADR 0096 §5, configuration file).
 var DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
 
 // ServerDefaults are the provider settings that belong to the server rather
-// than to any one provider instance (ADR 0096 §5). They arrive as a value
+// than to any one provider instance (ADR 0096 §5, configuration file). They arrive as a value
 // because they are configuration, and configuration is the server's to hold —
 // a provider that read them from the environment would be reading a file it
 // does not own.
@@ -38,7 +38,7 @@ type ServerDefaults struct {
 //
 // The override arrives as an argument rather than being read from the
 // environment here: it is server configuration, and the server is what holds
-// configuration (ADR 0096 §5).
+// configuration (ADR 0096 §5, configuration file).
 func EffectivePoolImage(image, override string) string {
 	if image = strings.TrimSpace(image); image != "" {
 		return image

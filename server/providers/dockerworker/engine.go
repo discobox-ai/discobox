@@ -54,22 +54,22 @@ const (
 	LabelPoolConfig         = "discobox.pool_agent.config_revision"
 	LabelProviderInstanceID = "discobox.provider_instance_id"
 	LabelPoolID             = "discobox.pool_id"
-	// LabelPoolEnvelope records the pool envelope applied to the worker
+	// LabelPoolEnvelope records the pool envelope applied to the pool-agent
 	// container, so an envelope change recreates the container through the
 	// normal label drift check.
 	LabelPoolEnvelope = "discobox.pool_envelope"
 )
 
-// Config configures the worker runtime engine. It describes the pool-agent
+// Config configures the pool runtime engine. It describes the pool-agent
 // container, not the VM: VM settings belong to the Driver.
 type Config struct {
-	// ControlPlaneURL is the URL the in-container worker agent registers with.
+	// ControlPlaneURL is the URL the in-container pool agent registers with.
 	ControlPlaneURL string
 	// Image is the pool-agent container image.
 	Image string
-	// Network is an optional additional Docker network for worker containers.
+	// Network is an optional additional Docker network for pool-agent containers.
 	Network string
-	// AgentPort is the container port the worker agent listens on.
+	// AgentPort is the container port the pool agent listens on.
 	AgentPort int
 	// PublicAgentPort publishes the harness port on all interfaces at the fixed
 	// harness port so the control plane can reach it at the VM's address. When
@@ -86,18 +86,18 @@ type Config struct {
 	// carries its transport in the scheme.
 	AgentListenURL string
 	// Privileged overrides the privileged flag, which defaults to true because
-	// the worker runs systemd as PID 1.
+	// the pool-agent container runs systemd as PID 1.
 	Privileged *bool
 	// CgroupNSMode overrides the container cgroup namespace mode.
 	CgroupNSMode string
 	// Command overrides the container command.
 	Command []string
-	// DockerSocket is the Docker socket path bound into the worker container
-	// so the worker agent can manage sandbox containers.
+	// DockerSocket is the Docker socket path bound into the pool-agent
+	// container so the pool agent can manage sandbox containers.
 	DockerSocket string
 	// RelaySocketDir is a directory on the filesystem of the Docker daemon
 	// hosting this pool — for a VM backend that is the guest, not the machine
-	// running the control plane — bound into the worker container at the same
+	// running the control plane — bound into the pool-agent container at the same
 	// path. A backend whose control-plane transport is terminated by a relay
 	// beside the daemon puts that relay's socket here, so the agent reaches it
 	// with an ordinary unix:// URL.
@@ -125,9 +125,9 @@ type Config struct {
 	HostMounts []HostMount
 	// ExtraHosts adds /etc/hosts entries, such as the Docker host gateway.
 	ExtraHosts []string
-	// Labels are applied to every worker container, such as the provider type.
+	// Labels are applied to every pool-agent container, such as the provider type.
 	Labels map[string]string
-	// DockerReadyTimeout bounds how long EnsureWorker waits for a freshly
+	// DockerReadyTimeout bounds how long acquireDockerReady waits for a freshly
 	// launched VM's Docker daemon to become reachable.
 	DockerReadyTimeout time.Duration
 	// ProgressReporter records what bringing this pool host up is doing right
@@ -157,7 +157,7 @@ type Config struct {
 }
 
 // Engine runs pool-agent containers over Driver-provided Docker access. It
-// implements the worker provider surface consumed by the worker pool.
+// is the pool runtime a Docker-backed provider hands to poolruntime.New.
 type Engine struct {
 	driver         Driver
 	cfg            Config
@@ -167,7 +167,7 @@ type Engine struct {
 	imageReclaim imageReclaimThrottle
 }
 
-// New creates a worker runtime engine over a VM driver.
+// New creates a pool runtime engine over a VM driver.
 func New(cfg Config, driver Driver) (*Engine, error) {
 	if driver == nil {
 		return nil, errors.New("dockerworker driver is required")
@@ -223,14 +223,14 @@ func (e *Engine) Close() error {
 // Image returns the pool-agent container image the engine launches.
 func (e *Engine) Image() string { return e.cfg.Image }
 
-// HostMounts are the host paths this engine carries into its workers, cleaned
-// and deduplicated as the engine will mount them. A worker sees a host
+// HostMounts are the host paths this engine carries into its pools, cleaned
+// and deduplicated as the engine will mount them. A pool sees a host
 // directory only if it is one of these, so callers deciding what a sandbox can
 // reach on this filesystem read them from here rather than re-deriving them
 // from a provider's raw configuration.
 func (e *Engine) HostMounts() []HostMount { return e.cfg.HostMounts }
 
-// ConfigRevision identifies the desired worker container configuration. It is
+// ConfigRevision identifies the desired pool-agent container configuration. It is
 // stamped as a label and compared to detect drift.
 func (e *Engine) ConfigRevision() string { return e.configRevision }
 
@@ -241,8 +241,8 @@ func (e *Engine) privileged() bool {
 	return true
 }
 
-// configRevision hashes every setting that shapes the worker container so
-// changing any of them recreates workers.
+// configRevision hashes every setting that shapes the pool-agent container so
+// changing any of them recreates it.
 func configRevision(cfg Config) string {
 	payload := struct {
 		Config             Config `json:"config"`
@@ -294,7 +294,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 }
 
 func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, _ string) error {
-	// Replace the VM only when it is missing or unhealthy; worker-local state
+	// Replace the VM only when it is missing or unhealthy; pool-local state
 	// such as named volumes survives container replacement on a healthy VM.
 	vmInfo, err := e.driver.InspectVM(ctx, pool.ID)
 	if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
@@ -414,7 +414,7 @@ func (e *Engine) vmSpec(provider *model.SandboxProviderInstance, pool *model.Poo
 	return VMSpec{Name: ContainerName(pool.ID), Metadata: metadata}
 }
 
-// acquireDockerReady acquires the worker's Docker client and waits for the
+// acquireDockerReady acquires the pool's Docker client and waits for the
 // daemon to answer pings, bounding the time a freshly booted VM gets to bring
 // Docker up. Drivers do not implement readiness waiting themselves.
 func (e *Engine) acquireDockerReady(ctx context.Context, poolID string) (*DockerClientLease, error) {
@@ -565,7 +565,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		config.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
 		waitForHealth = false
 	}
-	// The pool envelope is the worker container limit: per-sandbox limits nest
+	// The pool envelope is the pool-agent container limit: per-sandbox limits nest
 	// inside it, so overcommit falls out of the runtime hierarchy rather than
 	// scheduler arithmetic. Zero values leave the container host-sized.
 	if pool != nil {
@@ -579,7 +579,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if e.cfg.CgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(e.cfg.CgroupNSMode)
 	} else {
-		// systemd (PID 1 in the worker) must create its own cgroup subtree. A
+		// systemd (PID 1 in the pool-agent container) must create its own cgroup subtree. A
 		// private cgroup namespace makes Docker mount a writable cgroup2 hierarchy
 		// delegated to the container; bind-mounting the host /sys/fs/cgroup instead
 		// drops the container onto the read-only host cgroup root and systemd exits
@@ -592,9 +592,10 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if e.cfg.Network != "" {
 		networkConfig.EndpointsConfig = map[string]*network.EndpointSettings{e.cfg.Network: {}}
 	}
-	// Workers run the shared proxy that their sandboxes route through. Create
-	// the per-worker internal network so the worker can be aliased as the proxy
-	// server name on it and sandboxes can reach only the proxy.
+	// Pool agents run the shared proxy that their sandboxes route through.
+	// Create the per-pool internal network so the pool-agent container can be
+	// aliased as the proxy server name on it and sandboxes can reach only the
+	// proxy.
 	if err := e.ensureSandboxNetwork(ctx, cli, pool.ID); err != nil {
 		return nil, err
 	}
@@ -640,7 +641,7 @@ func (e *Engine) removePoolContainer(ctx context.Context, cli *client.Client, po
 // removeSandboxNetwork removes the per-pool internal network. Any container
 // still attached — a sandbox that outlived the pool teardown race, or a stale
 // endpoint — makes Docker refuse the removal with "network has active
-// endpoints", which previously leaked the network and its scarce address block.
+// endpoints", which would leak the network and its scarce address block.
 // Force-disconnect every endpoint first, then remove; surface a persistent
 // failure so the level-triggered pool reconcile retries instead of leaking.
 func (e *Engine) removeSandboxNetwork(ctx context.Context, cli *client.Client, poolID string) error {
@@ -661,7 +662,7 @@ func (e *Engine) removeSandboxNetwork(ctx context.Context, cli *client.Client, p
 	return nil
 }
 
-// ensureSandboxNetwork creates the per-worker internal bridge network if absent.
+// ensureSandboxNetwork creates the per-pool internal bridge network if absent.
 func (e *Engine) ensureSandboxNetwork(ctx context.Context, cli *client.Client, poolID string) error {
 	name := proxyagent.SandboxNetworkName(poolID)
 	if _, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err == nil {
@@ -695,14 +696,14 @@ func (e *Engine) containerLabels(provider *model.SandboxProviderInstance, pool *
 	return labels
 }
 
-// poolEnvelopeRevision encodes the envelope values applied to the worker
+// poolEnvelopeRevision encodes the envelope values applied to the pool-agent
 // container, compared through the label drift check so envelope changes
 // recreate the container.
 func poolEnvelopeRevision(pool *model.Pool) string {
 	return fmt.Sprintf("cpu=%.3f,mem=%d", pool.CPUVCPUs, pool.MemoryBytes)
 }
 
-// ShouldReconcileWorkerContainer reports whether a worker container drifted
+// ShouldReconcileWorkerContainer reports whether a pool-agent container drifted
 // from the engine's desired image or labels. It is shared with runtime drift
 // watchers.
 func (e *Engine) ShouldReconcileWorkerContainer(image string, labels map[string]string) bool {
@@ -882,8 +883,8 @@ func shortContainerID(id string) string {
 	return id
 }
 
-// AssignedAgentEndpoint resolves the published host endpoint for the worker
-// harness port from a container's port map.
+// AssignedAgentEndpoint resolves the published host endpoint for the pool
+// agent's port from a container's port map.
 func AssignedAgentEndpoint(ports network.PortMap, agentPort int) (string, int) {
 	port, ok := agentNetworkPort(agentPort)
 	if !ok {
@@ -920,7 +921,7 @@ func mapDockerNotFound(err error) error {
 
 var invalidContainerName = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
 
-// ContainerName is the deterministic pool-agent container name for a worker.
+// ContainerName is the deterministic pool-agent container name for a pool.
 func ContainerName(poolID string) string {
 	name := invalidContainerName.ReplaceAllString(poolID, "-")
 	name = strings.Trim(name, "-_.")

@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// Peer is a machine permitted to connect to this server (ADR 0095). It is the
+// Peer is a machine permitted to connect to this server (ADR 0095, enrolled iroh IDs). It is the
 // managed half of the two authorization layers, beside the server-wide
 // `<data dir>/authorized_ids` file, which is not a database resource and is
 // what an operator falls back to when the API is what they are trying to
@@ -18,7 +18,7 @@ type Peer struct {
 	// the primary key. There is no generated identifier: the peer ID is
 	// already unique and stable, and it is the exact string an operator pasted
 	// and would find in authorized_ids. A second name for it would be the only
-	// one that is not the address (ADR 0095 §2).
+	// one that is not the address (ADR 0095 §2, enrolled iroh IDs).
 	ID string `gorm:"primaryKey;type:text" json:"id" doc:"Peer ID"`
 
 	Name      string    `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Optional label for the enrollment"`

@@ -15,7 +15,8 @@ import (
 
 // A tool's configuration lives on this machine, not in the project and not in
 // the discobox: it is how *you* like your editor, which is a fact about you
-// rather than about the repository or about any one box (ADR 0071).
+// rather than about the repository or about any one box (ADR 0071 on tool
+// sessions).
 //
 // So there is nothing here that talks to the control plane. The copy is a file
 // under the user's config directory, the discobox gets it through one exec that

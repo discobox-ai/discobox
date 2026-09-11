@@ -1,4 +1,4 @@
-// Package docker registers the "docker" provider type: workers run as
+// Package docker registers the "docker" provider type: pools run as
 // containers on the local Docker daemon. It provides the local VM driver for
 // the shared dockerworker engine — VM CRUD is a no-op because the host is the
 // "VM" — plus a runtime drift watcher over the shared daemon.
@@ -30,10 +30,10 @@ const (
 	labelProviderType = "discobox.provider_type"
 )
 
-// DefaultImage returns the default Docker worker image.
+// DefaultImage returns the default pool-agent image for Docker pools.
 func DefaultImage() string { return dockerworker.DefaultPoolImage }
 
-// DefaultAgentPort returns the default worker-agent port exposed by Docker workers.
+// DefaultAgentPort returns the default pool-agent port exposed by Docker pools.
 func DefaultAgentPort() int { return defaultAgentPort }
 
 // Config is the persisted provider instance configuration.
@@ -105,7 +105,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 //
 // Two things have to hold, and the host mounts are the second: the daemon must
 // share a filesystem with this process, and the path must be one of the ones
-// this instance carries into its pool workers. A pool worker sees a host
+// this instance carries into its pools. A pool sees a host
 // directory only if it was mounted for it (dockerworker.Engine.containerMounts),
 // so the mounts are the whole answer — the sources are named here rather than
 // their in-container targets, because the caller compares them against a path

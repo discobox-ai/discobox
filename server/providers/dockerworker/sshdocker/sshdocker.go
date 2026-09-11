@@ -58,7 +58,7 @@ func ParseURL(value string) (Target, error) {
 	return target, nil
 }
 
-// Dialer opens SSH connections to worker VMs and adapts them into Docker API
+// Dialer opens SSH connections to pool VMs and adapts them into Docker API
 // client leases that dial the in-VM Unix socket.
 type Dialer struct {
 	user   string
@@ -134,7 +134,7 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*ssh.Client, error) {
 	config := &ssh.ClientConfig{
 		User:            user,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(d.signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // Fresh worker VMs have no pinnable host key; see comment above.
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // Fresh pool VMs have no pinnable host key; see comment above.
 		Timeout:         connectTimeout,
 	}
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)

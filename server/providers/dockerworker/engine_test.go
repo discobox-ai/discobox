@@ -120,7 +120,7 @@ func TestNewDefaults(t *testing.T) {
 	if engine.cfg.DockerSocket != dockerSocketPath {
 		t.Fatalf("dockerSocket = %q", engine.cfg.DockerSocket)
 	}
-	// The worker always runs systemd as PID 1, so it is privileged and runs the
+	// The pool-agent container always runs systemd as PID 1, so it is privileged and runs the
 	// pool agent unless the caller overrides either.
 	if !engine.privileged() {
 		t.Fatalf("privileged default = false, want true")

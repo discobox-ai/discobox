@@ -67,7 +67,7 @@ func LoadEnvFile() {
 // Config holds all configuration for discobox-server.
 //
 // The struct tags are the source of truth for the configuration file and its
-// JSON Schema (ADR 0096 §2): `yaml` is the key, `env` the variable that
+// JSON Schema (ADR 0096 §2, configuration file): `yaml` is the key, `env` the variable that
 // overrides it, `default` the literal default rendered into the schema, and
 // `doc` the description an operator reads in their editor. A field tagged
 // `yaml:"-"` is derived rather than configured, and appears in neither.
@@ -168,7 +168,7 @@ type Config struct {
 // IrohSettings configures the iroh transport's reach.
 type IrohSettings struct {
 	// RelayURLs replaces n0's public relays with a deployment's own
-	// (ADR 0096 §6). Empty keeps n0's, which are free but rate-limited,
+	// (ADR 0096 §6, configuration file). Empty keeps n0's, which are free but rate-limited,
 	// shared, and carry no uptime guarantee.
 	//
 	// Clients need the same list. An address carries a peer ID and nothing
@@ -189,7 +189,7 @@ type IrohSettings struct {
 //
 // The path comes from the environment and nowhere else. `configDir` is itself
 // a setting, so letting it relocate the file that declares it is a loop with no
-// fixed point (ADR 0096 §1).
+// fixed point (ADR 0096 §1, configuration file).
 const (
 	ConfigFileVar         = "DISCOBOX_CONFIG_FILE"
 	DefaultConfigFileName = "server.yaml"
@@ -206,7 +206,7 @@ func ConfigFilePath() string {
 }
 
 // Load resolves configuration from defaults, then the configuration file, then
-// the environment — in that order, so the environment wins (ADR 0096 §4).
+// the environment — in that order, so the environment wins (ADR 0096 §4, configuration file).
 //
 // A missing file is not an error: the environment alone configures a server
 // completely, which is what keeps a deployment that has never seen this file
@@ -234,7 +234,7 @@ func Load() (*Config, error) {
 		case os.IsNotExist(err):
 			// A path the operator named explicitly is different. Reading
 			// nothing there and starting on defaults is the silent
-			// misconfiguration this file exists to prevent (ADR 0096 §3), and
+			// misconfiguration this file exists to prevent (ADR 0096 §3, configuration file), and
 			// it is the one setting no schema can check, because it is what
 			// finds the schema.
 			return nil, fmt.Errorf("%s names %s, which does not exist", ConfigFileVar, path)

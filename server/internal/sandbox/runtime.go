@@ -123,7 +123,7 @@ type CreateOptions struct {
 	Labels map[string]string
 	Env    map[string]string
 	// Sentinels are the placeholder secret values injected into the sandbox that
-	// the worker registers with the proxy for runtime swapping.
+	// the pool agent registers with the proxy for runtime swapping.
 	Sentinels []string
 	// SecretEnv maps each secret-bound environment variable name to its
 	// sentinel placeholder value. Unlike Env, these never ride in the static

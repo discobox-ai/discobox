@@ -7,8 +7,8 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-// RuntimeState is the engine-owned worker runtime state persisted on the
-// worker row. InstanceID identifies the driver's VM (empty for the local
+// RuntimeState is the engine-owned pool runtime state persisted on the
+// pool row. InstanceID identifies the driver's VM (empty for the local
 // driver); ContainerID identifies the pool-agent container in that VM's
 // Docker daemon.
 type RuntimeState struct {
@@ -16,7 +16,7 @@ type RuntimeState struct {
 	ContainerID string `json:"containerId,omitempty"`
 }
 
-// DecodeRuntimeState parses persisted worker runtime state. It returns
+// DecodeRuntimeState parses persisted pool runtime state. It returns
 // sandbox.ErrNotFound when the state is empty or carries no runtime identity.
 func DecodeRuntimeState(data []byte) (RuntimeState, error) {
 	if len(data) == 0 {

@@ -548,7 +548,7 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	if err != nil {
 		// A refusal can land here rather than on the request below. The server
 		// closes an accepted connection the moment it decides against the peer
-		// (ADR 0095 §4), and whether that close arrives before or after this
+		// (ADR 0095 enrolled iroh IDs §4), and whether that close arrives before or after this
 		// call is a race nothing on this side controls — so both places ask the
 		// connection why it went away, and a refused peer is reported as one
 		// either way. Blaming the stream sends an operator to look for a broken
@@ -570,7 +570,7 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 
 	// The refusal lands here rather than at the handshake: a server accepts a
 	// connection, checks the peer against its allowlist, and closes with the
-	// reason if it says no (ADR 0095 §4). Opening a stream costs no round trip,
+	// reason if it says no (ADR 0095 enrolled iroh IDs §4). Opening a stream costs no round trip,
 	// so this request is usually the first thing that can notice — usually,
 	// because a close that arrives sooner fails the open above instead, which
 	// is why that path asks the same question.

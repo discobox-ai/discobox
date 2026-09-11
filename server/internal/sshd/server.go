@@ -1,7 +1,7 @@
-// Package sshd is the SSH control-plane ingress ADR 0024 describes: a
-// listener on discobox-server that maps SSH session channels onto the
-// existing exec primitive and, for direct-tcpip, a new sandbox-agent TCP
-// dial endpoint. It authenticates independently of internal/auth's HTTP
+// Package sshd is the SSH control-plane ingress ADR 0024 describes, reached
+// only through the /ssh/connect websocket route (ADR 0057) — there is no TCP
+// listener. It maps SSH session channels onto the existing exec primitive
+// and, for direct-tcpip, a sandbox-agent TCP dial endpoint. It authenticates independently of internal/auth's HTTP
 // Authentication/Authorization chain — see DESIGN.md — and, once a
 // connection is authenticated, drives services.SandboxService exactly the
 // way an HTTP caller would.

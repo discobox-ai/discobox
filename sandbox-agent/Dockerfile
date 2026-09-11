@@ -94,9 +94,8 @@ RUN set -eux \
 # pulls those layers once. See base-image/Dockerfile.
 #
 # The install steps below are split into a layer per tool group, ordered
-# stablest first. They used to be one 4GB RUN, which meant adding a single apt
-# package re-pulled every language runtime on every pool host and in every
-# harness image. A layer boundary costs nothing and bounds the blast radius of
+# stablest first. As one 4GB RUN, adding a single apt package would re-pull
+# every language runtime on every pool host and in every harness image. A layer boundary costs nothing and bounds the blast radius of
 # each edit to the tools it actually touched.
 FROM ${BASE_IMAGE} AS sandbox-agent
 
@@ -223,7 +222,7 @@ RUN set -eux; \
     systemctl enable nix-daemon.socket; \
     nix profile install nixpkgs#devenv nixpkgs#bashInteractive; \
     devenv --version; \
-    # ADR 0086: the stamp that guards the seed names the store it was cut
+    # ADR 0085: the stamp that guards the seed names the store it was cut
     # from, and a pool cache that already holds another build's store merges
     # this one in instead of overwriting the database that pool has been
     # writing to. Both need facts only the build knows, recorded beside the
@@ -372,8 +371,8 @@ RUN set -eux \
 # It is built at /opt rather than /etc/ssl/certs, and by a redirected copy of
 # update-ca-certificates rather than the tool itself, because a build running
 # inside a Discobox sandbox has /etc/ssl/certs bind-mounted over by the runc
-# wrapper: writes there go to the mount and vanish when the layer commits, which
-# is why the image used to ship an empty store. LOCALCERTSDIR is pointed away so
+# wrapper: writes there go to the mount and vanish when the layer commits,
+# leaving the image with an empty store. LOCALCERTSDIR is pointed away so
 # no build-time anchor is baked in; anchors belong to the sandbox that boots, and
 # it adds its own.
 RUN set -eux \
@@ -437,7 +436,8 @@ COPY sandbox-agent/image/desktop/launchers /usr/local/share/discobox/desktop/lau
 # The desktop's own service declaration, in the same format a repository's
 # `.discobox/services` uses and read from the same code. It declares the port
 # and what it speaks so the port watcher never has to connect to it — which for
-# a socket-activated service is what would start it (ADR 0094).
+# a socket-activated service is what would start it (ADR 0094, image-declared
+# services).
 COPY sandbox-agent/image/services /usr/local/share/discobox/services
 # Chromium is this image's browser, so it is what a link opens. See the file.
 COPY sandbox-agent/image/desktop/mimeapps.list /etc/xdg/mimeapps.list
@@ -570,7 +570,7 @@ LABEL io.discobox.image.v1.10-sandbox-base=${IMAGE_LAYER_METADATA}
 
 WORKDIR /workspace
 # No VOLUME directives: the sandbox-agent init flow (PID 1) wires all persistent
-# and cached paths from the primary volumes the worker mounts, per ADR 0007.
+# and cached paths from the primary volumes the pool agent mounts, per ADR 0007.
 # Anonymous volumes here would only shadow those binds.
 EXPOSE 6080 6900
 ENTRYPOINT ["/usr/local/bin/discobox-sandbox-agent", "init"]

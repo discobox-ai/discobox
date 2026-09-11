@@ -88,7 +88,7 @@ type AgentRuntime struct {
 	IdleTimeout string `json:"idleTimeout,omitempty"`
 }
 
-// Source is a worker-materialized source the sandbox-agent bind-mounts from
+// Source is a pool-agent-materialized source the sandbox-agent bind-mounts from
 // /.discobox/sources/<slug> onto its in-sandbox target.
 type Source struct {
 	Slug   string `json:"slug"`
@@ -131,15 +131,15 @@ type Source struct {
 	UpstreamRef string `json:"upstreamRef,omitempty"`
 }
 
-// User is the sandbox user identity as the manifest publishes it. Fields the
-// request did not give stay unset: the pool agent cannot resolve a sandbox's
-// names or invent its ids, so it forwards what it was told and the sandbox
-// resolves the rest (ADR 0025 §4). A wholly empty User means the manifest named
-// nobody and the image's own account stands (§5).
-// User is the identity a sandbox runs as. It is an alias rather than a parallel
-// type: the API, the manifest, the pool agent, and the launch path all describe
-// identity with one vocabulary, so a field cannot mean one thing here and
-// something else one layer in (ADR 0025 §1).
+// User is the sandbox user identity as the manifest publishes it. It is an
+// alias rather than a parallel type: the manifest, the pool agent, and the
+// launch path describe identity with one type, so a field cannot mean one
+// thing here and something else one layer in (ADR 0025 §1).
+//
+// Fields the request did not give stay unset: the pool agent cannot resolve a
+// sandbox's names or invent its ids, so it forwards what it was told and the
+// sandbox resolves the rest (ADR 0025 §4). A wholly empty User means the
+// manifest named nobody and the image's own account stands (ADR 0025 §5).
 type User = sandboxuser.User
 
 // GitIdentity is the authorship the sandbox commits under. It is deliberately
@@ -201,9 +201,10 @@ type ImageLayer struct {
 	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 }
 
-// ProjectLayer is the resolved source repository's contribution, read once at
-// the commit pool-agent clones. It is never re-read once the sandbox is
-// running (docs/adr/0012 §7).
+// ProjectLayer is the resolved source repository's contribution, read by
+// pool-agent at the commit it clones and, for a push-delivered source, re-read
+// when the push lands, before the sandbox is released to run anything. Nothing
+// reads it inside a running sandbox (docs/adr/0012 §7).
 type ProjectLayer struct {
 	// RunCommand and RelaunchCommand are override-grant only: when non-empty
 	// they replace the image's value wholesale.

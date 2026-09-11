@@ -18,7 +18,7 @@ import (
 // them: enable one — which runs the harness's own setup — disable it, make it
 // the project default, read what it is set to, and edit the files it carries.
 //
-// It is `discobox configure`, folded into the window. That command is now this
+// It is `discobox configure`, folded into the window. That command is this
 // screen opened directly (WithHarnesses), so there is one list of harnesses
 // with one set of keys rather than a second program with its own idea of both.
 //
@@ -866,9 +866,10 @@ func (m *Model) harnessHints() []hint {
 // ---------------------------------------------------------------------------
 // exec
 
-// harnessExec hands the terminal to an action that needs a real one: the
-// harness's own setup, $EDITOR on one of its files, and $EDITOR on a tool's
-// config (tools.go).
+// harnessExec hands the terminal to an action that needs a real one: $EDITOR
+// on one of a harness's files, and $EDITOR on a tool's config (tools.go). A
+// harness's own setup is not one of them: it runs in a configuration pane
+// (OpenHarnessConfigure).
 //
 // Bubble Tea releases the terminal — the alternate screen, raw mode, its own
 // input reader — for as long as the action runs and takes it back when it
@@ -878,7 +879,7 @@ type harnessExec struct {
 	// title names what is taking the terminal, printed at the top of the
 	// screen this clears.
 	title string
-	// ctx is the window's, and the parent of the one the flow is given.
+	// ctx is the window's, and the parent of the one the action is given.
 	ctx context.Context
 	run func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error
 
@@ -891,13 +892,13 @@ func (c *harnessExec) SetStdin(r io.Reader)  { c.stdin = r }
 func (c *harnessExec) SetStdout(w io.Writer) { c.stdout = w }
 func (c *harnessExec) SetStderr(w io.Writer) { c.stderr = w }
 
-// Run gives the flow a screen of its own.
+// Run gives the action a screen of its own.
 //
 // tea.Exec puts the window back on the primary screen and steps aside, and the
 // primary screen still holds whatever was on it before the window opened — the
 // shell prompt, the command line, whatever the CLI printed on its way here. The
-// flow then prints its first line into the middle of all that, which reads as
-// two screens drawn over each other. Clearing first is what makes the handover
+// action then draws into the middle of all that, which reads as two screens
+// drawn over each other. Clearing first is what makes the handover
 // look like one.
 func (c *harnessExec) Run() error {
 	clearScreen(c.stdout, c.title)
@@ -906,11 +907,11 @@ func (c *harnessExec) Run() error {
 	// Bubble Tea keeps its SIGINT handler installed while it steps aside —
 	// ReleaseTerminal only sets ignoreSignals, so the signal is still delivered
 	// to it and then dropped. A registered handler is also what turns off Go's
-	// default terminate-on-interrupt. So nothing was listening: ^C during a
-	// flow that can wait minutes on an image pull did nothing at all.
+	// default terminate-on-interrupt. So without this nothing is listening,
+	// and ^C during the action does nothing at all.
 	//
 	// Notifying here puts a second listener on the same signal, which Go
-	// delivers to both, and this one cancels the flow.
+	// delivers to both, and this one cancels the action.
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -924,7 +925,7 @@ func (c *harnessExec) Run() error {
 // names what is about to use it.
 //
 // The scrollback goes too (\x1b[3J). Without it the cleared rows are still
-// there to scroll back into, and what a user finds above a fresh flow is the
+// there to scroll back into, and what a user finds above a fresh action is the
 // window that was supposed to have stepped aside.
 func clearScreen(out io.Writer, title string) {
 	if out == nil {

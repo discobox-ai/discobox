@@ -55,7 +55,7 @@ const (
 	// A pass is one container inspect and one loopback GET, so the interval is
 	// what actually bounds how late a ready sandbox is noticed. It is short
 	// because this is create latency a person waits through, and because a pass
-	// costs well under a millisecond now that it no longer lists containers.
+	// lists no containers and costs well under a millisecond.
 	sandboxAgentPollInterval = 25 * time.Millisecond
 
 	// The pool host provisions host-backed roots and mounts them at these
@@ -174,7 +174,7 @@ type Runtime interface {
 	// tree by intent (ADR 0022 §6), and a sandbox whose container was lost out
 	// of band keeps one too until the reaper's retention expires. Both are
 	// still occupying the disk they occupied while running, so anything
-	// accounting for storage has to see them (ADR 0071 §7).
+	// accounting for storage has to see them (ADR 0071 resource accounting §7).
 	StoredSandboxIDs(ctx context.Context) ([]string, error)
 	GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error)
 	CreateSandbox(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (*Sandbox, error)
@@ -454,9 +454,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Mounts:     mounts,
 		Privileged: true,
 	}
-	// No CPU/memory limit is set here: a sandbox container shares its worker
+	// No CPU/memory limit is set here: a sandbox container shares its pool
 	// container's cgroup rather than reserving a nested slice of it
-	// (docs/adr/0025).
+	// (ADR 0029).
 	// Attach the sandbox to the per-pool internal network only: it reaches the
 	// pool proxy (resolved as discobox-pool-proxy via Docker embedded DNS)
 	// and DNS, but has no route off-box, so all egress is forced through the proxy.
@@ -850,7 +850,7 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 }
 
 // prepareSandboxVolumes provisions the four host-backed roots and returns their
-// container mounts. The pool host no longer decides in-sandbox paths (home,
+// container mounts. The pool host does not decide in-sandbox paths (home,
 // /var/lib/docker, sources targets); it only supplies the primary volumes. The
 // sandbox-agent wires everything else from the image's declarative volume list
 // and the manifest's source list (ADR 0007).
@@ -1223,14 +1223,14 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 				UserEmail: optString(git.UserEmail),
 			}
 		}
-		// The pool owns the effective sandbox user used for the home mount and
-		// container environment. Publish that fully resolved identity even when
-		// the request omitted or partially specified config.user, so the
-		// sandbox-agent installs harness files and launches commands against the
-		// same home directory.
+		// The run user is the request's config.user, trimmed and passed through
+		// sandboxuser.Merge as its only layer. The pool resolves nothing further:
+		// what the request left unset stays unset here, for the sandbox-agent to
+		// resolve against the image (ADR 0033 §5). It is the same value the
+		// create path uses for the home mount and container environment.
 		user := resolveSandboxUser(req)
 		doc.Runtime.User = user
-		// The sandbox-agent bind-mounts each worker-materialized source from
+		// The sandbox-agent bind-mounts each pool-materialized source from
 		// /.discobox/sources/<slug> onto its target as this same user (ADR 0007).
 		for _, source := range sandboxSources(req) {
 			doc.Runtime.Sources = append(doc.Runtime.Sources, sandboxconfig.Source{
@@ -1510,9 +1510,9 @@ func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, er
 // establishing a Docker event subscription, on managed sandbox destroy events,
 // and on a slow level-triggered backstop.
 //
-// It no longer reports anything to the control plane: a sandbox whose container
-// is gone is an observation, and observations travel on the state channel
-// (statereport.go). This is now only about reclaiming disk.
+// It reports nothing to the control plane: a sandbox whose container is gone
+// is an observation, and observations travel on the state channel
+// (statereport.go). This is only about reclaiming disk.
 func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
@@ -3557,12 +3557,12 @@ func cloneSandbox(sb *Sandbox) *Sandbox {
 }
 
 // validateCreateRequest refuses a create the control plane did not fully
-// resolve. The pool agent runs what it is told and invents nothing: it used to
-// substitute a plain alpine image for a missing one, which cannot host a
-// sandbox agent at all, so the result was a container that could never answer
-// instead of a failure naming the request that was wrong. Every sandbox carries
-// a harness config (ADR 0025), so a request without one is a control plane that
-// failed to resolve it, not a sandbox asking for a bare shell.
+// resolve. The pool agent runs what it is told and invents nothing: it
+// substitutes no image for a missing one, because a stand-in image cannot host
+// a sandbox agent, and a container that can never answer says less than a
+// failure naming the request that was wrong. Every sandbox carries a harness
+// config (ADR 0032), so a request without one is a control plane that failed
+// to resolve it, not a sandbox asking for a bare shell.
 func validateCreateRequest(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
 	if strings.TrimSpace(optString(req.Config.Image)) == "" {
 		return fmt.Errorf("sandbox %s: create request has no image", sandboxID)

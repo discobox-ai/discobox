@@ -12,9 +12,9 @@ import (
 // The form: one card that asks everything a decision needs, instead of a run of
 // dialogs that ask one thing each.
 //
-// A pre-approval used to be seven questions in a row — scope, what it resolves
-// against, how it may be used, the variable, the use, the host, the lifetime —
-// and a sequence of modals is the wrong shape for that. Nothing can be revised
+// A pre-approval is seven questions — scope, what it resolves against, how it
+// may be used, the variable, the use, the host, the lifetime — and a sequence
+// of modals is the wrong shape for that. Nothing can be revised
 // without abandoning the run and starting again, the answers already given are
 // off screen by the third question, and a person can only see the shape of what
 // they are granting once it is granted.

@@ -77,7 +77,7 @@ type Response struct {
 	// onto one without being told its number.
 	Ports []ports.Port `json:"ports"`
 	// Resources is this sandbox's own CPU and memory consumption, as
-	// cumulative counters rather than rates (ADR 0071). Turning them into
+	// cumulative counters rather than rates (ADR 0071, resource accounting). Turning them into
 	// "how busy" is the pool agent's job: it polls every sandbox in the pool
 	// on one tick, so it can difference them all over the same window and the
 	// resulting ranking compares like with like.

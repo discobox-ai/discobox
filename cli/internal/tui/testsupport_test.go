@@ -1045,16 +1045,10 @@ func newTestModel(t *testing.T, ds DataSource) *Model {
 	return m
 }
 
-// send drives the model the way the runtime would, feeding back the messages the
-// commands it returns produce, so a frame can be looked at without a terminal.
-//
-// The timers — the cursor blink, the status expiry, the resize settle, the
-// refresh tick — are given up on rather than waited for: they are sleeps, and
-// waiting for them only buys a slower test.
 // finishConfigure ends the configuration pane's terminal, which is what
 // carries a setup flow's follow-up: the default the prompt promised to set,
 // and the run that was waiting on the answer. Opening the pane is where
-// configureHarnessThen now stops, so a test asserting on either has to close
+// configureHarnessThen stops, so a test asserting on either has to close
 // it first.
 func finishConfigure(t *testing.T, m *Model) *Model {
 	t.Helper()
@@ -1065,6 +1059,12 @@ func finishConfigure(t *testing.T, m *Model) *Model {
 	return send(t, m, paneMsg{id: p.id, msg: termpane.ClosedMsg{}})
 }
 
+// send drives the model the way the runtime would, feeding back the messages the
+// commands it returns produce, so a frame can be looked at without a terminal.
+//
+// The timers — the cursor blink, the status expiry, the resize settle, the
+// refresh tick — are given up on rather than waited for: they are sleeps, and
+// waiting for them only buys a slower test.
 func send(t *testing.T, m *Model, msgs ...tea.Msg) *Model {
 	t.Helper()
 	for _, msg := range msgs {
@@ -1388,7 +1388,7 @@ func (f *fakeSource) DeleteSecret(_ context.Context, secretID string) error {
 }
 
 // hintLine is the key line as one string, the way the status line joins it.
-// The hints themselves are key/label pairs now — a hint that names a key is a
+// The hints themselves are key/label pairs — a hint that names a key is a
 // button for it — and what most of these tests read is the text.
 func hintLine(hints []hint) string {
 	text := make([]string, 0, len(hints))

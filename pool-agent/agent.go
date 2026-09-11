@@ -329,7 +329,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 			poller := startSandboxAgentStatusPoller(ctx, logger, bootstrap, registration, runtime, statusClient)
 			// The resource reporter reads the counters that poll already
 			// collected rather than polling every sandbox a second time, so it
-			// only runs where the poller does (ADR 0071 §2).
+			// only runs where the poller does (ADR 0071 resource accounting §2).
 			if resourceClient, ok := reporter.(PoolResourceClient); ok && poller != nil {
 				startPoolResourceReporter(ctx, logger, bootstrap, registration, runtime, poller, resourceClient)
 			}
@@ -375,7 +375,7 @@ func availableCPUVCPUs() float64 {
 // poolFreeStorageBytes is what the scheduler places against: the space an
 // unprivileged writer can still use on the filesystem behind a path. What the
 // pool actually holds, broken down by sandbox, rides the resource report
-// instead (ADR 0071) — this one number is a scheduling input, not accounting.
+// instead (ADR 0071 resource accounting) — this one number is a scheduling input, not accounting.
 func poolFreeStorageBytes(path string) int64 {
 	usage, ok := filesystemUsage(path)
 	if !ok {

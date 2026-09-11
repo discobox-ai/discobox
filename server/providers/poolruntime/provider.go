@@ -245,11 +245,10 @@ func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, projec
 // StageImages pulls the images a sandbox will want onto a pool that is already
 // up. It creates nothing: no VM, no container, no pool.
 //
-// Bringing the pool up is not this call's business, and used to be. Staging ran
-// from server startup, where nothing had ensured anything, so it ensured the
-// pool itself — which meant starting every pool the database had ever held, at
-// every server start, to pull images onto them. Staging is now driven by the
-// pool's own reconcile, which has just converged the host this pulls onto.
+// Bringing the pool up is not this call's business. Staging is driven by the
+// pool's own reconcile, which has just converged the host this pulls onto; a
+// staging call that ensured the pool itself would start pools nobody asked to
+// run, just to pull images onto them.
 func (p *Provider) StageImages(ctx context.Context, pool *model.Pool, images []string, report func(sandbox.PreloadProgress)) error {
 	return p.runtimeProvider.StageImages(ctx, pool, images, report)
 }

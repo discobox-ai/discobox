@@ -11,12 +11,11 @@ package sandbox
 // RepoDigests. For a locally built image, which was never pushed and has no
 // RepoDigests, it is the image ID.
 //
-// It used to be documented as a config digest, "the same value a local Docker
-// daemon reports as an image ID". That was true of the classic image store and
-// false of the containerd one, which reports the index digest and is the
-// default in current Docker — so the recorded pin was a value the daemon would
-// never produce, and every sandbox on a published multi-arch image refused to
-// launch against an image that was sitting right there.
+// It is not a config digest. The classic image store reports one as an image
+// ID, but the containerd store — the default in current Docker — reports the
+// index digest, so a config-digest pin would be a value the daemon never
+// produces, and a sandbox on a published multi-arch image would refuse to
+// launch against an image that is sitting right there.
 //
 // An empty Digest means unpinned: sandboxes on the default image, and sandboxes
 // created before pinning existed. Those run whatever Name resolves to.

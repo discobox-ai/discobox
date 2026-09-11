@@ -27,11 +27,13 @@ type Seed struct {
 	Image string
 }
 
-// ShellSlug is the slug of the harness that ends the resolution chain: the one
-// a sandbox falls back to when nothing else is selected (ADR 0025, ADR 0043).
-// It is an ordinary registry harness — `harness/shell`, built on the sandbox
-// agent image like every other — and this name is reserved only so that
-// nothing else can claim the end of the chain.
+// ShellSlug is the slug of the `shell` built-in. It is an ordinary registry
+// harness — `harness/shell`, built on the sandbox agent image like every other
+// (ADR 0043) — and not a fallback: a sandbox names its harness or the project
+// does (ADR 0048). The one path that still ends at it is the upgrade of a
+// legacy sandbox with no harness config, which adopts this one (ADR 0032 §4;
+// see sandboxes.Service.fallbackHarnessConfig). The name is reserved so that
+// nothing else can claim that role.
 const ShellSlug = harness.ShellSlug
 
 // Seeds returns the built-in harness configs to seed, with each image replaced

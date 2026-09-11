@@ -3,12 +3,14 @@
 //
 // A credential's authorization is written as a host — the host a grant is
 // limited to, the host a secret belongs to, the host an approved use named —
-// and three separate places compare one of those against the destination the
-// proxy actually observed: the control plane's grant lookup, the pool agent's
-// activation check, and the check that a grant may not point a secret at a
-// host it does not belong to. They must agree. A rule that is subtly different
-// in one of them is either a credential that stops working for no visible
-// reason or one that travels somewhere nobody approved.
+// and every place that compares one of those against the destination the
+// proxy actually observed goes through this package: the control plane's
+// grant lookup and its secret match, the check that a resolved secret's host
+// covers the destination, the pool agent's activation check, and the check
+// that a grant may not point a secret at a host it does not belong to. They
+// must agree. A rule that is subtly different in one of them is either a
+// credential that stops working for no visible reason or one that travels
+// somewhere nobody approved.
 package hostscope
 
 import (

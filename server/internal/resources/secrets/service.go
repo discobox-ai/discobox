@@ -80,12 +80,12 @@ func (s *Service) describeOAuth(ctx context.Context, secret *model.Secret) {
 
 // normalizeHost is the one reading of a destination host in this package.
 //
-// The proxy reports the host it observed lowercased and without a port, and a
-// grant is matched against that string by SQL equality. So a host stored any
-// other way is a grant that can never match: `--host API.github.com` mints an
-// approval nothing will ever use, and the failure looks like a revoked
-// credential rather than a typo. Normalizing on the way in is what keeps the
-// stored host and the observed one comparable.
+// The proxy reports the host it observed lowercased and without a port. Grants
+// and secrets are matched against it in Go through hostscope.Covers, which
+// normalizes both sides, but a pending request is found again by SQL equality
+// on its stored host, and a stored host is what people read back. Normalizing
+// on the way in is what keeps every stored host comparable to the observed one,
+// whichever of the two does the comparing.
 func normalizeHost(host string) string { return hostscope.Normalize(host) }
 
 func (s *Service) CreateSecret(ctx context.Context, projectID string, input services.CreateSecretBody) (*model.Secret, error) {
@@ -619,9 +619,9 @@ func (s *Service) grantScopeKey(ctx context.Context, projectID, sandboxID, scope
 // grant would swap that credential into requests to another service — an
 // approval typo becomes the real key leaving for a host that was never supposed
 // to see it, and with the agent credentials flow the host is proposed by the
-// sandbox. A secret carrying no host is unconstrained on purpose: the field is
-// often inferred from the token's shape, and a credential that genuinely spans
-// hosts is expressed by leaving it empty rather than by widening every grant.
+// sandbox. A secret carrying no host is unconstrained on purpose: a credential
+// that genuinely spans hosts is expressed by leaving the field empty rather
+// than by widening every grant.
 func guardGrantHost(secret *model.Secret, host string) error {
 	secretHost := normalizeHost(secret.Host)
 	// The grant has to sit inside the binding, not merely touch it: a secret
@@ -684,16 +684,17 @@ func formatTTL(seconds int64) string {
 	return (time.Duration(seconds) * time.Second).String()
 }
 
-// mintGrant creates the standing authorization. uses is non-empty only for a
+// mintGrantAs creates the standing authorization. uses is non-empty only for a
 // grant minted by approving an agent credentials protocol request; a plain
 // grant authorizes the credential without enumerating what it is for.
+//
+// envName is the environment variable a grant carrying uses delivers in. It is
+// on the grant because a grant wider than one discobox has no binding yet, and
+// the binding is what the name would otherwise live on.
 //
 // It takes the secret rather than its ID because it is the one place every
 // grant passes through, which makes it the place to check the grant against the
 // credential it hands out.
-// mintGrantAs is mintGrant with the environment variable a grant carrying uses
-// delivers in. It is on the grant because a grant wider than one discobox has
-// no binding yet, and the binding is what the name would otherwise live on.
 func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *model.Secret, scope, scopeKey, host, envName string, ttlSeconds int64, uses []model.SecretUse) (*model.SecretGrant, error) {
 	host = normalizeHost(host)
 	if err := guardGrantHost(secret, host); err != nil {

@@ -6,10 +6,10 @@ import (
 
 // The folder filter is the path in the header, made selectable: it says where
 // the sandboxes on screen came from, and changing it changes which ones are on
-// screen. It replaces both the folder column — every row on screen shares the
-// value, so a column repeating it says nothing — and the key that used to
-// toggle "only the ones started here", which was the same filter with one of
-// its choices missing.
+// screen. It stands in for both a folder column — every row on screen shares
+// the value, so a column repeating it says nothing — and a key toggling "only
+// the ones started here", which would be the same filter with one of its
+// choices missing.
 
 // allFolders is the choice that is not a path: every sandbox in the project,
 // wherever it was started. It is last in the list rather than first, because

@@ -927,7 +927,7 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 		t.Error("the help should name the leader")
 	}
 
-	// The configured leader arms the pane; the default one no longer does.
+	// The configured leader arms the pane; the default one does not.
 	term := ds.terminals[0]
 	d.key("ctrl+a")
 	if got := term.typed("\x01"); !strings.Contains(got, "\x01") {
@@ -1034,7 +1034,7 @@ func wedgedSandbox() Sandbox {
 }
 
 // R repairs the discobox under the cursor, so recovering a wedged one never
-// means leaving the window for `discobox admin sandbox repair`.
+// means leaving the window for `discobox admin box repair`.
 func TestRepairRunsOnAWedgedBox(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(wedgedSandbox())

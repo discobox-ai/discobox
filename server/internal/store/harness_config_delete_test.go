@@ -41,7 +41,7 @@ func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 		t.Fatalf("delete with live sandbox = %v, want ErrInUse", err)
 	}
 
-	// A soft-deleted sandbox must NOT block deletion (the FK is cleared).
+	// A deleted sandbox must NOT block deletion.
 	stale := newConfig("stale")
 	newSandbox("sb-stale", stale.ID)
 	if err := db.Write.WithContext(ctx).Delete(&model.Sandbox{}, "id = ?", "sb-stale").Error; err != nil {

@@ -107,9 +107,10 @@ func encodeStatus(t *testing.T, w http.ResponseWriter, status health.Status) {
 // An invocation gets one autolaunch, at its start, and no more.
 //
 // Everything that retries — a terminal attach reconnecting, a watch loop — asks
-// for a client on every pass, and each ask used to be another chance to launch a
-// server. A command that outlived its server then spent the rest of its life
-// spawning replacements that lost the race for the singleton lock and exited.
+// for a client on every pass, and each ask would be another chance to launch a
+// server. A command that outlived its server would then spend the rest of its
+// life spawning replacements that lose the race for the singleton lock and
+// exit.
 func TestAnInvocationAutolaunchesAtMostOnce(t *testing.T) {
 	socket := filepath.Join(shorttmp.Dir(t), "s.sock")
 	endpointURL := "unix://" + socket

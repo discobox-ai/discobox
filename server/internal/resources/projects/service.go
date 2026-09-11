@@ -162,7 +162,7 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 // DeleteProject removes an empty project. Sandboxes and pools own runtime that
 // has to be torn down through their own reconcilers, so a project holding
 // either is refused rather than cascaded; the default project is refused too,
-// since `-p default` and every unqualified request resolve through it.
+// since `--project default` and every unqualified request resolve through it.
 func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {

@@ -37,8 +37,7 @@ const (
 	// paneDetachAlt is the detach key behind the leader, for a pane whose
 	// application needs Ctrl-C more than the window does. It is the d screen,
 	// tmux, and a plain `discobox attach` all detach on. The leader also carries
-	// the list's own keys, but none of them is d anymore — it was diff, until
-	// diff left the CLI.
+	// the list's own keys, but none of them is d.
 	paneDetachAlt = "d"
 	// paneTerminalKey opens another of the discobox's own terminals, beside
 	// the primary on the left. It is c because that is what screen and tmux
@@ -199,12 +198,12 @@ func (p *pane) name() string {
 
 // detachHint is how to get out of the workspace, as the key lists spell it.
 //
-// It is the same in every pane, and Ctrl-C is not it. A harness attach used to
-// take Ctrl-C as "back out of this", which is a fine reading of the key right
-// up until it is wrong: someone who types it to stop an agent and gets a
-// detached session instead has not stopped anything, and has no way to tell
-// from the screen they are looking at. The key belongs to whatever is running,
-// in a shell and in a harness alike, and the window asks for the leader.
+// It is the same in every pane, and Ctrl-C is not it. Taking Ctrl-C as "back
+// out of this" is a fine reading of the key right up until it is wrong: someone
+// who types it to stop an agent and gets a detached session instead has not
+// stopped anything, and has no way to tell from the screen they are looking at.
+// The key belongs to whatever is running, in a shell and in a harness alike,
+// and the window asks for the leader.
 func (m *Model) detachHint() string { return m.leader() + " " + paneDetachAlt }
 
 // leader is the pane's prefix key, as a Bubble Tea key name. It is the same key
@@ -608,9 +607,9 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	for n := 0; n <= 9; n++ {
 		opts = append(opts, termpane.WithPrefixBinding(strconv.Itoa(n), jumpPaneMsg{n: n}))
 	}
-	// The tools picker, which is where vscode now lives: it used to be bound
-	// here on its own key, and a second way to open one of three tools is one
-	// key to remember for no more reach. See tools.go.
+	// The tools picker, which is where vscode lives rather than on a key of its
+	// own here: a second way to open one of three tools is one key to remember
+	// for no more reach. See tools.go.
 	opts = append(opts, termpane.WithPrefixBinding(toolsKey, openToolsMsg{}))
 	// The services have the same alphabet one keystroke further in: S1 through
 	// S9 are their own tabs, and S0 is the menu that reaches the ones with no

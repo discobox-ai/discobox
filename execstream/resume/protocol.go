@@ -7,6 +7,8 @@
 // positions only after applying them, and the client retains unacknowledged
 // actions for retransmission. Resize and Ready are connection state rather than
 // actions: the latest resize is coalesced and Ready is restored per connection.
+// Repaint is neither: it goes out on the current connection only and is not
+// retained, because a reconnect repaints on its own.
 package resume
 
 import (

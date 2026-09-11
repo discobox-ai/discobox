@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// The way out is one sequence wherever you are: the workspace already quits on
-// leader-q, and the discoboxes now do too.
+// The way out is one sequence wherever you are: the workspace quits on
+// leader-q, and so do the discoboxes.
 func TestLeaderQuitsFromTheList(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
@@ -22,8 +22,8 @@ func TestLeaderQuitsFromTheList(t *testing.T) {
 	}
 }
 
-// Ctrl-C still quits there. It is no longer what the window advertises, but
-// nothing that used to work stopped working.
+// Ctrl-C quits there too. It is not what the window advertises, but it
+// works.
 func TestCtrlCStillQuitsFromTheList(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)

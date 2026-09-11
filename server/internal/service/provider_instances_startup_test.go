@@ -91,7 +91,7 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesPoolReconcile(t *testing
 	}
 
 	// Pool reconciliation rides the level-triggered reconcile engine: startup
-	// must mark the provider's pools dirty rather than append a job row.
+	// must mark the provider's pools dirty.
 	dirty, err := engine.ListDirty(ctx, pools.PoolResourceType)
 	if err != nil {
 		t.Fatalf("list dirty: %v", err)

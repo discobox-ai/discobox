@@ -34,7 +34,7 @@ func splitPoolDirtyID(id string) (projectID, poolID string, err error) {
 }
 
 // poolRegistrationTimeout is how long a freshly created runtime may sit in
-// the registering phase before the reconciler repairs it in place: the
+// the `registering` state before the reconciler repairs it in place: the
 // container/VM came up but its agent never called home, so it is replaced
 // under the same pool identity with a fresh bootstrap token.
 var poolRegistrationTimeout = 2 * time.Minute
@@ -310,8 +310,8 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	if err := r.update(ctx, pool, generation); err != nil {
 		return err
 	}
-	// The runtime is gone and the row is terminal: soft-delete it so listings
-	// drop the pool and the name can be reused.
+	// The runtime is gone and the row is terminal: delete it outright
+	// (ADR 0010) so listings drop the pool and the name can be reused.
 	if err := r.store.DeletePool(ctx, pool.ProjectID, pool.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
@@ -319,7 +319,7 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 }
 
 // failReconcile records a failed active reconcile. A pool whose runtime never
-// completed its initial create reports the terminal-looking "failed" phase
+// completed its initial create reports the terminal-looking "failed" state
 // (there is no runtime yet). A created pool keeps its state: its runtime is
 // stateful and stays serving whatever it already hosts, so a failed
 // convergence is an ErrorMessage against this generation, not a state — a

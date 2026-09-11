@@ -3,8 +3,9 @@ package proxy
 import "github.com/discobox-ai/discobox/proxy/internal/secrets"
 
 // SecretResolver resolves a sentinel placeholder to its real credential value.
-// Worker-agent implements it (calling the control plane); the proxy stays
-// server-agnostic. A nil resolver passed to NewServer disables secret swapping.
+// The pool agent implements it (pool-agent/proxyagent, calling the control
+// plane) and always passes one; the proxy stays server-agnostic. A nil
+// resolver passed to NewServer disables secret swapping.
 type SecretResolver = secrets.Resolver
 
 // SecretResolveRequest is the input to a SecretResolver.

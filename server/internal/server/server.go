@@ -78,11 +78,11 @@ func Run(ctx context.Context) error {
 	//
 	// Everything below this point is slow at least once: opening the database,
 	// migrating it, building the services, reaching a registry to seed the
-	// built-in harness configs. All of it used to happen before anything was
-	// listening, so a client had a refused connection to look at and no way to
-	// tell a server still coming up from one that died on startup — two very
-	// different problems that looked identical, and the reason a CLI could sit
-	// out its whole start timeout with nothing to report.
+	// built-in harness configs. Done before anything was listening, all of it
+	// would leave a client a refused connection to look at and no way to tell a
+	// server still coming up from one that died on startup — two very different
+	// problems that would look identical, with a CLI sitting out its whole
+	// start timeout with nothing to report.
 	irohAdmission, irohPeerID, irohWatch, err := configureIroh(ctx, cfg.DataDir, cfg.Listen, cfg.Iroh.RelayURLs, cfg.Iroh.LogLevel)
 	if err != nil {
 		return err
@@ -102,8 +102,8 @@ func Run(ctx context.Context) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
 		// deadlines that survive protocol upgrades (exec attach websockets
-		// proxied to workers) and cut long-lived streams (project events, log
-		// follows) off mid-flight. Liveness comes from ReadHeaderTimeout,
+		// proxied to pool agents) and cut long-lived streams (log follows) off
+		// mid-flight. Liveness comes from ReadHeaderTimeout,
 		// IdleTimeout, and websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
 	}
@@ -179,7 +179,7 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 	// The iroh gate has been answering from authorized_ids alone since the
-	// listener bound; this is the managed layer arriving (ADR 0095 §4). Any
+	// listener bound; this is the managed layer arriving (ADR 0095 §4, enrolled iroh IDs). Any
 	// peer parked waiting for it is released here. If startup had failed
 	// before this line, cleanupListeners would have closed the endpoint and
 	// refused them instead.

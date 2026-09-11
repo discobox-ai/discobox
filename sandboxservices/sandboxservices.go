@@ -4,7 +4,7 @@
 //
 // A sandbox's services are declared in files — the repository's under
 // `.discobox/services`, the image's under `/usr/local/share/discobox/services`
-// (ADR 0094) — and their ids are ordinarily whatever the declaration says.
+// (ADR 0094 image services) — and their ids are ordinarily whatever the declaration says.
 // Ordinarily nothing outside the sandbox cares: a port is a port, and the
 // client forwards it and lists it.
 //

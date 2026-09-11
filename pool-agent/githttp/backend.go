@@ -1,3 +1,7 @@
+// Package githttp serves git's smart HTTP protocol for a sandbox's pool-side
+// repositories: it parses the "<id>.git/..." route suffix and runs
+// git http-backend as a CGI, as the repository's owner, in an environment it
+// builds from scratch.
 package githttp
 
 import (

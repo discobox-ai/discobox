@@ -366,7 +366,7 @@ func refuseAll(_ context.Context, id IrohID) error {
 
 // A refusal carries the policy's own words, not this package's. "Not enrolled"
 // and "the server is still starting" send an operator to different places, and
-// the close reason is the only channel that distinction has (ADR 0095 §4).
+// the close reason is the only channel that distinction has (ADR 0095 enrolled iroh IDs §4).
 func TestIrohRefusalReasonReachesPeer(t *testing.T) {
 	const reason = "this server has not finished starting"
 	server, client := irohPair(t, func(context.Context, IrohID) error {
@@ -405,7 +405,7 @@ func TestIrohRefusalReasonReachesPeer(t *testing.T) {
 // Closing the endpoint releases an admission check that is still waiting.
 //
 // The control plane's gate waits for a database that startup has not opened
-// yet (ADR 0095 §4). When that startup fails instead, the listener is torn
+// yet (ADR 0095 enrolled iroh IDs §4). When that startup fails instead, the listener is torn
 // down — and a waiter with no cancellation would sit there until the process
 // died rather than being refused by it.
 func TestIrohCloseReleasesWaitingAuthorize(t *testing.T) {

@@ -1,7 +1,9 @@
 // Package bridge implements the sandbox-local forwarding proxy that accepts
-// plaintext proxy traffic inside a sandbox and forwards it to the worker proxy
-// over mTLS. It is intentionally dependency-light so the sandbox-agent binary
-// can embed it without importing the full worker proxy stack.
+// plaintext proxy traffic inside a sandbox and forwards it to the pool proxy
+// over mTLS. The pool agent's build forwarder uses it the same way inside a
+// build's network namespace. It is intentionally dependency-light so the
+// sandbox-agent binary can embed it without importing the full pool proxy
+// stack.
 package bridge
 
 import (
@@ -25,9 +27,9 @@ import (
 
 const tracerName = "github.com/discobox-ai/discobox/proxy/bridge"
 
-// Forwarder forwards sandbox-local plaintext proxy traffic to the worker proxy
+// Forwarder forwards sandbox-local plaintext proxy traffic to the pool proxy
 // over mTLS. It is protocol agnostic, so HTTP and SOCKS traffic both flow
-// through the worker proxy's protocol detector.
+// through the pool proxy's protocol detector.
 type Forwarder struct {
 	ctx           context.Context
 	listenAddress string

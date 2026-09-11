@@ -187,8 +187,8 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 		if err != nil {
 			return err
 		}
-		// Secret ciphertext is nulled rather than left in soft-deleted rows,
-		// matching DeleteSecret.
+		// Secret ciphertext is nulled before the rows are deleted, matching
+		// DeleteSecret.
 		if err := tx.Model(&model.Secret{}).Where("project_id = ?", projectID).
 			Update("encrypted_value", nil).Error; err != nil {
 			return err

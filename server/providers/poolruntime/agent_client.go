@@ -21,7 +21,7 @@ import (
 
 const defaultPoolBaseURL = "https://pool"
 
-// poolAgentClient adapts one worker's pool-agent API to the sandbox
+// poolAgentClient adapts one pool's pool-agent API to the sandbox
 // operations the pool needs. It is created per operation around a single
 // pool-agent HTTP client lease; each call consumes and releases the lease.
 type poolAgentClient struct {
@@ -327,7 +327,7 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 			Volume: poolclient.HarnessVolumeVolume(v.Volume),
 		}
 		// Absent stays absent rather than becoming "user": the sandbox agent
-		// defaults an unset scope itself (ADR 0094 §3), and sending a value the
+		// defaults an unset scope itself (ADR 0094 §3, pool cache), and sending a value the
 		// image did not state would make an image built before the field
 		// indistinguishable from one that chose the default.
 		if scope := string(v.Scope); scope != "" {
@@ -493,8 +493,8 @@ func poolGitSource(in model.GitSource, dataKey string) (poolapimodel.GitSource, 
 	if out.Kind == "" {
 		out.Kind = poolclient.GitSourceKindGit
 	}
-	// A push-delivered source names a repository this worker cannot reach. Its
-	// URL and directory are deliberately not forwarded, so the worker cannot
+	// A push-delivered source names a repository this pool cannot reach. Its
+	// URL and directory are deliberately not forwarded, so the pool cannot
 	// try; the client pushes the commits in instead.
 	push := in.Delivery == model.GitSourceDeliveryPush
 	if push {
@@ -527,7 +527,7 @@ func poolGitSource(in model.GitSource, dataKey string) (poolapimodel.GitSource, 
 	// A dirty workspace still has to be restored on the push path: its semantics
 	// are the base commit checked out with uncommitted changes on top, which the
 	// snapshot ref describes. Only the fetch differs — the client pushes the
-	// snapshot ref in, so the worker already has the objects.
+	// snapshot ref in, so the pool already has the objects.
 	if in.Workspace != nil {
 		workspace := poolapimodel.GitSourceWorkspace{}
 		if in.Workspace.Mode != "" {

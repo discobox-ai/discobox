@@ -63,7 +63,7 @@ func TestMissingSandboxAgentRebuildsEveryImageLayeredOnIt(t *testing.T) {
 	}
 }
 
-// The cascade is two levels deep now that both agent images build FROM a shared
+// The cascade is two levels deep because both agent images build FROM a shared
 // base: losing it has to take the sandbox agent AND every harness on top of it,
 // which a single non-repeated sweep would miss.
 func TestMissingSharedBaseRebuildsEveryImageBuiltOnIt(t *testing.T) {

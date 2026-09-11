@@ -331,7 +331,7 @@ type SandboxImageTarget struct {
 // config when the sandbox has none yet. A sandbox with no harness config is
 // always reported as upgradable, whatever its digest: what the upgrade changes
 // for it is adopting the config, and its digest matching already is not the
-// same as it being converged (ADR 0025 §4).
+// same as it being converged (ADR 0032 §4).
 func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (SandboxImageTarget, bool) {
 	if sandbox.HarnessMode == "config" || config == nil {
 		return SandboxImageTarget{}, false

@@ -31,8 +31,8 @@ const (
 	colBothBG      = "31"  // under the cursor and selected
 	colInactive    = "236"
 	// The band behind the credential banner: a dark red the text keeps its own
-	// colors over, rather than the reverse video the whole bar used to be
-	// drawn in. Reversed red puts the terminal's background color on a red
+	// colors over, rather than the whole bar drawn in reverse video. Reversed
+	// red puts the terminal's background color on a red
 	// field, which is a slab at a glance and a struggle to read at a sentence.
 	colAlertBG = "52"
 	// The alert band's call to action is a chip inside that field, and it

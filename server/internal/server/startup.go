@@ -22,10 +22,10 @@ var processStart = time.Now()
 //
 // Binding first is the point. Everything expensive — opening the database,
 // migrating it, building the services, reaching a registry to seed the built-in
-// harnesses — used to happen before anything was listening, so a client had
-// nothing to look at but a refused connection and no way to tell a server that
-// was still coming up from one that had died on startup. They are very
-// different problems and they looked identical.
+// harnesses — happens after the endpoints are bound. Done before, it would leave
+// a client nothing to look at but a refused connection and no way to tell a
+// server that is still coming up from one that has died on startup: very
+// different problems that would look identical.
 type startupHandler struct {
 	mu    sync.Mutex
 	phase string

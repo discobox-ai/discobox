@@ -36,7 +36,7 @@ func (h *Handler) GetSandboxExecResources(context.Context, serverapi.GetSandboxE
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
-// GetSandboxAgentStatus is deliberately left unproxied for now (ADR 0030's
+// GetSandboxAgentStatus is deliberately left unproxied (ADR 0030's
 // stated non-goal): the sandbox-agent status endpoint is reached only by
 // pool-agent's periodic poll, not by an on-demand user request through the
 // control plane.

@@ -723,7 +723,7 @@ func portSpan(st *styles, text, url string) headerSpan {
 // different kind of thing: a desktop to open, not a port to connect something
 // to. The client recognizes it by the id the image declared it under
 // (sandboxservices.DesktopID) rather than by a port number, so nothing here
-// hardcodes 6900 — see ADR 0094.
+// hardcodes 6900 — see ADR 0094 on image services.
 //
 // Drawn only when the forward has bound it, for the reason portEntry links only
 // forwarded ports: an offer to open a desktop that cannot be reached is worse

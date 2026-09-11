@@ -440,7 +440,7 @@ func TestWatcherSurvivesADeclaredSetItCannotRead(t *testing.T) {
 	}
 }
 
-// The reason ADR 0094 exists. Classifying a port means connecting to it, and
+// The reason ADR 0094 (image-declared services) exists. Classifying a port means connecting to it, and
 // connecting to a socket-activated port is what starts the service behind it —
 // for the desktop, an X server, a window manager and a VNC server, brought up
 // by a classification probe in every sandbox whether or not anybody wanted one.

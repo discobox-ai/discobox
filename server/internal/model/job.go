@@ -5,7 +5,9 @@ import (
 	"time"
 )
 
-// Job is a read-only API view of a durable orchestration job.
+// Job is a read-only API view of one reconcile dirty mark: a resource the
+// reconcile engine has pending, running, scheduled, or backing off. Nothing
+// stores jobs; resources/jobs projects them from the engine's dirty set.
 type Job struct {
 	ID           string          `json:"id"`
 	Type         string          `json:"type"`

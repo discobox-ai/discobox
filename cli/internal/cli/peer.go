@@ -20,7 +20,7 @@ import (
 // Only `id` is local. It reads and generates this machine's key file and talks
 // to no server, which is what makes it usable from a machine that has no access
 // yet; everything else is an ordinary API call and so works over whatever
-// transport --server names (ADR 0095 §5).
+// transport --server names (ADR 0095 §5 on iroh IDs).
 func (a *App) newPeerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "peer",
@@ -60,8 +60,8 @@ func (a *App) newPeerIDCommand() *cobra.Command {
 
 // newIrohAliasCommands keeps the spellings operators' notes already use:
 // `discobox admin iroh-id`, and `discobox admin iroh` with the same verbs.
-// Breaking them to tidy a command tree is a cost paid by users (ADR 0095 §5,
-// ADR 0097 §7).
+// Breaking them to tidy a command tree is a cost paid by users (ADR 0095 §5 on
+// iroh IDs, ADR 0097 §7).
 func (a *App) newIrohAliasCommands() []*cobra.Command {
 	id := a.newPeerIDCommand()
 	id.Use = "iroh-id"

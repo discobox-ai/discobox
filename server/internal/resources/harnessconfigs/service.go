@@ -33,9 +33,7 @@ func NewService(store *store.Store) *Service {
 		inspector: defaultImageInspector{},
 		// Read here rather than threaded down from config: seeding is what the
 		// override is for, and every process that seeds — the server, and a
-		// test binary that constructs a project — has to honor it. CI points
-		// these at label-only stand-ins for the real harness images
-		// (ADR 0066 §7).
+		// test binary that constructs a project — has to honor it.
 		harnessImages: harnessdefs.ImageOverridesFromEnv(os.Getenv),
 	}
 }
@@ -241,9 +239,10 @@ func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, config
 
 // UnsetDefaultHarnessConfig clears the project's default harness config when it
 // currently points at configID, leaving the project with no default. New
-// sandboxes created without an explicit harness then run agent-less. Clearing a
-// config that is not the default is rejected so the intent is unambiguous; this
-// is also how a client releases the default before disabling that harness.
+// sandboxes created without an explicit harness are then refused until one is
+// named or a new default is set (ADR 0048). Clearing a config that is not the
+// default is rejected so the intent is unambiguous; this is also how a client
+// releases the default before disabling that harness.
 func (s *Service) UnsetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
@@ -517,7 +516,7 @@ func (s *Service) applyResolvedImageDigest(ctx context.Context, projectID, confi
 }
 
 // seeds are the built-in harness configs: every harness in the registry,
-// `shell` included. It is the end of the resolution chain rather than a
+// `shell` included. `shell` is an ordinary harness image rather than a
 // different kind of thing, so nothing here treats it differently (ADR 0043).
 func (s *Service) seeds() []harnessdefs.Seed {
 	return harnessdefs.Seeds(s.harnessImages)

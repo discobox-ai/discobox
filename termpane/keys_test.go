@@ -90,8 +90,8 @@ func TestTheKeymapComesBeforeTheEncoder(t *testing.T) {
 
 // A modifier this terminal cannot encode costs the modifier, never the
 // keystroke. The emulator matches keys by exact equality, so anything it has no
-// case for used to reach the application as silence: a Backspace that deleted
-// nothing, a Tab that indented nothing.
+// case for would reach the application as silence: a Backspace that deletes
+// nothing, a Tab that indents nothing.
 func TestAnUnencodableModifierLeavesTheKey(t *testing.T) {
 	for _, tc := range []struct {
 		name string

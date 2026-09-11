@@ -19,10 +19,10 @@ import (
 // pool is consuming and which sandbox is consuming it.
 //
 // The ranking is the point. Every sandbox in a pool is differenced over the
-// same tick by the one agent that polls all of them (ADR 0071), so the vCPU
-// column is comparable between rows and adds up — which is what makes "who is
-// eating this pool" a question the table answers rather than one it leaves to
-// the reader.
+// same tick by the one agent that polls all of them (ADR 0071 on resource
+// accounting), so the vCPU column is comparable between rows and adds up —
+// which is what makes "who is eating this pool" a question the table answers
+// rather than one it leaves to the reader.
 func (a *App) newPoolResourcesCommand() *cobra.Command {
 	var showProcesses bool
 	cmd := &cobra.Command{
@@ -643,9 +643,9 @@ func formatSandboxDiskLine(consumption apimodel.SandboxResourceConsumption) stri
 // subtracting the discoboxes from a pool total. There is no such total to
 // subtract from: the discoboxes run under a nested container runtime whose
 // cgroups are not children of the pool container's, so the two measurements are
-// disjoint and add (ADR 0071 §6). Deriving it by subtraction produced a
-// negative on a live pool, because the pool figure was smaller than the sum of
-// the discoboxes it was supposed to contain.
+// disjoint and add (ADR 0071 §6 on resource accounting). Deriving it by
+// subtraction produced a negative on a live pool, because the pool figure was
+// smaller than the sum of the discoboxes it was supposed to contain.
 func poolServicesRow(report apimodel.PoolResourceReport) sandboxResourceRow {
 	row := sandboxResourceRow{}
 	if vcpus, ok := report.CPU.Vcpus.Get(); ok {

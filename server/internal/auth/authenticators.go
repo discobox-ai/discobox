@@ -47,9 +47,9 @@ func (a PoolAuthenticator) Authenticate(r *http.Request) (Principal, bool, error
 	}
 	claims, err := poolauth.VerifyToken(pool.PublicKey, token)
 	if err != nil {
-		// Two unrelated faults arrive here and used to read identically, which
-		// left the only visible symptom — a bare 401 the pool agent exits on —
-		// pointing at nothing.
+		// Two unrelated faults arrive here, and they must not read
+		// identically: that would leave the only visible symptom — a bare 401
+		// the pool agent exits on — pointing at nothing.
 		//
 		// A signature that does not verify means the control plane holds a
 		// different key than the agent signs with: a restored database, or a
@@ -113,7 +113,7 @@ var poolRuntimeActions = map[string]bool{
 	"resolve-sandbox-secret":      false,
 	"sandbox-agent-status-tokens": false,
 	"sandbox-agent-status":        false,
-	// The pool's resource report (ADR 0071). It addresses the pool itself, so
+	// The pool's resource report (ADR 0071, resource accounting). It addresses the pool itself, so
 	// it takes no trailing ID.
 	"resources": false,
 	// The agent credentials broker (ADR 0031).

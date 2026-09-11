@@ -18,9 +18,10 @@ import (
 // only way a client can say what it is waiting for is to read the sandbox and
 // report what the pool agent recorded there.
 //
-// What that record says is `sandboxcreate.ProvisionStatus`, which a create's
-// own wait for a source push narrates from as well. This is the loop around it:
-// when to read, and when to stop.
+// What that record says is `sandboxcreate.Status`, which reads the pool too
+// when the sandbox alone would only say it is waiting for one, and which a
+// create's own wait for a source push narrates from as well. This is the loop
+// around it: when to read, and when to stop.
 
 // provisionPollInterval is how often a client waiting on a sandbox re-reads it.
 // It is display only: nothing waits on this loop, and the attach it runs beside

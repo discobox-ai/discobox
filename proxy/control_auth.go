@@ -22,7 +22,8 @@ const (
 
 type controlClaimsContextKey struct{}
 
-// ControlTokenClaims are signed by worker-agent for proxy control API access.
+// ControlTokenClaims are the claims a proxy control API token carries.
+// CreateControlToken signs them.
 type ControlTokenClaims struct {
 	ProjectID string
 	WorkerID  string

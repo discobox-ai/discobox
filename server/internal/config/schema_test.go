@@ -11,7 +11,7 @@ import (
 
 // The generated schema and the loader describe the same surface. If they can
 // drift, "all valid configuration is in the file" is a claim nobody checks
-// (ADR 0096 §2).
+// (ADR 0096 §2, configuration file).
 func TestSchemaCoversEverySetting(t *testing.T) {
 	schema, err := Schema()
 	if err != nil {

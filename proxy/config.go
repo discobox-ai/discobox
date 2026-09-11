@@ -1,4 +1,4 @@
-// Package proxy provides the worker-scoped HTTP/HTTPS and SOCKS proxy
+// Package proxy provides the pool-scoped HTTP/HTTPS and SOCKS proxy
 // component used by Discobox sandboxes.
 package proxy
 
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Config controls a worker proxy instance.
+// Config controls a pool proxy instance.
 type Config struct {
 	ListenAddress string
 	PublicURL     string
@@ -68,7 +68,10 @@ type SecretClient struct {
 	Sentinels []string
 }
 
-// ControlConfig controls the optional read-only control API.
+// ControlConfig controls the optional read-only control API, which
+// ListenAndServeControl serves when ListenAddress is set. The pool agent sets
+// no ListenAddress and does not call it, so a pool's proxy serves no control
+// API.
 type ControlConfig struct {
 	ListenAddress  string
 	TrustPublicKey string
@@ -170,7 +173,7 @@ func SweepInterval(retention time.Duration) time.Duration {
 	return interval
 }
 
-// DefaultConfig returns conservative worker proxy defaults.
+// DefaultConfig returns conservative pool proxy defaults.
 func DefaultConfig() Config {
 	return Config{
 		ListenAddress: "127.0.0.1:17080",

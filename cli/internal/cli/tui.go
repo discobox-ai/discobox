@@ -304,7 +304,8 @@ func dedicated(envelope, capacity float64) float64 {
 }
 
 // toTUIUsage is what the row's usage column draws: the sandbox's share of the
-// host it runs on, from the pool agent's resource report (ADR 0071).
+// host it runs on, from the pool agent's resource report (ADR 0071 on resource
+// accounting).
 //
 // The denominators come from the sandbox's own pool, which the listing already
 // carries, so drawing the column costs no extra request. They are the host's
@@ -670,8 +671,8 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 	// Which key it enrolled and which files it wrote go on the busy line with
 	// everything else this create says. Nothing reaches the terminal: the
 	// window is a full-screen program on it, and a line written past the
-	// renderer draws over the frame — which is what "wrote …/config" used to
-	// do, on the stream this used to hand it.
+	// renderer draws over the frame, which is what a "wrote …/config" on the
+	// terminal's own stream would do.
 	notes := noteFunc(func(format string, args ...any) {
 		if report != nil {
 			report(fmt.Sprintf(format, args...))

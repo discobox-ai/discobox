@@ -22,7 +22,8 @@ type PoolManager interface {
 	// provider instance's live pools as orphans.
 	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
 	// SchedulablePoolForSandbox gates placement: the sandbox's pool must be
-	// ready, schedulable, and fit the request within its reported capacity.
+	// present, unrevoked, not offline, ready, and schedulable. It checks no
+	// capacity; a sandbox makes no resource request to fit (ADR 0029).
 	SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error)
 	GetProject(ctx context.Context, projectID string) (*model.Project, error)
 	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
@@ -48,9 +49,9 @@ type PoolManager interface {
 //
 // The work is the driver's, so the phases are the driver's. A VM backend
 // fetches a disk image and boots a machine before anything can run containers,
-// and on a cold start that is where the minutes actually go — the phase a
-// client used to spend them staring at was "waiting for a pool to take it",
-// which says only that the wait exists.
+// and on a cold start that is where the minutes actually go. Without these
+// phases the only thing a client could show for them is "waiting for a pool to
+// take it", which says only that the wait exists.
 //
 // An observation, never a state: it decides nothing, and it is history the
 // moment the phase ends (ADR 0060).

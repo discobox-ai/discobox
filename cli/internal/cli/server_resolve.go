@@ -102,7 +102,7 @@ func (r serverResolver) resolve(ctx context.Context) (string, error) {
 		// Absolute, because a bare name means two different files to the two
 		// halves of this: os.Stat resolves it against the working directory
 		// and exec.Command hands it to PATH. So `--binary discobox-server` in
-		// build/ used to stat the file in front of it and then run whichever
+		// build/ would stat the file in front of it and then run whichever
 		// one PATH found — or fail saying there was none, with the file it had
 		// just checked sitting right there. PATH is not searched for a server
 		// (ADR 0099 §6), and "used as-is" has to mean the file the caller

@@ -39,7 +39,7 @@ const DirName = ".discobox/services"
 
 // BuiltinDir is where the image declares the services it ships, in the same
 // format. It sits beside the image's skills directory and is read the same way
-// (ADR 0080's pairing, extended to services by ADR 0094).
+// (ADR 0080's pairing, extended to image-declared services by ADR 0094).
 //
 // The desktop viewer is what it exists for. Its port is bound by a `.socket`
 // unit, so the port watcher's uid filter cannot see it, and classifying it
@@ -116,7 +116,7 @@ type Definition struct {
 	// Protocol is what the declaration says its ports speak, empty when it
 	// says nothing. Stated, it is reported instead of probing the port; that is
 	// the whole point for a socket-activated service, where the probe is the
-	// activation (ADR 0094).
+	// activation (ADR 0094, image-declared services).
 	//
 	// It applies to every port the declaration names: a service serving two
 	// ports that speak different things is two declarations.

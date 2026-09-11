@@ -215,9 +215,11 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		}
 	}
 	if image == "" {
-		// Only reachable when seeding could not create the `shell` config, or
-		// in config mode, where the image is the harness config's own and is
-		// resolved above. Everything else took its image from a harness config.
+		// Only reachable when the harness config declares no image, or when a
+		// config-mode request names none: config mode skips the branch above
+		// and takes the request's image, which the configure flow sets to the
+		// harness config's own. Everything else took its image from a harness
+		// config.
 		image, imageDigest = s.defaultImage, s.defaultImageDigest
 	}
 	sandbox := &model.Sandbox{
@@ -290,10 +292,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 // resolveHarnessConfigID is which harness a sandbox runs: what the request
 // names, else the project default, else nothing — which is an error (ADR 0048).
 //
-// The chain used to end at the built-in `shell`, so it always terminated. That
-// answered a project with a harness configured and no default set with a shell,
-// which is indistinguishable from a working setup until you are inside the
-// sandbox wondering where the harness went.
+// The chain does not end at the built-in `shell`. Ending there would answer a
+// project with a harness configured and no default set with a shell, which is
+// indistinguishable from a working setup until you are inside the sandbox
+// wondering where the harness went.
 func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (string, error) {
 	if project == nil {
 		return "", fmt.Errorf("project is required")
@@ -522,7 +524,7 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 }
 
 // RepairSandbox rebuilds the sandbox in place, on its harness config's current
-// image, and starts it (ADR 0035, ADR 0062).
+// image, and starts it (ADR 0035, ADR 0064).
 //
 // It is one existence intent, not a workflow: the recorded generation carries
 // RepairGeneration, which makes the reconciler's ensure tear the runtime down
@@ -531,7 +533,7 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 // clears a latched ErrorMessage, so repair is the way out of a settled failure
 // (ADR 0017 §4).
 //
-// The same intent carries the re-pin an upgrade would (ADR 0062 §1). The
+// The same intent carries the re-pin an upgrade would (ADR 0064 §1). The
 // teardown has already discarded everything a re-pin costs, so rebuilding on
 // the older of two images buys nothing — and a stale image is itself a way for
 // a sandbox to be wedged (ADR 0016), which a repair that kept the pin would
@@ -739,7 +741,7 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 //
 // It exists because two operations write it — upgrade, whose whole content it
 // is, and repair, which carries it on the rebuild it was already doing
-// (ADR 0062 §1). They must not be able to pin differently, and the difference
+// (ADR 0064 §1). They must not be able to pin differently, and the difference
 // between them is only what an unavailable target means, which each decides for
 // itself before calling apply.
 type imageRepin struct {
@@ -750,7 +752,7 @@ type imageRepin struct {
 	// sandbox created before every sandbox carried one resolves its target
 	// through the fallback `shell` config, and pinning that config's image
 	// without adopting the config would leave the row describing an image no
-	// config of its own names (ADR 0025 §4). This is the whole migration —
+	// config of its own names (ADR 0032 §4). This is the whole migration —
 	// explicit, in place, and visible in the listing first.
 	HarnessConfigID string
 
@@ -813,7 +815,7 @@ func (s *Service) currentImageRepin(ctx context.Context, sb *model.Sandbox) (ima
 // fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
 // has not created it.
 //
-// It is no longer where create's resolution chain ends (ADR 0048): a sandbox
+// It is not where create's resolution chain ends (ADR 0048): a sandbox
 // names its harness or the project does. What still needs it is the migration
 // of sandboxes made before every sandbox carried a harness config, which adopt
 // this one on upgrade — a legacy path, not a default.
@@ -852,7 +854,7 @@ func (s *Service) FallbackHarnessConfig(ctx context.Context, projectID string) (
 // mismatch is refused rather than recorded.
 //
 // The server does not verify the commits are present in the sandbox's
-// repositories: that means a round trip to the worker, and the reconcile that
+// repositories: that means a round trip to the pool agent, and the reconcile that
 // follows fails on a missing commit anyway, with a better message than this
 // endpoint could produce.
 func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {

@@ -43,7 +43,7 @@ type imageSpec struct {
 	// metadataFile is the authoring-time image.json compacted into metadataArg
 	// at build time, which the Dockerfile turns into a manifest label. Both are
 	// empty for an image that declares nothing and inherits its whole manifest
-	// from the base layer (ADR 0086 §2), which is what `shell` now is.
+	// from the base layer (ADR 0086 §2), which is what `shell` is.
 	metadataFile string
 	metadataArg  string
 	// contextDir and dockerfile describe the same build as buildArgs, but

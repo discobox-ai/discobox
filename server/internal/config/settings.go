@@ -11,7 +11,7 @@ import (
 )
 
 // A setting is one configurable field of Config, described by its struct tags
-// (ADR 0096 §2). The struct is the source of truth: the loader binds from
+// (ADR 0096 §2, configuration file). The struct is the source of truth: the loader binds from
 // these, and genschema emits the JSON Schema from the same walk, so a field
 // cannot appear in one and not the other.
 type setting struct {
@@ -81,7 +81,7 @@ func appendSettings(out []setting, t reflect.Type, prefix string, index []int) [
 }
 
 // applyDefaults writes every literal default into cfg. It runs first, so the
-// file and then the environment overwrite it (ADR 0096 §4).
+// file and then the environment overwrite it (ADR 0096 §4, configuration file).
 func applyDefaults(cfg *Config) error {
 	value := reflect.ValueOf(cfg).Elem()
 	for _, s := range settings(value.Type()) {
@@ -127,7 +127,7 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) (map[string]bool,
 //
 // Presence comes from the document rather than from the resulting values,
 // because a field set to its zero value and a field left out are different
-// things and a zero cannot tell them apart (ADR 0096 §4).
+// things and a zero cannot tell them apart (ADR 0096 §4, configuration file).
 func decodeFile(cfg *Config, data []byte, path string) (map[string]bool, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -139,7 +139,7 @@ func decodeFile(cfg *Config, data []byte, path string) (map[string]bool, error) 
 	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
 	// The whole reason the file earns its place over the environment: a key
 	// nothing defines is a failure naming the key, not a silent default
-	// (ADR 0096 §3).
+	// (ADR 0096 §3, configuration file).
 	decoder.KnownFields(true)
 	if err := decoder.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

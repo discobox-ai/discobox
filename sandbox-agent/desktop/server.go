@@ -249,21 +249,20 @@ func Serve(ctx context.Context, log *slog.Logger, cfg Config, listener net.Liste
 // settleScale writes the scale the desktop session will start at, and then lets
 // it start. It is the reason this unit is Type=notify.
 //
-// **It must not touch X.** That is the whole point of the function now, and it
-// used to do the opposite: it called a readiness loop (since deleted) whose
-// `xrandr` connects to
-// /tmp/.X11-unix/X0, which socket-activates the X server — and xvfb.service
-// pulls up the Xfce session behind it. So merely *starting the viewer* started
-// the entire desktop: an X server, a window manager, a panel and a VNC server,
-// from a process whose only job at that moment is to be ready to serve a web
-// page. Anything that opened a TCP connection to 6900 and went away — a health
-// check, a port scan, a stray probe — brought the whole thing up.
+// **It must not touch X.** Anything that connects to /tmp/.X11-unix/X0 — an
+// `xrandr` readiness check, say — socket-activates the X server, and
+// xvfb.service pulls up the Xfce session behind it. Merely *starting the
+// viewer* would then start the entire desktop: an X server, a window manager,
+// a panel and a VNC server, from a process whose only job at that moment is to
+// be ready to serve a web page. Anything that opened a TCP connection to 6900
+// and went away — a health check, a port scan, a stray probe — would bring the
+// whole thing up.
 //
 // The scale it needs is a file, not a screen: scale.env records what the last
 // run settled on, and reading it costs nothing and starts nothing. What the
 // session actually reads is that same file, so writing it is the whole job.
 //
-// X now starts when something genuinely needs pixels — a browser loading the
+// X starts only when something genuinely needs pixels — a browser loading the
 // page and asking for a size, or opening the VNC socket, or any program in the
 // sandbox talking to DISPLAY=:0. Not before.
 func (s *Server) settleScale() {

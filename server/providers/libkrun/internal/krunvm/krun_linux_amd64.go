@@ -127,7 +127,7 @@ func boot(cfg Config, lib *krunLibrary) error {
 	// Disk order is the guest's contract: root, data, cache become /dev/vda,
 	// /dev/vdb, /dev/vdc, and discobox-mount-storage addresses them by those
 	// names. All three are raw — the guest image publishes a raw ext4 root
-	// (ADR 0062 §6), so nothing here reads QCOW2 any more.
+	// (ADR 0062 §8), so nothing here reads QCOW2.
 	for _, disk := range []struct {
 		id       string
 		path     string

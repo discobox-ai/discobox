@@ -297,14 +297,12 @@ func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, 
 		}).Error
 }
 
-// RecordPoolResources stores what a pool reported it is consuming (ADR 0071).
+// RecordPoolResources stores what a pool reported it is consuming (ADR 0071, resource accounting).
 //
 // A narrow two-column update rather than a Save, for the same reason as the
 // progress writers above: this is telemetry arriving on its own schedule
 // against a row the pool's reconcile also writes, and every other column on it
-// belongs to somebody else. It publishes no project event either — a routine
-// report on every pool every thirty seconds is not something an event stream
-// should fan out.
+// belongs to somebody else.
 func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resources json.RawMessage, reportedAt time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
