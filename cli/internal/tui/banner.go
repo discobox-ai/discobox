@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -124,21 +125,114 @@ func (m *Model) pressBanner() tea.Cmd {
 	return nil
 }
 
-// bannerRow paints one band: the mark and its sentence on the left, the key
-// that acts pinned to the right, over a field of bg.
+// The credential band's call to action throbs. It is the one animated thing in
+// the window, and it is animated because it is the one thing on screen that
+// somebody is waiting on: an agent has stopped, and every second it stays
+// stopped is a second of nothing happening. The offer's chip is still, so that
+// the moving one means what it says.
+//
+// bannerPulseHues is the field the chip steps through, up and back down. Four
+// frames, held long enough to read as a heartbeat rather than as a blink — a
+// bar that flashes is one the eye learns to look past, which is the whole
+// failure this is trying to avoid.
+var bannerPulseHues = []string{colAlertChip, colAlertMid, colAlertLit, colAlertMid}
+
+// bannerPulseInterval is how long each beat is held: a whole throb, up and back
+// down, is four of them, about a second and a half.
+const bannerPulseInterval = 400 * time.Millisecond
+
+type bannerPulseMsg struct{ gen int }
+
+// armBannerPulse starts the throb when the credential band comes up and stops
+// it when it goes, whatever it was that put it there or took it away.
+//
+// It is called from the one place every message passes through rather than from
+// each of the several things that can raise or answer a request — a request
+// arriving, one being answered, a pane being switched, a workspace being closed
+// — because a clock left running on a bar that is no longer drawn is a window
+// that never idles, and a bar drawn with no clock behind it is a button that
+// sits still while somebody waits.
+//
+// The generation is what makes that safe: a tick names the run it belongs to,
+// so a band that goes and comes back is one clock rather than two beating
+// against each other.
+func (m *Model) armBannerPulse() tea.Cmd {
+	want := m.st.color && m.bannerShowing() == bannerCredential
+	if want == m.pulsing {
+		return nil
+	}
+	m.pulsing, m.pulseGen = want, m.pulseGen+1
+	if !want {
+		m.pulse = 0
+		return nil
+	}
+	return bannerPulseTick(m.pulseGen)
+}
+
+func bannerPulseTick(gen int) tea.Cmd {
+	return tea.Tick(bannerPulseInterval, func(time.Time) tea.Msg {
+		return bannerPulseMsg{gen: gen}
+	})
+}
+
+// advanceBannerPulse moves the throb on a beat. A tick from a run that is over
+// is dropped rather than answered: the band it was beating for is gone.
+func (m *Model) advanceBannerPulse(msg bannerPulseMsg) tea.Cmd {
+	if !m.pulsing || msg.gen != m.pulseGen {
+		return nil
+	}
+	m.pulse++
+	return bannerPulseTick(m.pulseGen)
+}
+
+// bannerRow paints one band: the mark and its sentence on the left, the call to
+// action centered in the window, the key that acts pinned to the right.
 //
 // The bar is painted and the text keeps its own colors over it — the mark that
-// catches the eye, the subject, and the key — because a whole bar drawn in
-// reverse video is a slab at a glance and a struggle to read at a sentence.
+// catches the eye, the subject, the call, and the key — because a whole bar
+// drawn in reverse video is a slab at a glance and a struggle to read at a
+// sentence.
+//
+// The call is the one thing on the bar that is not a statement, so it is not
+// left at the end of the sentence where a reader who has already stopped seeing
+// the header will never reach it. It sits in the middle of the row itself
+// rather than in the gap between the other two, so it does not slide about as
+// the subject changes length, and it is drawn as a chip — its own field, inside
+// the band's — because the whole band is a button and nothing about a bar of
+// flat color says so.
 //
 // The key is pinned: on a narrow window the subject is what gives way, because
 // a bar that says something is there and not what to press about it is a bar
-// that has said the less useful half. The two cells of band in front of the key
-// are part of the right, so the gap survives a subject long enough to be cut
-// back against it.
-func bannerRow(st *styles, width int, mark lipgloss.Style, glyph, subject, key, verb, bg string) string {
-	left := mark.Render(" "+glyph+"  ") + subject
-	right := st.attentionHint.Render("  ") + st.attentionText.Render(key) +
-		st.attentionHint.Render("  or click to "+verb+" ")
-	return highlight(st, padANSI(spreadPin(left, right, width), width), bg)
+// that has said the less useful half. The call goes before the key does, whole
+// rather than cut: a chip reading "click to ap…" is a button with a typo on it.
+// The key's "or" goes with it, because it is the chip the key is the other way
+// of doing. The two cells of band in front of the key are part of the right, so
+// the gap survives a subject long enough to be cut back against it.
+func bannerRow(st *styles, width int, mark lipgloss.Style, glyph, subject, call, key, bg string) string {
+	head := mark.Render(" " + glyph + "  ")
+	keyed := st.attentionText.Render(key) + st.attentionHint.Render(" ")
+	right := st.attentionHint.Render("  or  ") + keyed
+	// The mark whole, two cells of air, the chip, and a cell before the key's
+	// own gap — spreadCenterPin keeps each of them — then the key. Less room
+	// than that and the call goes, rather than the mark or the key.
+	if call == "" || lipgloss.Width(head)+3+lipgloss.Width(call)+lipgloss.Width(right) > width {
+		call, right = "", st.attentionHint.Render("  ")+keyed
+	}
+	return highlight(st, padANSI(spreadCenterPin(head+subject, call, right, width), width), bg)
+}
+
+// bannerChip is a call to action drawn as a button: bold text in a field of its
+// own, with two cells of that field on either side of the words so it reads as
+// something pressable rather than as a highlighted phrase.
+//
+// Without color there is no field, and what is left is the sentence — which is
+// why the words say the gesture rather than naming a button.
+func bannerChip(st *styles, text, fg, bg string) string {
+	if !st.color {
+		return text
+	}
+	return lipgloss.NewStyle().Bold(true).
+		Foreground(lipgloss.Color(fg)).
+		Background(lipgloss.Color(bg)).
+		Render("  " + text + "  ")
 }

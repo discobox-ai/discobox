@@ -276,6 +276,13 @@ type Model struct {
 	shimmer int
 	noise   *rand.Rand
 
+	// pulsing is whether the credential band's chip is throbbing, pulse the
+	// beat it is on, and pulseGen which run of the clock owns it. See
+	// armBannerPulse.
+	pulsing  bool
+	pulse    int
+	pulseGen int
+
 	focus       focusArea
 	optionsOpen bool
 	// secretsOpen is whether the secrets screen has the window, on the same
@@ -645,6 +652,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// pane on screen is one being read. Doing it here rather than at each of
 	// the several places focus can move means no new way to move it can forget.
 	m.markSeen()
+	// Same reasoning for the band's clock: it runs while the credential band is
+	// up and stops with it, and here is the one place that sees every way it
+	// can come and go. See armBannerPulse.
+	if pulse := m.armBannerPulse(); pulse != nil {
+		cmd = tea.Batch(cmd, pulse)
+	}
 	return m, cmd
 }
 
@@ -955,6 +968,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case shimmerTickMsg:
 		return m.advanceShimmer(msg)
+
+	case bannerPulseMsg:
+		return m.advanceBannerPulse(msg)
 
 	case tea.PasteMsg:
 		return m.updatePaste(msg)

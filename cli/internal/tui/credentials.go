@@ -737,7 +737,9 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 //
 // It is a band across the window rather than a sentence among sentences: the
 // row above it is the header you stop seeing after a minute, and this is the
-// thing that must not be stopped seeing. See banner.go for the bar itself.
+// thing that must not be stopped seeing — which is also why the chip in the
+// middle of it throbs, and why it is the only thing in the window that moves
+// without something having happened. See banner.go for the bar and its beat.
 func (m *Model) viewCredentialBanner(width int) string {
 	pending := m.pendingFor(m.paneBox.ID)
 	if len(pending) == 0 {
@@ -754,7 +756,8 @@ func (m *Model) viewCredentialBanner(width int) string {
 	}
 	body := st.attentionText.Render(what) +
 		st.attentionHint.Render("  ·  ") + st.attentionText.Render(subject)
-	return bannerRow(st, width, st.attentionMark, "⚠", body, m.leader()+" "+credentialsLeaderKey, "answer", colAlertBG)
+	call := bannerChip(st, "click to answer", colChipLight, bannerPulseHues[m.pulse%len(bannerPulseHues)])
+	return bannerRow(st, width, st.attentionMark, "⚠", body, call, m.leader()+" "+credentialsLeaderKey, colAlertBG)
 }
 
 // credentialErrorSection says which request is still waiting, under the

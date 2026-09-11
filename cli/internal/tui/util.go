@@ -335,6 +335,35 @@ func spreadCenter(left, middle, right string, w int) string {
 	return row + strings.Repeat(" ", max(w-lipgloss.Width(row)-rightW, 0)) + right
 }
 
+// spreadCenterPin lays a left, a middle and a right fragment out on one row
+// like spreadCenter, but with the right pinned and the middle whole: a row too
+// narrow for all three cuts the left back, and one too narrow even for that
+// drops the middle rather than shortening it.
+//
+// For the caller whose middle is a button. A shortened sentence still reads; a
+// button with its label cut in half is a control nobody presses. See bannerRow.
+func spreadCenterPin(left, middle, right string, w int) string {
+	middleW, rightW := lipgloss.Width(middle), lipgloss.Width(right)
+	// Centered in the row itself, as spreadCenter does it, so the middle holds
+	// still as the left changes length — and pushed off center rather than
+	// through the left when the left is long enough to reach it. What gives way
+	// after that is the left, down to nothing; a row with no room even for that
+	// keeps the two ends and drops the middle whole. Which of the three a
+	// caller can afford to lose is the caller's own; see bannerRow.
+	//
+	// The middle keeps two cells of air in front of it whether or not the left
+	// was cut to make room: one is close enough to read as part of what it is
+	// beside, and a cut left ends in an ellipsis that would otherwise run
+	// straight into it. centerStart is asked for a cell more of left than it
+	// insists on so an uncut left keeps them; a cut one is cut two short.
+	start := centerStart(lipgloss.Width(left)+1, middleW, rightW, w)
+	if middle == "" || start < 2 {
+		return spreadPin(left, right, w)
+	}
+	row := pad(left, start-2) + "  " + middle
+	return row + strings.Repeat(" ", max(w-lipgloss.Width(row)-rightW, 0)) + right
+}
+
 // centerStart is the column where spreadCenter puts its middle. Renderers that
 // mark controls inside that middle use this same arithmetic, so the hit map is
 // made from where the row was drawn rather than from a parallel layout.

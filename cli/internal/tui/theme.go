@@ -35,12 +35,28 @@ const (
 	// drawn in. Reversed red puts the terminal's background color on a red
 	// field, which is a slab at a glance and a struggle to read at a sentence.
 	colAlertBG = "52"
+	// The alert band's call to action is a chip inside that field, and it
+	// throbs: these are the reds it steps through, up and back down, each of
+	// them light enough to read white on and none of them the band's own color
+	// — a chip that dropped to the field it sits in would be a bar blinking at
+	// somebody rather than a button asking to be pressed. See bannerPulseHues.
+	colAlertChip = "124"
+	colAlertLit  = "196"
+	colAlertMid  = "160"
 	// The band behind the ready-to-apply banner, the same idea one color round
 	// the wheel: a dark green, because the bar it paints is an offer rather
 	// than a person waiting. Red for "something is blocked on you" and green
 	// for "there is something here to take" is the one distinction the eye
 	// makes before it reads either bar.
 	colReadyBG = "22"
+	// The offer's own chip, a green two steps up from its band. It does not
+	// throb: work that is ready will still be ready in a minute, and a screen
+	// with two things moving on it has nothing that stands out.
+	colReadyChip = "34"
+	// The text on a chip, which is dark on the offer's green and light on the
+	// request's red: both fields are strong colors, and a chip is only a button
+	// while the words on it are the most readable thing in the bar.
+	colChipLight = "231"
 	// The mark's own purple, which is what the box round the window is drawn
 	// in: the window is framed in the color it is branded in rather than in a
 	// third accent.

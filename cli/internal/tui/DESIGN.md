@@ -339,15 +339,36 @@ an exception.
 
 The band is **painted, and the text keeps its own colors over it** (`bannerRow`,
 `attentionMark`/`readyMark`/`attentionText`/`attentionHint`): a field of color,
-a mark, the subject in bold, and the key in dim grey on the right. Reversed
-video puts the terminal's own background on a colored field — a slab at a
-glance, and a struggle to read at a sentence. The field says which band this is
-before it is read: `colAlertBG`, a dark red under an amber `⚠`, for somebody
-being waited on; `colReadyBG`, a dark green under the list's own `⇡`, for
-something there to take. The key is pinned to the right and the subject is what
-gives way when the window narrows: a bar that says a credential is waiting, or
-that a discobox is ready, but not what to press about it has said the less
-useful half.
+a mark, the subject in bold, the call to action in the middle, and the key in
+dim grey on the right. Reversed video puts the terminal's own background on a
+colored field — a slab at a glance, and a struggle to read at a sentence. The
+field says which band this is before it is read: `colAlertBG`, a dark red under
+an amber `⚠`, for somebody being waited on; `colReadyBG`, a dark green under the
+list's own `⇡`, for something there to take. The key is pinned to the right and
+the subject is what gives way when the window narrows: a bar that says a
+credential is waiting, or that a discobox is ready, but not what to press about
+it has said the less useful half.
+
+**The call is a chip, centered in the row itself** (`bannerChip`,
+`spreadCenterPin`): the one thing on the bar that is not a statement, drawn as
+its own field inside the band's, in the middle of the window rather than at the
+end of a sentence a reader who has stopped seeing the header never reaches. It
+is centered in the row and not in the gap the subject leaves, so it holds still
+as the subject changes length, and it is pushed off center rather than through a
+subject long enough to reach it. It goes before the key does and goes whole: a
+chip reading `click to ap…` is a button with a typo on it.
+
+**The request's chip throbs** (`armBannerPulse`): the field under `click to
+answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,
+four beats of 400ms — a heartbeat rather than a blink, and never down to the
+band's own color, because a bar that flashes on and off is one the eye learns to
+look past. It is the only thing in the window that moves without somebody having
+done something, and the offer's chip is deliberately still: work that is ready
+will still be ready in a minute, and a screen with two things moving on it has
+nothing that stands out. The clock is armed and disarmed from `Model.Update`,
+where every way the band can come and go is seen at once, and each beat names
+the run it belongs to so a band that goes and comes back is one clock rather
+than two.
 
 **The band is a button.** It records its span *and which band it was* as it is
 drawn, the way the tabs and the maximize controls record theirs, and a press

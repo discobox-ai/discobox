@@ -41,14 +41,16 @@ func (m *Model) applyReady() bool {
 // because this one is an offer rather than a person waiting on you.
 //
 // The mark is the list's own `⇡` for the same state, so the bar and the row are
-// plainly about the same thing.
+// plainly about the same thing. The chip in the middle is still, where the
+// request's throbs: this one will still be here in a minute.
 func (m *Model) viewApplyBanner(width int) string {
 	st := m.st
 	subject := st.attentionText.Render("ready to apply")
 	if detail := applyReadyDetail(m.currentBox()); detail != "" {
 		subject += st.attentionHint.Render("  ·  ") + st.attentionText.Render(detail)
 	}
-	return bannerRow(st, width, st.readyMark, "⇡", subject, m.leader()+" "+applyKey, "apply", colReadyBG)
+	call := bannerChip(st, "click to apply", colBlack, colReadyChip)
+	return bannerRow(st, width, st.readyMark, "⇡", subject, call, m.leader()+" "+applyKey, colReadyBG)
 }
 
 // applyReadyDetail is how much is waiting, in the list's own spelling of a
