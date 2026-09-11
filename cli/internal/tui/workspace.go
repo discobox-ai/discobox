@@ -793,12 +793,15 @@ func (m *Model) endPane(p *pane) tea.Cmd {
 	m.ending[execID] = true
 	m.closeTab(p)
 	ctx, ds, box := m.ctx, m.ds, m.paneBox.ID
-	return tea.Batch(status("%s ended", name), func() tea.Msg {
+	// The report of the end comes from the same command as the kill, so it is
+	// said once the server has done it, and a refusal cannot land ahead of it
+	// and be written over.
+	return func() tea.Msg {
 		if err := ds.EndExec(ctx, box, execID); err != nil {
 			return endExecFailedMsg{gen: gen, execID: execID, name: name, err: err}
 		}
-		return nil
-	})
+		return statusMsg{text: name + " ended"}
+	}
 }
 
 // endExecFailedMsg is a kill the server refused: the pane is already off the
