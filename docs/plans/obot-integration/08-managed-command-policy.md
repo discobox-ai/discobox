@@ -1,5 +1,8 @@
 # WI-08 — Managed command policy and event correlation metadata
 
+> Status (checked 2026-09-11): not started; blocked on WI-03, which has not
+> started. The event machinery this plan assumed is gone (see Current state).
+
 **Goal:** define and enforce what ordinary user lifecycle commands do against a
 managed resource, and expose enough management metadata in reads and project
 events for an upstream controller to correlate them.
@@ -24,22 +27,24 @@ enqueue hints, and upstream re-reads before believing anything.
 
 ## Current state
 
-- Ordinary lifecycle commands, all unaware of management:
-  `start` (`api/openapi/server.yaml:4458`), `stop` (`:4499`),
-  `restart` (`:4341`), `upgrade` (`:4382`), `reconcile` (`:4423`),
-  `PATCH` (`:4176`), `DELETE` (`:4112`). Pools have `default` (`:3932`),
-  `reconcile` (`:4001`), `PATCH` (`:3892`), `DELETE` (`:3828`).
-- Events: `server/internal/events` (project event broker) and
-  `server/internal/store/resource_events.go`. There is no client-facing
-  transport on top of them any more: the websocket and SSE streams promised a
-  resumable list-then-watch they could not deliver and were removed
+- Ordinary lifecycle commands in `api/openapi/server.yaml`, all unaware of
+  management: `start-sandbox`, `stop-sandbox`, `restart-sandbox`,
+  `upgrade-sandbox`, `repair-sandbox`, `reconcile-sandbox`, `update-sandbox`
+  (`PATCH`), `delete-sandbox`, `unarchive-sandbox`, `purge-sandbox`. Pools have
+  `set-default-pool`/`unset-default-pool`, `reconcile-pool`, `update-pool`
+  (`PATCH`), `delete-pool`.
+- Events: there is nothing left to build on. The websocket and SSE streams
+  promised a resumable list-then-watch they could not deliver and were removed
   ([ADR 0061](../../adr/0061-the-client-facing-project-event-stream-is-removed.md)),
   which also took the `ResourceChangedEvent`/`ResourceListedEvent` wire shapes
   and the list-start/finish envelope with them.
-- So this plan builds the stream it wants rather than inheriting one. What it
-  describes below — enqueue hints, with polling as the correctness mechanism and
-  a re-read before believing anything — is exactly what the broker already
-  provides and materially less than what was removed. Managed sandboxes would
+  [ADR 0081](../../adr/0081-project-events-are-not-persisted-and-the-wait-polls.md)
+  then dropped the `project_events` table, the store's event machinery, and the
+  in-process broker (`server/internal/events`); the attach wait polls instead.
+- So this plan builds the stream it wants, and the publisher under it, rather
+  than inheriting one. What it describes below — enqueue hints, with polling as
+  the correctness mechanism and a re-read before believing anything — is
+  materially less than what was removed. Managed sandboxes would
   appear as ordinary sandbox resources on it; there is no separate managed
   stream.
 
@@ -63,7 +68,8 @@ enqueue hints, and upstream re-reads before believing anything.
    The owner value is deployment/configuration identity — not a hard-coded
    assumption that only Obot manages Discobox.
 3. **Management metadata in events.** The same block rides in the resource
-   payloads carried by `resource.changed` and snapshot events, so a subscriber
+   payloads of the change and snapshot events the new stream carries (no
+   `resource.changed` event exists today), so a subscriber
    can map a Discobox sandbox ID to its upstream resource without a second call.
 4. **Do not put utilization in events.** WI-07 is deliberately a separate live
    read path; resource events carry lifecycle only.

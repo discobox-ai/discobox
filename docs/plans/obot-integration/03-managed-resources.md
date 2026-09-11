@@ -1,5 +1,8 @@
 # WI-03 — Managed pool and managed sandbox resources
 
+> Status (checked 2026-09-11): not started — no managed-resource model, route,
+> or migration exists. WI-01's ADR, which this waits on, has not been written.
+
 **Goal:** add persisted managed-pool and managed-sandbox resources keyed by an
 upstream-owned external ID and opaque revision, with idempotent
 `PUT`/`GET`/`DELETE` operations over the existing concrete `Pool` and `Sandbox`.
@@ -21,20 +24,26 @@ it materializes.
 - No external identity, manager identity, or revision anywhere in
   `server/internal/model/model.go` or `api/openapi/server.yaml`. Confirmed by
   search; there is nothing to extend.
-- Concrete resources: `model.Pool` (`model.go:487`) and `model.Sandbox`
-  (`model.go:555`), both embedding `ResourceLifecycle` with
-  `generation`/`observed_generation` and desired-state/phase fields.
-- Sandbox IDs are generated in `Sandbox.BeforeCreate` (`model.go:608`).
+- Concrete resources: `model.Pool` and `model.Sandbox` (`model.go`), both
+  embedding `ResourceLifecycle` (`model/lifecycle.go`) with
+  `generation`/`observedGeneration`, `desiredState`, and `state`. A sandbox's
+  power state is the separate, observed `runtimeState` (ADR 0034).
+- Sandbox IDs are generated in `Sandbox.BeforeCreate` (`model.go`).
 - Existing REST shape to mirror: `POST /projects/{projectId}/sandboxes` returns
-  `202` with a sandbox that keeps reconciling; `POST .../pools` likewise.
-- `server/internal/resources/{pools,sandboxes}/` own service, manager, executor,
-  and reconciliation code per resource area. Read
+  `202` with a sandbox that keeps reconciling; `POST .../pools` returns `200`
+  with the created pool, which then reconciles.
+- `server/internal/resources/{pools,sandboxes}/` own the API-facing service,
+  lifecycle intent, and reconciler per resource area (pools also own the trusted
+  `ControlPlane` handed to drivers). Read
   `server/internal/resources/DESIGN.md` for the layering rules.
-- `server/internal/store/` is split by resource; `transactions.go` exists for
-  the "persist intent + project event + reconcile job in one transaction"
-  pattern described in the root `DESIGN.md`.
-- `docs/adr/0010-deletes-are-hard-deletes.md` governs deletion semantics; WI-01
-  decides how managed identity interacts with it.
+- `server/internal/store/` is split by resource; `transactions.go` provides
+  `Store.Transaction`, used for the root `DESIGN.md` pattern of persisting
+  accepted intent together with a dirty mark for the level-triggered reconcile
+  engine (`server/internal/reconcile`) in one transaction. There is no project
+  event to write alongside it any more (ADR 0081).
+- `docs/adr/0010-deletes-are-hard-deletes.md` (status still `Proposed`) and
+  `docs/adr/0022-sandbox-deletion-is-archive-then-confirmed-purge.md` govern
+  deletion semantics; WI-01 decides how managed identity interacts with them.
 
 ## Scope
 
@@ -82,7 +91,7 @@ it materializes.
    complete. Managed-pool deletion must be refused while managed sandboxes
    remain assigned to it.
 6. **Provider binding.** Pool provider binding is immutable
-   (`model.go:491`). A managed `PUT` that would change it returns conflict
+   (`PoolManifest.ProviderInstanceID`). A managed `PUT` that would change it returns conflict
    rather than silently replacing a non-empty pool.
 7. **Source restriction.** Reject `push`-delivered Git sources on managed
    sandboxes; only remotely cloneable sources are supported. See

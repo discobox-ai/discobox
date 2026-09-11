@@ -33,7 +33,7 @@
   declares the mount against an older guest fails every pool with "bind source
   path does not exist: /Users". In development the answer is
   `discobox admin pool build-guest` and a pool recreate; for a release it is a
-  `vm/v*` tag and a re-pinned `DefaultGuestImage`, shipped before or with the
+  `vm/v*` tag and a re-pinned `guestimage.DefaultVMImage`, shipped before or with the
   server-side mount, never after.
 - **Pool IDs become directory names.** Anything reaching `filepath.Join` with
   the state directory goes through `validatePoolID` first.

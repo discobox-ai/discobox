@@ -1,22 +1,27 @@
 # Proxy Implementation Backlog
 
-Track proxy-component work here until the pool-agent/sandbox-agent integration
-phase starts.
+> **Status: fully implemented.** Every item below has shipped, including the
+> pool integration and all three Sentinel Secret Swapping phases. This file is
+> kept as the record of the backlog; the current design lives in
+> [`DESIGN.md`](DESIGN.md), and the pool-side wiring in
+> [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md).
 
-## Worker Integration (done)
+## Pool Integration (done)
 
-- Worker proxy runs as the `discobox-proxy.service` systemd unit inside the
-  worker container (`discobox-pool-agent proxy`); `pool-agent/proxyagent`
-  prepares the CA bundle before systemd boots.
+- The pool proxy runs as the `discobox-proxy.service` systemd unit inside the
+  pool container (`discobox-pool-agent proxy`); `pool-agent/proxyagent`
+  prepares the CA bundle (`PrepareBundle`) before systemd boots.
 - The sandbox-local forwarder lives in the dependency-light `proxy/bridge`
   package and runs as `discobox-proxy-bridge.service`
   (`discobox-sandbox-agent proxy-bridge`).
 - `sandboxruntime.CreateSandbox` issues per-sandbox client certificates (client
-  ID = sandbox ID), bind-mounts the public CAs + client keypair at
-  `/etc/discobox/proxy`, injects proxy/CA env into the container and manifest,
-  and adds `discobox-worker-proxy:host-gateway`.
-- Remaining: the proxy runs with a nil resolver, so sentinel secret swapping is
-  inactive until Phase 3 wiring below lands.
+  ID = sandbox ID), places the public CAs + client keypair in the config volume
+  so they appear in the sandbox at `/etc/discobox/proxy`, injects proxy/CA env
+  into the container and manifest, and attaches the sandbox only to the
+  per-pool internal network (`discobox-sbnet-<poolID>`), where the pool is
+  aliased `discobox-pool-proxy`.
+- The pool proxy is built with a real `proxy.SecretResolver`
+  (`proxyagent.secretResolver`), so sentinel secret swapping is live.
 
 ## Work Items
 
@@ -24,7 +29,7 @@ phase starts.
   detection, HTTP request handling, CONNECT/MITM, header rewrite, cache
   lookup/store, audit enqueue/drop/write, and SOCKS connect handling.
 - [x] Add sandbox-local forwarding proxy mode that accepts localhost proxy traffic
-  and forwards to the worker proxy with the sandbox client certificate.
+  and forwards to the pool proxy with the sandbox client certificate.
 - [x] Add end-to-end mTLS HTTP proxy tests covering client identity, blocked
   requests, CONNECT/MITM, cache hit/store, and header injection.
 - [x] Add SOCKS integration tests covering mTLS client identity and allow/deny audit
@@ -63,13 +68,17 @@ Swapping.
   leaking entropy); seed provider table (format + default host); anonymous-secret
   creation for inline values (`Anonymous`/`UniqueKey` columns exclude them from
   the type+host uniqueness domain and from list/match); `SandboxSecret` assignment
-  table + store; `CreateSandboxBody.secrets[]` with create-time assignment,
+  table + store; `SandboxCreateConfig.secrets[]` with create-time assignment,
   sentinel minting, and env injection; `ResolveSandboxSecret` resolve-by-sentinel
   entry point building on the `SecretRequest` approval flow; CLI `--secret/-s`
   (`KEY=VALUE` inline, `KEY=<ID>` reference) plus fuzzy `--env` secret detection
   (`KEY`/`TOKEN`/`PASS`/`SECRET`) with `KEY!=VALUE` override.
-- [ ] Phase 3 — remaining wiring: HTTP endpoint exposing `ResolveSandboxSecret`
-  to the worker; worker-agent `secrets.Resolver` implementation calling it; build
-  the proxy `Config.Secrets` sentinel sets from `SandboxSecret` rows and push them
-  at sandbox launch/reconcile; GC anonymous secrets and assignments on sandbox
-  delete; extend `run` to the same `--secret`/fuzzy `--env` handling.
+- [x] Phase 3 — wiring: the `ResolveSandboxSecret` API operation for pool
+  principals (`server/internal/handlers/secrets.go`); the pool-agent
+  `secrets.Resolver` implementation calling it (`pool-agent/proxyagent/secrets.go`);
+  the create request carries the sandbox's sentinel set, which
+  `sandboxruntime.CreateSandbox` writes with `proxyagent.UpsertSandboxSentinels`
+  to the secrets file the proxy watches into `Config.Secrets`; anonymous secrets
+  and assignments are removed on sandbox delete (`deleteSandboxSecretsTx`); `run`
+  shares the `--secret`/fuzzy `--env` handling
+  (`sandboxcreate.EnvAndSecretsFromOptions`).

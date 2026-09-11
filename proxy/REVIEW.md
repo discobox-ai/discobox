@@ -35,8 +35,9 @@
   rule. Never persist injected secret values in audit rows.
 - Keep certificate preparation callable without starting the proxy listener.
 - Header rewrite rule evaluation must remain deterministic across process runs.
-- Avoid importing server internals; this package is consumed by pool-agent
-  and launch wiring through root-module contracts.
+- Avoid importing server internals. The package lives in the root module and
+  is consumed through root-module contracts: `pool-agent/proxyagent` runs the
+  pool proxy, and sandbox-agent imports only `proxy/bridge`.
 - Never persist a swapped secret value. Any header whose value was
   secret-swapped must be added to the audit redaction set, and a query-param
   swap must record the pre-swap URL. Real values must never reach an audit row,

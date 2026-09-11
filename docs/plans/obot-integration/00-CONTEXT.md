@@ -1,5 +1,8 @@
 # Shared context: Obot managed-runtime integration
 
+> Status: see [README](README.md) — none of these items has shipped (checked
+> 2026-09-11).
+
 Read this before picking up any `NN-*.md` work item in this directory. Each work
 item assumes it and does not repeat it.
 
@@ -89,7 +92,7 @@ and expect mechanical but real conflicts:
 
 | File | Items |
 | --- | --- |
-| `api/openapi/server.yaml` (~5700 lines) | WI-03, WI-04, WI-05, WI-06, WI-07 |
+| `api/openapi/server.yaml` (~8200 lines) | WI-03, WI-04, WI-05, WI-06, WI-07 |
 | `server/internal/model/model.go` | WI-03, WI-05, WI-06 |
 | `pool-agent/api/openapi/pool.yaml` | WI-05, WI-07 |
 | `server/internal/resources/sandboxes/` | WI-04, WI-05, WI-08 |
@@ -116,8 +119,8 @@ tree, or give each item its own worktree so it has its own generated output.
 | Trust boundary | WI-02 (service auth) | nothing |
 | Managed layer | WI-03 (managed resources) -> WI-08 (command policy + event metadata) | WI-01 accepted |
 | Sandbox capability | WI-04 (declarative update + replace), WI-05 (per-sandbox files) | nothing; both land independently of WI-03 |
-| Pool | WI-06 (suspension, envelope, overcommit) | WI-01 accepted for the overcommit decision |
-| Observability | WI-07 (live utilization) | nothing — fully independent |
+| Pool | WI-06 (suspension, envelope) | nothing — overcommit placement already shipped for every pool ([ADR 0029](../../adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)) |
+| Observability | WI-07 (live utilization) | re-plan against [ADR 0071](../../adr/0071-resource-accounting-is-a-pool-agent-differenced-report.md), which shipped resource accounting differently |
 | Verification | WI-09 (contract test suite) | WI-03's API shape frozen |
 
 WI-04, WI-05, WI-06, and WI-07 are all valuable on their own merits and can land

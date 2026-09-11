@@ -1,5 +1,8 @@
 # WI-05 — Per-sandbox runtime-layer files
 
+> Status (checked 2026-09-11): not started — no sandbox-level `files` field in
+> either contract or the model.
+
 **Goal:** let a caller supply files for one sandbox through the API, and have
 them land in the sandbox's runtime config layer.
 
@@ -22,27 +25,26 @@ is through a harness config, which is project-scoped and shared.
 
 The destination and its merge semantics are already built and tested:
 
-- `sandboxconfig/document.go:57` — `RuntimeLayer.Files []File`, documented as
+- `sandboxconfig/document.go` — `RuntimeLayer.Files []File`, documented as
   "overlays onto the image's declared files, by path".
-- `sandboxconfig/effective.go:96` and `mergeFiles` at `effective.go:146` —
+- `Effective` and `mergeFiles` in `sandboxconfig/effective.go` —
   image and runtime entries merge by path (later wins), then `ProjectLayer.FilesAdd`
   appends new paths only. Covered by `TestEffective_FilesOverlayByPath`
-  (`sandboxconfig/effective_test.go:110`).
+  (`sandboxconfig/effective_test.go`).
 - `docs/adr/0012-sandbox-config-is-three-attribute-owned-layers.md` and
   `sandboxconfig/DESIGN.md` describe the three attribute-owned layers.
 
 And it is never populated. The one construction site,
-`buildSandboxDocument` in `pool-agent/sandboxruntime/runtime.go:621`, sets
-model, prompt, harness mode, env, and user from the create request — but not
+`buildSandboxDocument` in `pool-agent/sandboxruntime/runtime.go`, sets
+model, prompt, harness mode, env, git identity, and user from the create request — but not
 files, because the request has nowhere to carry them:
 
-- `api/openapi/server.yaml:1715` — `SandboxCreateConfig` has no `files`.
-- `api/openapi/server.yaml:1641` — `SandboxConfig` has no `files`.
-- `pool-agent/api/openapi/pool.yaml` — `SandboxConfig` (~line 204) has no
+- `api/openapi/server.yaml` — `SandboxCreateConfig` has no `files`.
+- `api/openapi/server.yaml` — `SandboxConfig` has no `files`.
+- `pool-agent/api/openapi/pool.yaml` — `SandboxConfig` has no
   `files` either.
-- `model.Sandbox` (`server/internal/model/model.go:555`) has no files column.
-  Compare `model.HarnessConfig.Files` / `ConfiguredFiles` (`model.go:289`,
-  `model.go:297`), which is the existing project-scoped mechanism and a good
+- `model.Sandbox` (`server/internal/model/model.go`) has no files column.
+  Compare `model.HarnessConfig.Files` / `ConfiguredFiles` (`model.go`), which is the existing project-scoped mechanism and a good
   reference for the `File` shape.
 
 ## Scope
@@ -51,7 +53,7 @@ A four-hop plumb-through, plus one storage decision:
 
 1. `api/openapi/server.yaml`: add files to `SandboxCreateConfig` and
    `SandboxConfig`. Reuse or mirror the existing harness-config file shape
-   (`HarnessConfigFile`, `server.yaml:142`) rather than inventing a second one.
+   (`HarnessConfigFile`) rather than inventing a second one.
 2. `server/internal/model/model.go`: a files column on `Sandbox`, with a
    migration.
 3. `pool-agent/api/openapi/pool.yaml`: add files to `SandboxConfig` so the

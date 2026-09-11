@@ -1,9 +1,10 @@
 # Provider Review Notes
 
 - Backend-owned pool runtime drift detection should not mutate orchestrated
-  resource lifecycle rows in place. Enqueue the pool host reconcile job for rows
-  that still exist; direct provider cleanup is reserved for managed runtime
-  orphans with no DB row.
+  resource lifecycle rows in place. For rows that still exist it marks the pool
+  for reconciliation (`sandbox.PoolManager.SchedulePoolReconciliation`, a drift
+  mark that never cuts a failure backoff); direct provider cleanup is reserved
+  for managed runtime orphans with no DB row.
 - Keep pool-runtime drift detection separate from sandbox-runtime
   reconciliation. Even when both are Docker containers, drift detection may only
   observe pool runtimes; sandbox containers are owned by the pool-agent
@@ -18,16 +19,18 @@
   path.
 - Terminal `failed` is only for pools that never completed create. Gate any
   new terminal-failure transition on `!Pool.EverCreated()`. A created pool
-  that fails a reconcile/repair must go to a non-terminal state
-  (`FailOperationRetryable`, e.g. `offline`) and keep being re-enqueued for
-  reconciliation, not latched. Do not reintroduce checks that treat every
-  `phase==failed`/`LastOperationStatus==failed` pool as terminal
-  (`activePool`, the docker watcher, and pool repair all special-case
-  `EverCreated`).
-- Keep Docker out of `workerpool` and `internal/sandbox`. Container mechanics
+  that fails a reconcile/repair keeps its state and records the error against
+  that generation (`offline` only when its heartbeat is also stale) and keeps
+  being re-driven (`SchedulePoolRepair`), not latched. Do not add checks that
+  treat every `state==failed` or `errorMessage` pool as terminal (the pool
+  reconciler's pending stamp and `failReconcile`, and the docker watcher, all
+  special-case `EverCreated`).
+- Keep Docker out of `poolruntime` and `internal/sandbox`. Container mechanics
   belong in `dockerworker.Engine`; anything backend-specific belongs behind
-  `dockerworker.Driver`. A new backend should only implement VM CRUD plus the
-  two connection methods.
+  `dockerworker.Driver`. A new backend implements only the driver: VM
+  lifecycle, the two connection leases, `PoolLogs`, and `GuestImageBuildSpec`
+  (the last two may return `sandbox.ErrPoolLogsUnsupported` /
+  `sandbox.ErrGuestImageBuildUnsupported`).
 - The pool host console must never carry `LabelPoolAgent` (drift detection
   reconciles and deletes what does) or the pool agent's
   `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.
@@ -39,7 +42,7 @@
 - Keep console teardown in `RemovePool`. Nothing reconciles the console, so
   pool deletion is the only thing that removes it.
 - Do not add optional provider metadata, status, or lifecycle interfaces.
-  `sandbox.Provider`, `workerpool.WorkerProvider`, and `dockerworker.Driver`
+  `sandbox.Provider`, `poolruntime.RuntimeProvider`, and `dockerworker.Driver`
   state required behavior directly. Optional feature interfaces need a runtime
   product reason, not a smaller diff.
 - Drivers must not implement Docker readiness polling or carry bootstrap
@@ -54,7 +57,7 @@
 - Do not reintroduce VM adoption. `vz`, `wslc`, and `libkrun` all end their VMs
   with the server process (see [VM Lifetime](DESIGN.md#vm-lifetime)); a runtime
   lock, a recorded PID, or an "is that launcher still mine" check is the
-  protocol ADR 0062 §9 removed. A libkrun launcher must keep both lifetime
+  protocol ADR 0062 §9 excludes. A libkrun launcher must keep both lifetime
   mechanisms — `PR_SET_PDEATHSIG` *and* the watchdog pipe — because each covers
   what the other cannot.
 - The guest image belongs to no provider. `vm-image/` is one build for every VM

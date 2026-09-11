@@ -1,5 +1,9 @@
 # WI-02 — Service authentication and project-scoped service authorization
 
+> Status (checked 2026-09-11): not started. There is no service principal; the
+> router still authenticates with `PoolAuthenticator`, then
+> `DefaultUserAuthenticator`.
+
 **Goal:** let a remote service (Obot) authenticate to the Discobox REST API and
 project event streams with its own credential, authorized to a specific project.
 
@@ -17,9 +21,11 @@ why it is worth starting early and independently.
 
 ## Current state
 
-- `server/internal/auth/authenticators.go:56` — `DefaultUserAuthenticator`
-  authenticates *every* request as the configured default user.
-- `server/internal/auth/poolagent/` — pool agents authenticate with a bearer
+- `server/internal/auth/authenticators.go` — `DefaultUserAuthenticator`
+  authenticates *every* request as the configured default user; the router
+  (`server/internal/server/router.go`) tries `PoolAuthenticator` first, then it.
+- `PoolAuthenticator` (same file, token handling in
+  `server/internal/auth/poolagent/`) — pool agents authenticate with a bearer
   PASETO assertion verified against the pool's stored Ed25519 public key, with
   signed `project_id` and `pool_id` claims that must match the route. This is
   the closest existing model for a non-human principal.
@@ -30,8 +36,10 @@ why it is worth starting early and independently.
 - `server/internal/auth/context.go` — `Principal` is the only request identity
   in context; `PrincipalTypeUser` and `PrincipalTypePool` exist today.
 - There is no longer a project websocket/SSE stream: it was removed
-  ([ADR 0061](../../adr/0061-the-client-facing-project-event-stream-is-removed.md)).
-  If this work still wants one, it is built to this consumer's contract and
+  ([ADR 0061](../../adr/0061-the-client-facing-project-event-stream-is-removed.md)),
+  and [ADR 0081](../../adr/0081-project-events-are-not-persisted-and-the-wait-polls.md)
+  then dropped the in-process broker and the `project_events` table too. If
+  this work still wants one, it is built to this consumer's contract and
   authorized with the same credential from the start.
 
 Read `server/internal/auth/DESIGN.md` and `REVIEW.md` before designing. Two
@@ -84,13 +92,13 @@ rules there bind this work directly:
   bootstrap flow like `/api/pools/register`?
 - **Does the service principal need to act as a user** for resources that key
   off `created_by_user_id`? `model.Sandbox.CreatedByUserID` is `not null`
-  (`server/internal/model/model.go:558`). Answer this early — WI-03 needs it.
+  (`server/internal/model/model.go`). Answer this early — WI-03 needs it.
 
 ## Done when
 
 - A remote caller with a service credential can perform project-scoped REST
-  operations and open a project stream for its project, and is rejected for
-  another project.
+  operations (and open a project stream, if one is built) for its project, and
+  is rejected for another project.
 - The default-user path is unchanged for local single-user use.
 - Tests cover: valid credential, wrong project, revoked credential, missing
   credential, and stream authentication.

@@ -1,5 +1,8 @@
 # WI-09 — Managed contract test suite
 
+> Status (checked 2026-09-11): not started; blocked on WI-03, which has not
+> started.
+
 **Goal:** a test suite that proves the Discobox half of the managed contract
 behaves as an upstream controller assumes, especially under retry, loss, and
 out-of-band change.
@@ -49,7 +52,8 @@ Deletion:
 - managed-pool deletion refused while managed sandboxes remain assigned;
 - ordering: sandboxes deleted and finalized before the pool that hosted them.
 
-Events:
+Events (these depend on WI-08 building a stream; none exists today — ADR 0061,
+ADR 0081):
 
 - delayed and duplicate sandbox events are harmless;
 - event-stream reconnect delivers a fresh snapshot that closes the gap.
@@ -57,7 +61,7 @@ Events:
 Capacity and QoS (pairs with WI-06):
 
 - launching many sandboxes beyond the pool's physical capacity, with no
-  reservation-based admission rejection;
+  reservation-based admission rejection (already the behavior since ADR 0029);
 - pool pressure, QoS action, and sandbox termination are reported;
 - an explicitly confirmed live-pool envelope reduction applies.
 

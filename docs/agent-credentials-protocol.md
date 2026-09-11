@@ -19,7 +19,9 @@ Decision record:
   (`DISCOBOX_CREDENTIALS_TOKEN`). When a token is configured it is sent as
   `Authorization: Bearer <token>` on every request. Implementations reachable
   only over a trusted local transport — Discobox serves the protocol on sandbox
-  loopback — may require no token.
+  loopback — may require no token. Discobox sets `DISCOBOX_CREDENTIALS_URL` to
+  that default in every exec's environment unless the exec already names one,
+  and sets no token.
 
 ### Errors
 
@@ -36,6 +38,10 @@ message:
 | `denied` | 403 | You may not do this. Ask for it with `request`. |
 | `not_found` | 404 | The id means nothing to this server. |
 | `unavailable` | 5xx | The server could not answer. Retry; the same call may succeed. |
+
+The body's `code` wins over the status line. A client reading an error with no
+`code` classifies it by status: 400 or 409 is `invalid`, 401 or 403 `denied`,
+404 `not_found`, anything else `unavailable`.
 
 The code exists so a caller — an agent, above all — can branch on a token
 rather than on the wording of a sentence. The set is deliberately coarse: an id
@@ -106,10 +112,13 @@ POST /v1/credentials/requests
 
 `host` is the destination the credential will be sent to. It is required by the
 Discobox implementation, which refuses to mint a host-unscoped approval through
-this flow.
+this flow. Discobox also requires `name`, a valid `envVar`, and at least one use
+with a description, and answers `invalid` without them. A second ask for the
+same `envVar` and `host` while one is still pending returns that pending
+request rather than a new one.
 
-Approval is human-latency, so `request` is **asynchronous**: it returns
-immediately and the client polls.
+Approval is human-latency, so `request` is **asynchronous**: it answers
+`202 Accepted` immediately and the client polls.
 
 ```
 GET /v1/credentials/requests/{requestId}
@@ -122,6 +131,8 @@ GET /v1/credentials/requests/{requestId}
 `status` is one of `pending`, `granted`, `denied`. `uses` is present once
 granted and carries the ids `get` accepts — the approver may have edited the
 descriptions, so the granted uses are authoritative, not the requested ones.
+Discobox reports an approval whose grant has since been revoked as `denied`,
+and a request id that is not the calling sandbox's own as `not_found`.
 
 Blocking is the client's job (`--wait` on the CLI), built on this poll. There is
 no long-poll and no synchronous request primitive.
@@ -161,7 +172,9 @@ reports the role it would have asked for anyway, such as `"none"`). `prompt`
 is the exact text the decision was made from, in full. An implementation that
 makes no such decision may still require the field and record it verbatim; the
 protocol does not make persistence itself mandatory, only that the field is
-sent.
+sent. Discobox answers `invalid` when `useId` is missing or the verdict has no
+`role` or `prompt`, and records the verdict to the control plane before it
+mints: if that write fails, no value is issued.
 
 `expiresAt` is the end of this value's window. A client that needs the
 credential again after it passes calls `get` again rather than holding the value.
@@ -184,11 +197,13 @@ A caller that judges its own commands before calling `get` (`discobox-access`
 does; the protocol does not require it) never calls `get` at all for a command
 its judge refused — there is nothing to issue, so there is nothing for `get`'s
 own recording to catch. Without this operation that verdict would exist only
-on the caller's own side, if anywhere. Reporting it is the caller's choice, not
-its obligation: the response is `204` either way, and a client is free to treat
-this call's own failure as unremarkable — it is what a caller volunteers about
-a decision made before this protocol was ever asked to act on it, not a
-correction to something `get` returned.
+on the caller's own side, if anywhere. A report the server accepts answers
+`204`, whether the verdict allowed or refused the command; Discobox answers
+`invalid` for one with no `useId` or with no verdict `role` or `prompt`.
+Reporting it is the caller's choice, not its obligation, and a client is free
+to treat this call's own failure as unremarkable — it is what a caller
+volunteers about a decision made before this protocol was ever asked to act on
+it, not a correction to something `get` returned.
 
 ## The client shape that fits it best
 
@@ -238,7 +253,7 @@ protocol neither knows nor depends on whether its caller does this, and a
 different client may do something else.
 
 **The reference client has no unwrapped way to take a value.** The wire
-operation below is `get` for a reason — a caller of the protocol may still ask
+operation above is `get` for a reason — a caller of the protocol may still ask
 for a value with no command attached — but `discobox-access` itself dropped
 that as a CLI capability
 ([ADR 0092](adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md)): a value
@@ -260,9 +275,11 @@ An implementation owns four decisions the protocol does not make:
 4. **What becomes of a verdict.** The field is required on both `get` and the
    denial report; whether either is persisted, and where, is not specified.
 
-In Discobox: sandbox-agent serves the protocol on sandbox loopback, relays to
-pool-agent over the sandbox's mTLS client certificate (which is the identity),
-and pool-agent mints the ephemeral sentinel and calls the control plane, where
-grants and cleartext live. See
+In Discobox: sandbox-agent serves the protocol on sandbox loopback
+(`127.0.0.1:17010`) and relays each call to the pool over the sandbox's mTLS
+client certificate, whose common name is the sandbox ID and is the identity.
+The pool's proxy unit (`pool-agent/proxyagent`, on `:17083`) answers it: it
+calls the control plane, where grants and cleartext live, and mints the
+ephemeral sentinel. See
 [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md) and
 [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md).

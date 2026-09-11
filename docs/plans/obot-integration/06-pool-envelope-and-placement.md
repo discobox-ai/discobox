@@ -1,5 +1,9 @@
 # WI-06 — Pool suspension, envelope enforcement, and overcommit placement
 
+> Status (checked 2026-09-11): partial. Overcommit placement shipped for every
+> pool with ADR 0029 (scope item 2). Suspension, envelope enforcement, and
+> in-place envelope changes have not started.
+
 **Goal:** make a pool an administrator-controlled capacity envelope that
 sandboxes share by overcommit, with an explicit suspension switch, rather than a
 capacity pool that admits sandboxes by instantaneous available-resource checks.
@@ -23,40 +27,34 @@ that today.
 
 ## Current state
 
-**Placement is admission-by-available-capacity.**
-`Store.SchedulablePoolForSandbox` (`server/internal/store/pools.go:275-307`)
-refuses placement unless the pool is unrevoked, active, ready, schedulable, and
+**Placement no longer gates capacity (shipped since this plan was written).**
+[ADR 0029](../../adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)
+removed per-sandbox CPU/memory/storage requests and every capacity comparison
+from `Store.SchedulablePoolForSandbox` (`server/internal/store/pools.go`), for
+all pools. It now refuses placement only when the pool is revoked, not desired
+`present`, `offline`, or not agent-reported `Ready` and `Schedulable`. The
+agent-reported `Available*` fields on `model.Pool` are still written by every
+heartbeat (`Store.UpdatePoolStatus`, via
+`server/internal/resources/pools/agent_service.go`), but nothing gates on them.
 
-```go
-pool.AvailableCPUVCPUs     >= sandbox.CPUVCPUs &&
-pool.AvailableMemoryBytes  >= sandbox.MemoryBytes &&
-pool.AvailableStorageBytes >= sandbox.StorageBytes
-```
-
-Those `Available*` fields are *instantaneous agent-reported* values
-(`model.go:506-508`), written by pool heartbeats through
-`server/internal/resources/pools/agent_service.go:60`. So placement today
-depends on a sampled number that moves under the caller's feet — which is the
-worst of both worlds: it is not a real reservation, but it does reject work.
-
-**There is no suspension.** `model.Pool.Schedulable` (`model.go:504`) is
+**There is no suspension.** `model.Pool.Schedulable` (`model.go`) is
 agent-reported, not administrator-declared, and is written by the heartbeat and
-by the reconciler on failure paths (`resources/pools/reconciler.go:224,253`).
+by the reconciler on failure paths (`resources/pools/reconciler.go`).
 Overloading it for administrative suspension would let the next heartbeat
 silently clear the administrator's intent.
 
 **The envelope is enforced only partly, and one third of it is inert.**
-`Pool.CPUVCPUs`, `MemoryBytes`, `StorageBytes` (`model.go:496-498`) are
+`Pool.CPUVCPUs`, `MemoryBytes`, `StorageBytes` (on `model.PoolManifest`) are
 documented as the total capacity the pool's sandboxes may overcommit, with zero
 meaning "sized by the host". In practice the Docker pool host applies
 `pool.CPUVCPUs` -> `NanoCPUs` and `pool.MemoryBytes` -> `Memory`
-(`server/providers/dockerworker/engine.go:401-411`), and **`pool.StorageBytes`
+(`server/providers/dockerworker/engine.go`), and **`pool.StorageBytes`
 is read by nothing outside CLI display** — it is accepted, persisted, shown, and
 never enforced. Do not leave it looking implemented; either enforce it or
 document it as unenforced.
 
 **Changing a pool's envelope today force-recreates the pool host container.**
-The envelope is compared via a container *label*, so any capacity change
+The envelope is compared via a container *label* (`discobox.pool_envelope`), so any capacity change
 destroys and recreates the host rather than updating it — an outage, not the
 "applies immediately, increases contention" behavior this item wants. The fix
 is to compare against the live `HostConfig` and apply changes with
@@ -65,20 +63,23 @@ pool, not just managed ones, so confirm the blast radius with the engineer
 before building it.
 
 **The placement gate fires only on sandbox create.**
-`SchedulablePoolForSandbox` is reached solely from `poolruntime.Provider.Create`.
+`SchedulablePoolForSandbox` is reached solely from `poolruntime.Provider.Create`
+(through `schedulablePool`).
 `Start` and `Restart` perform no pool check at all — they talk straight to the
 agent. So suspension cannot be enforced in the store gate alone; it needs
 service-layer enforcement at the start/restart entrypoints too.
 
-**A failed placement is terminal, with no wake-up path.** The sandbox reconciler
-calls the non-retryable `FailOperation`, and `ScanDirty` explicitly excludes
-terminal failures. Nothing marks sandboxes dirty when a pool becomes healthy
+**A failed placement is settled, with no wake-up path.** The sandbox reconciler
+records the failure on the resource and advances `ObservedGeneration` — a
+settled failure is converged by design — and `ScanDirty` re-marks only
+sandboxes whose generations disagree, so nothing re-drives it until new intent
+arrives. Nothing marks sandboxes dirty when a pool becomes healthy
 again. "Clearing suspension resumes sandboxes" therefore needs real re-drive
 intent, not just a dirty mark.
 
-**`Schedulable` is rewritten on every heartbeat** (`store/pools.go:257`) and by
-`RegisterPool` (`store/pools.go:219`), as well as by the reconciler's failure
-paths. This is confirmed, not suspected: it cannot carry administrator intent,
+**`Schedulable` is rewritten on every heartbeat** (`Store.UpdatePoolStatus`)
+and by the reconciler's failure paths. (`RegisterPool` no longer writes the
+health flags; the agent's first heartbeat does.) This is confirmed, not suspected: it cannot carry administrator intent,
 and a separate `Suspended` column is the right call.
 
 The findings above came out of an aborted implementation run. They are
@@ -87,7 +88,8 @@ them.
 
 Relevant accepted ADRs: `0003-promote-pool-to-a-first-class-primitive.md`,
 `0006-pool-is-the-runtime-host.md`,
-`0013-local-linux-pools-use-libkrun-microvms.md`.
+`0013-local-linux-pools-use-libkrun-microvms.md`,
+`0029-sandboxes-have-no-per-sandbox-resource-requests.md`.
 
 ## Scope
 
@@ -98,11 +100,10 @@ Relevant accepted ADRs: `0003-promote-pool-to-a-first-class-primitive.md`,
    administrator may stop a sandbox while suspended, and it stays stopped.
    Clearing suspension resumes reconciliation and starts sandboxes whose desired
    state is running.
-2. **Placement.** Per WI-01's decision, remove the instantaneous available-
-   capacity comparison from the placement gate — for managed pools at minimum,
-   possibly for all pools. What remains: the pool must be unrevoked, active,
-   ready, schedulable, and not suspended. Do not replace one admission rule with
-   another.
+2. **Placement.** Done for every pool by ADR 0029: the capacity comparison is
+   gone. What remains is adding suspension to the gate — the pool must be
+   unrevoked, present, not offline, ready, schedulable, and not suspended. Do
+   not reintroduce an admission rule.
 3. **Envelope enforcement.** The configured capacity is the pool runtime's outer
    boundary, applied at the host, not an admission check at the API. Establish
    what the pool host enforces today and close the gap.
@@ -117,22 +118,21 @@ Relevant accepted ADRs: `0003-promote-pool-to-a-first-class-primitive.md`,
 
 - Reporting pressure, usage, QoS actions, or termination reasons — WI-07.
 - Managed-pool routes and external identity — WI-03.
-- Per-sandbox resource guarantees. Per-sandbox CPU/memory/storage values stay
-  *observations and hints*, never allocations. Do not turn them into requests.
+- Per-sandbox resource guarantees. Sandboxes carry no CPU/memory/storage values
+  at all (ADR 0029); do not reintroduce them as requests.
 
 ## Design questions for the engineer
 
-- **Managed-only or universal overcommit?** WI-01 should have settled it. If
-  not, settle it there first — this item implements, it does not decide.
-- **Do per-sandbox `cpuVcpus`/`memoryBytes`/`storageBytes` still mean anything**
-  once they no longer gate placement? They may still shape cgroup limits inside
-  the pool. If they become purely advisory, say so in the API documentation.
-- **What happens to a sandbox whose requested storage exceeds the whole
-  envelope?** Overcommit says do not reject; physics says it will fail. Failing
-  at runtime with a clear condition is probably right, but confirm.
+- **Managed-only or universal overcommit?** Settled: universal, by ADR 0029.
+- **Do per-sandbox `cpuVcpus`/`memoryBytes`/`storageBytes` still mean anything?**
+  Settled: they were removed (ADR 0029). The pool envelope is the only cgroup
+  boundary, shared by every sandbox inside it.
+- **What happens when a pool runs out of storage?** ADR 0029 answers the
+  admission half: a full pool fails the way any full disk fails a write.
+  Whether that should also surface as a clear pool condition is still open.
 - **Should suspension be a desired-state field or a separate lifecycle state?**
   A field composes better with the existing `desiredState` enum
-  (`active`/`deleted`) than a third enum value would.
+  (`present`/`deleted` for a pool; `archived` is sandbox-only) than a third enum value would.
 
 ## Done when
 
@@ -140,7 +140,7 @@ Relevant accepted ADRs: `0003-promote-pool-to-a-first-class-primitive.md`,
   sandboxes alone, and resumes correctly when unsuspended — and a heartbeat
   cannot clear the suspension.
 - Many sandboxes can be launched into a pool beyond its nominal capacity without
-  admission rejection.
+  admission rejection. Already true since ADR 0029; keep it under test.
 - The envelope is enforced at the runtime boundary.
 - Pool `DESIGN.md` files describe the new placement semantics.
 - `go tool task check-hooks` passes.

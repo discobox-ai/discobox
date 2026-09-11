@@ -1,5 +1,8 @@
 # WI-01 — Discobox ADR for the managed-resource layer
 
+> Status (checked 2026-09-11): not started — no managed-layer ADR exists in
+> `docs/adr/`. Decision 3 below has since been settled by ADR 0029.
+
 **Goal:** land the Discobox-side decision record that the managed-resource work
 builds against.
 
@@ -11,8 +14,9 @@ outcome.**
 `CLAUDE.md` requires an ADR when a plausible alternative was rejected for a
 non-obvious reason, drafted as `Proposed`, landed on its own, and flipped to
 `Accepted` as the decision gate before implementation. Three decisions in this
-integration clear that bar comfortably, and two of them cut against existing
-accepted Discobox ADRs. Getting them written down first is what keeps the
+integration cleared that bar when this was written. The second cuts against an
+existing Discobox ADR (0010); the third has since been settled for every pool by
+ADR 0029 (see below). Getting them written down first is what keeps the
 parallel work items from disagreeing with each other.
 
 The upstream Obot ADR is accepted and specifies the cross-system contract. It is
@@ -32,38 +36,37 @@ changes, and the managed identity has to survive that replacement. Record this.
 
 **2. Managed identity outlives the concrete resource.**
 
-`docs/adr/0010-deletes-are-hard-deletes.md` is accepted: Discobox hard-deletes.
+`docs/adr/0010-deletes-are-hard-deletes.md` records that Discobox hard-deletes,
+and the code does (the ADR's status line still reads `Proposed`). Sandbox
+deletion is also archive-then-confirmed-purge
+([ADR 0022](../../adr/0022-sandbox-deletion-is-archive-then-confirmed-purge.md)).
 The managed layer needs the identity to persist through deletion so a repeated
 `DELETE` continues the same deletion rather than starting a new resource
 generation, and so out-of-band runtime loss can be reconciled instead of
 appearing as "already gone". Decide whether this supersedes part of ADR-0010,
 narrows it, or sits alongside it as a different resource kind with its own rule.
-Do not quietly contradict an accepted ADR.
+Do not quietly contradict either ADR.
 
-**3. Overcommit placement for managed sandboxes.**
+**3. Overcommit placement — settled since this was written; cite, do not re-decide.**
 
-`Store.SchedulablePoolForSandbox` (`server/internal/store/pools.go:275-307`)
-currently refuses placement when a sandbox's requested CPU, memory, or storage
-exceeds the pool's *instantaneous, agent-reported* available capacity. The
-upstream ADR requires managed placement to be overcommit-only: a pool behaves
-like the user's machine, all their agents share it, and starting another one is
-not rejected because the sum of requests exceeds the envelope. Contention is
-handled by pool QoS, not admission.
+When this plan was written, `Store.SchedulablePoolForSandbox` refused placement
+when a sandbox's requested CPU, memory, or storage exceeded the pool's
+instantaneous, agent-reported available capacity.
+[ADR 0029](../../adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)
+(Accepted) has since removed per-sandbox resource requests and every capacity
+comparison in `SchedulablePoolForSandbox` (`server/internal/store/pools.go`),
+**for all pools**: placement checks only that the pool is unrevoked, desired
+`present`, not `offline`, and agent-reported ready and schedulable. That is the
+overcommit model the upstream ADR requires (a pool behaves like the user's
+machine; contention is handled by pool QoS, not admission), with one scheduling
+semantic rather than a managed-only branch. It also superseded ADR 0003 §4's
+per-sandbox limits inside the envelope.
 
-There is a further piece of evidence that the current gate is closer to an
-accident than a policy: the agent-reported `Available*` figures it compares
-against are measured from the **host** (`runtime.NumCPU()`, `/proc/meminfo`),
-not from the pool's cgroup. So today's admission check admits against numbers
-that ignore the very envelope the runtime enforces. Whatever is decided, the
-existing behavior should not be defended as an intentional design.
-
-The genuine question is whether this becomes managed-only behavior or the model
-for all pools. Branching leaves two scheduling semantics in one system, which is
-a real cost. The overcommit rationale arguably applies to ordinary pools too —
-see `docs/adr/0003-promote-pool-to-a-first-class-primitive.md` and
-`docs/adr/0006-pool-is-the-runtime-host.md`, which already describe a pool as a
-shared envelope and runtime host. Recommend one and say why the other was
-rejected. WI-06 implements whatever this concludes.
+The Discobox ADR should cite ADR 0029 rather than decide this again. The
+agent-reported `Available*` figures are still measured from the host
+(`runtime.NumCPU()`, `/proc/meminfo` in `pool-agent/agent.go`), not from the
+pool's cgroup, but nothing gates on them any more. WI-06 keeps the suspension
+and envelope work.
 
 ## Also worth recording, if the engineer agrees
 
@@ -80,8 +83,8 @@ rejected. WI-06 implements whatever this concludes.
    `docs/adr/` for tone and structure. Keep it short and directive; these are
    read by agents as much as by people.
 2. Status `Proposed`. Land it on its own, with no implementation.
-3. Flip to `Accepted` only once the engineer agrees. That is the gate WI-03 and
-   WI-06 wait on.
+3. Flip to `Accepted` only once the engineer agrees. That is the gate WI-03 waits
+   on (WI-06's placement half no longer does; see decision 3).
 4. Do not write sequencing or implementation plans into the ADR — `CLAUDE.md`
    is explicit that those belong to the task doing the work.
 
@@ -96,7 +99,8 @@ rejected. WI-06 implements whatever this concludes.
 
 - Does managed-identity-survives-deletion supersede, narrow, or coexist with
   ADR-0010?
-- Overcommit for managed pools only, or for all pools?
+- Overcommit for managed pools only, or for all pools? Settled: all pools
+  (ADR 0029).
 - Reject direct lifecycle commands on managed resources, or accept them as
   overridable temporary actions?
 

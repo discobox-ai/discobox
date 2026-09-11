@@ -1,5 +1,19 @@
 # Task — Pool-shared BuildKit
 
+> Status (checked 2026-09-11): largely implemented, mid-August 2026 —
+> `d1a6abb6` (pool builder and registry), `a21be9b0` (mediator), `86183fae`
+> (per-build egress), `e5fb203f`/`54a77382` (sandbox shim, results via the
+> registry), `8945568e` (proxy cache fixes). The checkboxes below were never
+> ticked. Current design:
+> [pool-agent/DESIGN.md, Pool-Shared Builds](../../pool-agent/DESIGN.md#pool-shared-builds)
+> and `sandbox-agent/DESIGN.md` (`dockercache`). Two deviations from the shape
+> below: build state lives under `layout.PoolBuild`, not the pool cache
+> ([ADR 0050](../adr/0050-pool-build-state-is-not-sandbox-visible.md)), and the
+> sandbox reaches the mediator through a local bridge (`127.0.0.1:17082`)
+> rather than dialing it directly. Not found in the code: Phase 3's source
+> policy (no `SourcePolicy` overwrite, no policy config file), Phase 6's
+> request coalescing, and the `moby/buildkit` bump (still v0.20.2).
+
 Implements [ADR 0044](../adr/0044-builds-run-on-a-pool-shared-buildkit.md).
 Land the ADR as `Accepted` first; it is the spec.
 
@@ -31,7 +45,9 @@ docker build (shim)
 Two transports, deliberately separate: the **registry** stores build output
 (decision 11); the **proxy cache** caches upstream pulls (decision 12).
 
-## Status
+## Status at the time of writing
+
+Superseded by the status note at the top.
 
 Phase 1 has landed and is verified running in a live pool; `runcca` has moved to
 the root module so the pool and the sandbox share one wrapper. Phase 6's two
@@ -68,7 +84,8 @@ instance.
 
 - [ ] `buildkitd` as a systemd unit in the pool image, mirroring
       `discobox-proxy.service`. State root on the pool cache volume
-      (`layout.PoolCache`). One daemon per pool — `buildkitd.lock` is exclusive
+      (`layout.PoolCache`; since moved to `layout.PoolBuild`, ADR 0050). One
+      daemon per pool — `buildkitd.lock` is exclusive
       and the solver cache lives under `--root`, so a second daemon is not an
       option.
 - [ ] `buildkitd.toml` with **explicit** `max-parallelism` (CPUs, floor 2) and
@@ -112,8 +129,9 @@ instance.
       solve's `Definition` is nil for dockerfile builds, so the mediator cannot
       see identifiers itself.
 - [ ] Bump `github.com/moby/buildkit` — v0.20.2 is pinned by nothing (the
-      `// indirect` marker is stale; `server/providers/dockerworker/image_build.go`
-      imports `buildkit/client` directly). v0.20.2 types do round-trip against a
+      `// indirect` marker has since been dropped; `server/providers/dockerworker/image_build.go`
+      imports `buildkit/client` directly). Still v0.20.2 in `server/go.mod` and
+      `pool-agent/go.mod`. v0.20.2 types do round-trip against a
       v0.32.2 daemon via unknown-field preservation, so this is not blocking.
 
 ## Phase 3 — Policy
@@ -175,7 +193,10 @@ instance.
 ## Phase 6 — Proxy cache
 
 `proxy/internal/cache` is complete and wired into `http.go`; it ships
-`Enabled: false` with no `Patterns`. Four changes:
+`Enabled: false` with no `Patterns`. Four changes (all but coalescing have
+since landed: `pool-agent/proxyagent` enables the cache with digest-scoped
+`Patterns` and `ContentAware`, and `8945568e` refuses 206 and keys blobs by
+digest):
 
 - [ ] Reject `206 Partial Content`. `ShouldCacheResponse` accepts `200..299`, so
       a range response is stored as a whole entity. `VerifyDigestHex` catches it

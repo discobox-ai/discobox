@@ -7,13 +7,18 @@ module. It fails quietly — the process starts, and only some capability is
 missing — so it survives review easily. Rules, and why each exists:
 
 - **Resolve through [`runuser`](runuser/DESIGN.md), never by hand.** One call:
-  `runuser.Resolve(User)`. Reading `config.ExecDefaults` or `DISCOBOX_USER_*`
-  into a `User` yourself is a second construction of the same identity, and the
-  two always drift. That drift is exactly how terminals came to run without the
-  sandbox's supplementary groups while plain execs kept them.
-- **Inside `execs`/`terminal`, ask the manager.** `Manager.ResolveUser(req)`
-  applies the request-vs-manifest and group rules first, then resolves. Do not
-  call `runuser.Resolve` directly there and do not rebuild the default user.
+  `runuser.Resolve(layers, need)`, with the image, manifest and request layers
+  and the fields the caller needs. Precedence and completion belong to it and
+  to `sandboxuser.Merge`. `DISCOBOX_USER_*` (boot's `manifestUser`) and
+  `config.ExecDefaults` (the server's `execDefaultUser`) are read once each, as
+  the manifest layer. Treating either as the resolved user is a second
+  construction of the same identity, and the two always drift. That drift is
+  exactly how terminals came to run without the sandbox's supplementary groups
+  while plain execs kept them.
+- **Outside boot, ask the exec manager.** `execs.Manager.ResolveUser(req)`
+  supplies the three layers and does no merging of its own. `terminal`, the
+  server and `ports` all go through it. Do not assemble layers yourself, and do
+  not rebuild the default user.
 - **Never invent an id.** No `uid = 0`, no `gid = uid`, no `uid = 1000` for a
   bare name. UIDs and GIDs are separate namespaces; `uid == gid` is a `useradd`
   default, not a rule. A missing id is read from the passwd entry, and a uid with
@@ -30,11 +35,13 @@ missing — so it survives review easily. Rules, and why each exists:
   Code running on the pool host or in the control plane cannot resolve a name and
   must not guess a number for it; it leaves the value unset (`-1` for a chown)
   and lets the sandbox decide.
-- **A group the image never created is skipped, not fatal.** Mirrors the boot
-  flow, so the two cannot disagree about the same image. A harness Dockerfile
+- **A group the image never created is skipped, not fatal.** `runuser.Groups`
+  drops it from the credential, the same way boot's `ensureAdditionalGroups`
+  skips it, so the two cannot disagree about the same image. A harness Dockerfile
   that forgot to install a package must not break every process in the sandbox.
 
-Decision record: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md).
+Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md),
+[ADR 0033](../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md).
 
 ## Testing identity
 
@@ -51,8 +58,9 @@ Decision record: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-re
   child holding the *agent's* groups — the agent is root — so a process dropped
   to the sandbox user silently inherits root's groups and none of its own.
 - Identity resolution is cross-platform; keep it out of `_unix.go` files. Only
-  the credential and `SysProcAttr` construction are platform-specific. Build with
-  `GOOS=windows` before relying on that split.
+  the credential and `SysProcAttr` construction are platform-specific
+  (`execs/process_unix.go`, `execs/process_windows.go`). Run
+  `go tool task check:windows` before relying on that split.
 
 ## Reading the working tree at boot
 
@@ -79,7 +87,7 @@ user waits on every single start.
 - **Never let a recursive walk under `$HOME` cross into a mounted volume.** The
   shared pool cache and the source trees are mounted *under* home
   (`~/.cache`, `~/go/pkg/mod`, `~/.local/share/pnpm`, the source targets). They
-  are unbounded — ~5*10^5 inodes on a working machine — and they already have
+  are unbounded — ~4.7*10^5 inodes on a working machine — and they already have
   the ownership `wireVolume`/`wireSources` and the pool agent gave them. Walking
   them cost ~14s of every boot on a cold page cache. `seedHome` uses
   `chownTreeOnOwnFilesystem` for exactly this reason; GNU `chown` has no
@@ -89,6 +97,13 @@ user waits on every single start.
   `~/.cargo/registry`, `~/go/pkg` above `~/go/pkg/mod` — because
   `applyOwnership` chowns only the mountpoint. Those live on home's own
   filesystem, so the same-filesystem walk still covers them.
+- **An overlay's upperdir adopts the target's identity before
+  `applyOwnership`, never after.** overlayfs presents the upperdir's owner and
+  mode as the merged root's, so `wireVolume` runs `adoptDirIdentity` (setgid
+  included) before mounting. Then `applyOwnership` applies only what the path
+  declares (ADR 0107 §3). Reverse the order and a declared uid/gid/mode is
+  overwritten. Drop the adopt and every overlayed path shows up as root:root
+  0755, which refuses writes at its top level only.
 - **Ownership has one owner per path.** If the pool agent already owns a tree,
   boot must not assert it again. Both sides asserting produced two full walks of
   the same inodes, in opposite directions, on every start.

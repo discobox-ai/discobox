@@ -26,8 +26,8 @@ as `$PREV_STUB_TOKEN`, a sentinel the proxy swaps only while a live grant covers
 it. Afterwards exactly one `stub-token` secret must exist (reconfigure replaces
 the previous generation instead of leaking it).
 
-Set `STUB_CONFIGURE_KEEP=1` in the configure sandbox to exercise the other half
-of that path: the command returns `usePrevious` instead of a value, and the
+Set `STUB_CONFIGURE_KEEP=1` in the image's env to exercise the other half of
+that path: the command returns `usePrevious` instead of a value, and the
 secret from the first run must survive with its ID, binding, and grant intact.
 It only keeps when there is something to keep — claiming `usePrevious` on a
 first run is a commit error, and a real harness makes the same check before
@@ -35,11 +35,15 @@ offering to keep a credential.
 
 `test/bats/harness_configure.bats` automates all of the above; run it with
 `go tool task test:docker:bats BATS_SUITE=test/bats/harness_configure.bats`.
-It sets the toggle through `image.json`'s `env` block in a derived image, which
-is how a sandbox process gets its environment: the sandbox-agent applies image
-env and the manifest's env when it starts the command. A Dockerfile `ENV` would
-not work — that belongs to the container, whose PID 1 is systemd, and systemd
-does not pass its own environment to the services it starts.
+The keep case runs against a derived `discobox-harness-stub-keep:local`,
+registered beside the stub under its own slug.
+
+The toggle has to reach the configure command as image env, and image env comes
+from the image's `io.discobox.image.v1` label: its `env` is merged into the
+sandbox's manifest, and the sandbox-agent applies the manifest's env when it
+starts the command. A Dockerfile `ENV` does not work — that belongs to the
+container, whose PID 1 is systemd, and systemd does not pass its own
+environment to the services it starts.
 
 ## Usage
 
@@ -52,11 +56,15 @@ discobox admin harness delete stub
 ```
 
 To exercise the failure path (commit must record `configureError` and leave the
-harness unconfigured), bake or override `STUB_CONFIGURE_EXIT` to a non-zero
-value in the configure sandbox's environment.
+harness unconfigured), add `STUB_CONFIGURE_EXIT` with a non-zero value to
+`image.json`'s `env` and rebuild the image, so it reaches the label.
 
 ## Notes
 
+- `Dockerfile` builds `FROM` the sandbox agent image, sets the label from
+  `image.json` (the `HARNESS_METADATA` build arg), and installs `configure.sh`
+  as `/usr/local/libexec/discobox/configure-stub`, the config-mode command
+  `image.json` declares. `create` takes the slug `stub` from the harness id.
 - The image must be rebuilt when the sandbox-agent base changes; the build task
   resolves the base from `.env` (`DISCOBOX_DEFAULT_SANDBOX_IMAGE`) so it tracks
   the image watcher's dev builds, falling back to

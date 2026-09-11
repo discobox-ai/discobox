@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a discobox release — infer the next version, get main green, tag it, watch the release workflow, and land it on the dev Homebrew channel; separately, mark an already-cut release stable so it reaches `brew install discobox` and winget. Use when the user wants to tag, release, ship a version, push a formula to the tap, promote or mark a release stable, or submit a version to winget.
+description: Cut a discobox release — infer the next version, get main green, tag it, watch the release workflow, and land it on the dev Homebrew channel; separately, mark an already-cut release stable so it reaches `brew install discobox`, and submit it to winget by hand. Use when the user wants to tag, release, ship a version, push a formula to the tap, promote or mark a release stable, or submit a version to winget.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, AskUserQuestion
 metadata:
   argument-hint: "[version-or-tag]"
@@ -60,9 +60,10 @@ git fetch upstream --tags
 git tag -l 'v[0-9]*' --sort=-v:refname | head -6
 ```
 
-The glob matters. `'v*'` also matches `vm/vN` — the VM guest image tags, which
-sort above every CLI tag, so it returns a screen of the one thing this decision
-must ignore and no CLI version at all. `'v[0-9]*'` excludes them.
+The glob matters. `'v*'` also matches `vm/vN` and `vm-kernel/vN` — the VM guest
+image and libkrun kernel tags, on their own release lines, which sort above every
+CLI tag, so it returns a screen of the one thing this decision must ignore and no
+CLI version at all. `'v[0-9]*'` excludes them.
 
 The scheme is plain `vMAJOR.MINOR.PATCH`.
 
@@ -81,7 +82,7 @@ picks the first two; a human picks the third.
 | --- | --- | --- |
 | `v0.6.0-alpha.2`, `-beta.1`, `-rc.1` | that tag's own assets and images, and **nothing else** — neither brew formula, no `:latest`, no winget | lowest confidence. You want a real release build that cannot land in front of anyone. |
 | `v0.6.0` | GitHub prerelease, ghcr `:latest`, `brew install discobox-dev` | the normal case, and what a dot release is for |
-| the same release, blessed | `brew install discobox`, winget | §7 — a human's decision, later |
+| the same release, blessed | `brew install discobox`; winget by hand (§6) | §7 — a human's decision, later |
 
 A dot release is the default; take the patch bump without asking. It is cheap
 now, because it only reaches people who went and installed `discobox-dev`.
@@ -93,12 +94,13 @@ reach it by pinning the version, and nothing promotes it later: when you trust
 it, cut the dot release. Overriding that to push one at a channel anyway takes
 `--prerelease` typed out.
 
-**One consequence right now:** the three newest tags are `v0.6.0-alpha.1`
-through `.3`, from before the dev channel existed, when an alpha was the only
-way to try a build. Do not continue that series and do not bump from it as
-though it were a release. **The next tag is the dot release those alphas were
-heading for**: after `v0.6.0-alpha.3` that is `v0.6.0` — not `v0.6.1`, and not
-`v0.6.0-alpha.4`.
+**One consequence right now:** that listing puts `v0.6.0-alpha.1` through `.3`
+above `v0.6.0`, because git's version sort ranks a suffixed tag above the bare
+one. They are older: they come from before the dev channel existed, when an
+alpha was the only way to try a build, and `v0.6.0` is the release they were
+heading for. Do not continue that series and do not bump from it as though it
+were a release. Bump from the newest dot release — after `v0.6.0` that is
+`v0.6.1`, not `v0.6.0-alpha.4`.
 
 ## Remotes
 
@@ -120,8 +122,8 @@ discobox-access run --use <id> -- git -c credential.helper= \
   push https://github.com/discobox-ai/discobox.git HEAD:main
 ```
 
-One consequence: `Taskfile.yml`'s `RELEASE_REPO` reads only `origin` and only
-matches github.com URLs, so it resolves empty here and
+One consequence: `Taskfile.yml`'s `RELEASE_REPO` reads `GITHUB_REPOSITORY` and
+otherwise only `origin`, matching only github.com URLs, so it resolves empty here and
 `scripts/brew-formula.sh` falls back to its own `discobox-ai/discobox` default.
 That is correct by accident, not by design — if the formula ever points at the
 wrong repo, this is why.
@@ -180,7 +182,7 @@ grep -nE "(--- FAIL|FAIL\s+github|panic:)" /tmp/win.log
 ### One failure hides the rest
 
 `test:all` runs the modules in order — root, `cli`, `termpane`, `server`,
-`pool-agent`, `sandbox-agent` — and stops at the first one that fails. Every
+`pool-agent`, `sandbox-agent`, `access` — and stops at the first one that fails. Every
 package *within* a module still runs, but no later module does. So a green
 `windows` job after a fix is not evidence the fix was the last problem; it may
 just be the first. Expect to iterate, and do not promise a single round trip.
@@ -223,7 +225,7 @@ git log --oneline upstream/main..HEAD    # anything here has NOT been through CI
 Then read what is going out, against the previous release tag:
 
 ```bash
-git log --oneline v0.2.0..HEAD
+git log --oneline <previous-tag>..HEAD
 ```
 
 Say how many commits that is and what is notable in them before tagging. It is
@@ -355,8 +357,8 @@ It refuses anything that is not exactly `vMAJOR.MINOR.PATCH`. An rc reaching
 winget takes `--prerelease` typed out, because winget has no notion of a channel
 and whatever is published is what `winget install discobox` gives everyone.
 
-Only after the GitHub release exists, either way: the checksum is of the
-`discobox-windows-amd64.zip` the release uploaded.
+Only after the GitHub release exists, either way: the checksums are of the
+`discobox-windows-*.zip` archives (amd64 and arm64) the release uploaded.
 
 Unlike the tap, **opening the request is not the end**. The Windows Package
 Manager Community Repository is Microsoft's; their validation pipeline runs the
@@ -370,13 +372,15 @@ pending review, not published. Two things need a human on that thread:
 
 ### The token
 
-The job needs `WINGET_TOKEN`: a **classic** PAT with `public_repo` (fine-grained
+`winget:publish` needs a **classic** PAT with `public_repo` (fine-grained
 tokens are not accepted), for an account that has forked
-`microsoft/winget-pkgs`. `GITHUB_TOKEN` cannot do this — it may only write to
-this repository, and the submission is a pull request from a fork of somebody
-else's. Without the secret the `winget` job fails: nothing else submits, so a
-missing token is a version winget silently never gets, and that is worth a red
-run.
+`microsoft/winget-pkgs`, and checks the token's scopes before it writes
+anything. By hand that is your own `gh` credential; the `winget` job, once
+restored, takes it from the `WINGET_TOKEN` secret. `GITHUB_TOKEN` cannot do
+this — it may only write to this repository, and the submission is a pull
+request from a fork of somebody else's. The restored job should fail without
+the secret: nothing else submits, so a missing token is a version winget
+silently never gets, and that is worth a red run.
 
 `go tool task winget:manifests` generates the three manifests without opening
 anything, which is the safe dry run. Nothing about the submission is validated
@@ -458,7 +462,7 @@ cheaper before `publish` creates the GitHub release. Ask the user which:
   winget, and the only channel to correct is `discobox-dev`, which the next tag
   moves anyway.
 
-That second option is cheaper than it used to be, and usually right. Deleting a
+That second option is cheap, and usually right. Deleting a
 pushed tag is outward-facing; do not choose it unprompted.
 
 ## Waiting

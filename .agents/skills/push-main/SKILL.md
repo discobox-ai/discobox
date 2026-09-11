@@ -82,8 +82,10 @@ Prefer `gh run watch --exit-status` over polling. If no run exists yet, re-list
 a few times only to discover the ID, then switch to watching. Re-list after
 each watch returns — more runs can appear for the same commit.
 
-`darwin` regularly queues 20+ minutes before it starts. Do not sit in a polling
-loop for it: arm a Monitor that exits when the run completes and keep working.
+CI takes about seven minutes end to end: the runners are Depot's and start
+without a queue, and `windows` is the critical path, not `darwin`. Still do not
+sit in a polling loop: arm a Monitor that exits when the run completes and keep
+working.
 
 Six jobs must pass: `check`, `test`, `verify`, `build`, `darwin`, `windows`.
 
@@ -91,12 +93,12 @@ Six jobs must pass: `check`, `test`, `verify`, `build`, `darwin`, `windows`.
 
 `gh run view --log-failed` refuses while the run is still in progress. To read a
 finished job's log while its siblings are still going — which is most of the
-time, because of `darwin` — go through the API:
+time, since `windows` is the longest job — go through the API:
 
 ```bash
 J=$(gh run view <run-id> --repo discobox-ai/discobox --json jobs \
   -q '.jobs[]|select(.name=="windows")|.databaseId')
-gh api --allow-escape-sequences repos/discobox-ai/discobox/actions/jobs/$J/logs \
+gh api repos/discobox-ai/discobox/actions/jobs/$J/logs \
   | sed 's/\x1b\[[0-9;]*m//g' > /tmp/win.log
 grep -nE "(--- FAIL|FAIL\s+github|panic:)" /tmp/win.log
 ```
@@ -104,7 +106,7 @@ grep -nE "(--- FAIL|FAIL\s+github|panic:)" /tmp/win.log
 ### One failure hides the rest
 
 `test:all` runs the modules in order — root, `cli`, `termpane`, `server`,
-`pool-agent`, `sandbox-agent` — and stops at the first that fails. Every
+`pool-agent`, `sandbox-agent`, `access` — and stops at the first that fails. Every
 package *within* a module still runs, but no later module does. A green job
 after a fix is not proof the fix was the last problem. Expect to iterate; do
 not promise a single round trip.

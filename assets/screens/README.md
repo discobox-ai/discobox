@@ -1,7 +1,7 @@
 # Screenshots
 
-The launcher, captured from a real run rather than mocked up. They are what the
-README shows; nothing else reads them.
+The launcher, captured from a real run rather than mocked up. The root
+`README.md` shows `claude-code.png`; nothing else in this repository reads them.
 
 | File | Screen |
 | --- | --- |
@@ -9,7 +9,7 @@ README shows; nothing else reads them.
 | `launcher.png` | the discobox list, with the prompt a new one starts from |
 | `claude-code.png` | one discobox open: Claude Code, and a shell beside it |
 | `codex.png` | the same, running Codex |
-| `tools.png` | the `ctrl+a o` menu |
+| `tools.png` | the tools menu, `ctrl+a o` under the default leader |
 | `review.png` | the built-in diff and approval tool, on what the agent just wrote |
 
 ## Re-taking one
@@ -37,8 +37,8 @@ kitty renders them procedurally, at exact cell boundaries. xterm does not, and
 fractional advances — is worse again.
 
 The window size is the crop: `initial_window_width`/`initial_window_height` in
-`kitty.conf`, in cells, sized to the screen being shot, then `-trim` takes the
-rest.
+the `kitty.conf` you pass (the repository ships none), in cells, sized to the
+screen being shot, then `-trim` takes the rest.
 
 Two crops, not one. The first `-trim` takes off the desktop around the terminal
 window; a second one takes off the terminal's own empty area, which is what a

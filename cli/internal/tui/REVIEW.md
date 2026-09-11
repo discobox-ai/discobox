@@ -2,8 +2,8 @@
 
 ## The mouse and the hit map
 
-- **A control you draw must mark itself** (`zones.mark`, and the `markList` /
-  `markHints` helpers). The window has no widget tree, so a control that is
+- **A control you draw must mark itself** (`zones.mark`, the `markRow` /
+  `markList` helpers, and `viewHints` for a key line). The window has no widget tree, so a control that is
   drawn but not marked is simply unreachable by the pointer — and the failure
   is silent: nothing logs, nothing looks wrong, the click just does nothing.
   Adding a row, a band, or an offer to a key line means adding its mark in the
@@ -12,8 +12,9 @@
 - **Never compute a position twice.** Mark from the numbers the draw used, at
   the origin the composing code pushed (`zones.push`/`pop`), never from a
   second pass over the layout arithmetic. A hit map recomputed from the layout
-  drifts from the frame exactly the way the column header drifted from its rows
-  before `tailColumns` — with no pixels to show it.
+  drifts from the frame the way a column header budgeted apart from its rows
+  drifts out of line when a column drops — which is why `tailColumns` budgets
+  both from one arithmetic — and there are no pixels to show it.
 
 - **A hint that names a key carries the key.** `hints()` returns `hint` pairs,
   not formatted text. A new offer written as `says("x archive")` looks right on
@@ -40,13 +41,14 @@
 ## Selection
 
 - **Everything on screen is inside the frame `paintChrome` is handed.** The
-  chrome selection addresses the grid parsed from that frame, and
-  `selection.snap` *clamps* a press past the last line instead of dropping it.
+  chrome selection addresses the grid parsed from that frame, and the
+  selection's `snap` (`github.com/discobox-ai/x/selection`) *clamps* a press
+  past the last line instead of dropping it.
   So a row appended to the view after the paint is not inert: it silently hands
   its presses to the row above it, and the only symptom is a drag that
   highlights the wrong line. Anything that wants to sit outside the window —
   under the border, beside it — goes on an existing row instead; see
-  `initializing.go`, which is there because it tried the other way.
+  `initializing.go`, whose report sits on the status row for this reason.
 
 - **One selection on screen at a time.** A press that starts one clears the
   others (`clearSelections`, `clearPaneSelections`); two highlights racing to
@@ -70,9 +72,9 @@
   The harnesses and secrets screens are the trap: they open panes of their own
   and stay open behind them, so a check on `harnessesOpen`/`secretsOpen` that
   is not guarded by `!m.inPanes()` steals every key from the terminal drawn
-  over it — and on that screen the stolen keys are commands, so Enter at a
-  harness's configure banner meant "reconfigure this harness" and restarted the
-  flow it was typed into.
+  over it — and on that screen the stolen keys are commands: Enter in a
+  harness's configure terminal becomes "reconfigure the highlighted harness"
+  and restarts the flow it was typed into.
 
 ## The screen
 

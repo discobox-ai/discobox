@@ -1,5 +1,14 @@
 # WI-07 — Live pool and per-sandbox utilization
 
+> Status (checked 2026-09-11): superseded in substance.
+> [ADR 0071](../../adr/0071-resource-accounting-is-a-pool-agent-differenced-report.md)
+> (Accepted, implemented) shipped pool and per-sandbox resource accounting a
+> different way: the pool agent pushes a differenced report every 30s, and the
+> server persists it on `Pool.resources` and `Sandbox.resources` — which this
+> plan rules out. Re-plan against ADR 0071 before picking this up; only what it
+> does not cover (an explicit unavailable response for an offline pool,
+> termination/OOM reporting, an unpersisted on-demand read) is still open here.
+
 **Goal:** a read-only, live, point-in-time utilization snapshot for one pool and
 its sandboxes, collected by the pool agent and served through the server without
 being persisted.
@@ -20,25 +29,34 @@ watches; utilization stays an on-demand diagnostic read.
 
 ## Current state
 
-Nothing serves this today. The three things that look adjacent are each the
-wrong shape:
+Nothing serves an unpersisted, on-demand read. The adjacent things are each a
+different shape:
 
+- **The ADR 0071 resource report.** Every 30s the pool agent posts one report
+  (`POST /api/pools/{poolId}/resources`) with pool-wide usage and a per-sandbox
+  breakdown, rates differenced from cumulative counters over one tick
+  (`pool-agent/resourcereport.go`). The server stores it on `Pool.resources` and
+  `Sandbox.resources`; `discobox admin pool resources` and a per-sandbox
+  `resources` command display it. It answers "which agent is responsible", but
+  it is pushed, persisted, and up to a tick stale.
 - **Pool heartbeats** report coarse `availableCpuVcpus`, `availableMemoryBytes`,
   `availableStorageBytes` plus an opaque `conditions` JSON blob
-  (`model.go:506-509`, written via
-  `server/internal/resources/pools/agent_service.go:60`). That is remaining
+  (`model.Pool`, written via
+  `server/internal/resources/pools/agent_service.go`). That is remaining
   headroom, not a utilization breakdown, and it has no per-sandbox dimension.
-- **`SandboxRuntime`** (`api/openapi/server.yaml:1888`) carries lifecycle only —
-  phase, generations, operation status, error message. No utilization.
+- **`SandboxRuntime`** (`api/openapi/server.yaml`) carries lifecycle — desired,
+  display, and runtime state, generations, error message — plus agent status
+  and, since ADR 0071, the stored `resources` report.
 - **Sandbox-agent resource samples** (`sandbox-agent/resources/collector.go`,
-  `sandbox-agent/store/store.go:33`) dump cgroup and procfs data as opaque JSON
+  stored by `sandbox-agent/store`) dump cgroup and procfs data as opaque JSON
   scoped to an individual *exec*, keyed by terminal ID, retained by count
   (`ResourceRetentionCount: 300`, set in
   `pool-agent/sandboxruntime/runtime.go`). Per-exec, not per-sandbox; opaque,
-  not typed; and inside the sandbox rather than above it.
+  not typed; and inside the sandbox rather than above it. The server proxies them per exec
+  (`.../execs/{execId}/resources`, `/history`, `/stream`).
 
 The transport you need already exists: `poolruntime.RuntimeProvider.AcquirePoolAgentClient`
-(`server/providers/poolruntime/provider.go:57`) returns an authenticated HTTP
+(`server/providers/poolruntime/provider.go`) returns an authenticated HTTP
 client lease to a pool's agent, used today by `server/providers/poolruntime/agent_client.go`.
 
 ## Scope
@@ -76,7 +94,7 @@ client lease to a pool's agent, used today by `server/providers/poolruntime/agen
 - Historical series, streaming, utilization events, billing-grade accounting,
   cross-pool aggregation. All explicitly deferred.
 - Persisting samples anywhere, or copying them into `Pool`/`Sandbox` status.
-- Feeding utilization back into placement or admission. WI-06 is removing
+- Feeding utilization back into placement or admission. ADR 0029 removed
   capacity-based admission; do not reintroduce it here.
 - Replacing the existing heartbeat fields. They serve pool health; leave them.
 
@@ -84,10 +102,12 @@ client lease to a pool's agent, used today by `server/providers/poolruntime/agen
 
 - **Proxy or normalize?** Passing the pool agent's response through is simpler;
   normalizing at the server gives one stable public shape across pool
-  implementations (Docker, libkrun microVM, Kubernetes). Given
+  implementations (Docker, libkrun and vz microVMs, WSL, DigitalOcean, execvm;
+  `docs/adr/0005-kubernetes-backend-is-a-worker-driver.md` is still `Proposed`
+  and no Kubernetes provider exists). Given
   `docs/adr/0013-local-linux-pools-use-libkrun-microvms.md` and
-  `docs/adr/0005-kubernetes-backend-is-a-worker-driver.md`, differing collection
-  capability across backends is likely, which argues for normalizing plus an
+  `docs/adr/0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md`,
+  differing collection capability across backends is likely, which argues for normalizing plus an
   explicit capability signal.
 - **Where do storage figures come from?** CPU and memory are cgroup reads;
   storage may need a volume or filesystem query with a different cost profile

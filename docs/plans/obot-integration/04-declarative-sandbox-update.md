@@ -1,5 +1,8 @@
 # WI-04 — Declarative sandbox update, in place or by replacement
 
+> Status (checked 2026-09-11): not started — the server's `SandboxUpdateConfig`
+> still carries only `name`.
+
 **Goal:** let a caller declare the full desired runtime configuration of an
 existing sandbox, and have Discobox decide which changes apply in place and
 which require replacing the concrete sandbox.
@@ -16,24 +19,28 @@ model, prompt, environment, or image cannot be applied to an existing sandbox.
 
 ## Current state
 
-- `api/openapi/server.yaml:2645` — `SandboxUpdateConfig` has exactly one field,
+- `SandboxUpdateConfig` (`api/openapi/server.yaml`) has exactly one field,
   `name`. Reached via `PATCH /projects/{projectId}/sandboxes/{sandboxId}`
-  (`server.yaml:4176`).
-- `api/openapi/server.yaml:1641` — `SandboxConfig`, the full desired shape:
-  harness config, harness mode, model/reasoning/tier, cpu/memory/storage,
-  description, env, image, image digest, name, prompt, source, source code
-  references, user.
+  (`update-sandbox`).
+- `SandboxConfig` (`api/openapi/server.yaml`), the full desired shape:
+  harness config, harness mode, model/reasoning/tier, description, env, git
+  authorship identity, image, image digest, name, prompt, source, source code
+  references, user. There is no CPU/memory/storage: ADR 0029 removed
+  per-sandbox resource requests.
 - **Pool-agent already accepts more than the server sends.** `pool-agent/api/openapi/pool.yaml`
-  `SandboxUpdateConfig` (~line 255) takes `cpuVcpus`, `env`, `image`,
-  `memoryBytes`, `storageBytes`, `workingDirectory`, and
-  `PoolSandboxUpdateRequest` (~line 393) additionally carries replacement
-  `sentinels` and `secretEnv` for live secret rebinding. The server simply never
+  `SandboxUpdateConfig` takes `env`, `image`, and `workingDirectory` (its
+  CPU/memory/storage fields went with ADR 0029), and `PoolSandboxUpdateRequest`
+  carries that `config` plus replacement `sentinels` and `secretEnv` for live
+  secret rebinding. The server simply never
   drives it. Check what the pool-agent implementation actually honors before
   assuming the contract is fully implemented.
-- Existing adjacent operations that already model "change and converge":
-  `restart` (`server.yaml:4341`) and `upgrade` (`server.yaml:4382`), backed by
-  `restart_generation`/`restarted_generation` on `model.Sandbox`
-  (`model.go:565`), and `SandboxUpgrade` (`server.yaml:1857`).
+- Existing adjacent operations: `upgrade` (`upgrade-sandbox`, body
+  `SandboxUpgrade`) models "change and converge" — it re-pins `imageDigest` as
+  ordinary spec intent the reconciler delivers (ADR 0021). `restart`
+  (`restart-sandbox`) is not intent: start/stop/restart are instructions
+  forwarded to the pool agent, and there is no restart generation
+  (ADR 0017 §9). `repair` (ADR 0035, ADR 0064) marks one generation to tear the
+  runtime down and rebuild it — the nearest existing thing to replacement.
 - `docs/adr/0016-sandbox-image-upgrades-are-explicit-and-in-place.md` governs
   image changes: `image_digest` is written at create and by an upgrade, never by
   a restart, and the pool host refuses an image that does not match it. Any
@@ -79,8 +86,9 @@ model, prompt, environment, or image cannot be applied to an existing sandbox.
 ## Design questions for the engineer
 
 - **Which fields are truly immutable?** Candidates: `source` and
-  `sourceCodeReferences` (the sandbox has already materialized them), `user`,
-  and possibly storage. `image` is constrained by ADR-0016 rather than immutable.
+  `sourceCodeReferences` (the sandbox has already materialized them), and
+  `user`. (Storage is no longer a per-sandbox field — ADR 0029.) `image` is
+  constrained by ADR-0016 rather than immutable.
   Bring a proposed classification table rather than an open question.
 - **Is replacement in scope for ordinary sandboxes now, or gated to managed
   ones?** Replacing a user's sandbox in response to a `PATCH` is surprising;

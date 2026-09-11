@@ -6,6 +6,19 @@
 >
 > Research snapshot: 2026-07-21. Provider details are time-sensitive and should
 > be verified again before using this proposal as an implementation specification.
+>
+> Checked against the code on 2026-09-11: still unimplemented. Nothing proposed
+> here has shipped: no native file API, endpoint leases, snapshots, idempotency
+> keys, structured error codes, TypeScript SDK, or `discobox task run`. What
+> exists instead is durable execs and services as sandbox-agent routes in
+> `api/openapi/server.yaml` (generated subset: `api/openapi/sandbox.yaml`),
+> `discobox shell` for running a command (it replaced the root `discobox exec`
+> this proposal was written against), `discobox admin exec` for the explicit
+> resource form, and `discobox cp`, which copies files with scp over the SSH
+> ingress rather than through a file API. Statements below about current
+> Discobox behavior are corrected to that check. Current design lives in the
+> root [`DESIGN.md`](../DESIGN.md) (API Contracts) and
+> [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md).
 
 ## Purpose
 
@@ -691,7 +704,7 @@ discobox snapshot create SBX_ID --filesystem --wait -o json
 discobox snapshot get SNAPSHOT_ID -o json
 ```
 
-The existing root `discobox exec` may continue to select a sandbox implicitly for
+The existing `discobox shell` may continue to select a discobox implicitly for
 human use. Agent callers should pass an explicit sandbox ID or set
 `DISCO_SANDBOX_ID`; an explicit argument always wins.
 
@@ -782,9 +795,10 @@ This proposal builds on several existing choices:
   proposed common API should strengthen rather than collapse those boundaries.
 - Sandbox execs are already durable resources with argv, cwd, environment,
   user, PTY state, timestamps, output logs, runtime events, and exit status.
-- The CLI already treats root `discobox exec` as a local-command-like operation:
-  it chooses a PTY only when all streams are terminals, preserves stdout and
-  stderr behavior, forwards signals, and returns the remote exit status.
+- The CLI already runs a command in a discobox like a local one: `discobox
+  shell` (which replaced the root `discobox exec`) always attaches stdin,
+  allocates a PTY only when the local terminal is one, forwards signals, and
+  exits with the remote exit status.
 - Provider `AcquireHTTPClient` already points toward delegated, scoped access to
   worker-local operations rather than provider-specific implementations of
   every public endpoint.
@@ -793,9 +807,12 @@ The proposal also identifies areas to reconsider if this work is pursued:
 
 ### Structured errors
 
-The current public error schema is a human-readable string. Agent clients need a
-stable error code, retryability, request ID, and structured details. Human text
-remains useful but cannot be the programmatic contract.
+Control-plane routes answer errors as problem details
+(`application/problem+json`, the `ErrorModel` schema: `status`, `title`,
+`detail`, and per-field `errors`); sandbox-agent routes answer `ErrorResponse`,
+a single human-readable `error` string. Neither carries a stable error code,
+retryability, or request ID, which agent clients need. Human text remains
+useful but cannot be the programmatic contract.
 
 ### Idempotency and optimistic concurrency
 
@@ -818,7 +835,9 @@ not alternatives to the runtime image.
 ### Native files and endpoint leases
 
 The public API currently has exec and proxied HTTP behavior but not a general
-native filesystem contract or an endpoint-lease resource. These should be
+native filesystem contract or an endpoint-lease resource. `discobox cp` moves
+files, but as scp over the SSH ingress (the discobox's own `sftp-server` run
+as an exec), not through a file API. These should be
 implemented by the pool/sandbox agent and exposed consistently through the
 control plane, not added independently to each provider.
 
@@ -847,10 +866,12 @@ configuration inheritance, Git delivery policy, or secret ownership. The
 control plane resolves those concepts and supplies the public non-secret
 sandbox manifest and separate provider-owned bootstrap channel.
 
-The current provider input also carries one `ResourceConfig` plus separate CPU,
-memory, and storage fields. A future contract should have one normalized
-resource allocation type with requested and effective values represented
-clearly.
+The current provider input carries no per-sandbox resource fields: sandboxes
+have no per-sandbox resource requests, and a pool carries the resource
+envelope ([ADR 0029](adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)).
+The `resources` field in the sketch above and `--cpu`/`--memory` in the
+candidate CLI would reopen that decision. A contract that does so must
+supersede that ADR and represent requested and effective values clearly.
 
 ## Security considerations
 
@@ -904,9 +925,11 @@ agent.
     resume after its cursor falls outside retention?
 13. Should the CLI's default create/start/stop/delete behavior wait for
     convergence, or should waiting always be explicit?
-14. Can the existing `discobox exec` syntax accept a positional sandbox ID without
-    making ordinary command argv ambiguous, or should the unambiguous machine
-    form live under `discobox admin exec`?
+14. `discobox shell` takes an optional positional discobox ID, recognized only
+    when it names a discobox `discobox ls` shows for the current directory,
+    with `--` to force none. Is that unambiguous enough for a machine caller,
+    or should the explicit form be `discobox admin exec create --discobox-id`,
+    where exec creation lives today?
 15. Which capability differences are acceptable, and which must be normalized by
     the worker/sandbox agent so callers never branch on provider kind?
 

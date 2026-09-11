@@ -338,7 +338,7 @@ discobox apply      cherry-pick a box's commits onto the working tree
 discobox push       push local commits into a box, to rebase there
 discobox proxy      forward a box's ports without the window open
 discobox cp         copy files in and out
-discobox tools      run git, ssh, or VS Code against a box
+discobox tools      run git, ssh, VS Code, or Zed against a box
 discobox secret     secrets, grants, and approval requests
 discobox configure  enable, disable, and set the default harness
 discobox status     check the connection to the server, layer by layer
