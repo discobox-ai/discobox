@@ -192,6 +192,54 @@ before with no stream read, and a new client meeting an old server is refused at
 the TLS layer — an unambiguous "this server has no certificates" rather than a
 misleading "not enrolled".
 
+## A Client Remembers Where a Server Answered
+
+`peer_addrs.go` keeps one entry per peer under `<state>/iroh/peer-addrs.json`:
+the socket addresses that peer turned out to answer on. They are offered back on
+the next dial through `IrohConfig.Locate`, and recorded through
+`IrohConfig.Reached`, which the transport calls with the direct paths of a live
+connection.
+
+It exists because discovery publishes a peer's **relay and nothing else**. A
+client holding only a peer ID must therefore reach the server through a relay
+before hole punching can build a direct path — and that bootstrap is the whole
+connection budget when the relay is having a bad day. Measured against one
+server: 5.9s per round trip through the relay, 4ms dialling the same server at
+its address, and a 20s connect deadline that two relay round trips do not
+reliably fit inside.
+
+The memory is a hint, and the design follows from that:
+
+- It is offered **beside** discovery, never instead of it. iroh dials every
+  address it is given at once, alongside the relay, and takes whichever answers
+  first, so a wrong entry costs a probe nobody waits on. Verified: a peer dialed
+  with a dead address still connects, in 1.07s against 5ms for a live one.
+- It is read from the live connection, not from what the server advertises. A
+  server publishes every socket it bound — Docker bridges, loopback, VPN
+  addresses — and which of them this client can route to is a fact about the
+  client that only a connection answers.
+- It is recorded by watching the connection, not on a request. A connection
+  starts relayed and moves to a direct path only once hole punching succeeds,
+  a relay round trip or two after the handshake; the first stream opens before
+  that, and every later request reuses it. So the transport polls the new
+  connection's paths (`watchPaths`, bounded) and reports the first direct one.
+  A command that exits before then learns nothing and spends nothing.
+- The path carrying traffic is recorded first, so the per-peer bound never cuts
+  off the one that worked.
+- Entries expire (`peerAddrsLifetime`) and are bounded per peer and in total. An
+  unchanged entry is rewritten once a day (`peerAddrsRefresh`), so a server
+  that stays put is not expired for it.
+- An entry that does not parse is dropped on read: the memory may only add
+  candidates, never fail a dial.
+
+**It does not survive a server restart, and that is the case that hurts most.** A
+server binds a fresh UDP port on every start, so a restart invalidates every
+entry at the same moment it kills every direct path and forces every client back
+onto the relay at once — the stampede described in the section above. The cache
+re-learns the address from the first connection that gets through, so it shortens
+the window rather than closing it. Closing it means giving the server a stable
+listen port, which `iroh://` has no spelling for today.
+
 ## CLI State Directory
 
 `cliStateDir()` (`internal/cli/statedir.go`) is `<state>` throughout this

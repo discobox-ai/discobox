@@ -654,3 +654,116 @@ func irohPing(t *testing.T, client *http.Client) string {
 	}
 	return string(body)
 }
+
+// Locate is offered addresses and Reached hands them back, so a client that
+// has connected once can dial the address next time instead of waiting on
+// discovery and a relay to rebuild the path it already knows.
+func TestIrohReportsTheAddressAPeerAnsweredOn(t *testing.T) {
+	server, client := irohPair(t, admitAll)
+
+	listener, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	t.Cleanup(cleanup)
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+
+	// Reached is told from a watch on the connection, not from the request, so
+	// the test waits for it rather than reading it the moment the request ends.
+	reachedCh := make(chan []string, 1)
+	client.cfg.Reached = func(id IrohID, addrs []string) {
+		if id != serverID {
+			t.Errorf("Reached reported %s, want the peer that was dialed, %s", id, serverID)
+		}
+		select {
+		case reachedCh <- append([]string(nil), addrs...):
+		default:
+		}
+	}
+
+	httpServer := &http.Server{
+		Handler:           http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") }),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() { _ = httpServer.Serve(listener) }()
+	t.Cleanup(func() { _ = httpServer.Close() })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LogicalHTTPBaseURL+"/", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	resp, err := irohClient(t, client, serverID).Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	_ = resp.Body.Close()
+
+	var reached []string
+	select {
+	case reached = <-reachedCh:
+	case <-ctx.Done():
+		t.Fatal("Reached was told nothing, so a client that just connected has nothing to try next time")
+	}
+	// It has to be an address, not a relay URL: the whole point is that it can
+	// be dialed without one.
+	for _, addr := range reached {
+		if _, err := netip.ParseAddrPort(addr); err != nil {
+			t.Fatalf("Reached reported %q, which is not a socket address: %v", addr, err)
+		}
+	}
+	// And it has to be an address this server is actually on, or it is a hint
+	// that sends the next dial somewhere else entirely.
+	bound, err := server.DirectAddrs()
+	if err != nil {
+		t.Fatalf("DirectAddrs() error = %v", err)
+	}
+	if !slices.Contains(bound, reached[0]) {
+		t.Fatalf("Reached reported %q, which is not one of the server's addresses %v", reached[0], bound)
+	}
+}
+
+// A nil Reached is the ordinary case for anything that dials a peer once, and
+// it must not cost the caller a request.
+func TestIrohWithoutReachedServesNormally(t *testing.T) {
+	server, client := irohPair(t, admitAll)
+	if client.cfg.Reached != nil {
+		t.Fatal("the test pair should not set Reached")
+	}
+
+	listener, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	t.Cleanup(cleanup)
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+
+	httpServer := &http.Server{
+		Handler:           http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") }),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() { _ = httpServer.Serve(listener) }()
+	t.Cleanup(func() { _ = httpServer.Close() })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LogicalHTTPBaseURL+"/", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	resp, err := irohClient(t, client, serverID).Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}

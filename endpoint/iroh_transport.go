@@ -490,6 +490,9 @@ func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ..
 			return nil, err
 		}
 		conn = opened
+		if e.cfg.Reached != nil {
+			go e.watchPaths(id, opened)
+		}
 		return conn, nil
 	}
 
@@ -537,6 +540,85 @@ func locate(locator func(IrohID) []string, id IrohID) []string {
 		return nil
 	}
 	return locator(id)
+}
+
+// reached reports the direct addresses this connection is actually using to
+// [IrohConfig.Reached].
+//
+// The addresses come off the live connection rather than out of discovery
+// because what is worth remembering is the one that works *from here*. A
+// server publishes every socket it bound — its Docker bridges, its loopback,
+// its VPN address — and which of them a given client can route to is a fact
+// about the client, answered only by having connected.
+//
+// The path carrying traffic goes first, then the other direct paths in the
+// order iroh opened them. A caller that keeps only a few keeps the one that
+// worked, and the same connection reports the same list every time.
+//
+// It reports whether there is nothing more to learn from this connection:
+// either it reported, or the connection can no longer say.
+func (e *IrohEndpoint) reached(id IrohID, conn *iroh.Conn) bool {
+	if e.cfg.Reached == nil {
+		return true
+	}
+	paths, err := conn.Paths()
+	if err != nil {
+		// Debug, and no further: this is a hint for a later dial, and the
+		// caller is in the middle of a request that is working.
+		irohLogf(IrohLogDebug, "reached: the paths to %s are unreadable: %v", id.Short(), err)
+		return true
+	}
+	addrs := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if path.Kind != iroh.PathIP {
+			continue
+		}
+		if path.Selected {
+			addrs = append([]string{path.Remote}, addrs...)
+		} else {
+			addrs = append(addrs, path.Remote)
+		}
+	}
+	if len(addrs) == 0 {
+		return false
+	}
+	e.cfg.Reached(id, addrs)
+	return true
+}
+
+const (
+	// irohPathPoll is how often a new connection is asked whether it has a
+	// direct path yet. iroh has no event for it, and the answer usually
+	// arrives within a relay round trip or two of the handshake.
+	irohPathPoll = 200 * time.Millisecond
+	// irohPathWatch bounds the asking. A connection that has no direct path by
+	// then is most likely one that will stay on the relay, and a watch that
+	// ran for the life of every connection would be a goroutine per peer
+	// asking a question whose answer has stopped changing.
+	irohPathWatch = 30 * time.Second
+)
+
+// watchPaths reports a new connection's direct paths to [IrohConfig.Reached]
+// as soon as it has one.
+//
+// A connection starts on the relay and moves to a direct path once hole
+// punching succeeds, which is a round trip or two over the relay after the
+// handshake. Nothing a request does lines up with that moment: the first
+// stream opens before it, and every request after reuses that stream, so a
+// hook on the request path sees a relayed connection and never looks again.
+// This watches the connection instead, for as long as the process holds it —
+// a command that exits first learns nothing, which is no worse than before.
+func (e *IrohEndpoint) watchPaths(id IrohID, conn *iroh.Conn) {
+	deadline := time.Now().Add(irohPathWatch)
+	ticker := time.NewTicker(irohPathPoll)
+	defer ticker.Stop()
+	for !e.reached(id, conn) && time.Now().Before(deadline) {
+		select {
+		case <-ticker.C:
+		case <-e.ctx.Done():
+			return
+		}
+	}
 }
 
 // irohListen binds this machine's endpoint and presents accepted streams as a

@@ -112,6 +112,8 @@ func configureIrohForEndpoint(parsed endpoint.Endpoint, relayURLs, logLevel stri
 		SecretKey:   transport,
 		Certificate: certificate,
 		RelayURLs:   splitRelayURLs(relayURLs),
+		Locate:      cachedPeerAddrs,
+		Reached:     rememberPeerAddrs,
 	}); err != nil {
 		if strings.Contains(err.Error(), errIrohAlreadyConfigured.Error()) {
 			return nil

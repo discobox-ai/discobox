@@ -600,6 +600,12 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	diagnosis.ok(DiagnosisLayerAdmission, started, "this peer is admitted")
 	reportHealth(diagnosis, started, status)
 	diagnoseIrohRoute(diagnosis, conn)
+	// A diagnosis dials the same peer an ordinary command does, so it has the
+	// same thing to say about where that peer answered. `discobox status` is
+	// what somebody runs when connecting is slow, and it would be perverse for
+	// the command asking about the connection to be the one that learns
+	// nothing from it.
+	configured.reached(peer, conn)
 }
 
 // diagnoseIrohRoute reports the path the connection settled on: direct to the

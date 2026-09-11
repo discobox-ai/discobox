@@ -127,6 +127,16 @@ type IrohConfig struct {
 	// or two peers on one host. Nil relies on discovery alone.
 	Locate func(IrohID) []string
 
+	// Reached is told the socket addresses a peer turned out to answer on, so
+	// a caller that keeps them can hand them back through Locate next time and
+	// dial the peer directly instead of waiting on discovery and a relay.
+	//
+	// It is the write half of Locate and exists because discovery publishes a
+	// peer's relay and nothing else: the only way to learn an address that
+	// works from this machine is to have used one. Nil keeps nothing, which is
+	// what a peer dialed once wants.
+	Reached func(IrohID, []string)
+
 	// RelayURLs are the relay servers to use instead of the defaults, for a
 	// deployment running its own (ADR 0096 §6). Empty keeps n0's public
 	// relays, which are free, rate-limited, and carry no uptime guarantee.
