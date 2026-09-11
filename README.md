@@ -41,8 +41,8 @@ on the same source independently.
 
 ## Working with a box
 
-- **Terminal and SSH:** Use the TUI or `discobox shell`. Run
-  `discobox admin ssh-config --write` to configure SSH access by box ID or name.
+- **Terminal and SSH:** Use the TUI or `discobox shell`. SSH configuration syncs
+  automatically when a box is created, so you can connect by box ID or name.
 - **Editor:** Use `discobox tools vscode` to open VS Code in the box's working
   directory. Editors with SSH remote support can also connect directly.
 - **Desktop:** Access the box's graphical desktop and browser through VNC or
