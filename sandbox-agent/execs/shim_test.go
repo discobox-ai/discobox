@@ -675,6 +675,11 @@ func TestRunShimReportsAttacherCount(t *testing.T) {
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("attach status = %s", resp.Status)
 	}
+	// A lower bound the leave has to beat. The shim recorded the connect before
+	// it answered it, and it cannot record the leave before the program started
+	// below has run and exited. A bound taken after the exit frame would race the
+	// shim, which ends the attach itself once the program exits.
+	attachedAt := time.Now().UTC()
 	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
 		t.Fatalf("start shim: %v", err)
 	}
@@ -698,7 +703,6 @@ func TestRunShimReportsAttacherCount(t *testing.T) {
 		}
 	}
 
-	leftAt := time.Now().UTC()
 	conn.Close()
 
 	if err := waitForAttacherCount(ctx, socketPath, 0); err != nil {
@@ -707,13 +711,16 @@ func TestRunShimReportsAttacherCount(t *testing.T) {
 	// Leaving is access: the idle stop's clock starts when the last client
 	// left, not at its last keystroke (ADR 0108 §2).
 	deadline := time.Now().Add(5 * time.Second)
+	var last *time.Time
 	for {
-		status, err := shimproxy.StatusJSON[Exec](ctx, socketPath)
-		if err == nil && status.LastAccessedAt != nil && !status.LastAccessedAt.Before(leftAt) {
-			break
+		if status, err := shimproxy.StatusJSON[Exec](ctx, socketPath); err == nil {
+			last = status.LastAccessedAt
+			if last != nil && last.After(attachedAt) {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("last accessed at = %v after detach, want no earlier than %v", status.LastAccessedAt, leftAt)
+			t.Fatalf("last accessed at = %v after detach, want later than the attach at %v", last, attachedAt)
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
