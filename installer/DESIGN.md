@@ -63,6 +63,28 @@ flowchart TD
   `tag_name` and one `prerelease`, in either order, and on escaped quotes
   keeping release notes from matching.
 
+## How it looks
+
+Both scripts draw the TUI's mark and use its palette
+(`cli/internal/tui/theme.go`), on the terms the TUI itself applies:
+
+- **The mark is shading, not line art.** A terminal that cannot color it gets
+  none of it rather than a monochrome smear — the same rule as `newLogo`. It
+  needs 256 colors, a UTF-8 terminal, and 29 columns.
+- **The art is generated**, never hand-copied, by
+  `internal/cmd/discobox-installer-logo` from `cli/internal/tui/logo.json`:
+  24-bit and nearest-xterm-256 variants, since neither script has lipgloss to
+  downsample for it. `go generate ./installer` writes it between the
+  `BEGIN generated logo` markers, so `task verify` fails on drift.
+- **Both files stay ASCII.** sh carries the art as octal escapes for
+  `printf %b`; PowerShell carries it as base64 it decodes at run time. The two
+  decode to the same bytes.
+- **Styling is off unless it is wanted.** A pipe, a redirected stream, a
+  console with no virtual terminal sequences, `TERM=dumb`, and `NO_COLOR` all
+  give plain sentences; `CLICOLOR_FORCE` or `FORCE_COLOR` turns it back on. The
+  unstyled text is the same sentence, so nothing reads only in color.
+- **Messages go to stderr**, leaving stdout to whatever a caller is piping.
+
 ## Tests
 
 `installer_test.go` runs the real scripts against a fake mirror, release URL,

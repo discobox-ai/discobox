@@ -23,6 +23,12 @@ const (
 	PowerShellName = "install.ps1"
 )
 
+// The mark both scripts draw is generated from the TUI's own cell data, so the
+// installer cannot drift from the brand: `task generate` runs this, and
+// `task verify` fails when it would change anything.
+//
+//go:generate go run ../internal/cmd/discobox-installer-logo -logo ../cli/internal/tui/logo.json -sh install.sh -ps1 install.ps1
+
 //go:embed install.sh
 var shellScript []byte
 

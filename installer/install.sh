@@ -30,6 +30,31 @@ sources=${DISCOBOX_INSTALL_SOURCES:-"https://assets.discobox.ai/discobox https:/
 api=${DISCOBOX_INSTALL_API:-https://api.github.com/repos/discobox-ai/discobox}
 releases_page=https://github.com/discobox-ai/discobox/releases
 
+# How this looks. The palette is the TUI's (cli/internal/tui/theme.go) and the
+# mark is the TUI's, drawn only where the terminal will show it: a pipe, a log
+# file, TERM=dumb, and NO_COLOR all get plain text, and CLICOLOR_FORCE or
+# FORCE_COLOR turns it back on. Messages go to stderr, so a `| sh` leaves
+# stdout alone.
+color_depth=0
+c_reset=
+c_dim=
+c_mark=
+c_ok=
+c_warn=
+c_err=
+sym_step=
+sym_ok=
+sym_warn=
+sym_err=
+
+# The mark, in 24-bit color and in the nearest xterm-256 indices, escaped for
+# printf %b. Written by `go generate ./installer` from the TUI's own cell data;
+# see internal/cmd/discobox-installer-logo.
+# BEGIN generated logo
+logo_24bit='     \033[38;2;139;47;214m\0342\0226\0227\0342\0226\0226\033[0m\n     \033[7;38;2;244;92;255m\0342\0226\0215\033[0m\033[38;2;244;92;255m\0342\0226\0213\033[0m\n     \033[7;38;2;244;92;255m\0342\0226\0214\033[0m\033[38;2;244;92;255m\0342\0226\0213\033[0m  \033[38;2;244;92;255m\0342\0226\0201\0342\0226\0201\033[0m\n      \033[7;38;2;244;92;255m\0342\0226\0204\033[0m\033[38;2;244;92;255m\0342\0226\0206\0342\0226\0207\033[0m\033[7;38;2;244;92;255m\0342\0226\0204\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;2;244;92;255m\0342\0226\0206\0342\0226\0205\0342\0226\0203\0342\0226\0202\0342\0226\0201\033[0m\n       \033[7;38;2;244;92;255m\0342\0226\0216\033[0m\033[38;2;244;92;255m\0342\0226\0214\033[0m \033[38;2;244;92;255m\0342\0226\0227\0342\0226\0204\0342\0226\0226\033[0m  \033[7;38;2;244;92;255m\0342\0226\0206\0342\0226\0205\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;2;244;92;255m\0342\0226\0206\0342\0226\0204\033[0m\n       \033[7;38;2;244;92;255m\0342\0226\0215\033[0m\033[38;2;244;92;255m\0342\0226\0214\033[0m \033[38;2;244;92;255m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m\0342\0226\0203\033[0m\033[38;2;244;92;255m\0342\0226\0230\033[0m\033[7;38;2;244;92;255m\0342\0226\0230\033[0m\033[38;2;244;92;255m\0342\0226\0207\0342\0226\0206\033[0m \033[38;2;244;92;255m\0342\0226\0205\0342\0226\0205\033[0m  \033[7;38;2;244;92;255m\0342\0226\0216\033[0m\033[38;2;244;92;255m\0342\0226\0215\033[0m\n        \033[7;38;2;244;92;255m\0342\0226\0226\033[0m\033[38;2;244;92;255m\0342\0226\0204\033[0m   \033[7;38;2;244;92;255m\0342\0226\0207\0342\0226\0206\033[0m  \033[7;38;2;244;92;255m\0342\0226\0204\0342\0226\0204\033[0m \033[38;2;244;92;255m\0342\0226\0227\033[0m\033[7;38;2;244;92;255m \033[0m\033[38;2;139;47;214m\0342\0226\0216\033[0m\n       \033[38;2;139;47;214m\0342\0226\0203\033[0m\033[38;2;244;92;255m\0342\0226\0204\033[0m\033[7;38;2;244;92;255m \033[0m\033[38;2;244;92;255m\0342\0226\0207\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;2;139;47;214m\0342\0226\0201\033[0m  \033[38;2;244;92;255m\0342\0226\0201\0342\0226\0203\0342\0226\0206\033[0m\033[7;38;2;244;92;255m\0342\0226\0203\0342\0226\0206\0342\0226\0226\033[0m\033[38;2;244;92;255m\0342\0226\0226\033[0m\n      \033[7;38;2;244;92;255m\0342\0226\0213     \0342\0226\0201\0342\0226\0202\0342\0226\0203     \0342\0226\0235\033[0m\033[38;2;139;47;214m\0342\0226\0226\033[0m\033[7;38;2;244;92;255m\0342\0226\0203\033[0m\033[38;2;244;92;255m\0342\0226\0230\033[0m\n      \033[7;38;2;244;92;255m\0342\0226\0214     \033[0m\033[38;2;244;92;255m\0342\0226\0226\033[0m  \033[38;2;244;92;255m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m      \033[0m\033[38;2;244;92;255m\0342\0226\0204\033[0m\n      \033[38;2;139;47;214m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\033[0m\033[7;38;2;139;47;214m\0342\0226\0205\033[0m   \033[38;2;139;47;214m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\033[0m\n'
+logo_256='     \033[38;5;92m\0342\0226\0227\0342\0226\0226\033[0m\n     \033[7;38;5;207m\0342\0226\0215\033[0m\033[38;5;207m\0342\0226\0213\033[0m\n     \033[7;38;5;207m\0342\0226\0214\033[0m\033[38;5;207m\0342\0226\0213\033[0m  \033[38;5;207m\0342\0226\0201\0342\0226\0201\033[0m\n      \033[7;38;5;207m\0342\0226\0204\033[0m\033[38;5;207m\0342\0226\0206\0342\0226\0207\033[0m\033[7;38;5;207m\0342\0226\0204\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;5;207m\0342\0226\0206\0342\0226\0205\0342\0226\0203\0342\0226\0202\0342\0226\0201\033[0m\n       \033[7;38;5;207m\0342\0226\0216\033[0m\033[38;5;207m\0342\0226\0214\033[0m \033[38;5;207m\0342\0226\0227\0342\0226\0204\0342\0226\0226\033[0m  \033[7;38;5;207m\0342\0226\0206\0342\0226\0205\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;5;207m\0342\0226\0206\0342\0226\0204\033[0m\n       \033[7;38;5;207m\0342\0226\0215\033[0m\033[38;5;207m\0342\0226\0214\033[0m \033[38;5;207m\0342\0226\0235\033[0m\033[7;38;5;207m\0342\0226\0203\033[0m\033[38;5;207m\0342\0226\0230\033[0m\033[7;38;5;207m\0342\0226\0230\033[0m\033[38;5;207m\0342\0226\0207\0342\0226\0206\033[0m \033[38;5;207m\0342\0226\0205\0342\0226\0205\033[0m  \033[7;38;5;207m\0342\0226\0216\033[0m\033[38;5;207m\0342\0226\0215\033[0m\n        \033[7;38;5;207m\0342\0226\0226\033[0m\033[38;5;207m\0342\0226\0204\033[0m   \033[7;38;5;207m\0342\0226\0207\0342\0226\0206\033[0m  \033[7;38;5;207m\0342\0226\0204\0342\0226\0204\033[0m \033[38;5;207m\0342\0226\0227\033[0m\033[7;38;5;207m \033[0m\033[38;5;92m\0342\0226\0216\033[0m\n       \033[38;5;92m\0342\0226\0203\033[0m\033[38;5;207m\0342\0226\0204\033[0m\033[7;38;5;207m \033[0m\033[38;5;207m\0342\0226\0207\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;5;92m\0342\0226\0201\033[0m  \033[38;5;207m\0342\0226\0201\0342\0226\0203\0342\0226\0206\033[0m\033[7;38;5;207m\0342\0226\0203\0342\0226\0206\0342\0226\0226\033[0m\033[38;5;207m\0342\0226\0226\033[0m\n      \033[7;38;5;207m\0342\0226\0213     \0342\0226\0201\0342\0226\0202\0342\0226\0203     \0342\0226\0235\033[0m\033[38;5;92m\0342\0226\0226\033[0m\033[7;38;5;207m\0342\0226\0203\033[0m\033[38;5;207m\0342\0226\0230\033[0m\n      \033[7;38;5;207m\0342\0226\0214     \033[0m\033[38;5;207m\0342\0226\0226\033[0m  \033[38;5;207m\0342\0226\0235\033[0m\033[7;38;5;207m      \033[0m\033[38;5;207m\0342\0226\0204\033[0m\n      \033[38;5;92m\0342\0226\0235\033[0m\033[7;38;5;207m\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\033[0m\033[7;38;5;92m\0342\0226\0205\033[0m   \033[38;5;92m\0342\0226\0235\033[0m\033[7;38;5;207m\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\033[0m\n'
+# END generated logo
+
 usage() {
 	cat <<'USAGE'
 Install the discobox command line client.
@@ -52,12 +77,134 @@ version beats a channel.
 USAGE
 }
 
+# setup_style decides what this terminal can show, once.
+setup_style() {
+	if [ -n "${NO_COLOR:-}" ]; then return 0; fi
+	if [ -z "${CLICOLOR_FORCE:-${FORCE_COLOR:-}}" ]; then
+		[ -t 2 ] || return 0
+		[ "${TERM:-dumb}" != dumb ] || return 0
+	fi
+
+	color_depth=16
+	case ${COLORTERM:-} in
+		truecolor | 24bit) color_depth=16777216 ;;
+	esac
+	if [ "$color_depth" -eq 16 ]; then
+		case ${TERM:-} in
+			*256color* | *direct*) color_depth=256 ;;
+			*)
+				if command -v tput >/dev/null 2>&1; then
+					[ "$(tput colors 2>/dev/null || echo 8)" -ge 256 ] && color_depth=256
+				fi
+				;;
+		esac
+	fi
+
+	c_reset=$(printf '\033[0m')
+	c_dim=$(printf '\033[2m')
+	if [ "$color_depth" -ge 16777216 ]; then
+		c_mark=$(printf '\033[38;2;244;92;255m')
+	elif [ "$color_depth" -ge 256 ]; then
+		# The same colors the TUI names: the mark's purple downsampled, and its
+		# own indices for the rest.
+		c_mark=$(printf '\033[38;5;207m')
+	else
+		c_mark=$(printf '\033[95m')
+	fi
+	if [ "$color_depth" -ge 256 ]; then
+		c_ok=$(printf '\033[38;5;83m')
+		c_warn=$(printf '\033[38;5;214m')
+		c_err=$(printf '\033[38;5;196m')
+	else
+		c_ok=$(printf '\033[92m')
+		c_warn=$(printf '\033[93m')
+		c_err=$(printf '\033[91m')
+	fi
+
+	if unicode_terminal; then
+		sym_step=$(printf '\342\206\222')
+		sym_ok=$(printf '\342\234\223')
+		sym_warn=$(printf '\342\232\240')
+		sym_err=$(printf '\342\234\227')
+	else
+		sym_step='>'
+		sym_ok='+'
+		sym_warn='!'
+		sym_err='x'
+	fi
+}
+
+# unicode_terminal reports whether the terminal is being told to expect UTF-8.
+# The mark is block characters and the symbols are arrows; neither is worth
+# printing as question marks.
+unicode_terminal() {
+	case ${LC_ALL:-${LC_CTYPE:-${LANG:-}}} in
+		*UTF-8* | *UTF8* | *utf-8* | *utf8*) return 0 ;;
+	esac
+	return 1
+}
+
+term_cols() {
+	if command -v tput >/dev/null 2>&1; then
+		cols=$(tput cols 2>/dev/null || true)
+		if [ -n "$cols" ]; then
+			printf '%s' "$cols"
+			return 0
+		fi
+	fi
+	printf '%s' "${COLUMNS:-80}"
+}
+
+# print_logo draws the mark, on the terms the TUI draws it on: it is shading
+# rather than line art, so a terminal that cannot color it gets none of it
+# rather than a monochrome smear. It also needs the room and the encoding.
+print_logo() {
+	[ "$color_depth" -ge 256 ] || return 0
+	unicode_terminal || return 0
+	[ "$(term_cols)" -ge 29 ] || return 0
+	if [ "$color_depth" -ge 16777216 ]; then
+		printf '\n%b\n' "$logo_24bit" >&2
+	else
+		printf '\n%b\n' "$logo_256" >&2
+	fi
+}
+
 say() {
 	printf '%s\n' "$*" >&2
 }
 
+# step, ok, and warn are the three things this has to say while it works. Each
+# falls back to the sentence alone, which is what a log file or a pipe gets.
+step() {
+	if [ -n "$c_dim" ]; then
+		printf '%s%s %s%s\n' "$c_dim" "$sym_step" "$*" "$c_reset" >&2
+	else
+		say "$*"
+	fi
+}
+
+ok() {
+	if [ -n "$c_ok" ]; then
+		printf '%s%s%s %s\n' "$c_ok" "$sym_ok" "$c_reset" "$*" >&2
+	else
+		say "$*"
+	fi
+}
+
+warn() {
+	if [ -n "$c_warn" ]; then
+		printf '%s%s%s %s\n' "$c_warn" "$sym_warn" "$c_reset" "$*" >&2
+	else
+		say "$*"
+	fi
+}
+
 die() {
-	printf 'error: %s\n' "$*" >&2
+	if [ -n "$c_err" ]; then
+		printf '%s%s error:%s %s\n' "$c_err" "$sym_err" "$c_reset" "$*" >&2
+	else
+		printf 'error: %s\n' "$*" >&2
+	fi
 	exit 1
 }
 
@@ -66,6 +213,7 @@ need() {
 }
 
 main() {
+	setup_style
 	need curl
 	need uname
 	need mktemp
@@ -203,7 +351,7 @@ resolve() {
 			;;
 	esac
 	[ -n "$found" ] || die "there is no release on the $1 channel yet"
-	say "the $1 channel is at $found"
+	step "the $1 channel is at $found"
 	printf '%s\n' "$found"
 }
 
@@ -228,7 +376,7 @@ fetch() {
 		if curl -fsL --retry 2 -o "$3" "$url"; then
 			[ -n "$4" ] || return 0
 			[ "$(sha256 "$3")" = "$4" ] && return 0
-			say "$url is not the file $release was released with; trying the next source"
+			warn "$url is not the file $release was released with; trying the next source"
 		fi
 	done
 	return 1
@@ -245,7 +393,7 @@ sha256() {
 }
 
 delegate() {
-	say "installing $1 with the installer it was released with"
+	step "installing $1 with the installer it was released with"
 	fetch "$1" install.sh "$tmp/install.sh" "" ||
 		die "$1 has no installer: there is no such release, or it came before install.sh did (see $releases_page/tag/$1)"
 	set -- --version "$1"
@@ -293,7 +441,13 @@ install_release() {
 	expected=$(printf '%s\n' "$checksums" | awk -v asset="$asset" '$2 == asset { print $1 }')
 	[ -n "$expected" ] || die "$release has no build for $os on $arch"
 
-	say "downloading discobox $release for $os/$arch"
+	print_logo
+	# The name of the thing being installed, under its own mark. No symbol: a
+	# tick here would claim something finished before anything has happened.
+	if [ -n "$c_mark" ]; then
+		printf '%s\033[1mdiscobox %s%s\n\n' "$c_mark" "$release" "$c_reset" >&2
+	fi
+	step "downloading discobox $release for $os/$arch"
 	fetch "$release" "$asset" "$tmp/discobox" "$expected" ||
 		die "could not download $asset for $release from any source with the SHA-256 it was released with"
 	chmod 755 "$tmp/discobox"
@@ -313,17 +467,17 @@ install_release() {
 		*"$release"*) ;;
 		*) die "installed $dir/discobox, but it says it is '$out' rather than $release" ;;
 	esac
-	say "installed discobox $release to $dir/discobox"
+	ok "installed discobox $release to $dir/discobox"
 
 	case ":${PATH:-}:" in
 		*":$dir:"*)
 			found=$(command -v discobox 2>/dev/null || true)
 			if [ -n "$found" ] && [ "$found" != "$dir/discobox" ]; then
-				say "$found comes before it on your PATH, so that is the one 'discobox' runs"
+				warn "$found comes before it on your PATH, so that is the one 'discobox' runs"
 			fi
 			;;
 		*)
-			say "$dir is not on your PATH; add it with:"
+			warn "$dir is not on your PATH; add it with:"
 			say "  export PATH=\"$dir:\$PATH\""
 			;;
 	esac

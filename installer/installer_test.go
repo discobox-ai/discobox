@@ -171,7 +171,7 @@ func newServer(t *testing.T, releases []release) *server {
 	}
 	mux.HandleFunc("GET /mirror/{tag}/{asset}", serve(&s.mirror))
 	mux.HandleFunc("GET /github/{tag}/{asset}", serve(&s.github))
-	mux.HandleFunc("GET /api/releases", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/releases", func(w http.ResponseWriter, _ *http.Request) {
 		s.apiCalls.Add(1)
 		if s.rateLimited {
 			http.Error(w, `{"message":"API rate limit exceeded"}`, http.StatusForbidden)
@@ -255,7 +255,7 @@ func fakeBinary(t *testing.T, tag string) []byte {
 		fakeBinaryDir = dir
 	}
 	out := filepath.Join(fakeBinaryDir, tag+".exe")
-	build := exec.Command("go", "build", "-o", out, "-ldflags", "-X main.version="+tag, "./testdata/fakediscobox")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", out, "-ldflags", "-X main.version="+tag, "./testdata/fakediscobox")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("building the fake discobox: %v\n%s", err, output)
@@ -316,7 +316,7 @@ func installedVersion(t *testing.T, dir string) string {
 	if _, err := os.Stat(path); err != nil {
 		return ""
 	}
-	out, err := exec.Command(path, "--version").Output()
+	out, err := exec.CommandContext(t.Context(), path, "--version").Output() //nolint:gosec // The binary this test just installed, in its own temporary directory.
 	if err != nil {
 		t.Fatalf("the installed discobox does not run: %v", err)
 	}
@@ -341,7 +341,8 @@ func requireShell(t *testing.T) {
 func runShell(t *testing.T, s *server, script string, env []string, args ...string) installResult {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "bin")
-	cmd := exec.Command("sh", append([]string{script, "--dir", dir}, args...)...)
+	//nolint:gosec // The installer under test, with arguments this test wrote.
+	cmd := exec.CommandContext(t.Context(), "sh", append([]string{script, "--dir", dir}, args...)...)
 	cmd.Env = append(append(clean(), s.env()...), env...)
 	out, err := cmd.CombinedOutput()
 	return installResult{output: string(out), err: err, dir: dir, version: installedVersion(t, dir)}
@@ -504,7 +505,8 @@ func runPowerShell(t *testing.T, shell string, s *server, script string, iex boo
 		command = fmt.Sprintf("& ([scriptblock]::Create((Get-Content -Raw -LiteralPath %s))) -InstallDir %s -NoModifyPath %s",
 			psQuote(script), psQuote(dir), params)
 	}
-	cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", command)
+	//nolint:gosec // A PowerShell this test found on PATH, running the installer under test.
+	cmd := exec.CommandContext(t.Context(), shell, "-NoProfile", "-NonInteractive", "-Command", command)
 	cmd.Env = append(append(clean(), s.env()...), env...)
 	out, err := cmd.CombinedOutput()
 	return installResult{output: string(out), err: err, dir: dir, version: installedVersion(t, dir)}
@@ -565,6 +567,96 @@ func TestPowerShellFallsBackAndRefuses(t *testing.T) {
 			got = runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, nil, "-Version v1.0.0")
 			if got.err == nil || !strings.Contains(got.output, "v1.0.0 has no installer") {
 				t.Fatalf("a release with no installer did not say so: err %v:\n%s", got.err, got.output)
+			}
+		})
+	}
+}
+
+// styleEnv is a terminal that can show everything: the mark, its colors, and
+// the symbols. CLICOLOR_FORCE stands in for the terminal a test does not have.
+var styleEnv = []string{"CLICOLOR_FORCE=1", "COLORTERM=truecolor", "TERM=xterm-256color", "LANG=C.UTF-8"}
+
+const (
+	// The lit side of the mark, which is also the color the TUI frames its
+	// window in (cli/internal/tui/theme.go).
+	markPurple = "\x1b[38;2;244;92;255m"
+	// The shadow side, which appears in the mark and nowhere else, so it is
+	// what says the mark itself was drawn.
+	shadowPurple = "\x1b[38;2;139;47;214m"
+)
+
+func TestShellDrawsTheMarkOnlyWhereItShows(t *testing.T) {
+	requireShell(t)
+	s := newServer(t, ladder)
+	script := s.script(t, "v1.1.0", ShellName)
+
+	// The sentence is the same either way: nothing here reads only in color.
+	plain := runShell(t, s, script, nil)
+	if strings.Contains(plain.output, "\x1b[") {
+		t.Errorf("a pipe got escape sequences:\n%q", plain.output)
+	}
+	if !strings.Contains(plain.output, "installed discobox v1.1.0 to") {
+		t.Errorf("plain output lost its sentence:\n%s", plain.output)
+	}
+
+	styled := runShell(t, s, script, styleEnv)
+	for _, want := range []string{shadowPurple, markPurple, "\u2713", "\u2192"} {
+		if !strings.Contains(styled.output, want) {
+			t.Errorf("a terminal that shows everything did not get %q:\n%q", want, styled.output)
+		}
+	}
+	if !strings.Contains(styled.output, "installed discobox v1.1.0 to") {
+		t.Errorf("styled output lost its sentence:\n%s", styled.output)
+	}
+
+	// NO_COLOR wins over being asked for color, per no-color.org.
+	none := runShell(t, s, script, append(append([]string{}, styleEnv...), "NO_COLOR=1"))
+	if strings.Contains(none.output, "\x1b[") {
+		t.Errorf("NO_COLOR got escape sequences:\n%q", none.output)
+	}
+
+	// Sixteen colors is not enough for the mark, which is shading rather than
+	// line art — the rule the TUI's newLogo applies. The messages keep theirs.
+	sixteen := runShell(t, s, script, []string{"CLICOLOR_FORCE=1", "TERM=xterm", "LANG=C.UTF-8"})
+	if strings.Contains(sixteen.output, shadowPurple) || strings.Contains(sixteen.output, markPurple) {
+		t.Errorf("a 16-color terminal was sent the mark:\n%q", sixteen.output)
+	}
+	if !strings.Contains(sixteen.output, "\x1b[") {
+		t.Errorf("a 16-color terminal got no color at all:\n%q", sixteen.output)
+	}
+
+	// A terminal that is not being told to expect UTF-8 gets no block
+	// characters and no arrows.
+	ascii := runShell(t, s, script, []string{"CLICOLOR_FORCE=1", "COLORTERM=truecolor", "TERM=xterm-256color", "LANG=C", "LC_ALL=C"})
+	if strings.Contains(ascii.output, shadowPurple) || strings.Contains(ascii.output, "\u2713") {
+		t.Errorf("a non-UTF-8 terminal got the mark or its symbols:\n%q", ascii.output)
+	}
+}
+
+func TestPowerShellDrawsTheMarkOnlyWhereItShows(t *testing.T) {
+	for _, shell := range powerShells(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			s := newServer(t, ladder)
+			script := s.script(t, "v1.1.0", PowerShellName)
+
+			plain := runPowerShell(t, shell, s, script, false, nil, "")
+			if strings.Contains(plain.output, "\x1b[") {
+				t.Errorf("a captured stream got escape sequences:\n%q", plain.output)
+			}
+			if !strings.Contains(plain.output, "installed discobox v1.1.0 to") {
+				t.Errorf("plain output lost its sentence:\n%s", plain.output)
+			}
+
+			styled := runPowerShell(t, shell, s, script, false, styleEnv, "")
+			for _, want := range []string{shadowPurple, markPurple, "\u2713"} {
+				if !strings.Contains(styled.output, want) {
+					t.Errorf("a terminal that shows everything did not get %q:\n%q", want, styled.output)
+				}
+			}
+
+			none := runPowerShell(t, shell, s, script, false, append(append([]string{}, styleEnv...), "NO_COLOR=1"), "")
+			if strings.Contains(none.output, "\x1b[") {
+				t.Errorf("NO_COLOR got escape sequences:\n%q", none.output)
 			}
 		})
 	}
