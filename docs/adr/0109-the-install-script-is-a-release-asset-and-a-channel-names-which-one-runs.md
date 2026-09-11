@@ -96,13 +96,13 @@ sometimes miss ones it does.
 
 The site gains a Worker in front of its static assets:
 
-- `discobox.ai/` answers a client that does not ask for HTML with the stable
-  release's `install.sh`, or with `install.ps1` if it is PowerShell. Browsers
-  get the site exactly as they do now. `/install.sh` and `/install.ps1` answer
-  every client.
-- `edge.discobox.ai` answers every path with the edge release's installer,
-  browsers included. It has no site. It is the place to run an installer change
-  before it is blessed.
+- `discobox.ai/` answers curl and wget with the stable release's `install.sh`,
+  and PowerShell with its `install.ps1`, recognised by user agent. Everything
+  else — browsers, and the bots that unfurl a link — gets the site exactly as it
+  does now. `/install.sh` and `/install.ps1` answer every client.
+- `edge.discobox.ai` answers `/`, `/install.sh`, and `/install.ps1` with the
+  edge release's installer, browsers included. It is the place to run an
+  installer change before it is blessed.
 
 The Worker does not call the GitHub API. Unauthenticated requests from shared
 Worker egress would be rate-limited, and the mirror already holds the token that
@@ -166,9 +166,9 @@ running, so delegation trusts nothing the first `curl | sh` did not.
   costs one request against the 60 an hour GitHub allows each address
   unauthenticated, and the script reports a rate limit as one, suggesting a
   pinned version.
-- **The site stops being static.** The Worker runs only for `/`, the two script
-  paths, and the edge host; every other path is still served straight from the
-  static assets.
+- **The site stops being static.** The Worker runs only for `/` and the two
+  script paths, on either host; every other path is still served straight from
+  the static assets, and a browser on `edge.discobox.ai` sees the site there.
 
 ## Rejected alternatives
 
