@@ -764,6 +764,7 @@ func (s *responseStream) Close() error {
 func (s *responseStream) finish(aborted bool, readErr error) {
 	s.finalizeOnce.Do(func() {
 		responseBodyFile, responseBodyFormat, responseBodyBytes, responseBodyError := s.responseBodyMetadata()
+		responseBodyError = mergeResponseBodyError(responseBodyError, readErr)
 		cacheStored := false
 		if s.cacheStore != nil {
 			_, cacheSpan := proxyTracer().Start(s.meta.ctx, "proxy.cache.store.finish")
@@ -819,6 +820,16 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 		s.meta.span.SetAttributes(attribute.Int("http.response.status_code", s.status), attribute.Bool("proxy.cache.stored", cacheStored))
 		s.meta.span.End()
 	})
+}
+
+func mergeResponseBodyError(bodyError string, readErr error) string {
+	if readErr == nil || errors.Is(readErr, io.EOF) {
+		return bodyError
+	}
+	if bodyError == "" {
+		return readErr.Error()
+	}
+	return bodyError + "; response read: " + readErr.Error()
 }
 
 func (s *responseStream) responseBodyMetadata() (file string, format string, bytes int64, errText string) {

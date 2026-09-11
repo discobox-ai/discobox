@@ -34,6 +34,18 @@ type stubResolver struct {
 	host  string
 }
 
+func TestMergeResponseBodyErrorRecordsUnexpectedEOF(t *testing.T) {
+	if got := mergeResponseBodyError("", io.ErrUnexpectedEOF); got != "unexpected EOF" {
+		t.Fatalf("mergeResponseBodyError() = %q, want unexpected EOF", got)
+	}
+	if got := mergeResponseBodyError("disk full", io.ErrUnexpectedEOF); got != "disk full; response read: unexpected EOF" {
+		t.Fatalf("mergeResponseBodyError() with spool error = %q", got)
+	}
+	if got := mergeResponseBodyError("", io.EOF); got != "" {
+		t.Fatalf("mergeResponseBodyError() recorded clean EOF as %q", got)
+	}
+}
+
 func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (secrets.ResolveResult, error) {
 	if r.host != "" && req.Host != r.host {
 		return secrets.ResolveResult{}, secrets.ErrDenied
