@@ -861,7 +861,8 @@ func keyNamed(name string) tea.KeyPressMsg {
 	return key(name)
 }
 
-// Special keys held with Ctrl or Shift reach the application.
+// Special keys held with a modifier reach the application. Alt has a test of
+// its own; see TestAltIsAParameterNotAPrefix.
 //
 // The emulator does not encode them: it matches key events by exact equality,
 // so a Left carrying a modifier matches none of its cases and produces nothing
@@ -877,9 +878,6 @@ func TestModifiedSpecialKeysReachTheApplication(t *testing.T) {
 		{"left", tea.KeyPressMsg{Code: tea.KeyLeft}, "\x1b[D"},
 		{"home", tea.KeyPressMsg{Code: tea.KeyHome}, "\x1b[H"},
 		{"f5", tea.KeyPressMsg{Code: tea.KeyF5}, "\x1b[15~"},
-		// Alt alone is left to it too: an escape prefix is a form readline and
-		// its like have always understood.
-		{"alt+left", tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt}, "\x1b\x1b[D"},
 
 		// The ones it drops, in xterm's encoding: 1 plus a bit per modifier.
 		{"ctrl+left", tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModCtrl}, "\x1b[1;5D"},

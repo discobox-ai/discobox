@@ -79,11 +79,25 @@ var tildeNumbers = map[rune]int{
 // Modified cursor keys take the CSI form whether or not the application has
 // asked for application cursor keys: that is what xterm does, and the SS3 form
 // has nowhere to put a modifier.
+//
+// Alt belongs in the parameter here, not in front of the sequence. Prefixing an
+// escape is right for the keys with no parameter to put a modifier in — Alt-B
+// is readline's backward-word and has been for forty years — but a special key
+// prefixed that way arrives as "\x1b\x1b[A", which reads as the Escape key
+// followed by the literal text "[A". xterm sends "\x1b[1;3A" for Alt-Up, and so
+// does every terminal since.
 func modifiedKeySeq(key tea.Key) string {
-	// Alt alone is left to the emulator, which sends it as an escape prefix —
-	// a form readline and its like have always understood. Only the modifiers
-	// it drops are handled here.
-	if key.Mod&(uv.ModCtrl|uv.ModShift) == 0 {
+	// A key carrying no modifier this form can express is the emulator's: it
+	// is the only one that knows whether the application asked for application
+	// cursor mode, and the unmodified cursor keys are the only place that
+	// changes what is sent.
+	//
+	// The test is against what modifierParam encodes rather than against zero,
+	// because a keyboard reports more than that. Windows sets ModCapsLock on
+	// every key pressed while Caps Lock is on, and a parameter with nowhere to
+	// put it would read ";1" — a modified sequence claiming no modifier — for
+	// every arrow key on the machine.
+	if key.Mod&encodableMods == 0 {
 		return ""
 	}
 	param := strconv.Itoa(modifierParam(key.Mod))
@@ -95,6 +109,11 @@ func modifiedKeySeq(key tea.Key) string {
 	}
 	return ""
 }
+
+// encodableMods are the modifiers modifierParam has a bit for. The rest of what
+// a keyboard reports — the locks, Super, Hyper — has no place in an xterm
+// modifier parameter, so a key carrying only those is an unmodified key.
+const encodableMods = uv.ModShift | uv.ModAlt | uv.ModCtrl | uv.ModMeta
 
 // unshiftBackspace folds Shift-Backspace onto Backspace.
 //

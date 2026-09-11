@@ -55,10 +55,22 @@ events by exact equality, so a Left carrying Ctrl or Shift matches none of its
 cases and produces *nothing* — Ctrl-Left, Shift-Home and Ctrl-Delete reach the
 application as silence. (Upstream says as much: "TODO: Support Kitty, CSI u, and
 XTerm modifyOtherKeys".) Those are encoded in xterm's form before the emulator
-is asked; everything else, Alt included, is left to it, since what it does there
-works and is the application's own negotiated mode rather than a guess. A
-modified cursor key takes the CSI form even in application-cursor mode, because
-the SS3 form has nowhere to put a modifier. Backspace is the exception with no
+is asked; a key with no modifier this form can express is left to it, since that
+is the only case where the application's own negotiated mode changes what is
+sent — and the test is against the modifiers an xterm parameter has a bit for,
+not against zero, because Windows reports Caps Lock as a modifier on every
+keystroke and a parameter with nowhere to put it would read `;1` for every arrow
+key on the machine. A modified cursor key takes the CSI form even in
+application-cursor mode, because the SS3 form has nowhere to put a modifier.
+
+**Alt is a parameter, not a prefix** — for the keys that have a parameter.
+Prefixing an escape is right for the keys with nowhere to put a modifier (Alt-B
+is readline's backward-word), but a special key prefixed that way arrives as
+`\x1b\x1b[A`, which an application reads as the Escape key followed by the
+literal text `[A`. xterm sends `\x1b[1;3A` for Alt-Up. Keys with no CSI form
+still fall through to the emulator and keep the prefix.
+
+Backspace is the exception with no
 form to encode: xterm sends DEL shifted or not, so Shift-Backspace is folded
 onto Backspace (`unshiftBackspace`) rather than given a sequence of its own.
 
