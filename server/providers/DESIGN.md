@@ -150,7 +150,8 @@ boots, waits for Docker and pulls the pool-agent image, failed with "no sandbox
 capacity" every time while all of it was working. The wait now extends whenever
 the pool's progress stamp moves, and only silence spends it. A pool that has
 actually failed is still caught immediately, by its settled failure rather than
-by a clock.
+by a clock. A create reaching the agent of the pool it was placed on spends the
+same budget; see [Pool-agent client leases](#pool-agent-client-leases).
 
 Two rules make it cheap enough to write from a hot path. Reports are a narrow
 two-column update, so they never race the reconcile writing the rest of the row;
@@ -622,3 +623,24 @@ mean this pool's agent, so a client built without one dials that name for real
 and fails to resolve it. Acquire a client per call — a retry loop included —
 and let `poolClient` refuse a spent one rather than degrading to a client that
 cannot reach anything.
+
+A create waits for the host it was placed on. Placement trusts the agent's
+last-reported `Ready`/`Schedulable`, which outlive its container until the agent
+is noticed gone, so a pool whose container is being replaced or restarted is
+still handed out, and a create is one attempt that settles the sandbox failed.
+When the lease cannot be acquired, the create marks the pool for reconcile and
+polls the driver on the placement wait's budget, ending early on a settled
+failure and at `poolAgentWaitCeiling` regardless, since routine reconciles
+stamp progress too. It polls the driver, not the row: the mark is drift, which
+bumps no generation, so the row reads converged throughout. Every other
+operation does not wait for the host: it retries once, after any reconcile the
+pool's pending intent already owes, because proxied traffic must not hang on a
+missing host and a remove must not hold a reconcile slot for one.
+
+Only a driver whose acquire can see the pool container can refuse it. The
+local driver inspects the container for its port anyway, and refuses one that
+is not running or whose healthcheck is still starting
+(`dockerworker.PoolAgentUnreachable`); that reason is the error when the wait
+runs out. The VM and cloud drivers return a lease without touching the
+container, so on those backends a create landing on a container being replaced
+still fails on its first call to the agent.

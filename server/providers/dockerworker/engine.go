@@ -833,6 +833,21 @@ func containerReadyError(inspect container.InspectResponse) error {
 	}
 }
 
+// PoolAgentUnreachable reports why a pool-agent container cannot answer a
+// request yet: it is not running, so it publishes nothing, or its healthcheck
+// has not passed once, so its agent may not have bound its port. It is the
+// verdict a driver that inspects the container on acquire applies.
+//
+// It is narrower than the readiness wait's containerReadyError on purpose. An
+// unhealthy container is still running an agent that may answer, and refusing
+// it would cut every request to a live pool whenever its probe flapped.
+func PoolAgentUnreachable(inspect container.InspectResponse) error {
+	if inspect.State != nil && inspect.State.Running && !containerHealthStarting(inspect) {
+		return nil
+	}
+	return containerReadyError(inspect)
+}
+
 func containerHealthStarting(inspect container.InspectResponse) bool {
 	return inspect.State != nil && inspect.State.Running && inspect.State.Health != nil && inspect.State.Health.Status == "starting"
 }

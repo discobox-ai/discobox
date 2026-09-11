@@ -43,12 +43,20 @@ const (
 	// safe to be generous, because a pool that has actually failed is caught by
 	// settledFailure rather than by this clock.
 	defaultPoolProvisionStallTimeout = 2 * time.Minute
+	// defaultPoolAgentWaitCeiling bounds how long a create waits for the host
+	// it was placed on to answer. Its stall clock alone cannot end the wait:
+	// every reconcile of the pool stamps progress, including the periodic
+	// drift scan, so a host that reconciles cleanly and still cannot be reached
+	// would renew it forever. Long enough for a container recreate that pulls a
+	// new pool-agent image.
+	defaultPoolAgentWaitCeiling = 5 * time.Minute
 )
 
 var (
 	poolCapacityWaitTimeout   = defaultPoolCapacityWaitTimeout
 	poolCapacityPollInterval  = defaultPoolCapacityPollInterval
 	poolProvisionStallTimeout = defaultPoolProvisionStallTimeout
+	poolAgentWaitCeiling      = defaultPoolAgentWaitCeiling
 )
 
 // PoolManager is the control-plane surface a pool provider needs.
@@ -315,31 +323,75 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 }
 
 func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions, pool *model.Pool) (*sandbox.Sandbox, []byte, error) {
-	client, err := p.agentClientForPool(ctx, pool)
+	lease, err := p.awaitPoolAgentClient(ctx, pool)
 	if err != nil {
 		return nil, state, err
 	}
+	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
 	return client.Create(ctx, ref, state, opts)
 }
 
-// poolProgressAt is when the pool's driver last said what it was doing, and
-// whether it has said anything at all.
+// awaitPoolAgentClient reaches the agent of the pool a create was placed on,
+// waiting out a host that is momentarily not there.
 //
-// An unreadable pool reports nothing rather than something wrong: the read can
-// fail for reasons that have no bearing on provisioning, and this only decides
-// whether to keep waiting.
-func (p *Provider) poolProgressAt(ctx context.Context, sb *model.Sandbox) (time.Time, bool) {
-	pool, err := p.manager.GetPool(ctx, sb.ProjectID, sb.PoolID)
-	if err != nil || pool == nil || pool.ProvisionProgressAt == nil {
-		return time.Time{}, false
+// Placement trusts the agent's last-reported Ready and Schedulable, which stay
+// set until the agent is noticed gone (pools DESIGN.md, "Offline is a liveness
+// verdict"). A pool whose container is being replaced or restarted — a drift
+// recreate, a Docker daemon restart, a development image rebuild — is therefore
+// handed out while there is nothing to reach, and a create is a single attempt
+// that settles the sandbox as failed. So the host is reconciled and waited for.
+//
+// Only create waits. Every other operation reaches the pool through
+// agentClientForPool, which retries once after any reconcile the pool's
+// pending intent already owes and does not wait for the host: proxied traffic
+// must not hang on a missing host, nor a remove or archive hold a reconcile
+// slot for one.
+//
+// The wait polls the driver, not the pool row. The mark is drift, which bumps
+// no generation, so the row reads converged both before and after the
+// reconcile it asks for; waiting on convergence returns at once. The wait is
+// bounded by poolAgentWaitCeiling, because progress stamps renew its stall
+// clock and a pool's routine reconciles stamp progress too.
+func (p *Provider) awaitPoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err == nil {
+		return lease, nil
 	}
-	return *pool.ProvisionProgressAt, true
+	if p.manager == nil || pool == nil || strings.TrimSpace(pool.ID) == "" {
+		return nil, err
+	}
+	if scheduleErr := p.manager.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); scheduleErr != nil {
+		return nil, scheduleErr
+	}
+	ctx, cancel := context.WithTimeoutCause(ctx, poolAgentWaitCeiling, errPoolWaitExpired)
+	defer cancel()
+	lastErr := err
+	err = p.waitForPool(ctx, pool.ProjectID, pool.ID, func(ctx context.Context, current *model.Pool) (bool, error) {
+		acquired, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, current)
+		if err != nil {
+			// An attempt cut off by the wait ending has nothing to say about
+			// the host; keep the last one that did.
+			if ctx.Err() == nil {
+				lastErr = err
+			}
+			return false, nil
+		}
+		lease = acquired
+		return true, nil
+	})
+	if errors.Is(err, errPoolWaitExpired) || errors.Is(context.Cause(ctx), errPoolWaitExpired) {
+		// The driver's own account of why the host cannot be reached says more
+		// than the wait running out.
+		return nil, lastErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	return lease, nil
 }
 
-// schedulablePool waits for the sandbox's pool to accept placement. It gives
-// up early when the pool has settled into failure: a scheduling wait is only
-// worth its deadline while the runtime is still on its way up, and a settled
-// failure carries a cause the caller should see.
+// schedulablePool waits for the sandbox's pool to accept placement, on the
+// budget waitForPool gives a pool that is on its way up.
 func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*model.Pool, error) {
 	pool, err := p.manager.SchedulablePoolForSandbox(ctx, sb)
 	if err == nil {
@@ -356,29 +408,68 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*mod
 	if err := p.manager.SchedulePoolReconciliation(ctx, sb.ProjectID, sb.PoolID); err != nil {
 		return nil, err
 	}
+	err = p.waitForPool(ctx, sb.ProjectID, sb.PoolID, func(ctx context.Context, _ *model.Pool) (bool, error) {
+		pool, err = p.manager.SchedulablePoolForSandbox(ctx, sb)
+		if errors.Is(err, apperrors.ErrNotFound) {
+			return false, nil
+		}
+		return err == nil, err
+	})
+	if errors.Is(err, errPoolWaitExpired) {
+		return nil, sandbox.ErrNoSandboxCapacity
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pool, nil
+}
+
+// errPoolWaitExpired is waitForPool giving up on a pool that went quiet. Each
+// caller turns it into the error that explains its own wait.
+var errPoolWaitExpired = errors.New("pool wait expired")
+
+// waitForPool polls attempt until it reports done, for as long as the pool is
+// worth waiting for. attempt is handed the pool as just read, and ends the wait
+// early by returning an error, for a failure that waiting cannot fix.
+//
+// A wait is only worth its deadline while the runtime is still on its way up.
+// The driver stamps its progress as it works, so a stamp that moved is the pool
+// saying it is alive and renews the deadline; a pool that says nothing keeps
+// the plain budget. Progress is only what moved during the wait. A pool that
+// has settled into failure ends the wait with
+// that failure, because its recorded cause — a missing image, an unreachable
+// daemon — is what the caller should see.
+func (p *Provider) waitForPool(ctx context.Context, projectID, poolID string, attempt func(context.Context, *model.Pool) (bool, error)) error {
 	deadline := time.Now().Add(poolCapacityWaitTimeout)
-	var lastProgressAt time.Time
+	var lastProgressAt *time.Time
 	for {
-		pool, err := p.manager.SchedulablePoolForSandbox(ctx, sb)
-		if err == nil {
-			return pool, nil
+		pool, err := p.manager.GetPool(ctx, projectID, poolID)
+		if err != nil {
+			return err
 		}
-		if !errors.Is(err, apperrors.ErrNotFound) {
-			return nil, err
+		done, err := attempt(ctx, pool)
+		if err != nil || done {
+			return err
 		}
-		if err := p.settledFailure(ctx, sb); err != nil {
-			return nil, err
+		if err := settledFailure(pool); err != nil {
+			return err
 		}
-		// A pool that is visibly still being built is not a pool to give up on.
-		// The driver stamps its progress as it works, so a stamp that moved is
-		// the pool saying it is alive; a pool that says nothing keeps the plain
-		// budget it has always had.
-		if at, ok := p.poolProgressAt(ctx, sb); ok && at.After(lastProgressAt) {
-			lastProgressAt = at
+		// The stamp as first read is the baseline, not movement: it is never
+		// cleared, so any pool that has ever been brought up carries one.
+		// A driver holding a phase restates it every few seconds, well inside
+		// the plain budget, so a live provision still renews the deadline.
+		at := pool.ProvisionProgressAt
+		if lastProgressAt == nil {
+			lastProgressAt = &time.Time{}
+			if at != nil {
+				*lastProgressAt = *at
+			}
+		} else if at != nil && at.After(*lastProgressAt) {
+			*lastProgressAt = *at
 			deadline = time.Now().Add(poolProvisionStallTimeout)
 		}
 		if poolCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
-			return nil, sandbox.ErrNoSandboxCapacity
+			return errPoolWaitExpired
 		}
 		timer := time.NewTimer(poolCapacityPollInterval)
 		select {
@@ -386,7 +477,7 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*mod
 			if !timer.Stop() {
 				<-timer.C
 			}
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-timer.C:
 		}
 	}
@@ -394,16 +485,8 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*mod
 
 // settledFailure returns the pool's failure once nothing can still bring the
 // runtime up, and nil while a reconcile is pending or in flight. The error
-// carries the pool's recorded message so the cause — a missing image, an
-// unreachable daemon — reaches the sandbox.
-func (p *Provider) settledFailure(ctx context.Context, sb *model.Sandbox) error {
-	if sb == nil || sb.PoolID == "" {
-		return nil
-	}
-	pool, err := p.manager.GetPool(ctx, sb.ProjectID, sb.PoolID)
-	if err != nil {
-		return err
-	}
+// carries the pool's recorded message so the cause reaches the sandbox.
+func settledFailure(pool *model.Pool) error {
 	if pool.RevokedAt != nil || pool.DesiredState != model.DesiredStatePresent {
 		return &sandbox.PoolFailure{PoolID: pool.ID, Message: "pool is not active"}
 	}
@@ -412,11 +495,7 @@ func (p *Provider) settledFailure(ctx context.Context, sb *model.Sandbox) error 
 	if pool.ErrorMessage == nil || !pool.Converged() {
 		return nil
 	}
-	message := ""
-	if pool.ErrorMessage != nil {
-		message = *pool.ErrorMessage
-	}
-	return &sandbox.PoolFailure{PoolID: pool.ID, Message: message}
+	return &sandbox.PoolFailure{PoolID: pool.ID, Message: *pool.ErrorMessage}
 }
 
 func (p *Provider) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {

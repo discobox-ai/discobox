@@ -175,8 +175,11 @@ type testRuntimeProvider struct {
 	createsRuntime bool
 	// staticToken returns a lease without a token provider, so the agent
 	// client attaches its own claims-minting provider (asserted by tests).
-	staticToken  bool
-	acquireErrs  []error
+	staticToken bool
+	acquireErrs []error
+	// unreachable fails every acquire once acquireErrs is spent, standing in
+	// for a pool host that never comes back.
+	unreachable  error
 	acquireCalls int
 	consoleCalls int
 	logCalls     int
@@ -235,6 +238,9 @@ func (p *testRuntimeProvider) AcquirePoolAgentClient(context.Context, *model.Poo
 		if err != nil {
 			return nil, err
 		}
+	}
+	if p.unreachable != nil {
+		return nil, p.unreachable
 	}
 	if p.staticToken {
 		return transport.NewHTTPClientLeaseWithBaseURLAndAuth(p.client, p.baseURL, p.token, nil), nil
@@ -431,6 +437,155 @@ func TestPoolProviderAcquireHTTPClientReconcilesPoolAndRetries(t *testing.T) {
 	}
 }
 
+// A pool still reads ready while its container is being replaced, so a create
+// is placed on a host that is not there yet. The create must wait for it to
+// come back rather than settle the sandbox as failed. The pool reconcile it
+// schedules is drift, which leaves the generations agreeing throughout, so
+// this cannot be waiting on convergence.
+func TestPoolProviderCreateWaitsForAPoolHostThatIsComingBack(t *testing.T) {
+	oldTimeout, oldInterval := poolCapacityWaitTimeout, poolCapacityPollInterval
+	poolCapacityWaitTimeout = time.Second
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldInterval })
+
+	notRunning := errors.New(`pool "pool-1" container is created`)
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.acquireErrs = []error{notRunning, notRunning, notRunning}
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
+		PoolID: "pool-1",
+		Image:  sandbox.ImageRef{Name: "discobox/sandbox:latest"},
+	})
+	if err != nil {
+		t.Fatalf("create on a pool host that came back: %v", err)
+	}
+	if runtimeProvider.acquireCalls != 4 {
+		t.Fatalf("AcquirePoolAgentClient calls = %d, want 4", runtimeProvider.acquireCalls)
+	}
+	if manager.scheduledReconciles != 1 {
+		t.Fatalf("scheduled pool reconciles = %d, want 1", manager.scheduledReconciles)
+	}
+}
+
+// A host that never comes back fails with the driver's account of why, not
+// with the wait running out.
+func TestPoolProviderReportsWhyAPoolHostNeverCameBack(t *testing.T) {
+	oldTimeout, oldInterval := poolCapacityWaitTimeout, poolCapacityPollInterval
+	poolCapacityWaitTimeout = 20 * time.Millisecond
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldInterval })
+
+	notRunning := errors.New(`pool "pool-1" container is exited`)
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.unreachable = notRunning
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	if !errors.Is(err, notRunning) {
+		t.Fatalf("create error = %v, want %v", err, notRunning)
+	}
+	if runtimeProvider.acquireCalls < 2 {
+		t.Fatalf("AcquirePoolAgentClient calls = %d, want the wait to keep trying", runtimeProvider.acquireCalls)
+	}
+}
+
+// A pool whose reconcile has settled into failure is not coming back on its
+// own, so the wait ends at once with the pool's recorded cause.
+func TestPoolProviderStopsWaitingForASettledPoolFailure(t *testing.T) {
+	oldTimeout, oldInterval := poolCapacityWaitTimeout, poolCapacityPollInterval
+	poolCapacityWaitTimeout = time.Minute
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldInterval })
+
+	pool := activePool("pool-1")
+	message := "pull pool agent image: no such image"
+	pool.ErrorMessage = &message
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.unreachable = errors.New(`pool "pool-1" container is exited`)
+	manager := &fakePoolManager{pool: pool, schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	var failure *sandbox.PoolFailure
+	if !errors.As(err, &failure) || failure.Message != message {
+		t.Fatalf("create error = %v, want the pool's settled failure %q", err, message)
+	}
+}
+
+// A pool that reconciles cleanly still stamps progress, so a host that never
+// answers would renew the stall clock forever. The ceiling ends it.
+func TestPoolProviderCreateGivesUpOnAHostAtTheCeiling(t *testing.T) {
+	oldTimeout, oldInterval, oldStall, oldCeiling := poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout, poolAgentWaitCeiling
+	poolCapacityWaitTimeout = time.Minute
+	poolCapacityPollInterval = time.Millisecond
+	poolProvisionStallTimeout = time.Minute
+	poolAgentWaitCeiling = 50 * time.Millisecond
+	t.Cleanup(func() {
+		poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout, poolAgentWaitCeiling = oldTimeout, oldInterval, oldStall, oldCeiling
+	})
+
+	noPort := errors.New(`pool "pool-1" does not expose a harness URL`)
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.unreachable = noPort
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	// Routine reconciles, stamping progress throughout.
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+			stamp := time.Now().UTC()
+			manager.mu.Lock()
+			manager.pool.ProvisionProgressAt = &stamp
+			manager.mu.Unlock()
+		}
+	}()
+	defer func() { close(stop); <-done }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	if !errors.Is(err, noPort) {
+		t.Fatalf("create error = %v, want %v at the ceiling", err, noPort)
+	}
+}
+
+// Only a create waits for the host. Everything else fails promptly: proxied
+// traffic must not hang on a missing host, nor a remove hold a reconcile slot.
+func TestPoolProviderOnlyCreateWaitsForAPoolHost(t *testing.T) {
+	oldTimeout, oldInterval := poolCapacityWaitTimeout, poolCapacityPollInterval
+	poolCapacityWaitTimeout = time.Minute
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldInterval })
+
+	notRunning := errors.New(`pool "pool-1" container is created`)
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.acquireErrs = []error{notRunning, notRunning, notRunning}
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{poolagentauth.ScopeSandboxRead})
+	if !errors.Is(err, notRunning) {
+		t.Fatalf("AcquireHTTPClient error = %v, want %v without waiting", err, notRunning)
+	}
+	if runtimeProvider.acquireCalls != 2 {
+		t.Fatalf("AcquirePoolAgentClient calls = %d, want 2", runtimeProvider.acquireCalls)
+	}
+}
+
 func TestPoolFailureUnwrapsToNoCapacity(t *testing.T) {
 	err := error(&sandbox.PoolFailure{PoolID: "pool-1", Message: "No such image"})
 
@@ -492,6 +647,33 @@ func TestSchedulablePoolKeepsWaitingWhileTheDriverReportsProgress(t *testing.T) 
 	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
 	if _, err := provider.schedulablePool(context.Background(), sb); err != nil {
 		t.Fatalf("gave up on a pool that was reporting progress throughout: %v", err)
+	}
+}
+
+// A progress stamp is never cleared, so one left by an earlier provision is
+// not movement: only a stamp that moves during the wait renews it.
+func TestSchedulablePoolIgnoresProgressFromBeforeTheWait(t *testing.T) {
+	oldTimeout, oldInterval, oldStall := poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout
+	poolCapacityWaitTimeout = 20 * time.Millisecond
+	poolCapacityPollInterval = 5 * time.Millisecond
+	poolProvisionStallTimeout = time.Minute
+	t.Cleanup(func() {
+		poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout = oldTimeout, oldInterval, oldStall
+	})
+
+	pool := activePool("pool-1")
+	pool.Ready = false
+	pool.Schedulable = false
+	stamp := time.Now().Add(-time.Hour).UTC()
+	pool.ProvisionProgressAt = &stamp
+	manager := &fakePoolManager{pool: pool, schedulable: false}
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
+	if _, err := provider.schedulablePool(ctx, sb); !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
+		t.Fatalf("schedulablePool error = %v, want ErrNoSandboxCapacity on the plain budget", err)
 	}
 }
 

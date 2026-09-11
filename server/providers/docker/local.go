@@ -110,6 +110,13 @@ func (d *LocalDriver) AcquirePoolAgentClient(ctx context.Context, poolID string)
 	if err != nil {
 		return nil, mapDockerNotFound(err)
 	}
+	// Placement can hand out a pool whose container is being replaced or has
+	// stopped, and a create waits for it to come back, so say which it is: a
+	// container that is not running publishes no ports, and reading that as a
+	// missing harness URL misreports a pool that is on its way up.
+	if err := dockerworker.PoolAgentUnreachable(inspect.Container); err != nil {
+		return nil, fmt.Errorf("pool %q: %w", poolID, err)
+	}
 	host, port := dockerworker.AssignedAgentEndpoint(inspect.Container.NetworkSettings.Ports, d.agentPort)
 	if host == "" || port <= 0 {
 		return nil, fmt.Errorf("pool %q does not expose a harness URL", poolID)
