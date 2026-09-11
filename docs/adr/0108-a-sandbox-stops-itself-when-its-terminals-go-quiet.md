@@ -38,13 +38,17 @@ Three facts already exist inside the sandbox, and nowhere else first-hand:
 
 A standing loop in the sandbox-agent (a new `autostop` package, started
 beside the ports watcher) evaluates activity on an interval and, when the
-sandbox has been idle for the idle timeout, runs `systemctl poweroff`. systemd
-stops its units, PID 1 exits, the container stops.
+sandbox has been idle for the idle timeout, starts systemd's `poweroff.target`
+(`systemctl start --no-block --job-mode=replace-irreversibly poweroff.target`,
+which is what `systemctl poweroff` falls back to without logind, minus the wait
+that the shutdown itself interrupts). systemd stops its units, PID 1 exits, the
+container stops.
 
 Nothing else changes. The pool agent sees the Docker `die` event and reports
 `stopped` on the §10 channel, exactly as for any container that exited; there
 is no restart policy to bring it back (§9), and the next sandbox-directed
-request starts it (§12). The server and pool agent gain no code. This meets
+request starts it (§12). Neither the server nor the pool agent takes part in
+the decision; they only carry the pool's idle timeout to it (§3). This meets
 §9's own test for an idle policy — it writes no new state anywhere.
 
 A sandbox in configure mode does not run the policy. It exists to run one
@@ -68,26 +72,51 @@ The sandbox's last activity is the latest of:
   it survives a sandbox-agent restart because the shim outlives one. A title
   being *set* to the value it already has is not a change — shells and
   harnesses re-emit their title on redraw.
-- **A connected client.** While any exec has an attacher, or any TCP tunnel is
-  open, the sandbox is active *now*. There is no timeout while someone is
-  connected. After the last one leaves, its last access is the activity time;
-  the shim records access on detach as well as on attach and input, so the
-  clock starts when the client left rather than at its last keystroke.
+- **A connected client.** While a client is connected — attached to an exec,
+  or through a TCP tunnel — the sandbox is active *now*. There is no timeout
+  while someone is connected. After the last one leaves, its leaving is the
+  activity time, so the clock starts when the client left rather than at its
+  last keystroke. The sandbox-agent holds the policy for every client
+  connection it serves rather than relying on the shims' attacher counts
+  alone, because a shim's record of access ends with its exec: a client that
+  just finished a long command would otherwise count for nothing.
 - **A keepalive lease** (§4).
 - **The sandbox-agent's own start**, so a sandbox that was just created or
   just auto-started gets a full window before anything else has happened.
+
+The policy remembers the latest of these it has observed, for the same reason:
+an exec that ends or is deleted takes its title and access times with it.
+Leases alone are re-read every time and never remembered, so removing one
+releases it (§4).
 
 The sandbox stops once `now ≥ lastActivity + idleTimeout`. The loop re-reads
 everything immediately before powering off, and logs which activity was the
 latest and when, so a stop can be explained after the fact from the journal.
 
-### 3. The idle timeout is a sandbox-agent default
+### 3. The idle timeout is pool policy, defaulting to 30 minutes *(amended 2026-09-11)*
 
-`idleTimeout` defaults to 30 minutes, and the evaluation interval to 30
-seconds. It is not configurable through the server, the pool, the image, or the
-project. A sandbox that must not stop holds a lease (§4) instead; that covers
-every case a knob would, from inside the sandbox, without a new field in any
-layer of `sandbox.json`.
+The timeout is `sandboxIdleTimeout` on `poolruntime.PoolPolicy`, the policy
+every provider instance carries for the pools it runs, beside
+`proxyAuditRetention`. It travels the way that setting does: the engine renders
+it into the pool container's environment, and the pool agent writes it into a
+sandbox's `sandbox.json` as `agentRuntime.idleTimeout` — when it creates the
+sandbox, and again before every start, because the sandbox-agent reads that
+file at boot and the rest of the document is rendered only once. Left empty,
+nothing is written and the sandbox-agent applies its own default of 30 minutes.
+The evaluation interval is 30 seconds and is not configurable.
+
+It is the pool's policy rather than the sandbox's, so every sandbox on a pool
+stops on the same terms from its next start, sandboxes created before the
+change included; one already running keeps the timeout it booted with until it
+next stops. No image, project, or create request can set it. A sandbox that
+must outlast the timeout holds a lease (§4) instead.
+
+A changed value reaches a pool when that pool is next reconciled. Saving a
+provider instance's configuration does not reconcile its pools — true of every
+pool policy field, and outside this decision (see Deferred). The server makes
+no decision and gains no logic: it stores the provider instance's
+configuration and validates the duration, as it already does for every pool
+policy field.
 
 ### 4. A lease is a file whose mtime is the time it holds the sandbox until
 
@@ -172,10 +201,17 @@ first thing anyone tries — and a lease would behave differently from every
 other activity. Treating the mtime as activity keeps one rule and makes the
 heartbeat work.
 
-**A configurable idle timeout now.** The obvious home is a runtime-layer field
-in `sandbox.json`, set by the server, which is exactly the server work this
-decision avoids. Nothing yet needs a value other than the default that a lease
-cannot provide; see Deferred.
+**A fixed timeout, with only leases to extend it.** The original §3. It kept
+every layer of `sandbox.json` untouched, but a lease can only lengthen the
+window: a pool that wants sandboxes back sooner — a cost-sensitive one, or a
+development pool exercising the stop end to end in a minute instead of half an
+hour — had no way to ask.
+
+**The timeout as a per-sandbox field on the create request.** It would let the
+server vary it per sandbox, which nothing needs, and it would make the server
+compute a value every sandbox on a pool shares. Pool policy is where the other
+setting of that shape already lives, and it reaches the pool without the
+server deciding anything.
 
 ## Consequences
 
@@ -200,15 +236,23 @@ cannot provide; see Deferred.
   shutdown time.
 - The first request after a stop pays a container start (ADR 0017 §12's
   consequence, now common rather than rare).
-- The server, pool agent, and CLI need no change. The API contract gains one
+- The server and pool agent make no decision; they carry one duration of pool
+  policy (§3). The CLI needs no change: it configures pool policy through the
+  provider instance's config like any other field. The API contract gains one
   optional object (§5).
 
 ## Deferred
 
-- **A per-pool or per-project idle timeout.** Revisit when a user needs a
-  timeout the default and a lease cannot express together — for example a
-  cost-sensitive pool that wants five minutes. The home is a runtime-layer
-  `sandbox.json` field the pool agent writes.
+- **Applying a provider configuration change when it is saved.** Saving does
+  not reconcile the provider's pools, so a new idle timeout — like any pool
+  policy — waits for their next reconcile, a server restart at the latest.
+  Reconciling on save was built and taken back out: it recreates every pool
+  container on every configuration edit, which changes how all provider
+  configuration applies rather than anything about this feature. Revisit when a
+  policy change waiting on an unrelated reconcile is a problem someone hits.
+- **A per-project idle timeout.** The provider instance sets it for every
+  pool it runs. Revisit when two projects sharing a provider need different
+  values.
 - **Connections to listening ports as activity.** `ports` already reads
   `/proc/net/tcp`; counting established connections to the sandbox's own
   listening sockets would make `/http/{port}` traffic keep a sandbox up.
