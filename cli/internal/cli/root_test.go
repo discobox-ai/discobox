@@ -648,6 +648,69 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 	}
 }
 
+// A lifetime is typed the way it is said. 604800 is not a week to anybody, and
+// the window's picker offers weeks — so the flag takes them too, and a bare
+// number of seconds still means what it always did.
+func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
+	const (
+		requestID = "request-1"
+		secretID  = "secret-1"
+	)
+	var approved map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
+			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
+				t.Fatalf("decode approve body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"token","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		default:
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID, "--grant-ttl", "1w"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret request approve: %v", err)
+	}
+	if approved["grantTTLSeconds"] != float64(604800) {
+		t.Fatalf("approve body = %#v, want a week in seconds", approved)
+	}
+
+	// Said nothing, it grants for an hour — the window's default — rather than
+	// leaving the server to take the secret's limit, which for this secret is
+	// forever.
+	cmd = NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret request approve: %v", err)
+	}
+	if approved["grantTTLSeconds"] != float64(3600) {
+		t.Fatalf("approve body = %#v, want the hour the window also opens on", approved)
+	}
+
+	// What is not a lifetime is refused here, where it can be retyped, rather
+	// than sent as something else.
+	cmd = NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID, "--grant-ttl", "a while"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("a lifetime nobody can read was accepted")
+	}
+	if !strings.Contains(err.Error(), "--grant-ttl") || !strings.Contains(err.Error(), "1h, 90m, 3d, 2w, 1mo, or forever") {
+		t.Fatalf("error = %q, want it to name the flag and the spellings that work", err)
+	}
+}
+
 func TestHarnessListShowsProjectDefault(t *testing.T) {
 	const defaultHarnessID = "harness-default-full-id"
 	requested := map[string]int{}
