@@ -96,59 +96,77 @@ func run(ctx context.Context) error {
 	if len(specs) == 0 {
 		return errors.New("no Docker images configured")
 	}
-	states := make(map[string]map[string]fileState, len(specs))
-	for _, spec := range specs {
-		if len(spec.files) == 0 {
-			return fmt.Errorf("no Docker inputs discovered for %s", spec.name)
-		}
-		log.Printf("watching %d Docker inputs for %s", len(spec.files), spec.name)
-		states[spec.name] = snapshot(spec.files)
-	}
-	if err := buildChangedImages(ctx, repoRoot, specs, nil); err != nil {
-		return err
-	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	// A separate, slower beat for "is the image still there", which costs a
 	// Docker call where the file check costs a stat.
 	presence := time.NewTicker(missingImageCheckInterval)
 	defer presence.Stop()
+	return watchImages(ctx, repoRoot, specs, ticker.C, presence.C)
+}
+
+func watchImages(ctx context.Context, repoRoot string, specs []imageSpec, ticks, presence <-chan time.Time) error {
+	states := make(map[string]map[string]fileState, len(specs))
+	pending := make(map[string]bool, len(specs))
+	for _, spec := range specs {
+		if len(spec.files) == 0 {
+			return fmt.Errorf("no Docker inputs discovered for %s", spec.name)
+		}
+		log.Printf("watching %d Docker inputs for %s", len(spec.files), spec.name)
+		states[spec.name] = snapshot(spec.files)
+		pending[spec.name] = true
+	}
+	var retryAt time.Time
+	now := time.Now()
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if len(pending) > 0 && !now.Before(retryAt) {
+			var builds []imageSpec
+			for _, spec := range specs {
+				if pending[spec.name] {
+					builds = append(builds, spec)
+				}
+			}
+			log.Printf("building development images: %s", strings.Join(specNames(builds), ", "))
+			if err := buildChangedImages(ctx, repoRoot, specs, builds); err != nil {
+				// Remember the whole pass until builds AND publication succeed.
+				// An old :local tag can still exist after a failed build, so the
+				// missing-image check cannot substitute for retrying pending work.
+				retryAt = time.Now().Add(imageBuildRetryInterval)
+				log.Printf("build failed; retrying in %s: %v", imageBuildRetryInterval, err)
+			} else {
+				clear(pending)
+				retryAt = time.Time{}
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-presence.C:
+		case now = <-presence:
 			missing, err := missingImageSpecs(ctx, repoRoot, specs)
 			if err != nil {
 				log.Printf("check built images: %v", err)
 				continue
 			}
-			if len(missing) == 0 {
-				continue
+			for _, spec := range missing {
+				pending[spec.name] = true
 			}
-			log.Printf("rebuilding %s: built image no longer on the daemon", strings.Join(specNames(missing), ", "))
-			if err := buildChangedImages(ctx, repoRoot, specs, missing); err != nil {
-				log.Printf("build failed: %v", err)
-			}
-		case <-ticker.C:
-			var changedSpecs []imageSpec
+		case now = <-ticks:
 			for _, spec := range specs {
 				next := snapshot(spec.files)
 				if changed(states[spec.name], next) {
 					states[spec.name] = next
-					changedSpecs = append(changedSpecs, spec)
+					pending[spec.name] = true
 				}
-			}
-			if len(changedSpecs) == 0 {
-				continue
-			}
-			log.Printf("Docker inputs changed for %s; rebuilding", strings.Join(specNames(changedSpecs), ", "))
-			if err := buildChangedImages(ctx, repoRoot, specs, changedSpecs); err != nil {
-				log.Printf("build failed: %v", err)
 			}
 		}
 	}
 }
+
+// imageBuildRetryInterval bounds retries while continuing to collect file changes.
+const imageBuildRetryInterval = 15 * time.Second
 
 // missingImageCheckInterval paces the check for built images that have left the
 // daemon.

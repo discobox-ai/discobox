@@ -313,7 +313,9 @@ same blobs. `release:images` builds them in that order, and the development
 image watcher orders its own builds from the same parent links. After any
 partial rebuild, the watcher derives both the complete development manifest and
 every image setting in `.env` from one inspection of the full local image set;
-the two publications must never name different pool or sandbox images.
+the two publications must never name different pool or sandbox images. Failed
+build or publication work stays pending and retries without requiring another
+file change, including the initial build.
 Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
 a running development server.
