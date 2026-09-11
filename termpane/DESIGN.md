@@ -55,13 +55,10 @@ events by exact equality, so a Left carrying Ctrl or Shift matches none of its
 cases and produces *nothing* — Ctrl-Left, Shift-Home and Ctrl-Delete reach the
 application as silence. (Upstream says as much: "TODO: Support Kitty, CSI u, and
 XTerm modifyOtherKeys".) Those are encoded in xterm's form before the emulator
-is asked; a key with no modifier this form can express is left to it, since that
-is the only case where the application's own negotiated mode changes what is
-sent — and the test is against the modifiers an xterm parameter has a bit for,
-not against zero, because Windows reports Caps Lock as a modifier on every
-keystroke and a parameter with nowhere to put it would read `;1` for every arrow
-key on the machine. A modified cursor key takes the CSI form even in
-application-cursor mode, because the SS3 form has nowhere to put a modifier.
+is asked; an unmodified key is left to it, since that is the only case where the
+application's own negotiated mode changes what is sent. A modified cursor key
+takes the CSI form even in application-cursor mode, because the SS3 form has
+nowhere to put a modifier.
 
 **Alt is a parameter, not a prefix** — for the keys that have a parameter.
 Prefixing an escape is right for the keys with nowhere to put a modifier (Alt-B
@@ -70,9 +67,39 @@ is readline's backward-word), but a special key prefixed that way arrives as
 literal text `[A`. xterm sends `\x1b[1;3A` for Alt-Up. Keys with no CSI form
 still fall through to the emulator and keep the prefix.
 
-Backspace is the exception with no
-form to encode: xterm sends DEL shifted or not, so Shift-Backspace is folded
-onto Backspace (`unshiftBackspace`) rather than given a sequence of its own.
+**A modifier with no encoding costs the modifier, not the keystroke**
+(`foldToEncodable`). Exact-equality matching means every modifier the emulator
+has no case for is silence — Ctrl-Tab, Ctrl-Backspace, Shift-Escape and
+Ctrl-Shift-anything reach the application as nothing at all. A real terminal
+with no encoding for a modifier sends the unmodified key, so that is what the
+fold does, after `modifiedKeySeq` has taken the keys that do have a form.
+
+It keeps an allowlist rather than stripping a list, because a keyboard reports
+more than the four modifiers an encoding exists for: Caps Lock, Num Lock,
+Scroll Lock, Super and Hyper all arrive here, Windows sets Caps Lock on every
+key pressed while it is on, and any one of them left on a key is the silence
+this exists to prevent. Alt always survives, as an escape prefix; Shift only on
+Tab, whose back-tab the emulator encodes; Ctrl only on the codes with a control
+byte. `modifiedKeySeq` asks the same question at its door, against
+`encodableMods` rather than against zero — a lock is not a modifier, and a
+parameter with nowhere to put one would read `;1` for every arrow key on a
+Windows machine.
+
+**A key with no sequence is sent as nothing** (`encodable`). The emulator's
+switch ends in `default: if key.Mod == 0 { seq += string(key.Code) }`, which is
+right for a printable key — it is its own rune — and wrong for a special one:
+those start at `KeyExtended`, one past `utf8.MaxRune`, so a special key the
+emulator has no case for is not silence but U+FFFD, typed at the application.
+Hence the two branches of `encodable`: a valid rune the emulator can always
+write, and a special code only if `emulatorKeys` has it. The pane checks before
+handing a key over, and sends nothing, which is what a terminal with no sequence
+for a key sends.
+
+`emulatorKeys` is that check's list, and it is copied by hand from the
+emulator's own switch in a module this repository pins by replace directive. It
+matches exactly today. If the pin moves and the emulator gains a case, the key
+it gained goes on being dropped here, silently and with no test to catch it —
+so the list is worth re-reading whenever that pin does move.
 
 **Input is drained and written by separate goroutines.** The pipe behind the
 emulator is synchronous — `Paste` and `SendKey` are held until their bytes are

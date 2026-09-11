@@ -2,6 +2,7 @@ package termpane
 
 import (
 	"strconv"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -115,15 +116,68 @@ func modifiedKeySeq(key tea.Key) string {
 // modifier parameter, so a key carrying only those is an unmodified key.
 const encodableMods = uv.ModShift | uv.ModAlt | uv.ModCtrl | uv.ModMeta
 
-// unshiftBackspace folds Shift-Backspace onto Backspace.
-//
-// xterm has no modified form for Backspace: shifted or not, it sends the same
-// DEL. The emulator matches keys by exact equality, so the shifted key would
-// reach the application as silence — a Backspace that deletes nothing on any
-// terminal that reports the modifier. Ctrl and Alt are left as they are.
-func unshiftBackspace(key tea.Key) tea.Key {
-	if key.Code == uv.KeyBackspace {
-		key.Mod &^= uv.ModShift
+// emulatorKeys are the special codes the emulator encodes itself. Every other
+// code above [utf8.MaxRune] reaches its default branch, which writes
+// string(code) — and a code that is not a rune comes out of that as U+FFFD.
+var emulatorKeys = map[rune]bool{
+	uv.KeyBackspace: true, uv.KeyDelete: true, uv.KeyDown: true,
+	uv.KeyEnd: true, uv.KeyEnter: true, uv.KeyEscape: true,
+	uv.KeyHome: true, uv.KeyInsert: true, uv.KeyLeft: true,
+	uv.KeyPgDown: true, uv.KeyPgUp: true, uv.KeyRight: true,
+	uv.KeySpace: true, uv.KeyTab: true, uv.KeyUp: true,
+	uv.KeyF1: true, uv.KeyF2: true, uv.KeyF3: true, uv.KeyF4: true,
+	uv.KeyF5: true, uv.KeyF6: true, uv.KeyF7: true, uv.KeyF8: true,
+	uv.KeyF9: true, uv.KeyF10: true, uv.KeyF11: true, uv.KeyF12: true,
+	uv.KeyKp0: true, uv.KeyKp1: true, uv.KeyKp2: true, uv.KeyKp3: true,
+	uv.KeyKp4: true, uv.KeyKp5: true, uv.KeyKp6: true, uv.KeyKp7: true,
+	uv.KeyKp8: true, uv.KeyKp9: true, uv.KeyKpComma: true,
+	uv.KeyKpDecimal: true, uv.KeyKpEnter: true, uv.KeyKpEqual: true,
+	uv.KeyKpMinus: true, uv.KeyKpMultiply: true, uv.KeyKpPlus: true,
+}
+
+// encodable reports whether the emulator can send this key at all. A printable
+// code it writes as itself; a special code it writes only if it has a case for
+// it. Anything else it would turn into a replacement character, so the pane
+// sends nothing instead — which is what a terminal with no sequence for a key
+// sends.
+func encodable(code rune) bool {
+	return utf8.ValidRune(code) || emulatorKeys[code]
+}
+
+// ctrlEncodable reports whether the emulator has a control byte for this code:
+// the letters, space, and the five symbols that fill out the C0 range.
+func ctrlEncodable(code rune) bool {
+	switch code {
+	case uv.KeySpace, '[', '\\', ']', '^', '_':
+		return true
 	}
+	return code >= 'a' && code <= 'z'
+}
+
+// foldToEncodable keeps only the modifiers the emulator can send, so a key held
+// with one it cannot arrives unmodified rather than not at all.
+//
+// The emulator matches keys by exact equality, so every modifier it has no case
+// for turns the keystroke into silence: Ctrl-Tab, Ctrl-Backspace, Shift-Escape
+// and Ctrl-Shift-anything reach the application as nothing. A real terminal
+// with no encoding for a modifier sends the unmodified key instead, which is
+// what this does. It runs after modifiedKeySeq, so every key that does have a
+// form keeps it.
+//
+// It is an allowlist rather than a list of modifiers to strip, because a
+// keyboard reports more than the four an encoding exists for: the locks, Super
+// and Hyper all reach here, and any one of them left on a key is the silence
+// this exists to prevent. Alt always survives, as an escape prefix; Shift only
+// on Tab, whose back-tab the emulator encodes; Ctrl only on the codes with a
+// control byte.
+func foldToEncodable(key tea.Key) tea.Key {
+	mod := key.Mod & uv.ModAlt
+	if key.Mod&uv.ModShift != 0 && key.Code == uv.KeyTab {
+		mod |= uv.ModShift
+	}
+	if key.Mod&uv.ModCtrl != 0 && ctrlEncodable(key.Code) {
+		mod |= uv.ModCtrl
+	}
+	key.Mod = mod
 	return key
 }

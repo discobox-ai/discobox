@@ -809,7 +809,7 @@ func (m *Model) SendKey(msg tea.KeyPressMsg) {
 	if m.emu == nil || m.opts.readOnly {
 		return
 	}
-	key := unshiftBackspace(msg.Key())
+	key := msg.Key()
 	if key.Text != "" && key.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
 		m.emu.SendText(key.Text)
 		return
@@ -817,6 +817,14 @@ func (m *Model) SendKey(msg tea.KeyPressMsg) {
 	// The emulator drops the modified special keys; see keys.go.
 	if seq := modifiedKeySeq(key); seq != "" {
 		m.emu.SendText(seq)
+		return
+	}
+	key = foldToEncodable(key)
+	// A key the emulator has no sequence for is sent as nothing. Handed over
+	// anyway it reaches its default branch, which writes string(code) — and
+	// the special codes are above utf8.MaxRune, so the application would be
+	// typed a replacement character where a terminal sends nothing at all.
+	if !encodable(key.Code) {
 		return
 	}
 	m.emu.SendKey(uv.KeyPressEvent(uv.Key(key)))
