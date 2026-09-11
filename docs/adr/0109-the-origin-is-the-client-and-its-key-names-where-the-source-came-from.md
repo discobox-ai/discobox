@@ -1,6 +1,6 @@
 # 0109 — The origin is the client, and its key names where the source came from
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-11
 - **Supersedes**: [0001](0001-sandbox-origin-and-remote-source-push.md) §1's
   `Origin.ProjectPath` and its derivation of `OriginKey`. The origin records

@@ -1,6 +1,9 @@
 # 0001 — Sandbox origin and remote source push
 
-- **Status**: Accepted
+- **Status**: Accepted (§1's `Origin.ProjectPath` and derivation of `OriginKey`
+  superseded by
+  [ADR 0109](0109-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md);
+  the rest stands)
 - **Date**: 2026-07-16
 
 ## Context

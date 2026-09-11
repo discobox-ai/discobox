@@ -53,7 +53,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0001](0001-sandbox-origin-and-remote-source-push.md) | Sandbox origin and remote source push | Accepted |
+| [0001](0001-sandbox-origin-and-remote-source-push.md) | Sandbox origin and remote source push | Accepted (§1's `Origin.ProjectPath` and derivation of `OriginKey` superseded by [0109](0109-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)) |
 | [0002](0002-harness-config-is-the-only-harness-concept.md) | Harness config is the only harness concept | Accepted |
 | [0003](0003-promote-pool-to-a-first-class-primitive.md) | Promote pool to a first-class primitive | Accepted (§4 superseded by [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md)) |
 | [0004](0004-user-namespaces-are-the-default-isolation.md) | User namespaces are the default isolation | Proposed |
@@ -165,5 +165,5 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0108](0108-a-sandbox-stops-itself-when-its-terminals-go-quiet.md) | A sandbox stops itself when its terminals go quiet | Accepted |
 | [0109](0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md) | A bound UDP port is listed, and forwarded as datagrams | Accepted (settles [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md)'s deferred UDP) |
 | [0110](0110-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md) | The install script is a release asset, and a channel names which one runs | Accepted (amends [0105](0105-a-release-is-cut-as-a-prerelease-and-blessed-stable-later.md) §2 — an explicit prerelease reaches the opt-in `edge` channel; supersedes [0106](0106-a-consumer-points-at-the-asset-mirror-only-if-it-can-fall-back.md) §4 for the installer's two addresses) |
-| [0109](0109-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md) | The origin is the client, and its key names where the source came from | Proposed (supersedes [0001](0001-sandbox-origin-and-remote-source-push.md) §1's `Origin.ProjectPath` and derivation of `OriginKey`) |
+| [0109](0109-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md) | The origin is the client, and its key names where the source came from | Accepted (supersedes [0001](0001-sandbox-origin-and-remote-source-push.md) §1's `Origin.ProjectPath` and derivation of `OriginKey`) |
 | [0110](0110-whoever-serves-an-api-is-strict-and-whoever-reads-it-is-tolerant.md) | Whoever serves an API is strict, and whoever reads its responses is tolerant | Proposed (deferred until its revisit condition holds) |
