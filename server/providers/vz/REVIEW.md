@@ -6,6 +6,10 @@
   own daemon (`dockerworker.BuildArtifacts`), not on the host.
 - **Never open a TCP listener.** Both directions are VSOCK. An IP listener on
   macOS is a machine-wide surface and a firewall prompt.
+- **The framework owns a VSOCK connection's descriptor.** A binding may dup it
+  but never close or adopt it: the framework closes it again on dealloc, into
+  whatever reused the number. Moving off the `discobox-ai/vz` fork, or bumping
+  it, needs `go tool task test:vz-stress` passing on a real guest first.
 - **Do not add a `CloseWrite` that does nothing.** A caller that finds the
   method believes the peer saw EOF. If a code path genuinely needs half-close,
   fix it at the binding, not with a method that lies.

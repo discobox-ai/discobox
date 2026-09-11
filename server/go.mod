@@ -425,3 +425,9 @@ replace github.com/discobox-ai/discobox => ..
 replace github.com/discobox-ai/discobox/pool-agent => ../pool-agent
 
 replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953
+
+// Code-Hex/vz closes the descriptor a VZVirtioSocketConnection owns, so the
+// framework's own close lands on whatever reused the number; the server exits
+// with "accept unix ...: bad file descriptor". The fork duplicates it instead.
+// Drop this once an upstream release does, after `task test:vz-stress` passes.
+replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20260911044327-cfc8ce376aee

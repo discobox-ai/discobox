@@ -66,8 +66,6 @@ github.com/ClickHouse/clickhouse-go-linter v1.2.0 h1:zbm174up3hTKjp0wKZVnTzRiG7t
 github.com/ClickHouse/clickhouse-go-linter v1.2.0/go.mod h1:pLorS7ffPTfuUV9M0SJgfHA/h/WQPQUk2FWG9x74cQ4=
 github.com/Code-Hex/go-infinity-channel v1.0.0 h1:M8BWlfDOxq9or9yvF9+YkceoTkDI1pFAqvnP87Zh0Nw=
 github.com/Code-Hex/go-infinity-channel v1.0.0/go.mod h1:5yUVg/Fqao9dAjcpzoQ33WwfdMWmISOrQloDRn3bsvY=
-github.com/Code-Hex/vz/v3 v3.7.1 h1:EN1yNiyrbPq+dl388nne2NySo8I94EnPppvqypA65XM=
-github.com/Code-Hex/vz/v3 v3.7.1/go.mod h1:1LsW0jqW0r0cQ+IeR4hHbjdqOtSidNCVMWhStMHGho8=
 github.com/Djarvur/go-err113 v0.1.1 h1:eHfopDqXRwAi+YmCUas75ZE0+hoBHJ2GQNLYRSxao4g=
 github.com/Djarvur/go-err113 v0.1.1/go.mod h1:IaWJdYFLg76t2ihfflPZnM1LIQszWOsFDh2hhhAVF6k=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 h1:DHa2U07rk8syqvCge0QIGMCE1WxGj9njT44GH7zNJLQ=
@@ -281,6 +279,8 @@ github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.4.0 h1:/XxXIQZ5zO/IiT6fBEp2
 github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.4.0/go.mod h1:aWZAwCslRneFsiAz9FE3IG+WUyH5QrWoYKUAmagNElQ=
 github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0 h1:gIxKszXdZ1v0TCwgLOGFJxSEoYYTVNA3hQiYRWQxdhU=
 github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0/go.mod h1:mLpdkgTL7Jvpc14B/kT5d/pxhjtngOrfczfCt7oPaLA=
+github.com/discobox-ai/vz/v3 v3.7.2-0.20260911044327-cfc8ce376aee h1:1tsg+moIhhUoADMu9LnOwmoA66tYFY59Wwb07tyf4i4=
+github.com/discobox-ai/vz/v3 v3.7.2-0.20260911044327-cfc8ce376aee/go.mod h1:1LsW0jqW0r0cQ+IeR4hHbjdqOtSidNCVMWhStMHGho8=
 github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16 h1:iYGFtvn+yojA/63kNZdHfGIxGIBv5EH7hSxoqgpqvQY=
 github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16/go.mod h1:ozoGHzU8woLHyDsmXikg5H1raf07miXC7vg51QtkQew=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=

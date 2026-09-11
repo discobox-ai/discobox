@@ -28,6 +28,16 @@ There is none. Virtualization.framework is part of macOS and is used in
 process through `Code-Hex/vz`, so unlike libkrun there is no launcher process,
 no runtime lock, and no recorded process identity.
 
+In process also means the framework shares the server's descriptor table.
+`VZVirtioSocketConnection` owns its descriptor and closes it when the object is
+destroyed, so the binding duplicates it and never closes the original. Upstream
+`Code-Hex/vz` closes it, which lets the framework's own close land on whatever
+reused the number — a connection the Unix listener just accepted, ending
+`Serve` with `accept unix …: bad file descriptor`. The binding is therefore the
+`discobox-ai/vz` fork, pinned by a `replace` in `server/go.mod`, and
+`task test:vz-stress` is the reproduction: a Unix listener probed on fresh
+connections while a real guest churns VSOCK.
+
 `internal/vzvm` is the whole cgo/darwin surface, isolated exactly as
 `wslc/internal/wslcsession` is, so the driver, its configuration, and its tests
 compile and run on every platform. The bindings are built `darwin && cgo` —
