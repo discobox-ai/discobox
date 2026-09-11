@@ -1470,6 +1470,12 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		m.dialog = m.helpDialog()
 	case "enter":
 		return m.act("a")
+	case "delete":
+		// Del is where a hand reaches to be rid of a row, and being rid of a
+		// discobox here means archiving it: reversible, disk and all. It is
+		// the same key as x, filtered and refused the same way. Purge, which
+		// is not reversible, stays typed for.
+		return m.act("x")
 	case ".":
 		targets := m.list.targets()
 		m.dialog = actionsDialog(actionTitle(targets), "", m.actions(targets), chooseAction(targets))
@@ -3524,7 +3530,7 @@ func (m *Model) helpText() string {
 		"           current image, keeping its workspace and changes",
 		"    " + credentialsKey + "      answer the credential request waiting on it",
 		"    e      rename          t  stop",
-		"    T      start           x  archive",
+		"    T      start           x  archive (Del too)",
 		"    U      unarchive       P  purge",
 		"    A      show or hide archived discoboxes",
 		"    r      refresh now (the list also refreshes on its own)",

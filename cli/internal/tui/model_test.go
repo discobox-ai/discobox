@@ -392,6 +392,21 @@ func TestVisualRangeActsOnTheWholeRange(t *testing.T) {
 	}
 }
 
+// Del is the archive key a hand finds without reading the bottom line.
+func TestDeleteArchivesLikeX(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("delete"))
+
+	if len(ds.did) != 1 || ds.did[0] != "archive sbx_one" {
+		t.Fatalf("did = %v", ds.did)
+	}
+	if m.dialog != nil {
+		t.Fatal("archive is reversible and should ask nothing")
+	}
+}
+
 // Purge destroys the disk, so it asks first — and archiving, which is
 // reversible, does not.
 func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
