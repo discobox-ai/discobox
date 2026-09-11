@@ -186,6 +186,25 @@ type IrohConfig struct {
 	// test binary is a fresh path under a temporary directory on every run, so
 	// no allowance a developer grants is ever asked about again.
 	BindAddrs []netip.AddrPort
+
+	// PreferredBindAddrs are sockets to try before the ones BindAddrs, or the
+	// default, would give. A family those would bind and these leave out is
+	// bound anyway, on a fresh port, so the preference moves ports and never
+	// drops a family. If they cannot be bound — a port was taken while this
+	// process was down, an interface has gone — the endpoint binds as though
+	// they had never been offered. Empty binds as before.
+	//
+	// It exists for a server coming back on the port it had. The port is the
+	// one part of a server's address a client learns only by connecting (see
+	// Reached), and a fresh one on every start throws away what every client
+	// learned at the moment all of them are reconnecting at once.
+	PreferredBindAddrs []netip.AddrPort
+
+	// Bound is told the sockets the endpoint bound, once, when it binds, so a
+	// caller that keeps them can offer them back through PreferredBindAddrs on
+	// the next start. It runs inside the bind and must not use the endpoint.
+	// Nil keeps nothing, which is what anything that does not listen wants.
+	Bound func([]netip.AddrPort)
 }
 
 // ConfigureIroh installs this process's iroh identity and admission policy. It

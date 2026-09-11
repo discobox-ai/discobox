@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -135,30 +136,90 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 	var secret iroh.SecretKey
 	copy(secret[:], e.cfg.SecretKey.Seed())
 
-	started := time.Now()
-	bound, err := iroh.Bind(context.Background(), iroh.Options{
+	options := iroh.Options{
 		Preset:    preset,
 		RelayMode: relay,
 		RelayURLs: e.cfg.RelayURLs,
 		SecretKey: &secret,
 		ALPNs:     irohALPNs(e.cfg),
 		BindAddrs: e.cfg.BindAddrs,
-	})
-	if err != nil {
-		irohLogf(IrohLogError, "bind: %v", err)
-		return nil, fmt.Errorf("bind iroh endpoint: %w", err)
+	}
+	started := time.Now()
+	var bound *iroh.Endpoint
+	// Further binds rather than a fallback inside the first, because iroh has
+	// none: a socket given a port either gets that port or fails the whole
+	// bind. Binding is local work, so each retry costs milliseconds.
+	for _, sockets := range preferredBinds(e.cfg) {
+		attempt := options
+		attempt.BindAddrs = sockets
+		var err error
+		bound, err = iroh.Bind(context.Background(), attempt)
+		if err == nil {
+			break
+		}
+		irohLogf(IrohLogInfo, "bind: %s is unavailable: %v", joinAddrPorts(sockets), err)
+	}
+	if bound == nil {
+		var err error
+		bound, err = iroh.Bind(context.Background(), options)
+		if err != nil {
+			irohLogf(IrohLogError, "bind: %v", err)
+			return nil, fmt.Errorf("bind iroh endpoint: %w", err)
+		}
 	}
 	irohLogf(IrohLogInfo, "bind: endpoint %s bound in %s (%s)",
 		IrohID(bound.ID()).Short(), time.Since(started).Round(time.Millisecond), irohReachDescription(e.cfg))
-	if irohLogEnabled(IrohLogDebug) {
-		if sockets, socketsErr := bound.BoundSockets(); socketsErr != nil {
-			irohLogf(IrohLogDebug, "bind: bound sockets are unreadable: %v", socketsErr)
-		} else {
-			irohLogf(IrohLogDebug, "bind: sockets %s", joinAddrPorts(sockets))
+	if sockets, socketsErr := bound.BoundSockets(); socketsErr != nil {
+		irohLogf(IrohLogDebug, "bind: bound sockets are unreadable: %v", socketsErr)
+	} else {
+		irohLogf(IrohLogDebug, "bind: sockets %s", joinAddrPorts(sockets))
+		if e.cfg.Bound != nil {
+			e.cfg.Bound(sockets)
 		}
 	}
 	e.endpoint = bound
 	return e.endpoint, nil
+}
+
+// irohDefaultBind is the socket set iroh binds when it is given none: an IPv4
+// wildcard that must bind and an IPv6 one that is allowed to fail. It is
+// written out here because preferred sockets replace that set rather than
+// adjusting it, so completing them means knowing what it was.
+var irohDefaultBind = []netip.AddrPort{
+	netip.AddrPortFrom(netip.IPv4Unspecified(), 0),
+	netip.AddrPortFrom(netip.IPv6Unspecified(), 0),
+}
+
+// preferredBinds are the socket sets to try, most wanted first, before the
+// bind the configuration would otherwise make.
+//
+// Replayed alone, the preferred sockets would pin the endpoint to whichever
+// families bound on the start that recorded them: iroh's IPv6 socket may fail,
+// and a start without one records an IPv4-only endpoint that would never try
+// IPv6 again. So the first set is every family the ordinary bind asks for,
+// with the preferred port where there is one and a fresh port where there is
+// not; the second is the preferred set as it was, for a host where the missing
+// family still cannot bind.
+func preferredBinds(cfg IrohConfig) [][]netip.AddrPort {
+	preferred := cfg.PreferredBindAddrs
+	if len(preferred) == 0 {
+		return nil
+	}
+	ordinary := cfg.BindAddrs
+	if len(ordinary) == 0 {
+		ordinary = irohDefaultBind
+	}
+	complete := slices.Clone(preferred)
+	for _, socket := range ordinary {
+		sameFamily := func(have netip.AddrPort) bool { return have.Addr().Is4() == socket.Addr().Is4() }
+		if !slices.ContainsFunc(preferred, sameFamily) {
+			complete = append(complete, socket)
+		}
+	}
+	if len(complete) == len(preferred) {
+		return [][]netip.AddrPort{preferred}
+	}
+	return [][]netip.AddrPort{complete, preferred}
 }
 
 // irohALPNs is what this endpoint speaks.

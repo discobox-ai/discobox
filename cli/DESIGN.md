@@ -232,13 +232,13 @@ The memory is a hint, and the design follows from that:
 - An entry that does not parse is dropped on read: the memory may only add
   candidates, never fail a dial.
 
-**It does not survive a server restart, and that is the case that hurts most.** A
-server binds a fresh UDP port on every start, so a restart invalidates every
-entry at the same moment it kills every direct path and forces every client back
-onto the relay at once — the stampede described in the section above. The cache
-re-learns the address from the first connection that gets through, so it shortens
-the window rather than closing it. Closing it means giving the server a stable
-listen port, which `iroh://` has no spelling for today.
+A server restart is the case that hurts most: it kills every direct path and
+forces every client back onto the relay at once — the stampede described in the
+section above. A remembered address is what lets a client skip that queue, so
+the server asks for the same UDP ports on every start (see
+[server](../server/DESIGN.md#the-port-survives-a-restart)). When it cannot get
+them, every entry is wrong at once, and the cache re-learns the address from the
+first connection that gets through.
 
 ## CLI State Directory
 

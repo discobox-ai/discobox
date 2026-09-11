@@ -767,3 +767,114 @@ func TestIrohWithoutReachedServesNormally(t *testing.T) {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }
+
+// A server offered the sockets of its last start comes back on them, so the
+// port every client remembered is still the port it answers on.
+func TestIrohBindsThePreferredSockets(t *testing.T) {
+	first := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t)})
+	var remembered []netip.AddrPort
+	first.cfg.Bound = func(sockets []netip.AddrPort) { remembered = sockets }
+	if _, err := first.bind(); err != nil {
+		t.Fatalf("bind() error = %v", err)
+	}
+	first.close()
+	if len(remembered) == 0 || remembered[0].Port() == 0 {
+		t.Fatalf("Bound reported %v, want the socket that was bound", remembered)
+	}
+
+	again := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t), PreferredBindAddrs: remembered})
+	t.Cleanup(again.close)
+	var bound []netip.AddrPort
+	again.cfg.Bound = func(sockets []netip.AddrPort) { bound = sockets }
+	if _, err := again.bind(); err != nil {
+		t.Fatalf("bind() error = %v", err)
+	}
+	if !slices.Equal(bound, remembered) {
+		t.Fatalf("bound %v, want the preferred %v", bound, remembered)
+	}
+}
+
+// A port taken while the server was down is somebody else's now. That costs
+// the server its old port, never its listener.
+func TestIrohBindsFreshSocketsWhenThePreferredOnesAreTaken(t *testing.T) {
+	taken, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("ListenUDP() error = %v", err)
+	}
+	t.Cleanup(func() { _ = taken.Close() })
+	held := taken.LocalAddr().(*net.UDPAddr).AddrPort()
+
+	ep := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t), PreferredBindAddrs: []netip.AddrPort{held}})
+	t.Cleanup(ep.close)
+	var bound []netip.AddrPort
+	ep.cfg.Bound = func(sockets []netip.AddrPort) { bound = sockets }
+	if _, err := ep.bind(); err != nil {
+		t.Fatalf("bind() error = %v, want a fresh socket in place of the taken one", err)
+	}
+	if len(bound) == 0 {
+		t.Fatal("Bound reported nothing, so the next start has nothing to prefer")
+	}
+	if slices.Contains(bound, held) {
+		t.Fatalf("bound %v, which includes %v that another socket holds", bound, held)
+	}
+}
+
+// Offered sockets replace iroh's default set rather than adjusting it, so a
+// family missing from them must still be bound: a start that recorded IPv4
+// alone, because IPv6 failed that once, must not pin the endpoint to IPv4.
+func TestIrohPreferredSocketsDoNotDropAFamily(t *testing.T) {
+	probe, err := net.ListenUDP("udp6", &net.UDPAddr{IP: net.IPv6loopback})
+	if err != nil {
+		t.Skipf("this host cannot bind IPv6 loopback: %v", err)
+	}
+	_ = probe.Close()
+	free, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("ListenUDP() error = %v", err)
+	}
+	remembered := free.LocalAddr().(*net.UDPAddr).AddrPort()
+	_ = free.Close()
+
+	ep := newIrohEndpointForTest(t, IrohConfig{SecretKey: newSecretKey(t), PreferredBindAddrs: []netip.AddrPort{remembered}})
+	ep.cfg.BindAddrs = append(loopbackBind(), netip.AddrPortFrom(netip.IPv6Loopback(), 0))
+	t.Cleanup(ep.close)
+	var bound []netip.AddrPort
+	ep.cfg.Bound = func(sockets []netip.AddrPort) { bound = sockets }
+	if _, err := ep.bind(); err != nil {
+		t.Fatalf("bind() error = %v", err)
+	}
+	if !slices.Contains(bound, remembered) {
+		t.Fatalf("bound %v, want the remembered %v among them", bound, remembered)
+	}
+	if !slices.ContainsFunc(bound, func(s netip.AddrPort) bool { return s.Addr().Is6() }) {
+		t.Fatalf("bound %v, which has no IPv6 socket although the ordinary bind asks for one", bound)
+	}
+}
+
+func TestPreferredBinds(t *testing.T) {
+	v4 := netip.MustParseAddrPort("0.0.0.0:46966")
+	v6 := netip.MustParseAddrPort("[::]:54867")
+	for name, tc := range map[string]struct {
+		cfg  IrohConfig
+		want [][]netip.AddrPort
+	}{
+		"nothing preferred": {cfg: IrohConfig{}, want: nil},
+		"both families remembered": {
+			cfg:  IrohConfig{PreferredBindAddrs: []netip.AddrPort{v4, v6}},
+			want: [][]netip.AddrPort{{v4, v6}},
+		},
+		// The first attempt puts IPv6 back on a fresh port; the second is the
+		// remembered set, for a host that still has no IPv6.
+		"IPv6 missing": {
+			cfg:  IrohConfig{PreferredBindAddrs: []netip.AddrPort{v4}},
+			want: [][]netip.AddrPort{{v4, netip.AddrPortFrom(netip.IPv6Unspecified(), 0)}, {v4}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := preferredBinds(tc.cfg)
+			if !slices.EqualFunc(got, tc.want, slices.Equal) {
+				t.Fatalf("preferredBinds() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

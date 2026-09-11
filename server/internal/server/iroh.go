@@ -57,6 +57,14 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 		// configure its clients too: the address carries a peer ID and does
 		// not name ours (ADR 0096 §6).
 		RelayURLs: relayURLs,
+		// The ports of the last start, so the clients that remembered them
+		// can still dial this server directly after a restart.
+		PreferredBindAddrs: irohd.LoadSockets(dataDir),
+		Bound: func(sockets []netip.AddrPort) {
+			if err := irohd.RememberSockets(dataDir, sockets); err != nil {
+				log.Printf("iroh: could not remember this server's sockets for the next start: %v", err)
+			}
+		},
 	}); err != nil {
 		return nil, endpoint.IrohID{}, nil, fmt.Errorf("configure iroh: %w", err)
 	}

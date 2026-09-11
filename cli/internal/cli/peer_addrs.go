@@ -28,7 +28,7 @@ import (
 // nobody waits for — iroh dials every address it is given at once and takes
 // whichever answers, and a peer dialed with a dead address and a live relay
 // still connects. That is what makes it safe to keep an address that will be
-// wrong the moment the server restarts.
+// wrong the first time the server restarts and finds its port taken.
 //
 // It is best-effort like the rest of the CLI's state (see statedir.go): a
 // missing, unreadable, or corrupt file just means the next dial waits on
@@ -49,11 +49,11 @@ const (
 	// on the next dial.
 	peerAddrsPerPeer = 4
 	// peerAddrsLifetime is how long an address is worth offering. A server
-	// binds a fresh UDP port every start, so what is remembered here is
-	// invalidated by an ordinary restart and is only ever a guess about a
-	// server that has stayed put. Long enough to survive a laptop being shut
-	// for a weekend, short enough that a machine that has moved is not
-	// probed at for a month.
+	// asks for the same UDP port on every start but gets a fresh one when
+	// something else has taken it, so what is remembered here is only ever a
+	// guess about a server that has stayed put. Long enough to survive a
+	// laptop being shut for a weekend, short enough that a machine that has
+	// moved is not probed at for a month.
 	peerAddrsLifetime = 14 * 24 * time.Hour
 	// peerAddrsRefresh is how old an unchanged entry may get before recording
 	// it again writes the file anyway. Without it an entry would expire

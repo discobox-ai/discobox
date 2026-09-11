@@ -68,9 +68,9 @@ func TestPeerAddrsSurvivesUnusableState(t *testing.T) {
 	}
 }
 
-// A server binds a fresh port every start, so an old entry is a guess that has
-// almost certainly gone wrong. It stops being offered rather than being probed
-// at forever.
+// A server keeps its port only until something else takes it, so an old entry
+// is a guess that has had a long time to go wrong. It stops being offered
+// rather than being probed at forever.
 func TestPeerAddrsExpire(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	peer := testPeerID(t)

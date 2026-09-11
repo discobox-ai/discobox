@@ -338,6 +338,38 @@ two were indistinguishable in the log: the address was printed either way, and
 the difference showed up only as a client somewhere else timing out. It is in
 the background because it is a report and not a step; nothing waits on it.
 
+### The Port Survives a Restart
+
+The iroh endpoint asks for the UDP ports it had last time. `irohd` keeps the
+bound sockets in `<data dir>/iroh_sockets` and offers them back through
+`IrohConfig.PreferredBindAddrs`; the endpoint reports what it actually bound
+through `IrohConfig.Bound`.
+
+The port is the one part of this server's address a peer ID does not carry and
+discovery does not publish, so a client learns it only by connecting, and
+remembers it (see [cli](../cli/DESIGN.md#a-client-remembers-where-a-server-answered)).
+A fresh port on every start throws that memory away at the moment every client
+is reconnecting, which sends all of them back through the relay at once.
+
+- It is a **preference, not configuration**. iroh has no "this port or any":
+  a socket given a port gets it or fails the whole bind. So the endpoint binds
+  again when it has to, ending on the ordinary bind with fresh ports, and a
+  port taken while the server was down costs the old port, never the listener.
+- It remembers ports, not which sockets exist. The remembered sockets replace
+  iroh's default set rather than adjusting it, so the endpoint first binds
+  every family the default asks for — a remembered port where it has one, a
+  fresh one where it does not — then the remembered set as recorded, then the
+  ordinary bind: up to three attempts, each milliseconds. A start where IPv6
+  failed once therefore does not pin the server to IPv4, and a host with no
+  IPv6 at all pays for one failed attempt on every start.
+- The file is all or nothing, so a torn one offers no ports rather than half.
+- Losing a remembered port is logged, because that restart is the one every
+  client pays for. Gaining a socket the last start could not bind is not.
+
+A fixed, operator-chosen port is a different feature — one an `iroh://`
+endpoint has no spelling for — and this does not provide one: it keeps the
+port the OS chose first for as long as nothing else takes it.
+
 ## Peer Admission
 
 Which peers may connect is two layers, and `internal/irohd` owns both (ADR
