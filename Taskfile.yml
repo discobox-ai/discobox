@@ -534,6 +534,38 @@ tasks:
     cmds:
       - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/docker -run Integration -count=1 -v
 
+  test:vz-stress:
+    desc: "Churn VSOCK on a real vz guest while probing a Unix listener (macOS). GUEST=<dir with vmlinux, initrd.img, root.ext4>, or NO_VM=1 for the control"
+    # Opt-in and bounded: CYCLES (VSOCK connections, default 10000), DURATION
+    # (default 30m), WORKERS (default 8). PAUSE (e.g. 90s) pauses the guest
+    # through Virtualization.framework mid-churn and reports how far its clock
+    # fell behind and how fast it recovered. Failure artifacts land in
+    # build/vz-stress. The test boots a VM, so its binary is compiled and signed
+    # rather than run through `go test`.
+    platforms: [darwin]
+    vars:
+      TEST_BINARY: build/vzvm-stress.test
+      ARTIFACTS: build/vz-stress
+    cmds:
+      - |
+        if [ -z "{{.GUEST}}" ] && [ -z "{{.NO_VM}}" ]; then
+          echo "test:vz-stress: GUEST=<guest image directory> or NO_VM=1 is required" >&2
+          exit 1
+        fi
+      - mkdir -p build {{.ARTIFACTS}}
+      - cd server && go test -c -o ../{{.TEST_BINARY}} ./providers/vz/internal/vzvm
+      - task: sign
+        vars: { SIGN_BINARY: '{{.TEST_BINARY}}' }
+      - >-
+        DISCOBOX_VZ_STRESS_GUEST="{{.GUEST}}"
+        DISCOBOX_VZ_STRESS_NO_VM="{{.NO_VM}}"
+        DISCOBOX_VZ_STRESS_CYCLES="{{.CYCLES}}"
+        DISCOBOX_VZ_STRESS_DURATION="{{.DURATION}}"
+        DISCOBOX_VZ_STRESS_WORKERS="{{.WORKERS}}"
+        DISCOBOX_VZ_STRESS_PAUSE="{{.PAUSE}}"
+        DISCOBOX_VZ_STRESS_ARTIFACTS="$PWD/{{.ARTIFACTS}}"
+        ./{{.TEST_BINARY}} -test.run TestVSOCKChurnKeepsUnixListenerServing -test.count=1 -test.v -test.timeout 45m
+
   test:docker:pool-flow:
     desc: "Run the Docker pool create-flow e2e test. Requires: dockerd"
     # Not test:docker, which is the provider's own integration suite. This is
