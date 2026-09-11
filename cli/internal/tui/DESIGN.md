@@ -988,7 +988,11 @@ A successful apply is the useful exception to the generic finished-pane flow:
 its report stays on screen and immediately opens a two-choice menu over it.
 Archive is selected by default; detach leaves the discobox running. Either
 choice detaches from the workspace, while Esc dismisses only the menu and
-returns to the readable apply result. A failed apply opens no cleanup menu; it
+returns to the readable apply result. The choice is carried out as it is made,
+not posted back as a message, so a key typed after it reads the screen the
+choice left rather than a report already gone. The menu is about the report
+under it (`dialog.over`) and goes with it: a session that ends while the menu
+is up takes the question away along with the workspace. A failed apply opens no cleanup menu; it
 keeps the ordinary reader keys so the failure remains the decision in front of
 the user.
 

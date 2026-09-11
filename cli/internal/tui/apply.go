@@ -123,7 +123,17 @@ func (m *Model) successfulApply(p *pane) bool {
 // openSuccessfulApplyDialog asks what to do with a box whose work is safely
 // back on the host. Archive leads because it is the usual cleanup; Escape
 // dismisses only the question and leaves the apply report on screen.
-func (m *Model) openSuccessfulApplyDialog() {
+//
+// The answer is carried out in the dialog's own callback rather than sent back
+// as a message. A message lands behind whatever input is already queued, and a
+// second Enter — the finished report's own "done" key — would take the report
+// away before the answer reached it. Carried out in place, the answer leaves
+// the workspace before the next key is read, and that key acts on the list, as
+// it does after the workspace's own archive key.
+//
+// The question is over p and goes with it (dialog.over): if the session under
+// the workspace ends while it is up, there is no screen left to leave.
+func (m *Model) openSuccessfulApplyDialog(p *pane) {
 	items := []action{
 		{key: "archive", label: "archive", detail: "put the discobox away", enabled: true},
 		{key: "detach", label: "detach", detail: "leave the discobox running", enabled: true},
@@ -133,13 +143,14 @@ func (m *Model) openSuccessfulApplyDialog() {
 	// top-down, and what to do next is asked where the choosing happens rather
 	// than a card's height above it.
 	d := actionsDialog("Apply succeeded", "What this apply did:", items, func(choice string) tea.Cmd {
-		return func() tea.Msg { return applyFinishedChoiceMsg{choice: choice} }
+		return m.finishSuccessfulApply(p, choice)
 	})
-	if reporter, ok := m.overlay.stream.(ApplyResultReporter); ok {
+	if reporter, ok := p.stream.(ApplyResultReporter); ok {
 		if result, ok := reporter.ApplyResult(); ok {
 			d.sections = appliedSourceSections(result)
 		}
 	}
+	d.over = p
 	d.answerLabel = "what should happen to this discobox?"
 	d.footer = "Either choice detaches from the workspace."
 	d.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc returns to the apply result", "esc")}
@@ -193,12 +204,9 @@ func shortCommit(commit string) string {
 
 // finishSuccessfulApply carries out either dialog choice. Both leave the
 // workspace; archive additionally changes the discobox's durable lifecycle
-// state after its local terminal view has been closed.
-func (m *Model) finishSuccessfulApply(choice string) tea.Cmd {
-	p := m.overlay
-	if !m.successfulApply(p) {
-		return nil
-	}
+// state after its local terminal view has been closed. p is the report the
+// question was asked over, still on screen: the question goes with it.
+func (m *Model) finishSuccessfulApply(p *pane, choice string) tea.Cmd {
 	id := p.sandbox.ID
 	hadWorkspace := m.terminals.len() > 0
 	m.closeWorkspace()

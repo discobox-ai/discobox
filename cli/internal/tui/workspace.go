@@ -753,6 +753,9 @@ func (m *Model) closeWorkspace() {
 	}
 	if m.overlay != nil {
 		_ = m.overlay.term.Close()
+		if m.dialog != nil && m.dialog.over == m.overlay {
+			m.dialog = nil
+		}
 		m.overlay = nil
 	}
 	m.terminals.closeAll()

@@ -645,6 +645,9 @@ func (m *Model) closeOverlay() {
 		return
 	}
 	_ = m.overlay.term.Close()
+	if m.dialog != nil && m.dialog.over == m.overlay {
+		m.dialog = nil
+	}
 	m.overlay = nil
 	if m.terminals.len() > 0 {
 		m.layout()
@@ -986,7 +989,7 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		p.exited = true
 		p.status, p.failed = exitVerdict(p.stream)
 		if m.successfulApply(p) {
-			m.openSuccessfulApplyDialog()
+			m.openSuccessfulApplyDialog(p)
 		}
 		return m.refresh()
 

@@ -1389,6 +1389,43 @@ func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
 			t.Fatalf("overlay = %v, inPanes = %v, focus = %v; want the list", m.overlay, m.inPanes(), m.focus)
 		}
 	})
+
+	// A second Enter pressed on the heels of the answer is already queued when
+	// the answer is given, and Enter is also the finished report's own "done"
+	// key. The answer is carried out before that key is read, so it cannot
+	// take the report away first and leave the answer nothing to act on.
+	t.Run("an Enter queued behind the answer does not lose it", func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		finish(t, ds, d, m)
+		report := m.overlay
+		d.dispatch(keyPress("enter"))
+		if m.overlay == report {
+			t.Fatal("the answer should have left the report before the next key is read")
+		}
+		d.dispatch(keyPress("enter"))
+		d.wait("archive", func() bool { return len(ds.did) == 1 })
+		if got := ds.did[0]; got != "archive sbx_one" {
+			t.Fatalf("did = %q, want archive sbx_one", got)
+		}
+	})
+
+	// Every answer the question offers is a way of leaving the report, so when
+	// the session under the workspace ends and takes the report with it, the
+	// question goes too rather than promising a screen that is not there.
+	t.Run("the question goes with the workspace it was asked over", func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, primary := openWorkspace(t, ds, "enter")
+		finish(t, ds, d, m)
+		primary.Close()
+		d.wait("the workspace to close", func() bool { return !m.inPanes() && m.overlay == nil })
+		if m.dialog != nil {
+			t.Fatalf("the question outlived its report: %q", dialogText(m))
+		}
+		if len(ds.did) != 0 {
+			t.Fatalf("did = %v, nothing was chosen", ds.did)
+		}
+	})
 }
 
 // The primary session that ends is gone: the workspace was a view onto it, so

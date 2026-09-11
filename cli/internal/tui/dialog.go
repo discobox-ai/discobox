@@ -135,6 +135,11 @@ type dialog struct {
 	// both answers — carry the uncommitted changes, or do not — has to hear
 	// "no" as well as "yes".
 	onCancel func() tea.Cmd
+
+	// over is the overlay a question stands over and is about: the finished
+	// apply report under the successful-apply menu. The question goes when
+	// that screen does, because every answer it offers is a way of leaving it.
+	over *pane
 }
 
 // action is one row of the action menu.
