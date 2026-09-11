@@ -163,3 +163,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0106](0106-a-consumer-points-at-the-asset-mirror-only-if-it-can-fall-back.md) | A consumer points at the asset mirror only if it can fall back | Accepted (amends [0099](0099-the-cli-downloads-the-server-it-starts.md) §3 — an asset names an ordered list of URLs) |
 | [0107](0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md) | Homebrew is image content on an overlay, handed to a group | Accepted (adds a rule to [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) §3's mount list) |
 | [0108](0108-a-sandbox-stops-itself-when-its-terminals-go-quiet.md) | A sandbox stops itself when its terminals go quiet | Accepted |
+| [0109](0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md) | A bound UDP port is listed, and forwarded as datagrams | Proposed (settles [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md)'s deferred UDP) |
