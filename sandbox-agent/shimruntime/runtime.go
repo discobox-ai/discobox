@@ -83,6 +83,19 @@ func (r *Runtime) Title() string {
 	return r.screen.title
 }
 
+// TitleChangedAt is when the program last changed its title to a new value:
+// zero for one that never set a title, and always zero for pipe execs. A
+// harness animates its title while it works, so this is what the sandbox's
+// idle stop reads as the program saying it is busy (ADR 0108 §2).
+func (r *Runtime) TitleChangedAt() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.screen == nil {
+		return time.Time{}
+	}
+	return r.screen.titleChangedAt
+}
+
 // Observe feeds the screen emulator, implementing host.Replayer. It runs under
 // the stream lock, so it must not block — see pumpScreenResponses.
 func (r *Runtime) Observe(payload []byte) {

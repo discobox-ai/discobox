@@ -81,6 +81,11 @@ type AgentRuntime struct {
 	DatabasePath           string `json:"databasePath"`
 	ResourceSampleInterval string `json:"resourceSampleInterval,omitempty"`
 	ResourceRetentionCount int    `json:"resourceRetentionCount,omitempty"`
+	// IdleTimeout is how long the sandbox runs with nothing happening in it
+	// before it powers itself off (ADR 0108), as a Go duration. The pool sets
+	// it from its provider instance's pool policy; empty leaves the
+	// sandbox-agent on its default.
+	IdleTimeout string `json:"idleTimeout,omitempty"`
 }
 
 // Source is a worker-materialized source the sandbox-agent bind-mounts from

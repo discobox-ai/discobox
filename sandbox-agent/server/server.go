@@ -16,6 +16,7 @@ import (
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 
+	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -49,14 +50,17 @@ type Config struct {
 	Prompt                []string
 	HarnessMode           string
 	Resources             config.ResourceConfig
-	Harness               config.Harness
-	Sources               []sandboxconfig.Source
-	SandboxConfig         map[string]any
-	Installer             terminal.Installer
-	ExecUnitManager       execs.UnitManager
-	ExecAuditRecorder     execs.AuditRecorder
-	Store                 *agentstore.Store
-	ResourceCollector     resources.Collector
+	// IdleTimeout is the pool's idle timeout for autostop; zero is its
+	// default (ADR 0108).
+	IdleTimeout       time.Duration
+	Harness           config.Harness
+	Sources           []sandboxconfig.Source
+	SandboxConfig     map[string]any
+	Installer         terminal.Installer
+	ExecUnitManager   execs.UnitManager
+	ExecAuditRecorder execs.AuditRecorder
+	Store             *agentstore.Store
+	ResourceCollector resources.Collector
 	// SecretEnv returns the sandbox's current secret-bound env->sentinel map.
 	// Serve wires this to a live secretswatch.Watcher; callers that build a
 	// router directly (e.g. tests) may leave it nil.
@@ -84,6 +88,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Prompt:                cfg.Prompt,
 		HarnessMode:           cfg.HarnessMode,
 		Resources:             cfg.Resources,
+		IdleTimeout:           cfg.IdleTimeout,
 		Harness:               cfg.Harness,
 		Sources:               cfg.Sources,
 		SandboxConfig:         cfg.SandboxConfig,
@@ -104,6 +109,7 @@ type agentRuntime struct {
 	services   *services.Manager
 	store      *agentstore.Store
 	portsWatch *ports.Watcher
+	autostop   *autostop.Policy
 	listenAddr string
 	// awaitSources is the wait for a push-delivered sandbox's working tree,
 	// nil when there is nothing to wait for. Built once and shared, because
@@ -211,6 +217,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		slog.Default().Warn("sandbox agent listening port watcher disabled", "error", err)
 		portsWatch = nil
 	}
+	// The idle stop reads every exec's shim-reported activity — title
+	// changes, attachers, last access — fresh on each evaluation (ADR 0108).
+	idleStop := autostop.New(autostop.Config{Execs: execManager.List, IdleTimeout: cfg.IdleTimeout})
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
@@ -224,6 +233,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		sources:           cfg.Sources,
 		execUser:          execManager.DefaultUser(),
 		ports:             portsWatch,
+		autostop:          idleStop,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {
@@ -269,6 +279,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		services:     serviceManager,
 		store:        localStore,
 		portsWatch:   portsWatch,
+		autostop:     idleStop,
 		listenAddr:   cfg.ListenAddress,
 		awaitSources: awaitSources,
 	}, nil
@@ -422,6 +433,13 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// loop behind it, because classifying a port means connecting to whatever
 	// is behind it (ADR 0046).
 	go built.portsWatch.Run(ctx)
+	// The sandbox powers itself off once nothing has happened in it for the
+	// idle timeout, and the pool agent's auto-start brings it back (ADR 0108).
+	// A configure-mode sandbox runs one setup command for a flow the control
+	// plane drives, so its lifetime belongs to that flow and not to this.
+	if cfg.HarnessMode != "config" {
+		go built.autostop.Run(ctx)
+	}
 	go func() {
 		if err := harnesshooks.Serve(ctx, harnesshooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Debug("sandbox agent hook collector stopped", "error", err)

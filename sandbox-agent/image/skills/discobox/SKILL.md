@@ -207,6 +207,50 @@ Do not regenerate the file. Edits are surgical so that your replies and their
 notes both survive; rewriting it from what you parsed deletes whatever you did
 not.
 
+## The box stops itself when idle
+
+Nobody has to stop a discobox. It powers itself off once nothing has happened
+in it for its idle timeout — 30 minutes unless the pool sets another; `jq
+.agentRuntime.idleTimeout /etc/discobox/sandbox.json` says, and empty means 30
+minutes — and starts again on its own the next time anyone uses it
+— an attach, `discobox shell`, a git fetch, a request to a forwarded port. Its
+terminals come back where they were, with the harness relaunched into its
+session. What was running is gone.
+
+Something happening is any of:
+
+- **a terminal's title changing.** Harnesses animate theirs while they work,
+  so while you are working on a task the box stays up on its own;
+- **someone connected** — attached to a terminal or shell, in an SSH session,
+  or holding a tunnel into the box;
+- **a keepalive lease.**
+
+Nothing else counts. A dev server nobody is attached to, a declared service,
+a build left running in the background — the box stops under all of them once
+the titles go still, however busy the processes are.
+
+### Hold the box up with a lease
+
+Before leaving anything running that must outlast you — a long build or test
+run you will not be watching, a server the user will come back to — take a
+lease:
+
+```bash
+touch -d '+2 hours' /run/discobox/keepalive/build   # active until then
+touch /run/discobox/keepalive/build                 # or: active now
+rm /run/discobox/keepalive/build                    # release it early
+```
+
+A lease is any file in `/run/discobox/keepalive/`, and its modification time
+counts as activity — a future one included — so the box stops no sooner than
+one idle timeout after the latest lease. Name the file for what it holds; each holder
+keeps its own, and nobody can shorten or remove another's. Leases are on
+`/run`, so they end with the box: a stopped box never comes back held by an old
+one.
+
+Take a lease for as long as the work needs and no longer, and tell the user
+when you take one — a box held up keeps its share of the pool while it waits.
+
 ## Persistence
 
 `volumes` in `sandbox.json` is the exact answer for this box. In general:

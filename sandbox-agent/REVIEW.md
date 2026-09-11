@@ -92,3 +92,16 @@ user waits on every single start.
 - **Ownership has one owner per path.** If the pool agent already owns a tree,
   boot must not assert it again. Both sides asserting produced two full walks of
   the same inodes, in opposite directions, on every start.
+
+## Idle stop
+
+- **Every client connection this process serves must hold `autostop`** —
+  exec attach, one-shot attach and `tcp/attach` today — for as long as the
+  client is connected. The shims' attacher counts are not enough: a tunnel has
+  no shim at all, and a shim's record of access ends with its exec, so a client
+  that just finished a long command would count for nothing. Forgetting is
+  silent until the sandbox powers off under someone (ADR 0108 §2).
+- **Reading is never activity.** A status poll, a listing, a title re-sent
+  unchanged: none of them may move the idle clock. The pool agent polls every
+  sandbox's status every 15 seconds, so anything a read counts as activity
+  keeps every sandbox up forever.

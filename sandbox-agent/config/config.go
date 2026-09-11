@@ -37,6 +37,10 @@ type Config struct {
 	Sources       []sandboxconfig.Source `json:"sources,omitempty"`
 	SandboxConfig map[string]any         `json:"-"`
 	Resources     ResourceConfig         `json:"resources"`
+	// IdleTimeout is how long the sandbox runs with nothing happening in it
+	// before it powers itself off (ADR 0108), from the pool's policy. Zero
+	// leaves autostop on its default.
+	IdleTimeout time.Duration `json:"idleTimeout,omitempty"`
 }
 
 type Identity struct {
@@ -162,6 +166,11 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		}
 	}
 	cfg.Resources.RetentionCount = effective.AgentRuntime.ResourceRetentionCount
+	if idleTimeout := strings.TrimSpace(effective.AgentRuntime.IdleTimeout); idleTimeout != "" {
+		if parsed, err := time.ParseDuration(idleTimeout); err == nil && parsed > 0 {
+			cfg.IdleTimeout = parsed
+		}
+	}
 	cfg.ExecDefaults = execDefaultsFromEffective(effective)
 	if strings.TrimSpace(effective.Harness.ID) != "" {
 		cfg.Harness = Harness{

@@ -94,6 +94,7 @@ type RestartSandboxBody = apigen.RestartSandboxBody
 type SSHIngress = apigen.SSHIngress
 type SSHKey = apigen.SSHKey
 type Sandbox = apigen.Sandbox
+type SandboxAgentAutostopStatus = apigen.SandboxAgentAutostopStatus
 type SandboxAgentCPUUsage = apigen.SandboxAgentCPUUsage
 type SandboxAgentGitSourceStatus = apigen.SandboxAgentGitSourceStatus
 type SandboxAgentListeningPort = apigen.SandboxAgentListeningPort

@@ -698,10 +698,24 @@ func TestRunShimReportsAttacherCount(t *testing.T) {
 		}
 	}
 
+	leftAt := time.Now().UTC()
 	conn.Close()
 
 	if err := waitForAttacherCount(ctx, socketPath, 0); err != nil {
 		t.Fatalf("attacher count did not return to 0 after detach: %v", err)
+	}
+	// Leaving is access: the idle stop's clock starts when the last client
+	// left, not at its last keystroke (ADR 0108 §2).
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		status, err := shimproxy.StatusJSON[Exec](ctx, socketPath)
+		if err == nil && status.LastAccessedAt != nil && !status.LastAccessedAt.Before(leftAt) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("last accessed at = %v after detach, want no earlier than %v", status.LastAccessedAt, leftAt)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 
 	cancel()

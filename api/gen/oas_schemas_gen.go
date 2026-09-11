@@ -6461,6 +6461,52 @@ func (o OptProjectSandboxUpgradePolicy) Or(d ProjectSandboxUpgradePolicy) Projec
 	return d
 }
 
+// NewOptSandboxAgentAutostopStatus returns new OptSandboxAgentAutostopStatus with value set to v.
+func NewOptSandboxAgentAutostopStatus(v SandboxAgentAutostopStatus) OptSandboxAgentAutostopStatus {
+	return OptSandboxAgentAutostopStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentAutostopStatus is optional SandboxAgentAutostopStatus.
+type OptSandboxAgentAutostopStatus struct {
+	Value SandboxAgentAutostopStatus
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentAutostopStatus was set.
+func (o OptSandboxAgentAutostopStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentAutostopStatus) Reset() {
+	var v SandboxAgentAutostopStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentAutostopStatus) SetTo(v SandboxAgentAutostopStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentAutostopStatus) Get() (v SandboxAgentAutostopStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentAutostopStatus) Or(d SandboxAgentAutostopStatus) SandboxAgentAutostopStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -11253,6 +11299,77 @@ func (*Sandbox) stopSandboxRes()               {}
 func (*Sandbox) updateSandboxRes()             {}
 func (*Sandbox) upgradeSandboxRes()            {}
 
+// The sandbox's own idle-stop policy, as it sees the sandbox at observedAt (ADR 0108). The sandbox
+// powers itself off once nothing has happened in it for the idle timeout; the next sandbox-directed
+// request starts it again.
+// Ref: #/components/schemas/SandboxAgentAutostopStatus
+type SandboxAgentAutostopStatus struct {
+	// How long the sandbox runs with nothing happening in it before it powers itself off.
+	IdleTimeoutSeconds int64 `json:"idleTimeoutSeconds"`
+	// Latest activity of any kind - a terminal title changing, a client connected or leaving, a
+	// keepalive lease, or the sandbox agent starting. A connected client makes it the observation time,
+	// and a lease dated in the future makes it that date.
+	LastActivityAt time.Time `json:"lastActivityAt"`
+	// What lastActivityAt was, for example "title change on exec <id>" or "lease
+	// /run/discobox/keepalive/build". Text for a person reading it, not a value to branch on.
+	LastActivity string `json:"lastActivity"`
+	// LastActivityAt plus the idle timeout - the earliest the sandbox powers itself off if nothing else
+	// happens.
+	StopsAt time.Time `json:"stopsAt"`
+	// The latest keepalive lease's time, when one is in the future.
+	LeaseUntil OptDateTime `json:"leaseUntil"`
+}
+
+// GetIdleTimeoutSeconds returns the value of IdleTimeoutSeconds.
+func (s *SandboxAgentAutostopStatus) GetIdleTimeoutSeconds() int64 {
+	return s.IdleTimeoutSeconds
+}
+
+// GetLastActivityAt returns the value of LastActivityAt.
+func (s *SandboxAgentAutostopStatus) GetLastActivityAt() time.Time {
+	return s.LastActivityAt
+}
+
+// GetLastActivity returns the value of LastActivity.
+func (s *SandboxAgentAutostopStatus) GetLastActivity() string {
+	return s.LastActivity
+}
+
+// GetStopsAt returns the value of StopsAt.
+func (s *SandboxAgentAutostopStatus) GetStopsAt() time.Time {
+	return s.StopsAt
+}
+
+// GetLeaseUntil returns the value of LeaseUntil.
+func (s *SandboxAgentAutostopStatus) GetLeaseUntil() OptDateTime {
+	return s.LeaseUntil
+}
+
+// SetIdleTimeoutSeconds sets the value of IdleTimeoutSeconds.
+func (s *SandboxAgentAutostopStatus) SetIdleTimeoutSeconds(val int64) {
+	s.IdleTimeoutSeconds = val
+}
+
+// SetLastActivityAt sets the value of LastActivityAt.
+func (s *SandboxAgentAutostopStatus) SetLastActivityAt(val time.Time) {
+	s.LastActivityAt = val
+}
+
+// SetLastActivity sets the value of LastActivity.
+func (s *SandboxAgentAutostopStatus) SetLastActivity(val string) {
+	s.LastActivity = val
+}
+
+// SetStopsAt sets the value of StopsAt.
+func (s *SandboxAgentAutostopStatus) SetStopsAt(val time.Time) {
+	s.StopsAt = val
+}
+
+// SetLeaseUntil sets the value of LeaseUntil.
+func (s *SandboxAgentAutostopStatus) SetLeaseUntil(val OptDateTime) {
+	s.LeaseUntil = val
+}
+
 // Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
 // is the difference between two samples over the time between them, and the
 // component holding two samples is the pool agent, which polls every sandbox
@@ -12130,8 +12247,11 @@ type SandboxAgentStatusResponse struct {
 	Ports []SandboxAgentListeningPort `json:"ports"`
 	// This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform
 	// where neither the cgroup nor procfs could be read.
-	Resources  OptSandboxAgentResourceUsage `json:"resources"`
-	ObservedAt time.Time                    `json:"observedAt"`
+	Resources OptSandboxAgentResourceUsage `json:"resources"`
+	// The sandbox's idle-stop policy (ADR 0108). Absent while the policy is not running, which in a
+	// configure-mode sandbox is always.
+	Autostop   OptSandboxAgentAutostopStatus `json:"autostop"`
+	ObservedAt time.Time                     `json:"observedAt"`
 }
 
 // GetSources returns the value of Sources.
@@ -12152,6 +12272,11 @@ func (s *SandboxAgentStatusResponse) GetPorts() []SandboxAgentListeningPort {
 // GetResources returns the value of Resources.
 func (s *SandboxAgentStatusResponse) GetResources() OptSandboxAgentResourceUsage {
 	return s.Resources
+}
+
+// GetAutostop returns the value of Autostop.
+func (s *SandboxAgentStatusResponse) GetAutostop() OptSandboxAgentAutostopStatus {
+	return s.Autostop
 }
 
 // GetObservedAt returns the value of ObservedAt.
@@ -12177,6 +12302,11 @@ func (s *SandboxAgentStatusResponse) SetPorts(val []SandboxAgentListeningPort) {
 // SetResources sets the value of Resources.
 func (s *SandboxAgentStatusResponse) SetResources(val OptSandboxAgentResourceUsage) {
 	s.Resources = val
+}
+
+// SetAutostop sets the value of Autostop.
+func (s *SandboxAgentStatusResponse) SetAutostop(val OptSandboxAgentAutostopStatus) {
+	s.Autostop = val
 }
 
 // SetObservedAt sets the value of ObservedAt.

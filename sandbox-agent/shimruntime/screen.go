@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/vt"
 )
@@ -41,6 +42,11 @@ type screenBuffer struct {
 	// sequences split across writes for free.
 	title    string
 	iconName string
+	// titleChangedAt is when title last changed to a different value, zero
+	// for never. A title set to the one it already holds is not a change:
+	// shells and harnesses re-emit theirs on redraw, and only a new value is
+	// the program saying it is doing something (ADR 0108 §2).
+	titleChangedAt time.Time
 }
 
 func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
@@ -58,7 +64,12 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 	// through screenBuffer.write under the Runtime's lock, so they touch these
 	// fields on the same goroutine that reads them in snapshot.
 	emu.SetCallbacks(vt.Callbacks{
-		Title:    func(title string) { s.title = title },
+		Title: func(title string) {
+			if title != s.title {
+				s.title = title
+				s.titleChangedAt = time.Now().UTC()
+			}
+		},
 		IconName: func(name string) { s.iconName = name },
 	})
 	return s

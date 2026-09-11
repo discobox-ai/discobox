@@ -79,6 +79,12 @@ type Exec struct {
 	// Empty for a program that never set one and for pipe execs, which have
 	// no emulator.
 	Title string `json:"title,omitempty"`
+	// TitleChangedAt is when that program last changed its title to a new
+	// value, reported live by the shim like Title. A harness animates its
+	// title while it works, so the sandbox's idle stop reads this as the
+	// program saying it is busy (ADR 0108 §2). Absent for a program that never
+	// set a title, for pipe execs, and once the shim is gone.
+	TitleChangedAt *time.Time `json:"titleChangedAt,omitempty"`
 	// LastAccessedAt is the last time a client acted on this exec — attached,
 	// typed, or is attached right now — reported live by the shim like
 	// AttacherCount. Absent when no client ever has, or once the shim is gone.
@@ -588,6 +594,7 @@ func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 		current.ExitedAt = &exitedAt
 	}
 	current.AttacherCount = 0
+	current.TitleChangedAt = nil
 	current.LastAccessedAt = nil
 	if err := writeRuntime(current.RuntimePath, current); err != nil {
 		return Exec{}, err
@@ -682,6 +689,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	current.ExitedAt = nil
 	current.AttacherCount = 0
 	current.Title = ""
+	current.TitleChangedAt = nil
 	current.LastAccessedAt = nil
 	if err := writeRuntime(current.RuntimePath, current); err != nil {
 		return Exec{}, err
@@ -1143,6 +1151,7 @@ func mergeExecStatus(base, status Exec) Exec {
 	}
 	base.AttacherCount = status.AttacherCount
 	base.Title = status.Title
+	base.TitleChangedAt = status.TitleChangedAt
 	base.LastAccessedAt = status.LastAccessedAt
 	return base
 }

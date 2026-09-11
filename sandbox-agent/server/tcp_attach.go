@@ -56,6 +56,11 @@ func (h *handler) attachTCPTunnelHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer wsConn.Close(websocket.StatusNormalClosure, "done")
+	// A tunnel is a client of this sandbox as much as an attached terminal is,
+	// and no shim counts it: hold the idle stop off for as long as it is open
+	// (ADR 0108 §2).
+	release := h.autostop.Hold("tcp tunnel to " + net.JoinHostPort(host, portText))
+	defer release()
 	ctx := r.Context()
 	wsNetConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
 	defer wsNetConn.Close()

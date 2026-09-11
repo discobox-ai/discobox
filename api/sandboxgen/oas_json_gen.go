@@ -1123,6 +1123,39 @@ func (s *OptInt64) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxAgentAutostopStatus as json.
+func (o OptSandboxAgentAutostopStatus) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxAgentAutostopStatus from json.
+func (o *OptSandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxAgentAutostopStatus to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxAgentAutostopStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxAgentAutostopStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxAgentResourceUsage as json.
 func (o OptSandboxAgentResourceUsage) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -1543,6 +1576,170 @@ func (s *ResourceSnapshot) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ResourceSnapshot) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxAgentAutostopStatus) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxAgentAutostopStatus) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("idleTimeoutSeconds")
+		e.Int64(s.IdleTimeoutSeconds)
+	}
+	{
+		e.FieldStart("lastActivity")
+		e.Str(s.LastActivity)
+	}
+	{
+		e.FieldStart("lastActivityAt")
+		json.EncodeDateTime(e, s.LastActivityAt)
+	}
+	{
+		if s.LeaseUntil.Set {
+			e.FieldStart("leaseUntil")
+			s.LeaseUntil.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		e.FieldStart("stopsAt")
+		json.EncodeDateTime(e, s.StopsAt)
+	}
+}
+
+var jsonFieldsNameOfSandboxAgentAutostopStatus = [5]string{
+	0: "idleTimeoutSeconds",
+	1: "lastActivity",
+	2: "lastActivityAt",
+	3: "leaseUntil",
+	4: "stopsAt",
+}
+
+// Decode decodes SandboxAgentAutostopStatus from json.
+func (s *SandboxAgentAutostopStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAgentAutostopStatus to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "idleTimeoutSeconds":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Int64()
+				s.IdleTimeoutSeconds = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"idleTimeoutSeconds\"")
+			}
+		case "lastActivity":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.LastActivity = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lastActivity\"")
+			}
+		case "lastActivityAt":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.LastActivityAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lastActivityAt\"")
+			}
+		case "leaseUntil":
+			if err := func() error {
+				s.LeaseUntil.Reset()
+				if err := s.LeaseUntil.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"leaseUntil\"")
+			}
+		case "stopsAt":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.StopsAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"stopsAt\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxAgentAutostopStatus")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00010111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxAgentAutostopStatus) {
+					name = jsonFieldsNameOfSandboxAgentAutostopStatus[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxAgentAutostopStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAgentAutostopStatus) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3129,6 +3326,12 @@ func (s *SandboxAgentStatusResponse) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxAgentStatusResponse) encodeFields(e *jx.Encoder) {
 	{
+		if s.Autostop.Set {
+			e.FieldStart("autostop")
+			s.Autostop.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("observedAt")
 		json.EncodeDateTime(e, s.ObservedAt)
 	}
@@ -3164,12 +3367,13 @@ func (s *SandboxAgentStatusResponse) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentStatusResponse = [5]string{
-	0: "observedAt",
-	1: "ports",
-	2: "resources",
-	3: "sessions",
-	4: "sources",
+var jsonFieldsNameOfSandboxAgentStatusResponse = [6]string{
+	0: "autostop",
+	1: "observedAt",
+	2: "ports",
+	3: "resources",
+	4: "sessions",
+	5: "sources",
 }
 
 // Decode decodes SandboxAgentStatusResponse from json.
@@ -3181,8 +3385,18 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "autostop":
+			if err := func() error {
+				s.Autostop.Reset()
+				if err := s.Autostop.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"autostop\"")
+			}
 		case "observedAt":
-			requiredBitSet[0] |= 1 << 0
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.ObservedAt = v
@@ -3194,7 +3408,7 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"observedAt\"")
 			}
 		case "ports":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				s.Ports = make([]SandboxAgentListeningPort, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -3222,7 +3436,7 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resources\"")
 			}
 		case "sessions":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				s.Sessions = make([]SandboxAgentSessionStatus, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -3240,7 +3454,7 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sessions\"")
 			}
 		case "sources":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				s.Sources = make([]SandboxAgentGitSourceStatus, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -3267,7 +3481,7 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011011,
+		0b00110110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

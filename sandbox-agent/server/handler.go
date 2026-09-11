@@ -13,6 +13,7 @@ import (
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/sandbox-agent/agentstatus"
+	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
@@ -36,6 +37,7 @@ type handler struct {
 	sources           []sandboxconfig.Source
 	execUser          *execs.User
 	ports             *ports.Watcher
+	autostop          *autostop.Policy
 }
 
 type terminalStore interface {
@@ -124,6 +126,11 @@ func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID 
 		writeExecResolveError(w, err)
 		return
 	}
+	// A client for as long as it is attached, and its leaving is activity:
+	// held here rather than left to the shim's count, which ends with the
+	// exec (ADR 0108 §2).
+	release := h.autostop.Hold("attach to exec " + execID)
+	defer release()
 	if err := h.execs.Attach(r.Context(), w, r, execID, replay); err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
@@ -175,6 +182,8 @@ func (h *handler) oneShotExecHTTP(w http.ResponseWriter, r *http.Request, execID
 		writeExecResolveError(w, err)
 		return
 	}
+	release := h.autostop.Hold("one-shot attach to exec " + execID)
+	defer release()
 	stdin, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxOneShotStdinBytes))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, sandboxapi.ErrorResponse{Error: "read request body: " + err.Error()})
@@ -485,7 +494,26 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	for _, port := range listening {
 		response.Ports = append(response.Ports, sandboxAgentListeningPort(port))
 	}
+	if state, ok := h.autostop.Status(); ok {
+		response.Autostop = sandboxapi.NewOptSandboxAgentAutostopStatus(sandboxAgentAutostopStatus(state))
+	}
 	return &response, nil
+}
+
+// sandboxAgentAutostopStatus carries the idle stop's view onto the wire
+// (ADR 0108 §5), so a client can say when the sandbox will stop and what is
+// keeping it up.
+func sandboxAgentAutostopStatus(in autostop.State) sandboxapi.SandboxAgentAutostopStatus {
+	out := sandboxapi.SandboxAgentAutostopStatus{
+		IdleTimeoutSeconds: int64(in.IdleTimeout / time.Second),
+		LastActivityAt:     in.LastActivityAt,
+		LastActivity:       in.LastActivity,
+		StopsAt:            in.StopsAt,
+	}
+	if !in.LeaseUntil.IsZero() {
+		out.LeaseUntil = sandboxapi.NewOptDateTime(in.LeaseUntil)
+	}
+	return out
 }
 
 // sandboxAgentListeningPort carries one port onto the wire.

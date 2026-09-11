@@ -16,6 +16,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
@@ -149,6 +150,60 @@ func TestGetSandboxAgentStatusReportsWatchedPorts(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("status never reported the watched port: %+v", status.Ports)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestGetSandboxAgentStatusReportsAutostopWhileItRuns covers the idle stop's
+// view in the status payload (ADR 0108 §5): present while the policy is in
+// force, absent while it is not — a configure-mode sandbox never runs it and
+// must not claim a stop time it will never reach.
+func TestGetSandboxAgentStatusReportsAutostopWhileItRuns(t *testing.T) {
+	policy := autostop.New(autostop.Config{
+		LeaseDir: filepath.Join(t.TempDir(), "keepalive"),
+		Interval: time.Hour,
+		PowerOff: func(context.Context) error {
+			t.Error("powered off during a status test")
+			return nil
+		},
+	})
+	agent := &handler{ports: ports.New(ports.Config{ProcRoot: t.TempDir()}), autostop: policy}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	status, err := agent.GetSandboxAgentStatus(ctx, sandboxapi.GetSandboxAgentStatusParams{})
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if status.Autostop.Set {
+		t.Fatalf("autostop reported before the policy runs: %+v", status.Autostop.Value)
+	}
+
+	go policy.Run(ctx)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		status, err := agent.GetSandboxAgentStatus(ctx, sandboxapi.GetSandboxAgentStatusParams{})
+		if err != nil {
+			t.Fatalf("get status: %v", err)
+		}
+		if got, ok := status.Autostop.Get(); ok {
+			if got.IdleTimeoutSeconds != int64(autostop.DefaultIdleTimeout/time.Second) {
+				t.Fatalf("idle timeout = %ds, want the default", got.IdleTimeoutSeconds)
+			}
+			if got.LastActivity != "sandbox agent start" {
+				t.Fatalf("last activity = %q, want the agent's start", got.LastActivity)
+			}
+			if !got.StopsAt.Equal(got.LastActivityAt.Add(autostop.DefaultIdleTimeout)) {
+				t.Fatalf("stops at = %v, want last activity %v plus the timeout", got.StopsAt, got.LastActivityAt)
+			}
+			if got.LeaseUntil.Set {
+				t.Fatalf("lease until = %v with no lease held", got.LeaseUntil.Value)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("status never reported autostop while the policy ran")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

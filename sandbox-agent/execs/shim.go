@@ -63,8 +63,8 @@ type shimRuntime struct {
 	inputClosed bool
 	status      Exec
 	// lastAccess is the last time a client acted on this exec: an attach
-	// connecting, or any frame it sent. Kept here rather than derived,
-	// because the stream does not timestamp its traffic.
+	// connecting, any frame it sent, or it leaving. Kept here rather than
+	// derived, because the stream does not timestamp its traffic.
 	lastAccess time.Time
 }
 
@@ -201,6 +201,9 @@ func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	// title is the same shape of fact — the emulator holds the current one.
 	status.AttacherCount = len(r.stream.Attachers())
 	status.Title = r.stream.Title()
+	if changed := r.stream.TitleChangedAt(); !changed.IsZero() {
+		status.TitleChangedAt = &changed
+	}
 	// A client that is attached right now is accessing the exec right now,
 	// even if it has not typed; otherwise access is the last time one
 	// connected or sent a frame.
@@ -234,6 +237,9 @@ func (r *shimRuntime) handleAttach(w http.ResponseWriter, req *http.Request) {
 	r.touchAccess()
 	repaint, _ := strconv.ParseBool(req.URL.Query().Get("replay"))
 	r.stream.HandleAttach(w, repaint)
+	// Leaving is access too: the sandbox's idle stop starts its clock when the
+	// last client left, not at that client's last keystroke (ADR 0108 §2).
+	r.touchAccess()
 }
 
 func (r *shimRuntime) handleStart(w http.ResponseWriter, _ *http.Request) {
