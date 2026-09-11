@@ -80,9 +80,9 @@ picks the first two; a human picks the third.
 
 | tag | reaches | when |
 | --- | --- | --- |
-| `v0.6.0-alpha.2`, `-beta.1`, `-rc.1` | that tag's own assets and images, and **nothing else** — neither brew formula, no `:latest`, no winget | lowest confidence. You want a real release build that cannot land in front of anyone. |
-| `v0.6.0` | GitHub prerelease, ghcr `:latest`, `brew install discobox-dev` | the normal case, and what a dot release is for |
-| the same release, blessed | `brew install discobox`; winget by hand (§6) | §7 — a human's decision, later |
+| `v0.6.0-alpha.2`, `-beta.1`, `-rc.1` | that tag's own assets and images, and the installer's opt-in `edge` channel — **nothing else**: neither brew formula, no `:latest`, no winget, no default install | lowest confidence. You want a real release build that lands in front of nobody who did not ask for edge. |
+| `v0.6.0` | GitHub prerelease, ghcr `:latest`, `brew install discobox-dev`, the installer's `latest` channel | the normal case, and what a dot release is for |
+| the same release, blessed | `brew install discobox`, `curl -sSfL https://discobox.ai \| sh`; winget by hand (§6) | §7 — a human's decision, later |
 
 A dot release is the default; take the patch bump without asking. It is cheap
 now, because it only reaches people who went and installed `discobox-dev`.
@@ -327,6 +327,15 @@ gh release view vX.Y.Z --repo discobox-ai/discobox \
   --json isPrerelease,assets -q '"prerelease=\(.isPrerelease) assets=\(.assets|length)"'
 ```
 
+The assets include `install.sh` and `install.ps1`, which `release:publish`
+stamps with the tag and every CLI binary's SHA-256 just before it uploads
+(`release:installers`, ADR 0109). `edge.discobox.ai` serves the newest
+release's installer, so once the release is up it should name this tag:
+
+```bash
+curl -sSfL https://edge.discobox.ai | grep -m1 '^release='
+```
+
 `release:image` separately decides whether ghcr's `:latest` moves, from
 `release:dot` — exactly `vMAJOR.MINOR.PATCH`. A dot release moves it; a
 `-rc`/`-alpha` tag does not.
@@ -507,6 +516,20 @@ Four things to know before running any of it:
 
 The `workflow_dispatch` above is also how to re-run a half-failed promotion
 without touching the release again.
+
+`discobox.ai` serves the stable release's installer through the mirror's
+`latest` alias, which reads the same box, so it moves the moment the box is
+unticked rather than when `promote.yml` finishes:
+
+```bash
+curl -sSfL https://discobox.ai | grep -m1 '^release='
+```
+
+Until the first release carrying `install.sh` is blessed, that answers with an
+error: there is no stable installer to serve. When it first names a tag, add
+`curl -sSfL https://discobox.ai | sh` to `README.md` beside the `brew install`
+line — it is deliberately not there before then, for the reason the winget line
+is not.
 
 ## If a tag was pushed on a red commit
 

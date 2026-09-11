@@ -172,6 +172,7 @@ Root module package map:
 | [`endpoint`](endpoint) | How a client reaches the control plane and how the control plane listens, resolved from a URL scheme. Shared because the CLI and the server must agree on what an endpoint means, and because `git`, websockets, and the generated client all reach the server through the one client it builds. The pool-agent hop is resolved separately by [`pool-agent/wire`](pool-agent/wire). It also owns `Diagnose`, which reports reaching a server layer by layer rather than as the one error the top of the stack produces, and the transport logging behind `discobox --iroh-log` and the server's `iroh.logLevel` — both live here because the layers they describe are this package's, and nothing above it can see them. |
 | [`harness`](harness) | The harness image contract (OCI-label metadata, registration) and hook registration drivers for sandbox terminals. See [`harness/DESIGN.md`](harness/DESIGN.md). |
 | [`serverstage`](serverstage) | The description of a released server — its assets, where each is published, and what each one's SHA-256 is — and the staging that turns one into verified files on disk, one directory per version. In the root module because it is a release-format contract with two ends: the CLI decodes the manifest a release linked into it, and `internal/cmd/discobox-server-manifest` is what encodes one at build time. See [ADR 0099](docs/adr/0099-the-cli-downloads-the-server-it-starts.md). |
+| [`installer`](installer) | The install scripts every release uploads — `install.sh` and `install.ps1` — and the stamp that fixes each copy to one release and its binaries' SHA-256s. In the root module for the reason `serverstage` is: a release-format contract with two ends, written by `internal/cmd/discobox-installers` when a release is published and read by the scripts on a user's machine. See [`installer/DESIGN.md`](installer/DESIGN.md) and [ADR 0109](docs/adr/0109-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md). |
 | [`hostscope`](hostscope) | What a credential's host scope covers: a scope covers itself and everything beneath it, never its parent. Shared because three places compare a scope against the destination the proxy observed — the control plane's grant lookup, the pool agent's activation check, and the guard on what a grant may point a secret at — and a rule that differs in one of them is either a credential that stops working for no visible reason or one that travels somewhere nobody approved. |
 | [`secretformat`](secretformat) | The shape of credential values: a generative template that mints a sentinel byte-identical to a real provider key, and inference of a template from a real value. Shared because both ends mint sentinels — the control plane the stable one bound to a sandbox, the pool agent the ephemeral one per use — and a sentinel shaped by different rules at each end would be distinguishable from the real thing. |
 | [`internal/hostid`](internal/hostid) | This machine's generated, persisted Discobox identity. Shared because a CLI and a control plane on one machine must resolve the same value: that agreement is how the server knows a request came from its own filesystem. |
@@ -239,8 +240,8 @@ flowchart LR
     tag["push vX.Y.Z<br/>release.yml"] --> pre["GitHub prerelease"]
     pre --> latest["latest channel<br/>ghcr :latest<br/>brew discobox-dev"]
     pre -.->|"a human unticks<br/>“Set as a pre-release”"| stable
-    stable["stable channel<br/>brew discobox<br/>winget"]
-    rc["push vX.Y.Z-rc1"] --> only["that tag only"]
+    stable["stable channel<br/>brew discobox<br/>winget<br/>discobox.ai installer"]
+    rc["push vX.Y.Z-rc1"] --> only["that tag, and the<br/>installer's edge channel"]
 ```
 
 - **`DOT_RELEASE`** — exactly `vMAJOR.MINOR.PATCH` — is the *latest* channel's
@@ -249,7 +250,8 @@ flowchart LR
   named a version) and the `discobox-dev` formula the moment it is cut. An
   explicit prerelease tag (`-alpha`, `-beta`, `-rc`) moves neither, deliberately:
   it is the lowest confidence level — a real release build, signed and pushed,
-  that reaches no brew channel at all and is had by pinning the version.
+  that reaches no brew channel at all and is had by pinning the version or by
+  asking the installer for its `edge` channel.
 - **Stable** is a human clearing the prerelease box on a GitHub release, which
   runs `promote.yml`. That is the only thing that moves `brew install discobox`
   (winget is submitted by hand; see below), and `release:require-dot` refuses to
@@ -306,9 +308,21 @@ express and a winget manifest, once merged, is permanent and not ours to amend.
 
 The mirror's aliases read the same prerelease bit the channels above do, which makes
 `/{namespace}/latest/` the newest blessed release and `/{namespace}/prerelease/`
-the newest unblessed one. Neither is a channel: `prerelease` is not
-`discobox-dev`, which follows the newest dot release whether or not it has been
-blessed.
+the newest unblessed one. `prerelease` is not `discobox-dev`, which follows the
+newest dot release whether or not it has been blessed, and it drifts back to an
+old alpha once every newer release is blessed — so the one consumer of the
+aliases, the installer's site below, never takes `prerelease` alone.
+
+Every release also uploads `install.sh` and `install.ps1`, stamped by
+`release:installers` with the tag and the SHA-256 of each CLI binary beside
+them (ADR 0109; see [`installer/DESIGN.md`](installer/DESIGN.md)). A stamped
+installer installs its own release. Asked for a version, or for a channel —
+`stable`, `latest`, or `edge`, the newest release of any shape — it hands over
+to that release's own installer, so a release is always installed by the code
+it shipped. The `discobox-ai/site` Worker serves them: `discobox.ai` gives
+curl, wget, and PowerShell the stable release's installer, read through the
+mirror's `latest` alias with GitHub behind it, and `edge.discobox.ai` gives
+the newer of the two aliases' releases.
 
 Windows is the one platform whose asset is an archive rather than a bare binary.
 winget resolves a portable package's command from the file name whenever it

@@ -1258,6 +1258,9 @@ tasks:
     # Consumes whatever populated build/release/bin, so the fan-out that fills
     # it can be GitHub's matrix or one developer's machine.
     cmds:
+      # Here rather than in release:build because the installers are stamped
+      # with every platform's binary, and only this job has all of them.
+      - task: release:installers
       - |
         set -eu
         tag="{{.TAG}}"
@@ -1279,6 +1282,35 @@ tasks:
         gh release view "$tag" >/dev/null 2>&1 ||
           gh release create "$tag" --verify-tag --title "$tag" --generate-notes --prerelease
         gh release upload "$tag" build/release/bin/* --clobber
+
+  release:installers:
+    desc: Write install.sh and install.ps1 for RELEASE_TAG into build/release/bin
+    # Stamped with the tag and the SHA-256 of each CLI binary beside them, which
+    # is exactly what release:publish is about to upload, so every digest an
+    # installer checks describes a file its release carries (ADR 0109). The
+    # server binaries and the winget archives are left out: no installer
+    # downloads them.
+    cmds:
+      - |
+        set -eu
+        tag="{{.TAG}}"
+        case "$tag" in
+          v*) ;;
+          *) echo "release:installers: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
+        esac
+        set --
+        for bin in build/release/bin/discobox-*; do
+          [ -f "$bin" ] || continue
+          case "$(basename "$bin")" in
+            discobox-server-* | *.zip) ;;
+            *) set -- "$@" "$bin" ;;
+          esac
+        done
+        if [ $# -eq 0 ]; then
+          echo "release:installers: build/release/bin has no CLI binaries; run release:build first" >&2
+          exit 1
+        fi
+        go run ./internal/cmd/discobox-installers -version "$tag" -out build/release/bin "$@"
 
   release:dot:
     desc: Print yes when the release tag is a dot release, nothing otherwise
