@@ -2,6 +2,7 @@ package harness
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -95,5 +96,47 @@ func TestVolumeScopeRoundTripsAndIsOmittedWhenUnset(t *testing.T) {
 	}
 	if decoded.Scope != "" {
 		t.Fatalf("decoded scope = %q, want it absent for an image built before the field", decoded.Scope)
+	}
+}
+
+// A declaration's mode is a POSIX mode word, and os.FileMode is not. The bits
+// that differ are the ones an image needs when it cannot know the uid that will
+// use a path: setgid is how a tree is handed to a group instead. Casting the
+// parsed octal straight to os.FileMode drops them with no error, so a prefix
+// declared "2775" would be created 0775 and every directory made under it would
+// land in the wrong group.
+func TestResolveVolumesModeCarriesSetgid(t *testing.T) {
+	for _, tc := range []struct {
+		mode string
+		perm os.FileMode
+		flag os.FileMode
+	}{
+		{"0755", 0o755, 0},
+		{"0711", 0o711, 0},
+		{"2775", 0o775, os.ModeSetgid},
+		{"4755", 0o755, os.ModeSetuid},
+		{"1777", 0o777, os.ModeSticky},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			resolved, err := ResolveVolumes(
+				[]Volume{{Path: "/x", Volume: VolumeData, Mode: tc.mode}},
+				VolumeRuntime{Home: "/home/u", UID: 1000, GID: 1000},
+			)
+			if err != nil {
+				t.Fatalf("ResolveVolumes: %v", err)
+			}
+			if resolved[0].Mode == nil {
+				t.Fatal("mode was not resolved")
+			}
+			got := *resolved[0].Mode
+			if got.Perm() != tc.perm {
+				t.Errorf("perm = %#o, want %#o", got.Perm(), tc.perm)
+			}
+			// os.Chmod reads only these flags, so a bit that is not one of them
+			// reaches the filesystem as nothing at all.
+			if want := tc.flag; got&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != want {
+				t.Errorf("high bits = %v, want %v", got&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky), want)
+			}
+		})
 	}
 }

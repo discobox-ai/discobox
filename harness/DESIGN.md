@@ -21,6 +21,14 @@ sandbox terminals.
   depth. Layers merge by identity — `env` per key, `volumes`/`files` by path,
   `secrets` by name, groups by union — and none of them may unset.
   `00`–`49` is reserved for layers Discobox ships.
+- A volume's `mode` is a POSIX mode word, and `ResolveVolumes` converts it to
+  `os.FileMode` rather than casting: the two agree only on the low nine bits,
+  and setuid/setgid/sticky sit far higher up in Go's encoding than in POSIX's.
+  A cast loses them silently — nothing errors, and the path is simply created
+  without the bit. That matters because setgid on a directory is the only way an
+  image can hand a tree to a *group*, which is what it must do whenever the uid
+  that will use the tree is not known until the sandbox boots
+  ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md) §2).
 - **Extending `discobox-sandbox-agent` is required**, and the base layer proves
   it. Registration rejects an image carrying no `10-sandbox-base` layer, because
   the runtime contract — PID 1, systemd units, the runc wrapper — lives in the

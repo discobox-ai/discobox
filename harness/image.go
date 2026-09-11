@@ -176,12 +176,40 @@ func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error
 			if err != nil {
 				return nil, fmt.Errorf("volume %q mode %q: %w", volumePath, mode, err)
 			}
-			m := os.FileMode(parsed)
+			m := fileModeFromPOSIX(uint32(parsed))
 			rv.Mode = &m
 		}
 		out = append(out, rv)
 	}
 	return out, nil
+}
+
+// fileModeFromPOSIX converts a POSIX mode word -- what a declaration's octal
+// "2775" means to chmod(1) -- into Go's os.FileMode.
+//
+// The two agree only on the low nine bits. POSIX carries setuid/setgid/sticky
+// at 0o4000/0o2000/0o1000, while os.FileMode keeps them as ModeSetuid/
+// ModeSetgid/ModeSticky far higher up, and os.Chmod looks at the Go flags
+// alone. Casting the parsed number straight across therefore drops those three
+// bits with no error anywhere: a volume declaring "2775" is created 0775, and
+// an image handing a tree to a group by setgid -- the only way it can, when the
+// uid that will use the tree is not known until the sandbox boots -- would find
+// the bit simply gone and every directory created under it in the wrong group.
+func fileModeFromPOSIX(mode uint32) os.FileMode {
+	out := os.FileMode(mode & 0o777)
+	for _, bit := range []struct {
+		posix uint32
+		flag  os.FileMode
+	}{
+		{0o4000, os.ModeSetuid},
+		{0o2000, os.ModeSetgid},
+		{0o1000, os.ModeSticky},
+	} {
+		if mode&bit.posix != 0 {
+			out |= bit.flag
+		}
+	}
+	return out
 }
 
 // ValidateVolumeScope reports whether a declared scope can be honored for this
