@@ -1312,6 +1312,27 @@ tasks:
           echo "Publish it anyway with: task winget:publish -- --prerelease $tag" >&2
           exit 1
         fi
+        # Fail on the token here rather than on the first write it cannot make.
+        # A token that may read but not write gets all the way through: the
+        # fork-existence check is a GET, and so is every lookup against
+        # winget-pkgs, which is public and needs no token at all. The first blob
+        # POST is where it stops, and GitHub answers an unauthorised write with
+        # 404 rather than 403 so as not to confirm the repository exists — so
+        # the failure reads as "the fork is missing", which it is not, and the
+        # error can never say this for itself.
+        #
+        # A fine-grained PAT reports no scopes at all, which is the same empty
+        # string as a classic token carrying none, and neither can do this.
+        scopes="$(gh api -i user 2>/dev/null | tr -d "\r" | sed -n "s/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p")"
+        case ",$(printf %s "$scopes" | tr -d " ")," in
+          *,repo,*|*,public_repo,*) ;;
+          *)
+            echo "winget:publish: WINGET_TOKEN may not write to the winget-pkgs fork." >&2
+            echo "  scopes reported: ${scopes:-(none, which is also what a fine-grained token reports)}" >&2
+            echo "  It must be a classic PAT with public_repo (or repo), owned by the account whose" >&2
+            echo "  fork of microsoft/winget-pkgs the pull request comes from." >&2
+            exit 1 ;;
+        esac
       - task: winget:manifests
         vars: { WINGET_OUT: '{{.MANIFESTS}}' }
       - |
