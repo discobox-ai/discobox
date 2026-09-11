@@ -23,3 +23,6 @@ func execInit([]string, []string) error { return errUnsupported }
 // fileDevice cannot report a device number here, so callers fall back to
 // treating every path as one filesystem.
 func fileDevice(os.FileInfo) (uint64, bool) { return 0, false }
+
+// fileOwner cannot report ownership here, so callers copy the mode alone.
+func fileOwner(os.FileInfo) (uid, gid int, ok bool) { return 0, 0, false }

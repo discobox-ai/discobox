@@ -82,6 +82,20 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
 				return err
 			}
 		}
+		// ADR 0107 §3. overlayfs reports the *upperdir's* ownership and mode
+		// for the merged root, not the lower's. A freshly created upper is
+		// root:root 0755, so without this every overlayed path would present
+		// as root:root 0755 however the image built it -- and applyOwnership
+		// below only speaks when the declaration states uid/gid/mode, which a
+		// path that is already correct in the image has no reason to do.
+		//
+		// The visible half is writes at the top level of the path. Anything
+		// below it inherits the lower directory's own attributes on copy-up and
+		// is unaffected, which is what makes this fail in a confusing way: a
+		// group-writable tree accepts writes everywhere except its own root.
+		if err := adoptDirIdentity(v.Path, upper); err != nil {
+			return err
+		}
 		if err := overlayMount(v.Path, v.Path, upper, work); err != nil {
 			return err
 		}
@@ -94,6 +108,37 @@ func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
 		return err
 	}
 	return applyOwnership(v.Path, v)
+}
+
+// adoptDirIdentity gives dst the ownership and permission bits of src, so an
+// overlay's upperdir presents the merged root the way the image's own directory
+// did. Permission bits include setuid/setgid/sticky: a setgid directory is
+// exactly how an image hands a tree to a group rather than to a uid it cannot
+// know yet, and dropping that bit would defeat it.
+func adoptDirIdentity(src, dst string) error {
+	fi, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	uid, gid, ok := fileOwner(fi)
+	if !ok {
+		// No ownership to copy on this platform; the mode still carries.
+		return os.Chmod(dst, dirPermissions(fi))
+	}
+	if err := os.Chown(dst, uid, gid); err != nil {
+		return fmt.Errorf("chown overlay upperdir %s: %w", dst, err)
+	}
+	// Chmod last: chown(2) clears setuid/setgid on some filesystems.
+	if err := os.Chmod(dst, dirPermissions(fi)); err != nil {
+		return fmt.Errorf("chmod overlay upperdir %s: %w", dst, err)
+	}
+	return nil
+}
+
+// dirPermissions is fi's permission bits plus the setuid/setgid/sticky bits,
+// in the form os.Chmod understands.
+func dirPermissions(fi os.FileInfo) os.FileMode {
+	return fi.Mode().Perm() | (fi.Mode() & (os.ModeSetuid | os.ModeSetgid | os.ModeSticky))
 }
 
 func applyOwnership(target string, v harness.ResolvedVolume) error {

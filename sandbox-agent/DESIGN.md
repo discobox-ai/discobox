@@ -151,7 +151,12 @@ PID, because PIDs are reused and the pool agent differences per process.
   contributes, `sandbox-agent/image.json` (ADR 0086 §2); the pool host mounts the primary volumes (`/.discobox/{data,cache,config,sources,secrets}`)
   and the `boot` init flow wires each declared path onto its backing volume —
   bind when the target is empty, overlay (lower = image content) when it ships
-  content. Cache paths are always a direct shared bind, never an overlay, because
+  content. An overlay's upperdir is given the target's own ownership and mode
+  before the mount ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)), because overlayfs reports the
+  *upperdir's* attributes for the merged root: left at the `0755` root-owned
+  directory that creating it produces, every overlayed path would present as
+  `root:root 0755` however the image built it, and the path's top level alone
+  would reject writes that everything beneath it accepts. Cache paths are always a direct shared bind, never an overlay, because
   the cache volume is shared across concurrently running sandboxes. By default it
   is shared only with the ones running as the same uid: a cache path is backed by
   `/.discobox/cache/.users/<uid>/<target>`, because everything under it is
