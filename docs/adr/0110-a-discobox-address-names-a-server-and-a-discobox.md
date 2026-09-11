@@ -34,6 +34,7 @@ only when it listens for peers.
 | an IP address, with or without a port | `https://<ip>[:<port>]` | no |
 | a DNS name with a port | `https://<name>:<port>` | no |
 | a DNS name without a port | whatever DNS says; `https://<name>` when it says nothing | yes |
+| written `discobox+http://<host>[:<port>]` or `discobox+https://…` | that transport, said outright | no |
 
 A peer ID is recognised before anything is looked up, so a `d1-` host never
 reaches a resolver: it is an identity, and asking DNS about one would put the
@@ -60,6 +61,14 @@ A lookup that *fails* — a timeout, a refused query, anything but "no such
 record" — fails the dial rather than falling back to https. Falling back would
 turn an iroh server behind a slow resolver into an https dial of a host that
 does not serve https, and the error would name the wrong thing entirely.
+
+`discobox+http://` is the one way to write plain http, and it exists because
+the rules above cannot infer it: a bare host is https, and a server that serves
+plain http — a development server on a port, a deployment where TLS is
+terminated somewhere this address cannot see — would otherwise have no address
+in this family at all, and so no way to name a discobox on it. Naming the
+transport is deliberate work, which is the property https-by-default is
+protecting: nothing becomes plain text because a rule guessed.
 
 https, not http: an address somebody hands to somebody else crosses a network,
 and a plain-text control plane is not a default to encode into one. `http://`
