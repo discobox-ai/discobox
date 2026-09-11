@@ -218,6 +218,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		DevelopmentImageSync: imageSync,
 		ProgressReporter:     progress,
 		ProxyAuditRetention:  cfg.ProxyAuditRetention.Value(),
+		SandboxIdleTimeout:   cfg.SandboxIdleTimeout.Value(),
 	}
 }
 

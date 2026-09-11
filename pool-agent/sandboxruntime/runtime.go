@@ -228,6 +228,10 @@ type DockerSandboxRuntime struct {
 	// that has no state transition to hang off — an image pull, above all
 	// (see statereport.go, ADR 0039).
 	progressPublisher atomic.Value
+	// sandboxIdleTimeout is the pool policy's idle timeout, written into each
+	// sandbox's sandbox.json at create and again before every start; zero
+	// leaves the sandbox-agent's default (ADR 0108).
+	sandboxIdleTimeout time.Duration
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -238,6 +242,9 @@ type DockerSandboxRuntimeConfig struct {
 	// HostStateRoot is where this pool's Docker daemon sees
 	// layout.ContainerRoot. Empty means no relocation.
 	HostStateRoot string
+	// SandboxIdleTimeout is how long a sandbox runs idle before it powers
+	// itself off (ADR 0108). Zero leaves the sandbox-agent's default.
+	SandboxIdleTimeout time.Duration
 }
 
 func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
@@ -250,6 +257,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		projectID:             cfg.ProjectID,
 		poolID:                cfg.PoolID,
 		controlPlanePublicKey: cfg.ControlPlanePublicKey,
+		sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
 		hostMountPrefix:       cleanAbsPath(cfg.HostMountPrefix),
 		hostState:             layout.NewHostMapping(cfg.HostStateRoot),
 	}, nil
@@ -1063,7 +1071,7 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := os.MkdirAll(filepath.Join(configDir, "proxy"), 0o755); err != nil {
 		return err
 	}
-	doc := buildSandboxDocument(r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, resolvedImage, req, proxyEnv, project)
+	doc := buildSandboxDocument(r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, resolvedImage, r.sandboxIdleTimeout, req, proxyEnv, project)
 	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
@@ -1163,7 +1171,7 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 // image's OCI label, and the caller-supplied ProjectLayer (read once from the
 // resolved source repository at clone time; nil when the project supplies
 // nothing).
-func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, resolvedImage string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, resolvedImage string, idleTimeout time.Duration, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
 	doc := sandboxconfig.Document{
 		Runtime: sandboxconfig.RuntimeLayer{
 			SandboxID: sandboxID,
@@ -1186,6 +1194,12 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 			},
 		},
 		Project: project,
+	}
+	// The pool's policy, not the request's: every sandbox on a pool stops on
+	// the same terms (ADR 0108 §3). Unset stays unset, so the sandbox-agent's
+	// own default applies rather than one written down here.
+	if idleTimeout > 0 {
+		doc.Runtime.AgentRuntime.IdleTimeout = idleTimeout.String()
 	}
 	if req != nil {
 		config := req.Config

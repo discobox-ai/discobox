@@ -61,6 +61,17 @@ func TestUnsetProxyAuditRetentionReachesTheEngineAsZero(t *testing.T) {
 	}
 }
 
+func TestSandboxIdleTimeoutTravelsFromProviderInstanceConfig(t *testing.T) {
+	cfg, err := Decode([]byte(`{"image":"pool:test","sandboxIdleTimeout":"90s"}`))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	engineCfg := engineConfigFor(t, cfg, []string{"http://127.0.0.1:8080"}, "unix:///var/run/docker.sock")
+	if engineCfg.SandboxIdleTimeout != 90*time.Second {
+		t.Fatalf("SandboxIdleTimeout = %s, want 90s", engineCfg.SandboxIdleTimeout)
+	}
+}
+
 // The catalog has to offer the field, or nothing can be configured through the
 // UI that reads it.
 func TestDefinitionOffersTheSharedPoolPolicyFields(t *testing.T) {

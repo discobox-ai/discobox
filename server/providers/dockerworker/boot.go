@@ -6,6 +6,7 @@ import (
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 // BootEnv renders the pool-agent bootstrap contract as container environment
@@ -34,7 +35,8 @@ func BootEnv(bootstrap poolagent.Bootstrap) map[string]string {
 }
 
 // poolContainerEnv is the pool-agent's whole environment: the bootstrap
-// contract, plus engine-level policy the agent applies to its own Docker daemon.
+// contract, plus the pool policy the agent applies to its own Docker daemon,
+// its proxy, and the sandboxes it hosts.
 //
 // The policy is kept out of Bootstrap deliberately. Bootstrap is identity and
 // transport — "a backend is expressed entirely in the URLs it renders" — and
@@ -48,6 +50,9 @@ func (e *Engine) poolContainerEnv(bootstrap poolagent.Bootstrap) map[string]stri
 	}
 	if e.cfg.ProxyAuditRetention > 0 {
 		env[proxyagent.EnvAuditRetention] = e.cfg.ProxyAuditRetention.String()
+	}
+	if e.cfg.SandboxIdleTimeout > 0 {
+		env[sandboxruntime.EnvSandboxIdleTimeout] = e.cfg.SandboxIdleTimeout.String()
 	}
 	return env
 }

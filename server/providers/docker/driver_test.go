@@ -155,6 +155,10 @@ func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 		// proxy unit reads it from that container's environment at start, so a
 		// pool left running would keep sweeping on the old window.
 		"proxyAuditRetention": func(cfg *Config) { cfg.ProxyAuditRetention = poolruntime.Duration(96 * time.Hour) },
+		// The same for the idle timeout: the pool agent reads it from the
+		// container's environment at start and writes it into each sandbox.json
+		// it renders, so a pool left running would hand out the old one.
+		"sandboxIdleTimeout": func(cfg *Config) { cfg.SandboxIdleTimeout = poolruntime.Duration(2 * time.Minute) },
 	}
 
 	for _, field := range configJSONFields(t, reflect.TypeOf(Config{})) {

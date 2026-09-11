@@ -169,6 +169,7 @@ func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serve
 		HostMounts:          cfg.HostMounts,
 		Labels:              map[string]string{labelProviderType: ProviderType},
 		ProxyAuditRetention: cfg.ProxyAuditRetention.Value(),
+		SandboxIdleTimeout:  cfg.SandboxIdleTimeout.Value(),
 	}
 	if engineCfg.ControlPlaneURL == "" {
 		reach, err := resolveControlPlaneReach(listenEndpoints, daemonHost)

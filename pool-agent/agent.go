@@ -240,12 +240,17 @@ func ExecSystemdChildIfRequested() error {
 
 // Serve starts the pool-agent HTTP server.
 func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporters ...SandboxStateClient) error {
+	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
+	if err != nil {
+		return err
+	}
 	runtime, err := sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
 		ProjectID:             bootstrap.ProjectID,
 		PoolID:                bootstrap.PoolID,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
 		HostMountPrefix:       bootstrap.HostMountPrefix,
 		HostStateRoot:         bootstrap.HostStateRoot,
+		SandboxIdleTimeout:    idleTimeout,
 	})
 	if err != nil {
 		return err

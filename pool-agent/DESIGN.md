@@ -246,6 +246,12 @@ proxy, and the SSH ingress's TCP tunnel route (ADR 0024 §7) — start a stopped
 sandbox before proxying (`server/autostart.go`), and ten concurrent requests
 produce one start. Control operations never auto-start.
 
+Every start — explicit, restart, or auto-start — first writes the pool's current
+idle timeout into the sandbox's `sandbox.json` (`applySandboxIdleTimeout`,
+ADR 0108 §3). It is the one part of that document rendered again after create:
+the sandbox-agent reads it at the boot the start begins, so a provider's changed
+timeout reaches existing sandboxes at their next start rather than never.
+
 The latch also waits for a container that is not there yet, which is this tier's
 half of the attach wait (ADR 0039): a rebuild — repair, or a recreate after
 runtime loss — leaves a window where the sandbox's tree is here and its

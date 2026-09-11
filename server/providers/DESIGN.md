@@ -484,8 +484,8 @@ anonymously, so its fields flatten into that provider's JSON and appear in that
 provider's catalog through `PoolPolicyConfigFields`. One declaration, and no
 backend that can quietly be missing a setting the catalog claims it accepts.
 
-The split is what the setting describes. Anything about what a pool does with
-its own disk belongs here; anything about the machine a pool happens to run on
+The split is what the setting describes. Anything about how a pool treats what
+it holds — its own disk, the sandboxes it hosts — belongs here; anything about the machine a pool happens to run on
 — image, region, socket, disk sizes — stays in the provider's own `Config`.
 
 Values reach the pool the way bootstrap identity does, as pool-container
@@ -499,6 +499,14 @@ follow that rule.
 the recorded body or upgraded stream it names (`proxy/DESIGN.md`, Retention).
 It does not govern the proxy's response cache, which is content-addressed and
 bounded by bytes rather than time.
+
+`SandboxIdleTimeout` is how long a sandbox on the provider's pools runs with
+nothing happening in it before it powers itself off (ADR 0108). The pool agent
+reads it from `DISCOBOX_SANDBOX_IDLE_TIMEOUT` and writes it into a sandbox's
+`sandbox.json` as `agentRuntime.idleTimeout` at create and again before every
+start; the decision itself is the sandbox-agent's. Unset, the sandbox-agent's
+default of 30 minutes applies. Like every pool policy field, a change reaches a
+pool at its next reconcile; saving the provider instance does not trigger one.
 
 ## Guest Image Artifacts
 

@@ -15,10 +15,10 @@ import (
 // It is embedded anonymously into each provider's own Config so its fields
 // flatten into that provider's JSON, on the same terms as PoolManifest in
 // model.Pool: declared once, and impossible for a backend to be quietly
-// missing. Everything here describes what a pool does with its own disk, which
-// is a property of pools rather than of the machine one happens to run on —
-// the settings that do belong to a backend (image, region, socket) stay in the
-// provider's own Config.
+// missing. Everything here describes how a pool treats what it holds — its own
+// disk, and the sandboxes it hosts — which is a property of pools rather than of
+// the machine one happens to run on. The settings that do belong to a backend
+// (image, region, socket) stay in the provider's own Config.
 type PoolPolicy struct {
 	// ProxyAuditRetention is how long the pool proxy keeps an audit row and the
 	// request/response body or upgraded-stream capture it names. Empty leaves
@@ -28,6 +28,12 @@ type PoolPolicy struct {
 	// not: what its sandbox sent is the question the audit trail exists to
 	// answer, and it is most often asked after the sandbox is gone.
 	ProxyAuditRetention Duration `json:"proxyAuditRetention,omitempty"`
+	// SandboxIdleTimeout is how long a sandbox on this provider's pools runs
+	// with nothing happening in it — no terminal title changing, no client
+	// connected, no keepalive lease — before it powers itself off (ADR 0108).
+	// The next use starts it again. Empty leaves every sandbox on the
+	// sandbox-agent's default.
+	SandboxIdleTimeout Duration `json:"sandboxIdleTimeout,omitempty"`
 }
 
 // defaultRetentionHint mirrors proxy.DefaultRetention for display only. It is
@@ -38,6 +44,12 @@ type PoolPolicy struct {
 // is applied by the proxy itself when this setting is left empty, so the two
 // drifting costs a stale hint and nothing more.
 const defaultRetentionHint = "48h"
+
+// defaultIdleTimeoutHint mirrors autostop.DefaultIdleTimeout for display only,
+// on the same terms as defaultRetentionHint: the sandbox-agent applies the
+// real default when this is left empty, and the sandbox-agent module is not
+// one the server builds against.
+const defaultIdleTimeoutHint = "30m"
 
 // PoolPolicyConfigFields describes PoolPolicy for provider catalogs. Every
 // provider definition appends it, so the fields appear identically wherever a
@@ -50,6 +62,14 @@ func PoolPolicyConfigFields() []sandbox.ProviderConfigField {
 			Type:        "string",
 			Description: "How long the pool proxy keeps request audit records and recorded bodies, as a Go duration.",
 			Placeholder: defaultRetentionHint,
+			Advanced:    true,
+		},
+		{
+			Key:         "sandboxIdleTimeout",
+			Label:       "Sandbox Idle Timeout",
+			Type:        "string",
+			Description: "How long a sandbox runs with nothing happening in it — no terminal title changing, no client connected, no keepalive lease — before it stops itself, as a Go duration. The next use starts it again.",
+			Placeholder: defaultIdleTimeoutHint,
 			Advanced:    true,
 		},
 	}

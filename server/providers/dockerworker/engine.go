@@ -149,6 +149,11 @@ type Config struct {
 	// reason ImageRetention does: materializing a default would change
 	// configRevision and recreate every existing pool.
 	ProxyAuditRetention time.Duration `json:"proxyAuditRetention,omitempty"`
+	// SandboxIdleTimeout overrides how long a sandbox on this pool runs with
+	// nothing happening in it before it powers itself off (ADR 0108). Zero
+	// leaves every sandbox-agent on its own default, and serializes away for
+	// the reason ImageRetention does.
+	SandboxIdleTimeout time.Duration `json:"sandboxIdleTimeout,omitempty"`
 }
 
 // Engine runs pool-agent containers over Driver-provided Docker access. It

@@ -68,10 +68,36 @@ func TestRetentionRoundTripsAsADurationString(t *testing.T) {
 
 func TestPolicyFieldsAreOfferedByProviderCatalogs(t *testing.T) {
 	fields := PoolPolicyConfigFields()
-	if len(fields) != 1 || fields[0].Key != "proxyAuditRetention" {
+	if len(fields) != 2 || fields[0].Key != "proxyAuditRetention" || fields[1].Key != "sandboxIdleTimeout" {
 		t.Fatalf("PoolPolicyConfigFields() = %+v", fields)
 	}
 	if fields[0].Placeholder != defaultRetentionHint {
 		t.Fatalf("placeholder = %q, want %q", fields[0].Placeholder, defaultRetentionHint)
+	}
+	if fields[1].Placeholder != defaultIdleTimeoutHint {
+		t.Fatalf("placeholder = %q, want %q", fields[1].Placeholder, defaultIdleTimeoutHint)
+	}
+}
+
+// The idle timeout is pool policy like the retention window (ADR 0108 §3):
+// one flattened field on every provider, a duration string, and absent when
+// unset so the sandbox-agent's own default applies.
+func TestSandboxIdleTimeoutIsADurationOnThePolicy(t *testing.T) {
+	var cfg PoolPolicy
+	if err := json.Unmarshal([]byte(`{"sandboxIdleTimeout":"2m"}`), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got := cfg.SandboxIdleTimeout.Value(); got != 2*time.Minute {
+		t.Fatalf("SandboxIdleTimeout = %s, want 2m", got)
+	}
+	if err := json.Unmarshal([]byte(`{"sandboxIdleTimeout":"soon"}`), &cfg); err == nil {
+		t.Fatal("an unparsable idle timeout was accepted")
+	}
+	data, err := json.Marshal(PoolPolicy{})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if string(data) != `{}` {
+		t.Fatalf("unset policy marshals to %s, want {}", data)
 	}
 }

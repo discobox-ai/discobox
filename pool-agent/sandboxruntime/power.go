@@ -3,6 +3,7 @@ package sandboxruntime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -145,6 +146,11 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	}
 	if sb.Status == StatusRunning {
 		return nil
+	}
+	// The pool's idle timeout as it is now, not as it was when the sandbox was
+	// created: the sandbox-agent reads it once, at the boot this starts.
+	if err := r.applySandboxIdleTimeout(sandboxID); err != nil {
+		return fmt.Errorf("apply idle timeout to sandbox %s: %w", sandboxID, err)
 	}
 	// Announce the transition before making it. The Docker event only arrives
 	// once the container is up, and waitForSandboxAgent can take a while after
