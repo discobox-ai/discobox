@@ -111,9 +111,10 @@ tags, CI, and the `gh` CLI all mean **upstream**. Push there.
 
 **Inside a discobox there may be no GitHub remote at all** — `origin` is
 `/.discobox/origins/primary`, the sandbox's own mirror, and `gh` is not logged
-in. Add the remote, and get a credential with the `discobox-access` skill rather
-than assuming one exists; a push needs the token named explicitly and the URL
-spelled out, or the access judge will refuse it:
+in. Add the remote. `discobox-ai/discobox` is public, so `git fetch` and
+`git ls-remote` need no credential; every push and every `gh` call runs under
+the token asked for once, up front (below). A push needs the token named
+explicitly and the URL spelled out, or the access judge will refuse it:
 
 ```bash
 git remote add upstream https://github.com/discobox-ai/discobox.git
@@ -122,11 +123,69 @@ discobox-access run --use <id> -- git -c credential.helper= \
   push https://github.com/discobox-ai/discobox.git HEAD:main
 ```
 
+The tag goes the same way, with `refs/tags/vX.Y.Z` in place of `HEAD:main` and
+the tag's own use ID.
+
 One consequence: `Taskfile.yml`'s `RELEASE_REPO` reads `GITHUB_REPOSITORY` and
 otherwise only `origin`, matching only github.com URLs, so it resolves empty here and
 `scripts/brew-formula.sh` falls back to its own `discobox-ai/discobox` default.
 That is correct by accident, not by design — if the formula ever points at the
 wrong repo, this is why.
+
+### Inside a discobox: ask for access once, up front
+
+Every GitHub step in this skill runs on one `GH_TOKEN` with host `github.com`:
+`git push` over https, and every `gh` call, which goes to `api.github.com` and
+is covered by the same grant. Ask for all of it in one request, so the human
+answers once and the release then runs without them.
+
+1. **Settle the version first.** The tag's use names it, and a version changed
+   after the grant is a second request. If the user did not name one and it is
+   not a plain patch bump, ask the patch-or-minor question now, not at the tag.
+2. **Request before anything else, in the background**, and run the local
+   `ci:test` and `ci:check` while the human answers:
+
+```bash
+discobox-access request --json <<'EOF'
+{
+  "name": "github",
+  "envVar": "GH_TOKEN",
+  "host": "github.com",
+  "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main, watch CI until it is green, tag the green commit, then check the release and the dev Homebrew formula. git uses the token over https to github.com and gh uses it against api.github.com. Needed for about two hours, since CI can take several rounds.",
+  "uses": [
+    {"description": "git push the local main branch to https://github.com/discobox-ai/discobox.git main"},
+    {"description": "git push the annotated release tag vX.Y.Z, created on the main commit CI verified green, to https://github.com/discobox-ai/discobox.git"},
+    {"description": "Read GitHub Actions workflow runs, jobs, and job logs for discobox-ai/discobox with gh run list, gh run view, gh run watch, and gh api repos/discobox-ai/discobox/actions"},
+    {"description": "Read the GitHub release for vX.Y.Z in discobox-ai/discobox with gh release view"},
+    {"description": "Read Formula/discobox-dev.rb from discobox-ai/homebrew-tap with gh api repos/discobox-ai/homebrew-tap/contents"}
+  ],
+  "wait": true,
+  "timeoutSeconds": 3600
+}
+EOF
+```
+
+Each of these is shaped by something that went wrong on the release that wrote
+it down:
+
+- **The tag's use names a version, never a commit.** The release commit moves
+  whenever CI needs a fix or `main` moves under you — one release went through
+  three candidate commits — and an approval naming one commit cannot honestly
+  be stretched to another. §3's gate is what picks the commit.
+- **The justification says how long.** The approver picks the grant's lifetime
+  and the request has no field for it. One grant lasted an hour, less than a
+  release with a CI fix in it takes.
+- **Never two requests in flight.** One filed while another is still pending
+  comes back as that one — same request ID, same uses — and what it asked for
+  is never shown to anyone. If a use turns out to be missing, wait until
+  nothing is pending, then ask.
+- **`unavailable` with a control-plane 503 is a restart, not an answer.** The
+  human never saw the request. Retry once before telling them to approve
+  anything.
+
+Deliberately left out: `brew:refresh`, `brew:publish`, deleting a pushed tag,
+and promoting (§7). Each is a failure path or a human's decision, and the moment
+one is needed is a moment the human should be looking anyway. Ask then.
 
 ## 1. Land the work
 
