@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -192,6 +193,9 @@ func TestLeaseMtimeIsActivityIncludingTheFuture(t *testing.T) {
 }
 
 func TestPrepareLeaseDirIsStickyAndWorldWritable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the sticky bit is POSIX-only; the lease dir lives in the Linux guest")
+	}
 	p := newPolicy(t, &clock{now: epoch}, nil)
 	if err := p.prepareLeaseDir(); err != nil {
 		t.Fatal(err)

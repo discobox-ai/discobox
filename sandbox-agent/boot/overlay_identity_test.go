@@ -3,6 +3,7 @@ package boot
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -12,6 +13,9 @@ import (
 // group when it cannot know the uid the sandbox will run as, and a root:root
 // 0755 upper would take the whole arrangement away at the top level.
 func TestAdoptDirIdentityKeepsModeAndSetgid(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("setgid and permission bits are POSIX-only; the overlay is wired in the Linux guest")
+	}
 	root := t.TempDir()
 	src := filepath.Join(root, "image")
 	dst := filepath.Join(root, "upper")
@@ -46,6 +50,9 @@ func TestAdoptDirIdentityKeepsModeAndSetgid(t *testing.T) {
 // A path the image left at its default has nothing special to carry, and must
 // not acquire anything either.
 func TestAdoptDirIdentityPlainDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are POSIX-only; the overlay is wired in the Linux guest")
+	}
 	root := t.TempDir()
 	src, dst := filepath.Join(root, "image"), filepath.Join(root, "upper")
 	for _, d := range []string{src, dst} {
