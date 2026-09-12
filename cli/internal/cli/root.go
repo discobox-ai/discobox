@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -517,6 +519,15 @@ type serverUnreachable struct {
 func (e serverUnreachable) Error() string { return e.err.Error() }
 
 func (e serverUnreachable) Unwrap() error { return e.err }
+
+// Timeout forwards what the transport said about itself. url.Error.Timeout()
+// asks its own Err, so a mark that did not answer this would make every
+// control-plane timeout report net.Error.Timeout() as false: wrapping an error
+// must not change what it says about itself.
+func (e serverUnreachable) Timeout() bool {
+	var timeout net.Error
+	return errors.As(e.err, &timeout) && timeout.Timeout()
+}
 
 // gitServerURL is the base URL git commands address the server through, along
 // with the func that releases it.

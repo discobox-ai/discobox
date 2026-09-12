@@ -5,10 +5,37 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
 )
+
+// The mark must not change what the error says about itself. url.Error.Timeout()
+// delegates to its own Err, so a timeout wrapped by serverUnreachable has to
+// keep answering net.Error.Timeout() — nothing in the repository asks today,
+// and an error that lies about being a timeout is a trap for whatever asks
+// first.
+func TestServerUnreachableKeepsTheTimeoutAnswer(t *testing.T) {
+	timedOut := &url.Error{
+		Op:  "Get",
+		URL: "http://discobox.local/healthz",
+		Err: serverUnreachable{err: &net.OpError{Op: "dial", Net: "unix", Err: os.ErrDeadlineExceeded}},
+	}
+	var asNet net.Error
+	if !errors.As(error(timedOut), &asNet) {
+		t.Fatalf("a wrapped dial timeout is not a net.Error")
+	}
+	if !asNet.Timeout() {
+		t.Fatalf("Timeout() = false for a dial that timed out")
+	}
+	// And a refusal is not a timeout, so the answer is forwarded rather than
+	// invented.
+	refused := serverUnreachable{err: &net.OpError{Op: "dial", Net: "unix", Err: syscall.ECONNREFUSED}}
+	if refused.Timeout() {
+		t.Fatalf("Timeout() = true for a refused connection")
+	}
+}
 
 // A command that could not reach the server names the command that says why.
 // The diagnosis is not at the top level (ADR 0112), so the failure is where
