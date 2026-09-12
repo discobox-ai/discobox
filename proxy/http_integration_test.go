@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -783,6 +784,115 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 // (`sandbox-agent/ports/probe.go`).
 const portProbeUserAgent = "discobox-sandbox-agent (port probe)"
 
+// TestHTTPProxyUpgradeEarlyClientBytes pins the bytes a client sends in the
+// same write as its upgrade request.
+//
+// net/http parses the request with a bufio.Reader, so anything that arrives in
+// the same segment is already in that buffer when the handler runs. goproxy
+// hijacks the connection and throws that reader away (hijackConnection in
+// websocket.go), then relays from the raw connection — so without the wrapper
+// this proxy puts in front of it, those bytes reach nobody: the origin waits
+// for a request it will never see and the client waits for an answer to it.
+//
+// TestHTTPProxyUpgradeAudit exercises the same path but writes after reading
+// the 101, so it only fails when the scheduler puts the client's write first.
+// That made it a ten-minute CI hang roughly one run in two and it passes every
+// time locally. This one sends both in one write, so it fails every time.
+func TestHTTPProxyUpgradeEarlyClientBytes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	originErrCh := make(chan error, 1)
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "hijack unsupported", http.StatusInternalServerError)
+			return
+		}
+		conn, rw, err := hijacker.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
+		_ = rw.Flush()
+		buf := make([]byte, 4)
+		if _, err := io.ReadFull(rw, buf); err != nil {
+			originErrCh <- err
+			return
+		}
+		originErrCh <- nil
+		_, _ = rw.WriteString("pong")
+		_ = rw.Flush()
+	})
+	defer origin.Close()
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+	t.Cleanup(closeProxyServer(t, server, errCh))
+	addr := waitForAddr(t, server)
+
+	conn := dialProxyMTLS(ctx, t, addr.String(), prepared.Clients["sandbox-1"])
+	// A deadline rather than the package timeout: the failure this pins is a
+	// hang, and a hang that waits for `go test` to give up costs ten minutes
+	// and reports a panic rather than this test's name.
+	if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+
+	// The whole point: one write carrying the request and the first payload.
+	request := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", origin.URL, originURL.Host)
+	if _, err := conn.Write(append([]byte(request), []byte("ping")...)); err != nil {
+		t.Fatalf("write upgrade request and payload: %v", err)
+	}
+
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read upgrade response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
+	}
+
+	got := make([]byte, 4)
+	if _, err := io.ReadFull(reader, got); err != nil {
+		select {
+		case originErr := <-originErrCh:
+			t.Fatalf("read reply: %v; the origin's own read: %v", err, originErr)
+		default:
+		}
+		t.Fatalf("read reply: %v (the origin never saw the payload sent with the request)", err)
+	}
+	if string(got) != "pong" {
+		t.Fatalf("reply = %q, want \"pong\"", got)
+	}
+}
+
 // ignoringPortProbe answers the sandbox-agent's port probe itself rather than
 // passing it to the handler: every port that starts listening on the machine is
 // asked `HEAD /` once, and this repository is worked on inside a sandbox, so a
@@ -881,9 +991,10 @@ func waitForStreamSpool(t *testing.T, path string, payloads ...[]byte) []byte {
 		}
 		if err == nil {
 			last = data
+			recorded := streamSpoolPayloads(data)
 			complete := true
 			for _, payload := range payloads {
-				if !bytes.Contains(data, payload) {
+				if !streamSpoolHasPayload(recorded, payload) {
 					complete = false
 					break
 				}
@@ -975,6 +1086,74 @@ func assertSpoolFile(t *testing.T, path, want string) {
 	if string(got) != want {
 		t.Fatalf("spool file %s = %q, want %q", path, got, want)
 	}
+}
+
+// streamSpoolPayloads reassembles what a spool file recorded, one stream per
+// direction.
+//
+// A frame is not a payload boundary: a chunk is whatever one read returned, so
+// four bytes written together arrive as "p" and "ing" when part of them was
+// already in the request parser's buffer and the rest was still on the wire.
+// Searching the file for the bytes as written would make the test depend on
+// that split, which nothing promises.
+//
+// The format is the one streams.go writes: a header of the magic, a version
+// byte, a timestamp, and two length-prefixed strings, then frames of a type
+// byte, a timestamp, a direction, a length and the payload. Every integer is
+// big-endian. A short read returns what has been parsed so far, since the
+// caller polls a file that is still being written.
+func streamSpoolPayloads(data []byte) map[byte][]byte {
+	recorded := map[byte][]byte{}
+	read := func(n int) []byte {
+		if len(data) < n {
+			data = nil
+			return nil
+		}
+		taken := data[:n]
+		data = data[n:]
+		return taken
+	}
+	if magic := read(4); string(magic) != "DBS1" {
+		return recorded
+	}
+	read(1) // version
+	read(8) // started at
+	if length := read(2); length != nil {
+		read(int(binary.BigEndian.Uint16(length))) // session id
+	}
+	if length := read(2); length != nil {
+		read(int(binary.BigEndian.Uint16(length))) // upgrade type
+	}
+	for len(data) > 0 {
+		frameType := read(1)
+		if frameType == nil {
+			break
+		}
+		if frameType[0] != 1 { // a summary frame, which ends the file
+			break
+		}
+		read(8) // timestamp
+		direction := read(1)
+		length := read(4)
+		if direction == nil || length == nil {
+			break
+		}
+		payload := read(int(binary.BigEndian.Uint32(length)))
+		if payload == nil {
+			break
+		}
+		recorded[direction[0]] = append(recorded[direction[0]], payload...)
+	}
+	return recorded
+}
+
+func streamSpoolHasPayload(recorded map[byte][]byte, payload []byte) bool {
+	for _, stream := range recorded {
+		if bytes.Contains(stream, payload) {
+			return true
+		}
+	}
+	return false
 }
 
 func dialProxyMTLS(ctx context.Context, t *testing.T, addr string, material ClientMaterial) net.Conn {

@@ -144,6 +144,23 @@ v1.8.5; `TestHTTPProxyMITMUpgradeHandshakeIsNotFragmented` pins the property
 from the client's side so a regression surfaces here rather than as a harness
 silently downgrading its transport.
 
+The bytes a client sends in the same write as its upgrade request are the other
+property this path has to hold. `net/http` parses the request with a buffered
+reader, so that payload is already off the wire when the handler runs, and
+stock `goproxy` takes the connection from `Hijack` while dropping the reader
+beside it — after which it relays from the raw connection and those bytes reach
+nobody, hanging both ends. The `replace` in the root `go.mod` points at a fork
+that forwards them, on the plain HTTP path this proxy uses and on the MITM path
+alike; `TestHTTPProxyUpgradeEarlyClientBytes` sends a request and a payload in
+one write and is what says whether the fork is still needed. Upstream is fixing
+only the MITM half (elazarl/goproxy#805), so that landing does not retire the
+fork on its own.
+
+A frame in a stream spool is therefore not a payload boundary either: a write
+can be recorded as two chunks when part of it came from the parser's buffer and
+the rest from the wire. Anything asserting on a spool reassembles the direction
+first.
+
 ## Sentinel Secret Swapping
 
 Sandboxes are provisioned with **sentinels** — convincing fake credentials

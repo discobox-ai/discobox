@@ -379,3 +379,16 @@ tool (
 )
 
 replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953
+
+// goproxy drops the bytes a client sends in the same write as an upgrade
+// request: net/http has already read them into the request parser's buffer, and
+// both of its websocket relays then read the raw connection, so the origin waits
+// for a frame that never arrives and the client waits for the reply. It hung
+// this repository's CI for the full ten minute test timeout. The fork forwards
+// the buffered bytes on both paths.
+//
+// Drop this once an upstream release fixes both: elazarl/goproxy#805 covers the
+// MITM path in https.go, and the plain HTTP path this proxy uses — hijackConnection
+// in websocket.go — is untouched by it. discobox-ai/discobox#25 tracks that, and
+// proxy's TestHTTPProxyUpgradeEarlyClientBytes is what says whether it is safe.
+replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8

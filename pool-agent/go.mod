@@ -97,3 +97,12 @@ require (
 )
 
 tool github.com/ogen-go/ogen/cmd/ogen
+
+// goproxy drops the bytes a client sends in the same write as an upgrade
+// request, hanging both ends; see the root go.mod for the detail. Repeated here
+// because a replace only applies to the main module, and this module builds
+// proxy itself.
+//
+// Drop this with the one in the root go.mod, once an upstream release fixes both
+// call sites (elazarl/goproxy#805 covers only the MITM half).
+replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
