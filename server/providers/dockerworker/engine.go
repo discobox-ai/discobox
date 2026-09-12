@@ -481,6 +481,17 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, cli *client.Client, pr
 			}
 		} else {
 			inst, err := e.waitContainerReady(ctx, cli, existing.Container.ID, false)
+			if err != nil && inst != nil && containerHealthStarting(*inst) {
+				// A container whose healthcheck has not passed yet is a host
+				// still coming up, not a broken one, and it is reported as
+				// such: a failed reconcile of a pool with sandboxes assigned
+				// repairs it, which removes and recreates this container and
+				// restarts the very healthcheck being waited on. A pool
+				// container restarts for ordinary reasons — a Docker restart,
+				// a development image rebuild — and something is usually
+				// waiting on it when it does.
+				return inst, false, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
+			}
 			return inst, false, err
 		}
 	}

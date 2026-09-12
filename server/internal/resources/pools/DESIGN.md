@@ -90,8 +90,14 @@ flowchart LR
   `projectID/poolID`): converges the pool's single runtime host
   (container/VM/pod) toward its desired state through the provider's
   `PoolRuntime`. A missing or disabled provider instance, or one with no pool
-  runtime, converges trivially. A failed `ReconcilePool` on a pool with
-  assigned sandboxes is repaired in place (`RepairPool`); a runtime whose
+  runtime, converges trivially. A `ReconcilePool` that reports
+  `sandbox.ErrPoolNotReachable` — a host that is up but not yet taking traffic,
+  such as a container whose healthcheck has not passed — is not a failure at
+  all: the pass writes nothing and asks again (`poolHostComingUpRequeue`),
+  because repairing it would remove and recreate the container and restart the
+  healthcheck something is waiting on. Any other failed `ReconcilePool` on a
+  pool with assigned sandboxes is repaired in place (`RepairPool`); a runtime
+  whose
   agent never registers within `poolRegistrationTimeout` (2m, armed with
   `RequeueAt` only while waiting) is repaired with a fresh bootstrap token;
   delete refuses while sandboxes are assigned, removes the runtime, and then

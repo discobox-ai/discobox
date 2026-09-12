@@ -687,6 +687,14 @@ treats it as "not yet". The VM and cloud drivers return a lease without
 touching the container, so on those backends a create landing on a container
 being replaced still fails on its first call to the agent.
 
+The engine reports the same condition from the other direction. A drift
+re-check of an existing container whose healthcheck has not passed yet
+(`ensurePoolContainer`) reports `sandbox.ErrPoolNotReachable` rather than a
+plain readiness failure, because a failed reconcile of a pool with sandboxes
+assigned repairs it — removing and recreating that container, and restarting
+the healthcheck whatever is waiting on the pool is waiting for. The pool
+reconciler requeues on it instead
+([pools](../internal/resources/pools/DESIGN.md)).
 
 That is also why a failed acquire marks the pool at most once per
 `poolReconcileMarkInterval`. The mark exists to notice a host nobody else has

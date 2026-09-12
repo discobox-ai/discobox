@@ -31,6 +31,15 @@
   lifecycle, the two connection leases, `PoolLogs`, and `GuestImageBuildSpec`
   (the last two may return `sandbox.ErrPoolLogsUnsupported` /
   `sandbox.ErrGuestImageBuildUnsupported`).
+- A pool container whose healthcheck is still `starting` is not a failed
+  reconcile. Report it as `sandbox.ErrPoolNotReachable` and let the pool
+  reconciler come back: a failure on a pool with sandboxes assigned repairs it,
+  which removes and recreates that container and restarts the healthcheck —
+  and a pool container restarts for ordinary reasons (a Docker restart, a
+  development image rebuild), usually with something attached and waiting on
+  it. The same sentinel is what lets a caller that can wait (the attach wait,
+  ADR 0039 tier 1) wait instead of failing, so do not flatten it into a plain
+  error anywhere on the acquire or reconcile path.
 - The pool host console must never carry `LabelPoolAgent` (drift detection
   reconciles and deletes what does) or the pool agent's
   `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.

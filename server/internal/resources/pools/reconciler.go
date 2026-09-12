@@ -46,6 +46,12 @@ var poolRegistrationTimeout = 2 * time.Minute
 // state, short enough that a dead host is called out within a scan or two.
 var poolHeartbeatTimeout = 90 * time.Second
 
+// poolHostComingUpRequeue is how long to wait before re-checking a pool whose
+// host is up but not yet taking traffic — a container whose healthcheck has not
+// passed yet. The pool-agent image probes every 5s after a 5s start period, so
+// this is one probe interval: the soonest the answer can have changed.
+var poolHostComingUpRequeue = 5 * time.Second
+
 // heartbeatStale reports a pool whose agent has stopped answering: it has
 // heartbeated before, and the last beat is older than poolHeartbeatTimeout. A
 // pool that has never heartbeated is not stale — it is still registering, and
@@ -149,6 +155,18 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if r.registrationExpired(pool) {
 		err = runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, "pool agent did not register before timeout")
 	} else if err = runtimeProvider.ReconcilePool(ctx, r.pools, project, provider, pool); err != nil {
+		// A host that is still coming up is not a failed reconcile. Repairing
+		// one removes and recreates the container whose healthcheck has not
+		// passed yet, which restarts that healthcheck — and a pool container
+		// restarts for ordinary reasons (a Docker restart, a development image
+		// rebuild), usually with a sandbox attaching to it waiting on exactly
+		// that healthcheck (ADR 0039 tier 1). So this pass settles nothing and
+		// asks again: no failure is recorded, no repair runs, the pool keeps
+		// the state it had, and this generation is not marked observed over a
+		// runtime the reconcile never reached.
+		if errors.Is(err, sandbox.ErrPoolNotReachable) {
+			return reconcile.RequeueAfter(poolHostComingUpRequeue), nil
+		}
 		if repairErr := r.repairAssignedPool(ctx, runtimeProvider, project, provider, pool, err); repairErr != nil {
 			err = repairErr
 		} else {

@@ -3,6 +3,7 @@ package pools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -277,6 +278,100 @@ func newPoolReconcilerTestStore(t *testing.T) (*store.Store, *gorm.DB) {
 // stubPoolProvider is a provider whose pool runtime always converges. Only the
 // PoolRuntime half is exercised; the sandbox surface is present
 // because the reconciler resolves providers through sandbox.Provider.
+// A pool container whose healthcheck has not passed yet is a host on its way
+// up, not a broken one, and the reconcile reports it as such rather than
+// failing. A failed reconcile of a pool with sandboxes assigned repairs it —
+// removing and recreating the container, restarting the very healthcheck
+// something is waiting on (ADR 0039 tier 1) — and a pool container restarts
+// for ordinary reasons: a Docker restart, a development image rebuild.
+func TestReconcileRequeuesAPoolHostThatIsStillComingUp(t *testing.T) {
+	ctx := context.Background()
+	appStore, _ := newPoolReconcilerTestStore(t)
+	runtime := &hostComingUpProvider{}
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", runtime)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	registeredAt := time.Now().UTC()
+	pool := &model.Pool{
+		ID:           "pool-1",
+		ProjectID:    "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+		Ready:        true,
+		Schedulable:  true,
+		RegisteredAt: &registeredAt,
+		LastSeenAt:   &registeredAt,
+	}
+	pool.DesiredState = model.DesiredStatePresent
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	// The case that matters: a sandbox is assigned, so a failed reconcile is
+	// the path that repairs the host rather than recording the failure.
+	if err := appStore.CreateSandbox(ctx, &model.Sandbox{
+		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1",
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStateReady},
+	}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if assigned, err := appStore.CountSandboxesForPool(ctx, "project-1", "pool-1"); err != nil || assigned == 0 {
+		t.Fatalf("assigned sandboxes = %d (err %v), want at least one or this test proves nothing", assigned, err)
+	}
+
+	before, err := appStore.GetPool(ctx, pool.ProjectID, pool.ID)
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	result, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID))
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.RequeueAt.IsZero() {
+		t.Fatal("a host that is still coming up did not ask to be looked at again")
+	}
+	if runtime.repairs != 0 {
+		t.Fatalf("repairs = %d, want none: a repair restarts the healthcheck being waited on", runtime.repairs)
+	}
+	updated, err := appStore.GetPool(ctx, pool.ProjectID, pool.ID)
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	if updated.ErrorMessage != nil {
+		t.Fatalf("error message = %q, want none: a host coming up is not a failure", *updated.ErrorMessage)
+	}
+	// Settles nothing: the pass that found a host coming up leaves the row as
+	// it was and asks again, rather than advancing this generation over a
+	// runtime it never reached.
+	if updated.State != before.State {
+		t.Fatalf("state = %q, want %q unchanged", updated.State, before.State)
+	}
+	if updated.ObservedGeneration != before.ObservedGeneration {
+		t.Fatalf("observed generation = %d, want %d unchanged", updated.ObservedGeneration, before.ObservedGeneration)
+	}
+}
+
+// hostComingUpProvider is a pool runtime whose host is up but not yet taking
+// traffic — the verdict dockerworker.PoolAgentUnreachable returns for a
+// container whose healthcheck has not passed.
+type hostComingUpProvider struct {
+	stubPoolProvider
+	repairs int
+}
+
+func (p *hostComingUpProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
+	return fmt.Errorf("%w: container abc health check is starting", sandbox.ErrPoolNotReachable)
+}
+
+func (p *hostComingUpProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string) error {
+	p.repairs++
+	return nil
+}
+
 type stubPoolProvider struct{}
 
 func (stubPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
