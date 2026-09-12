@@ -1646,6 +1646,10 @@ func (m *Model) viewPaneWindow() string {
 // What the transport is doing is not among them. It displaces the keys while it
 // is happening — it is the more urgent of the two — and unlike them it is
 // written down nowhere else, so it holds its place all the way down.
+//
+// What the discobox and the machine are using are not among them either, and
+// are not in the middle: they ride the right edge, inside the keys, in whatever
+// room the row has left once everything above has its place (withResources).
 func (m *Model) viewPaneHeader(w int) string {
 	if p := m.overlay; p != nil && p.configure != nil {
 		// The warning outranks the reminder on a row too narrow for both:
@@ -1706,7 +1710,16 @@ func (m *Model) viewPaneHeader(w int) string {
 	middle := fields.text()
 	for _, sides := range concessions {
 		if lipgloss.Width(middle) <= centerRoom(sides[0], sides[1], w) {
-			right := drawKeys(sides[1])
+			// The resource readouts go on after the keys have been drawn and
+			// marked, because the keys are marked at the far end of the row —
+			// the readouts sit inside them, and moving them would put the hit
+			// map somewhere the keys are not.
+			//
+			// They are budgeted against concessions[0] — the row's edges at
+			// their widest — rather than against this concession's: a row
+			// narrow enough to have given an edge up has no room to spare,
+			// whatever is now standing empty where that edge was.
+			right := m.withResources(middle, drawKeys(sides[1]), concessions[0], w)
 			return spreadCenter(sides[0], fields.render(m, sides[0], right, w), right, w)
 		}
 	}
@@ -1906,6 +1919,99 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	}
 	if listening := portsField(m.st, box, m.forwardedPorts()); !listening.empty() {
 		fields = append(fields, listening)
+	}
+	return fields
+}
+
+// resourceAir is the air the banner keeps on each side of the resource readouts
+// — between them and the middle, and between them and the keys — before it will
+// carry them at all: twice the gap between fields, so a readout reads as
+// neither the end of the middle nor the first word of the keys.
+const resourceAir = 4
+
+// withResources hangs the resource readouts on the row's right edge, inside the
+// keys, in the room left between the middle and that edge.
+//
+// They are ambient — nothing on this screen is done with them — so they take
+// only room nothing else wanted, which is why they are fitted here, after a
+// concession has won, rather than competing with the fields of the middle.
+//
+// The room is measured from where the middle sits *without* them, and the air
+// either side is what keeps that true: the widest readout this leaves room for
+// still ends a clear gap short of the keys, so spreadCenter neither cuts the
+// middle nor pushes it off its centered start. That matters more here than the
+// cells it costs. These figures change on the refresh — a discobox's cpu goes
+// from 9% to 12%, the machine's halves come and go in a block — and the middle
+// is where the pressable things are: the git summary opens the diff, every
+// forwarded port is a link. A banner that re-centered itself every few seconds
+// would walk them out from under the pointer between the look and the press.
+//
+// widest is the row's edges at their widest — concessions[0], the brand and
+// folder on one side and the keys, or the pane status that displaces them, on
+// the other — and the budget is measured against those whether or not this row
+// still draws them. A row too narrow to keep an edge gave it up because the
+// middle needed its room; handing that room to the readouts instead would rank
+// them above an edge they are supposed to rank below. Measured this way the
+// arithmetic answers for itself: on every concession that gave an edge up the
+// room comes out negative, so nothing is drawn. Assuming edges wider than the
+// row draws can only understate the room, never overrun it, which is the
+// direction a budget should err in.
+func (m *Model) withResources(middle, right string, widest [2]string, w int) string {
+	// The furthest right spreadCenter could put the middle, by its own
+	// arithmetic, with the row's widest edges on it. On a row that has given an
+	// edge up the middle actually lands left of this — which is the direction
+	// that makes this a bound rather than a position, and every claim above
+	// turns on its being one.
+	start := max((w-lipgloss.Width(middle))/2, lipgloss.Width(widest[0])+1)
+	room := w - lipgloss.Width(widest[1]) - (start + lipgloss.Width(middle)) - resourceAir
+	gap := ""
+	if right != "" {
+		gap = strings.Repeat(" ", resourceAir)
+		room -= resourceAir
+	}
+	fields := m.paneResourceFields(room)
+	if len(fields) == 0 {
+		return right
+	}
+	return fields.text() + gap + right
+}
+
+// paneResourceFields is what this discobox is using and what the machine has,
+// grouped by resource — `cpu 12% (4.2/24)  mem 1.2G (9.0/32G)` — fitted into
+// the room withResources found for them.
+//
+// The machine's halves are one thing and the first to go, all of them together:
+// they are the frame around the figures beside them, and a row that kept the
+// frame on the cpu and dropped it on the memory would be inviting a comparison
+// it had stopped making. What goes after that is whole groups from the right,
+// in the list's own order — the disk, then the memory — so a banner with a
+// little room to spare carries this discobox's cpu rather than nothing.
+//
+// All of it follows the tick the listing and the machine readout are refreshed
+// on, whichever screen is up.
+func (m *Model) paneResourceFields(room int) paneHeaderFields {
+	groups := resourceGroups(m.st, m.currentBox(), m.resources)
+	if fields := m.groupFields(groups, true); len(fields) > 0 && lipgloss.Width(fields.text()) <= room {
+		return fields
+	}
+	for n := len(groups); n > 0; n-- {
+		if fields := m.groupFields(groups[:n], false); lipgloss.Width(fields.text()) <= room {
+			return fields
+		}
+	}
+	return nil
+}
+
+// groupFields draws each group as a field of its own, with the machine's half
+// in parentheses beside the discobox's own where the row is carrying it.
+func (m *Model) groupFields(groups []resourceGroup, machine bool) paneHeaderFields {
+	fields := make(paneHeaderFields, 0, len(groups))
+	for _, group := range groups {
+		text := group.own
+		if machine && group.machine != "" {
+			text += m.st.dimText.Render(" (") + group.machine + m.st.dimText.Render(")")
+		}
+		fields = append(fields, textField(text))
 	}
 	return fields
 }

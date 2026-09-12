@@ -121,16 +121,8 @@ func trimLeft(s string, n int) string {
 func usage(st *styles, s Sandbox) string {
 	// The color is the share in every case; only the cpu shows the share as
 	// its number.
-	cell := func(share int, text string, w int) string {
-		text = pad(text, w)
-		switch {
-		case share >= 90:
-			return st.statusER.Render(text)
-		case share >= 75:
-			return st.statusWA.Render(text)
-		default:
-			return st.dimText.Render(text)
-		}
+	cell := func(percent int, text string, w int) string {
+		return shareStyle(st, float64(percent)/100).Render(pad(text, w))
 	}
 	// One layout for measured and unmeasured alike, so a dot sits in the cell
 	// its figure would have, under the label naming it. Two layouts is how the
@@ -152,6 +144,98 @@ func usage(st *styles, s Sandbox) string {
 	return padANSI(cell(s.Usage.CPUPercent, cpu, 4)+" "+
 		cell(s.Usage.MemoryPercent, memory, 8)+" "+
 		cell(s.Usage.DiskPercent, disk, 8), usageWidth)
+}
+
+// resourceGroup is one resource said twice: what this discobox is using of it,
+// and what the machine has of it beside that — "cpu 12% (4.2/24)".
+//
+// Grouped by resource rather than by owner, which is how the banner first drew
+// it, because the two figures are read against each other: what this discobox
+// costs means something only beside what there is, and saying "cpu" twice in
+// one row — once per owner — spends the cells that the comparison needs. The
+// discobox's own figure leads and the machine's follows in parentheses: the
+// window is about this one, and the machine is the frame around it.
+type resourceGroup struct {
+	// own and machine are already styled, and machine is without its
+	// parentheses — the row draws those, because a row too narrow for the
+	// machine draws neither.
+	own     string
+	machine string
+}
+
+// resourceGroups is the banner's readouts in the list's own order — the cpu,
+// then the memory, then the disk — which is the order they are given up in,
+// last first: paneResourceFields drops them from the right.
+//
+// A group needs the discobox's own figure. The machine's half rides beside it
+// rather than on its own, because a bare figure in a banner about one discobox
+// reads as that discobox's — so a discobox nothing has measured says nothing
+// here, and the machine is read on the list screen, where it has a row.
+//
+// What has not been measured is left off rather than dotted: the dot in the
+// list holds a cell under its label, and here there is neither.
+func resourceGroups(st *styles, s Sandbox, r Resources) []resourceGroup {
+	var groups []resourceGroup
+	// CPU and memory are what a discobox is using, which a stopped one is not.
+	if s.up() && s.Usage.Known {
+		cpu := resourceGroup{own: shareStyle(st, float64(s.Usage.CPUPercent)/100).Render(fmt.Sprintf("cpu %d%%", s.Usage.CPUPercent))}
+		// The machine's cpu is what it has, not a share of it: a percentage
+		// beside a percentage would read as the same measurement twice.
+		if r.Known && r.CPUCapacity > 0 {
+			cpu.machine = shareStyle(st, r.CPUVCPUs/r.CPUCapacity).Render(trimFloat(r.CPUVCPUs) + "/" + trimFloat(r.CPUCapacity))
+		}
+		mem := resourceGroup{own: shareStyle(st, float64(s.Usage.MemoryPercent)/100).Render("mem " + shortBytes(s.Usage.MemoryBytes))}
+		if r.Known && r.MemoryCapacity > 0 {
+			mem.machine = shareStyle(st, float64(r.MemoryBytes)/float64(r.MemoryCapacity)).
+				Render(shortBytesPair(r.MemoryBytes, r.MemoryCapacity))
+		}
+		groups = append(groups, cpu, mem)
+	}
+	// Disk is what it is holding, which it holds whether it runs or not.
+	if s.Usage.DiskKnown {
+		disk := resourceGroup{own: shareStyle(st, float64(s.Usage.DiskPercent)/100).Render("disk " + shortBytes(s.Usage.DiskBytes))}
+		// Free rather than taken, as the machine row has it: what is left is
+		// the figure that answers whether the next discobox will fit. The data
+		// and cache split the list breaks out is left to the list — it is
+		// about reclaiming space, which is not what this row is read for.
+		if r.DiskKnown {
+			disk.machine = st.dimText.Render(shortBytes(r.DiskFreeBytes) + " free")
+		}
+		groups = append(groups, disk)
+	}
+
+	// The machine's halves go together or not at all. Its cpu and memory become
+	// known when the agent has two samples to difference, and its free space
+	// comes from a statfs that answers before them
+	// (cli.apiDataSource.Resources), so the first report after the agent starts
+	// has the disk and neither of the others. A row that framed the disk
+	// against the machine while the cpu beside it stood unframed would be
+	// making half the comparison these groups exist to make — and the list's
+	// machine row, which draws nothing at all until the whole report is known,
+	// cannot produce that shape either.
+	for _, group := range groups {
+		if group.machine != "" {
+			continue
+		}
+		for i := range groups {
+			groups[i].machine = ""
+		}
+		break
+	}
+	return groups
+}
+
+// shareStyle is how a figure is colored by the share of its whole it is taking,
+// so a discobox or a machine running full reads the same wherever it is drawn.
+func shareStyle(st *styles, share float64) lipgloss.Style {
+	switch {
+	case share >= 0.9:
+		return st.statusER
+	case share >= 0.75:
+		return st.statusWA
+	default:
+		return st.dimText
+	}
 }
 
 // usageHeader labels the three usage cells, in exactly the widths usage draws
@@ -176,15 +260,10 @@ func trimFloat(v float64) string {
 // humanBytes writes a byte count the way df -h does, in binary units, with one
 // decimal place below 10 so "1.2 GiB" and "15 GiB" both fit the same column.
 func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
+	if n < 1024 {
 		return fmt.Sprintf("%d B", n)
 	}
-	value, exp := float64(n), 0
-	for value >= unit && exp < 4 {
-		value /= unit
-		exp++
-	}
+	value, exp := scaleBytes(n)
 	suffix := [...]string{"B", "KiB", "MiB", "GiB", "TiB"}[exp]
 	if value < 10 {
 		return fmt.Sprintf("%.1f %s", value, suffix)
@@ -192,28 +271,76 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.0f %s", value, suffix)
 }
 
+// shortBytes is humanBytes cut to what a banner can afford — "1.2G" for
+// "1.2 GiB" — the same number in the same unit, with the unit as its letter and
+// the space taken out. The readouts it writes are there only while there is
+// room to spare, so every cell one of them keeps is a cell it might not get.
+//
+// The unit is unambiguous at a letter: these are the binary units everything
+// else in the window uses, and nothing in a row this size is going to be read
+// as a disk vendor's gigabyte.
+func shortBytes(n int64) string {
+	value, exp := scaleBytes(n)
+	letter := [...]string{"B", "K", "M", "G", "T"}[exp]
+	if exp > 0 && value < 10 {
+		return fmt.Sprintf("%.1f%s", value, letter)
+	}
+	return fmt.Sprintf("%.0f%s", value, letter)
+}
+
+// scaleBytes reduces a byte count to a value and the unit it is written in, so
+// the long spelling and the short one are the same number in the same unit.
+func scaleBytes(n int64) (float64, int) {
+	const unit = 1024
+	value, exp := float64(n), 0
+	for value >= unit && exp < 4 {
+		value /= unit
+		exp++
+	}
+	return value, exp
+}
+
 // humanBytesPair writes a used-of-total pair sharing one unit — "9.0/32 GiB"
 // rather than "9.0 GiB/32 GiB". Both halves are scaled by the total, so the
 // smaller number is read against the larger without the unit being said twice
 // in a band that has no room to say anything twice.
 func humanBytesPair(used, total int64) string {
-	const unit = 1024
-	if total < unit {
+	if total < 1024 {
 		return fmt.Sprintf("%d/%d B", used, total)
 	}
+	u, t, exp := scaleBytesPair(used, total)
+	suffix := [...]string{"B", "KiB", "MiB", "GiB", "TiB"}[exp]
+	// The used half keeps a decimal wherever it is small enough to need one,
+	// which is exactly when the difference between 0.4 and 4 matters most.
+	format := "%.0f"
+	if u < 10 {
+		format = "%.1f"
+	}
+	return fmt.Sprintf(format+"/%.0f %s", u, t, suffix)
+}
+
+// shortBytesPair is humanBytesPair cut the way shortBytes cuts humanBytes:
+// "9.0/32G" for "9.0/32 GiB".
+func shortBytesPair(used, total int64) string {
+	u, t, exp := scaleBytesPair(used, total)
+	letter := [...]string{"B", "K", "M", "G", "T"}[exp]
+	format := "%.0f"
+	if exp > 0 && u < 10 {
+		format = "%.1f"
+	}
+	return fmt.Sprintf(format+"/%.0f%s", u, t, letter)
+}
+
+// scaleBytesPair reduces a used-of-total pair to one unit, the total's, so the
+// smaller number is read against the larger without the unit being said twice.
+func scaleBytesPair(used, total int64) (float64, float64, int) {
+	const unit = 1024
 	div, exp := float64(1), 0
 	for float64(total)/div >= unit && exp < 4 {
 		div *= unit
 		exp++
 	}
-	suffix := [...]string{"B", "KiB", "MiB", "GiB", "TiB"}[exp]
-	// The used half keeps a decimal wherever it is small enough to need one,
-	// which is exactly when the difference between 0.4 and 4 matters most.
-	format := "%.0f"
-	if float64(used)/div < 10 {
-		format = "%.1f"
-	}
-	return fmt.Sprintf(format+"/%.0f %s", float64(used)/div, float64(total)/div, suffix)
+	return float64(used) / div, float64(total) / div, exp
 }
 
 // since is how long ago something was, in one unit and two characters where it
@@ -452,28 +579,16 @@ func machineText(st *styles, r Resources, avail int) string {
 	if !r.Known || avail <= 0 {
 		return ""
 	}
-	// Colored on the same thresholds as the row's usage column, so a full
-	// machine reads the same wherever it is drawn.
-	figure := func(text string, share float64) string {
-		switch {
-		case share >= 0.9:
-			return st.statusER.Render(text)
-		case share >= 0.75:
-			return st.statusWA.Render(text)
-		default:
-			return st.dimText.Render(text)
-		}
-	}
+	// Colored on the same thresholds as the row's usage column (shareStyle), so
+	// a full machine reads the same wherever it is drawn.
 	var parts []string
 	if r.CPUCapacity > 0 {
-		parts = append(parts, figure(
-			fmt.Sprintf("cpu %s/%s", trimFloat(r.CPUVCPUs), trimFloat(r.CPUCapacity)),
-			r.CPUVCPUs/r.CPUCapacity))
+		parts = append(parts, shareStyle(st, r.CPUVCPUs/r.CPUCapacity).
+			Render(fmt.Sprintf("cpu %s/%s", trimFloat(r.CPUVCPUs), trimFloat(r.CPUCapacity))))
 	}
 	if r.MemoryCapacity > 0 {
-		parts = append(parts, figure(
-			"mem "+humanBytesPair(r.MemoryBytes, r.MemoryCapacity),
-			float64(r.MemoryBytes)/float64(r.MemoryCapacity)))
+		parts = append(parts, shareStyle(st, float64(r.MemoryBytes)/float64(r.MemoryCapacity)).
+			Render("mem "+humanBytesPair(r.MemoryBytes, r.MemoryCapacity)))
 	}
 	// Free leads, and what is taken is broken out behind it. Free is the
 	// figure that answers whether the next discobox will fit; the split says

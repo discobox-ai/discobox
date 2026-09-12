@@ -1742,6 +1742,239 @@ func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
 	}
 }
 
+// busyWorkspace opens a workspace on a discobox serving two ports and measured
+// on both schedules, on a machine whose readout has arrived.
+func busyWorkspace(t *testing.T) (*driver, *Model, *fakeSource) {
+	t.Helper()
+	busy := testSandboxes()
+	busy[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+	busy[0].Usage = Usage{
+		Known: true, CPUPercent: 12, MemoryBytes: 1_288_490_189, MemoryPercent: 4,
+		DiskKnown: true, DiskBytes: 3_650_722_202, DiskPercent: 10,
+	}
+	ds := newFakeSource(busy...)
+	ds.setResources(Resources{
+		Known:    true,
+		CPUVCPUs: 4.2, CPUCapacity: 24,
+		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
+		DiskKnown: true, DiskFreeBytes: 34_896_609_280,
+	})
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the machine readout", func() bool { return m.resources.Known })
+	return d, m, ds
+}
+
+// A banner with room to spare carries what this discobox is using and what the
+// machine has of the same resource beside it, grouped by resource and written
+// short, and follows both on the tick the way it follows the git state.
+func TestTheBannerCarriesWhatTheDiscoboxAndMachineAreUsing(t *testing.T) {
+	t.Parallel()
+	d, m, ds := busyWorkspace(t)
+	d.dispatch(sizeMsg(270, 40))
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	const want = "cpu 12% (4.2/24)  mem 1.2G (9.0/32G)  disk 3.4G (32G free)"
+	if got := nameRow(); !strings.Contains(got, want) {
+		t.Fatalf("the banner does not carry the usage: %q", got)
+	}
+
+	busier := testSandboxes()
+	busier[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+	busier[0].Usage = Usage{Known: true, CPUPercent: 87, MemoryBytes: 1_288_490_189, DiskKnown: true, DiskBytes: 3_650_722_202}
+	ds.mu.Lock()
+	ds.sandboxes = busier
+	ds.mu.Unlock()
+	d.dispatch(tickMsg{})
+	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "cpu 87%") })
+}
+
+// The readouts are ambient — nothing on this screen is done with them — so they
+// ride only in room the rest of the row leaves over and are the first thing
+// given up: the machine's halves, all of them at once, then this discobox's
+// groups from the right, all before a single edge goes. At the width the rest
+// of the row just fits, the row is exactly what it was without them.
+func TestTheBannerGivesUpUsageBeforeAnyEdge(t *testing.T) {
+	t.Parallel()
+	d, m, _ := busyWorkspace(t)
+
+	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38  http:5173 · https:8443"
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	for _, tc := range []struct {
+		width int
+		want  []string
+		gone  []string
+	}{
+		{270, []string{"cpu 12% (4.2/24)  mem 1.2G (9.0/32G)  disk 3.4G (32G free)"}, nil},
+		{250, []string{"cpu 12%  mem 1.2G  disk 3.4G"}, []string{"(4.2/24)", "9.0/32G", "free"}},
+		{190, []string{"cpu 12%  mem 1.2G"}, []string{"disk 3.4G", "(4.2/24)"}},
+		{170, []string{"cpu 12%"}, []string{"mem 1.2G", "disk 3.4G"}},
+		{160, nil, []string{"cpu", "mem 1.2G", "disk 3.4G"}},
+	} {
+		d.dispatch(sizeMsg(tc.width, 40))
+		row := nameRow()
+		if !strings.Contains(row, middle) {
+			t.Fatalf("at %d columns the middle is not whole: %q", tc.width, row)
+		}
+		// Every edge is still there: the readouts made way for them, never
+		// the other way round.
+		if !strings.Contains(row, "detach") || !strings.HasPrefix(strings.TrimSpace(row), "discobox") || !strings.Contains(row, "/src/disco2") {
+			t.Fatalf("at %d columns the readouts cost the row an edge: %q", tc.width, row)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(row, want) {
+				t.Fatalf("at %d columns the banner dropped %q: %q", tc.width, want, row)
+			}
+		}
+		for _, gone := range tc.gone {
+			if strings.Contains(row, gone) {
+				t.Fatalf("at %d columns the banner still carries %q: %q", tc.width, gone, row)
+			}
+		}
+	}
+}
+
+// Nothing measured says nothing, however much room there is: a zero would read
+// as idle, and the dot the list holds a cell with has no cell to hold here.
+func TestTheBannerOmitsUsageNothingHasMeasured(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.dispatch(sizeMsg(270, 40))
+
+	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
+	for _, word := range []string{"cpu", "mem", "disk"} {
+		if strings.Contains(row, word) {
+			t.Fatalf("the banner carries %q with nothing measured: %q", word, row)
+		}
+	}
+}
+
+// The readouts change on the refresh — a cpu figure gains a digit, the
+// machine's halves come and go in a block — and the middle is where the
+// pressable things are: the git summary opens the diff and every forwarded port
+// is a link. So the middle holds its place through all of it. A banner that
+// re-centered itself every few seconds would walk its controls out from under
+// the pointer between the look and the press.
+func TestTheBannerHoldsItsMiddleAsTheReadoutsChange(t *testing.T) {
+	t.Parallel()
+	d, m, ds := busyWorkspace(t)
+	d.dispatch(sizeMsg(270, 40))
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	at := func() int { return strings.Index(nameRow(), "sbx_one") }
+	before := at()
+	if !strings.Contains(nameRow(), "(4.2/24)") {
+		t.Fatalf("the machine's halves should be drawn to begin with: %q", nameRow())
+	}
+
+	// The machine stops reporting: the widest thing on the row goes.
+	ds.setResources(Resources{})
+	d.dispatch(tickMsg{})
+	d.wait("the machine to go", func() bool { return !strings.Contains(nameRow(), "(4.2/24)") })
+	if got := at(); got != before {
+		t.Fatalf("the middle moved when the machine's halves went: %d then %d", before, got)
+	}
+
+	// And a figure that gains a digit does not move it either.
+	busier := testSandboxes()
+	busier[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+	busier[0].Usage = Usage{Known: true, CPUPercent: 100, MemoryBytes: 1_288_490_189, DiskKnown: true, DiskBytes: 3_650_722_202}
+	ds.mu.Lock()
+	ds.sandboxes = busier
+	ds.mu.Unlock()
+	d.dispatch(tickMsg{})
+	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "cpu 100%") })
+	if got := at(); got != before {
+		t.Fatalf("the middle moved when a figure grew: %d then %d", before, got)
+	}
+}
+
+// A row narrow enough to give up its keys has no room to spare, whatever is now
+// standing empty where they were: the readouts rank below every edge, so they
+// are budgeted against the keys' own edge whether or not this row still draws
+// it. Handing them the room an edge just vacated would rank them above it.
+func TestTheBannerSpendsNoRoomAnEdgeGaveUp(t *testing.T) {
+	t.Parallel()
+	d, m, _ := busyWorkspace(t)
+	// Narrow enough that the middle needs the keys' room and the keys go.
+	d.dispatch(sizeMsg(121, 40))
+
+	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
+	if strings.Contains(row, "detach") {
+		t.Fatalf("this width is meant to be past the keys: %q", row)
+	}
+	if !strings.Contains(row, "sbx_one  main@a3f9c21*  dirty  +142 −38  http:5173 · https:8443") {
+		t.Fatalf("the middle should be whole, which is what the keys paid for: %q", row)
+	}
+	for _, word := range []string{"cpu", "mem 1.2G", "disk 3.4G"} {
+		if strings.Contains(row, word) {
+			t.Fatalf("the banner spent the keys' room on %q: %q", word, row)
+		}
+	}
+}
+
+// The same holds for the edge on the other side. A wide brand and a key line
+// with one hint in it — a one-shot window's — put the row in the band where the
+// brand has been given up and the keys' room is what the budget still reserves:
+// measured against the brand this row is no longer drawing, there is nothing
+// spare, and measured against the folder that replaced it there would be just
+// enough for a cpu figure. The edges the budget answers to are the row's at
+// their widest, not the ones this concession kept.
+func TestTheBannerSpendsNoRoomTheBrandGaveUp(t *testing.T) {
+	t.Parallel()
+	busy := testSandboxes()
+	busy[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+	busy[0].Usage = Usage{
+		Known: true, CPUPercent: 12, MemoryBytes: 1_288_490_189, MemoryPercent: 4,
+		DiskKnown: true, DiskBytes: 3_650_722_202, DiskPercent: 10,
+	}
+	ds := newFakeSource(busy...)
+	// A project in the brand is what makes the left edge wide enough to matter.
+	ds.session.Project = "backend-platform"
+	d, m, _ := openWorkspace(t, ds, "enter")
+	// A one-shot window offers detach and not quit, which halves the key line —
+	// set here rather than by opening one, because what this test is about is
+	// the width of the two edges, not how the window came to be one.
+	m.oneRun = true
+	d.dispatch(sizeMsg(116, 40))
+
+	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
+	if strings.Contains(row, "discobox") {
+		t.Fatalf("this width is meant to be past the brand: %q", row)
+	}
+	if !strings.Contains(row, "/src/disco2") {
+		t.Fatalf("the folder should still be there, or the width is wrong: %q", row)
+	}
+	for _, word := range []string{"cpu", "mem 1.2G", "disk 3.4G"} {
+		if strings.Contains(row, word) {
+			t.Fatalf("the banner spent the brand's room on %q: %q", word, row)
+		}
+	}
+}
+
+// The machine's halves go together or not at all. Its free space comes from a
+// statfs that answers before it has two cpu samples to difference, so the first
+// report after the agent starts knows the disk and neither of the others — and
+// a row framing the disk against the machine while the cpu beside it stands
+// unframed makes half the comparison the parentheses are there to make.
+func TestTheBannerDrawsTheMachineOnlyWhenAllOfItIsKnown(t *testing.T) {
+	t.Parallel()
+	d, m, ds := busyWorkspace(t)
+	ds.setResources(Resources{DiskKnown: true, DiskFreeBytes: 34_896_609_280})
+	d.dispatch(tickMsg{})
+	d.dispatch(sizeMsg(270, 40))
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	d.wait("the machine to go", func() bool { return !strings.Contains(nameRow(), "(4.2/24)") })
+	row := nameRow()
+	if !strings.Contains(row, "cpu 12%  mem 1.2G  disk 3.4G") {
+		t.Fatalf("the discobox's own figures should be unaffected: %q", row)
+	}
+	if strings.Contains(row, "free") || strings.Contains(row, "(") {
+		t.Fatalf("the banner framed one figure against a machine it only half knows: %q", row)
+	}
+}
+
 // Output longer than the pane can be read back through: a screen you cannot
 // scroll is a screen whose first half you never saw.
 func TestAFinishedCommandCanBeScrolled(t *testing.T) {

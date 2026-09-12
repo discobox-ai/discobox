@@ -1276,6 +1276,49 @@ step — `fitFields`' drop-whole-from-the-right rule, over spans — and
 `spreadCenter` would have cut them to, which is what keeps the two from
 disagreeing about what fits.
 
+**What the discobox and the machine are using ride the row's right edge, inside
+the keys** (`withResources`, `paneResourceFields`, `resourceGroups`), grouped by
+resource — `cpu 12% (4.2/24)  mem 1.2G (9.0/32G)  disk 3.4G (32G free)` — with
+this discobox's figure leading each group and the machine's in parentheses
+beside it. Grouped by resource rather than by owner because the two figures are
+read against each other: what this discobox costs means something only beside
+what there is, and naming each resource once per owner spends the cells the
+comparison needs. They are the list's own usage columns and machine row, colored
+on the same thresholds (`shareStyle`), read off the same listing and readout the
+tick refreshes, and written short (`shortBytes`) — they exist only in room left
+over, so every cell one keeps is a cell it might not get.
+
+They are not in the middle, and that is the point. They change on the refresh —
+a cpu figure gains a digit, the machine's halves come and go in a block — and a
+middle that grew and shrank on a clock would re-center every few seconds,
+carrying the pressable things with it: the git summary opens the diff, every
+forwarded port is a link. So they are fitted *after* a concession has won, into
+the room between the middle and the keys, measured from where the middle sits
+without them and with `resourceAir` either side. That budget is what makes the
+rest provable: the widest readout it allows still ends a clear gap short of the
+keys, so `spreadCenter` neither cuts the middle nor pushes it off its centered
+start, and the row gives up no edge for them — they take only what nothing else
+wanted. The budget is measured against the row's edges at their widest, whether
+or not this row still draws them: a row too narrow to keep an edge gave it up
+because the middle needed its room, and room an edge just vacated is not room to
+spare. Measured that way the arithmetic answers for itself — on every concession
+that gave an edge up the room comes out negative. They are drawn after the keys
+are marked, since the keys' hit map is made at the far end of the row and the
+readouts sit inside them.
+
+What goes first as the room shrinks is the machine's halves, and they go
+together: a row that kept the frame on the cpu and dropped it on the memory
+would be making half a comparison. They go together for the same reason when
+the machine is only half measured — its free space comes from a statfs that
+answers before the agent has two cpu samples to difference — which is the one
+state the list's machine row cannot reach, since it draws nothing at all until
+the whole report is known. After that it is whole groups from the right, in the
+list's order. A group needs the discobox's own figure: a bare figure in a banner
+about one discobox reads as that discobox's, so a discobox nothing has measured
+says nothing here and the machine is read on the list screen, where it has a row
+of its own. What is unmeasured is left off rather than dotted — the dot holds a
+cell under its label in the list, and here there is neither.
+
 The title the application sets is laid into the top border (`titledEdge`) as
 `──[ title ]──`, not above it: it names the terminal rather than the window, and
 a border is a line the eye already follows, so a word set into it costs no row.
