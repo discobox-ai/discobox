@@ -156,6 +156,13 @@
         "null"
       ]
     },
+    "name": {
+      "description": "What this server calls itself: the name a client registering it is offered. Defaults to this machine's hostname. Environment: DISCOBOX_SERVER_NAME (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "otelMetricExportInterval": {
       "default": "1s",
       "description": "How often metrics are exported. The OTEL_METRIC_EXPORT_INTERVAL environment variable sets this too, in milliseconds, as the OpenTelemetry specification defines it.",

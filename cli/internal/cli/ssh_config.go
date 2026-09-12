@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -25,6 +26,9 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			"With --write, the stanzas and the server's host key are written to files this\n" +
 			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
 			"at them. Nothing else in ~/.ssh is edited.\n\n" +
+			"--write covers every server: the primary and the ones `discobox servers` lists,\n" +
+			"each into its own files. Without it, the stanzas printed are the primary's, since\n" +
+			"what is printed is one block to paste; --server picks another.\n\n" +
 			"On WSL that happens twice, once for each of the machine's two ssh installations:\n" +
 			"this distribution's, and the Windows one that a Windows VS Code or JetBrains\n" +
 			"Gateway drives. Without --write, the printed stanzas are this side's.\n\n" +
@@ -46,7 +50,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			// reporting goes.
 			notes := printedNotes(cmd.ErrOrStderr())
 			if write {
-				return a.writeProjectSSHConfig(cmd.Context(), client, projectID, identityFile, notes)
+				return a.writeEverySSHConfig(cmd.Context(), identityFile, notes)
 			}
 			// The written files are named after the project and the host key
 			// is verified under a name derived from it, so resolve what the
@@ -95,6 +99,60 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 	cmd.Flags().StringVar(&identityFile, "identity-file", "", "Private key to use, generated and enrolled if absent (default: the CLI's own managed key)")
 	cmd.Flags().BoolVarP(&write, "write", "w", false, "Write the config where ssh will find it, instead of printing it")
 	return cmd
+}
+
+// writeEverySSHConfig syncs the stanzas of every server this client lists:
+// each server's own project, into files named by that project, so one ssh
+// reaches the discoboxes on all of them (ADR 0113 §4).
+//
+// The primary failing fails the command, as it did when it was the only server
+// there was; a registered server that cannot be reached is a note, and every
+// other server is still written. Which server a note is about is said where
+// there is more than one: the paths it names are project IDs, which nobody
+// reads as a server.
+func (a *App) writeEverySSHConfig(ctx context.Context, identityFile string, notes noteFunc) error {
+	set, err := a.servers()
+	if err != nil {
+		return err
+	}
+	for _, s := range set {
+		about := notes
+		if len(set) > 1 {
+			about = func(format string, args ...any) {
+				notes("%s: "+format, append([]any{s.name}, args...)...)
+			}
+		}
+		if err := s.writeSSHConfig(ctx, identityFile, about); err != nil {
+			if s.primary {
+				return err
+			}
+			notes("could not sync the SSH config for %s: %v", s.name, err)
+		}
+	}
+	return nil
+}
+
+// sshSyncTimeout bounds syncing one registered server's stanzas. It is longer
+// than a listing's bound because the work is longer: a key enrolled on that
+// server, a listing, and on WSL two ssh installations written.
+const sshSyncTimeout = time.Minute
+
+// writeSSHConfig syncs one server's stanzas, in that server's own project.
+func (s *server) writeSSHConfig(ctx context.Context, identityFile string, notes noteFunc) error {
+	ctx, cancel := s.boundedBy(ctx, sshSyncTimeout)
+	defer cancel()
+	if _, err := s.app.resolveServerAddress(ctx); err != nil {
+		return err
+	}
+	projectID, err := s.app.projectIDValue()
+	if err != nil {
+		return err
+	}
+	client, err := s.app.apiClient()
+	if err != nil {
+		return err
+	}
+	return s.app.writeProjectSSHConfig(ctx, client, projectID, identityFile, notes)
 }
 
 // writeProjectSSHConfig is the one operation behind both `admin ssh-config

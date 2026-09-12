@@ -97,7 +97,7 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.writeSandboxes(cmd, body.GetSandboxes(), true)
+			return a.writeSandboxes(cmd, body.GetSandboxes(), true, nil)
 		},
 	}
 	a.addQuietFlag(cmd)

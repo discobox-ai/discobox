@@ -29,6 +29,11 @@
 # Environment: DISCOBOX_SERVER_LISTEN
 #listen:
 
+# What this server calls itself: the name a client registering it is
+# offered. Defaults to this machine's hostname.
+# Environment: DISCOBOX_SERVER_NAME
+#name:
+
 # Durable server state: the database, the SSH host key, the iroh endpoint
 # key, authorized_keys and authorized_ids. Defaults to <XDG data
 # home>/discobox.

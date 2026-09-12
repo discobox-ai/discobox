@@ -477,6 +477,15 @@ func (UnimplementedHandler) GetSecretRequest(ctx context.Context, params GetSecr
 	return r, ht.ErrNotImplemented
 }
 
+// GetServerInfo implements get-server-info operation.
+//
+// Describe this server.
+//
+// GET /server
+func (UnimplementedHandler) GetServerInfo(ctx context.Context) (r GetServerInfoRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetServerPeer implements get-server-peer operation.
 //
 // Discover this server's own peer ID.

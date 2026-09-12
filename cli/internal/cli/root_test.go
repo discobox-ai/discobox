@@ -129,7 +129,7 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 		{
 			name: "sandboxes",
 			write: func(cmd *cobra.Command) error {
-				return app.writeSandboxes(cmd, []apimodel.Sandbox{{ID: "sandbox-full-id"}}, false)
+				return app.writeSandboxes(cmd, []apimodel.Sandbox{{ID: "sandbox-full-id"}}, false, nil)
 			},
 			want: "sandbox-full-id\n",
 		},
@@ -1019,7 +1019,7 @@ func TestWriteSandboxesShowSourceColumn(t *testing.T) {
 		},
 	}
 
-	if err := app.writeSandboxes(cmd, sandboxes, true); err != nil {
+	if err := app.writeSandboxes(cmd, sandboxes, true, nil); err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}
 	output := out.String()
@@ -1030,7 +1030,7 @@ func TestWriteSandboxesShowSourceColumn(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := app.writeSandboxes(cmd, sandboxes, false); err != nil {
+	if err := app.writeSandboxes(cmd, sandboxes, false, nil); err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}
 	if strings.Contains(out.String(), "SOURCE") {
@@ -1056,7 +1056,7 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 			ErrorMessage: apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
 			Generation:   1,
 		},
-	}}, false)
+	}}, false, nil)
 	if err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}

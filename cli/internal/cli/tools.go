@@ -76,11 +76,18 @@ them.`,
 // runToolInSource runs command inside the sandbox, in the working tree of the
 // selected source, streamed to this terminal exactly like `discobox shell`.
 func (a *App) runToolInSource(cmd *cobra.Command, sandboxArg, sourceSlug string, command []string) error {
-	ctx := cmd.Context()
-	projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
+	app, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 	if err != nil {
 		return err
 	}
+	return app.runToolInSelected(cmd, projectID, sandboxID, client, sourceSlug, command)
+}
+
+// runToolInSelected is runToolInSource once the discobox is chosen, run by the
+// App aimed at the server it is on (selectSandbox).
+func (a *App) runToolInSelected(cmd *cobra.Command, projectID, sandboxID string, client *apiclientgen.Client, sourceSlug string, command []string) error {
+	ctx := cmd.Context()
+	var err error
 	// The primary source needs no workdir and therefore no sandbox record: an
 	// exec with no workdir already lands in the sandbox's default exec
 	// directory, which is the primary source's. Naming another source with

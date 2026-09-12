@@ -75,6 +75,10 @@ type Config struct {
 	// Server settings.
 	Port   int      `yaml:"port" env:"PORT" default:"18080" doc:"TCP port for an http:// listen endpoint that does not name one."`
 	Listen []string `yaml:"listen" env:"DISCOBOX_SERVER_LISTEN" doc:"Endpoints to listen on. Local IPC is added when none is named, so the CLI can always reach the server."`
+	// Name is what this server calls itself, and what a client offers as the
+	// name to register it under (ADR 0113 §2). It identifies nothing: two
+	// servers may share one, and nothing but a client's default choice reads it.
+	Name string `yaml:"name" env:"DISCOBOX_SERVER_NAME" doc:"What this server calls itself: the name a client registering it is offered. Defaults to this machine's hostname."`
 
 	// XDG-backed application directories. Their defaults are derived from the
 	// platform's base directories rather than being literals, so they are
@@ -298,6 +302,10 @@ func Load() (*Config, error) {
 	if !configured("defaultSandboxImage") {
 		cfg.DefaultSandboxImage = sandbox.DefaultSandboxImageName
 	}
+	if !configured("name") {
+		cfg.Name = defaultName()
+	}
+	cfg.Name = strings.TrimSpace(cfg.Name)
 	// The listen list always carries local IPC, whether it came from the file,
 	// the environment, or nowhere: a running server no one can reach is worse
 	// than one that opened a socket nobody asked for.
@@ -415,4 +423,16 @@ func requireLocalListenEndpoint(endpoints []string) []string {
 		}
 	}
 	return append([]string{endpoint.DefaultEndpoint()}, endpoints...)
+}
+
+// defaultName is the name a server takes when nothing gives it one: this
+// machine's hostname. A hostname that cannot be read leaves the name empty
+// rather than failing startup — a client names an unnamed server after its
+// address, which is what it does for one that predates names altogether.
+func defaultName() string {
+	name, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return name
 }

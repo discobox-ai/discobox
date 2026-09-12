@@ -97,11 +97,17 @@ func parseDirOverrides(values []string) (map[string]string, error) {
 }
 
 func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string, allowDirty bool) error {
-	ctx := cmd.Context()
-	projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
+	app, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 	if err != nil {
 		return err
 	}
+	return app.applySelected(cmd, projectID, sandboxID, client, onlySlug, dirOverrides, allowDirty)
+}
+
+// applySelected is apply once the discobox is chosen, run by the App aimed at
+// the server it is on (selectSandbox).
+func (a *App) applySelected(cmd *cobra.Command, projectID, sandboxID string, client *apiclientgen.Client, onlySlug string, dirOverrides map[string]string, allowDirty bool) error {
+	ctx := cmd.Context()
 	sandboxRes, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
 		return err

@@ -39,11 +39,15 @@ type AppOptions struct {
 	// data directory, neither of which this constructor owns.
 	SSHIngress services.SSHIngress
 
-	// ServerPeer is what GET /peer serves: this server's own peer ID, or empty
-	// when it does not listen on discobox://. Resolved by the caller because
-	// the identity is loaded when the iroh endpoint is configured, which
-	// happens before this constructor runs (ADR 0098).
+	// ServerPeer is what GET /peer serves: this server's own peer ID, which
+	// every server has (ADR 0114). Resolved by the caller because the identity
+	// is loaded with the iroh configuration, which happens before this
+	// constructor runs (ADR 0098).
 	ServerPeer services.ServerPeer
+
+	// ServerInfo is what GET /server serves: the name this server offers a
+	// client registering it (ADR 0113 §2).
+	ServerInfo services.ServerInfo
 
 	// IrohListener reports what this server's iroh listener is doing now, as
 	// opposed to who it is. Nil on a server with no iroh endpoint.
@@ -186,6 +190,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	svc := services.Services{
 		SSH:            opts.SSHIngress,
 		ServerPeer:     opts.ServerPeer,
+		ServerInfo:     opts.ServerInfo,
 		IrohListener:   opts.IrohListener,
 		Projects:       appServices,
 		HarnessConfigs: appServices,

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,25 +63,46 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 // user's action put there: nothing yet records real access (the runtime's
 // LastActiveAt moves for reconciler-driven reasons), and a list that reorders
 // for reasons the user did not cause is a list they cannot read.
-func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showSource bool) error {
+//
+// serverOf names the server each sandbox is on, by ID, when there is more than
+// one (ADR 0113 §4): the table gains a SERVER column and each JSON object a
+// "server" field. Nil is one server, which there is no point naming.
+func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showSource bool, serverOf map[string]string) error {
 	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	if a.quiet {
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
+		if serverOf == nil {
+			return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
+		}
+		rows := make([]json.RawMessage, 0, len(sandboxes))
+		for _, sandbox := range sandboxes {
+			row, err := withServerField(sandbox, serverOf[sandbox.ID])
+			if err != nil {
+				return err
+			}
+			rows = append(rows, row)
+		}
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": rows})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	if showSource {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tCREATED\tSOURCE")
-	} else {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tCREATED")
+	header := []string{"ID", "NAME"}
+	if serverOf != nil {
+		header = append(header, "SERVER")
 	}
+	header = append(header, "STATE", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "ERROR", "CREATED")
+	if showSource {
+		header = append(header, "SOURCE")
+	}
+	fmt.Fprintln(tw, strings.Join(header, "\t"))
 	for _, sandbox := range sandboxes {
 		git := sandboxGitStatus(sandbox)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
-			sandbox.ID,
-			truncateTableValue(sandbox.DisplayName, sandboxNameColumnWidth),
+		fmt.Fprintf(tw, "%s\t%s\t", sandbox.ID, truncateTableValue(sandbox.DisplayName, sandboxNameColumnWidth))
+		if serverOf != nil {
+			fmt.Fprintf(tw, "%s\t", serverOf[sandbox.ID])
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			sandboxDisplayState(sandbox),
 			sandboxHarness(sandbox),
 			sandboxGitColumn(sandbox),
@@ -96,6 +118,29 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		fmt.Fprintln(tw)
 	}
 	return tw.Flush()
+}
+
+// withServerField is sandbox's JSON with the server it is on added in front of
+// its own fields. It marshals through a pointer: the generated types encode
+// themselves only from one, and a value falls back to reflection that cannot
+// encode an unset optional field.
+func withServerField(sandbox apimodel.Sandbox, server string) (json.RawMessage, error) {
+	data, err := json.Marshal(&sandbox)
+	if err != nil {
+		return nil, err
+	}
+	name, err := json.Marshal(server)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]byte(`{"server":`), name...)
+	if body := bytes.TrimSpace(data[1:]); len(body) > 1 {
+		out = append(out, ',')
+		out = append(out, body...)
+	} else {
+		out = append(out, '}')
+	}
+	return out, nil
 }
 
 // sandboxHarness is the harness the sandbox runs, by the name a user would

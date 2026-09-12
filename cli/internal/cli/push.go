@@ -126,11 +126,17 @@ const (
 )
 
 func (a *App) runPush(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string, branch string, force bool) error {
-	ctx := cmd.Context()
-	projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
+	app, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 	if err != nil {
 		return err
 	}
+	return app.pushSelected(cmd, projectID, sandboxID, client, onlySlug, dirOverrides, branch, force)
+}
+
+// pushSelected is push once the discobox is chosen, run by the App aimed at
+// the server it is on (selectSandbox).
+func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, client *apiclientgen.Client, onlySlug string, dirOverrides map[string]string, branch string, force bool) error {
+	ctx := cmd.Context()
 	sandboxRes, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
 		return err

@@ -11,20 +11,33 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
-// configureIroh installs the server's iroh identity and admission policy when
-// any listen endpoint asks for one.
+// configureIroh loads this server's identity and, when any listen endpoint
+// asks for one, installs its iroh endpoint and admission policy.
 //
-// It runs before listenAll because binding the endpoint needs the identity,
-// and it is skipped entirely when no endpoint names the scheme: an iroh
-// endpoint generates a key and opens a UDP socket, neither of which a server
-// that was not asked to serve iroh should do.
-// It returns the identity it installed along with the gate, because that ID is
-// this server's address and `GET /peer` serves it (ADR 0098). A server with no
-// iroh endpoint returns the zero ID, which is the honest answer: it has no peer
-// identity rather than an unused one.
+// The identity is loaded on every start, whatever the server listens on
+// (ADR 0114): an ed25519 key in the data directory, written by Go like the SSH
+// host key, whose public half is the peer ID `GET /peer` serves (ADR 0098).
+// Loading it binds nothing. What is skipped without an iroh endpoint is the
+// endpoint — the native library, the UDP socket, the relay — none of which a
+// server that was not asked to serve iroh should open.
+//
+// It runs before listenAll because binding the endpoint needs the identity.
 func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayURLs []string, logLevel string) (*irohd.Admission, endpoint.IrohID, *irohd.ListenerWatch, error) {
+	key, err := irohd.LoadOrCreateEndpointKey(dataDir)
+	if err != nil {
+		return nil, endpoint.IrohID{}, nil, fmt.Errorf("server identity key: %w", err)
+	}
+	id, err := irohd.EndpointID(key)
+	if err != nil {
+		return nil, endpoint.IrohID{}, nil, fmt.Errorf("server peer ID: %w", err)
+	}
+	// Printed on every start, and before any listener: for the one caller GET
+	// /peer cannot serve — a client whose only transport is the endpoint it is
+	// trying to find (ADR 0052 §6) — and for an operator comparing it against
+	// what a client recorded. Every other caller asks for it (ADR 0098).
+	log.Printf("this server's peer ID is %s", id)
 	if !hasIrohEndpoint(listenEndpoints) {
-		return nil, endpoint.IrohID{}, nil, nil
+		return nil, id, nil, nil
 	}
 	level, err := endpoint.ParseIrohLogLevel(logLevel)
 	if err != nil {
@@ -36,10 +49,6 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 	// the file `discobox admin server logs` prints.
 	if err := endpoint.SetIrohLogging(level, log.Writer()); err != nil {
 		return nil, endpoint.IrohID{}, nil, fmt.Errorf("configure iroh logging: %w", err)
-	}
-	key, err := irohd.LoadOrCreateEndpointKey(dataDir)
-	if err != nil {
-		return nil, endpoint.IrohID{}, nil, fmt.Errorf("iroh endpoint key: %w", err)
 	}
 	// Built here and handed its store once NewApp returns: this runs before
 	// the database exists, so the managed layer cannot be captured (ADR 0095
@@ -68,15 +77,6 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 	}); err != nil {
 		return nil, endpoint.IrohID{}, nil, fmt.Errorf("configure iroh: %w", err)
 	}
-	id, err := endpoint.LocalIrohID()
-	if err != nil {
-		return nil, endpoint.IrohID{}, nil, fmt.Errorf("iroh endpoint ID: %w", err)
-	}
-	// Printed before the listener starts, for the one caller GET /peer cannot
-	// serve: a client whose only transport is the endpoint it is trying to find
-	// (ADR 0052 §6). Every other caller — anything already reaching this server
-	// over a socket, a pipe or HTTP — asks for it instead (ADR 0098).
-	log.Printf("this server's peer ID is %s", id)
 	watch := irohd.NewListenerWatch()
 	watch.Start(ctx)
 	return admission, id, watch, nil

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/adrg/xdg"
+
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 )
@@ -75,7 +77,22 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
-	os.Exit(m.Run())
+	// Every listing reads the registered servers, and a developer's own would
+	// otherwise be asked about by every test that lists anything. A test that
+	// is about them registers its own (useTempServersFile).
+	config, err := os.MkdirTemp("", "discobox-cli-config-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := os.Setenv("XDG_CONFIG_HOME", config); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	xdg.Reload()
+	code := m.Run()
+	_ = os.RemoveAll(config)
+	os.Exit(code)
 }
 
 // fakeEditor points $EDITOR at this test binary. write is the content the

@@ -220,13 +220,10 @@ func Diagnose(ctx context.Context, raw string, opts DiagnoseOptions) Diagnosis {
 	diagnosis := &Diagnosis{Endpoint: raw}
 
 	started := time.Now()
-	parsed, err := Parse(raw)
-	if err != nil {
-		diagnosis.fail(DiagnosisLayerAddress, started, "this address cannot be read", err, unreadableAddressHint(raw))
+	parsed, ok := diagnosis.readAddress(ctx, raw, started)
+	if !ok {
 		return *diagnosis
 	}
-	diagnosis.Scheme = parsed.Scheme
-	diagnosis.Transport = transportDescription(parsed)
 
 	if parsed.Scheme == "iroh" {
 		// The address is checked before the identity, because an address that
@@ -251,10 +248,11 @@ func Diagnose(ctx context.Context, raw string, opts DiagnoseOptions) Diagnosis {
 				DiagnosisLayerStream, DiagnosisLayerAdmission, DiagnosisLayerServer, DiagnosisLayerRoute)
 			return *diagnosis
 		}
-		return configured.Diagnose(ctx, raw, opts)
+		configured.diagnoseIrohAddress(ctx, diagnosis, parsed, started, opts)
+		return *diagnosis
 	}
 
-	diagnosis.ok(DiagnosisLayerAddress, started, parsed.Value)
+	diagnosis.ok(DiagnosisLayerAddress, started, parsed.Value, nameDetail(parsed)...)
 	diagnoseDialable(ctx, diagnosis, parsed, opts)
 	return *diagnosis
 }
@@ -267,13 +265,10 @@ func (e *IrohEndpoint) Diagnose(ctx context.Context, raw string, opts DiagnoseOp
 	diagnosis := &Diagnosis{Endpoint: raw}
 
 	started := time.Now()
-	parsed, err := Parse(raw)
-	if err != nil {
-		diagnosis.fail(DiagnosisLayerAddress, started, "this address cannot be read", err, unreadableAddressHint(raw))
+	parsed, ok := diagnosis.readAddress(ctx, raw, started)
+	if !ok {
 		return *diagnosis
 	}
-	diagnosis.Scheme = parsed.Scheme
-	diagnosis.Transport = transportDescription(parsed)
 	if parsed.Scheme != "iroh" {
 		diagnosis.fail(DiagnosisLayerAddress, started, "this address is not reached over iroh", nil, "")
 		return *diagnosis
@@ -282,11 +277,66 @@ func (e *IrohEndpoint) Diagnose(ctx context.Context, raw string, opts DiagnoseOp
 		diagnosis.add(*bad)
 		return *diagnosis
 	}
+	e.diagnoseIrohAddress(ctx, diagnosis, parsed, started, opts)
+	return *diagnosis
+}
+
+// diagnoseIrohAddress reports the address layer for an address that names a
+// peer, then walks the transport beneath it.
+func (e *IrohEndpoint) diagnoseIrohAddress(ctx context.Context, diagnosis *Diagnosis, parsed Endpoint, started time.Time, opts DiagnoseOptions) {
 	// Cannot fail: Parse validated the ID and Value is what it produced.
 	peer, _ := parsed.IrohID()
 	diagnosis.add(irohAddressStep(parsed, peer, started))
 	diagnoseIroh(ctx, diagnosis, e, parsed, peer, opts)
-	return *diagnosis
+}
+
+// readAddress parses raw and, for a name, looks it up, recording what carries
+// the result. It reports false with the address layer's failure already
+// recorded.
+//
+// The lookup is part of reading the address rather than a layer of its own:
+// until it answers there is no transport to have layers (ADR 0113 §1), and a
+// failed one is an address problem — the fix is DNS, or writing the address
+// in a form that needs none.
+func (d *Diagnosis) readAddress(ctx context.Context, raw string, started time.Time) (Endpoint, bool) {
+	parsed, err := Parse(raw)
+	if err != nil {
+		d.fail(DiagnosisLayerAddress, started, "this address cannot be read", err, unreadableAddressHint(raw))
+		return Endpoint{}, false
+	}
+	if !parsed.Resolved() {
+		resolved, err := resolveName(ctx, parsed)
+		if err != nil {
+			d.fail(DiagnosisLayerAddress, started, "this name could not be looked up", err, nameLookupHint(parsed))
+			return Endpoint{}, false
+		}
+		parsed = resolved
+	}
+	d.Scheme = parsed.Scheme
+	d.Transport = transportDescription(parsed)
+	return parsed, true
+}
+
+// nameDetail says how a name's transport was decided, and nothing for an
+// address that said which one it meant.
+func nameDetail(parsed Endpoint) []string {
+	if parsed.Name == "" {
+		return nil
+	}
+	record := discoboxRecord(parsed.Name)
+	if parsed.Scheme == "iroh" {
+		return details("the name's " + record + " record names this peer")
+	}
+	return details("no " + record + " record, so the name is an https server")
+}
+
+// nameLookupHint is what to do about a name whose lookup failed. A failure is
+// not read as "no record", so the way past a broken resolver is an address
+// that needs no lookup.
+func nameLookupHint(parsed Endpoint) string {
+	return "A name's " + discoboxRecord(parsed.Name) + " TXT record says whether it is a peer, and a lookup that " +
+		"fails is not taken to mean there is none. Check this machine's DNS, or write an address that needs no " +
+		"lookup: discobox://<peer-id> for a peer, discobox://" + parsed.Name + ":443 for https."
 }
 
 // unreadableAddressHint is what to do about an address [Parse] refused.
@@ -298,12 +348,13 @@ func (e *IrohEndpoint) Diagnose(ctx context.Context, raw string, opts DiagnoseOp
 // them to check the one part they got right.
 func unreadableAddressHint(raw string) string {
 	lowered := strings.ToLower(strings.TrimSpace(raw))
-	if strings.HasPrefix(lowered, SchemeDiscobox+"://") || strings.HasPrefix(lowered, "iroh://") {
+	peerHost, isDiscobox := strings.CutPrefix(lowered, SchemeDiscobox+"://")
+	if strings.HasPrefix(lowered, "iroh://") || (isDiscobox && strings.HasPrefix(peerHost, PeerIDVersion)) {
 		return "A peer ID is what `discobox admin peer id` prints on the machine it belongs to, " +
 			"and what the server logs at startup. Dashes and case are ignored, so it can be pasted " +
 			"however it arrived; a single wrong character is caught here rather than as a timeout later."
 	}
-	return "An address is discobox://<peer-id>, unix://<path>, npipe://<name>, or http://<host>:<port>. " +
+	return "An address is discobox://<peer-id>, discobox://<host>[:<port>], discobox+http://<host>:<port>, unix://<path>, npipe://<name>, or http://<host>:<port>. " +
 		"Set it with --server or DISCOBOX_SERVER."
 }
 
@@ -333,9 +384,9 @@ func irohAddressFailure(parsed Endpoint, started time.Time) *DiagnosisStep {
 // irohAddressStep is the address layer's answer for an address that names a
 // peer: which peer, and whether it carries its own way in.
 func irohAddressStep(parsed Endpoint, peer IrohID, started time.Time) DiagnosisStep {
-	var detail []string
+	detail := nameDetail(parsed)
 	if len(parsed.IrohAddrs) > 0 {
-		detail = details("dialing without discovery, at " + strings.Join(parsed.IrohAddrs, " "))
+		detail = append(detail, details("dialing without discovery, at "+strings.Join(parsed.IrohAddrs, " "))...)
 	}
 	return DiagnosisStep{
 		Layer:      DiagnosisLayerAddress,
@@ -371,7 +422,7 @@ func transportDescription(parsed Endpoint) string {
 // step, and only the server's own answer is another.
 func diagnoseDialable(ctx context.Context, diagnosis *Diagnosis, parsed Endpoint, opts DiagnoseOptions) {
 	started := time.Now()
-	baseURL, client, err := HTTPClient(parsed.Raw, nil)
+	baseURL, client, err := HTTPClient(parsed, nil)
 	if err != nil {
 		diagnosis.fail(DiagnosisLayerConnect, started, "no client for this endpoint", err, "")
 		diagnosis.skip(DiagnosisLayerServer, "the endpoint was never dialed")

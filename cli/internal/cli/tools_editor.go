@@ -128,16 +128,19 @@ func (a *App) editorRemote(cmd *cobra.Command, targets []sshTarget, sandboxArg, 
 	var client *apiclientgen.Client
 	var editorArgs []string
 	var err error
+	// The remote is written against the server the discobox is on, which both
+	// ways of naming one answer.
+	var app *App
 	if strings.TrimSpace(sandboxArg) != "" {
-		projectID, sandboxID, client, err = a.selectSandbox(cmd, sandboxArg)
+		app, projectID, sandboxID, client, err = a.selectSandbox(cmd, sandboxArg)
 		editorArgs = args
 	} else {
-		projectID, sandboxID, client, editorArgs, err = a.resolveShellTarget(cmd, args)
+		app, projectID, sandboxID, client, editorArgs, err = a.resolveShellTarget(cmd, args)
 	}
 	if err != nil {
 		return sandboxSSHRemote{}, nil, err
 	}
-	remote, err := a.sandboxSSHRemote(cmd.Context(), targets, client, projectID, sandboxID, source, notes)
+	remote, err := app.sandboxSSHRemote(cmd.Context(), targets, client, projectID, sandboxID, source, notes)
 	if err != nil {
 		return sandboxSSHRemote{}, nil, err
 	}

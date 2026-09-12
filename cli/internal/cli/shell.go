@@ -8,6 +8,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/endpoint"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -50,7 +51,8 @@ so, and one more quits shell and leaves the command where it is.`,
   discobox shell -- git log --oneline`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, _, cmdArgs, err := a.resolveShellTarget(cmd, args)
+			// Everything below talks to the server the discobox is on.
+			a, projectID, sandboxID, _, cmdArgs, err := a.resolveShellTarget(cmd, args)
 			if err != nil {
 				return err
 			}
@@ -125,39 +127,52 @@ func trimCommandSeparator(args []string) []string {
 // (it comes before the first positional, so flags are still being parsed) and
 // left ArgsLenAtDash behind to say where it was; 0 means nothing preceded it.
 // Nothing is trimmed for it here for the same reason: the token is already gone.
-func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, sandboxID string, client *apiclientgen.Client, cmdArgs []string, err error) {
-	projectID, err = a.projectIDValue()
-	if err != nil {
-		return "", "", nil, nil, err
-	}
-	client, err = a.apiClient()
-	if err != nil {
-		return "", "", nil, nil, err
-	}
+func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (app *App, projectID, sandboxID string, client *apiclientgen.Client, cmdArgs []string, err error) {
 	// -1 is "no -- was parsed", which is also what a command with flag parsing
 	// disabled reports -- `discobox tools ssh` reaches here that way, and reads its
 	// own separator later.
 	namesSandbox := cmd.Flags().ArgsLenAtDash() != 0
+	// A discobox's address names its server as well as the discobox (ADR 0113
+	// §6), so it is resolved rather than matched: matchSandboxArg finds nothing
+	// in it — it is no ID, no name and no short ID — and without this the
+	// address fell through as the command a picked discobox would run.
+	if namesSandbox && len(args) > 0 {
+		if _, isAddress, addressErr := endpoint.ParseSandboxAddress(args[0]); isAddress {
+			if addressErr != nil {
+				return nil, "", "", nil, nil, addressErr
+			}
+			app, projectID, sandboxID, client, err = a.selectSandbox(cmd, args[0])
+			return app, projectID, sandboxID, client, args[1:], err
+		}
+	}
+	projectID, err = a.projectIDValue()
+	if err != nil {
+		return nil, "", "", nil, nil, err
+	}
+	client, err = a.apiClient()
+	if err != nil {
+		return nil, "", "", nil, nil, err
+	}
 	// A full generated ID needs no listing to recognize: its shape alone is
 	// unambiguous, and the server is the one that validates it exists — the same
 	// no-round-trip-it-doesn't-need path a fully-specified --discobox-id takes
 	// elsewhere.
 	if namesSandbox && len(args) > 0 && idpkg.IsGenerated(args[0]) {
-		return projectID, args[0], client, args[1:], nil
+		return a, projectID, args[0], client, args[1:], nil
 	}
 	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID, false)
 	if err != nil {
-		return "", "", nil, nil, err
+		return nil, "", "", nil, nil, err
 	}
 	if namesSandbox && len(args) > 0 {
 		// configuredName: args[0] here may be the command instead, and a
 		// window title is free-form enough to be one ("vim", "make").
 		id, ok, matchErr := matchSandboxArg(args[0], sandboxes, configuredName)
 		if matchErr != nil {
-			return "", "", nil, nil, matchErr
+			return nil, "", "", nil, nil, matchErr
 		}
 		if ok {
-			return projectID, id, client, args[1:], nil
+			return a, projectID, id, client, args[1:], nil
 		}
 	}
 	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
@@ -166,7 +181,7 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 		recentKey: "sandbox:" + projectID,
 		expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),
 	})
-	return projectID, sandboxID, client, args, err
+	return a, projectID, sandboxID, client, args, err
 }
 
 // nameMatch says which of a discobox's names an argument is allowed to be.

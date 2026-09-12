@@ -187,6 +187,12 @@ type Sandbox struct {
 	Name  string
 	State State
 
+	// Server is the server the discobox is on, by the name the window lists it
+	// under (ADR 0113 §4): which section the row is drawn in, once there is
+	// more than one server. Empty when there is only one, where naming it says
+	// nothing.
+	Server string
+
 	// PendingRequests is how many credential requests on this discobox are
 	// waiting on a person. It is not read from the server with the row: the
 	// model annotates it from the project's request listing, so one poll
@@ -326,6 +332,11 @@ type Session struct {
 	// last open on it, and is what the composer opens holding. See
 	// DataSource.SaveDraft.
 	Draft string
+
+	// Servers are the servers a discobox can be created on, by the names the
+	// window lists them under, the primary first (ADR 0113 §5). Nil when there
+	// is only the primary, and then the run options offer no choice.
+	Servers []string
 }
 
 // HarnessState is what a harness is set to, and so whether a discobox can be
@@ -834,6 +845,14 @@ type Addresses struct {
 // has stopped — so the workspace never has to know its concrete id.
 const ExecPrimary = "primary"
 
+// Listing is what one refresh of the list found: the discoboxes, and the
+// registered servers that were asked and did not answer, whose discoboxes are
+// missing from it rather than gone (ADR 0113 §4).
+type Listing struct {
+	Sandboxes   []Sandbox
+	Unreachable []string
+}
+
 // RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
@@ -871,6 +890,10 @@ type RunRequest struct {
 	// the primary source's repository declares in .discobox/sources.json. The
 	// zero value brings them in, which is what both frontends do by default.
 	SkipDeclaredSources bool
+
+	// Server is the server to create the discobox on, by name: one of
+	// Session.Servers. Empty is the primary, which is `--server` unset.
+	Server string
 }
 
 // SourceWorkspace is what a create would carry into a discobox from the source
@@ -1277,8 +1300,10 @@ type DataSource interface {
 	// remembers, not this machine: see welcome.go.
 	MarkWelcomed(ctx context.Context) error
 
-	// List is the project's sandboxes, newest-created first.
-	List(ctx context.Context) ([]Sandbox, error)
+	// List is the project's sandboxes, newest-created first, across every
+	// server the window lists, with the registered servers that did not answer
+	// (ADR 0113 §4).
+	List(ctx context.Context) (Listing, error)
 
 	// Resources is what Discobox has on this machine and what it is using of
 	// it, polled on the same beat as List. It is separate from List because it

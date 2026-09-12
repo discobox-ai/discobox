@@ -30,7 +30,7 @@ type LoopbackProxy struct {
 
 // StartLoopbackProxy serves endpoint over a freshly bound loopback address.
 // The caller closes the proxy when the commands that need the URL are done.
-func StartLoopbackProxy(ctx context.Context, endpoint string) (*LoopbackProxy, error) {
+func StartLoopbackProxy(ctx context.Context, endpoint Endpoint) (*LoopbackProxy, error) {
 	_, client, err := HTTPClient(endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func StartLoopbackProxy(ctx context.Context, endpoint string) (*LoopbackProxy, e
 	var listenConfig net.ListenConfig
 	listener, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, fmt.Errorf("listen for local %s proxy: %w", endpoint, err)
+		return nil, fmt.Errorf("listen for local %s proxy: %w", endpoint.Raw, err)
 	}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {

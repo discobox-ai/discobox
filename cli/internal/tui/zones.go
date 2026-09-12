@@ -123,6 +123,11 @@ type zone struct {
 // "how many rows fit" is a second arithmetic to drift.
 type drawn struct {
 	top, count, first int
+	// rows is which entry each line of the block is, -1 for a line that is not
+	// one: a list whose lines are not one per entry — the discobox list, which
+	// puts a header in front of each server's rows — records it as it draws.
+	// Nil is the ordinary list, whose lines are its entries in order.
+	rows []int
 }
 
 // zones is one frame's hit map.
@@ -220,6 +225,17 @@ func (z *zones) find(kind hitKind) (zone, bool) {
 // is "this list, no row in particular".
 func (z *zones) markList(kind hitKind, d drawn, width, height int) {
 	z.mark(hit{kind: kind, idx: -1}, 0, 0, width, height)
+	if d.rows != nil {
+		// Marked from the walk that drew them, line by line: a line that is no
+		// entry keeps the block's own mark, which says which list it is and
+		// nothing more.
+		for i, idx := range d.rows {
+			if idx >= 0 {
+				z.markRow(hit{kind: kind, idx: idx}, d.top+i, width)
+			}
+		}
+		return
+	}
 	for i := range d.count {
 		z.markRow(hit{kind: kind, idx: d.first + i}, d.top+i, width)
 	}

@@ -42,8 +42,13 @@ type statusReport struct {
 	// the iroh layers apply. A server whose listener has lost its relay answers
 	// its socket perfectly while every remote client times out, and until this
 	// there was nowhere that fact was written down.
-	Server    *statusServer `json:"server,omitempty"`
-	Reachable bool          `json:"reachable"`
+	Server *statusServer `json:"server,omitempty"`
+	// Peer is the server's own peer ID — what a client dials it by — read off
+	// the address when that names one, a name resolved to one included, and
+	// asked of the server otherwise (serverIdentity). Nil when it could not be
+	// learned; a server with none says so in Reason.
+	Peer      *identityValue `json:"peer,omitempty"`
+	Reachable bool           `json:"reachable"`
 }
 
 // statusServer is the server's own account of its iroh listener.
@@ -107,8 +112,10 @@ func (a *App) runStatus(cmd *cobra.Command, timeout time.Duration) error {
 		Platform: runtime.GOOS + "/" + runtime.GOARCH,
 	}}
 
-	parsed := a.serverEndpoint()
-	if parsed.Scheme == "iroh" {
+	// A name that cannot be looked up is left for the diagnosis to report,
+	// which reads the address the same way and says why.
+	parsed, resolveErr := a.resolvedServer()
+	if resolveErr == nil && parsed.Scheme == "iroh" {
 		report.Client.IdentityFile = defaultIrohIdentityPath()
 		// The same call every other command makes, so what is diagnosed is the
 		// identity and the relays a real connection would use. A failure here
@@ -134,6 +141,14 @@ func (a *App) runStatus(cmd *cobra.Command, timeout time.Duration) error {
 	report.Endpoint = endpoint.Diagnose(ctx, a.serverURL, endpoint.DiagnoseOptions{})
 	report.Endpoint.Steps = append(report.Endpoint.Steps, a.statusAPILayer(ctx, report.Endpoint))
 	report.Reachable = report.Endpoint.OK()
+	// Asked of the server only when it answered: an ID read off the address
+	// needs no round trip, and a server that did not answer the layers above
+	// would only make this wait out the rest of the timeout to say the same.
+	if report.Reachable || (resolveErr == nil && parsed.Scheme == "iroh") {
+		if peer := a.serverIdentity(ctx); peer.PeerID != "" || !peer.Failed {
+			report.Peer = &peer
+		}
+	}
 	// Asked whenever this client got through at all, by whatever transport.
 	// Over a unix socket none of the layers above apply and this is the entire
 	// value of the command: it is the one place that says whether the transport
@@ -332,6 +347,13 @@ func printStatus(out io.Writer, report statusReport) {
 	// never answered reads "unavailable" rather than a version from elsewhere.
 	serverVersion := serverVersionText(report.Endpoint.ServerStatus != "", report.Endpoint.ServerVersion)
 	fmt.Fprintf(writer, "server    %s %s\n", paint(statusStyleBold, serverVersion), paint(statusStyleDim, report.Endpoint.Endpoint))
+	if peer := report.Peer; peer != nil {
+		if peer.PeerID != "" {
+			fmt.Fprintf(writer, "peer      %s %s\n", paint(statusStyleBold, peer.PeerID), paint(statusStyleDim, "(from "+peer.Source+")"))
+		} else {
+			fmt.Fprintf(writer, "peer      %s\n", paint(statusStyleDim, "none: "+peer.Reason))
+		}
+	}
 	if report.Endpoint.Transport != "" {
 		fmt.Fprintf(writer, "transport %s\n", paint(statusStyleDim, report.Endpoint.Transport))
 	}

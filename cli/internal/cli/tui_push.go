@@ -14,6 +14,7 @@ import (
 // reason and by the same rule; what it adds is somewhere to say so. See
 // push_auto.go for the rule, and internal/tui/push.go for the beat it runs on.
 func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]tui.SourcePush, error) {
+	d = d.at(sandboxID)
 	pushes, err := d.app.pushSandboxSources(ctx, d.client, d.projectID, sandboxID, held)
 	if err != nil {
 		return nil, err

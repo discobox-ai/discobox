@@ -139,6 +139,7 @@ type SecretOAuth = apigen.SecretOAuth
 type SecretRequest = apigen.SecretRequest
 type SecretUse = apigen.SecretUse
 type SecretValue = apigen.SecretValue
+type ServerInfo = apigen.ServerInfo
 type ServerPeer = apigen.ServerPeer
 type SetHarnessConfigSecretBindingBody = apigen.SetHarnessConfigSecretBindingBody
 type StartSandboxBody = apigen.StartSandboxBody

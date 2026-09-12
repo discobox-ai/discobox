@@ -302,13 +302,13 @@ func (f *fakeSource) SaveDraft(_ context.Context, folder, prompt string) error {
 	return f.draftErr
 }
 
-func (f *fakeSource) List(context.Context) ([]Sandbox, error) {
+func (f *fakeSource) List(context.Context) (Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.listErr != nil {
-		return nil, f.listErr
+		return Listing{}, f.listErr
 	}
-	return append([]Sandbox(nil), f.sandboxes...), nil
+	return Listing{Sandboxes: append([]Sandbox(nil), f.sandboxes...)}, nil
 }
 
 func (f *fakeSource) Resources(context.Context) (Resources, error) {

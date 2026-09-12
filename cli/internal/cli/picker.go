@@ -17,42 +17,150 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
 // errPickCanceled reports that the user dismissed a picker without choosing.
 var errPickCanceled = errors.New("canceled")
 
-// selectSandbox resolves the sandbox a command acts on. A sandbox given on the
-// command line wins; otherwise the candidates are the sandboxes `discobox ls`
-// shows for the current project directory, and the user picks one when there is
-// more than one. "a" in that picker widens the list to `discobox ls --all`, for
-// the discobox that is in this project but was started somewhere else.
-func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (projectID string, sandboxID string, client *apiclientgen.Client, err error) {
-	projectID, err = a.projectIDValue()
-	if err != nil {
-		return "", "", nil, err
+// selectSandbox resolves the discobox a command acts on, and the server it is
+// on.
+//
+// A discobox's address — discobox://<server>/<discobox> — names both, and a
+// server first reached through one is registered (ADR 0113 §6). A bare ID or
+// prefix is looked for on the primary and then on the registered servers, so
+// an ID copied from `discobox ls` works whichever server listed it. With
+// neither, the candidates are what `discobox ls` shows for the current project
+// directory, across every server, and the user picks one when there is more
+// than one; "a" in that picker widens the list to `discobox ls --all`, for the
+// discobox that is in this project but was started somewhere else.
+//
+// app is this invocation aimed at the discobox's server. The caller carries on
+// with it in place of the App it called this on: everything after — the
+// terminal, the git transport, the next request — has to reach the same
+// server.
+func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, projectID string, sandboxID string, client *apiclientgen.Client, err error) {
+	if address, ok, err := endpoint.ParseSandboxAddress(sandboxArg); ok {
+		if err != nil {
+			return nil, "", "", nil, err
+		}
+		return a.selectAddressedSandbox(cmd, address)
 	}
-	client, err = a.apiClient()
+	set, err := a.servers()
 	if err != nil {
-		return "", "", nil, err
+		return nil, "", "", nil, err
 	}
 	if strings.TrimSpace(sandboxArg) != "" {
+		if len(set) > 1 {
+			return a.findOnEveryServer(cmd.Context(), set, sandboxArg)
+		}
+		projectID, err = a.projectIDValue()
+		if err != nil {
+			return nil, "", "", nil, err
+		}
+		client, err = a.apiClient()
+		if err != nil {
+			return nil, "", "", nil, err
+		}
 		sandboxID, err = a.resolveSandboxID(cmd.Context(), client, projectID, sandboxArg)
-		return projectID, sandboxID, client, err
+		return a, projectID, sandboxID, client, err
 	}
-	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID, false)
+
+	candidates, unreachable, err := a.sandboxCandidates(cmd.Context(), false)
 	if err != nil {
-		return "", "", nil, err
+		return nil, "", "", nil, err
 	}
-	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
+	note := printedNotes(cmd.ErrOrStderr())
+	for _, silent := range unreachable {
+		note("%s did not answer, so its discoboxes are not offered: %v", silent.server.name, silent.err)
+	}
+	several := len(set) > 1
+	projectID, err = a.projectIDValue()
+	if err != nil {
+		return nil, "", "", nil, err
+	}
+	picked, err := pickOne(cmd, "Select a discobox", serverSandboxPickerItems(candidates, "", several), pickerOptions{
 		empty:     "no discoboxes were started from this directory; start one with `discobox run`, or name one with --discobox-id",
 		ambiguous: "more than one discobox was started from this directory; pass --discobox-id",
 		// The remembered pick is per project, because the candidate list is.
 		recentKey: "sandbox:" + projectID,
-		expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),
+		expand:    a.everyServerExpansion(cmd.Context(), several),
 	})
-	return projectID, sandboxID, client, err
+	if err != nil {
+		return nil, "", "", nil, err
+	}
+	// A row from a registered server is keyed by the server's name as well as
+	// the discobox's ID (serverSandboxPickerItems), which is what says where to
+	// go from here whichever of the two lists it was picked from.
+	target, sandboxID := set[0], picked
+	if name, id, ok := strings.Cut(picked, "/"); ok {
+		if target, ok = serverNamed(set[1:], name); !ok {
+			return nil, "", "", nil, fmt.Errorf("picked a discobox on %s, which is not a server this command knows", name)
+		}
+		sandboxID = id
+	}
+	projectID, err = target.app.projectIDValue()
+	if err != nil {
+		return nil, "", "", nil, err
+	}
+	client, err = target.app.apiClient()
+	if err != nil {
+		return nil, "", "", nil, err
+	}
+	return target.app, projectID, sandboxID, client, nil
+}
+
+// sandboxCandidates is the picker's list across every server: what `discobox
+// ls` shows, or with all `discobox ls --all`, less the archived discoboxes,
+// which have no runtime to act on.
+func (a *App) sandboxCandidates(ctx context.Context, all bool) ([]serverSandbox, []unansweredServer, error) {
+	listed, unreachable, err := a.listEveryServer(ctx, all)
+	if err != nil {
+		return nil, nil, err
+	}
+	candidates := make([]serverSandbox, 0, len(listed))
+	for _, row := range listed {
+		if row.sandbox.Runtime.DesiredState == apiclientgen.SandboxRuntimeDesiredStatePresent {
+			candidates = append(candidates, row)
+		}
+	}
+	return candidates, unreachable, nil
+}
+
+// everyServerExpansion is selectSandbox's "a": every discobox in the project on
+// every server, whatever directory or machine started it.
+func (a *App) everyServerExpansion(ctx context.Context, several bool) func() ([]pickerItem, error) {
+	return func() ([]pickerItem, error) {
+		localHostID, err := hostid.Get()
+		if err != nil {
+			return nil, err
+		}
+		candidates, _, err := a.sandboxCandidates(ctx, true)
+		if err != nil {
+			return nil, err
+		}
+		return serverSandboxPickerItems(candidates, localHostID, several), nil
+	}
+}
+
+// serverSandboxPickerItems is sandboxPickerItems for a list that may span
+// servers. With several, each row's detail says which server it is on, and a
+// row from a registered server is keyed <server>/<id>: IDs are the picker's
+// keys, and the pick has to say where to go as well as what to open.
+func serverSandboxPickerItems(rows []serverSandbox, localHostID string, several bool) []pickerItem {
+	items := make([]pickerItem, 0, len(rows))
+	for _, row := range rows {
+		item := sandboxPickerItem(row.sandbox, localHostID)
+		if several {
+			item.detail += " · on " + row.server.name
+			if !row.server.primary {
+				item.id = row.server.name + "/" + item.id
+			}
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 // listProjectSandboxCandidates is the shared candidate list for commands that
@@ -108,31 +216,36 @@ func (a *App) sandboxPickerExpansion(ctx context.Context, client *apiclientgen.C
 func sandboxPickerItems(sandboxes []apimodel.Sandbox, localHostID string) []pickerItem {
 	items := make([]pickerItem, 0, len(sandboxes))
 	for _, sandbox := range sandboxes {
-		updatedAt := recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt)
-		name := strings.TrimSpace(sandbox.DisplayName)
-		if name == "" {
-			name = strings.TrimSpace(sandbox.Config.Name)
-		}
-		if name == "" {
-			name = sandbox.ID
-		}
-		detail := []string{sandboxDisplayState(sandbox)}
-		if changes := sandboxGitStatus(sandbox).changes(sandboxSpawnCommit(sandbox)); changes != "-" {
-			detail = append(detail, changes)
-		}
-		detail = append(detail, formatTime(updatedAt))
-		item := pickerItem{
-			id:        sandbox.ID,
-			title:     name,
-			detail:    strings.Join(detail, " · "),
-			updatedAt: updatedAt,
-		}
-		if localHostID != "" {
-			item.origin, item.originHost = sandboxPickerOrigin(sandbox, localHostID)
-		}
-		items = append(items, item)
+		items = append(items, sandboxPickerItem(sandbox, localHostID))
 	}
 	return items
+}
+
+// sandboxPickerItem is one sandboxPickerItems row.
+func sandboxPickerItem(sandbox apimodel.Sandbox, localHostID string) pickerItem {
+	updatedAt := recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt)
+	name := strings.TrimSpace(sandbox.DisplayName)
+	if name == "" {
+		name = strings.TrimSpace(sandbox.Config.Name)
+	}
+	if name == "" {
+		name = sandbox.ID
+	}
+	detail := []string{sandboxDisplayState(sandbox)}
+	if changes := sandboxGitStatus(sandbox).changes(sandboxSpawnCommit(sandbox)); changes != "-" {
+		detail = append(detail, changes)
+	}
+	detail = append(detail, formatTime(updatedAt))
+	item := pickerItem{
+		id:        sandbox.ID,
+		title:     name,
+		detail:    strings.Join(detail, " · "),
+		updatedAt: updatedAt,
+	}
+	if localHostID != "" {
+		item.origin, item.originHost = sandboxPickerOrigin(sandbox, localHostID)
+	}
+	return item
 }
 
 // sandboxPickerOrigin says where a discobox came from: its source — the

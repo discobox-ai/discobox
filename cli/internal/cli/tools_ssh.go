@@ -50,7 +50,7 @@ everything after it, belongs to ssh.`,
 // runToolsSSH resolves the sandbox, ensures a key, opens the bridge, and runs
 // ssh against it.
 func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) error {
-	projectID, sandboxID, client, sshArgs, err := a.resolveSSHTarget(cmd, sandboxArg, args)
+	app, projectID, sandboxID, client, sshArgs, err := a.resolveSSHTarget(cmd, sandboxArg, args)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 			"so ssh must not outlive it. Background the command instead: discobox tools ssh -N ... &")
 	}
 
-	bridge, err := a.startSSHBridgeSession(cmd, client, projectID)
+	bridge, err := app.startSSHBridgeSession(cmd, client, projectID)
 	if err != nil {
 		return err
 	}
@@ -111,18 +111,21 @@ func runOverSSHBridge(cmd *cobra.Command, binary string, args []string) error {
 //
 // --discobox-id wins outright when given: it was said explicitly, and then no
 // argument is consumed as a sandbox at all.
-func (a *App) resolveSSHTarget(cmd *cobra.Command, sandboxArg string, args []string) (projectID, sandboxID string, client *apiclientgen.Client, sshArgs []string, err error) {
+//
+// app is the App aimed at the server the discobox is on (selectSandbox).
+func (a *App) resolveSSHTarget(cmd *cobra.Command, sandboxArg string, args []string) (app *App, projectID, sandboxID string, client *apiclientgen.Client, sshArgs []string, err error) {
 	if strings.TrimSpace(sandboxArg) != "" {
-		projectID, sandboxID, client, err = a.selectSandbox(cmd, sandboxArg)
-		return projectID, sandboxID, client, args, err
+		app, projectID, sandboxID, client, err = a.selectSandbox(cmd, sandboxArg)
+		return app, projectID, sandboxID, client, args, err
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "-") {
 		// An ssh flag, so there is no sandbox argument to find; the picker
 		// decides, exactly as it would with no arguments at all.
-		projectID, sandboxID, client, err = a.selectSandbox(cmd, "")
-		return projectID, sandboxID, client, args, err
+		app, projectID, sandboxID, client, err = a.selectSandbox(cmd, "")
+		return app, projectID, sandboxID, client, args, err
 	}
-	return a.resolveShellTarget(cmd, args)
+	app, projectID, sandboxID, client, sshArgs, err = a.resolveShellTarget(cmd, args)
+	return app, projectID, sandboxID, client, sshArgs, err
 }
 
 // writeTemporaryKnownHosts pins the server's host key for this command only.

@@ -193,6 +193,10 @@ type GetSecretRes interface {
 	getSecretRes()
 }
 
+type GetServerInfoRes interface {
+	getServerInfoRes()
+}
+
 type GetServerPeerRes interface {
 	getServerPeerRes()
 }

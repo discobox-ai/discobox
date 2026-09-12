@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -52,6 +53,19 @@ type App struct {
 	// validate resolves it from the environment, so it is empty until then —
 	// read it through leader() rather than directly.
 	leaderKey string
+
+	// resolveMu guards what carries --server: a name is looked up on the first
+	// dial (ADR 0113 §1) and the answer reused, so nothing asks DNS again
+	// mid-command. Only an answer is kept — see resolveServerAddress.
+	resolveMu   sync.Mutex
+	resolved    endpoint.Endpoint
+	resolveDone bool
+
+	// serverSet is every server this invocation lists discoboxes from, read
+	// once (see App.servers).
+	serversOnce  sync.Once
+	serverSet    []*server
+	serverSetErr error
 
 	// autoLaunchOnce guards the one autolaunch attempt this invocation gets.
 	// See ensureLocalServerOnce.
@@ -163,6 +177,9 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 			if err := app.validate(); err != nil {
 				return err
 			}
+			if err := app.resolveServerName(); err != nil {
+				return err
+			}
 			// Every command, not just the ones a pane runs: which command a
 			// pane is showing is the launcher's business, and a watch nobody
 			// asked for is a no-op (watchParentProcess).
@@ -253,6 +270,7 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newIDCommand())
+	cmd.AddCommand(app.newServersCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
@@ -449,10 +467,14 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 			return "", nil, err
 		}
 	}
-	if err := configureIrohForEndpoint(parsed, a.irohRelayURLs, a.irohLogLevel); err != nil {
+	resolved, err := a.resolvedServer()
+	if err != nil {
 		return "", nil, err
 	}
-	baseURL, client, err := endpoint.HTTPClient(a.serverURL, transport)
+	if err := configureIrohForEndpoint(resolved, a.irohRelayURLs, a.irohLogLevel); err != nil {
+		return "", nil, err
+	}
+	baseURL, client, err := endpoint.HTTPClient(resolved, transport)
 	if err != nil {
 		return "", nil, err
 	}
@@ -538,14 +560,59 @@ func (e serverUnreachable) Timeout() bool {
 // API client uses. An http(s) endpoint is already addressable and is returned
 // as-is, with nothing to release.
 func (a *App) gitServerURL(ctx context.Context) (string, func(), error) {
-	if a.serverEndpoint().DirectlyDialable() {
-		return a.serverURL, func() {}, nil
+	resolved, err := a.resolvedServer()
+	if err != nil {
+		return "", nil, err
 	}
-	proxy, err := endpoint.StartLoopbackProxy(ctx, a.serverURL)
+	if resolved.DirectlyDialable() {
+		return resolved.Value, func() {}, nil
+	}
+	proxy, err := endpoint.StartLoopbackProxy(ctx, resolved)
 	if err != nil {
 		return "", nil, err
 	}
 	return proxy.BaseURL(), func() { _ = proxy.Close() }, nil
+}
+
+// serverResolveTimeout bounds looking up a name --server gave. A resolver
+// that has not answered by then will not, and the command should say so
+// rather than sit on it.
+const serverResolveTimeout = 10 * time.Second
+
+// resolvedServer is --server with its transport settled, for a caller with no
+// context to lend: the lookup gets serverResolveTimeout of its own.
+//
+// Anything working to a bound — every path that spans servers — calls
+// resolveServerAddress with the context carrying that bound instead, so the lookup is
+// inside it and an interrupt reaches it.
+func (a *App) resolvedServer() (endpoint.Endpoint, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), serverResolveTimeout)
+	defer cancel()
+	return a.resolveServerAddress(ctx)
+}
+
+// resolveServerAddress is --server with its transport settled: what is dialed.
+// A name is looked up under the context of whoever asks (ADR 0113 §1), and an
+// answer is kept, so nothing asks DNS twice in one command.
+//
+// A failure is not kept. The context it failed under belongs to that caller —
+// a listing's bound, an interrupt — and says nothing about the name, while an
+// App outlives the command that first asked: the launcher holds one per
+// registered server for the life of the window, so a remembered failure would
+// be a server that never comes back however healthy DNS became, with the
+// thirty-second retry reading the cached error instead of asking.
+func (a *App) resolveServerAddress(ctx context.Context) (endpoint.Endpoint, error) {
+	a.resolveMu.Lock()
+	defer a.resolveMu.Unlock()
+	if a.resolveDone {
+		return a.resolved, nil
+	}
+	resolved, err := endpoint.Resolve(ctx, a.serverURL)
+	if err != nil {
+		return endpoint.Endpoint{}, err
+	}
+	a.resolved, a.resolveDone = resolved, true
+	return a.resolved, nil
 }
 
 // serverEndpoint parses --server so callers can ask what the endpoint supports

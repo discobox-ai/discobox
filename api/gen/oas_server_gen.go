@@ -328,6 +328,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secret-requests/{requestId}
 	GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (GetSecretRequestRes, error)
+	// GetServerInfo implements get-server-info operation.
+	//
+	// Describe this server.
+	//
+	// GET /server
+	GetServerInfo(ctx context.Context) (GetServerInfoRes, error)
 	// GetServerPeer implements get-server-peer operation.
 	//
 	// Discover this server's own peer ID.

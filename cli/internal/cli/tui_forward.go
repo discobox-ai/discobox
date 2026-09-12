@@ -20,6 +20,7 @@ import (
 // benefit — the workspace is where the ports are shown, so it is where they
 // are held.
 func (d *apiDataSource) Forward(ctx context.Context, sandboxID string) (tui.Forward, error) {
+	d = d.at(sandboxID)
 	dialer, err := d.app.sandboxPortDialer(d.projectID, sandboxID)
 	if err != nil {
 		return nil, err

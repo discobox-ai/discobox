@@ -21,6 +21,7 @@ import (
 // in the launcher's overlay. The discobox's terminals come through OpenExec
 // and NewShell instead.
 func (d *apiDataSource) Open(ctx context.Context, action tui.Interaction, sandboxID string, cols, rows int) (tui.Terminal, error) {
+	d = d.at(sandboxID)
 	switch action {
 	case tui.InteractApply:
 		// These run on this machine rather than in the discobox; see
@@ -34,6 +35,7 @@ func (d *apiDataSource) Open(ctx context.Context, action tui.Interaction, sandbo
 // Execs is the sandbox's exec sessions as the workspace's tab strip needs
 // them.
 func (d *apiDataSource) Execs(ctx context.Context, sandboxID string) ([]tui.Exec, error) {
+	d = d.at(sandboxID)
 	execs, err := d.app.listSandboxExecs(ctx, d.projectID, sandboxID)
 	if err != nil {
 		return nil, err
@@ -98,6 +100,7 @@ const execToolMetadataKey = "tool"
 // Services is the sandbox's declared services, running or not — what the
 // workspace's services menu is drawn from.
 func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.Service, error) {
+	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return nil, err
@@ -132,6 +135,7 @@ func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.S
 // that draws a service with no running process. The two streams are merged
 // here — a pane is one screen, and that is what a terminal does with them.
 func (d *apiDataSource) ServiceLogs(ctx context.Context, sandboxID, serviceID string) ([]byte, error) {
+	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return nil, err
@@ -160,6 +164,7 @@ func (d *apiDataSource) ServiceLogs(ctx context.Context, sandboxID, serviceID st
 
 // DoService runs one lifecycle verb against one declared service.
 func (d *apiDataSource) DoService(ctx context.Context, verb tui.ServiceVerb, sandboxID, serviceID string) error {
+	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return err
@@ -173,6 +178,7 @@ func (d *apiDataSource) DoService(ctx context.Context, verb tui.ServiceVerb, san
 // relaunching a primary terminal that has stopped — so nothing is started
 // here.
 func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (tui.Terminal, error) {
+	d = d.at(sandboxID)
 	return d.openFramedTerminal(ctx, sandboxID, execID, cols, rows)
 }
 
@@ -180,6 +186,7 @@ func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, 
 // `discobox shell` with no command runs. Only the sandbox can say which shell its
 // user has, so the request asks for one rather than naming it.
 func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	d = d.at(sandboxID)
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, shell: true, env: paneTerminalEnv(),
 	}, cols, rows)
@@ -191,6 +198,7 @@ func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, ro
 // the request names none: an exec created with no command, no shell and no
 // harness is a terminal on the sandbox's configured harness.
 func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	d = d.at(sandboxID)
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, terminal: true, env: paneTerminalEnv(),
 	}, cols, rows)
@@ -205,6 +213,7 @@ func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols,
 // naming it here would be this machine guessing at a path only the sandbox
 // knows.
 func (d *apiDataSource) NewTool(ctx context.Context, sandboxID string, spec tui.ToolSpec, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	d = d.at(sandboxID)
 	// Before the session, not alongside it: the tool reads its configuration
 	// when it starts, so a file that lands a moment later is a file this run
 	// never saw. See tui_tools.go.
@@ -219,6 +228,7 @@ func (d *apiDataSource) NewTool(ctx context.Context, sandboxID string, spec tui.
 
 // EndExec ends one exec session in the sandbox, killing what is running in it.
 func (d *apiDataSource) EndExec(ctx context.Context, sandboxID, execID string) error {
+	d = d.at(sandboxID)
 	return d.app.deleteSandboxExec(ctx, d.projectID, sandboxID, execID)
 }
 

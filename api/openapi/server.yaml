@@ -4399,7 +4399,7 @@ components:
             type: object
         ServerPeer:
             additionalProperties: false
-            description: This server's own peer identity, for a client that already reaches it some other way (ADR 0098). It is the value a client dials as `discobox://<peer-id>`, and it is absent on a server that does not listen for peers.
+            description: This server's own peer identity (ADR 0098), which every server has whatever it listens on (ADR 0114). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers, and the identity a client records for it otherwise.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -4410,7 +4410,21 @@ components:
                 irohListener:
                     $ref: '#/components/schemas/IrohListener'
                 peerId:
-                    description: This server's peer ID. Absent when the server does not listen on `discobox://`, in which case it has no peer identity at all rather than an unused one.
+                    description: This server's peer ID. Absent only on a server from before every server had one.
+                    type: string
+            type: object
+        ServerInfo:
+            additionalProperties: false
+            description: What this server calls itself (ADR 0113). A client registering this server offers the name as the one to register it under; nothing else depends on it, and two servers may share one.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ServerInfo.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                name:
+                    description: This server's name, from its `name` setting, which defaults to its hostname. Absent when neither is set.
                     type: string
             type: object
         IrohListener:
@@ -8064,6 +8078,25 @@ paths:
             summary: Discover this server's own peer ID
             tags:
                 - Peers
+    /server:
+        get:
+            operationId: get-server-info
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ServerInfo'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Describe this server
+            tags:
+                - Server
     /peers:
         get:
             operationId: list-peers

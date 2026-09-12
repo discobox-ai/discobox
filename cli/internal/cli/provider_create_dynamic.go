@@ -58,6 +58,9 @@ func (f *providerCreateHelpFlag) Provider() string { return f.provider }
 
 func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 	args = a.consumeProviderCreateGlobalFlags(args)
+	if err := a.resolveServerName(); err != nil {
+		return err
+	}
 	args = providerCreateArgs(cmd, args)
 	if helpProvider, ok := providerCreateHelpRequest(nil, args); ok {
 		if helpProvider == "" {
@@ -108,6 +111,9 @@ func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 
 func (a *App) runProviderUpdate(cmd *cobra.Command, args []string) error {
 	args = a.consumeProviderCreateGlobalFlags(args)
+	if err := a.resolveServerName(); err != nil {
+		return err
+	}
 	if helpProvider, ok := providerCreateHelpRequest(nil, args); ok {
 		if helpProvider == "" {
 			writeProviderUpdateStaticHelp(cmd)

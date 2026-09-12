@@ -188,7 +188,11 @@ func olderServer(status health.Status, expected string) bool {
 }
 
 func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
-	baseURL, client, err := HTTPClient(opts.Endpoint, nil)
+	target, err := Parse(opts.Endpoint)
+	if err != nil {
+		return err
+	}
+	baseURL, client, err := HTTPClient(target, nil)
 	if err != nil {
 		return err
 	}
@@ -287,7 +291,11 @@ func phaseOrUnknown(status health.Status) string {
 // status; anything else is an error, and only a connection error means "not
 // running" (see isProbeConnectionError).
 func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, error) {
-	baseURL, client, err := HTTPClient(opts.Endpoint, nil)
+	target, err := Parse(opts.Endpoint)
+	if err != nil {
+		return health.Status{}, err
+	}
+	baseURL, client, err := HTTPClient(target, nil)
 	if err != nil {
 		return health.Status{}, err
 	}

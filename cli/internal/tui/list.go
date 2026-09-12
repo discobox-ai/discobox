@@ -36,6 +36,11 @@ type sandboxList struct {
 	// way until then.
 	showArchived bool
 
+	// unreachable are the servers the last listing could not reach, which get
+	// a section of their own with no rows: a server's discoboxes going missing
+	// says why rather than looking like discoboxes that are gone.
+	unreachable []string
+
 	// Visual mode, lifted from discobox-review's diff: V anchors here, moving
 	// extends the range, and a command acts on the whole of it.
 	visual bool
@@ -114,7 +119,48 @@ func (l *sandboxList) rows() []Sandbox {
 		}
 		out = append(out, s)
 	}
+	// Grouped by server, and newest-first inside a section as everywhere else:
+	// the sort is stable, so the order the listing arrived in is what orders a
+	// section (ADR 0113 §4).
+	if l.grouped() {
+		sort.SliceStable(out, func(i, j int) bool {
+			return l.section(out[i].Server) < l.section(out[j].Server)
+		})
+	}
 	return out
+}
+
+// setUnreachable takes the servers the last listing could not reach.
+func (l *sandboxList) setUnreachable(servers []string) {
+	l.unreachable = append(l.unreachable[:0], servers...)
+}
+
+// grouped reports whether the list is drawn as one section per server, which
+// it is once there is more than one server to tell apart. With one, naming it
+// on every row — or over them — says nothing.
+func (l *sandboxList) grouped() bool {
+	return len(l.session.Servers) > 1
+}
+
+// sectioned reports whether the body carries any line that is not a row: the
+// server headers when it is grouped, and the servers that did not answer
+// whenever there are any. The listing and the session arrive on their own
+// schedules, so a server can be missing from a list the window does not yet
+// know is grouped, and it is still missing.
+func (l *sandboxList) sectioned() bool {
+	return l.grouped() || len(l.unreachable) > 0
+}
+
+// section is where a server's rows go: the order the session lists its
+// servers, the primary first. A row whose server is not among them sorts last,
+// which is what a listing that arrived before the session does.
+func (l *sandboxList) section(server string) int {
+	for i, name := range l.session.Servers {
+		if name == server {
+			return i
+		}
+	}
+	return len(l.session.Servers)
 }
 
 // folders are what the header can filter to (ADR 0111): the window's own
@@ -417,14 +463,60 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		}
 	}
 
+	// The cursor has to be inside the window, and what the rows above it cost
+	// is only known here: a section header is a line, and how many there are
+	// between the offset and the cursor depends on where the sections fall.
+	// clamp keeps the cursor on a row; this keeps the row on the screen.
+	for l.grouped() && l.cursor > l.offset && l.cursor < len(rows) && l.lineSpan(rows, l.offset, l.cursor) > rowBudget {
+		l.offset++
+	}
+
 	body := make([]string, 0, max(rowBudget, 0))
-	if len(rows) == 0 {
+	// The invitation is for a list with nothing in it at all: rows, and the
+	// sections that say where the missing ones went, are both something drawn.
+	if len(rows) == 0 && len(l.unreachable) == 0 {
 		body = append(body, st.dimText.Render(pad("  no discoboxes here yet — type a prompt below", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
+	if l.sectioned() {
+		l.drawn.rows = make([]int, 0, max(rowBudget, 0))
+	}
+	// How many each server has, for its band to say, counted once rather than
+	// per header: a section scrolled into twice is one section.
+	sectionCounts := map[string]int{}
+	if l.grouped() {
+		for _, s := range rows {
+			sectionCounts[s.Server]++
+		}
+	}
+	drawnSection := ""
 	for i := l.offset; i < len(rows) && len(body) < rowBudget; i++ {
+		// A header in front of each server's rows, and in front of the first
+		// row drawn whichever section it is in: a window scrolled into the
+		// middle of one still says which server is on screen.
+		if l.grouped() && rows[i].Server != drawnSection {
+			if len(body)+1 >= rowBudget {
+				break
+			}
+			body = append(body, l.sectionHeader(st, rows[i].Server, "", sectionCounts[rows[i].Server]))
+			l.drawn.rows = append(l.drawn.rows, -1)
+			drawnSection = rows[i].Server
+		}
 		body = append(body, l.row(st, rows[i], i, focused))
+		if l.drawn.rows != nil {
+			l.drawn.rows = append(l.drawn.rows, i)
+		}
 		l.drawn.count++
+	}
+	// The servers that did not answer, after the ones that did: their rows are
+	// missing from this listing rather than gone, and a section saying so is
+	// where a reader looks for them.
+	for _, name := range l.unreachable {
+		if len(body) >= rowBudget {
+			break
+		}
+		body = append(body, l.sectionHeader(st, name, "not answering", 0))
+		l.drawn.rows = append(l.drawn.rows, -1)
 	}
 	for len(body) < rowBudget {
 		body = append(body, blank)
@@ -434,6 +526,46 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	block := append(append(out, body...), blank)
 	z.markList(hitRow, l.drawn, l.width, len(block))
 	return lipgloss.JoinVertical(lipgloss.Left, block...)
+}
+
+// lineSpan is how many lines rows from through to take, headers included. It
+// is what tells the window whether the cursor still fits, and it counts the
+// way the body draws: a header in front of the first row, and one wherever the
+// server changes.
+func (l *sandboxList) lineSpan(rows []Sandbox, from, to int) int {
+	if from < 0 || to >= len(rows) || from > to {
+		return 0
+	}
+	lines := to - from + 1
+	if !l.grouped() {
+		return lines
+	}
+	lines++
+	for i := from + 1; i <= to; i++ {
+		if rows[i].Server != rows[i-1].Server {
+			lines++
+		}
+	}
+	return lines
+}
+
+// sectionHeader introduces one server's rows: the band the list's own title is
+// drawn as, in the dim of the two, so a section reads as a header of the same
+// kind rather than as a row whose glyph went missing. It says "server" because
+// a bare name over a list of discoboxes is one more name among them.
+//
+// It is a label rather than a row: nothing acts on it, the cursor never lands
+// on it, and the mouse walks past it onto the list (zones.go).
+func (l *sandboxList) sectionHeader(st *styles, server, note string, count int) string {
+	name := strings.TrimSpace(server)
+	if name == "" {
+		name = "this server"
+	}
+	right := note
+	if right == "" {
+		right = plural(count, "box", "boxes")
+	}
+	return renderTitle(st.titleDim, "server "+name, right, l.width)
 }
 
 // markBand makes the two offers on the title band pressable: the archived

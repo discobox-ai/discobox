@@ -31,7 +31,7 @@ func TestHTTPClientUsesUnixSocket(t *testing.T) {
 		_ = server.Serve(listener)
 	}()
 
-	baseURL, client, err := HTTPClient(endpoint, nil)
+	baseURL, client, err := HTTPClient(mustParse(t, endpoint), nil)
 	if err != nil {
 		t.Fatalf("HTTPClient() error = %v", err)
 	}

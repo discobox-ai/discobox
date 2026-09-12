@@ -1857,6 +1857,7 @@ func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
 func (*ErrorModelStatusCode) getSandboxRes()                       {}
 func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
 func (*ErrorModelStatusCode) getSecretRes()                        {}
+func (*ErrorModelStatusCode) getServerInfoRes()                    {}
 func (*ErrorModelStatusCode) getServerPeerRes()                    {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
@@ -16612,16 +16613,48 @@ func (s *SecretValue) SetTokenUrl(val OptString) {
 	s.TokenUrl = val
 }
 
-// This server's own peer identity, for a client that already reaches it some other way (ADR 0098).
-// It is the value a client dials as `discobox://<peer-id>`, and it is absent on a server that does
-// not listen for peers.
+// What this server calls itself (ADR 0113). A client registering this server offers the name as the
+// one to register it under; nothing else depends on it, and two servers may share one.
+// Ref: #/components/schemas/ServerInfo
+type ServerInfo struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// This server's name, from its `name` setting, which defaults to its hostname. Absent when neither
+	// is set.
+	Name OptString `json:"name"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ServerInfo) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetName returns the value of Name.
+func (s *ServerInfo) GetName() OptString {
+	return s.Name
+}
+
+// SetSchema sets the value of Schema.
+func (s *ServerInfo) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetName sets the value of Name.
+func (s *ServerInfo) SetName(val OptString) {
+	s.Name = val
+}
+
+func (*ServerInfo) getServerInfoRes() {}
+
+// This server's own peer identity (ADR 0098), which every server has whatever it listens on (ADR
+// 0114). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers,
+// and the identity a client records for it otherwise.
 // Ref: #/components/schemas/ServerPeer
 type ServerPeer struct {
 	// A URL to the JSON Schema for this object.
 	Schema       OptURI          `json:"$schema"`
 	IrohListener OptIrohListener `json:"irohListener"`
-	// This server's peer ID. Absent when the server does not listen on `discobox://`, in which case it
-	// has no peer identity at all rather than an unused one.
+	// This server's peer ID. Absent only on a server from before every server had one.
 	PeerId OptString `json:"peerId"`
 }
 

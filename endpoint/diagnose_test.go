@@ -117,7 +117,9 @@ func TestDiagnoseRejectsAnUnreadableAddress(t *testing.T) {
 		wantHint string
 	}{
 		{"gopher://example.com", "unix://<path>"},
-		{"discobox://not-an-id", "`discobox admin peer id`"},
+		{"discobox://d1-not-an-id", "`discobox admin peer id`"},
+		// A discobox where a server belongs names a thing --server does not take.
+		{"discobox://box.example.com/sbx_0123", "discobox://<host>"},
 		{"iroh://not-an-id", "`discobox admin peer id`"},
 		{"discobox://", "the listen form"},
 	} {

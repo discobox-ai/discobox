@@ -1,8 +1,10 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -325,6 +327,7 @@ func clearConfigEnv(t *testing.T) {
 		"PORT",
 		"DISCOBOX_SERVER",
 		"DISCOBOX_SERVER_LISTEN",
+		"DISCOBOX_SERVER_NAME",
 		"DISCOBOX_DATA_DIR",
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_CACHE_DIR",
@@ -390,5 +393,32 @@ func TestLoadRejectsUnusableRetentions(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A server nobody named takes this machine's hostname, which is what a client
+// registering it is offered (ADR 0113 §2). The setting wins, trimmed.
+func TestLoadNameDefaultsToTheHostname(t *testing.T) {
+	clearConfigEnv(t)
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Skipf("this machine has no hostname to default to: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Name != strings.TrimSpace(hostname) {
+		t.Fatalf("Name = %q, want the hostname %q", cfg.Name, hostname)
+	}
+
+	t.Setenv("DISCOBOX_SERVER_NAME", "  workstation ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Name != "workstation" {
+		t.Fatalf("Name = %q, want %q", cfg.Name, "workstation")
 	}
 }

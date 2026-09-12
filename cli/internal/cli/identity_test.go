@@ -50,13 +50,13 @@ func TestIDAcceptsAServerWithNoPeerID(t *testing.T) {
 	client, _ := testIdentityPair(t)
 	pair := identityPair{
 		Client: client,
-		Server: identityValue{Source: "the server", Reason: "this server does not listen on discobox://, so it has no peer ID"},
+		Server: identityValue{Source: "the server", Reason: "this server gives no peer ID, which only a server from before every server had one does"},
 	}
 	if err := identityExit(pair); err != nil {
 		t.Fatalf("identityExit() = %v, want nil for a server that answered", err)
 	}
 	printed := renderID(t, pair, false)
-	if !strings.Contains(printed, "does not listen on discobox://") {
+	if !strings.Contains(printed, "gives no peer ID") {
 		t.Fatalf("the reason is missing from the row:\n%s", printed)
 	}
 }

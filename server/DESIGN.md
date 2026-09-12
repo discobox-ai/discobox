@@ -326,11 +326,15 @@ right now (see Transport Logging and Reach). It is the same shape as `GET /ssh`
 — a server telling a client who it is, over the transport that client already
 has — and it exists because the alternative was grepping the startup log line.
 
-The ID is **absent** on a server that does not listen on `discobox://`: a key
-is loaded only for an endpoint that is bound, so such a server has no peer
-identity rather than an unused one, and its absence is the answer to "does this
-server listen for peers". `serverPeer` refuses to report the zero ID, which
-renders as a well-formed address that reaches nothing.
+Every server has one, whatever it listens on (ADR 0114). The key
+(`<data dir>/iroh_endpoint_key`) is loaded or generated on every start by
+`configureIroh`, in Go and binding nothing, like the SSH host key; only the
+iroh endpoint — the native library, the UDP socket, the relay, admission — is
+set up when a listen endpoint names one. So a server reached over a socket or
+http still has an identity a client can record, and adding `iroh://` later
+keeps it. Over those transports the ID is the server's word rather than
+something the connection proved (ADR 0114 §3). `serverPeer` refuses to report
+the zero ID, which renders as a well-formed address that reaches nothing.
 
 Unlike `GET /ssh` it is **authenticated**. `/ssh` is public because
 `ssh-config` reads it before any credential exists; nothing needs a peer ID
@@ -341,6 +345,20 @@ resource is server-scoped, so no narrower authorizer applies.
 The startup log line remains the only way in for the case ADR 0052 §6
 described and this route cannot serve: a client whose *only* transport is the
 iroh endpoint it is trying to find.
+
+### The Server's Name
+
+`GET /server` serves `name`: the `name` setting (`DISCOBOX_SERVER_NAME`),
+which defaults to this machine's hostname (ADR 0113 §2). It is what a client
+offers when it registers this server, and nothing else reads it — it need not
+be unique, and a client may register the server under a name of its own.
+
+It is a setting rather than something the API can change, so there is one
+place that decides it. It is not part of `GET /peer`, because a server that
+does not listen for peers still has a name. Authenticated, and listed in
+`authenticatedAllowedPaths`, for `/peer`'s reason. An unnamed server — no
+setting and no readable hostname — omits the field, and a client names it after
+its address, as it does a server that predates the route.
 
 ### Transport Logging and Reach
 

@@ -56,7 +56,8 @@ draw a window on, attach is raw whether or not the flag was given.`,
 			if len(args) > 0 {
 				sandboxArg = args[0]
 			}
-			projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
+			// Everything below talks to the server the discobox is on.
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 			if err != nil {
 				return err
 			}

@@ -31,25 +31,40 @@ directory (or the directory itself when it is not in a repository), or the
 repository URL -C names, plus this machine's discoboxes with no source.
 Discoboxes cut from anywhere else, or created on another machine, are not
 listed; pass --all (or use "discobox admin box ls") to list every discobox in
-the project.`,
+the project.
+
+Every server is listed: the primary, and the ones "discobox servers" registered,
+with a SERVER column once there is more than one. A registered server that does
+not answer is left out, and says so on stderr.`,
 		Example: `  discobox ls
   discobox ls --all
   discobox ls -o json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, err := a.projectIDValue()
+			listed, unreachable, err := a.listEveryServer(cmd.Context(), all)
 			if err != nil {
 				return err
 			}
-			client, err := a.apiClient()
+			note := printedNotes(cmd.ErrOrStderr())
+			for _, silent := range unreachable {
+				note("%s did not answer, so its discoboxes are not listed: %v", silent.server.name, silent.err)
+			}
+			set, err := a.servers()
 			if err != nil {
 				return err
 			}
-			sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, all)
-			if err != nil {
-				return err
+			sandboxes := make([]apimodel.Sandbox, 0, len(listed))
+			var serverOf map[string]string
+			if len(set) > 1 {
+				serverOf = make(map[string]string, len(listed))
 			}
-			return a.writeSandboxes(cmd, sandboxes, all)
+			for _, row := range listed {
+				sandboxes = append(sandboxes, row.sandbox)
+				if serverOf != nil {
+					serverOf[row.sandbox.ID] = row.server.name
+				}
+			}
+			return a.writeSandboxes(cmd, sandboxes, all, serverOf)
 		},
 	}
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "List every discobox in the project, whatever it was cut from and on whichever machine, and show a SOURCE column")

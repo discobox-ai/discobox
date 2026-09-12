@@ -75,7 +75,8 @@ have open keeps working. Forwarding stops when the command does.`,
 			if len(args) > 0 {
 				sandboxArg = args[0]
 			}
-			projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
+			// Forwarded from the server the discobox is on.
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 			if err != nil {
 				return err
 			}

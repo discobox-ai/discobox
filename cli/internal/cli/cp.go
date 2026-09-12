@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"maps"
 	"runtime"
 	"slices"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 // newCPCommand implements `discobox cp`: scp(1), pointed at the same SSH
@@ -34,9 +36,14 @@ is the NAME "discobox ls" prints only until the discobox's agent titles its
 terminal and the title takes the column, so the ID is what always resolves; the
 title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
 discobox this directory started, or a prompt to pick one when there is more than
-one. Everything without a colon is a local path.
+one. A discobox on another server is written by its address,
+DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox> as "discobox ls" and
+"discobox servers" give it. Everything without a colon is a local path.
 
-Both ends may name a discobox, and they need not be the same one.
+Both ends may name a discobox, and they need not be the same discobox — but
+they must be on the same server, since one copy runs over one connection. An
+address says which server that is, and a name or a bare :PATH beside one is
+looked up there rather than on the primary.
 
 Relative remote paths are resolved from the discobox user's home directory, not
 from a source working tree.
@@ -54,7 +61,8 @@ set DISCOBOX_SERVER and DISCOBOX_PROJECT in the environment.`,
 		Example: `  discobox cp ./config.yaml mybox:/tmp/config.yaml
   discobox cp -r mybox:/workspace/dist ./dist
   discobox cp :notes.md .
-  discobox cp mybox:/tmp/a.txt otherbox:/tmp/a.txt`,
+  discobox cp mybox:/tmp/a.txt otherbox:/tmp/a.txt
+  discobox cp discobox://box.example.com/sbx_01hq:/workspace/out.txt .`,
 		// Flag parsing is off entirely, not just SetInterspersed(false): scp's
 		// own flags come first in the common case (`discobox cp -r ...`), and
 		// cobra would reject them as unknown before the command ever ran.
@@ -81,21 +89,16 @@ func (a *App) runCP(cmd *cobra.Command, args []string) error {
 	if !slices.ContainsFunc(operands, func(operand cpOperand) bool { return operand.remote }) {
 		return fmt.Errorf("no discobox was named: write a path as DISCOBOX:PATH, or :PATH for this directory's discobox")
 	}
-
-	projectID, err := a.projectIDValue()
+	target, err := a.resolveCPTarget(cmd, operands)
 	if err != nil {
 		return err
 	}
-	client, err := a.apiClient()
-	if err != nil {
-		return err
-	}
-	rewritten, err := a.resolveCPOperands(cmd, client, projectID, operands)
+	rewritten, err := target.app.resolveCPOperands(cmd, target.client, target.projectID, operands, target.resolved)
 	if err != nil {
 		return err
 	}
 
-	bridge, err := a.startSSHBridgeSession(cmd, client, projectID)
+	bridge, err := target.app.startSSHBridgeSession(cmd, target.client, target.projectID)
 	if err != nil {
 		return err
 	}
@@ -109,6 +112,95 @@ func (a *App) runCP(cmd *cobra.Command, args []string) error {
 	}))
 }
 
+// cpTarget is the server a copy runs against and what it took to decide: the
+// App aimed at it, its client and project, and the discoboxes already resolved
+// on the way, since an address resolves as it is read.
+//
+// Every reference in one command resolves there, a name and a bare `:PATH`
+// included: one scp runs over one bridge, so the server an address names is
+// the only one this copy can reach.
+type cpTarget struct {
+	app       *App
+	client    *apiclientgen.Client
+	projectID string
+	// resolved is reference -> discobox ID for the addresses read here, so
+	// resolveCPOperands does not resolve them a second time.
+	resolved map[string]string
+}
+
+// resolveCPTarget decides which server the copy runs against.
+//
+// An address names its server (ADR 0113 §6), so the first one decides it —
+// and registers it, since it resolves through selectSandbox like every other
+// address. One scp runs over one bridge, so a second address naming a
+// different server is refused rather than half-copied; a name or an ID in the
+// same command then resolves on the server the address chose, which is the
+// only one this copy can reach.
+func (a *App) resolveCPTarget(cmd *cobra.Command, operands []cpOperand) (cpTarget, error) {
+	target := cpTarget{app: a, resolved: map[string]string{}}
+	// Everything decidable from the operands is decided first, so a copy this
+	// cannot make contacts nothing — and registers nothing, since reaching a
+	// server through its address registers it (ADR 0113 §6) and a refused copy
+	// must not leave one behind.
+	addresses := make([]string, 0, len(operands))
+	servers := map[string]string{}
+	for _, operand := range operands {
+		if !operand.remote || !discoboxAddressOperand(operand.reference) {
+			continue
+		}
+		switch {
+		case operand.addressWithoutPath:
+			// An address naming no discobox at all — discobox://host — is that
+			// before it is anything about paths, and ParseSandboxAddress has
+			// the words for it; advising a path here would send the reader
+			// round again.
+			if _, _, err := endpoint.ParseSandboxAddress(operand.reference); err != nil {
+				return cpTarget{}, err
+			}
+			return cpTarget{}, fmt.Errorf("%s names a discobox but no file: an operand is <discobox>:<path>, so write %s:/path, or %s: for its home directory",
+				operand.reference, operand.reference, operand.reference)
+		case operand.addressWithQuery:
+			return cpTarget{}, fmt.Errorf("%s carries a query, and cp cannot tell where it ends: ?addr= holds host:port, so the colon after it is as likely the port's as the path's. "+
+				"Register the server once (`discobox servers add <address>`) and name the discobox on it instead", operand.reference)
+		}
+		address, _, err := endpoint.ParseSandboxAddress(operand.reference)
+		if err != nil {
+			return cpTarget{}, err
+		}
+		if _, seen := servers[serverKey(address.Server)]; !seen {
+			servers[serverKey(address.Server)] = address.Server
+		}
+		if len(servers) > 1 {
+			named := slices.Sorted(maps.Values(servers))
+			return cpTarget{}, fmt.Errorf("one copy reaches one server, and these name two (%s and %s): copy through this machine in two commands", named[0], named[1])
+		}
+		if !slices.Contains(addresses, operand.reference) {
+			addresses = append(addresses, operand.reference)
+		}
+	}
+	for _, reference := range addresses {
+		app, projectID, sandboxID, client, err := a.selectSandbox(cmd, reference)
+		if err != nil {
+			return cpTarget{}, err
+		}
+		target.app, target.client, target.projectID = app, client, projectID
+		target.resolved[reference] = sandboxID
+	}
+	if target.client != nil {
+		return target, nil
+	}
+	projectID, err := a.projectIDValue()
+	if err != nil {
+		return cpTarget{}, err
+	}
+	client, err := a.apiClient()
+	if err != nil {
+		return cpTarget{}, err
+	}
+	target.projectID, target.client = projectID, client
+	return target, nil
+}
+
 // cpOperand is one path to copy, as written: local, or inside the discobox a
 // reference names.
 type cpOperand struct {
@@ -117,13 +209,29 @@ type cpOperand struct {
 	// empty for the bare `:PATH` form.
 	reference string
 	// path is the file itself: the remote side of the colon, or the whole
-	// operand spelled so scp reads it as local.
+	// operand spelled so scp reads it as local. Empty is the discobox's home
+	// directory, which is what a trailing colon means — `mybox:` and
+	// `discobox://host/sbx:` alike.
 	path string
+	// addressWithoutPath marks an address with no separator after it, which
+	// names a discobox and no file; addressWithQuery one carrying a query,
+	// which cannot be split from a path. resolveCPTarget refuses both by name,
+	// before anything is contacted.
+	addressWithoutPath bool
+	addressWithQuery   bool
 }
 
 func parseCPOperands(paths []string) []cpOperand {
 	operands := make([]cpOperand, 0, len(paths))
 	for _, path := range paths {
+		if discoboxAddressOperand(path) {
+			reference, remotePath, hasPath, hasQuery := splitCPAddress(path)
+			operands = append(operands, cpOperand{
+				remote: true, reference: reference, path: remotePath,
+				addressWithoutPath: !hasPath && !hasQuery, addressWithQuery: hasQuery,
+			})
+			continue
+		}
 		reference, remotePath, remote := splitCPPath(path)
 		if !remote {
 			operands = append(operands, cpOperand{path: localSCPPath(path)})
@@ -186,8 +294,10 @@ func scpArgs(invocation scpInvocation) []string {
 // a round trip per operand, and — for the bare `:PATH` form, which has no
 // reference to resolve — would open the picker again for every argument that
 // used it.
-func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client, projectID string, operands []cpOperand) ([]string, error) {
-	resolved := map[string]string{}
+func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client, projectID string, operands []cpOperand, resolved map[string]string) ([]string, error) {
+	if resolved == nil {
+		resolved = map[string]string{}
+	}
 	rewritten := make([]string, 0, len(operands))
 	for _, operand := range operands {
 		if !operand.remote {
@@ -251,6 +361,16 @@ func splitCPPath(operand string) (reference, path string, remote bool) {
 	if windowsDrivePath(operand) {
 		return "", "", false
 	}
+	// A discobox's address carries colons and slashes of its own, so it is
+	// split at the colon that ends the discobox rather than at the first one:
+	// discobox://host:8443/sbx_01:/tmp/x. The prefix is what makes this safe to
+	// look for — the operand it could be mistaken for is a discobox named
+	// "discobox" copied to a path starting "//". parseCPOperands reads the two
+	// cases this cannot report here; see splitCPAddress.
+	if discoboxAddressOperand(operand) {
+		reference, path, _, _ := splitCPAddress(operand)
+		return reference, path, true
+	}
 	for i, r := range operand {
 		switch r {
 		case ':':
@@ -262,6 +382,55 @@ func splitCPPath(operand string) (reference, path string, remote bool) {
 		}
 	}
 	return "", "", false
+}
+
+// splitCPAddress splits an operand written as a discobox's address. The
+// authority runs to the first slash after the scheme and may carry a colon of
+// its own (a port); the discobox segment follows it and can carry neither, so
+// the next colon is the one that ends the address. An address with no colon
+// after it names no path, which resolveCPTarget reports.
+// splitCPAddress splits an operand written as a discobox's address into the
+// address and the path after it.
+//
+// The address ends where its discobox segment does: the authority runs to the
+// first slash after the scheme and may carry a port, and a discobox segment
+// carries neither ":" nor "?" nor "/", so whichever of ":" or "?" comes first
+// after it is the end. A ":" there is the separator; a "?" is a query, which
+// this cannot split past — ?addr= carries host:port, so the next colon is as
+// likely the port's as the path's — and hasQuery says so for the caller to
+// refuse by name.
+//
+// hasPath distinguishes "no separator at all" from a trailing colon, which is
+// the home directory exactly as `mybox:` is.
+func splitCPAddress(operand string) (reference, path string, hasPath, hasQuery bool) {
+	scheme := strings.Index(operand, "://")
+	authority := operand[scheme+len("://"):]
+	slash := strings.Index(authority, "/")
+	if slash < 0 {
+		return operand, "", false, false
+	}
+	end := scheme + len("://") + slash
+	for i, r := range operand[end:] {
+		switch r {
+		case ':':
+			return operand[:end+i], operand[end+i+1:], true, false
+		case '?':
+			return operand, "", false, true
+		}
+	}
+	return operand, "", false, false
+}
+
+// discoboxAddressOperand reports whether an operand is written as a discobox
+// address rather than as <discobox>:<path>.
+func discoboxAddressOperand(operand string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(operand))
+	for _, scheme := range []string{endpoint.SchemeDiscobox, endpoint.SchemeDiscoboxHTTP, endpoint.SchemeDiscoboxHTTPS} {
+		if strings.HasPrefix(lowered, scheme+"://") {
+			return true
+		}
+	}
+	return false
 }
 
 // localSCPPath spells a local operand so scp reads it as one. scp applies the

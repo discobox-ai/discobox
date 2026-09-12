@@ -34,7 +34,7 @@ func TestLoopbackProxyForwardsToUnixSocket(t *testing.T) {
 		_ = server.Serve(listener)
 	}()
 
-	proxy, err := StartLoopbackProxy(context.Background(), endpoint)
+	proxy, err := StartLoopbackProxy(context.Background(), mustParse(t, endpoint))
 	if err != nil {
 		t.Fatalf("StartLoopbackProxy() error = %v", err)
 	}
@@ -67,7 +67,7 @@ func TestLoopbackProxyForwardsToUnixSocket(t *testing.T) {
 
 func TestLoopbackProxyCloseReleasesAddress(t *testing.T) {
 	endpoint := "unix://" + testSocketPath(t)
-	proxy, err := StartLoopbackProxy(context.Background(), endpoint)
+	proxy, err := StartLoopbackProxy(context.Background(), mustParse(t, endpoint))
 	if err != nil {
 		t.Fatalf("StartLoopbackProxy() error = %v", err)
 	}

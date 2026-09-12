@@ -38,9 +38,10 @@ type identityValue struct {
 	// Reason says why there is no ID.
 	Reason string `json:"reason,omitempty"`
 	// Failed separates the two ways there can be none. A server that answered
-	// "I have no peer ID" answered: it does not listen on discobox://, which is
-	// the ordinary configuration and not a problem. A server that could not be
-	// asked did not answer. Only the second is worth a non-zero exit.
+	// "I have no peer ID" answered: it is an older server, from before every
+	// server had one (ADR 0114), and nothing is wrong with it. A server that
+	// could not be asked did not answer. Only the second is worth a non-zero
+	// exit.
 	Failed bool `json:"failed,omitempty"`
 }
 
@@ -68,8 +69,8 @@ func (a *App) newIDCommand() *cobra.Command {
 		Long: "Print the two peer IDs an enrollment is made of: this machine's, which a server\n" +
 			"admits, and the server's, which a client dials as discobox://<peer-id>.\n\n" +
 			"This machine's ID is generated on first use and kept in the CLI state directory.\n" +
-			"The server's is read from --server when that address names a peer, and asked of\n" +
-			"the server otherwise.\n\n" +
+			"The server's is read from --server when that address names a peer — a name whose\n" +
+			"_discobox TXT record names one included — and asked of the server otherwise.\n\n" +
 			"`discobox admin peer id` prints this machine's ID alone, for a script, and needs\n" +
 			"no server.",
 		Args: cobra.NoArgs,
@@ -170,11 +171,17 @@ func (a *App) clientIdentity(cmd *cobra.Command) identityValue {
 // The address first, because it costs no round trip and answers while the
 // server is unreachable — and because when a `discobox://` address is what the
 // caller passed, that is the ID they are asking about.
+//
+// A name whose _discobox record names a peer names it as surely as a peer ID
+// in the address does (ADR 0113 §1), so the resolved address is the one read.
 func (a *App) serverIdentity(ctx context.Context) identityValue {
-	parsed := a.serverEndpoint()
-	if parsed.Scheme == "iroh" && parsed.Value != "" {
+	if parsed, err := a.resolvedServer(); err == nil && parsed.Scheme == "iroh" && parsed.Value != "" {
 		if id, err := parsed.IrohID(); err == nil {
-			return newIdentityValue(id, "--server")
+			source := "--server"
+			if parsed.Name != "" {
+				source = "the _discobox." + parsed.Name + " record"
+			}
+			return newIdentityValue(id, source)
 		}
 	}
 	// No autolaunch: `discobox id` reports who this server is, and starting one
@@ -201,7 +208,7 @@ func (a *App) serverIdentity(ctx context.Context) identityValue {
 		// discobox:// only when it was asked to.
 		return identityValue{
 			Source: "the server",
-			Reason: "this server does not listen on discobox://, so it has no peer ID",
+			Reason: "this server gives no peer ID, which only a server from before every server had one does",
 		}
 	}
 	id, err := endpoint.ParseIrohID(value)

@@ -282,11 +282,17 @@ type SSHIngress struct {
 // a service: the identity is loaded once, at the point the iroh endpoint is
 // configured, and cannot change while the process runs — it is the address.
 //
-// ID is empty on a server that does not listen on discobox://. Such a server
-// has no peer identity rather than an unused one: a key is loaded or generated
-// only for an endpoint that is actually bound (ADR 0052 §6).
+// Every server has one, whatever it listens on: the key is loaded on every
+// start, and only the iroh endpoint is opt-in (ADR 0114).
 type ServerPeer struct {
 	ID string
+}
+
+// ServerInfo is what GET /server serves: what this server calls itself, which
+// a client offers as the name to register it under (ADR 0113 §2). It is
+// configuration resolved at startup, fixed for the life of the process.
+type ServerInfo struct {
+	Name string
 }
 
 // IrohListener is what this server's iroh listener is doing right now.
@@ -328,6 +334,9 @@ type Services struct {
 	// deciding what to dial. Peers, below, is the other direction — who this
 	// server admits.
 	ServerPeer ServerPeer
+
+	// ServerInfo is served by GET /server: what this server calls itself.
+	ServerInfo ServerInfo
 
 	// IrohListener is served beside it: not who this server is, but whether the
 	// transport clients dial is working. Nil when this server has no iroh

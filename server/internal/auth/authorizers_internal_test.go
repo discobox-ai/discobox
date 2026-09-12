@@ -14,12 +14,14 @@ func TestAuthenticatedAllowedPaths(t *testing.T) {
 		want bool
 	}{
 		{"this server's own peer ID (ADR 0098)", "/peer", true},
+		{"what this server calls itself (ADR 0113)", "/server", true},
 		{"enrolled peers", "/peers", true},
 		{"one enrolled peer", "/peers/d1-dtztd73", true},
 		{"projects", "/projects", true},
 		{"the provider catalog", "/providers/catalog", true},
 
 		{"a route below an exact entry", "/peer/secrets", false},
+		{"a route below the server entry", "/server/secrets", false},
 		{"a route that merely starts the same way", "/peering", false},
 		{"a project's sandboxes", "/projects/proj-1/sandboxes", false},
 		{"an unlisted server-scoped route", "/secrets", false},

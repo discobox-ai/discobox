@@ -68,7 +68,7 @@ func TestParseListenFormNamesNoPeer(t *testing.T) {
 }
 
 func TestParseRejectsMalformedIrohEndpoint(t *testing.T) {
-	for _, raw := range []string{"iroh://not-an-id", "iroh:///some/path", "iroh://d1-dtztd73", "discobox://not-an-id"} {
+	for _, raw := range []string{"iroh://not-an-id", "iroh:///some/path", "iroh://d1-dtztd73", "discobox://d1-not-an-id"} {
 		if _, err := Parse(raw); err == nil {
 			t.Fatalf("Parse(%q) succeeded, want error", raw)
 		}
@@ -97,7 +97,7 @@ func TestIrohEndpointCapabilities(t *testing.T) {
 // scheme, which is understood perfectly well.
 func TestIrohEndpointRequiresAnIdentity(t *testing.T) {
 	raw := "iroh://" + testPeerID(t).String()
-	_, _, err := HTTPClient(raw, nil)
+	_, _, err := HTTPClient(mustParse(t, raw), nil)
 	if err == nil {
 		t.Fatal("HTTPClient() succeeded without an iroh identity configured")
 	}

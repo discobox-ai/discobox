@@ -44,6 +44,10 @@ const (
 
 // Model is the launcher window.
 type Model struct {
+	// unreachable is the registered servers the last listing was missing, as
+	// last reported; see reportUnreachable.
+	unreachable string
+
 	ctx context.Context
 	ds  DataSource
 	st  *styles
@@ -539,8 +543,8 @@ func (m *Model) loadSession() tea.Cmd {
 
 func (m *Model) refresh() tea.Cmd {
 	return func() tea.Msg {
-		sandboxes, err := m.ds.List(m.ctx)
-		return listLoadedMsg{sandboxes: sandboxes, err: err}
+		listing, err := m.ds.List(m.ctx)
+		return listLoadedMsg{listing: listing, err: err}
 	}
 }
 
@@ -568,8 +572,8 @@ type sessionLoadedMsg struct {
 }
 
 type listLoadedMsg struct {
-	sandboxes []Sandbox
-	err       error
+	listing Listing
+	err     error
 }
 
 type resourcesLoadedMsg struct {
@@ -701,7 +705,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.err != nil {
 			return m.report(true, "cannot list discoboxes: %v", msg.err)
 		}
-		m.list.setAll(msg.sandboxes)
+		m.list.setAll(msg.listing.Sandboxes)
+		// The servers that did not answer, so their sections say so rather
+		// than their rows simply being missing.
+		m.list.setUnreachable(msg.listing.Unreachable)
 		// The rows are replaced wholesale, so the marks are stamped back onto
 		// them: the two reads land independently and either can be the later.
 		m.list.setPending(m.requests)
@@ -710,7 +717,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// are exactly the ones something is already sitting in.
 		m.opts.setSources(m.list.sources())
 		m.layout()
-		return nil
+		return m.reportUnreachable(msg.listing.Unreachable)
 
 	case secretsLoadedListMsg:
 		return m.secretsLoaded(msg)
@@ -1063,6 +1070,26 @@ const repaintKey = "ctrl+l"
 
 // report sets the status line. It is the one path a handler uses to say what
 // happened, so a message can never outlive the key that produced it.
+// reportUnreachable says which registered servers the list is missing, once,
+// when that changes (ADR 0113 §4). The list is polled, and a window that
+// repeats the same complaint every refresh is a window you stop reading — but
+// rows that vanish with nothing said look like discoboxes that are gone.
+func (m *Model) reportUnreachable(servers []string) tea.Cmd {
+	names := strings.Join(servers, ", ")
+	if names == m.unreachable {
+		return nil
+	}
+	m.unreachable = names
+	switch len(servers) {
+	case 0:
+		return nil
+	case 1:
+		return m.report(false, "%s is not answering, so its discoboxes are not listed", names)
+	default:
+		return m.report(false, "%s are not answering, so their discoboxes are not listed", names)
+	}
+}
+
 func (m *Model) report(isErr bool, format string, args ...any) tea.Cmd {
 	return func() tea.Msg { return statusMsg{text: fmt.Sprintf(format, args...), err: isErr} }
 }

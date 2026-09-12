@@ -186,6 +186,10 @@ const (
 	optEnv
 	optSecret
 	optSource
+	// optServer is last because it is the one row that is not always there:
+	// it exists only when there is a server to choose (ADR 0113 §5), and the
+	// rows before it keep their places either way. See optionSet.server.
+	optServer
 )
 
 // unsetHarness is what the harness row says when nothing has been chosen on it.
@@ -230,8 +234,31 @@ func newOptions(session Session) *optionSet {
 			hint: sourceHint,
 		},
 	}}
+	if len(session.Servers) > 1 {
+		// The primary leads, so the common case is index zero and emits no
+		// flag, and it says it is the primary: the name alone does not say
+		// which of them a run goes to when nothing is chosen.
+		choices := append([]string{session.Servers[0] + " (primary)"}, session.Servers[1:]...)
+		set.opts = append(set.opts, &option{
+			label: "Server", kind: optChoice,
+			choices: choices,
+			values:  append([]string(nil), session.Servers...),
+			hint:    serverHint,
+		})
+	}
 	set.rebuildSources()
 	return set
+}
+
+// serverHint is what the Server row says.
+const serverHint = "--server · the server the discobox is created on"
+
+// server is the Server row, or nil when there is only the primary to create on.
+func (o *optionSet) server() *option {
+	if len(o.opts) > optServer {
+		return o.opts[optServer]
+	}
+	return nil
 }
 
 // sourceHint is what the Source row says: what it sets, and the one thing about
@@ -670,6 +697,9 @@ func (o *optionSet) request(prompt string) RunRequest {
 	case 2:
 		req.IncludeDirty = "false"
 	}
+	if server := o.server(); server != nil && server.changed() {
+		req.Server = server.selected()
+	}
 	return req
 }
 
@@ -741,6 +771,12 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 		add(source.display())
 	}
 
+	// The primary is where a run goes unless somebody said otherwise, which is
+	// the only case worth a word.
+	if server := o.server(); server != nil && server.changed() {
+		add("on " + server.selected())
+	}
+
 	// Nothing chosen, nothing to say. The marker introduces the answers given,
 	// so on its own it introduces nothing and is one more thing on screen that
 	// never changes.
@@ -766,7 +802,13 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 func (o *optionSet) command(prompt string) string {
 	req := o.request(prompt)
 	args := []string{"discobox"}
-	if p := o.session.Project; p != "" && p != o.session.DefaultProject {
+	if req.Server != "" {
+		args = append(args, "--server", req.Server)
+	}
+	// --project names a project on the primary, and a run on another server
+	// goes to that server's default (ADR 0113 §4): naming this one would offer
+	// a line that fails where it was told to run.
+	if p := o.session.Project; p != "" && p != o.session.DefaultProject && req.Server == "" {
 		args = append(args, "--project", p)
 	}
 	if req.Source != "" {

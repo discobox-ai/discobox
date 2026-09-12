@@ -19,6 +19,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
+	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/sshd"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers"
@@ -163,6 +164,7 @@ func Run(ctx context.Context) error {
 	router, appServices, appStore, shutdownApp, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		SSHIngress:                     sshIngress,
 		ServerPeer:                     serverPeer(irohPeerID),
+		ServerInfo:                     services.ServerInfo{Name: cfg.Name},
 		IrohListener:                   irohListenerService(irohWatch),
 		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
@@ -338,7 +340,11 @@ func shutdownExistingLocalServer(ctx context.Context, endpoints []string) {
 func requestEndpointShutdown(ctx context.Context, raw string) {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	baseURL, client, err := endpoint.HTTPClient(raw, nil)
+	target, err := endpoint.Parse(raw)
+	if err != nil {
+		return
+	}
+	baseURL, client, err := endpoint.HTTPClient(target, nil)
 	if err != nil {
 		return
 	}

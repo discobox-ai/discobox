@@ -16,10 +16,9 @@ import (
 // over the transport that client already has — and it exists for the same
 // reason: the alternative is grepping a startup log line.
 //
-// An absent ID is the answer for a server that does not listen for peers,
-// rather than an error. Such a server has no peer identity at all: the key is
-// loaded only for an endpoint that is bound, so there is nothing to report and
-// nothing wrong.
+// Every server has one, whatever it listens on (ADR 0114). The field is still
+// omitted when the service holds none, rather than served as the zero ID,
+// which would render as a well-formed peer ID that reaches nothing.
 func (h *Handler) GetServerPeer(context.Context) (serverapi.GetServerPeerRes, error) {
 	body := &apimodel.ServerPeer{}
 	if id := h.services.ServerPeer.ID; id != "" {

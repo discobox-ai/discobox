@@ -309,6 +309,97 @@ unwritable or corrupt file costs the convenience and never the command.
   under it, and a prompt past the cap is cut on a rune boundary — a state file
   is not where a pasted log belongs.
 
+## Many Servers (ADR 0113)
+
+A client has one **primary** server — `--server`, `DISCOBOX_SERVER`, or the
+local default — and any number of **registered** ones, kept in
+`<user config dir>/discobox/servers.json` (`internal/cli/servers.go`). That file
+is configuration rather than state: it is what `discobox servers
+add|rename|rm` write and what a person may edit, so it sits beside the
+server's `server.yaml` rather than under `<state>`, and one that does not parse
+is an error rather than a lost convenience.
+
+- **A server is an App.** `App.forServer` is this invocation aimed at another
+  address: the same transport flags, source directory and output; never
+  auto-started; the server's default project, since a project ID names a
+  project on one server; and no `--token`, which was given for the primary.
+  Every path to "the server" — the API client, the git transport, the
+  terminals, the ssh bridge, the child commands the launcher runs — reads the
+  App it is on, so aiming one is the whole of routing.
+- **`App.servers`** is the set, the primary first, read once per invocation. A
+  primary that is also registered is listed once, under its registered name:
+  `serverKey` compares the endpoints two addresses parse to, not their
+  spelling. A primary nobody registered goes by the name `GET /server` offers
+  once there is more than one server to tell apart, and by its address until
+  then. A name picks among the registered servers only, since the primary's is
+  whatever it offers and may be one of theirs.
+- **A registration records the server's peer ID** (`registeredServer.ID`),
+  read the way `discobox id` reads it: off the address when that names a peer,
+  a `discobox://` name resolved to one included, and from `GET /peer`
+  otherwise. Every current server has one, whatever it listens on (ADR 0114),
+  so it is empty only for a server from before that. It is
+  what `discobox servers` lists in its ID column, and what recognizes one
+  server registered again under another address — its http address and its
+  peer address are two keys and one peer (`byServer`), so `servers add`
+  refuses the second and an address that connects does not register it twice.
+  It is recorded, not refreshed: a server registered before it had an ID
+  shows none until it is registered again.
+- **`--server <name>`** is resolved in the root's pre-run
+  (`resolveServerName`): an address always has `://` and a name never can, so
+  which was written is never a guess.
+- **A listing** (`listEveryServer`) asks every server concurrently. The primary
+  is waited on as before and its failure fails the command; a registered
+  server gets `registeredServerTimeout`, and one that does not answer is a
+  note on stderr. A discobox two servers both list is one server registered
+  under two addresses, and is listed once. `ls` gains a SERVER column, and
+  each `-o json` object a `server` field, only when there is more than one
+  server.
+- **A discobox argument** goes through `selectSandbox`, which returns the App
+  aimed at the discobox's server; its callers carry on with that App
+  (`applySelected`, `pushSelected`, `runToolInSelected`). A
+  `discobox://<server>/<discobox>` address (`endpoint.ParseSandboxAddress`) —
+  or `discobox+http://<host>:<port>/<discobox>`, which is how a discobox on a
+  plain-http server is named, a bare host being https (ADR 0113 §1) —
+  names the server outright, and finding the discobox on one that is neither
+  the primary nor registered registers it under the name it offers
+  (`registerServer`) — only then, so a mistyped address leaves nothing
+  behind. A bare ID is looked for on the primary, then on every registered
+  server at once, so an ID copied from `ls` works whichever server listed it.
+  The picker lists every server; a registered server's rows say `on <name>`
+  and are keyed `<name>/<id>`, which is how the pick says where to go.
+- **The SSH config is every server's.** `discobox admin ssh-config --write`
+  syncs each server in turn (`writeEverySSHConfig`), and registering one syncs
+  it there and then, which is the same rewrite a create on that server does
+  (`writeProjectSSHConfig`, per server and per project). The files are per
+  project and the Include lines accumulate, so the servers' stanzas sit beside
+  each other rather than replacing one another; a registered server that
+  cannot be reached is a note, and the rest are still written. Printing
+  without `--write` stays the primary's, since that output is one block to
+  paste — `--server` picks another. Two servers holding a discobox of the same
+  *name* both offer that alias, and ssh takes the first `Include` that matches;
+  the ID alias is unambiguous either way.
+- **An address is taken everywhere a discobox is named; a name is not.**
+  `shell` resolves one through `selectSandbox` like every other command that
+  takes a discobox (ADR 0113 §6) — it has to, since `matchSandboxArg` finds
+  nothing in an address and the word would otherwise become the command a
+  picked discobox runs. `cp` takes one too: the `discobox://` prefix is what
+  makes the operand safe to recognize, and `splitCPAddress` cuts it where the
+  discobox segment ends — the authority runs to the first `/` and may carry a
+  port, the segment after it carries no `:`, `?` or `/`, so whichever of `:` or
+  `?` comes first ends the address. A `:` is the separator, and a trailing one
+  is the home directory exactly as `mybox:` is; a `?` is a query this cannot
+  split past, since `?addr=` holds `host:port` and the colon after it is as
+  likely the port's as the path's, so such an operand is refused by name with
+  `discobox servers add` as the way round it. One scp runs over one bridge, so
+  `resolveCPTarget` decides from the operands alone — before anything is
+  contacted, and so before an address registers its server — that they name one
+  server, refuses two, and then resolves each address there. **A name or a bare
+  `:PATH` in the same command resolves on that server too**, not on the
+  primary: it is the only server the copy can reach. What stays the primary's
+  is a *name* when no address is present, unique only within the directory that
+  issued it on one server (`matchSandboxArg`), and completion, since a
+  registered server that is down would hang a shell's tab.
+
 ## The Server Is a Separate Program
 
 The CLI does not contain the control plane. `discobox admin server` resolves a
@@ -895,7 +986,8 @@ positional argument shared with the command itself (`shell`, resolved by
 `selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
 
 - Candidates are exactly what `discobox ls` shows — `listProjectSandboxes` filtered
-  to this machine's origin keys for `-C` — so the command and the listing can
+  to this machine's origin keys for `-C`, on every server (see
+  [Many Servers](#many-servers-adr-0113)) — so the command and the listing can
   never disagree.
 - One candidate is used. Several with a terminal on stdin and stderr open the
   inline Bubble Tea picker; several without one is an error, since there is
@@ -2036,14 +2128,15 @@ the other machine says is the whole of what a person does with them.
 - **The client half** is this machine's key file, generated on first use —
   the same file and the same generation `discobox admin peer id` performs, so
   the two commands can never mint different identities for one machine.
-- **The server half** comes from `--server` when the address names a peer, and
-  from `GET /peer` otherwise (ADR 0098). The address first because it costs no
+- **The server half** comes from `--server` when the address names a peer —
+  a `discobox://` name whose `_discobox` record names one included (ADR 0113
+  §1) — and from `GET /peer` otherwise (ADR 0098). The address first because it costs no
   round trip and answers while the server is down; the row says which source it
   was, since an ID read out of an address was never confirmed by the server
   that answers to it.
-- **A half that is missing is still a row.** A server that does not listen on
-  `discobox://` has answered — that is the ordinary local-socket configuration
-  — and exits zero. A server that could not be *asked* has not, and that is a
+- **A half that is missing is still a row.** A server that answers with no
+  peer ID has answered — only one from before every server had one does
+  (ADR 0114) — and exits zero. A server that could not be *asked* has not, and that is a
   non-zero exit so a script does not proceed with one of the two IDs it wanted.
   Either way the client half is still printed: an unreachable server is often
   why somebody is asking.
@@ -2096,6 +2189,12 @@ top level is for the commands somebody uses a discobox with. The cheap half of
 the question that used to send people here, whether a server is reachable and
 which versions the two ends run, is `discobox version`. The retired word is an
 unknown command like any other: no alias, and no hint naming the new path.
+
+Its header says who the server is as well as how it was reached: a `peer` row
+with the server's peer ID and where it came from, read the way `discobox id`
+reads it. It is asked of the server only once the layers below have answered,
+so an unreachable server costs no second wait, and a server with no peer ID
+says so rather than leaving the row out.
 
 Three properties are deliberate:
 

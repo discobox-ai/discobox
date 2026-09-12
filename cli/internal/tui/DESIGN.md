@@ -497,6 +497,38 @@ Otherwise a standing refusal would be a permanent red status line with a
 rejected transfer behind it every five seconds.
 What went is one status line; nothing to send says nothing at all.
 
+## Many servers
+
+The window lists every server the CLI knows (ADR 0113 §4) and otherwise knows
+servers only by name. `List` returns a `Listing`: the rows, each with
+`Sandbox.Server` naming its server, and `Unreachable`, the registered servers
+that did not answer.
+
+**The list is one section per server** once there is more than one
+(`sandboxList.grouped`, from `Session.Servers`, the primary first). Rows are
+ordered by section and newest-first within one, and each section is introduced
+by the band the list's own title is drawn as (`renderTitle`, in the dim of the
+two): `server <name>` with that section's count, or `not answering` for a
+server that did not answer, whose section has no rows under it — rows that are
+missing say why rather than vanishing. A band rather than a line of text
+because a bare name above a list of discoboxes is one more name among them,
+and reads as a row whose glyph went missing.
+A header is a label and not a row: the cursor never lands on one, and the
+mouse walks past it onto the block (`drawn.rows`, marked from the walk that
+draws). Scrolling counts headers as the lines they are, which is why the window
+adjusts its own offset where it draws rather than in `clamp`: only the draw
+knows what a row costs. A server that stops answering is also reported once,
+when that changes (`reportUnreachable`) — the list is polled, and a complaint
+on every refresh is one you stop reading.
+
+Every `DataSource` method that takes a sandbox ID is routed by the CLI to the
+server the row was listed from (`apiDataSource.at`), so nothing here carries a
+server beside an ID. The run options gain a **Server** row — last, and only when
+`Session.Servers` has more than one — whose first choice is the primary, marked
+`(primary)`, so an untouched panel creates where it always did; anything else
+is `RunRequest.Server`, and `--server <name>` in the preview. The harnesses,
+secrets and credential screens are the primary's.
+
 ## Decisions
 
 **It opens as a prompt and opens out into a window** (`compact.go`). The first

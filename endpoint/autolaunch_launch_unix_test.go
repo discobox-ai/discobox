@@ -322,7 +322,7 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 		t.Fatal("EnsureRunning did not replace the older server")
 	}
 
-	baseURL, client, err := HTTPClient(endpointURL, nil)
+	baseURL, client, err := HTTPClient(mustParse(t, endpointURL), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
