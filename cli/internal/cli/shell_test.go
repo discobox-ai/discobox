@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
 func testSandboxWithID(id string) apimodel.Sandbox {
@@ -16,7 +19,7 @@ func testSandboxWithID(id string) apimodel.Sandbox {
 }
 
 func TestMatchSandboxArgFullGeneratedIDAlwaysMatches(t *testing.T) {
-	id, ok, err := matchSandboxArg("sbx_23x11jnw03w11nf2", nil)
+	id, ok, err := matchSandboxArg("sbx_23x11jnw03w11nf2", nil, configuredName)
 	if err != nil {
 		t.Fatalf("matchSandboxArg: %v", err)
 	}
@@ -27,7 +30,7 @@ func TestMatchSandboxArgFullGeneratedIDAlwaysMatches(t *testing.T) {
 
 func TestMatchSandboxArgShortIDResolvesUniqueMatch(t *testing.T) {
 	sandboxes := []apimodel.Sandbox{testSandboxWithID("sbx_h1ssjzhp60emtc2n")}
-	id, ok, err := matchSandboxArg("sbx_h1ssj", sandboxes)
+	id, ok, err := matchSandboxArg("sbx_h1ssj", sandboxes, configuredName)
 	if err != nil {
 		t.Fatalf("matchSandboxArg: %v", err)
 	}
@@ -38,7 +41,7 @@ func TestMatchSandboxArgShortIDResolvesUniqueMatch(t *testing.T) {
 
 func TestMatchSandboxArgNoMatchTreatedAsCommand(t *testing.T) {
 	sandboxes := []apimodel.Sandbox{testSandboxWithID("sbx_h1ssjzhp60emtc2n")}
-	id, ok, err := matchSandboxArg("ls", sandboxes)
+	id, ok, err := matchSandboxArg("ls", sandboxes, configuredName)
 	if err != nil {
 		t.Fatalf("matchSandboxArg: %v", err)
 	}
@@ -50,7 +53,7 @@ func TestMatchSandboxArgNoMatchTreatedAsCommand(t *testing.T) {
 func TestMatchSandboxArgNonShortIDShapeNeverMatches(t *testing.T) {
 	sandboxes := []apimodel.Sandbox{testSandboxWithID("sbx_h1ssjzhp60emtc2n")}
 	for _, arg := range []string{"git-status", "./script.sh", "Ls", "-la"} {
-		if id, ok, err := matchSandboxArg(arg, sandboxes); ok || err != nil || id != "" {
+		if id, ok, err := matchSandboxArg(arg, sandboxes, configuredName); ok || err != nil || id != "" {
 			t.Fatalf("matchSandboxArg(%q): id=%q ok=%v err=%v, want no match", arg, id, ok, err)
 		}
 	}
@@ -61,7 +64,7 @@ func TestMatchSandboxArgAmbiguousShortIDErrors(t *testing.T) {
 		testSandboxWithID("sbx_ab" + strings.Repeat("1", 14)),
 		testSandboxWithID("sbx_ab" + strings.Repeat("2", 14)),
 	}
-	id, ok, err := matchSandboxArg("ab", sandboxes)
+	id, ok, err := matchSandboxArg("ab", sandboxes, configuredName)
 	if err == nil {
 		t.Fatal("matchSandboxArg: error = nil, want an ambiguity error")
 	}
@@ -484,5 +487,123 @@ func TestShellSeparatorWithNoCommandRunsLoginShell(t *testing.T) {
 	}
 	if command, ok := createBody["command"].([]any); ok && len(command) != 0 {
 		t.Fatalf("create body command = %v, want none", createBody["command"])
+	}
+}
+
+// titledSandbox is a discobox whose agent has titled its terminal: the NAME
+// the listing prints is the title, and the configured name underneath it is the
+// generated one nobody sees.
+func titledSandbox(id, name, title string) apimodel.Sandbox {
+	sandbox := apimodel.Sandbox{ID: id, DisplayName: title}
+	sandbox.Config.Name = name
+	return sandbox
+}
+
+// The whole point of the two settings: a window title is free-form text, so
+// under configuredName it must not be taken as a discobox reference. `discobox
+// shell vim` runs vim, even beside a discobox whose terminal is titled "vim" —
+// while `discobox rm vim`, which has no command word to confuse it with,
+// resolves that discobox.
+func TestMatchSandboxArgTitleMatchesOnlyUnderListedName(t *testing.T) {
+	sandboxes := []apimodel.Sandbox{titledSandbox("sbx_h1ssjzhp60emtc2n", "brave-otter", "vim")}
+
+	id, ok, err := matchSandboxArg("vim", sandboxes, configuredName)
+	if err != nil || ok || id != "" {
+		t.Fatalf("matchSandboxArg(vim, configuredName): id=%q ok=%v err=%v, want no match so vim runs", id, ok, err)
+	}
+
+	id, ok, err = matchSandboxArg("vim", sandboxes, listedName)
+	if err != nil {
+		t.Fatalf("matchSandboxArg(vim, listedName): %v", err)
+	}
+	if !ok || id != "sbx_h1ssjzhp60emtc2n" {
+		t.Fatalf("matchSandboxArg(vim, listedName): id=%q ok=%v, want the titled discobox", id, ok)
+	}
+}
+
+// The configured name keeps resolving under listedName, so a name learned
+// before the discobox titled itself does not stop working.
+func TestMatchSandboxArgConfiguredNameMatchesUnderBothSettings(t *testing.T) {
+	sandboxes := []apimodel.Sandbox{titledSandbox("sbx_h1ssjzhp60emtc2n", "brave-otter", "vim")}
+	for _, match := range []nameMatch{configuredName, listedName} {
+		id, ok, err := matchSandboxArg("brave-otter", sandboxes, match)
+		if err != nil {
+			t.Fatalf("matchSandboxArg(brave-otter, %v): %v", match, err)
+		}
+		if !ok || id != "sbx_h1ssjzhp60emtc2n" {
+			t.Fatalf("matchSandboxArg(brave-otter, %v): id=%q ok=%v, want the discobox", match, id, ok)
+		}
+	}
+}
+
+// A title longer than the NAME column is printed cut short, and the cut form is
+// the only spelling the user can copy. It resolves, and so does the full title.
+func TestMatchSandboxArgMatchesTheNameAsListed(t *testing.T) {
+	const title = "Fixing the flaky reconciler integration test"
+	listed := truncateTableValue(title, sandboxNameColumnWidth)
+	if listed == title {
+		t.Fatalf("fixture title is not long enough to be truncated: %q", listed)
+	}
+	sandboxes := []apimodel.Sandbox{titledSandbox("sbx_h1ssjzhp60emtc2n", "brave-otter", title)}
+
+	for _, arg := range []string{title, listed} {
+		id, ok, err := matchSandboxArg(arg, sandboxes, listedName)
+		if err != nil {
+			t.Fatalf("matchSandboxArg(%q): %v", arg, err)
+		}
+		if !ok || id != "sbx_h1ssjzhp60emtc2n" {
+			t.Fatalf("matchSandboxArg(%q): id=%q ok=%v, want the titled discobox", arg, id, ok)
+		}
+	}
+}
+
+// An empty argument names nothing, even beside a discobox carrying no name of
+// its own.
+func TestMatchSandboxArgEmptyNamesNothing(t *testing.T) {
+	sandboxes := []apimodel.Sandbox{titledSandbox("sbx_h1ssjzhp60emtc2n", "", "")}
+	for _, match := range []nameMatch{configuredName, listedName} {
+		if id, ok, err := matchSandboxArg("", sandboxes, match); ok || err != nil || id != "" {
+			t.Fatalf("matchSandboxArg(\"\", %v): id=%q ok=%v err=%v, want no match", match, id, ok, err)
+		}
+	}
+}
+
+// `discobox shell` passes configuredName, and this is the test that says so:
+// the settings above are only worth having if the command that must not take a
+// window title as its argument actually asks for that.
+//
+// A discobox titled "vim" sits in the directory, and `discobox shell vim` has
+// to leave "vim" as the command it runs. Under listedName the title would be
+// eaten as the discobox reference and the command would come back empty, which
+// is `shell` with no command -- the login shell, and no vim.
+func TestResolveShellTargetLeavesATitleToTheCommand(t *testing.T) {
+	const sandboxID = "sbx_h1ssjzhp60emtc2n"
+	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+	t.Chdir(t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"sandboxes":[` + namedSandboxJSON(sandboxID, "brave-otter", "vim", "present") + `]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	app := &App{serverURL: server.URL, projectID: "project-1", source: "."}
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	_, gotID, _, cmdArgs, err := app.resolveShellTarget(cmd, []string{"vim"})
+	if err != nil {
+		t.Fatalf("resolveShellTarget: %v", err)
+	}
+	if got, want := strings.Join(cmdArgs, " "), "vim"; got != want {
+		t.Fatalf("command = %q, want %q -- the window title was taken as the discobox", got, want)
+	}
+	// The discobox still comes from the directory's one candidate, as it would
+	// with no argument at all.
+	if gotID != sandboxID {
+		t.Fatalf("discobox = %q, want %q", gotID, sandboxID)
 	}
 }

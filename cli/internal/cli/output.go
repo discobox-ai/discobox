@@ -44,7 +44,7 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tERROR\tUPDATED")
 	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		sandbox.ID,
-		truncateTableValue(sandbox.DisplayName, 40),
+		truncateTableValue(sandbox.DisplayName, sandboxNameColumnWidth),
 		sandboxDisplayState(*sandbox),
 		sandboxHarness(*sandbox),
 		sandboxGitColumn(*sandbox),
@@ -79,7 +79,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		git := sandboxGitStatus(sandbox)
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			sandbox.ID,
-			truncateTableValue(sandbox.DisplayName, 40),
+			truncateTableValue(sandbox.DisplayName, sandboxNameColumnWidth),
 			sandboxDisplayState(sandbox),
 			sandboxHarness(sandbox),
 			sandboxGitColumn(sandbox),
@@ -952,6 +952,19 @@ func compactTableValue(value string) string {
 	value = strings.ReplaceAll(strings.TrimSpace(value), "\n", " ")
 	return strings.Join(strings.Fields(value), " ")
 }
+
+// sandboxNameColumnWidth is how much of a discobox's name every rendering that
+// names a discobox to be read prints: the listing, the single-discobox view,
+// and the per-discobox header the resources view writes above a process table.
+// It is shared with the matching in sandboxListedAs, so a name typed back off
+// any of them resolves at exactly the width it was shown at, and widening the
+// column cannot quietly stop the longer names it now prints from resolving.
+//
+// The one rendering left out is the resources table itself (`resources.go`),
+// which prints the same field narrower because its other columns are numbers. A
+// name cut at that width is not one this resolves — that table leads with the
+// discobox ID, which is what it expects to be named from.
+const sandboxNameColumnWidth = 40
 
 func truncateTableValue(value string, maxTableValueLength int) string {
 	value = compactTableValue(value)

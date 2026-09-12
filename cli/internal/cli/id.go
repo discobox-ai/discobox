@@ -105,6 +105,48 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 	return resolveShortID(id, "discobox ID", ids)
 }
 
+// resolveSandboxReference turns a reference somebody typed into a sandbox ID,
+// where the reference is one they read off `discobox ls` rather than an
+// explicit --discobox-id: a name, a full ID or a short ID from the candidate
+// listing in sandboxes (matchSandboxArg), and failing that a short ID resolved
+// against the whole project. match is which names the caller's argument may be
+// written as; a name that more than one candidate answers to is refused rather
+// than picked between.
+//
+// The asymmetry is deliberate. An ID that names none of sandboxes is still
+// tried project-wide, because a discobox started in another directory or on
+// another machine is still a discobox and an ID says outright which one. A name
+// is not: names are unique within a project only as long as one directory
+// issues them, so two directories can each hold a "docs", and resolving one
+// project-wide would either pick the discobox the user did not mean or fail as
+// ambiguous. A name that matches nothing in sandboxes is therefore an error.
+//
+// That error names `discobox ls`, which is the listing for a caller that passed
+// all of it. A caller that filtered sandboxes first — cp passes the runtime
+// candidates — can have `ls` show a discobox this refused, and says so no
+// better than it did before this was shared.
+func (a *App) resolveSandboxReference(ctx context.Context, client *apiclientgen.Client, projectID, reference string, sandboxes []apimodel.Sandbox, match nameMatch) (string, error) {
+	sandboxID, ok, err := matchSandboxArg(reference, sandboxes, match)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return sandboxID, nil
+	}
+	if !isResolvableShortID(reference) {
+		return "", fmt.Errorf("no discobox named %q was started from this directory; run `discobox ls` to see them, `discobox ls --all` to see the ones started elsewhere, or write the discobox ID", reference)
+	}
+	sandboxID, err = a.resolveSandboxID(ctx, client, projectID, reference)
+	if err != nil {
+		// The reference is shaped like a short ID, so it was tried as one —
+		// but a name is what someone writing `mybox` most likely meant, and
+		// matchSandboxArg already ruled that out. Reporting only the ID
+		// reading sends them looking for an ID problem they do not have.
+		return "", fmt.Errorf("no discobox for %q: it names none started from this directory, and %w", reference, err)
+	}
+	return sandboxID, nil
+}
+
 func (a *App) resolveHarnessConfigID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "harness config ID")
 	if err != nil {

@@ -222,13 +222,16 @@ func (a *App) newSandboxDeleteCommand() *cobra.Command {
 		Long: `Archive discoboxes.
 
 The container and its runtime resources are removed; the discobox's workspace,
-config, and secrets are kept, so "discobox unarchive" brings it back with its
-work intact. Archived discoboxes are purged automatically once the retention
-runs out: the project's own if it set one, otherwise the server's default --
-24h, though a development server commonly sets a far shorter one. See
-"project update --archive-retention".
+config, and secrets are kept, so "discobox admin box unarchive" brings it back
+with its work intact. Archived discoboxes are purged automatically once the
+retention runs out: the project's own if it set one, otherwise the server's
+default -- 24h, though a development server commonly sets a far shorter one.
+See "discobox admin project update --archive-retention".
 
-To destroy a discobox and its data now, use "discobox purge".`,
+This takes discobox IDs. "discobox rm" is the same archive named the way you
+read it off "discobox ls", by name as well as by ID.
+
+To destroy a discobox and its data now, use "discobox admin box purge".`,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -306,7 +309,7 @@ the pool host along with the container. Unlike the other lifecycle commands it
 waits for the pool agent to confirm the removal, so when it returns the data is
 actually gone.
 
-To keep the data, use "discobox delete", which archives instead.`,
+To keep the data, use "discobox rm", which archives instead.`,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {

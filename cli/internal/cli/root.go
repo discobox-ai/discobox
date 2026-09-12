@@ -227,6 +227,7 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 
 	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newListCommand())
+	cmd.AddCommand(app.newRemoveCommand())
 	cmd.AddCommand(app.newShellCommand())
 	cmd.AddCommand(app.newCPCommand())
 	cmd.AddCommand(app.newAttachCommand())

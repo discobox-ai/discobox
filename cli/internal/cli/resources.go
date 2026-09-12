@@ -286,7 +286,7 @@ func (a *App) writePoolResources(cmd *cobra.Command, pool *apimodel.Pool, sandbo
 			if !ok || len(consumption.Processes) == 0 {
 				continue
 			}
-			fmt.Fprintf(out, "\n%s  %s\n", row.sandbox.ID, truncateTableValue(row.sandbox.DisplayName, 40))
+			fmt.Fprintf(out, "\n%s  %s\n", row.sandbox.ID, truncateTableValue(row.sandbox.DisplayName, sandboxNameColumnWidth))
 			if err := writeProcessTable(out, consumption.Processes); err != nil {
 				return err
 			}

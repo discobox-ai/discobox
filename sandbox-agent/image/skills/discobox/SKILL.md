@@ -339,6 +339,7 @@ artifact:
 discobox            open the launcher
 discobox run        launch a prompt in a new box
 discobox ls         boxes started from this directory
+discobox rm         archive boxes (alias: delete)
 discobox attach     open a box's window
 discobox shell      a command, or a login shell, in a box
 discobox apply      cherry-pick a box's commits onto the working tree
@@ -357,7 +358,9 @@ A prompt at the bare command is `-p` and only `-p` — `discobox -p '...'`. Afte
 `run` it can be trailing words. Bare `discobox` with loose words is an unknown
 command, not a prompt.
 
-`discobox admin box delete` removes a box.
+`discobox rm BOX...` archives boxes, by the NAME `ls` lists or by ID, and
+`delete` is an alias for it. A NAME two boxes share is refused rather than
+guessed at. `discobox admin box purge` destroys one and its data.
 
 Do not invent flags — you cannot run these commands to check them. Name the
 command and say to check `--help`.

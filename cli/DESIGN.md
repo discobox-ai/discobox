@@ -504,6 +504,45 @@ is no unset. `create --from` copies an existing project's configuration
 ([ADR 0023](../docs/adr/0023-projects-are-created-by-copy-and-deleted-only-when-empty.md)),
 with `--copy` selecting what comes across and `--copy none` taking nothing.
 
+`discobox rm DISCOBOX...` (`internal/cli/rm.go`) is the everyday archive, with
+`delete` as an alias, and `admin box delete` stays the raw form. Both post the
+same DELETE — which archives rather than destroys
+([ADR 0022](../docs/adr/0022-sandbox-deletion-is-archive-then-confirmed-purge.md) §2)
+— and both report each argument independently through `runActionMany`, so one
+failure neither stops nor hides the rest. What the root command adds is the
+reference rule (`resolveSandboxReference`): an argument is a name from the
+listing `discobox ls` shows for the current project directory, or an ID from
+anywhere in the project. Its candidates are that whole listing, archived
+discoboxes included, rather than the runtime candidates a picker offers —
+archiving needs no runtime, and a name the listing still shows must not come
+back as no such discobox. Purging has no root spelling: destroying data now is
+not an everyday verb, and stays `admin box purge`.
+
+Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
+command that made the distinction necessary. The NAME column is
+`SandboxDisplayName`: the primary terminal's window title once something has set
+one, and the configured name only until then — and the configured name is
+generated (`randomname.Generate`; `run` has no `--name`), so it is a string the
+listing has usually stopped printing.
+
+- `configuredName` matches `Config.Name` alone. It is for an argument that
+  shares its place with a command word — `shell`, and `tools ssh` through it —
+  where a generated name cannot collide with a command by accident but a
+  free-form window title ("vim", "make") plainly could. `cp` keeps it too:
+  widening what stands before its colon is a change to `cp`, and its help says
+  which name it means rather than pointing at the listing.
+- `listedName` also matches `DisplayName`, for `rm`, where every argument is a
+  discobox and the name the user can see is the only one they can type. It
+  matches the title as the table prints it as well as raw (`sandboxListedAs`):
+  `writeSandboxes` collapses whitespace and cuts past `sandboxNameColumnWidth`,
+  and the cut form is the spelling on the user's screen.
+
+A window title is not unique — two discoboxes running one agent commonly share
+it — so `listedName` leans on `sandboxesNamed` returning *every* match:
+ambiguity is refused, naming the IDs to choose between, and only that argument
+fails. Archiving is reversible, but archiving the wrong discobox still takes a
+running agent out from under somebody.
+
 `discobox shell` is the exception: the root command is the everyday one-shot "run
 this in my sandbox" verb, while `admin exec create` stays the raw, fully
 configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive

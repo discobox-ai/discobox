@@ -29,9 +29,12 @@ func (a *App) newCPCommand() *cobra.Command {
 		Long: `Copy files between this machine and a discobox, with scp.
 
 A path is inside a discobox when it is written DISCOBOX:PATH — the discobox's
-name, its ID, or a short prefix of either, exactly as "discobox ls" shows them.
-A bare :PATH means the discobox this directory started, or a prompt to pick one
-when there is more than one. Everything without a colon is a local path.
+ID, a short prefix of it, or the name the discobox was created with. That name
+is the NAME "discobox ls" prints only until the discobox's agent titles its
+terminal and the title takes the column, so the ID is what always resolves; the
+title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
+discobox this directory started, or a prompt to pick one when there is more than
+one. Everything without a colon is a local path.
 
 Both ends may name a discobox, and they need not be the same one.
 
@@ -206,22 +209,18 @@ func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client,
 
 // resolveCPSandbox turns what stood before the colon into a sandbox ID.
 //
-// It is `shell`'s rule rather than `--discobox-id`'s: the reference is
-// something the user typed alongside a path, so a name has to work there the
-// way it works in `discobox shell mybox ls`. `selectSandbox` cannot serve —
-// with a non-empty argument it resolves IDs only, and hands a name straight
-// back, which here would become an SSH username no sandbox answers to.
+// It is `shell`'s rule rather than `--discobox-id`'s, so it resolves through
+// resolveSandboxReference: the reference is something the user typed alongside
+// a path, so a name has to work there the way it works in
+// `discobox shell mybox ls`. `selectSandbox` cannot serve — with a non-empty
+// argument it resolves IDs only, and hands a name straight back, which here
+// would become an SSH username no sandbox answers to.
 //
-// An ID that names no discobox of this directory is still tried against the
-// whole project: a discobox started somewhere else is still a discobox, and an
-// ID says outright which one. A name is not, and stays matched per directory
-// even though the picker's "a" *shows* names from the whole project: a
-// name is unique only within the directory that issued it, so two directories
-// can each hold a "docs", and resolving one project-wide would either pick a
-// discobox the user did not mean or fail as ambiguous. Picking such a row is
-// still fine — the picker hands back an ID, not the name — so what a widened
-// pick costs is only that the name cannot be retyped later, which is what the
-// error below says when someone tries.
+// A name stays matched per directory even though the picker's "a" *shows*
+// names from the whole project. Picking such a row is still fine — the picker
+// hands back an ID, not the name — so what a widened pick costs is only that
+// the name cannot be retyped later, which is what resolveSandboxReference's
+// error says when someone tries.
 func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID, reference string) (string, error) {
 	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID, false)
 	if err != nil {
@@ -235,25 +234,9 @@ func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 			expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),
 		})
 	}
-	sandboxID, ok, err := matchSandboxArg(reference, sandboxes)
-	if err != nil {
-		return "", err
-	}
-	if ok {
-		return sandboxID, nil
-	}
-	if !isResolvableShortID(reference) {
-		return "", fmt.Errorf("no discobox named %q was started from this directory; run `discobox ls` to see them, `discobox ls --all` to see the ones started elsewhere, or write the discobox ID", reference)
-	}
-	sandboxID, err = a.resolveSandboxID(cmd.Context(), client, projectID, reference)
-	if err != nil {
-		// The reference is shaped like a short ID, so it was tried as one —
-		// but a name is what someone writing `mybox:/tmp/x` most likely meant,
-		// and matchSandboxArg already ruled that out. Reporting only the ID
-		// reading sends them looking for an ID problem they do not have.
-		return "", fmt.Errorf("no discobox for %q: it names none started from this directory, and %w", reference, err)
-	}
-	return sandboxID, nil
+	// configuredName: what cp accepts before a colon is `shell`'s rule, and
+	// widening it to the window title is a change to cp, not to this command.
+	return a.resolveSandboxReference(cmd.Context(), client, projectID, reference, sandboxes, configuredName)
 }
 
 // splitCPPath decides whether an operand names a discobox, and splits it if it

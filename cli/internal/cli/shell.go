@@ -150,7 +150,9 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 		return "", "", nil, nil, err
 	}
 	if namesSandbox && len(args) > 0 {
-		id, ok, matchErr := matchSandboxArg(args[0], sandboxes)
+		// configuredName: args[0] here may be the command instead, and a
+		// window title is free-form enough to be one ("vim", "make").
+		id, ok, matchErr := matchSandboxArg(args[0], sandboxes, configuredName)
 		if matchErr != nil {
 			return "", "", nil, nil, matchErr
 		}
@@ -167,27 +169,52 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 	return projectID, sandboxID, client, args, err
 }
 
+// nameMatch says which of a discobox's names an argument is allowed to be.
+//
+// configuredName is the name the discobox was created with and nothing else.
+// It is what an argument sharing its place with a command word has to match:
+// `discobox shell <arg> <cmd...>` guesses whether arg is a discobox at all, and
+// a generated name ("brave-otter") cannot collide with a command by accident.
+//
+// listedName also matches the NAME `discobox ls` prints, which is that
+// configured name only until something titles the discobox's primary terminal
+// and the window title takes the column (SandboxDisplayName, server-side). It
+// is therefore the only name the user of a running discobox ever sees, and it
+// is free-form text a harness chose: two discoboxes running the same agent
+// commonly carry the same one. Arguments that can only be discoboxes take it —
+// there is no command word to mistake one for — and pay for it by having to be
+// unique among the candidates, which sandboxesNamed reports on.
+type nameMatch int
+
+const (
+	configuredName nameMatch = iota
+	listedName
+)
+
 // matchSandboxArg reports whether arg names one of sandboxes, the same
 // candidates "discobox ls" shows for the current project directory: a full
-// generated ID, an exact sandbox name, or a short ID. A full
-// generated ID (id.IsGenerated) is trusted outright: its shape — a resource
-// prefix plus 16 random characters — is unique enough that no shell command
-// word could collide with it by accident. A short ID is matched against these
-// candidates exactly like a bare DISCOBOX_ID argument would be elsewhere;
+// generated ID, an exact sandbox name in the sense match asks for, or a short
+// ID. A full generated ID (id.IsGenerated) is trusted outright: its shape — a
+// resource prefix plus 16 random characters — is unique enough that no shell
+// command word could collide with it by accident. A short ID is matched against
+// these candidates exactly like a bare DISCOBOX_ID argument would be elsewhere;
 // matching none of them is not an error; it just means arg is not a sandbox
 // reference, so the caller treats it as the start of a command instead.
 // Matching several is reported as ambiguous, the same as any other short-ID
 // collision in the CLI, since arg's shape said it was meant as an ID.
-func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox) (id string, ok bool, err error) {
+func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox, match nameMatch) (id string, ok bool, err error) {
 	if idpkg.IsGenerated(arg) {
 		return arg, true, nil
 	}
 	// An exact name, before any ID matching: a name is what the listing shows
 	// and what people type, and matching it in full leaves no room for the
-	// guessing a prefix invites. Names are unique within a project
-	// (idx_sandbox_project_name), so a duplicate here would mean the candidate
-	// list spans projects; it is reported rather than picked between.
-	switch named := sandboxesNamed(arg, sandboxes); len(named) {
+	// guessing a prefix invites. Configured names are unique within a project
+	// (idx_sandbox_project_name), so a duplicate under configuredName would
+	// mean the candidate list spans projects; under listedName a shared window
+	// title is an everyday duplicate. Either way it is reported rather than
+	// picked between — deleting the discobox the user did not mean is not
+	// something a guess may cost.
+	switch named := sandboxesNamed(arg, sandboxes, match); len(named) {
 	case 0:
 	case 1:
 		return named[0], true, nil
@@ -211,16 +238,42 @@ func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox) (id string, ok bo
 	}
 }
 
-// sandboxesNamed returns the IDs of the sandboxes whose name is exactly arg.
-// The match is the whole name and nothing less: a partial name would compete
-// with short-ID matching for the same argument, and "did you mean a name or an
-// ID" is not a question a command word should have to answer.
-func sandboxesNamed(arg string, sandboxes []apimodel.Sandbox) []string {
+// sandboxesNamed returns the IDs of the sandboxes arg names, under match. The
+// match is the whole name and nothing less: a partial name would compete with
+// short-ID matching for the same argument, and "did you mean a name or an ID"
+// is not a question a command word should have to answer.
+//
+// Every ID that answers to arg comes back, not the first: a caller that cannot
+// tell which discobox was meant must say so rather than act on one of them.
+//
+// An empty arg names nothing. It would otherwise answer to any discobox whose
+// own name is empty, which is a match on the absence of a name rather than on a
+// name.
+func sandboxesNamed(arg string, sandboxes []apimodel.Sandbox, match nameMatch) []string {
+	if arg == "" {
+		return nil
+	}
 	var ids []string
 	for _, sandbox := range sandboxes {
-		if sandbox.Config.Name == arg {
+		if sandbox.Config.Name == arg || (match == listedName && sandboxListedAs(sandbox, arg)) {
 			ids = append(ids, sandbox.ID)
 		}
 	}
 	return ids
+}
+
+// sandboxListedAs reports whether arg is the NAME `discobox ls` prints for
+// sandbox.
+//
+// Two spellings count, because the table does not print the display name
+// verbatim: truncateTableValue collapses runs of whitespace and cuts anything
+// past the column width down to a prefix and an ellipsis. An agent's title
+// commonly runs past it, so matching the raw name alone would mean the one
+// spelling on the user's screen — the one they can select and paste — is the
+// one that does not resolve, which is the failure listedName exists to end.
+func sandboxListedAs(sandbox apimodel.Sandbox, arg string) bool {
+	if sandbox.DisplayName == arg {
+		return true
+	}
+	return truncateTableValue(sandbox.DisplayName, sandboxNameColumnWidth) == arg
 }
