@@ -229,9 +229,8 @@ func (s *Service) SetHookSocketPath(path string) {
 
 // Delegations to the underlying exec primitive.
 
-func (s *Service) List() []execs.Exec                  { return s.execs.List() }
-func (s *Service) Get(id string) (execs.Exec, bool)    { return s.execs.Get(id) }
-func (s *Service) Reconcile(ctx context.Context) error { return s.execs.Reconcile(ctx) }
+func (s *Service) List() []execs.Exec               { return s.execs.List() }
+func (s *Service) Get(id string) (execs.Exec, bool) { return s.execs.Get(id) }
 func (s *Service) Start(ctx context.Context, id string) (execs.Exec, error) {
 	return s.execs.Start(ctx, id)
 }

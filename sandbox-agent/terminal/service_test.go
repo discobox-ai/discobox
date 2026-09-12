@@ -73,10 +73,26 @@ func (f *fakeUnits) Start(_ context.Context, req execs.StartRequest) (execs.Star
 	return execs.StartResult{Unit: req.Unit}, nil
 }
 func (f *fakeUnits) Stop(context.Context, string) error { return nil }
-func (f *fakeUnits) Status(context.Context, string) (execs.UnitStatus, error) {
-	return execs.UnitStatus{}, context.Canceled
+
+// Status reports an absent unit the way systemd does: no error, unloaded. An
+// error here would mean "could not ask", which no longer demotes an exec to
+// lost, so spelling absence as an error would make this fake answer something
+// production never answers.
+func (f *fakeUnits) Status(_ context.Context, unit string) (execs.UnitStatus, error) {
+	return execs.UnitStatus{Unit: unit, Loaded: false, Status: execs.StatusExited}, nil
 }
 func (f *fakeUnits) List(context.Context) ([]execs.UnitStatus, error) { return nil, nil }
+
+// Watch reports no unit changes: these tests drive the manager directly rather
+// than through the watcher.
+func (f *fakeUnits) Watch(ctx context.Context) (<-chan string, error) {
+	ch := make(chan string)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}
 
 type noopInstaller struct {
 	calls []config.Harness

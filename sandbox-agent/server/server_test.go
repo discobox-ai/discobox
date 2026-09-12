@@ -571,12 +571,27 @@ func (r *sandboxAgentFakeRunner) Stop(_ context.Context, unit string) error {
 	return nil
 }
 
-func (r *sandboxAgentFakeRunner) Status(context.Context, string) (execs.UnitStatus, error) {
-	return execs.UnitStatus{}, os.ErrNotExist
+// Status reports an absent unit the way systemd does: no error, unloaded. An
+// error here would mean "could not ask", which no longer demotes an exec to
+// lost, so spelling absence as an error would make this fake answer something
+// production never answers.
+func (r *sandboxAgentFakeRunner) Status(_ context.Context, unit string) (execs.UnitStatus, error) {
+	return execs.UnitStatus{Unit: unit, Loaded: false, Status: execs.StatusExited}, nil
 }
 
 func (r *sandboxAgentFakeRunner) List(context.Context) ([]execs.UnitStatus, error) {
 	return nil, nil
+}
+
+// Watch reports no unit changes: these tests drive the manager directly rather
+// than through the watcher.
+func (r *sandboxAgentFakeRunner) Watch(ctx context.Context) (<-chan string, error) {
+	ch := make(chan string)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
 }
 
 type sandboxAgentNoopAudit struct{}

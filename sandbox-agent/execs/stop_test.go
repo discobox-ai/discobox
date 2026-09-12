@@ -52,14 +52,14 @@ func TestStopEndsTheRunAndKeepsTheRecord(t *testing.T) {
 	}
 }
 
-// A stopped exec is not lost. The reconcile loop finds the unit gone and calls
-// a live exec lost — true of a unit that vanished underneath one, and wrong for
-// one that was asked to stop.
-func TestStopSurvivesReconcile(t *testing.T) {
+// A stopped exec is not lost. A sweep finds the unit gone and calls a live exec
+// lost — true of a unit that vanished underneath one, and wrong for one that
+// was asked to stop.
+func TestStopSurvivesSweep(t *testing.T) {
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
 		RuntimeDir:  t.TempDir(),
-		Units:       &unloadedUnitManager{},
+		Units:       &fakeUnitManager{},
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -71,13 +71,11 @@ func TestStopSurvivesReconcile(t *testing.T) {
 	if _, err := manager.Stop(context.Background(), created.ID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	if err := manager.Reconcile(context.Background()); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
+	manager.Sweep(context.Background())
 
 	current, ok := manager.Get(created.ID)
 	if !ok {
-		t.Fatal("exec not found after reconcile")
+		t.Fatal("exec not found after the sweep")
 	}
 	if current.Status != StatusExited || !current.Stopped {
 		t.Fatalf("status = %q stopped = %t, want exited and stopped", current.Status, current.Stopped)

@@ -332,6 +332,9 @@ func TestManagerRelativeWorkdirCanCleanOutsideWorkingRoot(t *testing.T) {
 
 type fakeUnitManager struct {
 	starts []StartRequest
+	// changes, when set, is what Watch hands out, so a test can deliver a unit
+	// change the way systemd would.
+	changes chan string
 }
 
 func (m *fakeUnitManager) Start(_ context.Context, req StartRequest) (StartResult, error) {
@@ -515,19 +518,14 @@ func TestManagerAttachEndedExecWithoutShim(t *testing.T) {
 	}
 }
 
-func (m *fakeUnitManager) Status(context.Context, string) (UnitStatus, error) {
-	return UnitStatus{}, errors.New("not found")
-}
-
-// unloadedUnitManager reports what systemd actually reports for a unit it has
-// never heard of: no error, an unloaded and inactive unit. A transient exec unit
-// lost to a sandbox reboot reads exactly like this.
-type unloadedUnitManager struct {
-	fakeUnitManager
-}
-
-func (m *unloadedUnitManager) Status(_ context.Context, unit string) (UnitStatus, error) {
-	return UnitStatus{Unit: unit, Loaded: false, Status: StatusExited}, nil
+// Status reports what systemd actually reports for a unit it has never heard
+// of: no error, an unloaded and inactive unit. A transient exec unit lost to a
+// sandbox reboot reads exactly like this, and so does a unit that was collected
+// as it died. A *failure to ask* is a different thing entirely — it leaves an
+// exec's status alone rather than demoting it — so a fake must not spell an
+// absent unit as an error.
+func (m *fakeUnitManager) Status(_ context.Context, unit string) (UnitStatus, error) {
+	return UnitStatus{Unit: unitBaseName(unit), Loaded: false, Status: StatusExited}, nil
 }
 
 // A never-started exec whose unit vanished (the sandbox rebooted before its
@@ -540,7 +538,7 @@ func TestManagerReconcilesNeverStartedExecWithVanishedUnit(t *testing.T) {
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
 		RuntimeDir:  t.TempDir(),
-		Units:       &unloadedUnitManager{},
+		Units:       &fakeUnitManager{},
 		Audit:       audit,
 	})
 	if err != nil {
@@ -588,7 +586,7 @@ func TestManagerKeepsUnlaunchedExecStartingWhileRuntimePresent(t *testing.T) {
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
 		RuntimeDir:  t.TempDir(),
-		Units:       &unloadedUnitManager{},
+		Units:       &fakeUnitManager{},
 		Audit:       newRecordingAudit(),
 	})
 	if err != nil {
@@ -606,6 +604,18 @@ func TestManagerKeepsUnlaunchedExecStartingWhileRuntimePresent(t *testing.T) {
 
 func (m *fakeUnitManager) List(context.Context) ([]UnitStatus, error) {
 	return nil, nil
+}
+
+func (m *fakeUnitManager) Watch(ctx context.Context) (<-chan string, error) {
+	if m.changes != nil {
+		return m.changes, nil
+	}
+	ch := make(chan string)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
 }
 
 // The sandbox manifest is the sole authority for group membership; a request

@@ -95,6 +95,17 @@ func (f *fakeUnits) Status(_ context.Context, unit string) (execs.UnitStatus, er
 
 func (f *fakeUnits) List(context.Context) ([]execs.UnitStatus, error) { return nil, nil }
 
+// Watch reports no unit changes: these tests drive the manager directly rather
+// than through the watcher.
+func (f *fakeUnits) Watch(ctx context.Context) (<-chan string, error) {
+	ch := make(chan string)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}
+
 func (f *fakeUnits) closeAll() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

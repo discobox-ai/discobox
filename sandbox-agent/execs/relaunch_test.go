@@ -9,7 +9,7 @@ import (
 // stopRecordingUnitManager records stops so a test can assert the previous
 // run was fenced before the new generation started.
 type stopRecordingUnitManager struct {
-	unloadedUnitManager
+	fakeUnitManager
 	stops []string
 }
 

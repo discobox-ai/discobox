@@ -424,7 +424,10 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if cfg.HarnessMode != "config" && built.services != nil {
 		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
 	}
-	go execReconcileLoop(ctx, logger, execManager)
+	// Exec state converges on notifications rather than a poll (ADR 0115): the
+	// shim's own runtime write for an ordinary exit, and systemd's unit signals
+	// for an end it could not write.
+	go execs.NewWatcher(execs.WatcherConfig{Manager: execManager, Logger: logger}).Run(ctx)
 	// A harness that reads its credential from a file can clear that file on an
 	// upstream 401 it did nothing to cause, and cannot put it back: the refresh
 	// token it holds is a placeholder. This restores the sentinel so the next
@@ -521,21 +524,6 @@ func startDeclaredServices(ctx context.Context, logger *slog.Logger, await func(
 	case err == nil, errors.Is(err, context.Canceled):
 	default:
 		logger.Error("start sandbox services", "error", err)
-	}
-}
-
-func execReconcileLoop(ctx context.Context, logger *slog.Logger, manager *execs.Manager) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := manager.Reconcile(ctx); err != nil {
-				logger.Debug("sandbox agent exec reconcile failed", "error", err)
-			}
-		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package execs
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -131,6 +132,16 @@ type UnitManager interface {
 	Stop(context.Context, string) error
 	Status(context.Context, string) (UnitStatus, error)
 	List(context.Context) ([]UnitStatus, error)
+	// Watch delivers the name of every exec unit whose state changed, until
+	// ctx ends or the subscription does, when the channel closes. An empty
+	// name means changes were lost and the reader must sweep instead.
+	//
+	// It is required rather than optional: exec state converges on these
+	// notifications (ADR 0115), and a unit manager that cannot report a change
+	// would leave every exec that ends without a watcher pinned to its last
+	// observed status. An implementation with nothing to report returns a
+	// channel it never sends on.
+	Watch(context.Context) (<-chan string, error)
 }
 
 type StartRequest struct {
@@ -255,7 +266,7 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		runtimeDir = "/run/discobox/execs"
 	}
 	if units == nil {
-		units = SystemdRunner{}
+		units = NewSystemdRunner()
 	}
 	runtimeDir = filepath.Clean(runtimeDir)
 	return &Manager{
@@ -469,23 +480,11 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 func (m *Manager) List() []Exec {
 	ctx := context.Background()
 	records := m.loadRecords(ctx)
-	execs := m.runtimeExecs(ctx)
+	execs := m.runtimeExecs()
 	seen := make(map[string]bool, len(execs))
-	if units, err := m.units.List(ctx); err == nil {
-		byUnit := map[string]UnitStatus{}
-		for _, unit := range units {
-			byUnit[unit.Unit] = unit
-		}
-		for i := range execs {
-			if unit, ok := byUnit[execs[i].Unit]; ok {
-				execs[i] = applyUnitStatus(execs[i], unit)
-			}
-			execs[i] = m.refreshExec(ctx, execs[i], true)
-		}
-	} else {
-		for i := range execs {
-			execs[i] = m.refreshExec(ctx, execs[i], true)
-		}
+	byUnit := m.unitsByName(ctx)
+	for i := range execs {
+		execs[i] = m.refreshExecWithUnit(ctx, execs[i], true, lookupUnit(byUnit, execs[i].Unit))
 	}
 	for i := range execs {
 		seen[execs[i].ID] = true
@@ -497,7 +496,7 @@ func (m *Manager) List() []Exec {
 	// from their durable records, so history is not lost.
 	for id, record := range records {
 		if !seen[id] {
-			execs = append(execs, m.refreshExec(ctx, m.withRuntimePaths(record), false))
+			execs = append(execs, m.refreshExecWithUnit(ctx, m.withRuntimePaths(record), false, lookupUnit(byUnit, record.Unit)))
 		}
 	}
 	sort.Slice(execs, func(i, j int) bool {
@@ -506,9 +505,116 @@ func (m *Manager) List() []Exec {
 	return execs
 }
 
-func (m *Manager) Reconcile(ctx context.Context) error {
-	for _, exec := range m.runtimeExecs(ctx) {
-		_ = m.refreshExec(ctx, exec, true)
+// Sweep reconciles every known exec against systemd in one pass. It runs once
+// at startup, to take in whatever happened while no watcher was listening, and
+// again on each tick of the degraded fallback when no subscription could be
+// established (ADR 0115 §3).
+//
+// It sweeps the durable records as well as the runtime files, because the case
+// it exists for is the one the runtime files cannot show: the runtime directory
+// is tmpfs, so a reboot does not leave files behind for units that no longer
+// exist — it wipes them, and the durable record is all that is left of an exec
+// that was running when the sandbox went down. Reconciling only what the tmpfs
+// still holds would sweep every exec except the ones a reboot stranded.
+//
+// It is not a poll. Nothing schedules it while notifications are arriving.
+func (m *Manager) Sweep(ctx context.Context) {
+	byUnit := m.unitsByName(ctx)
+	seen := make(map[string]bool)
+	for _, exec := range m.runtimeExecs() {
+		seen[exec.ID] = true
+		_ = m.refreshExecWithUnit(ctx, exec, true, lookupUnit(byUnit, exec.Unit))
+	}
+	for id, record := range m.loadRecords(ctx) {
+		if seen[id] {
+			continue
+		}
+		_ = m.refreshExecWithUnit(ctx, m.withRuntimePaths(record), false, lookupUnit(byUnit, record.Unit))
+	}
+}
+
+// WatchUnits subscribes to unit changes through the unit manager. It is how
+// the watcher reaches the notification seam without holding the unit manager
+// itself.
+func (m *Manager) WatchUnits(ctx context.Context) (<-chan string, error) {
+	return m.units.Watch(ctx)
+}
+
+// ObserveRuntime reconciles the one exec whose runtime file just changed. The
+// shim writes that file when its command exits (see shimRuntime.wait), so this
+// is the notification that carries an ordinary exit — and the exit status it
+// carries is the shim's, which is the only accurate one: systemd collects a
+// transient unit as it dies, so the unit's own ExecMainStatus is gone by the
+// time anything can read it.
+func (m *Manager) ObserveRuntime(ctx context.Context, id string) {
+	exec, ok := m.readRuntime(id)
+	if !ok {
+		return
+	}
+	_ = m.refreshExec(ctx, m.withRuntimePaths(exec), true)
+}
+
+// ObserveUnit reconciles the exec behind a unit systemd reported a change for.
+// It is what catches an end the shim could not write — killed, out of memory,
+// or a unit stopped from outside — and demotes the exec to lost.
+func (m *Manager) ObserveUnit(ctx context.Context, unit string) {
+	id := execIDFromUnit(unit)
+	if id == "" {
+		return
+	}
+	if exec, ok := m.readRuntime(id); ok {
+		_ = m.refreshExec(ctx, m.withRuntimePaths(exec), true)
+		return
+	}
+	// A caller-supplied exec id can be spelled in ways the unit name cannot be
+	// taken apart again. Finding the exec by its recorded unit is exact, and
+	// only a name that did not resolve pays for it.
+	want := unitBaseName(unit)
+	for _, exec := range m.runtimeExecs() {
+		if unitBaseName(exec.Unit) == want {
+			_ = m.refreshExec(ctx, exec, true)
+			return
+		}
+	}
+}
+
+// execIDFromUnit recovers an exec id from its unit name, including the "-gN"
+// suffix a relaunched exec's unit carries (ADR 0038 §2).
+func execIDFromUnit(unit string) string {
+	id, ok := strings.CutPrefix(unitBaseName(unit), "discobox-exec-")
+	if !ok {
+		return ""
+	}
+	if base, generation, found := strings.Cut(id, "-g"); found {
+		if _, err := strconv.Atoi(generation); err == nil && base != "" {
+			return base
+		}
+	}
+	return id
+}
+
+// unitsByName reads every exec unit systemd knows about in one call, keyed by
+// bare unit name. A failure reports nothing rather than an error: each exec is
+// then refreshed against its own unit, which is the slower path, not a wrong
+// one.
+func (m *Manager) unitsByName(ctx context.Context) map[string]UnitStatus {
+	units, err := m.units.List(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]UnitStatus, len(units))
+	for _, unit := range units {
+		out[unitBaseName(unit.Unit)] = unit
+	}
+	return out
+}
+
+func lookupUnit(byName map[string]UnitStatus, unit string) *UnitStatus {
+	if byName == nil {
+		return nil
+	}
+	if status, ok := byName[unitBaseName(unit)]; ok {
+		return &status
 	}
 	return nil
 }
@@ -571,9 +677,9 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 // discards the record and the transcript, which is teardown, while this leaves
 // an exec that can be started again under the same id (ADR 0038).
 //
-// The status is written here rather than left to the reconcile loop, which
-// would find the unit unloaded and call the exec lost — true of a unit that
-// vanished underneath a live exec, and wrong for one that was asked to stop.
+// The status is written here rather than left to a sweep, which would find the
+// unit unloaded and call the exec lost — true of a unit that vanished
+// underneath a live exec, and wrong for one that was asked to stop.
 func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 	exec, ok := m.Get(id)
 	if !ok {
@@ -743,7 +849,11 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 func nextUnitGeneration(id, current string) string {
 	base := "discobox-exec-" + id
 	generation := 2
-	if suffix, ok := strings.CutPrefix(current, base+"-g"); ok {
+	// Records written before unit names were stored bare carry the ".service"
+	// suffix, and so does any exec whose last refresh went through the unloaded
+	// branch, which never reaches applyUnitStatus. Parsing the bare name is what
+	// keeps those from reusing generation 2's unit name on every relaunch.
+	if suffix, ok := strings.CutPrefix(unitBaseName(current), base+"-g"); ok {
 		if n, err := strconv.Atoi(suffix); err == nil && n >= generation {
 			generation = n + 1
 		}
@@ -1002,7 +1112,11 @@ func (m *Manager) socketPath(id string) string {
 	return filepath.Join(m.runtimeDir, safeName(id)+".sock")
 }
 
-func (m *Manager) runtimeExecs(ctx context.Context) []Exec {
+// runtimeExecs reads the known execs off disk, as written. It deliberately does
+// not refresh them: every caller joins them with unit status and shim status
+// itself, and refreshing here as well cost a second systemd query per exec on
+// every listing.
+func (m *Manager) runtimeExecs() []Exec {
 	matches, err := filepath.Glob(filepath.Join(m.runtimeDir, "*.json"))
 	if err != nil {
 		return nil
@@ -1013,8 +1127,7 @@ func (m *Manager) runtimeExecs(ctx context.Context) []Exec {
 		if err != nil || exec.ID == "" {
 			continue
 		}
-		exec = m.withRuntimePaths(exec)
-		out = append(out, m.refreshExec(ctx, exec, true))
+		out = append(out, m.withRuntimePaths(exec))
 	}
 	return out
 }
@@ -1044,6 +1157,16 @@ func (m *Manager) withRuntimePaths(exec Exec) Exec {
 }
 
 func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent bool) Exec {
+	return m.refreshExecWithUnit(ctx, exec, runtimePresent, nil)
+}
+
+// refreshExecWithUnit joins an exec's runtime record with its unit status and
+// its shim's status, and records what it finds.
+//
+// unit, when non-nil, is that exec's status as the caller already read it —
+// from the one call that lists every exec unit — so a listing or a sweep does
+// not query systemd a second time per exec. A nil unit means ask.
+func (m *Manager) refreshExecWithUnit(ctx context.Context, exec Exec, runtimePresent bool, unit *UnitStatus) Exec {
 	if exec.Status == StatusExited || exec.Status == StatusFailed {
 		_ = m.observe(ctx, exec)
 		return exec
@@ -1052,7 +1175,23 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent boo
 	// command is still running before Start) legitimately has no live unit yet, so
 	// keep it starting rather than declaring it lost while it waits to launch.
 	notYetLaunched := runtimePresent && exec.Status == StatusStarting && exec.StartedAt == nil
-	if unit, err := m.units.Status(ctx, exec.Unit); err == nil {
+	var (
+		status    UnitStatus
+		statusErr error
+	)
+	if unit != nil {
+		status = *unit
+	} else {
+		status, statusErr = m.units.Status(ctx, exec.Unit)
+	}
+	// A failure to *ask* is not an answer, so an error leaves the exec's status
+	// alone. Only Loaded reports a unit as gone — the rule DESIGN.md states:
+	// "Loaded — not a status error — is what demotes a vanished exec to lost".
+	// Treating an unreachable unit manager as a vanished unit would demote every
+	// running exec at once the moment the bus hiccups, and the terminal layer
+	// would then revive each one, stopping a live unit that was never in
+	// trouble. Stale is recoverable; that is not.
+	if unit := status; statusErr == nil {
 		// The unit is gone, so the shim that owned this exec cannot come back and
 		// neither can the exec — an exec whose transient unit did not survive a
 		// reboot lands here. Say so rather than letting applyUnitStatus report the
@@ -1070,9 +1209,6 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent boo
 		} else {
 			exec = applyUnitStatus(exec, unit)
 		}
-	} else if exec.ExitedAt == nil && !notYetLaunched {
-		exec.Status = StatusLost
-		exec.Error = "exec unit status is unavailable"
 	}
 	// The unit's main process is the shim, which deliberately outlives the
 	// command (it lingers so a late attacher can replay output and read the exit
@@ -1091,7 +1227,10 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent boo
 			}
 		}
 	}
-	_ = writeRuntime(exec.RuntimePath, exec)
+	// Written only when it actually changed. The runtime directory is watched
+	// for the shim's writes (ADR 0115 §1), and rewriting an unchanged file here
+	// would wake that watcher with this process's own echo.
+	_ = writeRuntimeIfChanged(exec.RuntimePath, exec)
 	_ = m.observe(ctx, exec)
 	return exec
 }
@@ -1204,15 +1343,59 @@ func hydrateMetadata(exec, record Exec) Exec {
 	return exec
 }
 
-func writeRuntime(path string, exec Exec) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(exec, "", "  ")
+// writeRuntimeIfChanged writes the runtime file only when its contents would
+// differ, comparing against the file rather than against an in-memory guess so
+// that "unchanged" means exactly what a watcher would see.
+func writeRuntimeIfChanged(path string, exec Exec) error {
+	data, err := marshalRuntime(exec)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
+	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, data) {
+		return nil
+	}
+	return writeRuntimeData(path, data)
+}
+
+func writeRuntime(path string, exec Exec) error {
+	data, err := marshalRuntime(exec)
+	if err != nil {
+		return err
+	}
+	return writeRuntimeData(path, data)
+}
+
+// runtimeFileState is the durable projection of an exec: every field the shim
+// reports live on each /status query is dropped before the exec is persisted.
+//
+// Those fields change by construction — LastAccessedAt is time.Now() for as
+// long as any client is attached (shimRuntime.handleStatus), and a harness
+// animating its title moves TitleChangedAt — so persisting them would make the
+// runtime file differ on every single refresh. The directory is watched for the
+// shim's writes, so a file that always differs is a feedback loop: write,
+// inotify, refresh, write, forever, for as long as a terminal is open. They are
+// live facts and the Exec fields that carry them say so; the file keeps what
+// outlives the shim.
+func runtimeFileState(exec Exec) Exec {
+	exec.AttacherCount = 0
+	exec.Title = ""
+	exec.TitleChangedAt = nil
+	exec.LastAccessedAt = nil
+	return exec
+}
+
+func marshalRuntime(exec Exec) ([]byte, error) {
+	data, err := json.MarshalIndent(runtimeFileState(exec), "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+func writeRuntimeData(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
 	return os.WriteFile(path, data, 0o600)
 }
 

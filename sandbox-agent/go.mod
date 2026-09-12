@@ -16,6 +16,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-faster/jx v1.2.0
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/klauspost/compress v1.18.5
 	golang.org/x/sys v0.47.0
 	gorm.io/gorm v1.31.2
