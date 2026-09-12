@@ -2,6 +2,7 @@ package endpoint
 
 import (
 	"context"
+	"errors"
 	"net"
 	"reflect"
 	"strings"
@@ -319,5 +320,45 @@ func TestParseSandboxAddressWithANamedTransport(t *testing.T) {
 	}
 	if _, err := Parse(got.Server); err != nil {
 		t.Fatalf("the server half %q does not parse: %v", got.Server, err)
+	}
+}
+
+// A canceled lookup is the caller giving up, whatever the platform's resolver
+// calls it. Windows spells it not-found, which the not-found branch would read
+// as "this name has no peer record" and resolve to https — so an interrupted
+// command would go on to dial a server instead of stopping.
+func TestResolveReportsACanceledContextRatherThanFallingBackToHTTPS(t *testing.T) {
+	for name, err := range map[string]error{
+		"not-found":    &net.DNSError{Err: "no such host", Name: "_discobox.box.example", IsNotFound: true},
+		"cancellation": context.Canceled,
+	} {
+		t.Run(name, func(t *testing.T) {
+			previous := lookupTXT
+			lookupTXT = func(context.Context, string) ([]string, error) { return nil, err }
+			t.Cleanup(func() { lookupTXT = previous })
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			resolved, resolveErr := Resolve(ctx, "discobox://box.example")
+			if resolveErr == nil {
+				t.Fatalf("Resolve() resolved a canceled lookup to %s endpoint %s", resolved.Scheme, resolved.Value)
+			}
+			if !errors.Is(resolveErr, context.Canceled) {
+				t.Errorf("Resolve() error = %v, want it to carry context.Canceled", resolveErr)
+			}
+		})
+	}
+}
+
+// An uncanceled lookup still reads not-found as "no peer record", which is the
+// https answer the record's absence means.
+func TestResolveStillReadsNotFoundAsAnHTTPSName(t *testing.T) {
+	answerTXT(t, nil)
+	resolved, err := Resolve(context.Background(), "discobox://box.example")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Scheme != "https" || resolved.Value != "https://box.example" {
+		t.Errorf("Resolve() = %s endpoint %s, want https://box.example", resolved.Scheme, resolved.Value)
 	}
 }

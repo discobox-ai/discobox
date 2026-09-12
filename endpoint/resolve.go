@@ -49,6 +49,13 @@ func resolveName(ctx context.Context, name Endpoint) (Endpoint, error) {
 	record := discoboxRecord(name.Name)
 	values, err := lookupTXT(ctx, record)
 	if err != nil {
+		// A caller that gave up is asked about before the error is read, because
+		// what a resolver calls a canceled lookup is the platform's business:
+		// Unix reports the cancellation, Windows reports not-found. Read as
+		// "no record", an interrupt would resolve the name to https and dial it.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Endpoint{}, fmt.Errorf("look up %s: %w", record, ctxErr)
+		}
 		var dnsErr *net.DNSError
 		if !errors.As(err, &dnsErr) || !dnsErr.IsNotFound {
 			return Endpoint{}, fmt.Errorf("look up %s: %w", record, err)
