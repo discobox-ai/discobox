@@ -45,6 +45,35 @@ func TestLoadOrCreateIrohIdentityWritesPrivateFile(t *testing.T) {
 	assertPrivateToUser(t, filepath.Dir(path))
 }
 
+// The identity is written through a temporary file and renamed, so a process
+// that exits mid-write leaves either no identity or a whole one. A truncated
+// PEM would be the worst of both: no later command can read it, and none will
+// replace it, because a corrupt identity is not an absent one. What is
+// observable afterwards is that nothing was left lying beside it.
+func TestLoadOrCreateIrohIdentityLeavesNothingPartial(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "iroh")
+	path := filepath.Join(dir, "id_ed25519")
+	if _, _, err := loadOrCreateIrohIdentity(path); err != nil {
+		t.Fatalf("loadOrCreateIrohIdentity() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read the identity directory: %v", err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if len(names) != 1 || names[0] != filepath.Base(path) {
+		t.Fatalf("identity directory holds %v, want only the identity", names)
+	}
+	// And what landed is a key rather than the front of one.
+	if _, err := readIrohIdentity(path); err != nil {
+		t.Fatalf("readIrohIdentity() error = %v", err)
+	}
+}
+
 // A broken identity must be reported, not silently replaced: overwriting it
 // would change the ID an operator already enrolled.
 func TestLoadOrCreateIrohIdentityRejectsCorruptFile(t *testing.T) {

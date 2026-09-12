@@ -49,17 +49,32 @@ func loadOrCreateIrohIdentity(path string) (id endpoint.IrohID, created bool, er
 		return endpoint.IrohID{}, false, fmt.Errorf("marshal iroh identity: %w", err)
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
-		return endpoint.IrohID{}, false, fmt.Errorf("write iroh identity: %w", err)
-	}
-	if err := restrictToUser(path); err != nil {
-		return endpoint.IrohID{}, false, fmt.Errorf("restrict iroh identity to this user: %w", err)
+	if err := writeIrohIdentity(path, pemBytes); err != nil {
+		return endpoint.IrohID{}, false, err
 	}
 	newID, err := endpoint.IrohIDFromPublicKey(pub)
 	if err != nil {
 		return endpoint.IrohID{}, false, err
 	}
 	return newID, true, nil
+}
+
+// writeIrohIdentity puts the key at path through writePrivateFile, which makes
+// it private before it is ever named and leaves nothing behind if it cannot
+// finish.
+//
+// A truncated PEM here is worse than no file at all: nothing heals it, because
+// a corrupt identity is not an absent one — loadOrCreateIrohIdentity generates
+// a key only when there is none, so every later command that touches iroh fails
+// on the remains until somebody works out which file to delete. Exiting
+// mid-write is not hypothetical: a Ctrl-C lands here as easily as anywhere, and
+// App.serverVersion abandons the dial it started when its deadline fires, which
+// is a goroutine that can be inside this write when the process goes.
+func writeIrohIdentity(path string, pemBytes []byte) error {
+	if err := writePrivateFile(path, pemBytes); err != nil {
+		return fmt.Errorf("write iroh identity: %w", err)
+	}
+	return nil
 }
 
 // readIrohIdentity returns the endpoint ID of the key at path. A missing file
