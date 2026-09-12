@@ -258,7 +258,6 @@ github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2 h1:oygO0locgZJ
 github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2/go.mod h1:wP83P5OoQ5p6ip3ScPr0BAq0BvuPAvacpEuSzyouqAI=
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 h1:1BDTz0u9nC3//pOCMdNH+CiXJVYJh5UQNCOBG7jbELc=
-github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
 github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2 h1:+vx7roKuyA63nhn5WAunQHLTznkw5W8b1Xc0dNjp83s=
 github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2/go.mod h1:HBCaDeC1lPdgDeDbhX8XFpy1jqjK0IBG8W5K+xYqA0w=
 github.com/ProtonMail/go-crypto v0.0.0-20221026131551-cf6655e29de4 h1:ra2OtmuW0AE5csawV4YXMNGNQQXvLRps3z2Z59OPO+I=
@@ -373,8 +372,6 @@ github.com/containerd/btrfs/v2 v2.0.0 h1:FN4wsx7KQrYoLXN7uLP0vBV4oVWHOIKDRQ1G2Z0
 github.com/containerd/btrfs/v2 v2.0.0/go.mod h1:swkD/7j9HApWpzl8OHfrHNxppPd9l44DFZdF94BUj9k=
 github.com/containerd/console v1.0.4-0.20230706203907-8f6c4e4faef5 h1:Ig+OPkE3XQrrl+SKsOqAjlkrBN/zrr+Qpw7rCuDjRCE=
 github.com/containerd/console v1.0.4-0.20230706203907-8f6c4e4faef5/go.mod h1:YynlIjWYF8myEu6sdkwKIvGQq+cOckRm6So2avqoYAk=
-github.com/containerd/console v1.0.4 h1:F2g4+oChYvBTsASRTz8NP6iIAi97J3TtSAsLbIFn4ro=
-github.com/containerd/console v1.0.4/go.mod h1:YynlIjWYF8myEu6sdkwKIvGQq+cOckRm6So2avqoYAk=
 github.com/containerd/fuse-overlayfs-snapshotter/v2 v2.1.1 h1:3N/qo9fkWavYRLeUWsKWOulrLYLMLKcut6EQJoJ2q/A=
 github.com/containerd/fuse-overlayfs-snapshotter/v2 v2.1.1/go.mod h1:WFiRbg7aIgJozIvNe3r9aHszi6AQQigOPgnbkk9xMmo=
 github.com/containerd/go-cni v1.1.12 h1:wm/5VD/i255hjM4uIZjBRiEQ7y98W9ACy/mHeLi4+94=
@@ -415,10 +412,8 @@ github.com/danieljoos/wincred v1.2.2 h1:774zMFJrqaeYCK2W57BgAem/MLi6mtSE47MB6BOJ
 github.com/danieljoos/wincred v1.2.2/go.mod h1:w7w4Utbrz8lqeMbDAK0lkNJUv5sAOkFi7nd/ogr0Uh8=
 github.com/dimchansky/utfbom v1.1.1 h1:vV6w1AhK4VMnhBno/TPVCoK9U/LP0PkLCS9tbxHdi/U=
 github.com/dimchansky/utfbom v1.1.1/go.mod h1:SxdoEBH5qIqFocHMyGOXVAybYJdr71b1Q/j0mACtrfE=
-github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:2QDmFSCtLohuzmqiaYuDU6R44S6UvCcftwo+Cf6Rhto=
-github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
-github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf h1:EJ3uHAM+tP21y8cgy6zQDy8DDPSSJaiUxErreXU35yo=
-github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
+github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8 h1:lFJ79i3hZemgcTAIDZUs4yeeTMEx4XWzbm3wvSDWim0=
+github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8/go.mod h1:THdE5ix2clxX9lZzcICPpZ67d6CdrPZxdOYsNgU5e30=
 github.com/discobox-ai/x v0.0.0-20260821223655-c8f7674a2726/go.mod h1:KnanKt8LsIyBe99CJrv9v53BlDDM6WinmsLt6fLKlLE=
 github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c h1:+pKlWGMw7gf6bQ+oDZB4KHQFypsfjYlq/C4rfL7D3g8=
 github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c/go.mod h1:Uw6UezgYA44ePAFQYUehOuCzmy5zmg/+nl2ZfMWGkpA=
@@ -644,8 +639,6 @@ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.2 h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9Gz0M=
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
-github.com/morikuni/aec v1.0.0 h1:nP9CBfwrvYnBRgY6qfDQkygYDmYwOilePFkwzv4dU8A=
-github.com/morikuni/aec v1.0.0/go.mod h1:BbKIizmSmc5MMPqRYbxO4ZU0S0+P200+tUnFx7PXmsc=
 github.com/mozilla/tls-observatory v0.0.0-20250923143331-eef96233227e h1:gOlpekCwR+xjqedQsHo1c7aUSixaQUIe3sAcEeDCMLc=
 github.com/mozilla/tls-observatory v0.0.0-20250923143331-eef96233227e/go.mod h1:FUqVoUPHSEdDR0MnFM3Dh8AU0pZHLXUD127SAJGER/s=
 github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 h1:ZK8zHtRHOkbHy6Mmr5D264iyp3TiX5OmNcI5cIARiQI=
@@ -766,8 +759,6 @@ github.com/tonistiigi/go-actions-cache v0.0.0-20250228231703-3e9a6642607f h1:q/S
 github.com/tonistiigi/go-actions-cache v0.0.0-20250228231703-3e9a6642607f/go.mod h1:h0oRlVs3NoFIHysRQ4rU1+RG4QmU0M2JVSwTYrB4igk=
 github.com/tonistiigi/go-archvariant v1.0.0 h1:5LC1eDWiBNflnTF1prCiX09yfNHIxDC/aukdhCdTyb0=
 github.com/tonistiigi/go-archvariant v1.0.0/go.mod h1:TxFmO5VS6vMq2kvs3ht04iPXtu2rUT/erOnGFYfk5Ho=
-github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab h1:H6aJ0yKQ0gF49Qb2z5hI1UHxSQt4JMyxebFR15KnApw=
-github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab/go.mod h1:ulncasL3N9uLrVann0m+CDlJKWsIAP34MPcOJF6VRvc=
 github.com/u-root/cpu v0.0.0-20251022203118-05ede1535667 h1:eUBtVqVC9WnmTXVX65vklgwSDzWKFKqDyDGGbe41wf0=
 github.com/u-root/cpu v0.0.0-20251022203118-05ede1535667/go.mod h1:SwKrzXTgbgbFoY33L3Z/uOFb0NyloZohfhbdowVF2Zc=
 github.com/u-root/cpuid v0.0.1-0.20250320140348-cc5fe81d966c h1:U/KbW3EQw/kHZqkzydesQ7KMIybd55uMFoF39GQEsjo=
