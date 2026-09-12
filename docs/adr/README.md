@@ -169,3 +169,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0111](0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md) | The origin is the client, and its key names where the source came from | Accepted (supersedes [0001](0001-sandbox-origin-and-remote-source-push.md) §1's `Origin.ProjectPath` and derivation of `OriginKey`) |
 | [0112](0112-the-top-level-is-for-people-not-a-transport-diagnosis.md) | The top level is for people, not for a transport diagnosis | Accepted |
 | [0113](0113-the-cli-stages-the-images-its-server-loads.md) | A release CLI stages its server's images, and a pool loads them before it pulls | Accepted |
+| [0114](0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md) | A sandbox pins its agent version from a pool-cached store | Accepted |
