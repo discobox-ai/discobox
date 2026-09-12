@@ -1,4 +1,4 @@
-# 0110 — Whoever serves an API is strict, and whoever reads its responses is tolerant
+# 0118 — Whoever serves an API is strict, and whoever reads its responses is tolerant
 
 - **Status**: Proposed
 - **Date**: 2026-09-11

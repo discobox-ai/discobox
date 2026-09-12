@@ -93,7 +93,7 @@ The CLI's repository-root resolution (`origin.ProjectPath`) stays: it is how
 The removal is a clean cut. `Origin` is strict (`additionalProperties: false`)
 and `projectPath` is required, so a CLI and a server on either side of this
 change fail to create or list against each other. Compatibility across versions
-is not maintained (0110 records that stance and when it changes), and a client
+is not maintained (0118 records that stance and when it changes), and a client
 that breaks is the signal to upgrade. The CLI replaces an older local server it
 starts, so the local pairing moves together.
 
@@ -140,7 +140,7 @@ remote-sourced or sourceless create happened to run in — is read by nothing.
 
 **Remove it in two releases**, optional first and absent later, so mismatched
 CLIs and servers keep working. That is compatibility work for a guarantee not
-yet offered (0110).
+yet offered (0118).
 
 **Key a sourceless discobox by the directory it was started in**, as today.
 Nothing was delivered from that directory and nothing will be applied into it,
