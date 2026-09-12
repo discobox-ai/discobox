@@ -199,6 +199,8 @@ func setupLine(pool *apimodel.Pool) string {
 		label = "Downloading virtual machine image"
 	case apiclientgen.PoolProvisionPhasePullingPoolImage:
 		label = "Downloading runtime image"
+	case apiclientgen.PoolProvisionPhaseLoadingPoolImage:
+		label = "Loading runtime image"
 	}
 	return label + bytesSuffix(pull.Current.Or(0), pull.Total.Or(0), pull.LayersComplete.Or(0), pull.Layers.Or(0))
 }
@@ -237,7 +239,14 @@ func stageLine(stage apimodel.PoolImageStage) string {
 	// A bare "(1 of 4)" trailing the whole line, after an image reference, a
 	// byte ratio and a layer ratio — three other pairs of numbers, none of them
 	// images — would leave which of the four it counts anybody's guess.
+	//
+	// A load is the same bytes read from this machine's disk, and a line that
+	// said "Downloading" would tell somebody who has just watched the download
+	// finish that it is happening again (ADR 0113).
 	line := "Downloading images"
+	if stage.Loading.Or(false) {
+		line = "Loading images"
+	}
 	if total := stage.GetTotal(); total > 0 {
 		line += fmt.Sprintf(" (%d of %d)", stage.GetDone()+1, total)
 	}

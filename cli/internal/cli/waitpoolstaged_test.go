@@ -280,3 +280,35 @@ func testPoolJSON(staged bool) string {
 	}
 	return pool + `}`
 }
+
+// A load reads bytes already on this machine, and says so, rather than claiming
+// a second download of what the user has just watched arrive (ADR 0113).
+func TestStagingLineSaysALoadIsALoad(t *testing.T) {
+	line := stagingLine([]apimodel.Pool{stagedPool("Default", false, &apimodel.PoolImageStage{
+		State:   apiclientgen.PoolImageStateStaging,
+		Image:   apiclientgen.NewOptString("ghcr.io/discobox-ai/discobox-harness-codex:v1"),
+		Done:    1,
+		Total:   5,
+		Current: apiclientgen.NewOptInt64(300 << 20),
+		Size:    apiclientgen.NewOptInt64(1200 << 20),
+		Loading: apiclientgen.NewOptBool(true),
+	})})
+	if want := "Loading images (2 of 5): discobox-harness-codex:v1 — 300.0 MiB of 1.2 GiB"; line != want {
+		t.Fatalf("line = %q, want %q", line, want)
+	}
+}
+
+func TestStagingLineReportsARuntimeImageLoad(t *testing.T) {
+	pool := stagedPool("Default", false, nil)
+	pool.ProvisionProgress = apiclientgen.NewOptPoolProvisionProgress(apimodel.PoolProvisionProgress{
+		Phase: apiclientgen.PoolProvisionPhaseLoadingPoolImage,
+		Pull: apiclientgen.NewOptSandboxPullProgress(apimodel.SandboxPullProgress{
+			Current: apiclientgen.NewOptInt64(152 << 20),
+			Total:   apiclientgen.NewOptInt64(264 << 20),
+		}),
+	})
+	pool.ProvisionProgressAt = apiclientgen.NewOptDateTime(time.Now())
+	if line, want := stagingLine([]apimodel.Pool{pool}), "Loading runtime image — 152.0 MiB of 264.0 MiB"; line != want {
+		t.Fatalf("line = %q, want %q", line, want)
+	}
+}

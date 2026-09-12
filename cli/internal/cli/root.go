@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/health"
+	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/serverstage"
 	"github.com/discobox-ai/discobox/version"
 )
@@ -607,6 +608,11 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 			if err != nil {
 				return endpoint.Command{}, err
 			}
+			// Between resolving the server and starting it, so the pools it
+			// brings up load the images from disk rather than pulling them
+			// (ADR 0113) — and, because EnsureRunning resolves before it stops
+			// an older server, while that server is still answering.
+			a.stageServerImages(ctx, progress, path)
 			return endpoint.Command{Path: path}, nil
 		},
 		Env:             localServerEnv(a.serverURL),
@@ -643,6 +649,23 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		staging.clear()
 	}
 	return nil
+}
+
+// stageServerImages stages the images the server about to start runs,
+// narrating on the launch line.
+//
+// A failure costs the head start and nothing else (ADR 0069): the images are
+// pulled when a pool first needs one, which is where they came from before any
+// of this, and a registry that is briefly down must not stop a server from
+// starting. So it is said, once, on a line that stays, and the launch goes on.
+func (a *App) stageServerImages(ctx context.Context, progress *statusLine, server string) {
+	resolver := a.serverResolver(nil)
+	resolver.onImageProgress = func(report imagecache.Progress) {
+		progress.set(imagesStageText(report))
+	}
+	if _, err := resolver.stageImages(ctx, server); err != nil && progress != nil {
+		progress.print("could not download the images discobox runs, so each is downloaded when first needed: %v", err)
+	}
 }
 
 // waitsOutFirstRunStaging reports whether this command should hold while a
@@ -717,6 +740,9 @@ func localServerEnv(endpoint string) []string {
 	env := []string{
 		"DISCOBOX_SERVER_LISTEN=" + endpoint,
 		"DISCOBOX_SERVER=" + endpoint,
+		// Where the autolaunch staged the server's images, so its pools load
+		// them rather than pull them (ADR 0113).
+		ImageCacheEnv + "=" + stagedImagesRoot(),
 	}
 	for _, key := range []string{
 		"DATABASE_DSN",

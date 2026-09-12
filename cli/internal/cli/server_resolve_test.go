@@ -11,10 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/imagecache/imagecachetest"
 	"github.com/discobox-ai/discobox/serverstage"
+	"github.com/discobox-ai/discobox/version"
 )
 
 // fakeInstall is a directory holding a discobox with a server beside it, which
@@ -251,5 +255,144 @@ func TestServerBinaryFlagAndEnvReachResolution(t *testing.T) {
 				t.Fatalf("error %q does not name the binary from the %s", err, from)
 			}
 		})
+	}
+}
+
+// The line an image download narrates on is the one the server's download used
+// a moment earlier, in the words a pool's staging uses later.
+func TestImagesStageText(t *testing.T) {
+	tests := []struct {
+		report imagecache.Progress
+		want   string
+	}{
+		{imagecache.Progress{Image: "ghcr.io/discobox-ai/discobox-harness-codex:v1", Index: 2, Images: 5, Total: 1024, Current: 512},
+			"Downloading images (2 of 5): discobox-harness-codex:v1 — 512 B of 1.0 KiB"},
+		// Before its manifests are read, an image has no total to count toward.
+		{imagecache.Progress{Image: "ghcr.io/x/a:v1", Index: 1, Images: 1}, "Downloading images (1 of 1): a:v1"},
+		{imagecache.Progress{Images: 5, Done: true}, "Images downloaded"},
+	}
+	for _, test := range tests {
+		if got := imagesStageText(test.report); got != test.want {
+			t.Fatalf("imagesStageText(%+v) = %q, want %q", test.report, got, test.want)
+		}
+	}
+}
+
+// setVersion makes this binary report version, as a release build's linker
+// would.
+func setVersion(t *testing.T, v string) {
+	t.Helper()
+	previous := version.Version
+	version.Version = v
+	t.Cleanup(func() { version.Version = previous })
+}
+
+// The images come from the server this CLI staged, asked before it is started,
+// and land once in the image cache a pool loads them from: staging again
+// downloads nothing.
+func TestStageImagesStagesWhatTheStagedServerNames(t *testing.T) {
+	setVersion(t, "v9.9.9")
+	registry := imagecachetest.NewRegistry(t)
+	image := registry.Publish("x/agent", "v1", []byte("base"))
+	manifest, _ := servedManifest(t, "v9.9.9")
+	var asked []string
+	resolver := serverResolver{
+		source:    serverSource{manifest: manifestFile(t, manifest)},
+		stageRoot: t.TempDir(),
+		imageRoot: filepath.Join(t.TempDir(), "images"),
+		client:    registry.Client(),
+		serverImages: func(_ context.Context, server string, _ []string) ([]string, error) {
+			asked = append(asked, server)
+			return []string{image.Reference}, nil
+		},
+	}
+	dir, err := resolver.stage(context.Background(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := filepath.Join(dir, manifest.Command)
+	staged, err := resolver.stageImages(context.Background(), server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(asked, []string{server}) {
+		t.Fatalf("asked %v, want the staged server %s", asked, server)
+	}
+	if len(staged) != 1 || staged[0].Digest != image.Index {
+		t.Fatalf("staged %+v, want %s at %s", staged, image.Reference, image.Index)
+	}
+	if _, err := imagecache.Open(resolver.imageRoot).Lookup(image.Reference, imagecache.PoolPlatform()); err != nil {
+		t.Fatal(err)
+	}
+	fetched := registry.Fetches()
+	if _, err := resolver.stageImages(context.Background(), server); err != nil {
+		t.Fatal(err)
+	}
+	if registry.Fetches() != fetched {
+		t.Fatal("staging the same images again downloaded them again")
+	}
+}
+
+// Only a server of this CLI's own release is asked. An older one takes the
+// question as nothing and starts serving, so a binary named with --binary, one
+// staged from another version's manifest, and a build with no manifest at all
+// are never asked.
+func TestStageImagesAsksOnlyAServerOfThisRelease(t *testing.T) {
+	setVersion(t, "v9.9.9")
+	asked := 0
+	ask := func(context.Context, string, []string) ([]string, error) {
+		asked++
+		return nil, nil
+	}
+	current, _ := servedManifest(t, "v9.9.9")
+	older, _ := servedManifest(t, "v9.9.8")
+	stagedFrom := func(manifest serverstage.Manifest) (serverResolver, string) {
+		resolver := serverResolver{
+			source:       serverSource{manifest: manifestFile(t, manifest)},
+			stageRoot:    t.TempDir(),
+			imageRoot:    t.TempDir(),
+			serverImages: ask,
+		}
+		dir, err := resolver.stage(context.Background(), manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resolver, filepath.Join(dir, manifest.Command)
+	}
+	ofThisRelease, server := stagedFrom(current)
+	ofAnother, olderServer := stagedFrom(older)
+	for name, check := range map[string]func() ([]imagecache.Staged, error){
+		"a named binary": func() ([]imagecache.Staged, error) {
+			return ofThisRelease.stageImages(context.Background(), "/opt/discobox-server")
+		},
+		"another release": func() ([]imagecache.Staged, error) { return ofAnother.stageImages(context.Background(), olderServer) },
+		"a build with no manifest": func() ([]imagecache.Staged, error) {
+			return serverResolver{imageRoot: t.TempDir(), serverImages: ask}.stageImages(context.Background(), server)
+		},
+	} {
+		if staged, err := check(); err != nil || len(staged) != 0 {
+			t.Fatalf("%s: stageImages() = %+v, %v; want nothing", name, staged, err)
+		}
+	}
+	if asked != 0 {
+		t.Fatalf("asked %d servers that are not of this release", asked)
+	}
+	if _, err := ofThisRelease.stageImages(context.Background(), server); err != nil {
+		t.Fatal(err)
+	}
+	if asked != 1 {
+		t.Fatal("the staged server of this release was not asked")
+	}
+}
+
+// The server an autolaunch starts is told where its images were staged, or it
+// would pull every one of them again.
+func TestLocalServerEnvNamesTheImageCache(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	t.Setenv(ImageCacheEnv, "")
+	want := ImageCacheEnv + "=" + filepath.Join(state, "discobox", "images")
+	if env := localServerEnv("unix:///tmp/discobox.sock"); !slices.Contains(env, want) {
+		t.Fatalf("env = %v, want %s", env, want)
 	}
 }

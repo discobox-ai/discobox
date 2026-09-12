@@ -16,6 +16,7 @@ import (
 
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/serverstage"
 )
 
@@ -85,6 +86,11 @@ func runServerProcess(cmd *cobra.Command, path string) error {
 	server.Stdin = cmd.InOrStdin()
 	server.Stdout = cmd.OutOrStdout()
 	server.Stderr = cmd.ErrOrStderr()
+	// Told where the image cache is, as an autolaunched server is: its pools
+	// load whatever an autolaunch or a stage already put there (ADR 0113).
+	// This command stages none itself; whoever runs it is starting a server
+	// on purpose, and the rest are pulled.
+	server.Env = append(os.Environ(), ImageCacheEnv+"="+stagedImagesRoot())
 	if err := server.Run(); err != nil {
 		var exit *exec.ExitError
 		// The server's status is this command's status, silently: a server that
@@ -108,6 +114,10 @@ A release CLI carries a description of the server it was cut against — where
 each of its files lives and what each one's SHA-256 is — and this turns that
 description into files on this machine, under the state directory, one
 directory per server version. An asset whose digest does not match is not kept.
+
+The container images that server runs are staged too, into the image cache its
+pools load them from instead of pulling them. Only the layers the cache does not
+already hold are downloaded, each checked against its digest.
 
 Nothing has to run this: a command that needs a server stages one on its own.
 It is here so the download can be done deliberately — while there is a network,
@@ -140,9 +150,20 @@ func (a *App) stageServer(cmd *cobra.Command) error {
 		progress.set(serverStageText(report))
 	}
 	dir, err := resolver.stage(cmd.Context(), manifest)
+	if err != nil {
+		progress.clear()
+		return err
+	}
+	// The images too: a stage is how a machine is provisioned ahead of time,
+	// and whatever it leaves out a later autolaunch fetches in front of its
+	// first command.
+	resolver.onImageProgress = func(report imagecache.Progress) {
+		progress.set(imagesStageText(report))
+	}
+	images, err := resolver.stageImages(cmd.Context(), filepath.Join(dir, manifest.Command))
 	progress.clear()
 	if err != nil {
-		return err
+		return fmt.Errorf("staged discobox server %s, but not the images it runs: %w", manifest.Version, err)
 	}
 
 	if a.output == "json" {
@@ -156,13 +177,15 @@ func (a *App) stageServer(cmd *cobra.Command) error {
 			})
 		}
 		return writeJSON(cmd.OutOrStdout(), map[string]any{
-			"version":   manifest.Version,
-			"os":        manifest.OS,
-			"arch":      manifest.Arch,
-			"directory": dir,
-			"command":   filepath.Join(dir, manifest.Command),
-			"assets":    assets,
-			"staged":    !already || a.serverSource.force,
+			"version":    manifest.Version,
+			"os":         manifest.OS,
+			"arch":       manifest.Arch,
+			"directory":  dir,
+			"command":    filepath.Join(dir, manifest.Command),
+			"assets":     assets,
+			"staged":     !already || a.serverSource.force,
+			"images":     stagedImagesJSON(images),
+			"imageCache": resolver.imageRoot,
 		})
 	}
 	out := cmd.OutOrStdout()
@@ -178,7 +201,29 @@ func (a *App) stageServer(cmd *cobra.Command) error {
 	for _, asset := range manifest.Assets {
 		fmt.Fprintf(out, "  %s\n", filepath.Join(dir, asset.Name))
 	}
+	if !manifest.ForThisPlatform() {
+		// Its images are named by running it, which cannot happen here.
+		fmt.Fprintf(out, "no images staged: a server for %s cannot be asked which images it runs from here\n", manifest.Platform())
+	}
+	if len(images) > 0 {
+		fmt.Fprintf(out, "images in %s\n", resolver.imageRoot)
+		for _, image := range images {
+			fmt.Fprintf(out, "  %s\n", image.Reference)
+		}
+	}
 	return nil
+}
+
+func stagedImagesJSON(images []imagecache.Staged) []map[string]any {
+	out := make([]map[string]any, 0, len(images))
+	for _, image := range images {
+		out = append(out, map[string]any{
+			"reference":  image.Reference,
+			"digest":     image.Digest,
+			"downloaded": image.Downloaded,
+		})
+	}
+	return out
 }
 
 func (a *App) newServerManifestCommand() *cobra.Command {
@@ -231,6 +276,26 @@ func serverStageText(report serverstage.Progress) string {
 		}
 	}
 	return line + bytesSuffix(report.Current, report.Total, 0, 0)
+}
+
+// imagesStageText says what staging the server's images is doing, in stageLine's
+// words — the same sentence a pool's own staging draws minutes later, when it
+// loads these very images instead of downloading them.
+//
+// Unlike a pool's, the total is fixed from the first report: the manifests say
+// how much is missing before a byte is fetched.
+func imagesStageText(report imagecache.Progress) string {
+	if report.Done {
+		return "Images downloaded"
+	}
+	line := "Downloading images"
+	if report.Images > 0 {
+		line += fmt.Sprintf(" (%d of %d)", report.Index, report.Images)
+	}
+	if report.Image == "" {
+		return line
+	}
+	return line + ": " + shortImage(report.Image) + bytesSuffix(report.Current, report.Total, 0, 0)
 }
 
 func (a *App) newServerShutdownCommand() *cobra.Command {

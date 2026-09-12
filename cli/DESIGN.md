@@ -269,7 +269,8 @@ and an operator enrolls), the SSH identity, and the generated per-project
 `ssh_config` files. It is `<discobox state>/cli`, a sibling of
 `<discobox state>/server` where staged server versions live
 (`stagedServerRoot()`): what is staged there is another program, and the CLI is
-only what fetched it. It is state the CLI derives,
+only what fetched it. `<discobox state>/images`, beside both, is the image cache
+that server's images are staged into (`stagedImagesRoot()`, ADR 0113). It is state the CLI derives,
 not configuration anyone edits, so it follows each platform's convention for
 that — `$XDG_STATE_HOME` or `~/.local/state` on Unix, `%LOCALAPPDATA%` on
 Windows, which is the local one rather than the roaming `%APPDATA%`: an SSH
@@ -419,6 +420,24 @@ retrying.
 an image build, on a machine being provisioned. Nothing requires it; a command
 that needs a server stages one.
 
+The server's images are staged beside it (ADR 0113). The server names them:
+`serverResolver.stageImages` runs `<staged server> images`, which prints the
+VM guest its default provider boots (on macOS), the pool agent, the default
+sandbox image and the built-in harnesses, and stages them through `imagecache`
+into `<discobox state>/images` (`ImageCacheEnv` names another) for this
+machine's platform, fetching only the blobs the layout lacks. Every server the
+CLI runs is told that path in `DISCOBOX_IMAGE_CACHE_DIR`, so its providers
+fetch through it and its pools load from it. Only a server staged from this
+CLI's own manifest is asked — the same release, so it has the command; an older
+binary named with `--binary`, a sibling, or another version's `--manifest`
+would take the argument as nothing and start serving, so none of those stages
+images. Only two things download them: the autolaunch, between resolving the
+server and starting it, narrated on the launch line (`imagesStageText`, in
+`stageLine`'s grammar), and `stage`. `discobox admin server` in the foreground
+stages the binary alone. A failed image stage in the autolaunch is one warning
+line and the launch goes on — the server fetches what is missing, as it always
+did (ADR 0069) — while `stage` fails, since staging is what it was asked to do.
+
 Local server auto-launch is a release capability. Normal and development builds
 leave it disabled; release CLI binaries opt in at build time by setting
 `cli.serverAutoLaunch` to `true` with the Go linker's `-X` flag.
@@ -451,15 +470,18 @@ attempt is told how it went; a later one dials the endpoint and reports the
 connection error, rather than being handed a stale failure it cannot act on.
 
 That first check also compares release versions from `/healthz`. When the local
-server is an older semantic version than the autolaunching CLI, the CLI asks it
-to shut down, waits for the endpoint to be released, and launches the server it
-resolves for itself. It never downgrades a newer server, and development or
+server is an older semantic version than the autolaunching CLI, the CLI resolves
+its own server first, then asks the old one to shut down, waits for the endpoint
+to be released, and launches the one it resolved. It never downgrades a newer server, and development or
 legacy responses without semantic versions are left alone because they do not
 establish which process is older.
 
 `endpoint.LaunchOptions.Command` is a func, not a path, and `EnsureRunning`
 calls it only when a server actually has to be started — under the launch lock,
-after the last probe. Resolving one can mean downloading it, or failing outright
+after the last probe, and before an older server it is replacing is asked to
+stop. Resolving is where a new version's server and images download, which on a
+first run is minutes, and the old server goes on answering for all of it: the
+only gap is the switch-over. Resolving one can mean downloading it, or failing outright
 on a build that has no server to download, and neither is a price to pay for
 finding out that the server you wanted was already running. It also means two
 CLIs racing to start one do not both download it.

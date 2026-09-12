@@ -59,6 +59,27 @@ func stagedServerRoot() string {
 	return filepath.Join(os.TempDir(), "discobox-server-state")
 }
 
+// stagedImagesRoot is the image cache an autolaunch stages the server's images
+// into, and the one every server this CLI runs is told to load them from (ADR
+// 0109). A sibling of the staged servers, for the reason those are a sibling of
+// the CLI's own state. ImageCacheEnv names another, and then names it for the
+// server too.
+//
+// Absolute, because the server is told this path and does not share this
+// process's working directory.
+func stagedImagesRoot() string {
+	if dir := strings.TrimSpace(os.Getenv(ImageCacheEnv)); dir != "" {
+		if absolute, err := filepath.Abs(dir); err == nil {
+			return absolute
+		}
+		return dir
+	}
+	if root := discoboxStateDir(); root != "" {
+		return filepath.Join(root, "images")
+	}
+	return filepath.Join(os.TempDir(), "discobox-images")
+}
+
 // ensureStateDir creates a directory under the state directory and restricts it
 // to this user.
 //

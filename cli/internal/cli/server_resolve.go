@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
+	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/serverstage"
+	"github.com/discobox-ai/discobox/version"
 )
 
 // The server is a separate program (ADR 0099). The CLI does not contain it; it
@@ -25,6 +29,10 @@ const (
 	// ServerManifestEnv names a manifest file to stage from instead of the one
 	// this build carries.
 	ServerManifestEnv = "DISCOBOX_SERVER_MANIFEST"
+	// ImageCacheEnv names the image cache the server's images are staged into
+	// and a server's pools load them from (ADR 0113). It is the server's own
+	// setting, so naming it here names it for both.
+	ImageCacheEnv = "DISCOBOX_IMAGE_CACHE_DIR"
 )
 
 // serverSource is where the server binary is to come from: what the flags and
@@ -50,9 +58,20 @@ type serverResolver struct {
 	executable string
 	// stageRoot holds one directory per staged server version.
 	stageRoot string
+	// imageRoot is the image cache the server's images are staged into.
+	imageRoot string
 	client    *http.Client
 	// onProgress, when set, is called while assets are downloaded.
 	onProgress func(serverstage.Progress)
+	// onImageProgress, when set, is called while images are downloaded.
+	onImageProgress func(imagecache.Progress)
+	// env is what the server this resolver stages will be started with, so
+	// asking it which images it runs is answered by the configuration it will
+	// actually read.
+	env []string
+	// serverImages asks a server which images it runs. Nil runs the server
+	// and asks it.
+	serverImages func(ctx context.Context, server string, env []string) ([]string, error)
 }
 
 func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolver {
@@ -80,6 +99,8 @@ func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolv
 		source:     source,
 		executable: executable,
 		stageRoot:  stagedServerRoot(),
+		imageRoot:  stagedImagesRoot(),
+		env:        localServerEnv(a.serverURL),
 		onProgress: onProgress,
 	}
 }
@@ -191,6 +212,83 @@ func (r serverResolver) stage(ctx context.Context, manifest serverstage.Manifest
 		Force:      r.source.force,
 		OnProgress: r.onProgress,
 	})
+}
+
+// stageImages asks the server about to be started which images a first run on
+// this machine will want, and stages them into the image cache its pools load
+// them from (ADR 0113).
+//
+// Only a server staged from the manifest this CLI was linked with is asked. It
+// is the same release as this CLI, so it answers the question; an older server
+// — named with --binary, installed beside this one, or staged from another
+// version's --manifest — would take the argument as nothing and start serving.
+func (r serverResolver) stageImages(ctx context.Context, server string) ([]imagecache.Staged, error) {
+	manifest, err := r.manifest(ctx)
+	if errors.Is(err, serverstage.ErrNoManifest) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Version != version.String() || !manifest.ForThisPlatform() {
+		return nil, nil
+	}
+	if dir, ok := serverstage.Staged(r.stageRoot, manifest); !ok || filepath.Join(dir, manifest.Command) != server {
+		return nil, nil
+	}
+	ask := r.serverImages
+	if ask == nil {
+		ask = askServerImages
+	}
+	images, err := ask(ctx, server, r.env)
+	if err != nil {
+		return nil, fmt.Errorf("ask the server which images it runs: %w", err)
+	}
+	if len(images) == 0 {
+		return nil, nil
+	}
+	// Locked down for the reason the staging root is: on Windows a directory
+	// is only this user's if something at the top of it says so.
+	if err := ensureStateDir(r.imageRoot); err != nil {
+		return nil, err
+	}
+	return imagecache.Open(r.imageRoot).Stage(ctx, images, imagecache.Options{
+		Client:     r.client,
+		OnProgress: r.onImageProgress,
+	})
+}
+
+// serverImagesTimeout bounds asking a server which images it runs. It is the
+// binary about to be started, and not yet one that has shown it answers.
+const serverImagesTimeout = 30 * time.Second
+
+// askServerImages runs `<server> images`, which prints one reference per line.
+//
+// In the environment the server itself will be started with, not merely this
+// process's: the answer is read out of the server's configuration (ADR 0113
+// §1), and a variable the launch adds — or one it does not carry — would
+// otherwise name an image the server will never run.
+func askServerImages(ctx context.Context, server string, env []string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, serverImagesTimeout)
+	defer cancel()
+	//nolint:gosec // The path is the server this CLI staged and verified (ADR 0099).
+	cmd := exec.CommandContext(ctx, server, "images")
+	cmd.Env = append(os.Environ(), env...)
+	out, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && len(exit.Stderr) > 0 {
+			return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+		}
+		return nil, err
+	}
+	var images []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			images = append(images, line)
+		}
+	}
+	return images, nil
 }
 
 // executableName is this binary, for an error to name. "discobox" when there is
