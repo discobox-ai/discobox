@@ -220,6 +220,25 @@ function Install-Discobox {
         return $found.tag_name
     }
 
+    # The SHA-256 of a file, without Get-FileHash: a Windows PowerShell whose
+    # module path has been trimmed does not have that cmdlet, and a Windows
+    # runner proved it by failing here with CommandNotFoundException while
+    # Invoke-WebRequest from the same module worked. The .NET class is always
+    # reachable, in 5.1 and in 7.
+    function Get-DiscoboxSha256([string]$Path) {
+        $stream = [IO.File]::OpenRead($Path)
+        try {
+            $sha = [Security.Cryptography.SHA256]::Create()
+            try {
+                return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+            } finally {
+                $sha.Dispose()
+            }
+        } finally {
+            $stream.Dispose()
+        }
+    }
+
     # Downloads <tag>/<asset> from the first source that has it and, given a
     # digest, whose bytes match it.
     function Get-DiscoboxFile([string]$Tag, [string]$Name, [string]$OutFile, [string]$Sha256) {
@@ -231,7 +250,7 @@ function Install-Discobox {
                 continue
             }
             if (-not $Sha256) { return $true }
-            if ((Get-FileHash -Algorithm SHA256 -LiteralPath $OutFile).Hash.ToLowerInvariant() -eq $Sha256) { return $true }
+            if ((Get-DiscoboxSha256 $OutFile) -eq $Sha256) { return $true }
             Write-DiscoboxWarn "$url is not the file $release was released with; trying the next source"
         }
         return $false
