@@ -16613,7 +16613,7 @@ func (s *SecretValue) SetTokenUrl(val OptString) {
 	s.TokenUrl = val
 }
 
-// What this server calls itself (ADR 0113). A client registering this server offers the name as the
+// What this server calls itself (ADR 0114). A client registering this server offers the name as the
 // one to register it under; nothing else depends on it, and two servers may share one.
 // Ref: #/components/schemas/ServerInfo
 type ServerInfo struct {
@@ -16647,7 +16647,7 @@ func (s *ServerInfo) SetName(val OptString) {
 func (*ServerInfo) getServerInfoRes() {}
 
 // This server's own peer identity (ADR 0098), which every server has whatever it listens on (ADR
-// 0114). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers,
+// 0115). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers,
 // and the identity a client records for it otherwise.
 // Ref: #/components/schemas/ServerPeer
 type ServerPeer struct {

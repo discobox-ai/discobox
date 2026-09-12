@@ -55,7 +55,7 @@ type App struct {
 	leaderKey string
 
 	// resolveMu guards what carries --server: a name is looked up on the first
-	// dial (ADR 0113 §1) and the answer reused, so nothing asks DNS again
+	// dial (ADR 0114 §1) and the answer reused, so nothing asks DNS again
 	// mid-command. Only an answer is kept — see resolveServerAddress.
 	resolveMu   sync.Mutex
 	resolved    endpoint.Endpoint
@@ -592,7 +592,7 @@ func (a *App) resolvedServer() (endpoint.Endpoint, error) {
 }
 
 // resolveServerAddress is --server with its transport settled: what is dialed.
-// A name is looked up under the context of whoever asks (ADR 0113 §1), and an
+// A name is looked up under the context of whoever asks (ADR 0114 §1), and an
 // answer is kept, so nothing asks DNS twice in one command.
 //
 // A failure is not kept. The context it failed under belongs to that caller —

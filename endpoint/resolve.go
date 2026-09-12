@@ -11,7 +11,7 @@ import (
 
 // discoboxRecordLabel is the label a name's peer ID is published under: the
 // TXT record at _discobox.<name> holds the peer the name stands for, written
-// the way every other Discobox surface writes one (ADR 0113 §1).
+// the way every other Discobox surface writes one (ADR 0114 §1).
 const discoboxRecordLabel = "_discobox"
 
 // discoboxRecord is the record name's peer ID is published at.
@@ -25,7 +25,7 @@ var lookupTXT = net.DefaultResolver.LookupTXT
 
 // Resolve reads raw and settles what carries it: [Parse], then, for a
 // discobox:// name, the DNS lookup that decides whether the name is a peer or
-// an https server (ADR 0113 §1). Every other endpoint comes back exactly as
+// an https server (ADR 0114 §1). Every other endpoint comes back exactly as
 // Parse returns it, and DNS is asked nothing.
 //
 // It is the step between reading an address and dialing it, and the only place
@@ -105,7 +105,7 @@ func isPeerIDHost(host string) bool {
 }
 
 // parseServerHost reads a discobox:// address that names its server by host
-// rather than by peer ID (ADR 0113 §1). An IP address, or any host with a
+// rather than by peer ID (ADR 0114 §1). An IP address, or any host with a
 // port, is an https server and is settled here; a bare name is left for
 // [Resolve].
 func parseServerHost(raw string, u *url.URL, addrs []string) (Endpoint, error) {

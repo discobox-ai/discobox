@@ -40,13 +40,13 @@ type AppOptions struct {
 	SSHIngress services.SSHIngress
 
 	// ServerPeer is what GET /peer serves: this server's own peer ID, which
-	// every server has (ADR 0114). Resolved by the caller because the identity
+	// every server has (ADR 0115). Resolved by the caller because the identity
 	// is loaded with the iroh configuration, which happens before this
 	// constructor runs (ADR 0098).
 	ServerPeer services.ServerPeer
 
 	// ServerInfo is what GET /server serves: the name this server offers a
-	// client registering it (ADR 0113 §2).
+	// client registering it (ADR 0114 §2).
 	ServerInfo services.ServerInfo
 
 	// IrohListener reports what this server's iroh listener is doing now, as

@@ -326,14 +326,14 @@ right now (see Transport Logging and Reach). It is the same shape as `GET /ssh`
 — a server telling a client who it is, over the transport that client already
 has — and it exists because the alternative was grepping the startup log line.
 
-Every server has one, whatever it listens on (ADR 0114). The key
+Every server has one, whatever it listens on (ADR 0115). The key
 (`<data dir>/iroh_endpoint_key`) is loaded or generated on every start by
 `configureIroh`, in Go and binding nothing, like the SSH host key; only the
 iroh endpoint — the native library, the UDP socket, the relay, admission — is
 set up when a listen endpoint names one. So a server reached over a socket or
 http still has an identity a client can record, and adding `iroh://` later
 keeps it. Over those transports the ID is the server's word rather than
-something the connection proved (ADR 0114 §3). `serverPeer` refuses to report
+something the connection proved (ADR 0115 §3). `serverPeer` refuses to report
 the zero ID, which renders as a well-formed address that reaches nothing.
 
 Unlike `GET /ssh` it is **authenticated**. `/ssh` is public because
@@ -349,7 +349,7 @@ iroh endpoint it is trying to find.
 ### The Server's Name
 
 `GET /server` serves `name`: the `name` setting (`DISCOBOX_SERVER_NAME`),
-which defaults to this machine's hostname (ADR 0113 §2). It is what a client
+which defaults to this machine's hostname (ADR 0114 §2). It is what a client
 offers when it registers this server, and nothing else reads it — it need not
 be unique, and a client may register the server under a name of its own.
 

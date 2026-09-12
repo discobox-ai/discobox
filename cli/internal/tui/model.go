@@ -1071,7 +1071,7 @@ const repaintKey = "ctrl+l"
 // report sets the status line. It is the one path a handler uses to say what
 // happened, so a message can never outlive the key that produced it.
 // reportUnreachable says which registered servers the list is missing, once,
-// when that changes (ADR 0113 §4). The list is polled, and a window that
+// when that changes (ADR 0114 §4). The list is polled, and a window that
 // repeats the same complaint every refresh is a window you stop reading — but
 // rows that vanish with nothing said look like discoboxes that are gone.
 func (m *Model) reportUnreachable(servers []string) tea.Cmd {

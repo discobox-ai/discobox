@@ -28,7 +28,7 @@ var errPickCanceled = errors.New("canceled")
 // on.
 //
 // A discobox's address — discobox://<server>/<discobox> — names both, and a
-// server first reached through one is registered (ADR 0113 §6). A bare ID or
+// server first reached through one is registered (ADR 0114 §6). A bare ID or
 // prefix is looked for on the primary and then on the registered servers, so
 // an ID copied from `discobox ls` works whichever server listed it. With
 // neither, the candidates are what `discobox ls` shows for the current project

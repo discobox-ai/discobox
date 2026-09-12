@@ -283,13 +283,13 @@ type SSHIngress struct {
 // configured, and cannot change while the process runs — it is the address.
 //
 // Every server has one, whatever it listens on: the key is loaded on every
-// start, and only the iroh endpoint is opt-in (ADR 0114).
+// start, and only the iroh endpoint is opt-in (ADR 0115).
 type ServerPeer struct {
 	ID string
 }
 
 // ServerInfo is what GET /server serves: what this server calls itself, which
-// a client offers as the name to register it under (ADR 0113 §2). It is
+// a client offers as the name to register it under (ADR 0114 §2). It is
 // configuration resolved at startup, fixed for the life of the process.
 type ServerInfo struct {
 	Name string

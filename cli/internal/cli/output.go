@@ -65,7 +65,7 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 // for reasons the user did not cause is a list they cannot read.
 //
 // serverOf names the server each sandbox is on, by ID, when there is more than
-// one (ADR 0113 §4): the table gains a SERVER column and each JSON object a
+// one (ADR 0114 §4): the table gains a SERVER column and each JSON object a
 // "server" field. Nil is one server, which there is no point naming.
 func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showSource bool, serverOf map[string]string) error {
 	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })

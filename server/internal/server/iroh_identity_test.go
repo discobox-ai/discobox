@@ -8,7 +8,7 @@ import (
 	"github.com/discobox-ai/discobox/endpoint"
 )
 
-// Every server has a peer ID, whatever it listens on (ADR 0114): one that
+// Every server has a peer ID, whatever it listens on (ADR 0115): one that
 // listens only on http loads the identity an iroh listener would use, keeps it
 // across restarts, and sets up nothing for iroh.
 func TestConfigureIrohGivesEveryServerAPeerID(t *testing.T) {

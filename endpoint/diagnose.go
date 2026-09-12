@@ -295,7 +295,7 @@ func (e *IrohEndpoint) diagnoseIrohAddress(ctx context.Context, diagnosis *Diagn
 // recorded.
 //
 // The lookup is part of reading the address rather than a layer of its own:
-// until it answers there is no transport to have layers (ADR 0113 §1), and a
+// until it answers there is no transport to have layers (ADR 0114 §1), and a
 // failed one is an address problem — the fix is DNS, or writing the address
 // in a form that needs none.
 func (d *Diagnosis) readAddress(ctx context.Context, raw string, started time.Time) (Endpoint, bool) {

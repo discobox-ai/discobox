@@ -40,7 +40,7 @@ func getServerInfo(t *testing.T, router http.Handler) (int, map[string]any) {
 }
 
 // What a client asks when it registers this server: the name to offer
-// (ADR 0113 §2). Routing and the handler only — the allowlist that lets an
+// (ADR 0114 §2). Routing and the handler only — the allowlist that lets an
 // authenticated caller through is TestAuthenticatedAllowedPaths's.
 func TestServerInfoRouteServesTheName(t *testing.T) {
 	status, body := getServerInfo(t, newServerInfoRouterForTest(services.ServerInfo{Name: "workstation"}))

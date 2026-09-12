@@ -22,7 +22,7 @@ import (
 )
 
 // A client has one primary server — what --server names — and any number of
-// registered ones beside it (ADR 0113 §3). Listings span all of them, and an
+// registered ones beside it (ADR 0114 §3). Listings span all of them, and an
 // operation on a discobox goes to the server it is on.
 
 // serversFile is where the registered servers are kept: the user's config
@@ -36,7 +36,7 @@ func serversFile() string {
 // registeredServer is one server the user registered: the name it is listed
 // under, which is theirs to choose, the address it is reached at, and its peer
 // ID as the server gave it when it was registered — empty only for a server
-// from before every server had one (ADR 0114).
+// from before every server had one (ADR 0115).
 type registeredServer struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
@@ -136,7 +136,7 @@ func validServerName(name string) error {
 }
 
 // registrationName is the name a server is registered under when nobody chose
-// one: the name it offers (ADR 0113 §2), made into one a name may be. A server
+// one: the name it offers (ADR 0114 §2), made into one a name may be. A server
 // that offers none, or none that survives, is named after its address.
 func registrationName(offered, address string) string {
 	if name := sanitizeServerName(offered); name != "" {
@@ -238,7 +238,7 @@ func serverKey(address string) string {
 	return parsed.Scheme + " " + value
 }
 
-// resolveServerName lets --server name a registered server (ADR 0113 §3). An
+// resolveServerName lets --server name a registered server (ADR 0114 §3). An
 // address always has a scheme and a registered name never can, so which one
 // was written is never a guess.
 func (a *App) resolveServerName() error {
@@ -298,7 +298,7 @@ func (a *App) loadServers() ([]*server, error) {
 	set := []*server{primary}
 	primaryKey := serverKey(a.serverURL)
 	// The peer the primary's address names, when it names one: an address and a
-	// peer ID are two spellings of one server (ADR 0113 §3), and reading it off
+	// peer ID are two spellings of one server (ADR 0114 §3), and reading it off
 	// the address costs no round trip. A primary reached some other way has
 	// none to compare until something asks it.
 	primaryPeer := addressPeerID(a.serverURL)
@@ -326,7 +326,7 @@ func serverNamed(set []*server, name string) (*server, bool) {
 // forServer is this invocation aimed at another server: the same transport
 // settings, source directory and output, a different --server.
 //
-// It is never started — only the primary may be (ADR 0113 §3) — it works in
+// It is never started — only the primary may be (ADR 0114 §3) — it works in
 // the server's default project, since a project ID names a project on one
 // server only, and it does not carry --token, which was given for the primary.
 func (a *App) forServer(address string) *App {
@@ -350,7 +350,7 @@ func (a *App) forServer(address string) *App {
 // waited on.
 const serverInfoTimeout = 5 * time.Second
 
-// offeredName is the name a server offers for itself (ADR 0113 §2), or empty
+// offeredName is the name a server offers for itself (ADR 0114 §2), or empty
 // when it offers none: no hostname, a version that predates GET /server, or
 // no answer in time. Nothing depends on it but a default.
 func offeredName(ctx context.Context, client *apiclientgen.Client) string {
@@ -368,7 +368,7 @@ func offeredName(ctx context.Context, client *apiclientgen.Client) string {
 }
 
 // registeredServerTimeout bounds how long anything that spans servers waits on
-// a registered one (ADR 0113 §4). The primary is waited on as it always was; a
+// a registered one (ADR 0114 §4). The primary is waited on as it always was; a
 // registered server that has not answered by then is reported and left out,
 // rather than holding every other server's discoboxes back with it.
 const registeredServerTimeout = 10 * time.Second
@@ -538,7 +538,7 @@ func matchSandboxIDs(value string, ids []string) []string {
 	return nil
 }
 
-// findOnEveryServer resolves a discobox ID across servers (ADR 0113 §4): the
+// findOnEveryServer resolves a discobox ID across servers (ADR 0114 §4): the
 // primary first, as with one server, and the registered servers only when the
 // primary has no such discobox, so an ID copied from `discobox ls` works
 // whichever server listed it.
@@ -602,7 +602,7 @@ func (a *App) findOnEveryServer(ctx context.Context, set []*server, value string
 // selectAddressedSandbox resolves a discobox's address: the server it names,
 // and the discobox on it. A server reached this way that is neither the
 // primary nor registered is registered, once the discobox has been found on
-// it (ADR 0113 §6) — so a mistyped address leaves nothing behind.
+// it (ADR 0114 §6) — so a mistyped address leaves nothing behind.
 func (a *App) selectAddressedSandbox(cmd *cobra.Command, address endpoint.SandboxAddress) (*App, string, string, *apiclientgen.Client, error) {
 	ctx := cmd.Context()
 	set, err := a.servers()

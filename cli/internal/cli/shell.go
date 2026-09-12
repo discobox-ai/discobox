@@ -132,7 +132,7 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (app *App, p
 	// disabled reports -- `discobox tools ssh` reaches here that way, and reads its
 	// own separator later.
 	namesSandbox := cmd.Flags().ArgsLenAtDash() != 0
-	// A discobox's address names its server as well as the discobox (ADR 0113
+	// A discobox's address names its server as well as the discobox (ADR 0114
 	// §6), so it is resolved rather than matched: matchSandboxArg finds nothing
 	// in it — it is no ID, no name and no short ID — and without this the
 	// address fell through as the command a picked discobox would run.

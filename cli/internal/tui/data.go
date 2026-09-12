@@ -188,7 +188,7 @@ type Sandbox struct {
 	State State
 
 	// Server is the server the discobox is on, by the name the window lists it
-	// under (ADR 0113 §4): which section the row is drawn in, once there is
+	// under (ADR 0114 §4): which section the row is drawn in, once there is
 	// more than one server. Empty when there is only one, where naming it says
 	// nothing.
 	Server string
@@ -334,7 +334,7 @@ type Session struct {
 	Draft string
 
 	// Servers are the servers a discobox can be created on, by the names the
-	// window lists them under, the primary first (ADR 0113 §5). Nil when there
+	// window lists them under, the primary first (ADR 0114 §5). Nil when there
 	// is only the primary, and then the run options offer no choice.
 	Servers []string
 }
@@ -847,7 +847,7 @@ const ExecPrimary = "primary"
 
 // Listing is what one refresh of the list found: the discoboxes, and the
 // registered servers that were asked and did not answer, whose discoboxes are
-// missing from it rather than gone (ADR 0113 §4).
+// missing from it rather than gone (ADR 0114 §4).
 type Listing struct {
 	Sandboxes   []Sandbox
 	Unreachable []string
@@ -1302,7 +1302,7 @@ type DataSource interface {
 
 	// List is the project's sandboxes, newest-created first, across every
 	// server the window lists, with the registered servers that did not answer
-	// (ADR 0113 §4).
+	// (ADR 0114 §4).
 	List(ctx context.Context) (Listing, error)
 
 	// Resources is what Discobox has on this machine and what it is using of

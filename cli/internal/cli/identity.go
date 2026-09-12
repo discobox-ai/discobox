@@ -39,7 +39,7 @@ type identityValue struct {
 	Reason string `json:"reason,omitempty"`
 	// Failed separates the two ways there can be none. A server that answered
 	// "I have no peer ID" answered: it is an older server, from before every
-	// server had one (ADR 0114), and nothing is wrong with it. A server that
+	// server had one (ADR 0115), and nothing is wrong with it. A server that
 	// could not be asked did not answer. Only the second is worth a non-zero
 	// exit.
 	Failed bool `json:"failed,omitempty"`
@@ -173,7 +173,7 @@ func (a *App) clientIdentity(cmd *cobra.Command) identityValue {
 // caller passed, that is the ID they are asking about.
 //
 // A name whose _discobox record names a peer names it as surely as a peer ID
-// in the address does (ADR 0113 §1), so the resolved address is the one read.
+// in the address does (ADR 0114 §1), so the resolved address is the one read.
 func (a *App) serverIdentity(ctx context.Context) identityValue {
 	if parsed, err := a.resolvedServer(); err == nil && parsed.Scheme == "iroh" && parsed.Value != "" {
 		if id, err := parsed.IrohID(); err == nil {

@@ -15,7 +15,7 @@ import (
 )
 
 // newServersCommand implements `discobox servers`: the servers this client
-// lists discoboxes from beside its primary (ADR 0113 §3).
+// lists discoboxes from beside its primary (ADR 0114 §3).
 func (a *App) newServersCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "servers",

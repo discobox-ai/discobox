@@ -251,7 +251,7 @@ func TestSelectSandboxFindsAnIDOnWhicheverServerHasIt(t *testing.T) {
 }
 
 // A discobox's address names its server, and reaching the discobox there
-// registers the server under the name it offers (ADR 0113 §6).
+// registers the server under the name it offers (ADR 0114 §6).
 func TestSelectSandboxAddressRegistersItsServer(t *testing.T) {
 	useTempServersFile(t)
 	primary := fakeServer(t, "alpha", sandboxA)
@@ -543,7 +543,7 @@ func managedSSHConfigs(t *testing.T, state string) map[string]string {
 }
 
 // `--write` covers every server, each into its own files, so one ssh reaches
-// the discoboxes on all of them (ADR 0113 §4).
+// the discoboxes on all of them (ADR 0114 §4).
 func TestSSHConfigWritesEveryServer(t *testing.T) {
 	useTempServersFile(t)
 	state := useTempSSHMachine(t)
@@ -623,7 +623,7 @@ func TestResolvingANameObeysTheCallersContext(t *testing.T) {
 }
 
 // One server is one server however it is reached: an address naming the peer a
-// registration recorded is that registration, listed once (ADR 0113 §3).
+// registration recorded is that registration, listed once (ADR 0114 §3).
 func TestServersListsThePrimaryOnceByItsPeerID(t *testing.T) {
 	useTempServersFile(t)
 	peer := peerWithKeyByteForCLI(t, 0xcc).String()
@@ -674,7 +674,7 @@ func TestLauncherSettlesThePrimaryNameBeforeItListsAnything(t *testing.T) {
 }
 
 // shell takes a discobox's address like every other command that takes a
-// discobox (ADR 0113 §6), rather than handing the address on as the command.
+// discobox (ADR 0114 §6), rather than handing the address on as the command.
 func TestShellTargetRoutesAnAddress(t *testing.T) {
 	useTempServersFile(t)
 	primary := fakeServer(t, "alpha", sandboxA)
@@ -696,7 +696,7 @@ func TestShellTargetRoutesAnAddress(t *testing.T) {
 }
 
 // cp takes a discobox's address like every other command that takes a
-// discobox (ADR 0113 §6): the operand splits at the colon that ends the
+// discobox (ADR 0114 §6): the operand splits at the colon that ends the
 // discobox, not at the one in the scheme, and the copy runs against the server
 // the address names — registering it on the way, as any other address does.
 func TestCPRoutesAnAddress(t *testing.T) {
@@ -755,7 +755,7 @@ func TestCPRefusesTwoServersInOneCopy(t *testing.T) {
 		t.Fatalf("resolveCPTarget() error = %v, want two servers refused", err)
 	}
 	// Decided from the operands, so neither server was reached — and reaching
-	// one through its address is what registers it (ADR 0113 §6).
+	// one through its address is what registers it (ADR 0114 §6).
 	if reg, err := loadServerRegistry(); err != nil || len(reg.Servers) != 0 {
 		t.Fatalf("registry = %+v (%v), want a refused copy to register nothing", reg.Servers, err)
 	}

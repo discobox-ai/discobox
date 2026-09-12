@@ -10,7 +10,7 @@ import (
 
 // The Server row is there only when there is a server to choose, and the
 // primary leads it so an untouched panel creates where it always did
-// (ADR 0113 §5).
+// (ADR 0114 §5).
 func TestRunOptionsOfferAServerOnlyWhenThereIsAChoice(t *testing.T) {
 	if single := newOptions(Session{Directory: "/work"}); single.server() != nil {
 		t.Fatal("the run options offer a server with only the primary to create on")
@@ -59,7 +59,7 @@ func TestUnreachableServersAreReportedWhenThatChanges(t *testing.T) {
 }
 
 // The list is one section per server, in the order the session names them,
-// with the primary's first (ADR 0113 §4).
+// with the primary's first (ADR 0114 §4).
 func TestTheListIsOneSectionPerServer(t *testing.T) {
 	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
 		{ID: "sbx_b1", Name: "three", Server: "beta", State: StateRunning},
