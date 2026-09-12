@@ -18,6 +18,11 @@ func registerPlatformProviderFactories(manager *sandbox.ProviderManager, poolMan
 	manager.RegisterProviderConfigValidator(wslc.ProviderType, wslc.Validate)
 }
 
+// DefaultBootImages are the images the provider this server installs by default
+// on this OS boots before it can run a pool (ADR 0113 §1). wslc boots the WSL
+// Containers VM Windows provides, and fetches no image to do it.
+func DefaultBootImages() []string { return nil }
+
 // controlPlaneStreams avoids handing the driver a typed-nil sink, which would
 // satisfy the interface while panicking on use.
 func controlPlaneStreams(options FactoryOptions) wslc.StreamSink {

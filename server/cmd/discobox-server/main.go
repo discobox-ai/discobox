@@ -23,6 +23,18 @@ func main() {
 		return
 	}
 
+	// And the images a first run here will want, which the CLI that staged this
+	// binary asks for before starting it, so it can download them where the
+	// user is watching (ADR 0113 §1). It reads the configuration and starts
+	// nothing.
+	if len(os.Args) > 1 && os.Args[1] == "images" {
+		if err := server.PrintImages(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Then this: the same binary is also a pool VM, re-executed into a hidden
 	// subcommand, and a launcher must do nothing a server does — no database,
 	// no listener, no configuration read.

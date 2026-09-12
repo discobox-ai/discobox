@@ -133,6 +133,13 @@ type Config struct {
 	// DockerPoolImage overrides the pool agent image the Docker provider runs.
 	DockerPoolImage string `yaml:"dockerPoolImage" env:"DISCOBOX_DOCKER_POOL_IMAGE" doc:"Pool agent image the Docker provider runs. Defaults to the released image for this build."`
 
+	// ImageCacheDir is the image store (ADR 0113): an OCI layout a CLI stages a
+	// release's images into before it starts this server, which a provider
+	// fetches a VM guest through and a pool on this machine loads a container
+	// image from before pulling one. The CLI names its own on every server it
+	// launches; a server started otherwise keeps one under its cache.
+	ImageCacheDir string `yaml:"imageCacheDir" env:"DISCOBOX_IMAGE_CACHE_DIR" doc:"OCI image layout that VM guest images are fetched through, and that a pool on this machine loads images from before pulling them. The CLI names the one it stages a release's images into. Defaults to <cacheDir>/images."`
+
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for at startup, for a host that keeps it somewhere this check
 	// would not look. It accepts a full path.
@@ -274,6 +281,13 @@ func Load() (*Config, error) {
 	}
 	if !configured("stateDir") {
 		cfg.StateDir = filepath.Join(xdg.StateHome, appName)
+	}
+	// A key written empty counts as absent here, unlike most: the store is not
+	// optional (ADR 0113 §3), and a server without one cannot fetch a VM guest
+	// at all — so one blank line in a configuration file would take every VM
+	// pool on the machine down.
+	if !configured("imageCacheDir") || strings.TrimSpace(cfg.ImageCacheDir) == "" {
+		cfg.ImageCacheDir = filepath.Join(cfg.CacheDir, "images")
 	}
 	if !configured("databaseDsn") {
 		cfg.DatabaseDSN = defaultDatabaseDSN(cfg.DataDir)

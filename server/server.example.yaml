@@ -102,6 +102,13 @@
 # Environment: DISCOBOX_DOCKER_POOL_IMAGE
 #dockerPoolImage:
 
+# OCI image layout that VM guest images are fetched through, and that a
+# pool on this machine loads images from before pulling them. The CLI
+# names the one it stages a release's images into. Defaults to
+# <cacheDir>/images.
+# Environment: DISCOBOX_IMAGE_CACHE_DIR
+#imageCacheDir:
+
 # The WSL Containers program to look for on a Windows host, as a name on
 # PATH or a full path. Empty looks for the component's own name, wslc.
 # Windows only.

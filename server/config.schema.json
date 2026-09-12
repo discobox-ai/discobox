@@ -104,6 +104,13 @@
         "null"
       ]
     },
+    "imageCacheDir": {
+      "description": "OCI image layout that VM guest images are fetched through, and that a pool on this machine loads images from before pulling them. The CLI names the one it stages a release's images into. Defaults to \u003ccacheDir\u003e/images. Environment: DISCOBOX_IMAGE_CACHE_DIR (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "imageRetention": {
       "description": "How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both. Environment: DISCOBOX_IMAGE_RETENTION (takes precedence over this file).",
       "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",

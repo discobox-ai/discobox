@@ -7,12 +7,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"syscall"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
@@ -154,6 +156,10 @@ func Run(ctx context.Context) error {
 	}
 
 	startup.setPhase("starting services")
+	var imageCache *imagecache.Layout
+	if dir := strings.TrimSpace(cfg.ImageCacheDir); dir != "" {
+		imageCache = imagecache.Open(dir)
+	}
 	router, appServices, appStore, shutdownApp, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		SSHIngress:                     sshIngress,
 		ServerPeer:                     serverPeer(irohPeerID),
@@ -172,6 +178,7 @@ func Run(ctx context.Context) error {
 		ServerDefaults: dockerworker.ServerDefaults{
 			PoolImage:      cfg.DockerPoolImage,
 			ImageRetention: cfg.ImageRetention,
+			ImageCache:     imageCache,
 		},
 		WSLCCommand: cfg.WSLCCommand,
 	})

@@ -3,6 +3,8 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"io"
 
 	internalserver "github.com/discobox-ai/discobox/server/internal/server"
 	"github.com/discobox-ai/discobox/server/providers/libkrun"
@@ -12,6 +14,22 @@ import (
 // HTTP server.
 func Run(ctx context.Context) error {
 	return internalserver.Run(ctx)
+}
+
+// PrintImages writes, one per line, the images a first run on this machine will
+// want, for the CLI that staged this binary to stage them before starting it
+// (ADR 0113 §1). It reads the configuration and starts nothing.
+func PrintImages(w io.Writer) error {
+	images, err := internalserver.Images()
+	if err != nil {
+		return err
+	}
+	for _, image := range images {
+		if _, err := fmt.Fprintln(w, image); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RunVMLauncherIfInvoked runs this process as a pool VM and never returns, or

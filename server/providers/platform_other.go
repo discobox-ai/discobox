@@ -15,6 +15,11 @@ import (
 func registerPlatformProviderFactories(*sandbox.ProviderManager, poolruntime.PoolManager, FactoryOptions) {
 }
 
+// DefaultBootImages are the images the provider this server installs by default
+// on this OS boots before it can run a pool (ADR 0113 §1). Linux defaults to the
+// host's Docker, which boots nothing; libkrun, which does, is chosen by hand.
+func DefaultBootImages() []string { return nil }
+
 // ensurePlatformPrerequisites has nothing to check. There is no platform
 // backend here: pools run on the portable providers, which are configured per
 // instance and fail per instance, so a Docker daemon that is not running is one
