@@ -61,7 +61,7 @@ runtime contract for sandboxes is the pool-agent HTTP API reached through
 `transport.HTTPClientLease`.
 
 `poolruntime.RuntimeProvider` is a nine-method interface: `Close`,
-`EnsurePool`, `RepairPool`, `RemovePool`, `StageImages`,
+`EnsurePool`, `RepairPool`, `RemovePool`,
 `AcquirePoolAgentClient`, `OpenConsole`, `OpenLogs`, and `BuildGuestImage`.
 `dockerworker.Engine` is its only implementation. The engine owns everything
 Docker: launching the pool-agent container with boot env, socket bind and host
@@ -284,17 +284,12 @@ reclaims the newest image of a repository for exactly this reason — see ADR 00
 
 ## Image Staging
 
-`RuntimeProvider.StageImages` (`Engine.StageImages`) pulls the images a
-sandbox will want onto a pool that is already up, so the first sandbox there
-does not wait for them. It creates nothing and reports under the
-`preloading_images` phase. Failures are collected rather than stopping at the
-first, and a pool whose images are not staged is still healthy and schedulable:
-staging is a head start, not a precondition.
-
-The engine does the pulling because it owns what is on a pool daemon; *when* to
-stage is not a provider decision. The pools service drives it as its own
-reconciled resource (`poolImages`, `server/internal/resources/pools`), marked
-when a pool becomes active and refreshed periodically.
+The pool reconciler passes its project's image set into `EnsurePool` and
+`RepairPool`. Before creating a pool-agent container, the engine loads cached
+images onto a local daemon and reports `preloading_images`. Existing healthy
+agents skip this work. Failed loads fail startup; absent cache entries and
+remote daemons are skipped, leaving sandbox images to their on-demand pull.
+There is no separate image staging operation or periodic prepull.
 
 ### The Image Cache
 
@@ -321,7 +316,7 @@ to the pull, so the cache never makes an image harder to get.
 
 Both routes run through `ensureImageRef`, and each is reported as what it is:
 the pool-agent image as `loading_pool_image` rather than `pulling_pool_image`,
-a staged image with `PreloadProgress.Loading`.
+a staged image with the `preloading_images` provisioning phase.
 
 ## Pool Runtime Lifecycle
 

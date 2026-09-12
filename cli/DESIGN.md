@@ -1850,14 +1850,10 @@ terminal, appended lines off one, and cleared before the stream is handed to
 anything else. The launcher renders the same reports on its busy line instead;
 see the launcher's design doc.
 
-**A first run draws three different things on that one row**, in order: the
-server downloading (`serverStageText`), the server starting
-(`serverStartupText`), and the pool's images staging (`stagingLine`). They share
-a grammar deliberately — sentence case, the count of things leading when there
-is more than one, the one being fetched after a colon, and `bytesSuffix`'s
-`— 12.0 MiB of 94.0 MiB` tail, which all three call rather than restate. Three
-ways of writing the same sentence, taking turns on one line, read as three
-unrelated programs rather than one setup.
+A first run reports server downloads and startup on this row. Once a sandbox
+is requested, its normal pool wait reports `preloading images` from pool
+provisioning progress, including image bytes. The launcher uses the same wait
+status. There is no separate first-run staging wait or initialization feed.
 
     ⠋ Downloading server — 12.0 MiB of 94.0 MiB
     ⠋ Starting server: migrating the database
@@ -1881,8 +1877,7 @@ else.
 
 The download narrates before the launcher's window opens, not inside it. The
 window needs a server to list from, so the download is already over by the time
-there is a window — unlike image staging, which deliberately outlives the
-window's opening and is handed to it as `WithInitialization`.
+there is a window. Pool preload is narrated by the sandbox create wait.
 
 **While it is up it owns the row it is on, so everything else the command
 writes to that stream goes through it.** A line that stays goes through

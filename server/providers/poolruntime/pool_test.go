@@ -184,36 +184,26 @@ type testRuntimeProvider struct {
 	acquireCalls int
 	consoleCalls int
 	logCalls     int
-
-	mu        sync.Mutex
-	preloaded []string
 }
 
 func (p *testRuntimeProvider) Close() error { return nil }
 
-func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, mint poolagent.MintBootstrap) error {
+func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, mint poolagent.MintBootstrap, _ []string, begin func(context.Context) error) error {
 	if !p.createsRuntime {
 		return nil
+	}
+	if err := begin(ctx); err != nil {
+		return err
 	}
 	_, err := mint(ctx)
 	return err
 }
 
-func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool, poolagent.MintBootstrap, string) error {
+func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool, poolagent.MintBootstrap, string, []string, func(context.Context) error) error {
 	return nil
 }
 
 func (p *testRuntimeProvider) RemovePool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
-	return nil
-}
-
-func (p *testRuntimeProvider) StageImages(_ context.Context, _ *model.Pool, images []string, report func(sandbox.PreloadProgress)) error {
-	p.mu.Lock()
-	p.preloaded = append(p.preloaded, images...)
-	p.mu.Unlock()
-	if report != nil {
-		report(sandbox.PreloadProgress{Done: len(images), Total: len(images)})
-	}
 	return nil
 }
 
@@ -379,7 +369,7 @@ func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
 	t.Run("drift check over a healthy runtime", func(t *testing.T) {
 		manager := &fakePoolManager{pool: pool}
 		provider := New(&testRuntimeProvider{}, sandbox.ProviderDefinition{Name: "test"}, manager)
-		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool); err != nil {
+		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, nil, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
 		if manager.mintedBootstrapTokens != 0 {
@@ -390,7 +380,7 @@ func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
 	t.Run("runtime creation", func(t *testing.T) {
 		manager := &fakePoolManager{pool: pool}
 		provider := New(&testRuntimeProvider{createsRuntime: true}, sandbox.ProviderDefinition{Name: "test"}, manager)
-		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool); err != nil {
+		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, nil, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
 		if manager.mintedBootstrapTokens != 1 {

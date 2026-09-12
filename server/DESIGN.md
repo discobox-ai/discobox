@@ -567,24 +567,13 @@ in another module. `Status.Starting()` is what a client waits out.
 
 ## Staging a Pool's Images
 
-The images a sandbox will want are pulled onto a pool when that pool becomes
-active, so the first sandbox on it does not wait for them (ADR 0069).
-
-It is its own reconciled resource — `poolImages`, keyed by pool ID — claimed and
-leased like anything else the engine runs. The pool's own reconcile marks it
-dirty on the way out and a level-triggered scan is the backstop. It creates
-nothing: the host is already up by the time this pulls onto it.
-
-Its result is a **condition**, not a state. `Pool.ImagesStaged` and
-`Pool.ImageStage` are display data, and a pool whose images are not staged is
-active, healthy and schedulable — a sandbox that wants an image its host does not
-have pulls it then, exactly as it always did. Staging is a head start, so the
-failure mode of staging is that it did not happen. Failures are recorded on the
-condition and retried on this resource's own cadence, never returned as a
-reconcile error: the engine's failure backoff is for resources that must
-converge.
-
-Server startup has nothing to do with any of it.
+The pool reconciler supplies the project image set to the runtime provider.
+Before starting a new pool agent, the engine loads images already staged in the
+local image cache. A cached-image load failure fails pool startup; an uncached
+image is left for the sandbox's on-demand pull. There is no background prepull
+resource or staging condition. Provisioning reports `preloading_images`, and
+placement requires an active pool, so registration alone cannot admit work
+before startup finishes. See [pools](internal/resources/pools/DESIGN.md).
 
 ## Single Server Per Data Directory
 

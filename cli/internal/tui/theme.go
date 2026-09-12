@@ -118,15 +118,7 @@ type styles struct {
 	frame    lipgloss.Style
 	statusOK lipgloss.Style
 	statusWA lipgloss.Style
-	// initializing is the server's own setup, reported at the end of the status
-	// row. In the busy line's own amber, because it is the same kind of
-	// statement — something is under way that the user is not being asked to
-	// wait for. Dim is what the keys on that row are painted in, so a dim
-	// report was the same paint as the chrome around it and read as chrome:
-	// the row pins it to the right end, which is where the eye goes last, and
-	// nothing about the layout reserves it a gap. See initializing.go.
-	initializing lipgloss.Style
-	statusER     lipgloss.Style
+	statusER lipgloss.Style
 	// The workspace's attention bands: a whole-width bar rather than a colored
 	// word, because it has to survive being looked past. It is three styles
 	// over one painted band — the mark that catches the eye, the subject, and
@@ -201,7 +193,6 @@ func newStyles(color bool) *styles {
 	s.statusWA = paint(colWarn)
 	// The same amber the status line uses, because it is the same kind of
 	// statement: something is happening that you are not waiting on.
-	s.initializing = paint(colWarn)
 	s.statusER = paint(colErr)
 	s.attentionMark = paint(colWarn).Bold(true)
 	s.readyMark = paint(colOK).Bold(true)

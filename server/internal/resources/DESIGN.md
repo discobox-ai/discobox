@@ -11,7 +11,7 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 | [harnessconfigs](harnessconfigs/DESIGN.md) | Project-scoped harness configs and the configure flow | `harnessConfig` |
 | [jobs](jobs/DESIGN.md) | Jobs API, a projection of the reconcile engine's dirty set | none |
 | `peers` | Enrolled peers: machines permitted to connect to this server | none |
-| [pools](pools/DESIGN.md) | `Pool` API (`Service`) and trusted pool intent (`ControlPlane`, the `sandbox.PoolManager` handed to drivers) | `pool`, `poolImages` |
+| [pools](pools/DESIGN.md) | `Pool` API (`Service`) and trusted pool intent (`ControlPlane`, the `sandbox.PoolManager` handed to drivers) | `pool` |
 | [projects](projects/DESIGN.md) | Projects and the default-project flag | none |
 | [providers](providers/DESIGN.md) | Provider-instance API and startup reconciliation | none |
 | [sandboxes](sandboxes/DESIGN.md) | Sandbox API, lifecycle intent, and reconciliation | `sandbox` |

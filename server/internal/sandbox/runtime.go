@@ -205,14 +205,12 @@ type ResolvedHarnessConfig struct {
 // The caller owns pool lifecycle persistence and job semantics. RepairPool is
 // only for preserving in-place repair of pools with assigned sandboxes;
 // delete reconciliation must use RemovePool and must not fall back to repair.
+// begin records startup before a runtime is replaced or created; providers
+// must call it before preloading images or launching a new agent.
 type PoolRuntime interface {
-	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
-	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error
+	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, images []string, begin func(context.Context) error) error
+	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, images []string, begin func(context.Context) error) error
 	RemovePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
-	// StageImages pulls the images a sandbox will want onto a pool that is
-	// already up, so the first sandbox on it does not wait for them. It creates
-	// nothing, and a pool whose images are not staged is still a healthy pool.
-	StageImages(ctx context.Context, pool *model.Pool, images []string, report func(PreloadProgress)) error
 	// OpenConsole attaches to the pool host's administrative console: a root
 	// shell in the host's own namespaces, for operators debugging the backend
 	// itself. It deliberately does not go through the pool agent, because the

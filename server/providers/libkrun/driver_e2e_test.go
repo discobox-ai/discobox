@@ -219,7 +219,7 @@ func TestLibkrunEndToEnd(t *testing.T) {
 			ControlPlaneKey: base64.StdEncoding.EncodeToString(controlPlanePublic),
 		}, nil
 	}
-	if err := engine.EnsurePool(ctx, nil, provider, pool, mint); err != nil {
+	if err := engine.EnsurePool(ctx, nil, provider, pool, mint, nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("start pool agent: %v%s", err, launcherDiagnostics(driver, poolID))
 	}
 	waitForPoolAgent(ctx, t, driver, poolID, &registrations, &statusUpdates)
@@ -245,7 +245,7 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		"busybox:1.37.0", "sh", "-ec",
 		`test "$(cat /data/libkrun-e2e-data)" = data-persisted && test "$(cat /cache/libkrun-e2e-cache)" = cache-persisted`)
 
-	if err := engine.EnsurePool(ctx, nil, provider, pool, mint); err != nil {
+	if err := engine.EnsurePool(ctx, nil, provider, pool, mint, nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("restore pool agent after VM restart: %v%s", err, launcherDiagnostics(driver, poolID))
 	}
 	waitForPoolAgent(ctx, t, driver, poolID, &registrations, &statusUpdates)

@@ -26,9 +26,6 @@ type ControlPlane struct {
 	store     *store.Store
 	engine    *reconcile.Engine
 	agentAuth *poolagentauth.Manager
-	// providerManager resolves a pool's provider outside a reconcile, which
-	// startup preloading needs and nothing else here does.
-	providerManager *sandbox.ProviderManager
 }
 
 func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPlane {
@@ -57,13 +54,8 @@ func (s *ControlPlane) RegisterJobs(providerManager *sandbox.ProviderManager) er
 	if s.engine == nil {
 		return errors.New("reconcile engine is required")
 	}
-	s.providerManager = providerManager
-	if err := s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s)); err != nil {
-		return err
-	}
-	// Its own resource, so it is claimed and leased like anything else and can
-	// fail and retry without a pool's health depending on it.
-	return s.engine.Register(PoolImagesResourceType, NewPoolImagesReconciler(s.store, providerManager))
+
+	return s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s))
 }
 
 func (s *ControlPlane) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {

@@ -6203,52 +6203,6 @@ func (o OptPool) Or(d Pool) Pool {
 	return d
 }
 
-// NewOptPoolImageStage returns new OptPoolImageStage with value set to v.
-func NewOptPoolImageStage(v PoolImageStage) OptPoolImageStage {
-	return OptPoolImageStage{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptPoolImageStage is optional PoolImageStage.
-type OptPoolImageStage struct {
-	Value PoolImageStage
-	Set   bool
-}
-
-// IsSet returns true if OptPoolImageStage was set.
-func (o OptPoolImageStage) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptPoolImageStage) Reset() {
-	var v PoolImageStage
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptPoolImageStage) SetTo(v PoolImageStage) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptPoolImageStage) Get() (v PoolImageStage, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptPoolImageStage) Or(d PoolImageStage) PoolImageStage {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptPoolProvisionProgress returns new OptPoolProvisionProgress with value set to v.
 func NewOptPoolProvisionProgress(v PoolProvisionProgress) OptPoolProvisionProgress {
 	return OptPoolProvisionProgress{
@@ -7953,13 +7907,7 @@ type Pool struct {
 	// Whether the pool accepts new sandboxes.
 	Schedulable bool `json:"schedulable"`
 	// Whether the pool should be used only as fallback capacity.
-	Degraded bool `json:"degraded"`
-	// Whether the images a sandbox might run are staged on this host. A condition, not a health state
-	// — an unstaged pool is still active and schedulable.
-	ImagesStaged OptBool           `json:"imagesStaged"`
-	ImageStage   OptPoolImageStage `json:"imageStage"`
-	// When imageStage was last written.
-	ImageStagedAt     OptDateTime              `json:"imageStagedAt"`
+	Degraded          bool                     `json:"degraded"`
 	ProvisionProgress OptPoolProvisionProgress `json:"provisionProgress"`
 	// When provisionProgress was observed.
 	ProvisionProgressAt OptDateTime `json:"provisionProgressAt"`
@@ -8072,21 +8020,6 @@ func (s *Pool) GetSchedulable() bool {
 // GetDegraded returns the value of Degraded.
 func (s *Pool) GetDegraded() bool {
 	return s.Degraded
-}
-
-// GetImagesStaged returns the value of ImagesStaged.
-func (s *Pool) GetImagesStaged() OptBool {
-	return s.ImagesStaged
-}
-
-// GetImageStage returns the value of ImageStage.
-func (s *Pool) GetImageStage() OptPoolImageStage {
-	return s.ImageStage
-}
-
-// GetImageStagedAt returns the value of ImageStagedAt.
-func (s *Pool) GetImageStagedAt() OptDateTime {
-	return s.ImageStagedAt
 }
 
 // GetProvisionProgress returns the value of ProvisionProgress.
@@ -8252,21 +8185,6 @@ func (s *Pool) SetSchedulable(val bool) {
 // SetDegraded sets the value of Degraded.
 func (s *Pool) SetDegraded(val bool) {
 	s.Degraded = val
-}
-
-// SetImagesStaged sets the value of ImagesStaged.
-func (s *Pool) SetImagesStaged(val OptBool) {
-	s.ImagesStaged = val
-}
-
-// SetImageStage sets the value of ImageStage.
-func (s *Pool) SetImageStage(val OptPoolImageStage) {
-	s.ImageStage = val
-}
-
-// SetImageStagedAt sets the value of ImageStagedAt.
-func (s *Pool) SetImageStagedAt(val OptDateTime) {
-	s.ImageStagedAt = val
 }
 
 // SetProvisionProgress sets the value of ProvisionProgress.
@@ -8588,185 +8506,6 @@ func (s *PoolFilesystemUsageAdditional) init() PoolFilesystemUsageAdditional {
 	return m
 }
 
-// What image staging is doing on one pool, for a client that launched the server and
-// is waiting out a first run. Nothing schedules on it.
-// Ref: #/components/schemas/PoolImageStage
-type PoolImageStage struct {
-	State PoolImageState `json:"state"`
-	// The reference being pulled, absent between images.
-	Image OptString `json:"image"`
-	// Images finished.
-	Done int `json:"done"`
-	// Images in the set.
-	Total int `json:"total"`
-	// Bytes downloaded of the image named above.
-	Current OptInt64 `json:"current"`
-	// Total bytes of the layers whose size has been reported. Grows while the manifest is walked, so
-	// current/size is a ratio at a moment and never a bar.
-	Size OptInt64 `json:"size"`
-	// Layers heard about so far.
-	Layers OptInt `json:"layers"`
-	// Layers fully pulled, including those already present.
-	LayersComplete OptInt `json:"layersComplete"`
-	// The image named is being loaded from the image cache on the server's machine rather than pulled
-	// from its registry (ADR 0113). The byte counts are the same shape either way.
-	Loading OptBool `json:"loading"`
-	// Why the last attempt failed. Staging retries on its own.
-	Error OptString `json:"error"`
-}
-
-// GetState returns the value of State.
-func (s *PoolImageStage) GetState() PoolImageState {
-	return s.State
-}
-
-// GetImage returns the value of Image.
-func (s *PoolImageStage) GetImage() OptString {
-	return s.Image
-}
-
-// GetDone returns the value of Done.
-func (s *PoolImageStage) GetDone() int {
-	return s.Done
-}
-
-// GetTotal returns the value of Total.
-func (s *PoolImageStage) GetTotal() int {
-	return s.Total
-}
-
-// GetCurrent returns the value of Current.
-func (s *PoolImageStage) GetCurrent() OptInt64 {
-	return s.Current
-}
-
-// GetSize returns the value of Size.
-func (s *PoolImageStage) GetSize() OptInt64 {
-	return s.Size
-}
-
-// GetLayers returns the value of Layers.
-func (s *PoolImageStage) GetLayers() OptInt {
-	return s.Layers
-}
-
-// GetLayersComplete returns the value of LayersComplete.
-func (s *PoolImageStage) GetLayersComplete() OptInt {
-	return s.LayersComplete
-}
-
-// GetLoading returns the value of Loading.
-func (s *PoolImageStage) GetLoading() OptBool {
-	return s.Loading
-}
-
-// GetError returns the value of Error.
-func (s *PoolImageStage) GetError() OptString {
-	return s.Error
-}
-
-// SetState sets the value of State.
-func (s *PoolImageStage) SetState(val PoolImageState) {
-	s.State = val
-}
-
-// SetImage sets the value of Image.
-func (s *PoolImageStage) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetDone sets the value of Done.
-func (s *PoolImageStage) SetDone(val int) {
-	s.Done = val
-}
-
-// SetTotal sets the value of Total.
-func (s *PoolImageStage) SetTotal(val int) {
-	s.Total = val
-}
-
-// SetCurrent sets the value of Current.
-func (s *PoolImageStage) SetCurrent(val OptInt64) {
-	s.Current = val
-}
-
-// SetSize sets the value of Size.
-func (s *PoolImageStage) SetSize(val OptInt64) {
-	s.Size = val
-}
-
-// SetLayers sets the value of Layers.
-func (s *PoolImageStage) SetLayers(val OptInt) {
-	s.Layers = val
-}
-
-// SetLayersComplete sets the value of LayersComplete.
-func (s *PoolImageStage) SetLayersComplete(val OptInt) {
-	s.LayersComplete = val
-}
-
-// SetLoading sets the value of Loading.
-func (s *PoolImageStage) SetLoading(val OptBool) {
-	s.Loading = val
-}
-
-// SetError sets the value of Error.
-func (s *PoolImageStage) SetError(val OptString) {
-	s.Error = val
-}
-
-// How far staging a pool's images has got. It is a condition and never a health
-// state: a pool whose images are not staged is active, healthy and schedulable,
-// because a sandbox that wants an image the host does not have pulls it then.
-// Ref: #/components/schemas/PoolImageState
-type PoolImageState string
-
-const (
-	PoolImageStateStaging PoolImageState = "staging"
-	PoolImageStateReady   PoolImageState = "ready"
-	PoolImageStateFailed  PoolImageState = "failed"
-)
-
-// AllValues returns all PoolImageState values.
-func (PoolImageState) AllValues() []PoolImageState {
-	return []PoolImageState{
-		PoolImageStateStaging,
-		PoolImageStateReady,
-		PoolImageStateFailed,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s PoolImageState) MarshalText() ([]byte, error) {
-	switch s {
-	case PoolImageStateStaging:
-		return []byte(s), nil
-	case PoolImageStateReady:
-		return []byte(s), nil
-	case PoolImageStateFailed:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *PoolImageState) UnmarshalText(data []byte) error {
-	switch PoolImageState(data) {
-	case PoolImageStateStaging:
-		*s = PoolImageStateStaging
-		return nil
-	case PoolImageStateReady:
-		*s = PoolImageStateReady
-		return nil
-	case PoolImageStateFailed:
-		*s = PoolImageStateFailed
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // What the pool's own services hold, from the pool container's own cgroup. Excludes the sandboxes,
 // which are charged to their own cgroups outside this subtree.
 // Ref: #/components/schemas/PoolMemoryUsage
@@ -8867,6 +8606,9 @@ func (s *PoolMemoryUsageAdditional) init() PoolMemoryUsageAdditional {
 // it is the build of the pool, sandbox-base, and harness images on the pool's own
 // Docker, which on a VM backend is where a cold start spends its second stretch of
 // minutes, after the machine is up and before its agent exists to start.
+// preloading_images loads locally cached sandbox images before starting the pool
+// agent. Placement stays closed until startup completes. Byte counts continue to
+// be reported while Docker extracts the image.
 // loading_pool_image is pulling_pool_image's twin when the image is read from the
 // image cache the CLI staged on the server's machine (ADR 0113): the same byte counts,
 // read from disk rather than a registry.

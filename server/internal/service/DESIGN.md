@@ -55,7 +55,7 @@ Resource packages expose their own service/control-plane/reconciler types:
 ```text
 internal/resources/sandboxes.Service            (+ SandboxReconciler)
 internal/resources/pools.Service
-internal/resources/pools.ControlPlane           (+ PoolReconciler, PoolImagesReconciler)
+internal/resources/pools.ControlPlane           (+ PoolReconciler)
 internal/resources/providers.Service
 internal/resources/harnessconfigs.Service       (also the harnessConfig reconciler)
 internal/resources/jobs.Service
@@ -81,7 +81,7 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
 1. Registers reconcilers: `sandbox` (`sandboxes.Service.RegisterJobs`, with
    `Options.SandboxReconcileJobConcurrency`), `harnessConfig`
    (`harnessconfigs.Service`, so in-flight configure flows survive a restart),
-   and `pool` plus `poolImages` (`pools.ControlPlane.RegisterJobs`).
+   and `pool` (`pools.ControlPlane.RegisterJobs`).
 2. Starts the engine.
 3. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`.
 4. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving

@@ -53,7 +53,7 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
 	mint := staticMint(poolagent.Bootstrap{ProjectID: project.ID, PoolID: pool.ID, Token: "token-1", ControlPlaneKey: "key-1"})
 
-	if err := engine.EnsurePool(ctx, project, provider, pool, mint); err != nil {
+	if err := engine.EnsurePool(ctx, project, provider, pool, mint, nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("ensure pool: %v", err)
 	}
 	t.Cleanup(func() {
@@ -74,7 +74,7 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	assertContainerRunning(ctx, t, state.ContainerID, true)
 
 	// EnsurePool is idempotent: the healthy container is kept.
-	if err := engine.EnsurePool(ctx, project, provider, pool, mint); err != nil {
+	if err := engine.EnsurePool(ctx, project, provider, pool, mint, nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("re-ensure pool: %v", err)
 	}
 	nextState, err := dockerworker.DecodeRuntimeState(pool.RuntimeState)
@@ -86,7 +86,7 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	}
 
 	// Repair replaces the container while preserving the pool identity.
-	if err := engine.RepairPool(ctx, project, provider, pool, mint, "integration test"); err != nil {
+	if err := engine.RepairPool(ctx, project, provider, pool, mint, "integration test", nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("repair pool: %v", err)
 	}
 	repairedState, err := dockerworker.DecodeRuntimeState(pool.RuntimeState)
@@ -147,7 +147,7 @@ func TestDockerIntegrationWorker(t *testing.T) {
 	project := &model.Project{ID: "project-" + uuid.NewString()}
 	provider := &model.SandboxProviderInstance{ID: "provider-" + uuid.NewString(), ProjectID: project.ID}
 	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
-	if err := engine.EnsurePool(ctx, project, provider, pool, staticMint(poolagent.Bootstrap{ProjectID: project.ID, PoolID: pool.ID, Token: "token-1"})); err != nil {
+	if err := engine.EnsurePool(ctx, project, provider, pool, staticMint(poolagent.Bootstrap{ProjectID: project.ID, PoolID: pool.ID, Token: "token-1"}), nil, func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("ensure systemd pool: %v", err)
 	}
 	t.Cleanup(func() {

@@ -125,19 +125,8 @@ const compactChrome = 6
 // rule under that, the rule below the field, and the mode line.
 const composerChrome = 4
 
-// compactRows is how tall the opening frame can get around a body of the given
-// height: its chrome, and the line under the frame whenever there is one to
-// report. The tallest it can get rather than the height it is at now, because
-// it grows on its own — the composer as you type, the line when the server has
-// something to say — and a frame that grows past the screen it is printed on
-// cannot take back what that costs.
-func (m *Model) compactRows(body int) int {
-	rows := compactChrome + body
-	if m.initLine != "" || m.initUpdates != nil {
-		rows++
-	}
-	return rows
-}
+// compactRows is the opening frame's chrome plus its body.
+func (m *Model) compactRows(body int) int { return compactChrome + body }
 
 // fitsInline reports whether a frame of that many rows fits on the screen it is
 // printed on.

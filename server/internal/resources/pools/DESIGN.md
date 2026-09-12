@@ -20,12 +20,8 @@ flowchart LR
     cp --> store
     cp --> engine[(reconcile engine)]
     engine -- pool --> rec[PoolReconciler]
-    engine -- poolImages --> img[PoolImagesReconciler]
     rec --> store
     rec -- "ReconcilePool / RepairPool / RemovePool" --> drivers
-    rec -- mark poolImages dirty --> engine
-    img --> store
-    img -- StageImages --> drivers
 ```
 
 ## Responsibilities
@@ -84,7 +80,7 @@ flowchart LR
   display-only driver provisioning progress (`ReportPoolProvisionProgress`,
   ADR 0060). There is deliberately no timer form of the pool mark: a
   reconciler's own re-check belongs in its `reconcile.Result`
-  (`reconcile.ErrSelfMark`). It also registers both reconcilers
+  (`reconcile.ErrSelfMark`). It also registers the pool reconciler
   (`RegisterJobs`), records the server-resolved default sandbox image for
   staging (`SetDefaultSandboxImage`), and purges spent bootstrap tokens hourly
   (`StartBootstrapTokenCleanup`).
@@ -107,20 +103,16 @@ flowchart LR
   never-registered pools fail terminally (`failed`, `Ready`/`Schedulable`
   cleared); a created pool keeps its state and records the failure as
   `ErrorMessage` — its runtime keeps serving what it already hosts, so a
-  failed convergence is not a phase. An `active` pool that is not yet staged
-  gets its `poolImages` resource marked dirty.
-- `imagestage.go` — `PoolImagesReconciler` (resource type `poolImages`, dirty
-  ID the pool ID): stages the images a sandbox on the project might run — the
-  server-resolved default sandbox image plus every harness config's image,
-  deduped, minus `:local` tags — onto a ready pool via
-  `PoolRuntime.StageImages`. It is its own claimed and leased resource, not
-  part of the pool reconcile. Staging is a condition (`ImagesStaged`), never a
-  health state: an unstaged pool is active and schedulable. A failure is
-  recorded on `ImageStage` and retried after 5m, never returned as a reconcile
-  error; a staged pool re-stages every 6h. `ScanDirty` returns only ready,
-  unstaged pools. An image the engine loads from the image cache rather than
-  pulls is recorded with `ImageStage.Loading`, so a client says *Loading* and
-  not a second *Downloading* (ADR 0113).
+  failed convergence is not a phase. The reconciler supplies the default sandbox
+  image and the project's harness
+  images to the provider. The engine loads local cache entries before starting
+  a pool agent, reporting `preloading_images` through provisioning progress.
+  The provider calls the reconciler's `begin` callback before replacing a runtime,
+  which records `registering` and closes placement even if old heartbeats still
+  report ready. There is no background image reconciler or staging condition.
+- `images.go` builds the deduplicated project image set and holds the
+  server-resolved default image. Development `:local` images are handled by the
+  development image sync.
 
 ## Offline is a liveness verdict
 
@@ -151,16 +143,14 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |
-| `ImagesStaged`, `ImageStage`, `ImageStagedAt` | image staging | `PoolImagesReconciler` |
 | `State`, `ErrorMessage`, `ObservedGeneration`, `RuntimeState` | reconciler | `PoolReconciler`, and nothing else |
 
 Health answers "can this host take work right now"; `State`/`ErrorMessage` are
 the reconciler's verdict on whether the runtime converged, and
 `ObservedGeneration` says the reconciler finished acting on a generation.
-Scheduling gates on the health flags plus the offline verdict
+Scheduling gates on the health flags plus the active state
 (`SchedulablePoolForSandbox`), so no agent call has any reason to write the
-reconciler's fields. The telemetry writers (resources, provisioning progress,
-image stage) use narrow column updates, never a whole-row save, so they cannot
+reconciler's fields. The telemetry writers (resources and provisioning progress) use narrow column updates, never a whole-row save, so they cannot
 clobber a concurrent reconcile.
 
 The rule that keeps the split honest: **agent calls write facts and mark the

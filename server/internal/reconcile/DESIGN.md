@@ -196,7 +196,6 @@ resource forever.
 | --- | --- | --- |
 | `sandbox` | [sandboxes](../resources/sandboxes/DESIGN.md) | generation mismatch, plus archived sandboxes past retention |
 | `pool` | [pools](../resources/pools/DESIGN.md) | every pool |
-| `poolImages` | [pools](../resources/pools/DESIGN.md) | ready pools with images not staged |
 | `harnessConfig` | [harnessconfigs](../resources/harnessconfigs/DESIGN.md) | none |
 
 ## What callers look like
@@ -212,9 +211,6 @@ s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 
 // Watcher (drift): one line.
 s.engine.MarkDirtyDrift(ctx, PoolResourceType, PoolDirtyID(projectID, poolID))
-
-// Cross-resource chaining: a pool reconcile marking its image staging.
-r.pools.engine.MarkDirty(ctx, PoolImagesResourceType, poolID)
 
 // A reconciler's own deadline — retention, a registration timeout, a source
 // await. Returned, never marked: see Self-marking.

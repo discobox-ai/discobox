@@ -152,7 +152,6 @@ type provisioningMark struct {
 	poolState         string
 	poolReady         bool
 	poolProgressAt    int64
-	poolStagedAt      int64
 }
 
 // provisioningMark reads the mark for one sandbox and the pool hosting it.
@@ -168,7 +167,7 @@ type provisioningMark struct {
 // What is here is the gate (the sandbox's lifecycle state and convergence, its
 // runtime state, the pool's state and readiness) and the progress counters that
 // justify waiting through a long provision (the sandbox's pull progress, and the
-// pool's own provisioning and image staging). A new signal that means "this is
+// pool's own provisioning, including image preload). A new signal that means "this is
 // still moving" belongs here too.
 func (s *Service) provisioningMark(ctx context.Context, sb *model.Sandbox) provisioningMark {
 	mark := provisioningMark{
@@ -190,7 +189,6 @@ func (s *Service) provisioningMark(ctx context.Context, sb *model.Sandbox) provi
 	mark.poolState = pool.State
 	mark.poolReady = pool.Ready
 	mark.poolProgressAt = markTime(pool.ProvisionProgressAt)
-	mark.poolStagedAt = markTime(pool.ImageStagedAt)
 	return mark
 }
 

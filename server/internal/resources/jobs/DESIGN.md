@@ -28,7 +28,7 @@ flowchart LR
     failed; `error` carries the engine's `last_error` for that row.
 - Only `sandbox` and `pool` marks are served; their dirty ids carry the
   `projectID/` prefix that scopes them to a project. Marks of other resource
-  types (`poolImages`, `harnessConfig`) are not project-scoped and never appear.
+  types (`harnessConfig`) are not project-scoped and never appear.
 - `ForceJob` pulls a scheduled or backed-off mark forward (`MarkDirty`, which
   overrides backoff), making it claimable immediately; `attempts` is kept. A
   running mark is refused with 409.

@@ -23,6 +23,7 @@ func TestPoolProvisionStatusNamesTheDriversWork(t *testing.T) {
 		phase apiclientgen.PoolProvisionPhase
 		want  Step
 	}{
+		{apiclientgen.PoolProvisionPhasePreloadingImages, "preloading images"},
 		{apiclientgen.PoolProvisionPhaseFetchingVMImage, "fetching the VM image"},
 		{apiclientgen.PoolProvisionPhaseStartingVM, "starting the VM"},
 		{apiclientgen.PoolProvisionPhaseWaitingForDocker, "waiting for Docker in the VM"},
@@ -103,5 +104,24 @@ func TestPoolProvisionStatusShortensADigestPinnedImage(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("PoolProvisionStatus() = %q, missing %q", got, want)
 		}
+	}
+}
+
+func TestPoolPreloadStatusReportsBytesWithoutClaimingAPull(t *testing.T) {
+	pool := poolWith(apimodel.PoolProvisionProgress{
+		Phase: apiclientgen.PoolProvisionPhasePreloadingImages,
+		Pull: apiclientgen.NewOptSandboxPullProgress(apimodel.SandboxPullProgress{
+			Image:   "ghcr.io/discobox-ai/discobox-harness-shell:v1",
+			Current: apiclientgen.NewOptInt64(1 << 20), Total: apiclientgen.NewOptInt64(2 << 20),
+		}),
+	}, time.Now())
+	got := string(PoolProvisionStatus(pool))
+	for _, want := range []string{"preloading images", "discobox-harness-shell:v1", "1.0 MiB", "2.0 MiB"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("status %q lacks %q", got, want)
+		}
+	}
+	if strings.Contains(got, "pulling") || strings.Contains(got, "downloading") {
+		t.Fatalf("local preload claims a download: %s", got)
 	}
 }

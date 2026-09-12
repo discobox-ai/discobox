@@ -2013,15 +2013,6 @@ components:
                 degraded:
                     description: Whether the pool should be used only as fallback capacity
                     type: boolean
-                imagesStaged:
-                    description: Whether the images a sandbox might run are staged on this host. A condition, not a health state — an unstaged pool is still active and schedulable.
-                    type: boolean
-                imageStage:
-                    $ref: '#/components/schemas/PoolImageStage'
-                imageStagedAt:
-                    description: When imageStage was last written
-                    format: date-time
-                    type: string
                 provisionProgress:
                     $ref: '#/components/schemas/PoolProvisionProgress'
                 provisionProgressAt:
@@ -3978,58 +3969,6 @@ components:
             required:
                 - phase
             type: object
-        PoolImageState:
-            description: |-
-                How far staging a pool's images has got. It is a condition and never a health
-                state: a pool whose images are not staged is active, healthy and schedulable,
-                because a sandbox that wants an image the host does not have pulls it then.
-            enum:
-                - staging
-                - ready
-                - failed
-            type: string
-        PoolImageStage:
-            additionalProperties: false
-            description: |-
-                What image staging is doing on one pool, for a client that launched the server and
-                is waiting out a first run. Nothing schedules on it.
-            properties:
-                state:
-                    $ref: '#/components/schemas/PoolImageState'
-                image:
-                    description: The reference being pulled, absent between images
-                    type: string
-                done:
-                    description: Images finished
-                    type: integer
-                total:
-                    description: Images in the set
-                    type: integer
-                current:
-                    description: Bytes downloaded of the image named above
-                    format: int64
-                    type: integer
-                size:
-                    description: Total bytes of the layers whose size has been reported. Grows while the manifest is walked, so current/size is a ratio at a moment and never a bar.
-                    format: int64
-                    type: integer
-                layers:
-                    description: Layers heard about so far
-                    type: integer
-                layersComplete:
-                    description: Layers fully pulled, including those already present
-                    type: integer
-                loading:
-                    description: The image named is being loaded from the image cache on the server's machine rather than pulled from its registry (ADR 0113). The byte counts are the same shape either way.
-                    type: boolean
-                error:
-                    description: Why the last attempt failed. Staging retries on its own.
-                    type: string
-            required:
-                - state
-                - done
-                - total
-            type: object
         PoolProvisionPhase:
             description: |-
                 What a pool host is being made to do right now, named for a client whose sandbox is
@@ -4046,6 +3985,10 @@ components:
                 it is the build of the pool, sandbox-base, and harness images on the pool's own
                 Docker, which on a VM backend is where a cold start spends its second stretch of
                 minutes, after the machine is up and before its agent exists to start.
+
+                preloading_images loads locally cached sandbox images before starting the pool
+                agent. Placement stays closed until startup completes. Byte counts continue to
+                be reported while Docker extracts the image.
 
                 loading_pool_image is pulling_pool_image's twin when the image is read from the
                 image cache the CLI staged on the server's machine (ADR 0113): the same byte counts,

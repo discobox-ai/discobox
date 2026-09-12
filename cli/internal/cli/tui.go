@@ -90,11 +90,6 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	if err != nil {
 		return err
 	}
-	// The window reports first-run setup itself, under its own frame, so the
-	// launch below must not sit on it: several minutes of a status line before
-	// anything appears is the thing this replaces. Nothing the window does
-	// needs those images — only running a discobox does.
-	a.stagingShownByUI = true
 	client, err := a.apiClient()
 	if err != nil {
 		return err
@@ -118,9 +113,6 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	}
 	if !welcomed {
 		options = append(options, tui.WithWelcome())
-	}
-	if a.startedServer {
-		options = append(options, tui.WithInitialization("Server initialization", a.stagingUpdates(cmd.Context())))
 	}
 	// The window's own loop does not wait for the commands it has in flight
 	// when it quits, and one of them may be a push that cannot be interrupted

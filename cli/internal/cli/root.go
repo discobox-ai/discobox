@@ -83,17 +83,6 @@ type App struct {
 	// ending one between receive-pack and the lease that guards it. See
 	// App.waitForPushes.
 	pushInFlight sync.WaitGroup
-
-	// startedServer records that this invocation launched the server, which is
-	// what makes it the one responsible for showing first-run setup.
-	startedServer bool
-	// stagingShownByUI is set by a front end that reports that setup itself, so
-	// the launch path does not block on it.
-	stagingShownByUI bool
-	// runsAnImage is set by a command that is going to make a discobox run an
-	// image, which is the only kind worth holding while a first run stages
-	// them. See waitsOutFirstRunStaging.
-	runsAnImage bool
 }
 
 // commandName is the name this binary was invoked as, which is what every
@@ -698,21 +687,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		// the only place it exists — and how to undo it. A caller that found one
 		// already up says nothing.
 		a.notify("started the discobox server in the background (logs: discobox admin server logs; stop it with: discobox admin server shutdown)")
-		a.startedServer = true
-		// Only a run holds for the images, and only when nothing else is
-		// showing them. See waitsOutFirstRunStaging.
-		if !a.waitsOutFirstRunStaging() {
-			return nil
-		}
-		// And wait out the first run here, once, rather than letting it happen
-		// inside whichever operation first needs an image (ADR 0069). Only the
-		// caller that started the server does this: it is the one that knows
-		// this is a first run, because it is the one that caused it.
-		// A fresh line: clearing one is final, so the launch's line cannot be
-		// reused for the wait that follows it.
-		staging := a.serverStartupLine()
-		a.waitForStagedPools(ctx, func(line string) { staging.set(line) })
-		staging.clear()
+
 	}
 	return nil
 }
@@ -732,27 +707,6 @@ func (a *App) stageServerImages(ctx context.Context, progress *statusLine, serve
 	if _, err := resolver.stageImages(ctx, server); err != nil && progress != nil {
 		progress.print("could not download the images discobox runs, so each is downloaded when first needed: %v", err)
 	}
-}
-
-// waitsOutFirstRunStaging reports whether this command should hold while a
-// first run stages the images a discobox runs.
-//
-// Only a command that is going to run one. Staging is a head start for the
-// images a discobox opens (ADR 0069), and `discobox ps` opens none: holding a
-// list behind gigabytes it will never read is a first command that prints the
-// line about the server it started and then appears to hang, which is exactly
-// how it was reported. The pull is not lost by not waiting here — it happens
-// inside the operation that needs the image, which narrates it there.
-//
-// A front end waits for nothing either, for the opposite reason: the window
-// reports this under its own frame while the user gets on with the application,
-// which beats a line they can only watch — so it says so, and this leaves the
-// waiting to it.
-func (a *App) waitsOutFirstRunStaging() bool {
-	if a.stagingShownByUI {
-		return false
-	}
-	return a.runsAnImage
 }
 
 // serverStartupLine is where a launch narrates, or nothing when there is

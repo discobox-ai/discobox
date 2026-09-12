@@ -1807,28 +1807,8 @@ list gives up rows for the composer as it grows and takes none at all when
 there is no room. A frame one row too tall scrolls the terminal, which is the
 one thing the renderer cannot redraw its way out of.
 
-**The server's own setup reports at the end of the status row**
-(`initializing.go`). Staging the images a discobox runs takes minutes on a cold
-pull, and the window deliberately does not wait for it: the launcher lists and
-the composer takes input regardless, and only actually running a discobox wants
-those images. So the report is pinned to the right end of the keys row every
-screen already draws — `viewStatus` for the launcher, harnesses, secrets and the
-opening prompt, `viewPaneWindow` for the workspace.
-
-Pinned there rather than put on the message row, because `statusMessage` is one
-slot with a strict precedence. That row belongs to what the user just did — the
-busy line, a result — and this belongs to something they did not do and cannot
-act on, so the two have to be able to speak at once. `spreadPin` cuts the keys back to make room, never the
-report: it is the only account on screen of a wait nothing else explains, while
-F1 spells the keys out anyway. `withReport` makes the same trade against the
-pinned identity when both cannot fit.
-
-It is not a row of its own under the border. That would cost a row every
-screen that fills the terminal has to be told about, and being outside the
-frame would let it scroll the alternate screen — stranding the hardware cursor
-a row from the grid — and hand its own presses to the border above it, because
-`paintChrome` parses the selection grid from a frame that does not include it. On the status row it is inside the frame like everything else and
-none of that is a question that can be got wrong.
+Pool preload is reported through the sandbox launch's normal busy status. The
+launcher has no independent prepull subscription or reserved setup row.
 
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
 is written through `DataSource.SaveDraft`, keyed by the session's directory, and
@@ -2359,7 +2339,6 @@ the newest one where the busy line goes.
 | `requests.go` | the secrets screen's lower table: the credential requests waiting on a person |
 | `welcome.go` | the once-per-project introduction |
 | `draft.go` | the unsent prompt, saved per folder and restored |
-| `initializing.go` | the server-setup report pinned to the status row |
 | `mouse.go` | the mouse: mode, routing, presses, hover, the wheel |
 | `zones.go` | the hit map a frame records as it draws |
 | `chrome.go` | the chrome selection over the composed frame |

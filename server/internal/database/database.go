@@ -115,6 +115,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropSandboxResourceRequestColumns(write); err != nil {
 		return err
 	}
+	if err := dropPoolImageStaging(write); err != nil {
+		return err
+	}
 	if err := dropProjectEvents(write); err != nil {
 		return err
 	}
@@ -695,6 +698,20 @@ func rekeySandboxOrigins(db *gorm.DB) error {
 		if err := db.Model(&model.Sandbox{}).Where("id = ?", row.ID).UpdateColumn("origin_key", key).Error; err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// dropPoolImageStaging retires the prepull condition and its queued work while
+// preserving pool identities, desired state, and all runtime data.
+func dropPoolImageStaging(db *gorm.DB) error {
+	for _, column := range []string{"images_staged", "image_stage", "image_staged_at"} {
+		if err := dropRetiredColumn(db, &model.Pool{}, "pools", column); err != nil {
+			return err
+		}
+	}
+	if db.Migrator().HasTable("reconcile_dirty") {
+		return db.Exec("DELETE FROM reconcile_dirty WHERE resource_type = ?", "poolImages").Error
 	}
 	return nil
 }

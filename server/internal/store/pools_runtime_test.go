@@ -44,6 +44,14 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	if !updated.Degraded || updated.AvailableCPUVCPUs != 2 || updated.AvailableMemoryBytes != 4<<30 || updated.AvailableStorageBytes != 10<<30 || string(updated.Conditions) == "" {
 		t.Fatalf("updated pool = %#v", updated)
 	}
+	// A ready heartbeat cannot admit work while startup is still preloading.
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("startup admitted work: %v", err)
+	}
+	updated.SetState(model.PoolStateActive)
+	if err := s.UpdatePoolWithGeneration(ctx, updated, updated.Generation); err != nil {
+		t.Fatal(err)
+	}
 	pool, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1"))
 	if err != nil {
 		t.Fatalf("schedulable pool: %v", err)
@@ -100,6 +108,14 @@ func TestSchedulablePoolForSandboxIgnoresCapacity(t *testing.T) {
 		t.Fatalf("update status: %v", err)
 	}
 
+	pool, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetState(model.PoolStateActive)
+	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
+		t.Fatal(err)
+	}
 	if pool, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); err != nil || pool.ID != "pool-1" {
 		t.Fatalf("schedulable pool = %v err=%v, want pool-1", pool, err)
 	}

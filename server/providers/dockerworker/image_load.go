@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -50,7 +51,7 @@ const containerdSnapshotter = "io.containerd.snapshotter.v1"
 
 // loadFromCache loads image into cli's daemon from the image cache, reporting
 // under phase as it goes, and says whether it did.
-func (e *Engine) loadFromCache(ctx context.Context, lease *DockerClientLease, poolID, image string, phase sandbox.PoolProvisionPhase, onProgress imageProgress) bool {
+func (e *Engine) loadFromCache(ctx context.Context, lease *DockerClientLease, poolID, image string, phase sandbox.PoolProvisionPhase) bool {
 	// A daemon on another machine is closer to its registry than to this
 	// machine's disk, and only the driver that handed over this client knows
 	// which it is.
@@ -74,29 +75,36 @@ func (e *Engine) loadFromCache(ctx context.Context, lease *DockerClientLease, po
 		}
 		return false
 	}
-	started := time.Now()
-	if err := e.loadCached(ctx, cli, poolID, cached, phase, onProgress); err != nil {
+	if err := e.importCachedImage(ctx, lease.Client, poolID, image, cached, usesContainerdStore(info.Info), phase); err != nil {
 		slog.WarnContext(ctx, "image cache: load failed; pulling instead", "pool", poolID, "image", image, "error", err)
-		removeLoaded(ctx, cli, image)
 		return false
 	}
-	if !usesContainerdStore(info.Info) {
-		if err := recordRegistryDigest(ctx, cli, cached); err != nil {
-			// A loaded image the pin can never match is worse than an absent
-			// one: present, it is never pulled over.
-			slog.WarnContext(ctx, "image cache: could not record the loaded image's registry digest; pulling instead", "pool", poolID, "image", image, "error", err)
+	return true
+}
+
+// importCachedImage imports and verifies the cached identity on either Docker
+// image store. Failure removes the partial image so a later retry can recover.
+func (e *Engine) importCachedImage(ctx context.Context, cli *client.Client, poolID, image string, cached *imagecache.Image, containerd bool, phase sandbox.PoolProvisionPhase) (err error) {
+	started := time.Now()
+	defer func() {
+		if err != nil {
 			removeLoaded(ctx, cli, image)
-			return false
+		}
+	}()
+	if err := e.loadCached(ctx, cli, poolID, cached, phase); err != nil {
+		return err
+	}
+	if !containerd {
+		if err := recordRegistryDigest(ctx, cli, cached); err != nil {
+			return fmt.Errorf("record registry digest: %w", err)
 		}
 	}
 	if err := verifyLoaded(ctx, cli, image, cached.Digest()); err != nil {
-		slog.WarnContext(ctx, "image cache: the loaded image is not the one staged; pulling instead", "pool", poolID, "image", image, "error", err)
-		removeLoaded(ctx, cli, image)
-		return false
+		return err
 	}
 	slog.InfoContext(ctx, "loaded image from the image cache", "pool", poolID, "image", image,
 		"digest", cached.Digest(), "bytes", cached.Size(), "duration", time.Since(started))
-	return true
+	return nil
 }
 
 // daemonPlatform is the platform a daemon runs images for, in the terms an
@@ -123,24 +131,47 @@ func usesContainerdStore(info system.Info) bool {
 
 // loadCached streams the image's archive into the daemon, reporting the bytes
 // written as a pull reports the bytes downloaded.
-func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID string, cached *imagecache.Image, phase sandbox.PoolProvisionPhase, onProgress imageProgress) error {
+func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID string, cached *imagecache.Image, phase sandbox.PoolProvisionPhase) error {
+	var progressMu sync.Mutex
 	progress := sandbox.PoolPullProgress{Image: cached.Reference.Name(), Total: cached.Size(), Layers: len(cached.Layers)}
 	report := func() {
-		e.cfg.ProgressReporter.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{Phase: phase, Pull: &progress})
-		if onProgress != nil {
-			onProgress(progress, true)
-		}
+		progressMu.Lock()
+		snapshot := progress
+		progressMu.Unlock()
+		e.cfg.ProgressReporter.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{Phase: phase, Pull: &snapshot})
 	}
 	// Once before the first byte, so the phase is on the row from the start.
 	report()
 
+	// Docker may spend minutes extracting after it has read the archive.
+	// Keep the latest byte counts visible until its response finishes.
+	stopHeartbeat, heartbeatDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopHeartbeat:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				report()
+			}
+		}
+	}()
+	defer func() { close(stopHeartbeat); <-heartbeatDone }()
+
 	reader, writer := io.Pipe()
 	written := make(chan error, 1)
 	go func() {
-		// progress is this goroutine's alone until written is received.
+		// Archive progress and the extraction heartbeat share the snapshot.
 		var lastReport time.Time
 		err := cached.WriteArchive(writer, func(current int64, layersComplete int) {
+			progressMu.Lock()
 			progress.Current, progress.LayersComplete = current, layersComplete
+			progressMu.Unlock()
 			if time.Since(lastReport) >= poolPullReportInterval {
 				lastReport = time.Now()
 				report()
@@ -162,7 +193,9 @@ func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID stri
 	if err := errors.Join(<-written, loadErr); err != nil {
 		return err
 	}
+	progressMu.Lock()
 	progress.Done = true
+	progressMu.Unlock()
 	report()
 	return nil
 }

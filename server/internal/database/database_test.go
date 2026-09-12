@@ -1189,3 +1189,63 @@ func TestMigrateRekeysSandboxOrigins(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrateRetiresPrepullWithoutLosingPools(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		"ALTER TABLE pools ADD COLUMN images_staged boolean NOT NULL DEFAULT false",
+		"ALTER TABLE pools ADD COLUMN image_stage text",
+		"ALTER TABLE pools ADD COLUMN image_staged_at datetime",
+		"CREATE TABLE reconcile_dirty (resource_type text, resource_id text)",
+		"INSERT INTO reconcile_dirty VALUES ('poolImages', 'pool-1'), ('pool', 'project-1/pool-1')",
+	} {
+		if err := db.Write.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Foreign keys require the ordinary parent rows too.
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Name: "provider", Type: "docker"}
+	if err := db.Write.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	pool := model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "pool"}}
+	if err := db.Write.Create(&pool).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got model.Pool
+	if err := db.Write.First(&got, "id = ?", pool.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.ProviderInstanceID != provider.ID || got.DesiredState != pool.DesiredState {
+		t.Fatalf("pool changed: %+v", got)
+	}
+	for _, column := range []string{"images_staged", "image_stage", "image_staged_at"} {
+		if db.Write.Migrator().HasColumn(&model.Pool{}, column) {
+			t.Fatalf("retired column remains: %s", column)
+		}
+	}
+	var types []string
+	if err := db.Write.Table("reconcile_dirty").Pluck("resource_type", &types).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(types) != 1 || types[0] != "pool" {
+		t.Fatalf("dirty work = %v, want only pool", types)
+	}
+}

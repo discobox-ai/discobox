@@ -82,7 +82,7 @@ save silently replays a stale value.
   for the incident.
 - Agent telemetry is written as narrow column updates, never a row `Save`:
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
-  `RecordPoolProvisionProgress`, `RecordPoolResources`, `RecordPoolImageStage`.
+  `RecordPoolProvisionProgress`, `RecordPoolResources`.
 - Pool status ownership is split between agent calls (`RegisterPool`,
   `UpdatePoolStatus`) and the reconciler; see
   [`resources/pools/DESIGN.md`](../resources/pools/DESIGN.md).

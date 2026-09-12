@@ -74,15 +74,14 @@ type RuntimeProvider interface {
 	//
 	// mint is called ONLY when a runtime is actually created: minting persists a
 	// single-use bootstrap token, and a drift check that finds a healthy
-	// container needs no credentials.
-	EnsurePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap) error
+	// container needs no credentials. Before replacing or creating an agent,
+	// begin must succeed: the reconciler closes scheduling before preload.
+	// images is the project image set to load from the local cache.
+	EnsurePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, images []string, begin func(context.Context) error) error
 	// RepairPool replaces an unhealthy pool runtime in place, preserving pool
 	// identity and pool-local state.
-	RepairPool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, reason string) error
+	RepairPool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, reason string, images []string, begin func(context.Context) error) error
 	RemovePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
-	// StageImages makes the images a sandbox will want present on the pool's
-	// daemon. The pool is already up; this creates nothing.
-	StageImages(ctx context.Context, pool *model.Pool, images []string, report func(sandbox.PreloadProgress)) error
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the pool
 	// agent API for the pool.
 	AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error)
@@ -160,11 +159,11 @@ func (p *Provider) RemoveProject(context.Context, string) error {
 	return nil
 }
 
-func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error {
+func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, images []string, begin func(context.Context) error) error {
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool)); err != nil {
+	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), images, begin); err != nil {
 		return err
 	}
 	// Best-effort: hand the now-ready pool-agent the authoritative pool set so it
@@ -250,26 +249,15 @@ func syncWithRetry(ctx context.Context, attempt func(context.Context) error) err
 	return err
 }
 
-func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error {
+func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, images []string, begin func(context.Context) error) error {
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), reason)
+	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), reason, images, begin)
 }
 
 func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error {
 	return p.runtimeProvider.RemovePool(ctx, project, provider, pool)
-}
-
-// StageImages pulls the images a sandbox will want onto a pool that is already
-// up. It creates nothing: no VM, no container, no pool.
-//
-// Bringing the pool up is not this call's business. Staging is driven by the
-// pool's own reconcile, which has just converged the host this pulls onto; a
-// staging call that ensured the pool itself would start pools nobody asked to
-// run, just to pull images onto them.
-func (p *Provider) StageImages(ctx context.Context, pool *model.Pool, images []string, report func(sandbox.PreloadProgress)) error {
-	return p.runtimeProvider.StageImages(ctx, pool, images, report)
 }
 
 // The registration timeout is armed by the pool reconciler, which owns the

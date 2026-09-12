@@ -10661,39 +10661,6 @@ func (s *OptPool) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes PoolImageStage as json.
-func (o OptPoolImageStage) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes PoolImageStage from json.
-func (o *OptPoolImageStage) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptPoolImageStage to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptPoolImageStage) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptPoolImageStage) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes PoolProvisionProgress as json.
 func (o OptPoolProvisionProgress) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -12186,24 +12153,6 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Degraded)
 	}
 	{
-		if s.ImagesStaged.Set {
-			e.FieldStart("imagesStaged")
-			s.ImagesStaged.Encode(e)
-		}
-	}
-	{
-		if s.ImageStage.Set {
-			e.FieldStart("imageStage")
-			s.ImageStage.Encode(e)
-		}
-	}
-	{
-		if s.ImageStagedAt.Set {
-			e.FieldStart("imageStagedAt")
-			s.ImageStagedAt.Encode(e, json.EncodeDateTime)
-		}
-	}
-	{
 		if s.ProvisionProgress.Set {
 			e.FieldStart("provisionProgress")
 			s.ProvisionProgress.Encode(e)
@@ -12309,7 +12258,7 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [36]string{
+var jsonFieldsNameOfPool = [33]string{
 	0:  "$schema",
 	1:  "cpuVcpus",
 	2:  "createdAt",
@@ -12323,29 +12272,26 @@ var jsonFieldsNameOfPool = [36]string{
 	10: "ready",
 	11: "schedulable",
 	12: "degraded",
-	13: "imagesStaged",
-	14: "imageStage",
-	15: "imageStagedAt",
-	16: "provisionProgress",
-	17: "provisionProgressAt",
-	18: "availableCpuVcpus",
-	19: "availableMemoryBytes",
-	20: "availableStorageBytes",
-	21: "conditions",
-	22: "resources",
-	23: "resourcesReportedAt",
-	24: "desiredState",
-	25: "state",
-	26: "stateChangedAt",
-	27: "generation",
-	28: "observedGeneration",
-	29: "errorMessage",
-	30: "keyType",
-	31: "publicKey",
-	32: "registeredAt",
-	33: "lastSeenAt",
-	34: "revokedAt",
-	35: "updatedAt",
+	13: "provisionProgress",
+	14: "provisionProgressAt",
+	15: "availableCpuVcpus",
+	16: "availableMemoryBytes",
+	17: "availableStorageBytes",
+	18: "conditions",
+	19: "resources",
+	20: "resourcesReportedAt",
+	21: "desiredState",
+	22: "state",
+	23: "stateChangedAt",
+	24: "generation",
+	25: "observedGeneration",
+	26: "errorMessage",
+	27: "keyType",
+	28: "publicKey",
+	29: "registeredAt",
+	30: "lastSeenAt",
+	31: "revokedAt",
+	32: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -12509,36 +12455,6 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"degraded\"")
 			}
-		case "imagesStaged":
-			if err := func() error {
-				s.ImagesStaged.Reset()
-				if err := s.ImagesStaged.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"imagesStaged\"")
-			}
-		case "imageStage":
-			if err := func() error {
-				s.ImageStage.Reset()
-				if err := s.ImageStage.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"imageStage\"")
-			}
-		case "imageStagedAt":
-			if err := func() error {
-				s.ImageStagedAt.Reset()
-				if err := s.ImageStagedAt.Decode(d, json.DecodeDateTime); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"imageStagedAt\"")
-			}
 		case "provisionProgress":
 			if err := func() error {
 				s.ProvisionProgress.Reset()
@@ -12560,7 +12476,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"provisionProgressAt\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -12572,7 +12488,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -12584,7 +12500,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -12627,7 +12543,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourcesReportedAt\"")
 			}
 		case "desiredState":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -12637,7 +12553,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "state":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -12657,7 +12573,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"stateChangedAt\"")
 			}
 		case "generation":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -12669,7 +12585,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -12741,7 +12657,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 3
+			requiredBitSet[4] |= 1 << 0
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -12763,10 +12679,10 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
 		0b01111110,
-		0b00011111,
-		0b00011100,
-		0b00011011,
-		0b00001000,
+		0b10011111,
+		0b01100011,
+		0b00000011,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -13313,296 +13229,6 @@ func (s PoolFilesystemUsageAdditional) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolFilesystemUsageAdditional) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *PoolImageStage) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *PoolImageStage) encodeFields(e *jx.Encoder) {
-	{
-		e.FieldStart("state")
-		s.State.Encode(e)
-	}
-	{
-		if s.Image.Set {
-			e.FieldStart("image")
-			s.Image.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("done")
-		e.Int(s.Done)
-	}
-	{
-		e.FieldStart("total")
-		e.Int(s.Total)
-	}
-	{
-		if s.Current.Set {
-			e.FieldStart("current")
-			s.Current.Encode(e)
-		}
-	}
-	{
-		if s.Size.Set {
-			e.FieldStart("size")
-			s.Size.Encode(e)
-		}
-	}
-	{
-		if s.Layers.Set {
-			e.FieldStart("layers")
-			s.Layers.Encode(e)
-		}
-	}
-	{
-		if s.LayersComplete.Set {
-			e.FieldStart("layersComplete")
-			s.LayersComplete.Encode(e)
-		}
-	}
-	{
-		if s.Loading.Set {
-			e.FieldStart("loading")
-			s.Loading.Encode(e)
-		}
-	}
-	{
-		if s.Error.Set {
-			e.FieldStart("error")
-			s.Error.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfPoolImageStage = [10]string{
-	0: "state",
-	1: "image",
-	2: "done",
-	3: "total",
-	4: "current",
-	5: "size",
-	6: "layers",
-	7: "layersComplete",
-	8: "loading",
-	9: "error",
-}
-
-// Decode decodes PoolImageStage from json.
-func (s *PoolImageStage) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode PoolImageStage to nil")
-	}
-	var requiredBitSet [2]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "state":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				if err := s.State.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"state\"")
-			}
-		case "image":
-			if err := func() error {
-				s.Image.Reset()
-				if err := s.Image.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"image\"")
-			}
-		case "done":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Int()
-				s.Done = int(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"done\"")
-			}
-		case "total":
-			requiredBitSet[0] |= 1 << 3
-			if err := func() error {
-				v, err := d.Int()
-				s.Total = int(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"total\"")
-			}
-		case "current":
-			if err := func() error {
-				s.Current.Reset()
-				if err := s.Current.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"current\"")
-			}
-		case "size":
-			if err := func() error {
-				s.Size.Reset()
-				if err := s.Size.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"size\"")
-			}
-		case "layers":
-			if err := func() error {
-				s.Layers.Reset()
-				if err := s.Layers.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"layers\"")
-			}
-		case "layersComplete":
-			if err := func() error {
-				s.LayersComplete.Reset()
-				if err := s.LayersComplete.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"layersComplete\"")
-			}
-		case "loading":
-			if err := func() error {
-				s.Loading.Reset()
-				if err := s.Loading.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"loading\"")
-			}
-		case "error":
-			if err := func() error {
-				s.Error.Reset()
-				if err := s.Error.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"error\"")
-			}
-		default:
-			return errors.Errorf("unexpected field %q", k)
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode PoolImageStage")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
-		0b00001101,
-		0b00000000,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfPoolImageStage) {
-					name = jsonFieldsNameOfPoolImageStage[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *PoolImageStage) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *PoolImageStage) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes PoolImageState as json.
-func (s PoolImageState) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes PoolImageState from json.
-func (s *PoolImageState) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode PoolImageState to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch PoolImageState(v) {
-	case PoolImageStateStaging:
-		*s = PoolImageStateStaging
-	case PoolImageStateReady:
-		*s = PoolImageStateReady
-	case PoolImageStateFailed:
-		*s = PoolImageStateFailed
-	default:
-		*s = PoolImageState(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s PoolImageState) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *PoolImageState) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

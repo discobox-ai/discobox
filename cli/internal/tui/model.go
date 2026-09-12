@@ -345,12 +345,6 @@ type Model struct {
 	// per project and dismissed with Enter; see welcome.go.
 	welcoming bool
 
-	// One-time server setup, reported under the window rather than waited on
-	// before it opens. See initializing.go.
-	initTitle   string
-	initLine    string
-	initUpdates <-chan string
-
 	// copySize is the measurement behind the "copy this directory?" question:
 	// the running total, the walk's stop, and the dialog the number is being
 	// written into, which is what says the answer has not been given yet.
@@ -493,7 +487,7 @@ func (m *Model) oneShot() bool { return m.oneRun || m.attach != nil }
 // harnesses are read here rather than when their screen is opened because the
 // run options offer them as the harness to run.
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization()}
+	cmds := []tea.Cmd{textarea.Blink, m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer()}
 	// An attach opens on its workspace rather than on the prompt, from the row
 	// the command already has: waiting for the listing to come back would hold
 	// the attach behind a request it does not need. The listing is still read,
@@ -672,8 +666,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
-	case initializationMsg:
-		return m.applyInitialization(msg)
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -3159,7 +3151,6 @@ func (m *Model) viewStatus() string {
 	if n := m.list.selectionCount(); n > 0 {
 		fields = append(fields, m.st.statusWA.Render(plural(n, "selected", "selected")))
 	}
-	fields = withReport(fields, m.viewInitialization(), m.inner())
 	right := ""
 	if len(fields) > 0 {
 		right = strings.Join(fields, "   ") + "  "
@@ -3170,27 +3161,6 @@ func (m *Model) viewStatus() string {
 	keys := m.statusKeys(max(m.inner()-lipgloss.Width(right)-2, 1))
 	m.zones.pop()
 	return message + "\n" + spreadPin("  "+keys, right, m.inner())
-}
-
-// withReport puts the initialization report at the end of a status row's pinned
-// fields, and drops what was already there when the two cannot both fit.
-//
-// The report goes last because that is where it belongs on the row, and the
-// identity beside it gives way rather than the report: the identity is a fact
-// about the row the cursor is on, one press from being seen again, while the
-// report is the only account on screen of a wait the user did not ask for.
-// Half the row is what the pinned end may take before that trade is made —
-// past that the keys are being squeezed for two things at once, and the report
-// is the one of them that cannot be found anywhere else.
-func withReport(fields []string, report string, width int) []string {
-	if report == "" {
-		return fields
-	}
-	together := append(append([]string{}, fields...), report)
-	if lipgloss.Width(strings.Join(together, "   ")) > width/2 {
-		return []string{report}
-	}
-	return together
 }
 
 // statusIdentity is the discobox under the cursor, named the two ways the row

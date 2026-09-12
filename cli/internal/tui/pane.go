@@ -1608,25 +1608,12 @@ func (m *Model) viewPaneWindow() string {
 		m.banner.live = true
 	}
 	room := max(inner-2*boxPad, 1)
-	// The initialization report is pinned to the end of this row the way the
-	// launcher pins it, and the keys give way to it rather than it to them.
-	// The workspace is where a wait is least explicable — the screen is a
-	// terminal, and nothing on it accounts for the server still staging images
-	// behind it. See initializing.go.
-	report := m.viewInitialization()
-	keysRoom := room
-	if report != "" {
-		keysRoom = max(room-lipgloss.Width(report)-2, 1)
-	}
 	// The message row is always drawn, empty or not: a row that came and went
 	// with a message would resize every terminal on screen each time.
 	rows = append(rows, " "+pad+padANSI(m.statusMessage(room), room)+pad+" ")
 	m.zones.push(1+boxPad, len(rows))
-	keys := m.statusKeys(keysRoom)
+	keys := m.statusKeys(room)
 	m.zones.pop()
-	if report != "" {
-		keys = spreadPin(keys, report, room)
-	}
 	rows = append(rows, " "+pad+padANSI(keys, room)+pad+" ")
 	return strings.Join(rows, "\n")
 }

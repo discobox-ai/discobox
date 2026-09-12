@@ -22,7 +22,7 @@ type PoolManager interface {
 	// provider instance's live pools as orphans.
 	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
 	// SchedulablePoolForSandbox gates placement: the sandbox's pool must be
-	// present, unrevoked, not offline, ready, and schedulable. It checks no
+	// present, unrevoked, active, ready, and schedulable. It checks no
 	// capacity; a sandbox makes no resource request to fit (ADR 0029).
 	SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error)
 	GetProject(ctx context.Context, projectID string) (*model.Project, error)
@@ -73,7 +73,7 @@ const (
 	PoolPhaseLoadingPoolImage    PoolProvisionPhase = "loading_pool_image"
 	PoolPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
 	PoolPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
-	// PoolPhasePreloadingImages is the startup pull of the images a sandbox
+	// PoolPhasePreloadingImages is the startup load of cached images a sandbox
 	// will want, done before anybody asks for one.
 	PoolPhasePreloadingImages PoolProvisionPhase = "preloading_images"
 )
@@ -100,28 +100,6 @@ type PoolPullProgress struct {
 	Layers         int    `json:"layers,omitempty"`
 	LayersComplete int    `json:"layersComplete,omitempty"`
 	Done           bool   `json:"done,omitempty"`
-}
-
-// PreloadProgress is how far a pool's preload has got: which image, how many
-// of how many, and — while one is actually downloading — how much of it has
-// arrived.
-//
-// The counts alone were what a startup line first reported, and they are the
-// half that moves least: "2 of 4" sits unchanged for the minutes it takes two
-// gigabytes to arrive, which is the whole of the wait this exists to describe.
-type PreloadProgress struct {
-	// Image is the reference being worked on, empty on the closing report.
-	Image string
-	// Done and Total count images, not bytes.
-	Done  int
-	Total int
-	// Pull is set while bytes are moving, and nil for an image that was
-	// already present.
-	Pull *PoolPullProgress
-	// Loading marks bytes read from the image cache on the server's machine
-	// rather than pulled from a registry: the same counts on the same line,
-	// and a different wait for the person reading it (ADR 0113).
-	Loading bool
 }
 
 // PoolProgressReporter is how a driver reports its progress without holding the

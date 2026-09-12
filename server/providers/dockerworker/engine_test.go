@@ -100,6 +100,8 @@ func TestRepairStopsUnhealthyVMWithoutDeletingPersistentState(t *testing.T) {
 		&model.Pool{ID: "pool-1", ProjectID: "project-1"},
 		nil,
 		"",
+		nil,
+		func(context.Context) error { return nil },
 	)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("RepairPool error = %v, want canceled after VM lifecycle", err)
@@ -131,7 +133,7 @@ func TestRepairRestartsARunningVMWhoseDockerDoesNotAnswer(t *testing.T) {
 			&model.SandboxProviderInstance{ID: "provider-1"},
 			&model.Pool{ID: "pool-1", ProjectID: "project-1"},
 			nil,
-			"",
+			"", nil, nil,
 		)
 		if err == nil || !strings.Contains(err.Error(), "docker daemon not ready") {
 			t.Fatalf("RepairPool error = %v, want the rebooted VM's Docker wait to fail", err)
@@ -163,7 +165,7 @@ func TestRepairKeepsARunningVMReachedOverANetwork(t *testing.T) {
 			&model.SandboxProviderInstance{ID: "provider-1"},
 			&model.Pool{ID: "pool-1", ProjectID: "project-1"},
 			nil,
-			"",
+			"", nil, nil,
 		)
 		if err == nil || !strings.Contains(err.Error(), "docker daemon not ready") {
 			t.Fatalf("RepairPool error = %v, want the Docker wait to fail", err)
@@ -217,7 +219,7 @@ func TestRepairKeepsARunningVMWhoseDockerAnswers(t *testing.T) {
 		&model.SandboxProviderInstance{ID: "provider-1"},
 		&model.Pool{ID: "pool-1", ProjectID: "project-1"},
 		nil,
-		"",
+		"", nil, nil,
 	); err == nil {
 		t.Fatal("RepairPool succeeded against a daemon that only answers pings")
 	}
@@ -247,7 +249,7 @@ func TestRepairCanceledWhileCheckingDockerKeepsTheVM(t *testing.T) {
 		&model.SandboxProviderInstance{ID: "provider-1"},
 		&model.Pool{ID: "pool-1", ProjectID: "project-1"},
 		nil,
-		"",
+		"", nil, nil,
 	)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("RepairPool error = %v, want canceled", err)

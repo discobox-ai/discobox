@@ -186,26 +186,17 @@ func TestTheOpeningFrameFitsTheScreenItIsPrintedOn(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		height   int
-		staging  bool
 		mark     bool
 		expanded bool
 	}{
 		{name: "room for everything", height: 40, mark: true},
 		{name: "room for the mark exactly", height: 18, mark: true},
 		{name: "a row short of the mark", height: 17},
-		{name: "the mark's last row wanted by the line under the frame", height: 18, staging: true},
 		{name: "room for the prompt and nothing beside it", height: 13},
 		{name: "no room for a small window at all", height: 12, expanded: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var options []Option
-			if tc.staging {
-				// A window with something to report under its frame, whether or
-				// not it has said anything yet: the row is reserved either way,
-				// because the line arrives on its own clock.
-				options = append(options, WithInitialization("staging", make(chan string)))
-			}
-			m := New(t.Context(), newFakeSource(testSandboxes()...), options...)
+			m := New(t.Context(), newFakeSource(testSandboxes()...))
 			m.logo = newLogo(true)
 			m.width, m.height, m.ready = 141, tc.height, true
 			m.layout()

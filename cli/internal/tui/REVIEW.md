@@ -47,8 +47,7 @@
   So a row appended to the view after the paint is not inert: it silently hands
   its presses to the row above it, and the only symptom is a drag that
   highlights the wrong line. Anything that wants to sit outside the window —
-  under the border, beside it — goes on an existing row instead; see
-  `initializing.go`, whose report sits on the status row for this reason.
+  under the border, beside it — goes on an existing row instead.
 
 - **One selection on screen at a time.** A press that starts one clears the
   others (`clearSelections`, `clearPaneSelections`); two highlights racing to

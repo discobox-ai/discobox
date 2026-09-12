@@ -59,12 +59,9 @@ func TestThePromptIsErasedFromTheScreenTheWindowLeavesBehind(t *testing.T) {
 			// something above them, the way they do on a real screen.
 			term.print("darren@host:~/src/disco2$ ./build/discobox")
 
-			// A window with something to report under it, which is the frame
-			// growing by a row while it is on screen.
-			updates := make(chan string, 1)
 			ds := newFakeSource(testSandboxes()...)
 			ds.workspace = SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
-			m := New(t.Context(), ds, WithInitialization("staging", updates))
+			m := New(t.Context(), ds)
 			m.logo = newLogo(true)
 			program := tea.NewProgram(m,
 				tea.WithInput(term.tty), tea.WithOutput(term.tty), tea.WithFPS(tc.fps))
@@ -78,10 +75,6 @@ func TestThePromptIsErasedFromTheScreenTheWindowLeavesBehind(t *testing.T) {
 
 			term.wait(t, "the opening prompt", func() bool {
 				return strings.Contains(term.screen(), "discoboxes you already have")
-			})
-			updates <- "pulling images"
-			term.wait(t, "the line under the window", func() bool {
-				return strings.Contains(term.screen(), "pulling images")
 			})
 
 			if tc.name == "the screen given back and taken again" {

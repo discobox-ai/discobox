@@ -46,7 +46,8 @@ by what it is looking for and is idempotent:
 2. `AutoMigrate(model.AllModels()...)`.
 3. Post-`AutoMigrate` data migrations, which need the new columns/constraints:
    index widening, value rewrites (secret types and hosts, provider types),
-   dropping a superseded constraint, dropping retired tables and columns, the
+   dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
+   its `poolImages` dirty rows), the
    sandbox state split (ADR 0034), and re-keying every sandbox origin to where
    its source came from (`rekeySandboxOrigins`, ADR 0111 §4).
 

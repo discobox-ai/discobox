@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/imagecache/imagecachetest"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
@@ -224,19 +227,22 @@ func localityEngine(t *testing.T, daemon *fakeLoadDaemon, cache *imagecache.Layo
 
 // A containerd daemon keeps the digest the archive gives the image, so a
 // staged image is loaded, narrated as a load, and never pulled.
-func TestStageImagesLoadsFromTheImageCache(t *testing.T) {
+func TestPreloadImagesLoadsFromTheImageCache(t *testing.T) {
 	cache, image := stagedCache(t)
 	daemon := newFakeLoadDaemon(true)
 	engine, _, _ := loadEngine(t, daemon, cache, testPoolImage)
 
+	var progressMu sync.Mutex
 	var loading, sawBytes bool
-	err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, []string{image.Reference},
-		func(progress sandbox.PreloadProgress) {
-			if progress.Loading {
-				loading = true
-				sawBytes = sawBytes || (progress.Pull != nil && progress.Pull.Current > 0)
-			}
-		})
+	engine.cfg.ProgressReporter = func(_ context.Context, _ string, progress sandbox.PoolProvisionProgress) {
+		progressMu.Lock()
+		defer progressMu.Unlock()
+		if progress.Phase == sandbox.PoolPhasePreloadingImages {
+			loading = true
+			sawBytes = sawBytes || (progress.Pull != nil && progress.Pull.Current > 0)
+		}
+	}
+	err := preloadTestImages(t, engine, []string{image.Reference})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +263,7 @@ func TestALoadIntoAClassicDaemonRecordsTheRegistryDigest(t *testing.T) {
 	daemon := newFakeLoadDaemon(false)
 	engine, _, _ := loadEngine(t, daemon, cache, testPoolImage)
 
-	if err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, []string{image.Reference}, nil); err != nil {
+	if err := preloadTestImages(t, engine, []string{image.Reference}); err != nil {
 		t.Fatal(err)
 	}
 	loads, pulls, removed := daemon.snapshot()
@@ -271,37 +277,36 @@ func TestALoadIntoAClassicDaemonRecordsTheRegistryDigest(t *testing.T) {
 }
 
 // A loaded image whose digest cannot be recorded would sit on the daemon
-// forever with a pin it can never match, so it is taken back and the image is
-// pulled the ordinary way.
+// forever with a pin it can never match, so it is taken back and startup fails.
 func TestAClassicLoadWhoseDigestCannotBeRecordedIsTakenBack(t *testing.T) {
 	cache, image := stagedCache(t)
 	daemon := newFakeLoadDaemon(false)
 	daemon.digestPullFails = true
 	engine, _, _ := loadEngine(t, daemon, cache, testPoolImage)
 
-	if err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, []string{image.Reference}, nil); err != nil {
-		t.Fatal(err)
+	if err := preloadTestImages(t, engine, []string{image.Reference}); err == nil {
+		t.Fatal("expected preload failure")
 	}
 	_, pulls, removed := daemon.snapshot()
 	if !slices.Equal(removed, []string{image.Reference}) {
 		t.Fatalf("removed = %v, want the loaded image taken back", removed)
 	}
-	if len(pulls) != 2 || pulls[1] != image.Reference {
-		t.Fatalf("pulls = %v, want the digest pull and then the ordinary one", pulls)
+	if len(pulls) != 1 {
+		t.Fatalf("pulls = %v, want only the digest registration attempt", pulls)
 	}
 }
 
-// An image the cache does not hold is pulled, exactly as before there was one.
-func TestAnImageNotInTheCacheIsPulled(t *testing.T) {
+// Startup leaves uncached images for the sandbox's on-demand pull.
+func TestPreloadSkipsAnImageNotInTheCache(t *testing.T) {
 	daemon := newFakeLoadDaemon(true)
 	engine, _, _ := loadEngine(t, daemon, imagecache.Open(t.TempDir()), testPoolImage)
 
-	if err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, []string{"ghcr.io/x/harness-shell:v1"}, nil); err != nil {
+	if err := preloadTestImages(t, engine, []string{"ghcr.io/x/harness-shell:v1"}); err != nil {
 		t.Fatal(err)
 	}
 	loads, pulls, _ := daemon.snapshot()
-	if len(loads) != 0 || !slices.Equal(pulls, []string{"ghcr.io/x/harness-shell:v1"}) {
-		t.Fatalf("loads = %v, pulls = %v; want the image pulled", loads, pulls)
+	if len(loads) != 0 || len(pulls) != 0 {
+		t.Fatalf("loads = %v, pulls = %v; want no preload or prepull", loads, pulls)
 	}
 }
 
@@ -331,19 +336,18 @@ func TestThePoolImageLoadsFromTheImageCache(t *testing.T) {
 }
 
 // A daemon on another machine is closer to its registry than to this machine's
-// disk, so an image staged here is pulled by it rather than sent over the
-// network twice — and the driver that reached it is what says so.
-func TestAnImageIsPulledIntoADaemonElsewhere(t *testing.T) {
+// disk, so startup leaves its images for the on-demand pull.
+func TestPreloadSkipsADaemonElsewhere(t *testing.T) {
 	cache, image := stagedCache(t)
 	daemon := newFakeLoadDaemon(true)
 	engine, _, _ := localityEngine(t, daemon, cache, testPoolImage, DaemonElsewhere)
 
-	if err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, []string{image.Reference}, nil); err != nil {
+	if err := preloadTestImages(t, engine, []string{image.Reference}); err != nil {
 		t.Fatal(err)
 	}
 	loads, pulls, _ := daemon.snapshot()
-	if len(loads) != 0 || !slices.Equal(pulls, []string{image.Reference}) {
-		t.Fatalf("loads = %v, pulls = %v; want the image pulled by the daemon itself", loads, pulls)
+	if len(loads) != 0 || len(pulls) != 0 {
+		t.Fatalf("loads = %v, pulls = %v; want no preload or prepull on a remote daemon", loads, pulls)
 	}
 }
 
@@ -362,5 +366,63 @@ func TestDaemonLocalityForHost(t *testing.T) {
 		if got := DaemonLocalityForHost(host); got != want {
 			t.Errorf("DaemonLocalityForHost(%q) = %v, want %v", host, got, want)
 		}
+	}
+}
+
+func preloadTestImages(t *testing.T, engine *Engine, images []string) error {
+	t.Helper()
+	lease, err := engine.acquireDockerReady(context.Background(), "pool_1", engine.dockerReadyTimeout())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	return engine.preloadImages(context.Background(), lease, "pool_1", images)
+}
+
+// Minting the bootstrap identity is the first step in creating an agent.
+// Neither a slow cache load nor a failed one may reach it early.
+func TestPoolAgentStartsOnlyAfterPreload(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint("load_failure=", fail), func(t *testing.T) {
+			cache, image := stagedCache(t)
+			daemon := newFakeLoadDaemon(!fail)
+			daemon.digestPullFails = fail
+			daemon.images[testPoolImage] = fakeImage{id: "pool-image"}
+			engine, log, url := loadEngine(t, daemon, cache, testPoolImage)
+			cli, err := testDockerClient(url)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cli.Close()
+			reachedCreate := errors.New("reached agent creation")
+			minted := false
+			began := false
+			mint := func(context.Context) (poolagent.Bootstrap, error) {
+				minted = true
+				if !began {
+					t.Error("agent created before scheduling was gated")
+				}
+				loads, _, _ := daemon.snapshot()
+				if !slices.Equal(loads, []string{image.Reference}) {
+					t.Errorf("agent created before preload: %v", loads)
+				}
+				return poolagent.Bootstrap{}, reachedCreate
+			}
+			_, _, err = engine.ensurePoolContainer(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil),
+				&model.SandboxProviderInstance{ID: "provider-1"}, &model.Pool{ID: "pool_1", ProjectID: "project-1"}, mint, false, []string{image.Reference}, func(context.Context) error { began = true; return nil })
+			if fail {
+				if err == nil || minted {
+					t.Fatalf("failed preload started agent: minted=%v err=%v", minted, err)
+				}
+			} else if !errors.Is(err, reachedCreate) || !minted {
+				t.Fatalf("successful preload did not reach agent creation: %v", err)
+			}
+			if !began {
+				t.Fatal("preload did not close scheduling gate")
+			}
+			if !slices.Contains(log.phases(), sandbox.PoolPhasePreloadingImages) {
+				t.Fatal("preload had no visible phase")
+			}
+		})
 	}
 }

@@ -231,6 +231,13 @@ func PoolProvisionStatus(pool *apimodel.Pool) Step {
 			return pullLine(pull)
 		}
 	}
+	if progress.Phase == apiclientgen.PoolProvisionPhasePreloadingImages {
+		line := Step("preloading images")
+		if pull, ok := progress.Pull.Get(); ok {
+			line += Step(": " + strings.TrimPrefix(string(pullLine(pull)), "pulling "))
+		}
+		return line
+	}
 	switch progress.Phase {
 	case apiclientgen.PoolProvisionPhaseFetchingVMImage:
 		return "fetching the VM image"

@@ -250,7 +250,7 @@ func TestStaleHeartbeatReadsOffline(t *testing.T) {
 // an unreachable daemon).
 type failingPoolProvider struct{ stubPoolProvider }
 
-func (failingPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
+func (failingPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(context.Context) error) error {
 	return errors.New("runtime did not converge")
 }
 
@@ -363,30 +363,26 @@ type hostComingUpProvider struct {
 	repairs int
 }
 
-func (p *hostComingUpProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
+func (p *hostComingUpProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(context.Context) error) error {
 	return fmt.Errorf("%w: container abc health check is starting", sandbox.ErrPoolNotReachable)
 }
 
-func (p *hostComingUpProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string) error {
+func (p *hostComingUpProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, []string, func(context.Context) error) error {
 	p.repairs++
 	return nil
 }
 
 type stubPoolProvider struct{}
 
-func (stubPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
+func (stubPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(context.Context) error) error {
 	return nil
 }
 
-func (stubPoolProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string) error {
+func (stubPoolProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, []string, func(context.Context) error) error {
 	return nil
 }
 
 func (stubPoolProvider) RemovePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
-	return nil
-}
-
-func (stubPoolProvider) StageImages(context.Context, *model.Pool, []string, func(sandbox.PreloadProgress)) error {
 	return nil
 }
 
@@ -448,4 +444,62 @@ func (stubPoolProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*sandb
 
 func (stubPoolProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte, []string) (*transport.HTTPClientLease, error) {
 	return nil, nil
+}
+
+type startingPoolProvider struct {
+	stubPoolProvider
+	observe func(context.Context, sandbox.PoolManager, *model.Pool, []string, func(context.Context) error) error
+}
+
+func (p startingPoolProvider) ReconcilePool(ctx context.Context, manager sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, images []string, begin func(context.Context) error) error {
+	return p.observe(ctx, manager, pool, images, begin)
+}
+
+func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
+	previous := defaultSandboxImage()
+	t.Cleanup(func() { setDefaultSandboxImage(previous) })
+	setDefaultSandboxImage("ghcr.io/discobox-ai/discobox-sandbox-agent:v1")
+	ctx := context.Background()
+	appStore, _ := newPoolReconcilerTestStore(t)
+	manager := sandbox.NewProviderManager()
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "startup", Name: "startup"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	pool := &model.Pool{ID: "pool-1", ProjectID: provider.ProjectID,
+		PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID},
+		Ready:        true, Schedulable: true, RegisteredAt: &now, LastSeenAt: &now,
+	}
+	pool.SetState(model.PoolStateActive)
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	sb := &model.Sandbox{ProjectID: pool.ProjectID, PoolID: pool.ID}
+	manager.RegisterProvider("startup", startingPoolProvider{observe: func(ctx context.Context, _ sandbox.PoolManager, _ *model.Pool, images []string, begin func(context.Context) error) error {
+		if len(images) == 0 {
+			t.Fatal("startup received no project images")
+		}
+		if _, err := appStore.SchedulablePoolForSandbox(ctx, sb); err != nil {
+			t.Fatalf("live pool initially unavailable: %v", err)
+		}
+		if err := begin(ctx); err != nil {
+			return err
+		}
+		// An old ready heartbeat can arrive while the image load is in flight.
+		if _, err := appStore.UpdatePoolStatus(ctx, pool.ID, true, true, false, 0, 0, 0, nil); err != nil {
+			return err
+		}
+		if _, err := appStore.SchedulablePoolForSandbox(ctx, sb); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("preloading pool admitted work: %v", err)
+		}
+		return nil
+	}})
+	r := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	if _, err := r.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := appStore.SchedulablePoolForSandbox(ctx, sb); err != nil {
+		t.Fatalf("completed startup still gated: %v", err)
+	}
 }

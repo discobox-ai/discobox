@@ -259,9 +259,9 @@ row:
 The agent also reports `available*` capacity and an opaque `conditions` JSON
 blob for display and diagnostics; the control plane does not interpret either
 for scheduling. Placement is a gate, not a search (`Store.SchedulablePoolForSandbox`):
-the sandbox's pool must be unrevoked, desired `present`, not `offline`, ready,
+the sandbox's pool must be unrevoked, desired `present`, `active`, ready,
 and schedulable. No capacity is gated; sandboxes share the pool's CPU, memory,
-and storage with no per-sandbox reservation (ADR 0029). `imagesStaged` is a condition, never a scheduling gate.
+and storage with no per-sandbox reservation (ADR 0029). Image preload progress uses `ProvisionProgress`.
 
 ## Pool Deletion
 

@@ -378,9 +378,6 @@ func TestProvisioningMarkSeesProgress(t *testing.T) {
 		{"pool provisioning progress", func() error {
 			return service.store.RecordPoolProvisionProgress(ctx, "pool-1", []byte(`{"phase":"boot"}`), time.Now().UTC())
 		}},
-		{"pool image staging", func() error {
-			return service.store.RecordPoolImageStage(ctx, "pool-1", []byte(`{"phase":"pull"}`), true, time.Now().UTC())
-		}},
 	} {
 		if err := step.do(); err != nil {
 			t.Fatalf("%s: %v", step.name, err)

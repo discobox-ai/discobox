@@ -264,7 +264,7 @@ func configRevision(cfg Config) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap) error {
+func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, images []string, begin func(context.Context) error) error {
 	// The phases of bringing a host up, in the order they happen, for a client
 	// whose sandbox is waiting for a pool to take it. On a VM backend starting
 	// the machine includes fetching the disk image the first time, which on a
@@ -293,7 +293,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, false)
+	inst, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, false, images, begin)
 	if err != nil {
 		return err
 	}
@@ -301,7 +301,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	return e.recordPoolRuntime(pool, vmInfo, inst, recreated)
 }
 
-func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, _ string) error {
+func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, _ string, images []string, begin func(context.Context) error) error {
 	// Replace the VM only when it is missing or unhealthy, which includes a VM
 	// hosted here whose Docker daemon does not answer; pool-local state such as
 	// named volumes survives container replacement on a healthy VM.
@@ -366,7 +366,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, _, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, true)
+	inst, _, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, true, images, begin)
 	if err != nil {
 		return err
 	}
@@ -503,7 +503,7 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout 
 // The bootstrap is minted lazily: the healthy-container path below returns
 // without calling mint, so a steady-state drift check persists no single-use
 // token. Only the create path needs credentials.
-func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
+func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, forceRecreate bool, images []string, begin func(context.Context) error) (*container.InspectResponse, bool, error) {
 	cli := lease.Client
 	name := ContainerName(pool.ID)
 	labels := e.containerLabels(provider, pool)
@@ -511,6 +511,11 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 	existing, existingErr := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if existingErr != nil && !cerrdefs.IsNotFound(existingErr) {
 		return nil, false, existingErr
+	}
+	if existingErr != nil {
+		if err := begin(ctx); err != nil {
+			return nil, false, err
+		}
 	}
 	image, err := e.resolvePoolAgentImage(ctx, lease, pool.ID, existing.Container)
 	if err != nil {
@@ -524,6 +529,9 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 		// configured image would remove and recreate it on every reconcile for
 		// as long as the registry stayed unreachable.
 		if forceRecreate || shouldRemoveExistingContainer(existing.Container, image, labels) {
+			if err := begin(ctx); err != nil {
+				return nil, false, err
+			}
 			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, false, err
 			}
@@ -542,6 +550,10 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 			}
 			return inst, false, err
 		}
+	}
+
+	if err := e.preloadImages(ctx, lease, pool.ID, images); err != nil {
+		return nil, false, err
 	}
 
 	inst, err := e.createPoolContainer(ctx, cli, pool, name, labels, mint, image)
