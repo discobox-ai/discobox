@@ -1,4 +1,4 @@
-# 0111 — Every server has a peer ID, whatever it listens on
+# 0114 — Every server has a peer ID, whatever it listens on
 
 - **Status**: Accepted
 - **Supersedes**: [0098](0098-a-server-serves-its-own-peer-id.md) §2 — the ID is no longer absent on a server that does not listen for peers — and [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §6's "a key is loaded only for an endpoint that is bound". The iroh endpoint itself stays opt-in.
@@ -12,7 +12,7 @@ server should not generate an identity it never uses: "it would be handing out
 an address that answers nothing". Most servers listen on a unix socket and
 nothing else, so most servers have no peer ID.
 
-[ADR 0110](0110-a-discobox-address-names-a-server-and-a-discobox.md) changed
+[ADR 0113](0113-a-discobox-address-names-a-server-and-a-discobox.md) changed
 what the ID is for. A client now keeps a list of servers, records each one's
 peer ID when it registers it, and recognizes one server registered under two
 addresses — its http address and its peer address — by that ID. A server

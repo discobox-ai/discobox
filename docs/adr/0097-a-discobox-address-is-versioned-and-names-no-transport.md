@@ -1,7 +1,7 @@
 # 0097 — A Discobox address is `discobox://<peer-id>`, and nothing user-facing says iroh
 
 - **Status**: Accepted
-- **§1's exact-concatenation address superseded by**: [0110](0110-a-discobox-address-names-a-server-and-a-discobox.md) — an address may also name a server by host, and a discobox on it; resolution moves from `Parse` to a `Resolve` step before the dial. The peer-ID format, and §§3-7, stand.
+- **§1's exact-concatenation address superseded by**: [0113](0113-a-discobox-address-names-a-server-and-a-discobox.md) — an address may also name a server by host, and a discobox on it; resolution moves from `Parse` to a `Resolve` step before the dial. The peer-ID format, and §§3-7, stand.
 - **Date**: 2026-09-08
 
 ## Context

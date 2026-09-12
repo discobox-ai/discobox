@@ -1,4 +1,4 @@
-# 0110 — A Discobox address names a server and a discobox, and a client lists every server it knows
+# 0113 — A Discobox address names a server and a discobox, and a client lists every server it knows
 
 - **Status**: Accepted
 - **Supersedes**: [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md) §1's "the address is exact concatenation" — an address may also name a server by host, and a discobox on it. §1's peer-ID format, and §§3-7, stand.

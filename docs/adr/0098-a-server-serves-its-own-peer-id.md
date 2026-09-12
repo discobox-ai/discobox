@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Narrows**: [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §6 — the address travels out of band *when iroh is the only way in*, which is not the case it is usually needed in. The rest of §6 stands.
-- **§2 superseded by**: [0111](0111-every-server-has-a-peer-id.md) — every server has a peer ID, whatever it listens on; the iroh endpoint stays opt-in.
+- **§2 superseded by**: [0114](0114-every-server-has-a-peer-id.md) — every server has a peer ID, whatever it listens on; the iroh endpoint stays opt-in.
 - **Date**: 2026-09-08
 
 ## Context
