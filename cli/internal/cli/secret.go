@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -451,13 +452,16 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		// The lifetime is always sent. Left out, the server would take the
 		// secret's own limit — forever, for a credential nobody capped — and
 		// approving here would mint a different grant from approving the same
-		// request in the window, which opens on the same default.
+		// request in the window, which opens on the same lifetime.
 		seconds, given, err := grantLifetime(cmd.Flags(), "grant-ttl", ttl)
 		if err != nil {
 			return err
 		}
 		if !given {
-			seconds = lifetime.Seconds(lifetime.Default)
+			seconds, err = requestedGrantLifetime(cmd.Context(), client, projectID, requestID)
+			if err != nil {
+				return err
+			}
 		}
 		body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 		if strings.TrimSpace(scope) != "" {
@@ -496,6 +500,30 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
 	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLApproveFlagUsage)
 	return cmd
+}
+
+// requestedGrantLifetime is what approving a request grants for when
+// --grant-ttl is left out: the lifetime the agent asked for, or
+// lifetime.Default when it asked for nothing in particular. It is the lifetime
+// the window opens on for the same request, so the two mint the same grant.
+func requestedGrantLifetime(ctx context.Context, client *apiclientgen.Client, projectID, requestID string) (int64, error) {
+	res, err := client.GetSecretRequest(ctx, apiclientgen.GetSecretRequestParams{ProjectId: projectID, RequestId: requestID})
+	if err != nil {
+		return 0, err
+	}
+	request, err := expectResponse[apimodel.SecretRequest](res)
+	if err != nil {
+		return 0, err
+	}
+	// Through FromRequest, like every other reader of an ask. A stored value
+	// outside what an agent may ask for is no ask at all, and must not mint
+	// here what the window, reading the same row, would refuse to open on —
+	// this is the path that hands out the grant, so it is the last place that
+	// should take the number on trust.
+	if asked := lifetime.FromRequest(request.GrantTTLSeconds.Or(0)); asked > 0 {
+		return lifetime.Seconds(asked), nil
+	}
+	return lifetime.Seconds(lifetime.Default), nil
 }
 
 func approveSecretRequestBodyScope(value string) (apiclientgen.ApproveSecretRequestBodyScope, error) {
@@ -554,11 +582,12 @@ func addSecretValueFlags(flags *pflag.FlagSet, opts *secretValueOptions) {
 // window's picker offers (see cli/internal/lifetime).
 //
 // Each command says what leaving its flag out means, because they differ:
-// approving a request grants for lifetime.Default, as the window does; a
+// approving a request grants for what the agent asked, else lifetime.Default,
+// as the window does; a
 // standing grant takes the secret's limit; a new secret's limit is the
 // server's default; and update leaves the limit as it is.
 const (
-	grantTTLApproveFlagUsage   = "How long the grant lives: 1h, 90m, 3d, 2w, 1mo, or forever (default 1h; a secret whose limit is shorter refuses the default, so pass one within it)"
+	grantTTLApproveFlagUsage   = "How long the grant lives: 1h, 90m, 3d, 2w, 1mo, or forever (default: what the agent asked for, else 1h; a secret whose limit is shorter refuses the default, so pass one within it)"
 	grantTTLCreateFlagUsage    = "How long the grant lives: 1h, 90m, 3d, 2w, 1mo, or forever (default: the secret's limit)"
 	maxGrantTTLCreateFlagUsage = "Longest a grant on this secret may live: 1h, 3d, 2w, 1mo, or forever (default 1h)"
 	maxGrantTTLUpdateFlagUsage = "Longest a grant on this secret may live: 1h, 3d, 2w, 1mo, or forever (omit to leave it as it is)"

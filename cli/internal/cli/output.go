@@ -16,6 +16,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 )
 
 func writeJSON(w io.Writer, value any) error {
@@ -601,6 +602,9 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 			}
 			fmt.Fprintf(tw, "%s\t%s\n", label, use.Description)
 		}
+	}
+	if asked := lifetime.FromRequest(request.GrantTTLSeconds.Or(0)); asked > 0 {
+		fmt.Fprintf(tw, "WANTED FOR\t%s\n", lifetime.Label(asked))
 	}
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
 		fmt.Fprintf(tw, "SECRET\t%s\n", secretID)

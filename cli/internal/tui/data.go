@@ -1064,7 +1064,10 @@ type CredentialRequest struct {
 	Type          string
 	Justification string
 	Uses          []string
-	Created       time.Time
+	// GrantTTL is how long the agent asked to keep the credential, and the
+	// lifetime the approval opens on. Zero is no ask, never forever.
+	GrantTTL time.Duration
+	Created  time.Time
 }
 
 // FromAgent reports whether a person is being asked a question with reasons

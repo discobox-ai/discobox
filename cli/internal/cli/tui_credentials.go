@@ -7,6 +7,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
@@ -48,6 +49,7 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		Host:          strings.TrimSpace(r.Host.Or("")),
 		Type:          string(r.Type),
 		Justification: strings.TrimSpace(r.Justification.Or("")),
+		GrantTTL:      lifetime.FromRequest(r.GrantTTLSeconds.Or(0)),
 		Created:       r.CreatedAt,
 	}
 	if uses, ok := r.Uses.Get(); ok {

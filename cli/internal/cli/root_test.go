@@ -667,6 +667,8 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 				t.Fatalf("decode approve body: %v", err)
 			}
 			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"token","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","type":"token","status":"pending","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
 			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
@@ -685,9 +687,9 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 		t.Fatalf("approve body = %#v, want a week in seconds", approved)
 	}
 
-	// Said nothing, it grants for an hour — the window's default — rather than
-	// leaving the server to take the secret's limit, which for this secret is
-	// forever.
+	// Said nothing, about a request that asked for nothing in particular, it
+	// grants for an hour — the window's default — rather than leaving the
+	// server to take the secret's limit, which for this secret is forever.
 	cmd = NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID})
@@ -710,6 +712,96 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--grant-ttl") || !strings.Contains(err.Error(), "1h, 90m, 3d, 2w, 1mo, or forever") {
 		t.Fatalf("error = %q, want it to name the flag and the spellings that work", err)
+	}
+}
+
+// An agent that asked how long it needs the credential is granted that when
+// --grant-ttl is left out — the lifetime the window opens on for the same
+// request — and --grant-ttl still overrides it.
+func TestSecretRequestApproveDefaultsToTheLifetimeTheAgentAskedFor(t *testing.T) {
+	const (
+		requestID = "request-1"
+		secretID  = "secret-1"
+	)
+	var approved map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","type":"token","status":"pending","grantTTLSeconds":14400,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
+			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
+				t.Fatalf("decode approve body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","type":"token","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		default:
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret request approve: %v", err)
+	}
+	if approved["grantTTLSeconds"] != float64(14400) {
+		t.Fatalf("approve body = %#v, want the four hours the agent asked for", approved)
+	}
+
+	cmd = NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID, "--grant-ttl", "1h"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret request approve: %v", err)
+	}
+	if approved["grantTTLSeconds"] != float64(3600) {
+		t.Fatalf("approve body = %#v, want --grant-ttl over the agent's ask", approved)
+	}
+}
+
+// A stored ask outside what an agent may ask for is no ask at all here too.
+// The window reads such a row as nothing asked and opens on the hour; if this
+// path took the number on trust it would mint the grant the window refused to
+// offer — and for most credentials, whose own limit is uncapped, nothing would
+// stop it.
+func TestSecretRequestApproveIgnoresAnAskOutsideWhatMayBeAsked(t *testing.T) {
+	const (
+		requestID = "request-1"
+		secretID  = "secret-1"
+	)
+	var approved map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			// The number that overflows a duration when multiplied out, which
+			// is how "forever" would arrive without a word for it.
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","type":"token","status":"pending","grantTTLSeconds":18446744074,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
+			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
+				t.Fatalf("decode approve body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","type":"token","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		default:
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret request approve: %v", err)
+	}
+	if approved["grantTTLSeconds"] != float64(3600) {
+		t.Fatalf("approve body = %#v, want the hour an unusable ask falls back to", approved)
 	}
 }
 

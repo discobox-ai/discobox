@@ -208,24 +208,35 @@ const lifetimeCustom = "custom"
 // asks the server for the credential's own ceiling — a ceiling most
 // credentials do not have — so a window that did would hand out permanent
 // credentials without ever saying the word. A card that has to be answered is
-// one that gets read. It opens on lifetime.Default, an hour.
+// one that gets read. It opens on the lifetime the agent asked for, or on
+// lifetime.Default, an hour, when it asked for nothing in particular.
 //
 // back is the dialog before this one, which Esc returns to: the request card,
 // or the binding question when the secret chosen raised one.
 func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
-	items := make([]action, 0, len(lifetime.Presets)+1)
-	for _, d := range lifetime.Presets {
+	asked := a.req.GrantTTL
+	offered := lifetimeChoices(asked)
+	if !slices.Contains(offered, asked) {
+		// Not a row, so not what anything below may open on or mark.
+		asked = 0
+	}
+	items := make([]action, 0, len(offered)+1)
+	for _, d := range offered {
 		items = append(items, action{
 			key:     strconv.FormatInt(lifetime.Seconds(d), 10),
 			label:   lifetime.Label(d),
-			detail:  lifetimeDetail(a.secret, d),
+			detail:  lifetimeDetail(a.secret, asked, d),
 			enabled: true,
 		})
 	}
 	items = append(items, action{key: lifetimeCustom, label: "custom…", detail: "type one: 90m, 3d, 6mo", enabled: true})
 
 	again := func() tea.Cmd { return m.askLifetime(a, back) }
-	opens := strconv.FormatInt(lifetime.Seconds(lifetime.Default), 10)
+	opensOn := lifetime.Default
+	if asked > 0 {
+		opensOn = asked
+	}
+	opens := strconv.FormatInt(lifetime.Seconds(opensOn), 10)
 	d := actionsDialog("How long?", "", items, func(result string) tea.Cmd {
 		if result == lifetimeCustom {
 			return m.askCustomLifetime(a, again, "")
@@ -238,11 +249,14 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 		next.ttl = time.Duration(seconds) * time.Second
 		return m.lifetimeChosen(next, again)
 	})
-	// It opens on the default, whatever order the presets are offered in, so
-	// Enter is the answer nobody had to choose.
+	// It opens on the agent's ask, else the default, whatever order the rows
+	// are offered in, so Enter is the answer nobody had to choose. The first
+	// row carrying the key wins, so a second one that somehow shared it could
+	// never take the cursor from it.
 	for i, item := range items {
 		if item.key == opens {
 			d.cursor = i
+			break
 		}
 	}
 	d.sections = []section{grantSection(a)}
@@ -254,17 +268,45 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 	return nil
 }
 
-// lifetimeDetail says what a lifetime means beyond its name: that forever never
-// lapses, and that one longer than the credential allows will be asked about —
-// said before it is chosen rather than discovered after.
-func lifetimeDetail(secret Secret, d time.Duration) string {
-	if limit := secret.MaxTTL; limit > 0 && (d <= 0 || d > limit) {
-		return "longer than " + secret.Name + " allows (" + lifetime.Label(limit) + "), asks first"
+// lifetimeChoices is the presets, with the lifetime the agent asked for in its
+// place among them when it is not already one: the row the card opens on has to
+// be a row on it. Forever stays last, since nothing an agent asks for is longer.
+//
+// A row's identity is its count of whole seconds, so an ask that is not one
+// cannot be a row: it would collide with the row whose count it shares —
+// forever's, for anything under a second — and the card would open on that
+// instead of on what was asked for. Such an ask is dropped here and the step
+// opens on lifetime.Default, the same as an ask nobody made.
+func lifetimeChoices(asked time.Duration) []time.Duration {
+	if asked <= 0 || asked%time.Second != 0 || slices.Contains(lifetime.Presets, asked) {
+		return lifetime.Presets
 	}
-	if d <= 0 {
-		return "never expires"
+	at := len(lifetime.Presets)
+	for i, d := range lifetime.Presets {
+		if d <= 0 || d > asked {
+			at = i
+			break
+		}
 	}
-	return ""
+	return slices.Insert(slices.Clone(lifetime.Presets), at, asked)
+}
+
+// lifetimeDetail says what a lifetime means beyond its name: that it is what
+// the agent asked for, that forever never lapses, and that one longer than the
+// credential allows will be asked about — said before it is chosen rather than
+// discovered after.
+func lifetimeDetail(secret Secret, asked, d time.Duration) string {
+	var notes []string
+	if asked > 0 && d == asked {
+		notes = append(notes, "what the agent asked for")
+	}
+	switch limit := secret.MaxTTL; {
+	case limit > 0 && (d <= 0 || d > limit):
+		notes = append(notes, "longer than "+secret.Name+" allows ("+lifetime.Label(limit)+"), asks first")
+	case d <= 0:
+		notes = append(notes, "never expires")
+	}
+	return strings.Join(notes, " · ")
 }
 
 // askCustomLifetime takes a lifetime the presets do not offer. refused is the
@@ -345,6 +387,9 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 	}
 	if req.Host != "" {
 		fields = append(fields, field{label: "may be sent to", value: req.Host, tone: toneAccent})
+	}
+	if req.GrantTTL > 0 {
+		fields = append(fields, field{label: "wanted for", value: lifetime.Label(req.GrantTTL)})
 	}
 	fields = append(fields, field{label: "asked", value: asked, tone: toneDim})
 	sections := []section{{label: "asked for", fields: fields}}

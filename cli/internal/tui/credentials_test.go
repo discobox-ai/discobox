@@ -419,6 +419,102 @@ func TestTheOfferedLifetimesAreTheOnesTheFlagsTake(t *testing.T) {
 	}
 }
 
+// An agent that says how long it needs the credential has that on the request
+// card, and the lifetime step opens on it — among the presets in its place when
+// it is not one of them — so Enter approves what was asked.
+func TestTheLifetimeStepOpensOnWhatTheAgentAskedFor(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	req.GrantTTL = 4 * time.Hour
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !onRequestCard(m) || !strings.Contains(dialogText(m), "4 hours") {
+		t.Fatalf("card = %q, want it to say how long the agent asked for", dialogText(m))
+	}
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
+	}
+	var labels []string
+	for _, item := range m.dialog.items {
+		labels = append(labels, item.label)
+	}
+	if got, want := strings.Join(labels, ", "), "1 hour, 4 hours, 1 day, 1 week, 1 month, forever, custom…"; got != want {
+		t.Fatalf("offered %s, want %s", got, want)
+	}
+	opened := m.dialog.items[m.dialog.cursor]
+	if opened.label != "4 hours" || !strings.Contains(opened.detail, "asked for") {
+		t.Fatalf("opened on %q (%q), want the 4 hours the agent asked for, marked as its ask", opened.label, opened.detail)
+	}
+	drain(t, m, m.dialog.action(opened.key), 0)
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 4*3600 {
+		t.Fatalf("approvals = %#v, want the lifetime the agent asked for", ds.approvals)
+	}
+}
+
+// An ask that is already a preset opens on that preset rather than offering
+// it twice.
+func TestALifetimeAskedForThatIsAPresetIsOfferedOnce(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	req.GrantTTL = lifetime.Week
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	if len(m.dialog.items) != len(lifetime.Presets)+1 {
+		t.Fatalf("offered %d rows, want the presets and custom", len(m.dialog.items))
+	}
+	if opened := m.dialog.items[m.dialog.cursor]; opened.label != "1 week" {
+		t.Fatalf("opened on %q, want the week the agent asked for", opened.label)
+	}
+}
+
+// An ask that cannot be a row is no row at all, and the step opens on the hour.
+// A row's identity is its count of whole seconds, so a sub-second ask shares
+// forever's count: offered, it would take the cursor and Enter would mint a
+// grant that never lapses — the one outcome this step exists to prevent.
+func TestAnAskThatCannotBeARowOpensOnTheDefault(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	req.GrantTTL = 290 * time.Millisecond
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
+	}
+	if len(m.dialog.items) != len(lifetime.Presets)+1 {
+		t.Fatalf("offered %d rows, want only the presets and custom", len(m.dialog.items))
+	}
+	keys := map[string]bool{}
+	for _, item := range m.dialog.items {
+		if keys[item.key] {
+			t.Fatalf("two rows share the key %q; the cursor cannot tell them apart", item.key)
+		}
+		keys[item.key] = true
+	}
+	opened := m.dialog.items[m.dialog.cursor]
+	if opened.label != "1 hour" {
+		t.Fatalf("opened on %q, want the hour an ask nobody could act on falls back to", opened.label)
+	}
+	drain(t, m, m.dialog.action(opened.key), 0)
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
+		t.Fatalf("approvals = %#v, want the hour, not a grant that never lapses", ds.approvals)
+	}
+}
+
 // The presets are the common answers, not every answer.
 func TestALifetimeCanBeTypedIn(t *testing.T) {
 	t.Parallel()

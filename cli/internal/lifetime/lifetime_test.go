@@ -1,10 +1,13 @@
 package lifetime
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/agentcreds"
 )
 
 // A lifetime is typed by whoever is handing out a credential, in a hurry, into
@@ -125,5 +128,28 @@ func TestSecondsIsWhatTheWireTakes(t *testing.T) {
 	}
 	if got := Seconds(Forever); got != 0 {
 		t.Fatalf("Seconds(forever) = %d, want the zero that means it never expires", got)
+	}
+}
+
+// What arrives from inside a sandbox is not a lifetime until it is checked. The
+// ceiling is what keeps the conversion from overflowing: 18446744074 seconds
+// multiplied out wraps to 290.448384ms, which is positive, rounds to zero whole
+// seconds, and would read as forever everywhere a lifetime is shown.
+func TestFromRequestTakesOnlyALifetimeAnAgentMayAskFor(t *testing.T) {
+	for _, tc := range []struct {
+		seconds int64
+		want    time.Duration
+	}{
+		{0, 0},
+		{-1, 0},
+		{3600, time.Hour},
+		{int64(agentcreds.MaxGrantTTLSeconds), 30 * Day},
+		{int64(agentcreds.MaxGrantTTLSeconds) + 1, 0},
+		{18446744074, 0},
+		{math.MaxInt64, 0},
+	} {
+		if got := FromRequest(tc.seconds); got != tc.want {
+			t.Errorf("FromRequest(%d) = %v, want %v", tc.seconds, got, tc.want)
+		}
 	}
 }
