@@ -8031,8 +8031,17 @@ func (c *Client) sendListSandboxes(ctx context.Context, params ListSandboxesPara
 		}
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			if val, ok := params.OriginKey.Get(); ok {
-				return e.EncodeValue(conv.StringToString(val))
+			if params.OriginKey != nil {
+				return e.EncodeArray(func(e uri.Encoder) error {
+					for i, item := range params.OriginKey {
+						if err := func() error {
+							return e.EncodeValue(conv.StringToString(item))
+						}(); err != nil {
+							return errors.Wrapf(err, "[%d]", i)
+						}
+					}
+					return nil
+				})
 			}
 			return nil
 		}); err != nil {

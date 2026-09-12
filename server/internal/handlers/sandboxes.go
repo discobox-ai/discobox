@@ -10,7 +10,7 @@ import (
 )
 
 func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandboxesParams) (serverapi.ListSandboxesRes, error) {
-	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), strings.TrimSpace(params.OriginKey.Or("")))
+	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), originKeys(params.OriginKey))
 	if err != nil {
 		return apiError(err), nil
 	}
@@ -189,4 +189,17 @@ func (h *Handler) ReconcileSandbox(ctx context.Context, params serverapi.Reconci
 		return nil, err
 	}
 	return &body, nil
+}
+
+// originKeys are the listing's origin-key filter with the blanks dropped. A
+// blank key names no place, so it filters nothing either way; dropping it here
+// keeps the store from being asked for sandboxes with no key at all.
+func originKeys(values []string) []string {
+	keys := make([]string, 0, len(values))
+	for _, value := range values {
+		if key := strings.TrimSpace(value); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }

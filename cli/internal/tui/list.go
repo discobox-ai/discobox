@@ -28,9 +28,9 @@ type sandboxList struct {
 	offset    int
 	selected  map[string]bool
 
-	// folder is the origin the list is filtered to, chosen in the header.
-	// Empty is every folder, which is the one choice that is not a path.
-	folder string
+	// folder is the folder the list is filtered to, chosen in the header. With
+	// no key it is every folder, which is the one choice that is not a place.
+	folder folder
 
 	// Archived sandboxes are history: kept, listed on request, and out of the
 	// way until then.
@@ -106,7 +106,7 @@ func (l *sandboxList) setPending(byBox map[string][]CredentialRequest) {
 func (l *sandboxList) rows() []Sandbox {
 	out := make([]Sandbox, 0, len(l.all))
 	for _, s := range l.all {
-		if l.folder != "" && s.Folder != l.folder {
+		if !l.folder.holds(s, l.session) {
 			continue
 		}
 		if !l.showArchived && s.State == StateArchived {
@@ -117,26 +117,31 @@ func (l *sandboxList) rows() []Sandbox {
 	return out
 }
 
-// folders are the origins the header can filter to: every folder the project's
-// sandboxes were started from, newest sandbox first, with this session's
-// own directory leading whether or not anything was started from it yet.
+// folders are what the header can filter to (ADR 0111): the window's own
+// folder first, whether or not anything was cut from it yet, then every other
+// folder the project's discoboxes are filed in, newest first, then the one the
+// header is on if nothing is filed in it yet. The order does not follow the
+// selection, so left and right walk the same ring whichever folder they start
+// from. This machine's own key is never one of them: its discoboxes with no
+// source are in every folder of this machine's already.
 //
 // It is derived from the listing rather than asked for separately: the folders
 // worth offering are exactly the ones something is sitting in.
-func (l *sandboxList) folders() []string {
-	seen := map[string]bool{}
-	out := []string{}
-	if dir := l.session.Directory; dir != "" {
-		seen[dir] = true
-		out = append(out, dir)
-	}
-	for _, s := range l.all {
-		if s.Folder == "" || seen[s.Folder] {
-			continue
+func (l *sandboxList) folders() []folder {
+	seen := map[string]bool{"": true, l.session.HostKey: true}
+	out := []folder{}
+	add := func(f folder) {
+		if seen[f.key] {
+			return
 		}
-		seen[s.Folder] = true
-		out = append(out, s.Folder)
+		seen[f.key] = true
+		out = append(out, f)
 	}
+	add(l.session.folder())
+	for _, s := range l.all {
+		add(s.folder(l.session))
+	}
+	add(l.folder)
 	return out
 }
 
@@ -144,11 +149,12 @@ func (l *sandboxList) folders() []string {
 // the project's discoboxes were cut from, newest sandbox first.
 //
 // It is the folder list's counterpart and not the same list. A folder is where
-// a create was run from, which a remote-sourced discobox shares with every
-// other one started in that directory; a source is what was actually
-// materialized, which is a repository URL as often as a path. A discobox
-// created with no source at all contributes nothing, because "no source" is an
-// answer the row already offers on its own.
+// a discobox is filed — a machine and a source — so one source cut on two
+// machines is two folders; a source is what can be cut from here, which is a
+// repository URL as often as a path. Each carries where a discobox cut from it
+// on this machine is filed. A discobox created with no source at all
+// contributes nothing, because "no source" is an answer the row already offers
+// on its own.
 func (l *sandboxList) sources() []Source {
 	seen := map[string]bool{}
 	out := []Source{}
@@ -157,7 +163,7 @@ func (l *sandboxList) sources() []Source {
 			continue
 		}
 		seen[s.Source] = true
-		out = append(out, Source{Value: s.Source, Remote: s.SourceRemote})
+		out = append(out, Source{Value: s.Source, Remote: s.SourceRemote, OriginKey: s.SourceOriginKey})
 	}
 	return out
 }
@@ -167,7 +173,7 @@ func (l *sandboxList) sources() []Source {
 func (l *sandboxList) archivedCount() int {
 	n := 0
 	for _, s := range l.all {
-		if s.State == StateArchived && (l.folder == "" || s.Folder == l.folder) {
+		if s.State == StateArchived && l.folder.holds(s, l.session) {
 			n++
 		}
 	}

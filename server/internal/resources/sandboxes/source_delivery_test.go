@@ -86,8 +86,8 @@ func TestSourceNeedsPush(t *testing.T) {
 	// A provider that reaches this filesystem, but not where the source lives.
 	elsewhere := sandbox.ProviderDefinition{LocalSourceRoots: []string{hostPath("/home"), hostPath("/Users")}}
 	everything := sandbox.ProviderDefinition{LocalSourceRoots: []string{hostPath("/")}}
-	sameHost := &model.Origin{HostID: serverHost, ProjectPath: hostPath("/src/alpha")}
-	otherHost := &model.Origin{HostID: clientHost, ProjectPath: hostPath("/src/alpha")}
+	sameHost := &model.Origin{HostID: serverHost}
+	otherHost := &model.Origin{HostID: clientHost}
 
 	tests := []struct {
 		name       string
@@ -170,7 +170,7 @@ func TestSourceNeedsPush(t *testing.T) {
 		},
 		{
 			name: "empty origin host pushes", definition: binds, serverHost: serverHost,
-			origin: &model.Origin{ProjectPath: "/src/alpha"}, source: localSource(), want: true,
+			origin: &model.Origin{}, source: localSource(), want: true,
 			why: "an origin without a host identifies no machine",
 		},
 		{

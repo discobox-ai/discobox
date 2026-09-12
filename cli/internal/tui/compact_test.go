@@ -284,7 +284,7 @@ func TestTheWindowStaysOpenOnceItHasOpenedOut(t *testing.T) {
 // the full window's header.
 func TestOpeningOutWithNothingToShow(t *testing.T) {
 	t.Parallel()
-	d, m := newCompactModel(t, newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/elsewhere"}))
+	d, m := newCompactModel(t, newFakeSource(cutFrom(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning}, "/src/elsewhere")))
 	d.key("tab")
 
 	if !m.expanded {

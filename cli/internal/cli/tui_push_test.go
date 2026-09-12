@@ -40,7 +40,7 @@ func pushDeliveredSandbox() apimodel.Sandbox {
 			DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState("running"),
 		},
 	}
-	sandbox.Origin = apiclientgen.NewOptOrigin(apiclientgen.Origin{HostId: thisHost, ProjectPath: "/src/disco2"})
+	sandbox.Origin = apiclientgen.NewOptOrigin(apiclientgen.Origin{HostId: thisHost})
 	sandbox.Config.SetSource(apiclientgen.NewOptGitSource(source))
 	return sandbox
 }
@@ -221,7 +221,7 @@ func pushDataSource(t *testing.T, dir string) (*apiDataSource, *pathLog) {
 	sandbox := `{"id":"sbx_1","projectId":"project-1","createdByUserId":"user-1","displayName":"box",` +
 		`"config":{"name":"box","image":"","source":{"kind":"git","slug":"primary","delivery":"push",` +
 		`"localDirectory":` + string(dirJSON) + `,"checkout":{"refName":"main","refType":"branch"}}},` +
-		`"origin":{"hostId":"` + thisHost + `","projectPath":` + string(dirJSON) + `},` +
+		`"origin":{"hostId":"` + thisHost + `"},` +
 		`"runtime":{"state":"ready","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},` +
 		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

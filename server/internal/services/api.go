@@ -129,7 +129,7 @@ type SandboxService interface {
 	// (ADR 0032 §4); create never ends at it (ADR 0048). The API mappers need
 	// it to report that upgrade. Nil when seeding has not created it.
 	FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error)
-	ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error)
+	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)

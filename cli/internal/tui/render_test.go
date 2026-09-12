@@ -23,7 +23,7 @@ func TestFrames(t *testing.T) {
 		{"list", func(m *Model) { send(t, m, keyPress("tab"), keyPress("down")) }},
 		{"multiselect", func(m *Model) { send(t, m, keyPress("tab"), keyPress(" "), keyPress("down"), keyPress(" ")) }},
 		{"visual", func(m *Model) { send(t, m, keyPress("tab"), keyPress("V"), keyPress("down")) }},
-		{"archived", func(m *Model) { send(t, m, keyPress("tab"), keyPress("A"), keyPress("G")) }},
+		{"archived", func(m *Model) { showAllFolders(t, m); send(t, m, keyPress("A"), keyPress("G")) }},
 		{"actions", func(m *Model) { send(t, m, keyPress("tab"), keyPress(".")) }},
 		{"options", func(m *Model) { send(t, m, keyPress("shift+tab")) }},
 		{"harnesses", func(m *Model) { send(t, m, keyPress("f3")) }},
@@ -705,7 +705,7 @@ func TestTheComposerGrowsToThreeRowsAndThenScrolls(t *testing.T) {
 func TestMenuLabelsFitTheirContent(t *testing.T) {
 	t.Parallel()
 	long := "/home/darren/src/discobox-scratch"
-	m := newTestModel(t, newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: long}))
+	m := newTestModel(t, newFakeSource(cutFrom(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning}, long)))
 	// Nothing was started in the folder the window is running in, so Tab lands
 	// on the filter rather than on an empty list.
 	send(t, m, keyPress("tab"), keyPress("enter"))

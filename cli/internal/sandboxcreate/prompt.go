@@ -11,6 +11,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/origin"
 	"github.com/discobox-ai/discobox/randomname"
 )
 
@@ -163,7 +164,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		local.Close()
 		return nil, nil, err
 	}
-	resolvedOrigin, err := ResolveOrigin(ctx, sourceArg)
+	resolvedOrigin, err := origin.Resolve()
 	if err != nil {
 		local.Close()
 		return nil, nil, err

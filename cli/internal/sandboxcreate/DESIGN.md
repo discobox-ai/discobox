@@ -5,9 +5,10 @@ sandbox create requests.
 
 - Frontends provide typed options; this package resolves source refs, snapshots
   dirty local workspaces, captures local user identity, captures the local Git
-  authorship, resolves the origin (`ResolveOrigin`; `OriginKey` is the matching
-  `discobox ls` filter), classifies environment and secret inputs, builds the
-  API body, and submits prompt sandbox creates.
+  authorship, derives the origin keys `discobox ls` filters on (`OriginKeys`,
+  over the root a create records for its source, `SourceRoot`), classifies
+  environment and secret inputs, builds the API body, and submits prompt sandbox
+  creates.
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is
   the authority on whether an identity is configured, and a `$USER@$(hostname)`

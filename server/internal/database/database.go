@@ -118,7 +118,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropProjectEvents(write); err != nil {
 		return err
 	}
-	return migrateSandboxStateSplit(write)
+	if err := migrateSandboxStateSplit(write); err != nil {
+		return err
+	}
+	return rekeySandboxOrigins(write)
 }
 
 // prepareSandboxStateSplit makes the sandboxes table safe for AutoMigrate to
@@ -661,6 +664,37 @@ func deduplicateSandboxNames(db *gorm.DB) error {
 			return fmt.Errorf("rename duplicate sandbox %s: %w", sandbox.ID, err)
 		}
 		log.Printf("renamed sandbox %s from %q to %q: sandbox names are now unique within a project", sandbox.ID, sandbox.Name, renamed)
+	}
+	return nil
+}
+
+// rekeySandboxOrigins files every sandbox under the origin key ADR 0111
+// derives: its origin host and its primary source's root, or the host alone
+// when it has no source. A local-sourced sandbox's key does not change; a
+// remote-sourced one moves from the directory it was created in to its URL,
+// and a sourceless one to its host.
+//
+// It reads only the host and the source, so a row's stored origin keeps the
+// project path it was created with: the model no longer declares the field,
+// and decoding ignores it. The key is written with UpdateColumn, which leaves
+// updated_at alone — listings order by it, and a migration is not an update
+// anybody made. It runs on every start and writes only the rows whose key
+// differs.
+func rekeySandboxOrigins(db *gorm.DB) error {
+	var rows []model.Sandbox
+	if err := db.Select("id", "origin", "source", "origin_key").
+		Where("origin IS NOT NULL").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		key := model.SandboxOriginKey(row.Origin, row.Source)
+		if key == "" || (row.OriginKey != nil && *row.OriginKey == key) {
+			continue
+		}
+		if err := db.Model(&model.Sandbox{}).Where("id = ?", row.ID).UpdateColumn("origin_key", key).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }

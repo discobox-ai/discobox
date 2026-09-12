@@ -114,12 +114,13 @@ type optionSet struct {
 	cursor  int
 	session Session
 
-	// folder is the folder the window is currently working in, chosen in the
-	// header. It is where Enter creates from, so switching folders switches
-	// what a new sandbox is cut from as well as which ones are listed — the
-	// header is one control, not two that happen to look alike. Empty is the
-	// session's own directory, which is also what "all folders" falls back to:
-	// there is no single folder to create in then.
+	// folder is the source of the folder the window is currently working in,
+	// chosen in the header: the directory or URL a create from it cuts from. It
+	// is where Enter creates from, so switching folders switches what a new
+	// sandbox is cut from as well as which ones are listed — the header is one
+	// control, not two that happen to look alike. Empty is the session's own
+	// directory, which is also what "all folders" falls back to: there is no
+	// single folder to create in then.
 	folder string
 
 	// known are the sources the project's discoboxes were cut from, newest
@@ -132,6 +133,10 @@ type optionSet struct {
 	// rather than read back off the row's cursor, because the row is rebuilt
 	// whenever the folder or the listing moves under it.
 	source string
+	// named is the last source typed by hand, as the check of it reported it.
+	// The listing does not hold it, so where a discobox cut from it is filed
+	// is kept here for the list to follow it there.
+	named Source
 }
 
 // Source is one place the project's discoboxes have been cut from, as the
@@ -141,6 +146,9 @@ type Source struct {
 	Value string
 	// Remote marks a repository URL rather than a directory on a client.
 	Remote bool
+	// OriginKey is where a discobox cut from Value on this machine is filed
+	// (ADR 0111), which is the folder the list follows the source to.
+	OriginKey string
 }
 
 // sourceNone is what the Source row carries for a discobox with nothing
@@ -335,7 +343,7 @@ func (o *optionSet) rebuildSources() {
 		choices = append(choices, o.sourceChoiceLabel(value))
 		values = append(values, value)
 	}
-	add(o.session.Directory)
+	add(o.session.source())
 	for _, source := range o.known {
 		add(source.Value)
 	}
@@ -362,7 +370,7 @@ func (o *optionSet) rebuildSources() {
 // window is running in wears its branch, the way the header spells it; nothing
 // else has a branch that means anything here.
 func (o *optionSet) sourceChoiceLabel(value string) string {
-	if value == o.session.Directory {
+	if value == o.session.source() {
 		return o.session.sourceLabel()
 	}
 	return value
@@ -387,24 +395,56 @@ func (o *optionSet) chooseSource(value string) {
 	o.rebuildSources()
 }
 
-// sourceFolder is where a discobox cut from the chosen source is filed, and so
-// which folder the list follows the source to. A local directory is its own
-// folder. A remote URL and "no source" have none, so a discobox from either is
-// filed under the directory this window is running in.
-func (o *optionSet) sourceFolder() string {
-	switch value := o.opts[optSource].selected(); {
-	case value == sourceNone, o.remoteSource(value):
-		return o.session.Directory
-	default:
-		return sourceDirectory(value)
+// sourceFolder is where a discobox cut from the chosen source is filed (ADR
+// 0111), and so which folder the list follows the source to. The window's own
+// source files under the window's own folder, and so does "no source", since
+// this machine's discoboxes with no source are in every one of its folders. A
+// directory or a URL files under its own, as the listing — or the check of a
+// source typed by hand — reported it. A source nothing has reported on is not
+// followed anywhere.
+func (o *optionSet) sourceFolder() (folder, bool) {
+	value := o.opts[optSource].selected()
+	if value == sourceNone || value == o.session.source() {
+		return o.session.folder(), true
 	}
+	of := func(source Source) (folder, bool) {
+		if source.Value != value || source.OriginKey == "" {
+			return folder{}, false
+		}
+		// A directory's folder is the directory, whatever ref was named with
+		// it: the ref is the source row's to say, not the folder's.
+		dir := value
+		if !source.Remote {
+			dir = sourceDirectory(value)
+		}
+		return folder{key: source.OriginKey, label: dir, source: dir, local: true}, true
+	}
+	if f, ok := of(o.named); ok {
+		return f, true
+	}
+	for _, source := range o.known {
+		if f, ok := of(source); ok {
+			return f, true
+		}
+	}
+	return folder{}, false
+}
+
+// nameSource sets the row to a source typed by hand and checked, keeping what
+// the check said about where a discobox cut from it is filed.
+func (o *optionSet) nameSource(source Source) {
+	o.named = source
+	o.chooseSource(source.Value)
 }
 
 // remoteSource reports whether a value is a repository URL rather than a
-// directory. The listing says so per source rather than this package parsing
-// the string, because what counts as a remote is the creation path's to decide
-// and not the window's.
+// directory. The listing — or the check of a source typed by hand — says so
+// per source rather than this package parsing the string, because what counts
+// as a remote is the creation path's to decide and not the window's.
 func (o *optionSet) remoteSource(value string) bool {
+	if o.named.Value == value {
+		return o.named.Remote
+	}
 	for _, source := range o.known {
 		if source.Value == value {
 			return source.Remote
@@ -414,14 +454,18 @@ func (o *optionSet) remoteSource(value string) bool {
 }
 
 // followSource moves the panel's folder to where the chosen source files its
-// discoboxes, and returns it for the list and the header to follow. This is the
-// source moving the header rather than the header moving the source, so the
-// source itself is left exactly as it was chosen.
-func (o *optionSet) followSource() string {
-	folder := o.sourceFolder()
-	o.folder = folder
+// discoboxes, and returns it for the list and the header to follow — or
+// reports that nothing says where that is, and the header stays where it is.
+// This is the source moving the header rather than the header moving the
+// source, so the source itself is left exactly as it was chosen.
+func (o *optionSet) followSource() (folder, bool) {
+	f, ok := o.sourceFolder()
+	if !ok {
+		return folder{}, false
+	}
+	o.folder = f.source
 	o.rebuildSources()
-	return folder
+	return f, true
 }
 
 // typedSource is what the input field opens holding: a source named by hand
@@ -535,11 +579,11 @@ func sourceDirectory(value string) string {
 	return value
 }
 
-// sourceDir is the directory Enter creates in: the folder the header is on, or
-// the session's own when the header is on every folder at once.
+// sourceDir is what Enter creates from: the folder the header is on, or the
+// window's own source when the header is on every folder at once.
 func (o *optionSet) sourceDir() string {
 	if o.folder == "" {
-		return o.session.Directory
+		return o.session.source()
 	}
 	return o.folder
 }
@@ -548,16 +592,32 @@ func (o *optionSet) sourceDir() string {
 // only where the branch means something — the directory this window is actually
 // running in.
 func (o *optionSet) sourceLabel() string {
-	if o.sourceDir() == o.session.Directory {
+	if o.sourceDir() == o.session.source() {
 		return o.session.sourceLabel()
 	}
 	return o.sourceDir()
 }
 
-// sourceLabel is the directory and ref a sandbox is cut from by default, in the
-// spelling the header uses.
+// source is what the window itself cuts from: the repository URL it was opened
+// on, ref and all, or the directory it is running in. It is what the panel
+// means by "the window's own", and the one value that needs no -C of its own —
+// unless it is a URL, which the CLI only resolves to because -C named it, and
+// whose ref nothing else would carry.
+func (s Session) source() string {
+	if s.Remote != "" {
+		return s.Remote
+	}
+	return s.Directory
+}
+
+// sourceLabel is what a sandbox is cut from by default, in the spelling the
+// header uses: the repository URL the window was opened on, or its directory
+// and the branch checked out there.
 func (s Session) sourceLabel() string {
-	if s.Branch == "" {
+	switch {
+	case s.Remote != "":
+		return s.Remote
+	case s.Branch == "":
 		return s.Directory
 	}
 	return s.Directory + " @ " + s.Branch
@@ -589,12 +649,16 @@ func (o *optionSet) request(prompt string) RunRequest {
 		req.Prompt = []string{text}
 	}
 	// The folder the header is on is what the source row leads with, and naming
-	// the session's own directory would only repeat the CLI's default — so that
+	// the window's own directory would only repeat the CLI's default — so that
 	// one case emits no -C and `discobox run` resolves it the way it always does.
+	//
+	// A window opened on a repository URL has no such default to lean on: -C is
+	// a flag, not something the shell is holding, so a command previewed without
+	// it would cut from the directory rather than from the URL Enter uses.
 	switch source := o.opts[optSource].selected(); {
 	case source == sourceNone:
 		req.NoSource = true
-	case source != o.session.Directory:
+	case source != o.session.Directory || o.session.Remote != "":
 		req.Source = source
 	}
 	if h := o.opts[optHarness]; h.changed() {

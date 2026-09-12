@@ -107,9 +107,10 @@ func TestNoSourceCreatesWithNothingToMaterialize(t *testing.T) {
 	if _, ok := body.Config.SourceCodeReferences.Get(); ok {
 		t.Fatal("nothing was included, so there is nothing to reference")
 	}
-	origin, ok := body.Origin.Get()
-	if !ok || origin.ProjectPath != repo {
-		t.Fatalf("origin = %+v, want the directory the create came from (%s)", origin, repo)
+	// The origin names the client and nothing about a directory (ADR 0111): a
+	// discobox with no source is filed under its host alone.
+	if origin, ok := body.Origin.Get(); !ok || origin.HostId == "" {
+		t.Fatalf("origin = %+v, want this client's host", origin)
 	}
 	if len(local.sources) != 0 {
 		t.Fatalf("local sources = %+v, want nothing to deliver", local.sources)
@@ -165,9 +166,8 @@ func TestDeclinedDirectoryCopyCreatesWithNoSource(t *testing.T) {
 	if len(local.sources) != 0 {
 		t.Fatalf("local sources = %+v, want nothing to deliver", local.sources)
 	}
-	origin, ok := body.Origin.Get()
-	if !ok || origin.ProjectPath != dir {
-		t.Fatalf("origin = %+v, want the directory the create came from (%s)", origin, dir)
+	if origin, ok := body.Origin.Get(); !ok || origin.HostId == "" {
+		t.Fatalf("origin = %+v, want this client's host", origin)
 	}
 }
 

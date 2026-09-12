@@ -120,8 +120,7 @@ func validRunHomeDirectory(value string) bool {
 //
 // sourceArg is the create request's source, @REF suffix and all. A remote
 // repository has no local worktree, so the read falls back to the process
-// working directory, mirroring how ResolveOrigin already resolves an origin for
-// a remote source.
+// working directory, the way LocalProjectDirectory does for a remote source.
 //
 // An unconfigured identity is left absent. git is the authority on whether one
 // is set, and $USER@$(hostname) here would only relocate the wrong fallback this

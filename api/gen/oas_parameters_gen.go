@@ -7286,9 +7286,9 @@ type ListSandboxesParams struct {
 	// Only list sandboxes whose primary source resolves to this repository root, given as a local
 	// repository root path or a remote Git URL.
 	SourceRoot OptString `json:",omitempty,omitzero"`
-	// Only list sandboxes created from this client host and project directory, as the origin key
-	// reported by the client.
-	OriginKey OptString `json:",omitempty,omitzero"`
+	// Only list sandboxes filed under one of these origin keys (ADR 0111); repeat the parameter for each
+	// key.
+	OriginKey []string `json:",omitempty"`
 }
 
 func unpackListSandboxesParams(packed middleware.Parameters) (params ListSandboxesParams) {
@@ -7314,7 +7314,7 @@ func unpackListSandboxesParams(packed middleware.Parameters) (params ListSandbox
 			In:   "query",
 		}
 		if v, ok := packed[key]; ok {
-			params.OriginKey = v.(OptString)
+			params.OriginKey = v.([]string)
 		}
 	}
 	return params
@@ -7423,25 +7423,27 @@ func decodeListSandboxesParams(args [1]string, argsEscaped bool, r *http.Request
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				var paramsDotOriginKeyVal string
-				if err := func() error {
-					val, err := d.DecodeValue()
-					if err != nil {
+				return d.DecodeArray(func(d uri.Decoder) error {
+					var paramsDotOriginKeyVal string
+					if err := func() error {
+						val, err := d.DecodeValue()
+						if err != nil {
+							return err
+						}
+
+						c, err := conv.ToString(val)
+						if err != nil {
+							return err
+						}
+
+						paramsDotOriginKeyVal = c
+						return nil
+					}(); err != nil {
 						return err
 					}
-
-					c, err := conv.ToString(val)
-					if err != nil {
-						return err
-					}
-
-					paramsDotOriginKeyVal = c
+					params.OriginKey = append(params.OriginKey, paramsDotOriginKeyVal)
 					return nil
-				}(); err != nil {
-					return err
-				}
-				params.OriginKey.SetTo(paramsDotOriginKeyVal)
-				return nil
+				})
 			}); err != nil {
 				return err
 			}

@@ -78,7 +78,7 @@ func (f *fakeSandboxService) FallbackHarnessConfig(context.Context, string) (*mo
 func (f *fakeSandboxService) PurgeSandbox(context.Context, string, string) error {
 	panic("not implemented")
 }
-func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, string) ([]model.Sandbox, error) {
+func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, []string) ([]model.Sandbox, error) {
 	panic("not implemented")
 }
 func (f *fakeSandboxService) CreateSandbox(context.Context, string, services.CreateSandboxBody) (*model.Sandbox, error) {

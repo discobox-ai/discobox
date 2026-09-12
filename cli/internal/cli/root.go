@@ -210,7 +210,7 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	// gains nothing from a flag on every command's help. It keeps working for
 	// the scripts and the launcher that pass it; it just stops being offered.
 	_ = cmd.PersistentFlags().MarkHidden("project")
-	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the discoboxes ls lists and run creates")
+	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what run cuts a discobox from, and what ls lists this machine's discoboxes for")
 	// Beta: the flag works but is undocumented until the source-selection UX is
 	// settled, so it stays out of help text and examples.
 	_ = cmd.PersistentFlags().MarkHidden("chdir")

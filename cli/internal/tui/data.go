@@ -180,8 +180,8 @@ type Port struct {
 // Sandbox is the row model: what a picker needs to tell one sandbox from
 // another, plus what the actions need to know about whether they apply.
 //
-// The origin — folder, branch and commit — is what tells two sandboxes with
-// similar names apart, so it is on the row rather than behind a key.
+// Where it came from — source, branch and commit — is what tells two sandboxes
+// with similar names apart, so it is on the row rather than behind a key.
 type Sandbox struct {
 	ID    string
 	Name  string
@@ -221,30 +221,33 @@ type Sandbox struct {
 
 	Harness string
 
-	// Folder is the client directory the sandbox was started from. It is not a
-	// column on the row — it is what the header's dropdown filters on, so every
-	// row on screen already shares it.
-	Folder string
+	// OriginKey is where the discobox is filed on the client that created it
+	// (ADR 0111): that host and where its source came from, or the host alone
+	// when it has none. It is not a column on the row — it is what the header's
+	// folder filter matches, so every row on screen already shares it.
+	OriginKey string
 
 	// OriginHostID identifies the machine the sandbox was created on, and
 	// OriginHost is the hostname that machine reported for itself, which is
-	// display only and may be empty. The folder does not answer this: two
-	// machines can hold the same project path, and their discoboxes then land
-	// in one folder with nothing on the row to say which is which. See
-	// Sandbox.elsewhere.
+	// display only and may be empty. A folder's name does not answer this: two
+	// machines can hold the same path, and the other's is a different folder
+	// that reads the same. See Sandbox.elsewhere.
 	OriginHostID string
 	OriginHost   string
 
 	// Source is what the discobox was cut from, spelled the way `-C` takes it:
 	// the client directory holding the repository, or the repository URL when
 	// there was no local one. Empty for a discobox created with no source at
-	// all. It is what the run options offer as sources to cut a new one from.
+	// all. It is what the run options offer as sources to cut a new one from,
+	// and what its folder is named by.
 	Source string
 	// SourceRemote marks a Source that is a repository URL rather than a
-	// directory on a client. A remote source has no folder of its own, so a
-	// discobox cut from one is filed under the directory the window is running
-	// in — which is what decides where the list follows the source to.
+	// directory on a client.
 	SourceRemote bool
+	// SourceOriginKey is where a discobox cut from Source on this machine is
+	// filed: what the list follows the Source row to when it is set to this
+	// one. It is OriginKey itself for a discobox created here.
+	SourceOriginKey string
 
 	Branch string
 	Commit string // the commit it was spawned from, short
@@ -286,10 +289,27 @@ type Session struct {
 	Project        string
 	DefaultProject string
 
-	// Directory is the project directory `discobox run` would cut a sandbox from,
-	// and Branch is what is checked out in it.
+	// Directory is the directory the window is running in — `-C`'s repository
+	// root, or the working directory's when -C names a repository URL — and
+	// Branch is what is checked out in it. It is where the window's prompt
+	// draft is kept, and what `discobox run` cuts a sandbox from by default
+	// unless the window was opened on a URL.
 	Directory string
 	Branch    string
+
+	// Remote is the repository URL the window was opened on with -C, as it was
+	// written and including any @REF: a new discobox is cut from it by default,
+	// and the header names it. Empty for a window opened on a directory. Where
+	// such a discobox is filed is OriginKey, which is ref-less — the ref says
+	// which commit to cut, not which place the discobox belongs to.
+	Remote string
+
+	// OriginKey is where a discobox cut from the window's own source is filed,
+	// and HostKey is this machine's own key, which files its discoboxes with no
+	// source (ADR 0111). They are the two `discobox ls` lists here, and the
+	// folder the header opens on.
+	OriginKey string
+	HostKey   string
 
 	// HostID is this machine's client identity, which is what makes a
 	// discobox created somewhere else recognizable as such. Empty where it
@@ -551,8 +571,8 @@ func (s Sandbox) repairable() bool {
 // id is what every other part of Discobox names the machine by.
 //
 // It is empty for a discobox this identity created, which is the usual row.
-// The qualifier is for the row nothing here started — a box from a laptop,
-// listed under a folder path this machine happens to share — and it is the
+// The qualifier is for the row nothing here started — a box from a laptop, in
+// a folder whose path this machine happens to share — and it is the
 // same fact `apply` refuses on, so a row that will not apply here says why
 // before it is tried.
 //
@@ -575,6 +595,26 @@ func (s Sandbox) elsewhere(session Session) string {
 		return "from " + shortHostID(s.OriginHostID)
 	}
 	return "from " + s.OriginHost + " (" + shortHostID(s.OriginHostID) + ")"
+}
+
+// folder is the header folder a discobox is filed in: its origin key, named by
+// its source — or as having none — and by the machine it was created on when
+// that is not this one, since one path on two machines is two folders.
+func (s Sandbox) folder(session Session) folder {
+	f := folder{key: s.OriginKey, label: s.Source, source: s.Source}
+	if s.Source == "" {
+		// Nothing was cut from it, so there is nothing to cut from in it: the
+		// panel falls back to the window's own source, the way it does for
+		// every folder at once. The sentinel is the Source row's answer, not a
+		// value anything may create from — sourceDir and the field's
+		// placeholder would draw it verbatim.
+		f.label = noSourceChoice
+	}
+	if from := s.elsewhere(session); from != "" {
+		f.label += " · " + from
+	}
+	f.local = session.HostID != "" && s.OriginHostID == session.HostID
+	return f
 }
 
 // shortHostID is a host id the length a row can afford: the prefix and enough
@@ -1263,8 +1303,10 @@ type DataSource interface {
 	// rather than a value, because the window is still holding the field it
 	// was typed into and this is the last point at which it can be corrected;
 	// the alternative is a create that fails on it seconds later, with the
-	// field long gone and the path to retype from memory.
-	ResolveSource(ctx context.Context, source string) (string, error)
+	// field long gone and the path to retype from memory. It comes back with
+	// where a discobox cut from it here is filed, since a directory's key is
+	// its repository root's and not what was typed.
+	ResolveSource(ctx context.Context, source string) (Source, error)
 
 	// MeasureDirectory starts counting what copying dir into a discobox would
 	// carry. total reports the running count and is polled while the question

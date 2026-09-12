@@ -27,8 +27,8 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
 		t.Fatalf("source = %q, want the next one the project holds", got)
 	}
-	if m.list.folder != "/src/obot" {
-		t.Fatalf("folder = %q, want the list to have followed", m.list.folder)
+	if m.list.folder.key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the list to have followed", m.list.folder.label)
 	}
 	// Right again reaches the third entry rather than bouncing back: the row's
 	// order does not move under the cursor when the folder follows it.
@@ -85,8 +85,8 @@ func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 		t.Fatalf("source = %q, want what was typed", got)
 	}
 	// The ref is not a folder, so the list follows the directory half of it.
-	if m.list.folder != "/src/typed" {
-		t.Fatalf("folder = %q, want the directory the ref sits in", m.list.folder)
+	if m.list.folder.key != testKey("/src/typed") {
+		t.Fatalf("folder = %q, want the directory the ref sits in", m.list.folder.label)
 	}
 	// And it is worth a chip: the header names the directory, and the ref is
 	// the part of the answer the window is not otherwise saying.
@@ -103,8 +103,8 @@ func TestTheHeaderStillMovesTheSource(t *testing.T) {
 
 	m.opts.chooseSource("https://github.com/acme/foo")
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("right"))
-	if m.list.folder != "/src/obot" {
-		t.Fatalf("folder = %q, want the header to have moved", m.list.folder)
+	if m.list.folder.key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the header to have moved", m.list.folder.label)
 	}
 	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", got)
@@ -153,8 +153,8 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
 	}
-	if m.list.folder != "/src/obot" {
-		t.Fatalf("folder = %q, want the header to have followed the answer", m.list.folder)
+	if m.list.folder.key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the header to have followed the answer", m.list.folder.label)
 	}
 }
 

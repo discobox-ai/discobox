@@ -105,10 +105,9 @@ func TestCreateSandboxRecordsOriginAndDerivesKey(t *testing.T) {
 		HarnessName: serverapi.NewOptString("shell"),
 		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
 		Origin: serverapi.NewOptOrigin(serverapi.Origin{
-			HostId:      "host_aaaaaaaaaaaaaaaa",
-			Hostname:    serverapi.NewOptString("laptop"),
-			ProjectPath: "/src/alpha",
-			User:        serverapi.NewOptString("darren"),
+			HostId:   "host_aaaaaaaaaaaaaaaa",
+			Hostname: serverapi.NewOptString("laptop"),
+			User:     serverapi.NewOptString("darren"),
 		}),
 	})
 	if err != nil {
@@ -118,20 +117,21 @@ func TestCreateSandboxRecordsOriginAndDerivesKey(t *testing.T) {
 	if created.Origin == nil {
 		t.Fatal("origin was not recorded")
 	}
-	if created.Origin.HostID != "host_aaaaaaaaaaaaaaaa" || created.Origin.ProjectPath != "/src/alpha" {
-		t.Fatalf("origin = %+v, want the client's host and project path", created.Origin)
+	if created.Origin.HostID != "host_aaaaaaaaaaaaaaaa" {
+		t.Fatalf("origin = %+v, want the client's host", created.Origin)
 	}
 	if created.Origin.Hostname != "laptop" || created.Origin.User != "darren" {
 		t.Fatalf("origin display fields = %+v, want them recorded verbatim", created.Origin)
 	}
-	want := originkey.Of("host_aaaaaaaaaaaaaaaa", "/src/alpha")
+	// It has no source, so it is filed under its host alone (ADR 0111).
+	want := originkey.Host("host_aaaaaaaaaaaaaaaa")
 	if created.OriginKey == nil || *created.OriginKey != want {
 		t.Fatalf("origin key = %v, want %q", derefString(created.OriginKey), want)
 	}
 }
 
-// A client that reports no origin still creates a sandbox; it simply cannot be
-// listed by project directory.
+// A client that reports no origin still creates a sandbox; it is filed under no
+// origin key, so only an unfiltered listing shows it.
 func TestCreateSandboxWithoutOriginLeavesKeyUnset(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)

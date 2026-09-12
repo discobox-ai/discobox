@@ -302,7 +302,7 @@ func TestTheArrowsClimbTheWindowAndStopAtItsEnds(t *testing.T) {
 // Refusing to move would leave no way to reach the one control that helps.
 func TestAnEmptyListLandsOnTheFolderFilter(t *testing.T) {
 	t.Parallel()
-	m := newTestModel(t, newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/elsewhere"}))
+	m := newTestModel(t, newFakeSource(cutFrom(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning}, "/src/elsewhere")))
 	if len(m.list.rows()) != 0 {
 		t.Fatalf("expected an empty list, got %d rows", len(m.list.rows()))
 	}
@@ -313,8 +313,8 @@ func TestAnEmptyListLandsOnTheFolderFilter(t *testing.T) {
 	}
 	// And from there the other folder is one press away.
 	send(t, m, keyPress("right"))
-	if m.list.folder != "/src/elsewhere" {
-		t.Fatalf("folder = %q, want the one with something in it", m.list.folder)
+	if m.list.folder.key != testKey("/src/elsewhere") {
+		t.Fatalf("folder = %q, want the one with something in it", m.list.folder.label)
 	}
 	if len(m.list.rows()) != 1 {
 		t.Fatalf("rows = %d, want the sandbox that was there all along", len(m.list.rows()))
@@ -413,7 +413,10 @@ func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G")) // the archived row is last
+	// The archived discobox was cut from a repository URL, which is a folder
+	// of its own (ADR 0111), so every folder is shown to reach it.
+	showAllFolders(t, m)
+	send(t, m, keyPress("A"), keyPress("G")) // the archived row is last
 
 	if got := m.list.current(); got == nil || got.State != StateArchived {
 		t.Fatalf("expected the cursor on an archived sandbox, got %+v", got)
@@ -539,7 +542,10 @@ func TestArchivedSandboxesCannotBeDiffed(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"))
+	// The archived discobox was cut from a repository URL, which is a folder
+	// of its own (ADR 0111), so every folder is shown to reach it.
+	showAllFolders(t, m)
+	send(t, m, keyPress("A"), keyPress("G"))
 
 	for _, a := range m.actions(m.list.targets()) {
 		switch a.key {
@@ -577,29 +583,35 @@ func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
 func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	if m.list.folder != "/src/disco2" {
-		t.Fatalf("folder = %q, want the directory the window is running in", m.list.folder)
+	if m.list.folder.key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the directory the window is running in", m.list.folder.label)
 	}
 	for _, s := range m.list.rows() {
-		if s.Folder != "/src/disco2" {
-			t.Fatalf("row from %q should be filtered out", s.Folder)
+		if s.OriginKey != testKey("/src/disco2") {
+			t.Fatalf("row cut from %q should be filtered out", s.Source)
 		}
 	}
 
 	// Left off the first choice wraps to "every folder", which is the one
-	// choice that is not a path.
+	// choice that is not a place.
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("left"))
-	if m.list.folder != "" {
-		t.Fatalf("folder = %q, want every folder", m.list.folder)
+	if m.list.folder.key != "" {
+		t.Fatalf("folder = %q, want every folder", m.list.folder.label)
 	}
 	if got := len(m.list.rows()); got != 3 {
 		t.Fatalf("rows = %d, want every unarchived sandbox", got)
 	}
 
-	// And on round to the other folder something was started from.
+	// And on round to the folders something else was cut from: the repository
+	// URL's, a folder the way a directory is (ADR 0111), then the other
+	// directory's.
 	send(t, m, keyPress("left"))
-	if m.list.folder != "/src/obot" {
-		t.Fatalf("folder = %q, want the other folder", m.list.folder)
+	if m.list.folder.key != testKey("https://github.com/acme/foo") {
+		t.Fatalf("folder = %q, want the repository URL's", m.list.folder.label)
+	}
+	send(t, m, keyPress("left"))
+	if m.list.folder.key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the other folder", m.list.folder.label)
 	}
 	if got := len(m.list.rows()); got != 1 {
 		t.Fatalf("rows = %d, want just the one started there", got)
@@ -617,7 +629,7 @@ func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
 		t.Fatal("enter on the folder filter should open the dropdown")
 	}
 	view := m.dialog.view(m.st, &m.zones, 120, 40)
-	for _, want := range []string{"/src/disco2", "/src/obot", allFolders, "where this window is running"} {
+	for _, want := range []string{"/src/disco2", "/src/obot", "https://github.com/acme/foo", allFolders, "where this window is running"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the dropdown is missing %q:\n%s", want, view)
 		}
@@ -625,8 +637,8 @@ func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
 
 	// The second choice is the other folder; picking it filters to it.
 	send(t, m, keyPress("down"), keyPress("enter"))
-	if m.list.folder != "/src/obot" {
-		t.Fatalf("folder = %q, want the choice that was made", m.list.folder)
+	if m.list.folder.key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the choice that was made", m.list.folder.label)
 	}
 	// And the cursor is back at the top: the rows under it are a different set
 	// of sandboxes now.
@@ -641,8 +653,8 @@ func TestTheFolderFilterAlwaysOffersThisDirectory(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	choices := m.folderChoices()
-	if len(choices) != 2 || choices[0] != "/src/disco2" || choices[1] != allFolders {
-		t.Fatalf("choices = %v", choices)
+	if len(choices) != 2 || choices[0].key != testKey("/src/disco2") || choices[1].label != allFolders {
+		t.Fatalf("choices = %+v", choices)
 	}
 }
 
@@ -674,7 +686,7 @@ func TestRefreshKeepsTheCursorOnItsSandbox(t *testing.T) {
 func TestDiffstatArrivesWithTheListing(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(Sandbox{
-		ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/disco2",
+		ID: "sbx_one", Name: "one", State: StateRunning, OriginKey: testKey("/src/disco2"),
 		Diff: DiffStat{Known: true, Added: 3, Deleted: 1, Files: 2},
 	})
 	m := newTestModel(t, ds)
@@ -749,8 +761,8 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	}
 
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("right")) // on to the other folder
-	if m.list.folder != "/src/obot" {
-		t.Fatalf("folder = %q", m.list.folder)
+	if m.list.folder.key != testKey("/src/obot") {
+		t.Fatalf("folder = %q", m.list.folder.label)
 	}
 	if req := m.opts.request(""); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", req.Source)
@@ -1028,7 +1040,10 @@ func TestVSCodeRefusedOnAnArchivedBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	// The archived row is the last one, and only shown once A asks for it.
-	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"), keyPress("v"))
+	// The archived discobox was cut from a repository URL, which is a folder
+	// of its own (ADR 0111), so every folder is shown to reach it.
+	showAllFolders(t, m)
+	send(t, m, keyPress("A"), keyPress("G"), keyPress("v"))
 
 	if len(ds.editors) != 0 {
 		t.Fatalf("an archived box should not reach the editor, got %v", ds.editors)
@@ -1043,7 +1058,7 @@ func TestVSCodeRefusedOnAnArchivedBox(t *testing.T) {
 func wedgedSandbox() Sandbox {
 	return Sandbox{
 		ID: "sbx_wedged", Name: "wedged", State: StateError, HasRuntime: true,
-		Harness: "claude", Folder: "/src/disco2", Branch: "main", Commit: "a3f9c21",
+		Harness: "claude", OriginKey: testKey("/src/disco2"), Branch: "main", Commit: "a3f9c21",
 		Message: "create failed: no such file or directory",
 	}
 }
@@ -1084,7 +1099,10 @@ func TestRepairPointsAnArchivedBoxAtUnarchive(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"))
+	// The archived discobox was cut from a repository URL, which is a folder
+	// of its own (ADR 0111), so every folder is shown to reach it.
+	showAllFolders(t, m)
+	send(t, m, keyPress("A"), keyPress("G"))
 
 	for _, a := range m.actions(m.list.targets()) {
 		if a.key != repairKey {

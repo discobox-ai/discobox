@@ -18,7 +18,7 @@ const thisHost = "hst_thismachine0001"
 func sandboxWithOrigin(t *testing.T, hostID, hostname, localDir string) (*apimodel.Sandbox, applySourceEntry) {
 	t.Helper()
 	sandbox := &apimodel.Sandbox{}
-	origin := apiclientgen.Origin{HostId: hostID, ProjectPath: localDir}
+	origin := apiclientgen.Origin{HostId: hostID}
 	if hostname != "" {
 		origin.Hostname = apiclientgen.NewOptString(hostname)
 	}

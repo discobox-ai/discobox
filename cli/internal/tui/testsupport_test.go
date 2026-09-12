@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -201,6 +202,26 @@ func promptText(req RunRequest) string { return strings.Join(req.Prompt, " ") }
 // a discobox created on another one recognizable as such.
 const testHostID = "host_0123456789abcdef"
 
+// testKey is the origin key a discobox cut from root on the test window's
+// machine is filed under, and testHostKey is the machine's own, which files
+// the ones with no source (ADR 0111). The CLI works both out; the window only
+// reads them.
+func testKey(root string) string { return originkey.Of(testHostID, root) }
+
+var testHostKey = originkey.Host(testHostID)
+
+// farHostID is another machine, and farHostKey files its discoboxes that have
+// no source — a folder this window can list but has nothing to cut from.
+const farHostID = "host_wilma000000000"
+
+var farHostKey = originkey.Host(farHostID)
+
+// cutFrom files a test sandbox as one this machine cut from root.
+func cutFrom(s Sandbox, root string) Sandbox {
+	s.Source, s.OriginKey, s.SourceOriginKey, s.OriginHostID = root, testKey(root), testKey(root), testHostID
+	return s
+}
+
 func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 	return &fakeSource{
 		session: Session{
@@ -209,6 +230,8 @@ func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 			Directory:      "/src/disco2",
 			Branch:         "main",
 			HostID:         testHostID,
+			OriginKey:      testKey("/src/disco2"),
+			HostKey:        testHostKey,
 		},
 		sandboxes: sandboxes,
 		createdID: "sbx_created",
@@ -352,14 +375,16 @@ func (f *fakeSource) Workspace(context.Context, string) (SourceWorkspace, error)
 // ResolveSource answers the way the real one does for a directory that is
 // there: what was typed, unchanged. sourceErr is what a test stages for one
 // that is not.
-func (f *fakeSource) ResolveSource(_ context.Context, source string) (string, error) {
+func (f *fakeSource) ResolveSource(_ context.Context, source string) (Source, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resolved = append(f.resolved, source)
 	if f.sourceErr != nil {
-		return "", f.sourceErr
+		return Source{}, f.sourceErr
 	}
-	return source, nil
+	// Filed under the directory the ref sits in, which is what the real one's
+	// repository root comes to for a directory that is one.
+	return Source{Value: source, OriginKey: testKey(sourceDirectory(source))}, nil
 }
 
 // setSourceErr moves what ResolveSource answers while the window is up, so a
@@ -1188,8 +1213,8 @@ func frameText(m *Model) string { return strings.Join(frame(m), "\n") }
 func showAllFolders(t *testing.T, m *Model) {
 	t.Helper()
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("left"))
-	if m.list.folder != "" {
-		t.Fatalf("folder filter is %q, want every folder", m.list.folder)
+	if m.list.folder.key != "" {
+		t.Fatalf("folder filter is %q, want every folder", m.list.folder.label)
 	}
 	send(t, m, keyPress("down"))
 	if m.focus != focusList {
@@ -1202,27 +1227,30 @@ func testSandboxes() []Sandbox {
 	return []Sandbox{
 		{
 			ID: "sbx_one", Name: "fix flaky pool reaper tests", State: StateRunning, HasRuntime: true,
-			Harness: "claude", Folder: "/src/disco2", Source: "/src/disco2",
+			Harness: "claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID,
+			Source: "/src/disco2", SourceOriginKey: testKey("/src/disco2"),
 			Branch: "main", Commit: "a3f9c21", Dirty: true,
 			Created: now.Add(-2 * time.Minute), Diff: DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7},
 		},
 		{
 			ID: "sbx_two", Name: "exec/terminal consolidation", State: StateRunning, HasRuntime: true,
-			Harness: "claude", Folder: "/src/disco2", Source: "/src/disco2",
+			Harness: "claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID,
+			Source: "/src/disco2", SourceOriginKey: testKey("/src/disco2"),
 			Branch: "main", Commit: "a3f9c21",
 			Created: now.Add(-18 * time.Minute), Upgrade: true,
 			Diff: DiffStat{Known: true, Added: 903, Deleted: 511, Files: 24},
 		},
 		{
 			ID: "sbx_three", Name: "openapi: sandbox upgrade field", State: StateStopped, HasRuntime: true,
-			Harness: "codex", Folder: "/src/obot", Source: "/src/obot",
+			Harness: "codex", OriginKey: testKey("/src/obot"), OriginHostID: testHostID,
+			Source: "/src/obot", SourceOriginKey: testKey("/src/obot"),
 			Branch: "main", Commit: "1c713f6",
 			Created: now.Add(-time.Hour), Diff: DiffStat{Known: true},
 		},
 		{
 			ID: "sbx_four", Name: "bats harness-configure endpoints", State: StateArchived,
-			Harness: "codex", Folder: "/src/disco2",
-			Source: "https://github.com/acme/foo", SourceRemote: true,
+			Harness: "codex", OriginKey: testKey("https://github.com/acme/foo"), OriginHostID: testHostID,
+			Source: "https://github.com/acme/foo", SourceRemote: true, SourceOriginKey: testKey("https://github.com/acme/foo"),
 			Branch: "main", Commit: "41a9507",
 			Created: now.Add(-48 * time.Hour), Diff: DiffStat{Known: true, Added: 240, Deleted: 96, Files: 11},
 		},

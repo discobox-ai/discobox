@@ -15,6 +15,8 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
+	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/x/gitutil"
 	"github.com/discobox-ai/x/id"
@@ -243,34 +245,68 @@ func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptio
 	return resolveLocalRunSource(ctx, source, ref, explicitRef, opts)
 }
 
-// ResolveOrigin resolves the origin of a CLI invocation acting on sourceArg:
-// the client host, and the project directory the command was run against. Any
-// @REF suffix is dropped, so every sandbox from a directory shares one origin
-// regardless of the ref it checked out.
-//
-// A remote repository has no local project directory, so the origin falls back
-// to the working directory — the sandbox is still one you started from here,
-// and "discobox ls" here should list it.
-func ResolveOrigin(ctx context.Context, sourceArg string) (apimodel.Origin, error) {
+// OriginKeys are the origin keys `discobox ls` lists for sourceArg (ADR 0111
+// §3): the one a discobox cut from sourceArg on this machine is filed under,
+// and this machine's own, which files its discoboxes with no source. Any @REF
+// suffix is dropped, so every discobox cut from one place shares its key
+// whatever ref it checked out.
+func OriginKeys(ctx context.Context, sourceArg string) (sourceKey, hostKey string, err error) {
+	host, err := hostid.Get()
+	if err != nil {
+		return "", "", err
+	}
+	root, err := SourceRoot(ctx, sourceArg)
+	if err != nil {
+		return "", "", err
+	}
+	return originkey.Of(host, root), originkey.Host(host), nil
+}
+
+// SourceRoot is the root a create from sourceArg records for its primary
+// source — what the server's GitSource.Root reads back, and so what an origin
+// key hashes: a remote URL in the form the request carries it, and a
+// directory's repository root, or the directory itself outside one.
+func SourceRoot(ctx context.Context, sourceArg string) (string, error) {
+	source, _, _ := splitRunSourceRef(sourceArg)
+	source = strings.TrimSpace(source)
+	if IsRemoteGitSource(source) {
+		return remoteSourceRoot(source), nil
+	}
+	if source == "" {
+		source = "."
+	}
+	return origin.ProjectPath(ctx, source)
+}
+
+// remoteSourceRoot is a remote URL in the form the create request carries it:
+// parsed and printed again (apiGitSource), which is the string the server
+// stores. A URL that does not parse is left as written; the create refuses it
+// before anything is filed under it.
+func remoteSourceRoot(source string) string {
+	u, err := url.Parse(source)
+	if err != nil {
+		return source
+	}
+	return u.String()
+}
+
+// LocalProjectDirectory is the directory on this machine a command acting on
+// sourceArg works in: a local source's repository root, or the working
+// directory's when the source is a remote repository, which has no local
+// directory of its own. It is where the launcher keeps its prompt draft and
+// reads its branch from. It is not where a discobox is filed; that is its
+// origin key.
+func LocalProjectDirectory(ctx context.Context, sourceArg string) (string, error) {
 	source, _, _ := splitRunSourceRef(sourceArg)
 	dir := strings.TrimSpace(source)
 	if dir == "" || IsRemoteGitSource(dir) {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return apimodel.Origin{}, fmt.Errorf("resolve working directory: %w", err)
+			return "", fmt.Errorf("resolve working directory: %w", err)
 		}
 		dir = cwd
 	}
-	return origin.Resolve(ctx, dir)
-}
-
-// OriginKey is the listing filter matching ResolveOrigin's origin.
-func OriginKey(ctx context.Context, sourceArg string) (string, error) {
-	resolved, err := ResolveOrigin(ctx, sourceArg)
-	if err != nil {
-		return "", err
-	}
-	return origin.Key(resolved), nil
+	return origin.ProjectPath(ctx, dir)
 }
 
 func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {

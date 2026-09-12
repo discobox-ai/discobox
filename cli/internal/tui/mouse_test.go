@@ -84,7 +84,7 @@ func manySandboxes(n int) []Sandbox {
 		out = append(out, Sandbox{
 			ID: "sbx_" + itoa(i), Name: "discobox number " + itoa(i),
 			State: StateRunning, HasRuntime: true, Harness: "claude",
-			Folder: "/src/disco2", Source: "/src/disco2",
+			OriginKey: testKey("/src/disco2"), Source: "/src/disco2",
 			Branch: "main", Commit: "a3f9c21", Created: now,
 		})
 	}

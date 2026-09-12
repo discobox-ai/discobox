@@ -684,9 +684,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// The window opens on the folder it was opened in, which is what
 		// `discobox ls` shows and what the header has always said. Everything
 		// else is one press away in the dropdown.
-		m.list.folder = msg.session.Directory
+		m.list.folder = msg.session.folder()
 		m.opts = newOptions(msg.session)
-		m.opts.setFolder(m.list.folder)
+		m.opts.setFolder(m.list.folder.source)
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
 		m.opts.setHarnesses(m.harnesses.all)
@@ -839,7 +839,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.askForSource(msg.typed, msg.err.Error(), msg.run)
 			return nil
 		}
-		m.opts.chooseSource(msg.source)
+		m.opts.nameSource(msg.source)
 		return m.sourceApplied(msg.run)
 
 	case paneOpenedMsg:
@@ -1546,9 +1546,8 @@ const (
 // header and the Source row are one control in both directions: the header
 // moves the source (selectFolder), and the source moves the header here.
 func (m *Model) followSource() tea.Cmd {
-	folder := m.opts.followSource()
-	if folder != m.list.folder {
-		m.list.folder = folder
+	if f, ok := m.opts.followSource(); ok && f.key != m.list.folder.key {
+		m.list.folder = f
 		m.list.resetCursor()
 		m.layout()
 	}
@@ -2053,7 +2052,7 @@ func (m *Model) resolveSource(msg sourceChosenMsg) tea.Cmd {
 type sourceResolvedMsg struct {
 	// typed is what was in the field, which a refusal puts back into it.
 	typed  string
-	source string
+	source Source
 	run    bool
 	err    error
 }
@@ -3578,9 +3577,10 @@ func (m *Model) helpText() string {
 		"───────────────────────────────────────────────────────────────",
 		"The folder filter",
 		"",
-		"  The path in the header is the folder whose discoboxes are listed.",
-		"  It starts as the folder the window is running in, which is what",
-		"  `discobox ls` shows.",
+		"  The header names the folder whose discoboxes are listed: the",
+		"  directory or repository URL they were cut from. It starts as the",
+		"  window's own, which is what `discobox ls` shows, and this",
+		"  machine's discoboxes with no source are listed in it too.",
 		"",
 		"    ↑              reach it, from the top of the discobox list",
 		"    ← →            change it without opening anything",

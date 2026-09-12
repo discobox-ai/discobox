@@ -141,7 +141,7 @@ func (s *routerTestServices) FallbackHarnessConfig(context.Context, string) (*mo
 	return nil, nil
 }
 
-func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot, _ string) ([]model.Sandbox, error) {
+func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot string, _ []string) ([]model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

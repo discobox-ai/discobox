@@ -61,7 +61,7 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 // user's action put there: nothing yet records real access (the runtime's
 // LastActiveAt moves for reconciler-driven reasons), and a list that reorders
 // for reasons the user did not cause is a list they cannot read.
-func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showFolder bool) error {
+func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showSource bool) error {
 	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	if a.quiet {
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
@@ -70,8 +70,8 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	if showFolder {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tCREATED\tFOLDER")
+	if showSource {
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tCREATED\tSOURCE")
 	} else {
 		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tCREATED")
 	}
@@ -89,8 +89,8 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.CreatedAt),
 		)
-		if showFolder {
-			fmt.Fprintf(tw, "\t%s", sandboxFolder(sandbox))
+		if showSource {
+			fmt.Fprintf(tw, "\t%s", sandboxSource(sandbox))
 		}
 		fmt.Fprintln(tw)
 	}
@@ -142,15 +142,21 @@ func sandboxGitColumn(sandbox apimodel.Sandbox) string {
 	return out
 }
 
-// sandboxFolder is the client-side project directory a sandbox was started
-// from, taken from its origin. It is empty for sandboxes created without an
-// origin (for example directly through the API).
-func sandboxFolder(sandbox apimodel.Sandbox) string {
-	origin, ok := sandbox.Origin.Get()
+// sandboxSource is where a sandbox's primary source came from — the local
+// directory it was cut from, or the repository URL — which is where its origin
+// key files it (ADR 0111). "-" for a sandbox with no source.
+func sandboxSource(sandbox apimodel.Sandbox) string {
+	source, ok := sandbox.Config.Source.Get()
 	if !ok {
 		return "-"
 	}
-	return origin.ProjectPath
+	if u, ok := source.URL.Get(); ok {
+		return u.String()
+	}
+	if dir := strings.TrimSpace(source.LocalDirectory.Or("")); dir != "" {
+		return dir
+	}
+	return "-"
 }
 
 func sandboxMessage(sandbox apimodel.Sandbox) string {

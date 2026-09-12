@@ -15,7 +15,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/gitapply` | Landing a fetched range on the local branch by cherry-pick in a disposable worktree (`Attempt`), and onto a repository with no commits (`AttemptRoot`, ADR 0084). |
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
 | `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 0095). |
-| `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
+| `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
 | `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
@@ -291,8 +291,8 @@ unwritable or corrupt file costs the convenience and never the command.
 
 - `prompt-drafts.json` (`internal/cli/drafts.go`) is the launcher's composer
   contents per project directory: what `tui.Session.Draft` is loaded from and
-  what `DataSource.SaveDraft` writes. Keyed by the resolved
-  `origin.ProjectPath`, because a prompt written in one checkout must not come
+  what `DataSource.SaveDraft` writes. Keyed by the window's own
+  directory (`sandboxcreate.LocalProjectDirectory`), because a prompt written in one checkout must not come
   back in another. An empty prompt deletes its entry rather than storing nothing
   under it, and a prompt past the cap is cut on a rune boundary — a state file
   is not where a pasted log belongs.
@@ -862,7 +862,7 @@ positional argument shared with the command itself (`shell`, resolved by
 `selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
 
 - Candidates are exactly what `discobox ls` shows — `listProjectSandboxes` filtered
-  to the current project directory's origin — so the command and the listing can
+  to this machine's origin keys for `-C` — so the command and the listing can
   never disagree.
 - One candidate is used. Several with a terminal on stdin and stderr open the
   inline Bubble Tea picker; several without one is an error, since there is
@@ -876,9 +876,9 @@ positional argument shared with the command itself (`shell`, resolved by
   list drops them, that they have no runtime to act on. The load happens on the
   first press and its answer is kept, `a` toggles back, the typed query survives
   the swap, and a failed load is reported in the card with the scoped list left
-  up. Widened rows carry where each discobox came from — the project directory,
+  up. Widened rows carry where each discobox came from — its source, or `no source`,
   and the machine when `Origin.hostId` is not this host's — because across
-  directories that is the only thing telling two identically named discoboxes
+  folders that is the only thing telling two identically named discoboxes
   apart. The scoped list omits it, since every row there shares one origin.
   Names stay resolved per directory even so (`matchSandboxArg`): a name is
   unique only within the directory that issued it. Picking a widened row is
@@ -1477,12 +1477,16 @@ suspend request maps to SIGSTOP there too.
 
 ## Origin and Source Delivery
 
-Every create carries an **origin**: this client's host identity plus the project
-directory, which is the Git repository root of `-C` (the working directory by
-default), or that directory itself outside a repository. `discobox ls` filters on
-its key rather than on the source root, because a local path identifies a
-repository only on the machine holding it — it means nothing once the server is
-remote, and collides across hosts and users.
+Every create carries an **origin**: this client's host identity, and nothing
+about a directory. Where a discobox belongs on its client is its **origin key**
+([ADR 0111](../docs/adr/0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)):
+the host and where the primary source came from — a local source's repository
+root, or a remote URL in the form the request carries it — or the host alone for
+a discobox with no source. The server derives it at create. `discobox ls` sends
+the key `-C` names and the host's own (`sandboxcreate.OriginKeys`), so it lists
+this machine's discoboxes cut from there and its sourceless ones, and never
+another machine's: a local path identifies a repository only on the machine
+holding it, and collides across hosts and users.
 
 Host identity comes from `internal/hostid` in the root module, deliberately
 shared: a CLI and a server on the same machine must resolve the same value from
@@ -1951,11 +1955,11 @@ directory in no repository (above): resolution itself answers "no source", and
 everything below applies to it identically. An `--include` that answers the same
 way is left out of the discobox rather than brought in empty.
 
-`-C` still applies and still means what it always did. What it names is the
-*origin* — the host and project directory the create came from — and the Git
-authorship the discobox commits under, both read from the client's disk. So a
-sourceless discobox is filed under the directory you ran in and listed there like
-any other; only what would have been checked out is left out. `-i` is unaffected:
+`-C` still applies, for the Git authorship the discobox commits under, read
+from the client's disk. It does not file the discobox: with no source there is
+no place it came from, so it is filed under this machine alone (ADR 0111) and
+`discobox ls` lists it from any directory here. Only what would have been
+checked out is left out. `-i` is unaffected:
 `--no-source -i ../foo` is a discobox holding `foo` and nothing else.
 
 A ref is refused rather than dropped: `@REF` names a commit to check out and

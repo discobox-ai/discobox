@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/x/gormdb"
@@ -1093,5 +1094,98 @@ func TestMigrateLiftsTheLimitOnConfiguredHarnessSecrets(t *testing.T) {
 	}
 	if limits["sec_chosen"] != 900 {
 		t.Fatalf("deliberately limited secret = %d, want the 900 somebody set", limits["sec_chosen"])
+	}
+}
+
+// ADR 0111 files a sandbox under its origin host and where its primary source
+// came from, or its host alone when it has no source. An upgraded database's
+// rows are re-keyed from what they recorded: a local-sourced row's key does not
+// move, a remote-sourced one moves from the directory it was created in to its
+// URL, and a sourceless one to its host. The project path an older server
+// stored stays in the origin, unread, and nothing here counts as an update.
+func TestMigrateRekeysSandboxOrigins(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
+	if err := db.Write.Create(project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Type: "docker", Name: "Docker"}
+	if err := db.Write.Create(provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
+	if err := db.Write.Create(pool).Error; err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	const host = "host_aaaaaaaaaaaaaaaa"
+	dir, url := "/src/alpha", "https://github.com/acme/api"
+	local := originkey.Of(host, dir)
+	// Where an older server filed the two that did not run in their source:
+	// the directory the create happened to run in.
+	scratch := originkey.Of(host, "/scratch")
+	updated := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, sandbox := range []*model.Sandbox{
+		{ID: "sbx_local", Name: "local", OriginKey: &local,
+			SandboxManifest: model.SandboxManifest{Source: &model.GitSource{Kind: "git", LocalDirectory: &dir}}},
+		{ID: "sbx_remote", Name: "remote", OriginKey: &scratch,
+			SandboxManifest: model.SandboxManifest{Source: &model.GitSource{Kind: "git", URL: &url}}},
+		{ID: "sbx_none", Name: "none", OriginKey: &scratch},
+	} {
+		sandbox.ProjectID, sandbox.PoolID, sandbox.CreatedByUserID = project.ID, pool.ID, "user-1"
+		sandbox.Origin = &model.Origin{HostID: host}
+		sandbox.UpdatedAt = updated
+		if err := db.Write.Create(sandbox).Error; err != nil {
+			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
+		}
+	}
+	// What an older server wrote into the origin: the project path as well.
+	legacy := `{"hostId":"` + host + `","projectPath":"/scratch"}`
+	if err := db.Write.Exec("UPDATE sandboxes SET origin = ?", legacy).Error; err != nil {
+		t.Fatalf("write legacy origins: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+
+	want := map[string]string{
+		"sbx_local":  local,
+		"sbx_remote": originkey.Of(host, url),
+		"sbx_none":   originkey.Host(host),
+	}
+	var sandboxes []model.Sandbox
+	if err := db.Write.Find(&sandboxes).Error; err != nil {
+		t.Fatalf("read sandboxes: %v", err)
+	}
+	if len(sandboxes) != len(want) {
+		t.Fatalf("read %d sandboxes, want %d", len(sandboxes), len(want))
+	}
+	for _, sandbox := range sandboxes {
+		if sandbox.OriginKey == nil || *sandbox.OriginKey != want[sandbox.ID] {
+			t.Errorf("%s: origin key = %v, want %q", sandbox.ID, sandbox.OriginKey, want[sandbox.ID])
+		}
+		if sandbox.Origin == nil || sandbox.Origin.HostID != host {
+			t.Errorf("%s: origin = %+v, want it still decoded with its host", sandbox.ID, sandbox.Origin)
+		}
+		if !sandbox.UpdatedAt.Equal(updated) {
+			t.Errorf("%s: updated_at = %v, want it untouched at %v", sandbox.ID, sandbox.UpdatedAt, updated)
+		}
 	}
 }

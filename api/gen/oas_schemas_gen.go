@@ -7795,17 +7795,14 @@ func (o OptUser) Or(d User) User {
 	return d
 }
 
-// The client host and project directory a sandbox was created from. Client-declared provenance
-// recorded verbatim; never used to materialize source.
+// The client host a sandbox was created from. Client-declared provenance recorded verbatim; never
+// used to materialize source.
 // Ref: #/components/schemas/Origin
 type Origin struct {
 	// Stable generated identity of the client host, unique per user per machine.
 	HostId string `json:"hostId"`
 	// Client hostname, for display only. Not stable and not unique.
 	Hostname OptString `json:"hostname"`
-	// Absolute path of the project root on the client host, which is the Git repository root, or the
-	// working directory outside a repository.
-	ProjectPath string `json:"projectPath"`
 	// Client OS username, for display only.
 	User OptString `json:"user"`
 }
@@ -7818,11 +7815,6 @@ func (s *Origin) GetHostId() string {
 // GetHostname returns the value of Hostname.
 func (s *Origin) GetHostname() OptString {
 	return s.Hostname
-}
-
-// GetProjectPath returns the value of ProjectPath.
-func (s *Origin) GetProjectPath() string {
-	return s.ProjectPath
 }
 
 // GetUser returns the value of User.
@@ -7838,11 +7830,6 @@ func (s *Origin) SetHostId(val string) {
 // SetHostname sets the value of Hostname.
 func (s *Origin) SetHostname(val OptString) {
 	s.Hostname = val
-}
-
-// SetProjectPath sets the value of ProjectPath.
-func (s *Origin) SetProjectPath(val string) {
-	s.ProjectPath = val
 }
 
 // SetUser sets the value of User.
@@ -11132,8 +11119,12 @@ type Sandbox struct {
 	DisplayName string `json:"displayName"`
 	// Stable sandbox ID.
 	ID string `json:"id"`
-	// Client host and project directory the sandbox was created from. Immutable after create.
+	// Client host the sandbox was created from. Immutable after create.
 	Origin OptOrigin `json:"origin"`
+	// Where the sandbox belongs on the client that created it, and what listings filter on (ADR 0111)
+	// — the host and the primary source's root, or the host alone for a sandbox with no source. Absent
+	// for a sandbox created without an origin.
+	OriginKey OptString `json:"originKey"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Pool the sandbox is scheduled into.
@@ -11189,6 +11180,11 @@ func (s *Sandbox) GetID() string {
 // GetOrigin returns the value of Origin.
 func (s *Sandbox) GetOrigin() OptOrigin {
 	return s.Origin
+}
+
+// GetOriginKey returns the value of OriginKey.
+func (s *Sandbox) GetOriginKey() OptString {
+	return s.OriginKey
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -11259,6 +11255,11 @@ func (s *Sandbox) SetID(val string) {
 // SetOrigin sets the value of Origin.
 func (s *Sandbox) SetOrigin(val OptOrigin) {
 	s.Origin = val
+}
+
+// SetOriginKey sets the value of OriginKey.
+func (s *Sandbox) SetOriginKey(val OptString) {
+	s.OriginKey = val
 }
 
 // SetProjectId sets the value of ProjectId.

@@ -498,27 +498,28 @@ type AppliedSourceCommit struct {
 	AppliedAt  time.Time `json:"appliedAt" doc:"When this apply was recorded"`
 }
 
-// Origin is the client host and project directory a sandbox was created from.
+// Origin is the client host a sandbox was created from.
 //
 // It is client-declared provenance, recorded verbatim and never used to
-// materialize source. It answers "which sandboxes did I start from this
-// directory?", which Source cannot: a local path means nothing on another
-// machine and collides across hosts and users.
+// materialize source. It names no directory: where a sandbox belongs on its
+// client is its origin key, derived from the host and the primary source
+// (SandboxOriginKey, ADR 0111).
 type Origin struct {
-	HostID      string `json:"hostId" doc:"Stable generated identity of the client host, unique per user per machine"`
-	Hostname    string `json:"hostname,omitempty" doc:"Client hostname, for display only. Not stable and not unique."`
-	ProjectPath string `json:"projectPath" doc:"Absolute path of the project root on the client host, which is the Git repository root, or the working directory outside a repository"`
-	User        string `json:"user,omitempty" doc:"Client OS username, for display only"`
+	HostID   string `json:"hostId" doc:"Stable generated identity of the client host, unique per user per machine"`
+	Hostname string `json:"hostname,omitempty" doc:"Client hostname, for display only. Not stable and not unique."`
+	User     string `json:"user,omitempty" doc:"Client OS username, for display only"`
 }
 
-// Key is the indexed identity of an origin, empty when the origin cannot
-// identify a client project directory. Clients derive the same value to filter
-// listings, so both sides share one implementation.
-func (o *Origin) Key() string {
-	if o == nil {
+// SandboxOriginKey is where a sandbox belongs on the client that created it
+// (ADR 0111): its origin host and its primary source's root, or the host alone
+// when it has no source. It is empty for a sandbox created without an origin.
+// Clients derive the same value to filter listings, which is why both sides go
+// through originkey.For.
+func SandboxOriginKey(origin *Origin, source *GitSource) string {
+	if origin == nil {
 		return ""
 	}
-	return originkey.Of(o.HostID, o.ProjectPath)
+	return originkey.For(origin.HostID, source.Root())
 }
 
 // PoolManifest is the pool spec, embedded anonymously in Pool on the same terms
@@ -743,10 +744,10 @@ type Sandbox struct {
 	SandboxManifest   `gorm:"embedded"`
 	ResourceLifecycle `gorm:"embedded"`
 	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
-	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host and project directory the sandbox was created from. Immutable after create."`
+	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
 	SourceDeliveredAt *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
 	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
-	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
+	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source (ADR 0111). Indexed; what listings filter on."`
 	ProviderState     json.RawMessage       `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	// RepairGeneration marks one generation as a repair (ADR 0035): when it
 	// equals Generation, ensure tears the runtime down (provider Archive:

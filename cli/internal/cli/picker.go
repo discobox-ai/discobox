@@ -135,20 +135,21 @@ func sandboxPickerItems(sandboxes []apimodel.Sandbox, localHostID string) []pick
 	return items
 }
 
-// sandboxPickerOrigin says where a discobox was started: the project directory,
-// and the machine when that machine is not this one. It is the picker's reading
-// of the FOLDER column `discobox ls --all` adds for the same reason. The two are
-// kept apart rather than pasted together because only the path may be shortened
-// — and because a Windows path carries a colon of its own, so nothing
-// downstream could take them back apart.
+// sandboxPickerOrigin says where a discobox came from: its source — the
+// directory or repository URL it was cut from, or that it had none — and the
+// machine when that machine is not this one. It is the picker's reading of the
+// SOURCE column `discobox ls --all` adds for the same reason. The two are kept
+// apart rather than pasted together because only the path may be shortened —
+// and because a Windows path carries a colon of its own, so nothing downstream
+// could take them back apart.
 func sandboxPickerOrigin(sandbox apimodel.Sandbox, localHostID string) (path, host string) {
 	origin, ok := sandbox.Origin.Get()
 	if !ok {
 		return "", ""
 	}
-	path = strings.TrimSpace(origin.ProjectPath)
-	if path == "" {
-		return "", ""
+	path = sandboxSource(sandbox)
+	if path == "-" {
+		path = "no source"
 	}
 	if origin.HostId == localHostID {
 		return path, ""

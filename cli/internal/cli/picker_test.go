@@ -480,27 +480,34 @@ func TestPickerHelpOffersAllOnlyWhenThereIsAWiderList(t *testing.T) {
 	}
 }
 
-// The widened rows say where each discobox was started, since that is all that
-// tells two identically named discoboxes from different directories apart. The
-// current directory's list says nothing, because every row there shares it.
+// The widened rows say where each discobox came from — its source — since that
+// is all that tells two identically named discoboxes from different places
+// apart. The current directory's list says nothing, because every row there
+// shares it.
 func TestSandboxPickerItemsSayWhereAWidenedRowCameFrom(t *testing.T) {
+	cutFrom := func(sb *apimodel.Sandbox, dir string) {
+		sb.Config.SetSource(apiclientgen.NewOptGitSource(apimodel.GitSource{LocalDirectory: apiclientgen.NewOptString(dir)}))
+	}
 	here := apimodel.Sandbox{ID: "sbx_here", DisplayName: "here"}
-	here.Origin = apiclientgen.NewOptOrigin(apimodel.Origin{HostId: "host_local", ProjectPath: "/home/ada/here"})
+	here.Origin = apiclientgen.NewOptOrigin(apimodel.Origin{HostId: "host_local"})
+	cutFrom(&here, "/home/ada/here")
 	there := apimodel.Sandbox{ID: "sbx_there", DisplayName: "there"}
 	there.Origin = apiclientgen.NewOptOrigin(apimodel.Origin{
-		HostId:      "host_other",
-		Hostname:    apiclientgen.NewOptString("laptop"),
-		ProjectPath: "/home/ada/there",
+		HostId:   "host_other",
+		Hostname: apiclientgen.NewOptString("laptop"),
 	})
+	cutFrom(&there, "/home/ada/there")
 	nowhere := apimodel.Sandbox{ID: "sbx_nowhere", DisplayName: "nowhere"}
+	empty := apimodel.Sandbox{ID: "sbx_empty", DisplayName: "empty"}
+	empty.Origin = apiclientgen.NewOptOrigin(apimodel.Origin{HostId: "host_local"})
 
-	for _, item := range sandboxPickerItems([]apimodel.Sandbox{here, there, nowhere}, "") {
+	for _, item := range sandboxPickerItems([]apimodel.Sandbox{here, there, nowhere, empty}, "") {
 		if item.originText() != "" {
 			t.Fatalf("this directory's list carries an origin on %q: %q", item.id, item.originText())
 		}
 	}
 
-	wide := sandboxPickerItems([]apimodel.Sandbox{here, there, nowhere}, "host_local")
+	wide := sandboxPickerItems([]apimodel.Sandbox{here, there, nowhere, empty}, "host_local")
 	if wide[0].originText() != "/home/ada/here" {
 		t.Fatalf("local row origin = %q, want the directory alone", wide[0].originText())
 	}
@@ -509,6 +516,9 @@ func TestSandboxPickerItemsSayWhereAWidenedRowCameFrom(t *testing.T) {
 	}
 	if wide[2].originText() != "" {
 		t.Fatalf("a discobox with no origin got one: %q", wide[2].originText())
+	}
+	if wide[3].originText() != "no source" {
+		t.Fatalf("sourceless row origin = %q, want it to say it has no source", wide[3].originText())
 	}
 	// The origin is its own column, so it never lands in the detail text that
 	// the runtime state and the git word share.

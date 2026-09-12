@@ -1901,23 +1901,31 @@ is a claim about what we know. Measured and unmeasured share one layout, so a
 dot sits in the cell its figure would have — with two layouts, resizing the
 cells puts the dots under the wrong columns.
 
-**The folder is a header control, not a column.** The path in the header is
-which folder's sandboxes are listed (`folder.go`). It opens on the directory the
-window is running in — what `discobox ls` shows — with every folder something was
-started from one press away, plus `allFolders`. The choices come from the
-listing itself, so the only folders offered are ones with something in them
-(plus the current directory, always, since that is where a new sandbox would
-go). Because every row on screen has already been filtered to one folder, the
-row carries no folder column: it would repeat one value down the whole list.
+**The folder is a header control, not a column.** The label in the header is
+which folder's sandboxes are listed (`folder.go`). A folder is an origin key
+([ADR 0111](../../../docs/adr/0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)):
+a machine, and where the discoboxes in it had their source from — a directory or
+a repository URL. It is matched by the key the server stored on each row
+(`Sandbox.OriginKey`) and named by that source, so a URL is a folder the way a
+directory is. The header opens on the window's own folder (`Session.OriginKey`,
+what `discobox ls` lists here), with every folder something is filed in one
+press away, plus `allFolders`. A folder of this machine's also holds its
+discoboxes with no source, which are filed under the machine alone
+(`Session.HostKey`) — `ls` sends both keys the same way — so that key is never
+offered as a folder of its own. The choices come from the listing itself, so the
+only folders offered are ones with something in them (plus the window's own,
+always, since that is where a new sandbox would go). Because every row on screen
+has already been filtered to one folder, the row carries no folder column: it
+would repeat one value down the whole list.
 
 **A discobox created on another machine says so beside its name**
-(`Sandbox.elsewhere`). The folder cannot say it: a folder is a path, two
-machines can hold the same one, and their discoboxes then land in one folder
-with nothing on the row to tell them apart — the window lists the whole
-project and filters it by path, where an origin is a host *and* a path. So the row
-carries `OriginHostID`/`OriginHost` and the window carries `Session.HostID`,
-and a row whose origin host is not this one is qualified `from wilma
-(host_zzzz45)` in dim text after the name.
+(`Sandbox.elsewhere`). A folder's name cannot say it: two machines can hold the
+same path, and under "all folders" their discoboxes sit side by side with
+nothing else on the row to tell them apart. So the row carries
+`OriginHostID`/`OriginHost` and the window carries `Session.HostID`, and a row
+whose origin host is not this one is qualified `from wilma (host_zzzz45)` in dim
+text after the name. Another machine's folder carries the same qualifier in the
+dropdown, since it would otherwise read exactly like this machine's.
 
 It is a qualifier on the name rather than a column of its own: what it answers
 is "why is this here", which is a question about the name it sits beside, and
@@ -1960,19 +1968,22 @@ takes the same two affordances the header does: left and right cycle in place,
 Enter opens the whole list, whose last row is the one entry that is not a source
 but the input field for a path, URL or `DIR@REF` the listing has never seen.
 
-Sources and folders are not the same list. A folder is where a create was *run*,
-which every discobox started in a directory shares; a source is what was
-*materialized*, which is a repository URL as often as a path. So the row carries
-`Source`/`SourceRemote` on the sandbox rather than reusing `Folder`, and the
-listing says which of the two a value is rather than this package parsing it —
-what counts as a remote belongs to the creation path.
+Sources and folders are not the same list. A folder is where a discobox is
+*filed* — a machine and a source — so one source cut on two machines is two
+folders; a source is what can be *cut from here*. So the row carries
+`Source`/`SourceRemote`/`SourceOriginKey` beside `OriginKey` rather than one
+being worked out from the other, and the listing says which of the two a value
+is rather than this package parsing it. What counts as a remote belongs to the
+creation path, and so does a key: this package derives none.
 
 The link runs both ways: the header moves the source (`setFolder`), and choosing
 a source moves the header to the folder that source's discoboxes are filed under
-(`followSource`, `Model.followSource`). For a local directory that is the
-directory; a remote URL and `no source` have no folder of their own, so a
-discobox from either is filed under — and the list follows to — the directory the
-window is running in, which is exactly where `ResolveOrigin` puts it.
+(`followSource`, `Model.followSource`). A directory or a URL files under its own
+folder, whose key the listing reported (`Source.OriginKey`) or the check of a
+typed source did (`ResolveSource` — a typed directory files under its
+repository root, which is not what was typed). `no source` and the window's own
+source file under the window's folder, which holds this machine's sourceless
+discoboxes too. A source nothing has reported on is not followed.
 
 **"All folders" is not a place, so a create from it asks** (`askWhereToCutFrom`).
 Every other choice in the header names the directory a new discobox is cut from;

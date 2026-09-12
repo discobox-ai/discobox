@@ -11829,10 +11829,6 @@ func (s *Origin) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("projectPath")
-		e.Str(s.ProjectPath)
-	}
-	{
 		if s.User.Set {
 			e.FieldStart("user")
 			s.User.Encode(e)
@@ -11840,11 +11836,10 @@ func (s *Origin) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfOrigin = [4]string{
+var jsonFieldsNameOfOrigin = [3]string{
 	0: "hostId",
 	1: "hostname",
-	2: "projectPath",
-	3: "user",
+	2: "user",
 }
 
 // Decode decodes Origin from json.
@@ -11878,18 +11873,6 @@ func (s *Origin) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hostname\"")
 			}
-		case "projectPath":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Str()
-				s.ProjectPath = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"projectPath\"")
-			}
 		case "user":
 			if err := func() error {
 				s.User.Reset()
@@ -11910,7 +11893,7 @@ func (s *Origin) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000101,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -18817,6 +18800,12 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.OriginKey.Set {
+			e.FieldStart("originKey")
+			s.OriginKey.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("projectId")
 		e.Str(s.ProjectId)
 	}
@@ -18842,7 +18831,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandbox = [14]string{
+var jsonFieldsNameOfSandbox = [15]string{
 	0:  "$schema",
 	1:  "harnessConfig",
 	2:  "config",
@@ -18852,11 +18841,12 @@ var jsonFieldsNameOfSandbox = [14]string{
 	6:  "displayName",
 	7:  "id",
 	8:  "origin",
-	9:  "projectId",
-	10: "pool",
-	11: "poolId",
-	12: "runtime",
-	13: "updatedAt",
+	9:  "originKey",
+	10: "projectId",
+	11: "pool",
+	12: "poolId",
+	13: "runtime",
+	14: "updatedAt",
 }
 
 // Decode decodes Sandbox from json.
@@ -18966,8 +18956,18 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"origin\"")
 			}
+		case "originKey":
+			if err := func() error {
+				s.OriginKey.Reset()
+				if err := s.OriginKey.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"originKey\"")
+			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -18999,7 +18999,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"poolId\"")
 			}
 		case "runtime":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				if err := s.Runtime.Decode(d); err != nil {
 					return err
@@ -19009,7 +19009,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"runtime\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -19031,7 +19031,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b11101100,
-		0b00110010,
+		0b01100100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

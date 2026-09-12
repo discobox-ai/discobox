@@ -284,6 +284,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.Origin != nil {
 		fields["origin"] = sandbox.Origin
 	}
+	if sandbox.OriginKey != nil {
+		fields["originKey"] = *sandbox.OriginKey
+	}
 	if sandbox.PoolID != "" {
 		fields["poolId"] = sandbox.PoolID
 	}
@@ -520,10 +523,9 @@ func OriginToModel(input serverapi.OptOrigin) *model.Origin {
 		return nil
 	}
 	return &model.Origin{
-		HostID:      strings.TrimSpace(value.HostId),
-		Hostname:    strings.TrimSpace(value.Hostname.Or("")),
-		ProjectPath: strings.TrimSpace(value.ProjectPath),
-		User:        strings.TrimSpace(value.User.Or("")),
+		HostID:   strings.TrimSpace(value.HostId),
+		Hostname: strings.TrimSpace(value.Hostname.Or("")),
+		User:     strings.TrimSpace(value.User.Or("")),
 	}
 }
 

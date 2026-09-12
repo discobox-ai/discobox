@@ -15,9 +15,11 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/cli/internal/origin"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -163,19 +165,40 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 		DefaultProject: defaultProjectAlias,
 	}
 
-	origin, err := sandboxcreate.ResolveOrigin(ctx, d.app.source)
+	client, err := origin.Resolve()
 	if err != nil {
 		return session, err
 	}
-	session.Directory = origin.ProjectPath
+	dir, err := sandboxcreate.LocalProjectDirectory(ctx, d.app.source)
+	if err != nil {
+		return session, err
+	}
+	session.Directory = dir
 	// This machine's identity, which is what tells a row created here from one
 	// created under another. It comes off the resolved origin rather than being
 	// read again: the same value the create request carries is the one the
 	// listing is compared against, hostname included — a row recording the
 	// hostname the window is already sitting on is not worth naming.
-	session.HostID = origin.HostId
-	session.Host = strings.TrimSpace(origin.Hostname.Or(""))
-	if branch, ok := gitutil.CurrentBranch(ctx, origin.ProjectPath); ok {
+	session.HostID = client.HostId
+	session.Host = strings.TrimSpace(client.Hostname.Or(""))
+	// Where the window's own source files its discoboxes, and where this
+	// machine files the ones with no source: the two keys `discobox ls` lists
+	// here, and the folder the header opens on (ADR 0111).
+	if session.OriginKey, session.HostKey, err = sandboxcreate.OriginKeys(ctx, d.app.source); err != nil {
+		return session, err
+	}
+	// A window opened on a repository URL cuts from that URL by default, and
+	// its header names it: the directory it happens to run in is only where
+	// its draft is kept.
+	//
+	// It is `-C` as it was written, ref and all, because that is what the
+	// window cuts from — not SourceRoot, which drops the ref on purpose: every
+	// ref of one repository is one place to file a discobox under (ADR 0111
+	// §1), and one of them is not the thing to hand back to a create.
+	if sandboxcreate.IsRemoteGitSource(sourceDirectory(d.app.source)) {
+		session.Remote = strings.TrimSpace(d.app.source)
+	}
+	if branch, ok := gitutil.CurrentBranch(ctx, dir); ok {
 		session.Branch = branch
 	}
 	// Whatever was left unsent here last time. It is local state, not the
@@ -394,8 +417,11 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		Message:    sandboxMessage(sb),
 		Created:    sb.CreatedAt,
 	}
+	// Where the discobox is filed: what the header's folder filter matches it
+	// against (ADR 0111). Read, not derived, so the window never files a row
+	// somewhere the server did not.
+	row.OriginKey = strings.TrimSpace(sb.OriginKey.Or(""))
 	if origin, ok := sb.Origin.Get(); ok {
-		row.Folder = origin.ProjectPath
 		// Which machine it was created on, so the row can say so when that is
 		// not this one. The hostname is display only and often absent; the
 		// host id is what identifies the machine.
@@ -429,6 +455,12 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		// A snapshot ref is the record of uncommitted work carried in at create,
 		// which is exactly what the starred commit on the row means.
 		row.Dirty = sourceSnapshotRef(source) != ""
+	}
+	// Where a discobox cut from the same source on this machine is filed: what
+	// the Source row follows the list to when it is set to this one. For a
+	// discobox created here, that is its own key.
+	if row.Source != "" {
+		row.SourceOriginKey = originkey.Of(hostID, row.Source)
 	}
 	row.Pushable = pushable(sb, hostID)
 	row.Ports = sandboxListeningPorts(sb)
@@ -530,7 +562,25 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 // The refusal is the point of it. `-C` on a directory that is not there fails
 // the create a few seconds later, by which time the field it was typed into is
 // gone and the path has to be remembered rather than corrected.
-func (d *apiDataSource) ResolveSource(_ context.Context, source string) (string, error) {
+func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.Source, error) {
+	value, err := resolveSourceValue(source)
+	if err != nil {
+		return tui.Source{}, err
+	}
+	// Where a discobox cut from it here is filed, so the list can follow the
+	// source there (ADR 0111). A directory's key is its repository root's,
+	// which what was typed need not be.
+	key, _, err := sandboxcreate.OriginKeys(ctx, value)
+	if err != nil {
+		return tui.Source{}, err
+	}
+	return tui.Source{Value: value, Remote: sandboxcreate.IsRemoteGitSource(sourceDirectory(value)), OriginKey: key}, nil
+}
+
+// resolveSourceValue is ResolveSource's check of the value itself: ~ expanded,
+// a directory made absolute and required to be there, and a ref carried
+// through untouched.
+func resolveSourceValue(source string) (string, error) {
 	value := strings.TrimSpace(source)
 	if value == "" {
 		return "", fmt.Errorf("name a directory, a repository URL, or DIR@REF")

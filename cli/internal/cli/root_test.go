@@ -904,7 +904,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	}
 }
 
-func TestWriteSandboxesShowFolderColumn(t *testing.T) {
+func TestWriteSandboxesShowSourceColumn(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
@@ -912,10 +912,11 @@ func TestWriteSandboxesShowFolderColumn(t *testing.T) {
 
 	sandboxes := []apimodel.Sandbox{
 		{
-			ID:        "sandbox-1",
-			Config:    apimodel.SandboxConfig{Name: "alpha"},
+			ID: "sandbox-1",
+			Config: apimodel.SandboxConfig{Name: "alpha", Source: apiclientgen.NewOptGitSource(apimodel.GitSource{
+				LocalDirectory: apiclientgen.NewOptString("/home/darren/src/disco2"),
+			})},
 			CreatedAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
-			Origin:    apiclientgen.NewOptOrigin(apiclientgen.Origin{ProjectPath: "/home/darren/src/disco2"}),
 		},
 		{
 			ID:        "sandbox-2",
@@ -928,7 +929,7 @@ func TestWriteSandboxesShowFolderColumn(t *testing.T) {
 		t.Fatalf("writeSandboxes: %v", err)
 	}
 	output := out.String()
-	for _, want := range []string{"FOLDER", "/home/darren/src/disco2"} {
+	for _, want := range []string{"SOURCE", "/home/darren/src/disco2"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("sandboxes output = %q, want %q", output, want)
 		}
@@ -938,8 +939,8 @@ func TestWriteSandboxesShowFolderColumn(t *testing.T) {
 	if err := app.writeSandboxes(cmd, sandboxes, false); err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}
-	if strings.Contains(out.String(), "FOLDER") {
-		t.Fatalf("sandboxes output = %q, did not want FOLDER column", out.String())
+	if strings.Contains(out.String(), "SOURCE") {
+		t.Fatalf("sandboxes output = %q, did not want SOURCE column", out.String())
 	}
 }
 

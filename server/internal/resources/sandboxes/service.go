@@ -103,11 +103,11 @@ type SandboxProviderCatalogItem struct {
 	ConfigFields []ProviderConfigField
 }
 
-func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error) {
+func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	return s.store.ListSandboxes(ctx, projectID, sourceRoot, originKey)
+	return s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys)
 }
 
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
@@ -180,7 +180,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	origin := services.OriginToModel(input.Origin)
 	var originKey *string
-	if key := origin.Key(); key != "" {
+	if key := model.SandboxOriginKey(origin, source); key != "" {
 		originKey = &key
 	}
 	if err := s.resolveSourceDelivery(ctx, source, sourceCodeReferences, origin, provider); err != nil {

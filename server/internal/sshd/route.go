@@ -103,7 +103,7 @@ func resolveProject(ctx context.Context, db *store.Store, value string) (*model.
 // id.ResolveShort against sandbox IDs, matching cli/internal/cli/id.go's
 // existing resolveSandboxID (ID/prefix only, not by display name).
 func resolveSandboxInProject(ctx context.Context, db *store.Store, projectID, value string) (*model.Sandbox, error) {
-	sandboxes, err := db.ListSandboxes(ctx, projectID, "", "")
+	sandboxes, err := db.ListSandboxes(ctx, projectID, "", nil)
 	if err != nil {
 		return nil, err
 	}

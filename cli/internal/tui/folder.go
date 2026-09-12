@@ -4,36 +4,74 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The folder filter is the path in the header, made selectable: it says where
+// The folder filter is the place in the header, made selectable: it says where
 // the sandboxes on screen came from, and changing it changes which ones are on
 // screen. It stands in for both a folder column — every row on screen shares
 // the value, so a column repeating it says nothing — and a key toggling "only
 // the ones started here", which would be the same filter with one of its
 // choices missing.
 
-// allFolders is the choice that is not a path: every sandbox in the project,
+// A folder is an origin key (ADR 0111): a machine, and where the discoboxes in
+// it had their source from — a directory or a repository URL — or the machine
+// alone for the ones with none. It is matched by key and named by its source,
+// so one path on two machines is two folders, and a URL is a folder the way a
+// directory is.
+
+// folder is one of the header's choices: the origin key the discoboxes in it
+// are filed under, what it reads as, the source a create from it cuts from,
+// and whether it is this machine's — in which case this machine's discoboxes
+// with no source are in it too, the way `discobox ls` lists them beside the
+// directory's own.
+type folder struct {
+	key    string
+	label  string
+	source string
+	local  bool
+}
+
+// allFolders is the choice that is not a place: every sandbox in the project,
 // wherever it was started. It is last in the list rather than first, because
 // the folder you are standing in is the one you almost always want.
 const allFolders = "all folders"
 
+// everyFolder is allFolders as a choice: no key, so nothing is filtered out.
+var everyFolder = folder{label: allFolders}
+
+// holds reports whether a discobox is in the folder: filed under its key, or —
+// in a folder of this machine's — under this machine's own, where its
+// discoboxes with no source are. Every discobox is in the folder with no key.
+func (f folder) holds(s Sandbox, session Session) bool {
+	switch {
+	case f.key == "":
+		return true
+	case s.OriginKey == f.key:
+		return true
+	default:
+		return f.local && session.HostKey != "" && s.OriginKey == session.HostKey
+	}
+}
+
+// folder is the window's own folder: where a discobox cut from its own source
+// is filed, named the way the header spells that source — which is the one
+// place a branch is shown, since it belongs to the directory the window is
+// running in and means nothing next to a folder somewhere else. It is this
+// machine's, so its discoboxes with no source are in it.
+func (s Session) folder() folder {
+	return folder{key: s.OriginKey, label: s.sourceLabel(), source: s.source(), local: true}
+}
+
 // folderChoices are what the dropdown offers: the folders something was started
 // from, then the choice to drop the filter entirely.
-func (m *Model) folderChoices() []string {
-	return append(m.list.folders(), allFolders)
+func (m *Model) folderChoices() []folder {
+	return append(m.list.folders(), everyFolder)
 }
 
 // folderLabel is how the current filter reads in the header.
 func (m *Model) folderLabel() string {
-	if m.list.folder == "" {
+	if m.list.folder.key == "" {
 		return allFolders
 	}
-	// The branch belongs to the directory the window is running in, and says
-	// what a new sandbox would be cut from. It means nothing next to a folder
-	// somewhere else, so it is only shown against the one it describes.
-	if m.list.folder == m.session.Directory && m.session.Branch != "" {
-		return m.session.Directory + " @ " + m.session.Branch
-	}
-	return m.list.folder
+	return m.list.folder.label
 }
 
 // cycleFolder steps to the next or previous choice.
@@ -48,13 +86,9 @@ func (m *Model) cycleFolder(delta int) tea.Cmd {
 }
 
 // folderIndex is where the current filter sits among the choices.
-func (m *Model) folderIndex(choices []string) int {
-	want := m.list.folder
-	if want == "" {
-		want = allFolders
-	}
+func (m *Model) folderIndex(choices []folder) int {
 	for i, choice := range choices {
-		if choice == want {
+		if choice.key == m.list.folder.key {
 			return i
 		}
 	}
@@ -66,14 +100,10 @@ func (m *Model) folderIndex(choices []string) int {
 // The cursor goes back to the top: the rows underneath it are a different set
 // of sandboxes now, and leaving the cursor on row four of a list that has been
 // replaced points it at something nobody chose.
-func (m *Model) selectFolder(choice string) tea.Cmd {
-	if choice == allFolders {
-		m.list.folder = ""
-	} else {
-		m.list.folder = choice
-	}
+func (m *Model) selectFolder(choice folder) tea.Cmd {
+	m.list.folder = choice
 	// Where the window is listing from is where it creates from.
-	m.opts.setFolder(m.list.folder)
+	m.opts.setFolder(choice.source)
 	m.list.resetCursor()
 	m.layout()
 	return status("showing %s", m.folderLabel())
@@ -124,9 +154,9 @@ func (m *Model) updateFolder(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 // folderDialog is the dropdown opened: every folder in full, with the sandboxes
-// each holds beside it. The whole path, because two checkouts of the same
-// repository differ by one segment somewhere in the middle, and the count,
-// because that is what the choice is usually made on.
+// each holds beside it. The whole path or URL, because two checkouts of the
+// same repository differ by one segment somewhere in the middle, and the
+// count, because that is what the choice is usually made on.
 func (m *Model) folderDialog() *dialog {
 	choices := m.folderChoices()
 	items := make([]action, 0, len(choices))
@@ -137,7 +167,7 @@ func (m *Model) folderDialog() *dialog {
 			// picked by number as well as by moving to them.
 			key:     n,
 			press:   n,
-			label:   choice,
+			label:   choice.label,
 			detail:  m.folderDetail(choice),
 			enabled: true,
 		})
@@ -157,22 +187,22 @@ func (m *Model) folderDialog() *dialog {
 
 // folderChosenMsg carries the dropdown's answer back to the live model, for the
 // same reason every other dialog does: it closed over the model by value.
-type folderChosenMsg struct{ folder string }
+type folderChosenMsg struct{ folder folder }
 
 // folderDetail is what each choice is worth knowing: how many sandboxes it
 // holds, and whether it is the one this window is running in.
-func (m *Model) folderDetail(choice string) string {
-	if choice == allFolders {
+func (m *Model) folderDetail(choice folder) string {
+	if choice.key == "" {
 		return plural(len(m.list.all), "box", "boxes") + " in the project"
 	}
 	n := 0
 	for _, s := range m.list.all {
-		if s.Folder == choice {
+		if choice.holds(s, m.session) {
 			n++
 		}
 	}
 	detail := plural(n, "box", "boxes")
-	if choice == m.session.Directory {
+	if choice.key == m.session.OriginKey {
 		detail += " · where this window is running"
 	}
 	return detail

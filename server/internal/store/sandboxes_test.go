@@ -87,7 +87,7 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 	newSandbox("sandbox-2", "/src/beta")
 	newSandbox("sandbox-3", "")
 
-	matching, err := s.ListSandboxes(ctx, "project-1", "/src/alpha", "")
+	matching, err := s.ListSandboxes(ctx, "project-1", "/src/alpha", nil)
 	if err != nil {
 		t.Fatalf("list sandboxes by source root: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 		t.Fatalf("sandboxes for /src/alpha = %v, want only sandbox-1", sandboxIDs(matching))
 	}
 
-	all, err := s.ListSandboxes(ctx, "project-1", "", "")
+	all, err := s.ListSandboxes(ctx, "project-1", "", nil)
 	if err != nil {
 		t.Fatalf("list all sandboxes: %v", err)
 	}
@@ -104,15 +104,17 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 	}
 }
 
-// Origin and source root are independent identities: the same project
-// directory on two machines is two origins, and one machine can start
-// sandboxes against repositories it does not hold.
-func TestListSandboxesFiltersByOriginKey(t *testing.T) {
+// The origin key files a sandbox under its host and where its source came from
+// (ADR 0111): the same directory on two machines is two places, and a listing
+// may ask for several at once — which is how `discobox ls` takes this
+// machine's sandboxes with no source alongside the directory's own.
+func TestListSandboxesFiltersByOriginKeys(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
+	const hostA, hostB = "host_aaaaaaaaaaaaaaaa", "host_bbbbbbbbbbbbbbbb"
 
-	newSandbox := func(id, hostID, projectPath string) {
+	newSandbox := func(id, hostID, root string) {
 		sandbox := &model.Sandbox{
 			ID:              id,
 			ProjectID:       "project-1",
@@ -120,36 +122,48 @@ func TestListSandboxesFiltersByOriginKey(t *testing.T) {
 			CreatedByUserID: "user-1",
 			Name:            id,
 		}
+		if root != "" {
+			sandbox.Source = &model.GitSource{Kind: "git", LocalDirectory: &root}
+		}
 		if hostID != "" {
-			sandbox.Origin = &model.Origin{HostID: hostID, ProjectPath: projectPath}
-			key := sandbox.Origin.Key()
+			sandbox.Origin = &model.Origin{HostID: hostID}
+			key := model.SandboxOriginKey(sandbox.Origin, sandbox.Source)
 			sandbox.OriginKey = &key
 		}
 		if err := s.CreateSandbox(ctx, sandbox); err != nil {
 			t.Fatalf("create sandbox %s: %v", id, err)
 		}
 	}
-	newSandbox("sandbox-1", "host_aaaaaaaaaaaaaaaa", "/src/alpha")
-	newSandbox("sandbox-2", "host_aaaaaaaaaaaaaaaa", "/src/beta")
-	// Same project path as sandbox-1, different machine.
-	newSandbox("sandbox-3", "host_bbbbbbbbbbbbbbbb", "/src/alpha")
-	newSandbox("sandbox-4", "", "")
+	newSandbox("sandbox-1", hostA, "/src/alpha")
+	newSandbox("sandbox-2", hostA, "/src/beta")
+	// Same directory as sandbox-1, different machine.
+	newSandbox("sandbox-3", hostB, "/src/alpha")
+	// No source: filed under its host alone.
+	newSandbox("sandbox-4", hostA, "")
+	// No origin: filed under nothing.
+	newSandbox("sandbox-5", "", "/src/alpha")
 
-	key := originkey.Of("host_aaaaaaaaaaaaaaaa", "/src/alpha")
-	matching, err := s.ListSandboxes(ctx, "project-1", "", key)
-	if err != nil {
-		t.Fatalf("list sandboxes by origin key: %v", err)
-	}
-	if len(matching) != 1 || matching[0].ID != "sandbox-1" {
-		t.Fatalf("sandboxes for host_a /src/alpha = %v, want only sandbox-1", sandboxIDs(matching))
+	listed := func(keys ...string) map[string]bool {
+		t.Helper()
+		sandboxes, err := s.ListSandboxes(ctx, "project-1", "", keys)
+		if err != nil {
+			t.Fatalf("list sandboxes by origin keys %v: %v", keys, err)
+		}
+		ids := map[string]bool{}
+		for _, id := range sandboxIDs(sandboxes) {
+			ids[id] = true
+		}
+		return ids
 	}
 
-	all, err := s.ListSandboxes(ctx, "project-1", "", "")
-	if err != nil {
-		t.Fatalf("list all sandboxes: %v", err)
+	if got := listed(originkey.Of(hostA, "/src/alpha")); len(got) != 1 || !got["sandbox-1"] {
+		t.Fatalf("sandboxes for host_a /src/alpha = %v, want only sandbox-1", got)
 	}
-	if len(all) != 4 {
-		t.Fatalf("unfiltered sandboxes = %v, want all four", sandboxIDs(all))
+	if got := listed(originkey.Of(hostA, "/src/alpha"), originkey.Host(hostA)); len(got) != 2 || !got["sandbox-1"] || !got["sandbox-4"] {
+		t.Fatalf("sandboxes for host_a /src/alpha and host_a's own = %v, want sandbox-1 and sandbox-4", got)
+	}
+	if got := listed(); len(got) != 5 {
+		t.Fatalf("unfiltered sandboxes = %v, want all five", got)
 	}
 }
 
@@ -161,12 +175,11 @@ func TestCreateSandboxPersistsOrigin(t *testing.T) {
 	createTestPool(t, s, "project-1", "pool-1")
 
 	want := &model.Origin{
-		HostID:      "host_aaaaaaaaaaaaaaaa",
-		Hostname:    "laptop",
-		ProjectPath: "/src/alpha",
-		User:        "darren",
+		HostID:   "host_aaaaaaaaaaaaaaaa",
+		Hostname: "laptop",
+		User:     "darren",
 	}
-	key := want.Key()
+	key := model.SandboxOriginKey(want, nil)
 	if err := s.CreateSandbox(ctx, &model.Sandbox{
 		ID:              "sandbox-1",
 		ProjectID:       "project-1",

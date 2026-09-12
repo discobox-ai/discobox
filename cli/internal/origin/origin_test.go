@@ -4,21 +4,19 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/internal/hostid"
-	"github.com/discobox-ai/discobox/internal/originkey"
 )
 
-func TestKeyMatchesSharedDerivation(t *testing.T) {
+// The origin names the client and nothing about a directory (ADR 0111): the
+// host identity is what every host-based decision reads, and where a discobox
+// belongs on that host is its origin key.
+func TestResolveCarriesTheHost(t *testing.T) {
 	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
 
-	resolved, err := Resolve(t.Context(), t.TempDir())
+	resolved, err := Resolve()
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want := originkey.Of(resolved.HostId, resolved.ProjectPath)
-	if got := Key(resolved); got != want {
-		t.Fatalf("Key = %q, want %q", got, want)
-	}
-	if Key(resolved) == "" {
-		t.Fatal("Key is empty; ls would silently list every sandbox")
+	if resolved.HostId != "host_0123456789abcdef" {
+		t.Fatalf("HostId = %q, want the configured host identity", resolved.HostId)
 	}
 }

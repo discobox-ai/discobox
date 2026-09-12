@@ -195,10 +195,10 @@ func (s *Store) ListStoppedSandboxesForHarnessConfig(ctx context.Context, projec
 
 // ListSandboxes lists a project's sandboxes. A non-empty sourceRoot restricts
 // the result to sandboxes whose primary source resolves to that repository root.
-// A non-empty originKey restricts it to sandboxes created from one client host
-// and project directory. The two filters are independent: sourceRoot asks what a
-// sandbox runs against, originKey asks where it was started from.
-func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error) {
+// Non-empty originKeys restrict it to sandboxes filed under any one of those
+// origin keys (ADR 0111). The two filters are independent: sourceRoot asks what
+// a sandbox runs against, originKeys ask where on which client it belongs.
+func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -212,8 +212,8 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot, origin
 	if sourceRoot != "" {
 		query = query.Where("source_root = ?", sourceRoot)
 	}
-	if originKey != "" {
-		query = query.Where("origin_key = ?", originKey)
+	if len(originKeys) > 0 {
+		query = query.Where("origin_key IN ?", originKeys)
 	}
 	var sandboxes []model.Sandbox
 	err = query.

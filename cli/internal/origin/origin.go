@@ -1,13 +1,14 @@
-// Package origin identifies the client host and project directory a sandbox is
-// created from.
+// Package origin identifies the client host a sandbox is created from, and
+// resolves the project directory a command acts on.
 //
-// Origin is provenance: it says where a create request came from, never what to
-// materialize. The server records it verbatim and uses it to answer "which
-// sandboxes did I start from this directory?" — a question the source alone
-// cannot answer once the server is remote, because a local path is meaningless
-// on another machine and collides across hosts and users.
+// Origin is provenance: it says which client a create request came from, never
+// what to materialize. The server records it verbatim. Where on that client a
+// sandbox belongs is its origin key — the host and where the primary source
+// came from (internal/originkey) — so the origin carries no directory of its
+// own.
 //
-// See docs/adr/0001-sandbox-origin-and-remote-source-push.md.
+// See docs/adr/0001-sandbox-origin-and-remote-source-push.md and
+// docs/adr/0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md.
 package origin
 
 import (
@@ -21,29 +22,17 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/internal/hostid"
-	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/x/gitutil"
 )
 
-// Resolve returns the origin for a create or list request made from dir.
-//
-// dir's Git repository root is the project path, matching how a project is
-// commonly understood as the repo you started from. Outside a repository the
-// directory itself is the project, so listing still works there rather than
-// failing.
-func Resolve(ctx context.Context, dir string) (apimodel.Origin, error) {
+// Resolve returns the origin every create request carries: this client's host
+// identity, with its hostname and user for display.
+func Resolve() (apimodel.Origin, error) {
 	host, err := hostid.Get()
 	if err != nil {
 		return apimodel.Origin{}, err
 	}
-	projectPath, err := ProjectPath(ctx, dir)
-	if err != nil {
-		return apimodel.Origin{}, err
-	}
-	out := apimodel.Origin{
-		HostId:      host,
-		ProjectPath: projectPath,
-	}
+	out := apimodel.Origin{HostId: host}
 	if hostname, err := os.Hostname(); err == nil && strings.TrimSpace(hostname) != "" {
 		out.Hostname = apiclientgen.NewOptString(hostname)
 	}
@@ -54,7 +43,8 @@ func Resolve(ctx context.Context, dir string) (apimodel.Origin, error) {
 }
 
 // ProjectPath returns the absolute project root for dir: its Git repository
-// root, or dir itself when it is not in a repository.
+// root, or dir itself when it is not in a repository. It is the directory a
+// local source is cut from, and so the place a directory's origin key hashes.
 func ProjectPath(ctx context.Context, dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -68,9 +58,4 @@ func ProjectPath(ctx context.Context, dir string) (string, error) {
 		return abs, nil //nolint:nilerr // absence of a repository is a fallback, not a failure
 	}
 	return root, nil
-}
-
-// Key is the indexed identity the server stores and filters on.
-func Key(o apimodel.Origin) string {
-	return originkey.Of(o.HostId, o.ProjectPath)
 }
