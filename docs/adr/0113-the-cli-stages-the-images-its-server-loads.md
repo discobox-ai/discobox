@@ -1,6 +1,6 @@
 # 0113 — A release CLI stages its server's images, and a pool loads them before it pulls
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-11
 - **Amends**: [0099](0099-the-cli-downloads-the-server-it-starts.md) §3 — a manifest also lists the images its server runs, by reference and without a digest. §3's "a URL and a digest or neither" still governs every *asset*; §1 below says why an image is a different kind of entry.
 - **Relates to**: [0069](0069-staging-pool-images-is-a-condition.md), whose staging condition is unchanged and now usually loads rather than pulls; [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) §6, whose digest pin every loaded image has to satisfy.
@@ -94,10 +94,19 @@ standard tools and nothing about it is private to this code.
   module. ADR 0099 took go-containerregistry out of `cli/go.mod`, and a few
   hundred lines of verified HTTP are not a reason to bring it back.
 
-Staging images is part of staging the server: it happens wherever the server
-is staged from a manifest — `discobox admin server stage` and the resolve that
-precedes an autolaunch — and costs a few `stat` calls once the layout is
-complete. A server that is already running costs nothing, as before.
+Two things stage images: the autolaunch, immediately after it has resolved
+the server and before it starts one, and `discobox admin server stage`, which
+provisions everything a later autolaunch would fetch. `discobox admin server`
+in the foreground stages only the binary: whoever runs it is starting a server
+on purpose, and its pools load whatever is already staged and pull the rest.
+Once the layout is complete a stage is a few `stat` calls, and a server that is
+already running costs nothing, as before.
+
+**Staging comes before a running server is stopped.** An autolaunch replaces a
+local server that is older than the CLI, and the download is now minutes long,
+so `endpoint.EnsureRunning` resolves the command to start — server and images —
+while the old server is still serving, and only then asks it to shut down. The
+gap a user sees is the switch-over, not the download.
 
 It is narrated on the launch line in stageLine's grammar, so the first run
 reads as one sequence: *Downloading server*, *Downloading images (2 of 5):
@@ -116,10 +125,11 @@ versions does not re-download either.
 
 ### 3. The CLI tells the server where the layout is
 
-Server configuration gains `imageCacheDir` (`DISCOBOX_IMAGE_CACHE_DIR`). The CLI
-sets it on every server it runs — the autolaunch and `discobox admin server` —
-and passes through a value already in its environment, which is also where it
-stages. Unset means no cache, and the server behaves exactly as it does today;
+The server's configuration file (ADR 0096) gains `imageCacheDir`, with
+`DISCOBOX_IMAGE_CACHE_DIR` as its environment override like every other key.
+The CLI sets the variable on every server it runs — the autolaunch and
+`discobox admin server` — unless its own environment already names one, which
+is then also where it stages. Unset means no cache, and the server behaves exactly as it does today;
 that is every server nothing launched through a CLI.
 
 ### 4. A pool loads from the layout before it pulls
