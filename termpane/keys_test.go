@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // keyMarker follows a key under test, because a key that encodes to nothing is
@@ -18,6 +19,19 @@ const keyMarker = "|end|"
 func sentForKey(t *testing.T, key tea.KeyPressMsg) string {
 	t.Helper()
 	m, stream, _ := attach(t, 40, 5)
+	m.Update(key)
+	m.SendText(keyMarker)
+	return strings.TrimSuffix(stream.sent(t, keyMarker), keyMarker)
+}
+
+// sentForKeyAfter is sentForKey with the far end having asked for something
+// first: the sequence is written to the pane, and the marker behind it landing
+// on the screen proves it was processed before the key is pressed.
+func sentForKeyAfter(t *testing.T, seq string, key tea.KeyPressMsg) string {
+	t.Helper()
+	m, stream, cmd := attach(t, 40, 5)
+	stream.send(seq + "READY")
+	pump(t, m, cmd, "READY")
 	m.Update(key)
 	m.SendText(keyMarker)
 	return strings.TrimSuffix(stream.sent(t, keyMarker), keyMarker)
@@ -196,17 +210,21 @@ func TestALockIsNotAModifier(t *testing.T) {
 	}
 }
 
-// A key the emulator cannot encode is sent as nothing, which is what a terminal
-// with no sequence for it sends. Handed over anyway it reaches the emulator's
-// default branch, which writes string(code) — and every special code is above
-// utf8.MaxRune, so the application would be typed U+FFFD instead.
+// A key neither the emulator nor the pane has a sequence for is sent as
+// nothing, which is what a terminal with no sequence for it sends. Handed over
+// anyway it reaches the emulator's default branch, which writes string(code) —
+// and every special code is above utf8.MaxRune, so the application would be
+// typed U+FFFD instead.
+//
+// The pane's own half of that is plainKeySeqs, which is why the condition is
+// both and not just the emulator; see
+// TestAKeyTheEmulatorCannotEncodeStillHasAForm.
 func TestAKeyWithNoSequenceTypesNothing(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		key  tea.KeyPressMsg
 	}{
-		{"ctrl+kpleft", tea.KeyPressMsg{Code: uv.KeyKpLeft, Mod: uv.ModCtrl}},
-		{"kpleft", tea.KeyPressMsg{Code: uv.KeyKpLeft}},
+		{"f13", tea.KeyPressMsg{Code: uv.KeyF13}},
 		{"ctrl+f13", tea.KeyPressMsg{Code: uv.KeyF13, Mod: uv.ModCtrl}},
 		{"shift+menu", tea.KeyPressMsg{Code: uv.KeyMenu, Mod: uv.ModShift}},
 		{"mute", tea.KeyPressMsg{Code: uv.KeyMute}},
@@ -269,4 +287,119 @@ func TestTheReservedKeysOutrankTheKeymap(t *testing.T) {
 			t.Fatalf("sent %q, want the bound shift+enter", got)
 		}
 	})
+}
+
+// The numpad is the keys it is labeled with. A pane is handed keys rather than
+// scancodes — the host terminal decoded the keystroke under its own keypad
+// mode, the numeric one — so what the far end is sent is Enter, or 5, or Left.
+// It is what the rest of the pane already calls them: String names every keypad
+// key after its twin, so the keymap and the prefix bindings never told the two
+// apart either.
+func TestTheNumpadIsTheKeysItIsLabeledWith(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  tea.KeyPressMsg
+		want string
+	}{
+		{"kpenter", tea.KeyPressMsg{Code: uv.KeyKpEnter}, "\r"},
+		{"alt+kpenter", tea.KeyPressMsg{Code: uv.KeyKpEnter, Mod: uv.ModAlt}, "\x1b\r"},
+
+		// Num Lock is on for the digits and the arithmetic, and reported with
+		// every one of them; it is a lock, not a modifier, and costs nothing.
+		{"kp5", tea.KeyPressMsg{Code: uv.KeyKp5, Mod: uv.ModNumLock}, "5"},
+		{"kpplus", tea.KeyPressMsg{Code: uv.KeyKpPlus, Mod: uv.ModNumLock}, "+"},
+		{"kpdivide", tea.KeyPressMsg{Code: uv.KeyKpDivide, Mod: uv.ModNumLock}, "/"},
+		{"kpdecimal", tea.KeyPressMsg{Code: uv.KeyKpDecimal, Mod: uv.ModNumLock}, "."},
+
+		// And with Num Lock off the same keys are the navigation cluster, which
+		// the emulator has no case for at all: before the fold every one of
+		// these was silence.
+		{"kpleft", tea.KeyPressMsg{Code: uv.KeyKpLeft}, "\x1b[D"},
+		{"ctrl+kpleft", tea.KeyPressMsg{Code: uv.KeyKpLeft, Mod: uv.ModCtrl}, "\x1b[1;5D"},
+		{"kphome", tea.KeyPressMsg{Code: uv.KeyKpHome}, "\x1b[H"},
+		{"kpdelete", tea.KeyPressMsg{Code: uv.KeyKpDelete}, "\x1b[3~"},
+		{"shift+kppgup", tea.KeyPressMsg{Code: uv.KeyKpPgUp, Mod: uv.ModShift}, "\x1b[5;2~"},
+
+		// The cluster's center is the one whose twin the emulator cannot encode
+		// either; plainKeySeqs is what keeps it from being a key that works only
+		// while Ctrl is held. See TestAKeyTheEmulatorCannotEncodeStillHasAForm.
+		{"kpbegin", tea.KeyPressMsg{Code: uv.KeyKpBegin}, "\x1b[E"},
+		{"ctrl+kpbegin", tea.KeyPressMsg{Code: uv.KeyKpBegin, Mod: uv.ModCtrl}, "\x1b[1;5E"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sentForKey(t, tc.key); got != tc.want {
+				t.Fatalf("%s sent %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// Application keypad mode is the far end's answer for its own keypad, and this
+// pane does not have one: the key it was handed was pressed on a terminal in
+// numeric mode, and re-encoding it as "\x1bOM" invents a keystroke nobody made.
+// Programs ask for the mode constantly — every zsh line editor does — and a
+// shell that reads "\x1bOM" as nothing is a numpad whose Enter key is dead.
+func TestApplicationKeypadModeDoesNotReachTheNumpad(t *testing.T) {
+	for _, mode := range []struct{ name, seq string }{
+		{"DECKPAM", "\x1b="},
+		{"DECNKM", ansi.SetModeNumericKeypad},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name string
+				key  tea.KeyPressMsg
+				want string
+			}{
+				{"kpenter", tea.KeyPressMsg{Code: uv.KeyKpEnter}, "\r"},
+				{"kp5", tea.KeyPressMsg{Code: uv.KeyKp5, Mod: uv.ModNumLock}, "5"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					if got := sentForKeyAfter(t, mode.seq, tc.key); got != tc.want {
+						t.Fatalf("%s under %s sent %q, want %q", tc.name, mode.name, got, tc.want)
+					}
+				})
+			}
+		})
+	}
+}
+
+// A key the emulator cannot encode still gets the sequence a terminal sends for
+// it, where the pane has one.
+//
+// Begin is the whole of that set, and without this it is a key that works only
+// while Ctrl is held: modifiedKeySeq encodes it from csiFinals, and the bare
+// press was silence.
+//
+// The form is the normal-cursor-mode one, which is a tradeoff and not a
+// derivation: under DECCKM xterm sends this cluster as SS3, and the pane is
+// knowingly not tracking that mode. See plainKeySeqs for what tracking it would
+// cost.
+//
+// The sequence is named in plainKeySeqs rather than derived from csiFinals,
+// because that table is xterm's modified finals: a rule reading "CSI, then the
+// final" would answer a bare F1 with "\x1b[P".
+func TestAKeyTheEmulatorCannotEncodeStillHasAForm(t *testing.T) {
+	if encodable(uv.KeyBegin) {
+		t.Fatal("the emulator now encodes Begin: this test and plainKeySeqs are about a key that it does not")
+	}
+	for _, tc := range []struct {
+		name string
+		key  tea.KeyPressMsg
+		want string
+	}{
+		{"begin", tea.KeyPressMsg{Code: uv.KeyBegin}, "\x1b[E"},
+		{"ctrl+begin", tea.KeyPressMsg{Code: uv.KeyBegin, Mod: uv.ModCtrl}, "\x1b[1;5E"},
+		{"alt+begin", tea.KeyPressMsg{Code: uv.KeyBegin, Mod: uv.ModAlt}, "\x1b[1;3E"},
+
+		// A lock is not a modifier here either: it folds off and leaves the
+		// plain form, rather than the ";1" of a modified sequence with no
+		// modifier.
+		{"numlock+begin", tea.KeyPressMsg{Code: uv.KeyBegin, Mod: uv.ModNumLock}, "\x1b[E"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sentForKey(t, tc.key); got != tc.want {
+				t.Fatalf("%s sent %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
 }

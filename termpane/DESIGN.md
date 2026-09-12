@@ -39,10 +39,11 @@ flowchart LR
 **Input flows through the emulator, not around it.** Keys are handed to
 `vt.Emulator`, and a goroutine copies the emulator's *input side* to the stream.
 That is not indirection for its own sake: the emulator encodes keys the way the
-application has asked for them (cursor-key mode, keypad mode, alt prefixing),
-and it answers the queries applications make about the terminal they are running
-in. Those replies are input like any other. An emulator whose replies are never
-collected fills its buffer and wedges on the first query.
+application has asked for them (cursor-key mode, alt prefixing — the keypad is
+the pane's own; see `foldKeypad`), and it answers the queries applications make
+about the terminal they are running in. Those replies are input like any other.
+An emulator whose replies are never collected fills its buffer and wedges on the
+first query.
 
 **Printable text is sent as text, not as a key.** The emulator's key encoder
 works from the unshifted code, so an uppercase `A` routed as a key arrives as
@@ -107,6 +108,34 @@ byte. `modifiedKeySeq` asks the same question at its door, against
 parameter with nowhere to put one would read `;1` for every arrow key on a
 Windows machine.
 
+**The numpad is the keys it is labeled with** (`foldKeypad`). A pane is handed
+keys, not scancodes: the host terminal already decoded the keystroke under its
+own keypad mode — the numeric one, since nothing a Bubble Tea window runs asks
+for the other — so what arrives is Enter, or `5`, or Left, pressed on the
+right-hand side of the keyboard. Sent on as a keypad key it would be encoded
+again by the *far end's* keypad mode, and a program that asked for application
+keypad keys turns Enter on the numpad into `\x1bOM`: a sequence the user's own
+terminal would never have sent, and one a shell's line editor does not read as a
+return. Programs ask for that mode constantly — every zsh line editor does — so
+the numpad had one key that silently did nothing.
+
+Every keypad key is therefore folded onto its twin before the encoder. For most
+of them that is how the rest of the pane already saw it:
+`tea.KeyPressMsg.String` names the digits, Enter and the navigation cluster
+after their twins — "5", "enter", "left" — so the keymap, the prefix bindings
+and the window's own keys never told those apart, and the encoder was the last
+place they differed. The arithmetic keys are the exception, named after
+themselves ("plus", "minus", "div", …), so a keymap can still bind numpad minus
+separately while the fold sends the same `-` either way. That split stays: the
+keymap is matched on the name in `SendKey` and the reserved keys a step earlier
+still, both before the fold, so folding sooner would move the disagreement
+rather than end it.
+
+The fold runs first within `sendEncoded`, so a modified keypad key reaches
+`modifiedKeySeq` as the key that has a form, and it settles the keypad
+navigation cluster — the numpad with Num Lock off — which the emulator has no
+case for at all and which `encodable` therefore dropped.
+
 **A key with no sequence is sent as nothing** (`encodable`). The emulator's
 switch ends in `default: if key.Mod == 0 { seq += string(key.Code) }`, which is
 right for a printable key — it is its own rune — and wrong for a special one:
@@ -122,6 +151,26 @@ emulator's own switch in a module this repository pins by replace directive. It
 matches exactly today. If the pin moves and the emulator gains a case, the key
 it gained goes on being dropped here, silently and with no test to catch it —
 so the list is worth re-reading whenever that pin does move.
+
+**Unless the pane has a form for it** (`plainKeySeqs`). Begin is the whole of
+that list, and the reason there is one: it is in `csiFinals` and not in
+`emulatorKeys`, so a modified Begin encoded and a bare one was silence — numpad
+5 with Num Lock off worked only while Ctrl was held.
+
+It is a list of keys and not a rule over `csiFinals`, which is the table that
+looks like it would serve. That one is xterm's *modified* finals: F1 to F4 take
+them after `CSI 1 ; <mod>` and SS3 when bare, so "CSI, then the final" would
+answer a bare F1 with `\x1b[P` — not F1, and DCH on the way back out. Its being
+unreachable today is the argument against, not for: such a rule widens itself
+exactly when the emulator loses a case, which is when it would start sending
+wrong bytes instead of none. A missing entry sends nothing, as before.
+
+The form listed is the normal-cursor-mode one. Under DECCKM xterm sends this
+cluster as SS3, and the pane cannot ask which mode is set — the emulator exposes
+no accessor, and watching the stream as `watchMouseModes` must would duplicate
+emulator state, and drift from it on a reset, for one key. So it is the right
+bytes in the mode applications are in unless they ask otherwise, and a form the
+other mode still decodes; silence was wrong in both.
 
 **Input is drained and written by separate goroutines.** The pipe behind the
 emulator is synchronous — `Paste` and `SendKey` are held until their bytes are

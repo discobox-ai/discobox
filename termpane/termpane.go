@@ -833,8 +833,10 @@ func (m *Model) SetPrefixArmed(armed bool) {
 func (m *Model) PrefixPending() bool { return m.prefixArmed || m.chordLead != "" }
 
 // SendKey forwards one key press to the terminal, encoded the way the
-// application on the other end has asked for it — cursor-key mode, keypad mode
-// and alt prefixing are all the emulator's business rather than the caller's.
+// application on the other end has asked for it — cursor-key mode and alt
+// prefixing are the emulator's business rather than the caller's. The keypad is
+// the exception: a pane is handed keys rather than scancodes, so the numpad is
+// sent as the keys it is labeled with. See foldKeypad.
 //
 // Printable text with no ctrl or alt is sent as text rather than as a key,
 // because the key encoder works from the unshifted code: routed as a key, an
@@ -866,7 +868,10 @@ func (m *Model) sendEncoded(msg tea.KeyPressMsg) {
 	if m.emu == nil || m.opts.readOnly {
 		return
 	}
-	key := msg.Key()
+	// The numpad is the keys it is labeled with; see keys.go. It is folded
+	// first, so a modified one reaches modifiedKeySeq as the key that has a
+	// form.
+	key := foldKeypad(msg.Key())
 	if key.Text != "" && key.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
 		m.emu.SendText(key.Text)
 		return
@@ -877,11 +882,15 @@ func (m *Model) sendEncoded(msg tea.KeyPressMsg) {
 		return
 	}
 	key = foldToEncodable(key)
-	// A key the emulator has no sequence for is sent as nothing. Handed over
-	// anyway it reaches its default branch, which writes string(code) — and
-	// the special codes are above utf8.MaxRune, so the application would be
-	// typed a replacement character where a terminal sends nothing at all.
+	// A key the emulator has no sequence for is the pane's own to spell out, or
+	// nothing. Handed over anyway it reaches the emulator's default branch,
+	// which writes string(code) — and the special codes are above utf8.MaxRune,
+	// so the application would be typed a replacement character where a
+	// terminal sends nothing at all.
 	if !encodable(key.Code) {
+		if seq := plainKeySeqs[key.Code]; seq != "" {
+			m.emu.SendText(seq)
+		}
 		return
 	}
 	m.emu.SendKey(uv.KeyPressEvent(uv.Key(key)))
