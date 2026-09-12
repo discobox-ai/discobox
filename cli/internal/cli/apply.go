@@ -284,8 +284,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 
 	hostDir, dirOrigin, err := resolveApplyHostDir(sandbox, hostID, entry, dirOverrides)
 	if err != nil {
-		printer.bareSourceHeader(entry.slug)
-		return fail("%v", err)
+		return a.unplacedSource(ctx, printer, projectID, sandboxID, sandbox, gitServerURL, entry, allowDirty, err)
 	}
 	report.HostPathOrigin = dirOrigin
 	repoRoot, err := gitutil.Root(ctx, hostDir)
@@ -310,34 +309,12 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	// on screen.
 	printer.sourceHeader(report)
 
-	if report.SandboxDir != "" {
-		printer.note("checking the discobox working tree (git status --porcelain)")
-		dirty, status, err := a.sandboxSourceDirty(ctx, projectID, sandboxID, report.SandboxDir)
-		if err != nil {
-			return fail("check discobox working tree: %v", err)
-		}
-		switch {
-		case dirty && !allowDirty:
-			report.Status = applyStatusBlocked
-			report.UncommittedChanges = statusLines(status)
-			report.NextSteps = dirtyNextSteps(sandboxID, entry.slug, report.SandboxDir, dirOverrides)
-			printer.outcome(applyStatusBlocked, "BLOCKED: the discobox has %d uncommitted %s; only committed work is applied",
-				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
-			printer.detailLines(report.UncommittedChanges)
-			printer.nextSteps(report.NextSteps)
-			return report
-		case dirty:
-			// --allow-dirty. The uncommitted work is still listed: it stays in
-			// the sandbox, and the whole point of the flag is that the user
-			// chose to leave it there rather than not knowing about it.
-			report.UncommittedChanges = statusLines(status)
-			report.DirtyIgnored = true
-			printer.caution("--allow-dirty: applying anyway; %d uncommitted %s stay in the discobox and are not applied",
-				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
-			printer.detailLines(report.UncommittedChanges)
-		default:
-			printer.noteDetail("clean, nothing uncommitted")
-		}
+	blocked, err := a.sandboxDirtyBlocks(ctx, printer, projectID, sandboxID, &report, allowDirty, dirOverrides[entry.slug])
+	if err != nil {
+		return fail("check discobox working tree: %v", err)
+	}
+	if blocked {
+		return report
 	}
 
 	printer.note("fetching the discobox's commits")
@@ -405,7 +382,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		if len(result.ChangedPaths) > 0 {
 			report.Status = applyStatusBlocked
 			report.LocalChanges = result.ChangedPaths
-			report.NextSteps = localChangesNextSteps(sandboxID, entry.slug, repoRoot, dirOverrides, carried)
+			report.NextSteps = localChangesNextSteps(sandboxID, entry.slug, repoRoot, dirOverrides[entry.slug], carried)
 			printer.outcome(applyStatusBlocked, "BLOCKED: %s", blockedLocalChanges(repoRoot, carried))
 			printer.detailLines(report.LocalChanges)
 			printer.nextSteps(report.NextSteps)
@@ -482,6 +459,158 @@ func resolveApplyBase(ctx context.Context, repoRoot, tip, lastCommit, discoboxBa
 	return base, baseOriginMergeBase, nil
 }
 
+// sandboxDirtyBlocks makes the discobox-side working-tree check that comes
+// before either apply path decides anything, records what it found on the
+// report, and says whether that ends the source.
+//
+// Both paths make it and both say the same thing about it, because it is the
+// same fact about the same discobox: uncommitted work is never applied, and a
+// source is not reported as drained while some of it is still sitting there.
+// Where the two differ is only the re-run they print — a source with no local
+// directory needs a --dir on it — which is what dir carries.
+func (a *App) sandboxDirtyBlocks(ctx context.Context, printer applyPrinter, projectID, sandboxID string, report *applySourceReport, allowDirty bool, dir string) (bool, error) {
+	if report.SandboxDir == "" {
+		// The discobox never said where this source landed, so there is no
+		// working tree to ask about.
+		return false, nil
+	}
+	printer.note("checking the discobox working tree (git status --porcelain)")
+	dirty, status, err := a.sandboxSourceDirty(ctx, projectID, sandboxID, report.SandboxDir)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case dirty && !allowDirty:
+		report.Status = applyStatusBlocked
+		report.UncommittedChanges = statusLines(status)
+		report.NextSteps = dirtyNextSteps(sandboxID, report.Slug, report.SandboxDir, dir)
+		printer.outcome(applyStatusBlocked, "BLOCKED: the discobox has %d uncommitted %s; only committed work is applied",
+			len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
+		printer.detailLines(report.UncommittedChanges)
+		printer.nextSteps(report.NextSteps)
+		return true, nil
+	case dirty:
+		// --allow-dirty. The uncommitted work is still listed: it stays in
+		// the sandbox, and the whole point of the flag is that the user
+		// chose to leave it there rather than not knowing about it.
+		report.UncommittedChanges = statusLines(status)
+		report.DirtyIgnored = true
+		printer.caution("--allow-dirty: applying anyway; %d uncommitted %s stay in the discobox and are not applied",
+			len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
+		printer.detailLines(report.UncommittedChanges)
+	default:
+		printer.noteDetail("clean, nothing uncommitted")
+	}
+	return false, nil
+}
+
+// unplacedSource ends a source whose local directory could not be resolved:
+// a discobox created on another machine, a source cloned from a remote rather
+// than pushed from a checkout here, or a directory that has since moved.
+//
+// Not knowing where a source would land only costs anything when it has
+// commits to land. A source cloned from a remote and left alone in the
+// discobox has nothing to place, and failing over it would fail every apply of
+// every discobox that carries one, forever — so the discobox's tip is read
+// straight off its repository, which ls-remote does without a local clone, and
+// compared against the commit this source is already accounted for at: the
+// last apply's, or the commit it was created at. Those match only when the
+// discobox has committed nothing here, and that is the one case where an
+// unknown directory is not a failure.
+func (a *App) unplacedSource(ctx context.Context, printer applyPrinter, projectID, sandboxID string, sandbox *apimodel.Sandbox, gitServerURL string, entry applySourceEntry, allowDirty bool, dirErr error) applySourceReport {
+	report := applySourceReport{
+		Slug:          entry.slug,
+		Status:        applyStatusError,
+		SandboxDir:    sourceWorkdir(entry.source),
+		SandboxRef:    sandboxapply.FetchRef(sandboxID, entry.slug),
+		HostPathError: dirErr.Error(),
+	}
+	// The heading names the discobox side, which is the half of this source
+	// that is known, and says in the local repo's own row why there is no
+	// local repo — before anything else happens, because everything that
+	// follows may hand the reader a --dir to fill in, and none of it explains
+	// itself without this. Status is not decided by it: a discobox that has
+	// committed nothing to this source needs no directory at all.
+	printer.sourceHeader(report)
+	fail := func() applySourceReport {
+		report.Status = applyStatusError
+		printer.outcome(applyStatusError, "ERROR: %s", report.Error)
+		printer.nextSteps(report.NextSteps)
+		return report
+	}
+
+	// The same working-tree check every other route makes, and for the same
+	// reason: a source is never reported as having nothing to apply while
+	// uncommitted work sits in it. The re-run it prints carries the --dir this
+	// source will need once that work is committed.
+	blocked, err := a.sandboxDirtyBlocks(ctx, printer, projectID, sandboxID, &report, allowDirty, applyDirPlaceholder)
+	if err != nil {
+		report.Error = fmt.Sprintf("%v (and its working tree could not be checked: %v)", dirErr, err)
+		return fail()
+	}
+	if blocked {
+		return report
+	}
+
+	report.Base, report.BaseOrigin = unplacedSourceBase(sandbox, entry)
+	if report.Base == "" {
+		// Nothing records the commit this source started from — a source
+		// created from a URL and a branch name, never applied since, has only
+		// the branch name — so no tip can be measured against anything and
+		// whether there is work here cannot be told. Saying that is the honest
+		// answer; assuming there is none would drop the discobox's commits on
+		// the floor.
+		report.Error = fmt.Sprintf("%v (and nothing records the commit it started from, so whether it has anything to apply cannot be told)", dirErr)
+		return fail()
+	}
+
+	printer.note("reading the discobox's tip (git ls-remote), to see whether it has anything that needs one")
+	tip, err := sandboxapply.Tip(ctx, gitServerURL, projectID, sandboxID, a.token, entry.source)
+	if err != nil {
+		report.Error = fmt.Sprintf("%v (and whether it has anything to apply could not be checked: %v)", dirErr, err)
+		return fail()
+	}
+	report.SandboxTip = tip
+	printer.noteDetail("discobox tip %s", shortSHA(tip))
+	printer.note("base %s — %s", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
+
+	if tip == report.Base {
+		report.Status = applyStatusUpToDate
+		printer.outcome(applyStatusUpToDate, "UP TO DATE: the discobox has no commits after %s, so there is nothing to apply and nothing needs a local directory here", shortSHA(report.Base))
+		return report
+	}
+	report.Error = fmt.Sprintf("the discobox has commits after %s to apply, but %v", shortSHA(report.Base), dirErr)
+	report.NextSteps = []applyNextStep{{
+		Description: fmt.Sprintf("apply them into a local checkout of the repository source %q came from", entry.slug),
+		Commands:    []string{applyRerun(sandboxID, entry.slug, applyDirPlaceholder)},
+	}}
+	return fail()
+}
+
+// unplacedSourceBase is the commit a source with no local directory is already
+// accounted for at, and where that commit came from: the last apply of this
+// source, or failing that the commit the source was created at. Anything the
+// discobox has committed after it is work that would be applied, and is what
+// makes an unknown local directory matter.
+//
+// It is deliberately not a merge base: there is no local repository here to
+// take one against, which is the situation that got us here. For the same
+// reason it cannot make resolveApplyBase's check that a recorded last-applied
+// commit is still an ancestor of the tip — a rebase in the discobox can leave
+// that cursor stale, and IsAncestor needs the objects. A stale one simply
+// fails to match the tip, so the source is reported as having work to place
+// and asks for a --dir; erring towards "there is something here" is the safe
+// way to be wrong when the answer cannot be checked.
+func unplacedSourceBase(sandbox *apimodel.Sandbox, entry applySourceEntry) (string, baseOrigin) {
+	if last, ok := lastApplied(sandbox, entry.slug); ok && last.Commit != "" {
+		return last.Commit, baseOriginLastApplied
+	}
+	if commit := checkoutCommit(entry.source); commit != "" {
+		return commit, baseOriginSourceCheckout
+	}
+	return "", ""
+}
+
 // checkoutCommit is the commit a source was created against, which for a
 // discobox created from a repository with no commits is the empty base commit
 // its whole history hangs off.
@@ -556,11 +685,8 @@ func blockedLocalChanges(repoRoot string, carried bool) string {
 // working tree back the way the discobox found it; doing that to files the
 // discobox was never given would mean deleting them, which is nobody's idea of
 // a way out.
-func localChangesNextSteps(sandboxID, slug, repoRoot string, dirOverrides map[string]string, carried bool) []applyNextStep {
-	rerun := fmt.Sprintf("discobox apply %s --source %s", sandboxID, slug)
-	if dir, ok := dirOverrides[slug]; ok {
-		rerun += fmt.Sprintf(" --dir %s=%s", slug, dir)
-	}
+func localChangesNextSteps(sandboxID, slug, repoRoot, dir string, carried bool) []applyNextStep {
+	rerun := applyRerun(sandboxID, slug, dir)
 	alternative := "or look at what changed, and put it back the way the discobox found it"
 	if !carried {
 		alternative = "or look at what is here, and move aside anything the discobox's commits would land on"
@@ -608,15 +734,30 @@ func commitSubject(commits []applyCommit, sha string) string {
 	return ""
 }
 
+// applyDirPlaceholder stands in for the local directory in a re-run printed for
+// a source that has none: the user is the only one who knows which checkout it
+// should be, and the command is printed to be filled in and run.
+const applyDirPlaceholder = "PATH"
+
+// applyRerun is the command that runs this apply again for one source. dir is
+// the local directory to name in a --dir: the one the caller passed, or the
+// PATH placeholder for a source that has no local directory to be found and
+// cannot be re-run without being given one. Empty means the source resolves its
+// own directory and needs no flag.
+func applyRerun(sandboxID, slug, dir string) string {
+	rerun := fmt.Sprintf("discobox apply %s --source %s", sandboxID, slug)
+	if dir != "" {
+		rerun += fmt.Sprintf(" --dir %s=%s", slug, dir)
+	}
+	return rerun
+}
+
 // dirtyNextSteps is the two ways out of a dirty sandbox working tree: commit
 // the work there and apply it too, or apply only what is already committed and
 // leave the rest. Both re-runs are spelled out for this exact source, --dir
 // override included, so neither has to be reassembled by hand.
-func dirtyNextSteps(sandboxID, slug, sandboxDir string, dirOverrides map[string]string) []applyNextStep {
-	rerun := fmt.Sprintf("discobox apply %s --source %s", sandboxID, slug)
-	if dir, ok := dirOverrides[slug]; ok {
-		rerun += fmt.Sprintf(" --dir %s=%s", slug, dir)
-	}
+func dirtyNextSteps(sandboxID, slug, sandboxDir, dir string) []applyNextStep {
+	rerun := applyRerun(sandboxID, slug, dir)
 	return []applyNextStep{
 		{
 			Description: "commit them in the discobox, then apply again",

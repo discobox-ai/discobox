@@ -166,7 +166,17 @@ func (m *Model) openSuccessfulApplyDialog(p *pane) {
 func appliedSourceSections(result ApplyResult) []section {
 	sections := make([]section, 0, len(result.Sources))
 	for _, source := range result.Sources {
-		fields := []field{{label: "repository", value: source.Repository, tone: toneAccent}}
+		// A source that landed names where; one that needed nowhere says that
+		// instead, in the same row, rather than an empty label — a discobox
+		// can finish a successful apply with a source it never had a local
+		// directory for.
+		var fields []field
+		switch {
+		case source.Repository != "":
+			fields = append(fields, field{label: "repository", value: source.Repository, tone: toneAccent})
+		case source.RepositoryError != "":
+			fields = append(fields, field{label: "repository", value: "none — " + source.RepositoryError, tone: toneDim})
+		}
 		if source.Branch != "" {
 			fields = append(fields, field{label: "branch", value: source.Branch})
 		}

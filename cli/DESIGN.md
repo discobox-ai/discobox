@@ -2220,6 +2220,32 @@ it.
   only actionable once you know why. `--dir` is the escape hatch and
   deliberately skips the check, so the report records how the directory was
   chosen (`hostPathOrigin`) and prints it under "chosen by".
+- Not knowing where a source would land only matters when it has commits to
+  land. When `resolveApplyHostDir` fails, `unplacedSource` reads the discobox's
+  tip with `sandboxapply.Tip` — `git ls-remote` over the same proxy, needing no
+  local clone — and compares it with `unplacedSourceBase`: the last apply's
+  commit, or the commit the source was created at (`baseOrigin:
+  "source-checkout"`). Equal means the discobox has committed nothing to that
+  source, and it ends `up-to-date` rather than failing; otherwise there is work
+  stranded, and the error says so and offers the `--dir` re-run. Without this, a
+  discobox carrying a source cloned from a remote would fail every apply of
+  every one of its sources, forever, over a source that had nothing to apply.
+  Why there is no directory is a field of the report (`hostPathError`), not
+  something the text output knows on its own: it is printed in the local repo
+  row's own place, before the working-tree check or anything else that could
+  end the source, so every outcome that path reaches — blocked, up-to-date,
+  stranded — explains the `--dir PATH` it hands back. A blocked source's
+  verdict is still its status alone, exactly as on the placed path. The
+  launcher decodes the same field (`tui.AppliedSource.RepositoryError`): this
+  is the one status that finishes a source successfully with no `hostPath`, so
+  its success dialog names why there is no repository rather than drawing the
+  row empty.
+  The escape needs a base commit to measure the tip against: a source created
+  from a URL and a *branch name* alone (`sandbox create --source-url --source-ref
+  main`, which records `checkout.refName` and no `checkout.commit`, unlike
+  `discobox run`, which resolves the SHA itself) has none, and still fails until
+  it is given `--dir` — the report says that is why rather than only that a
+  directory is missing.
 - A merge base that does not exist means the target repository shares no
   history with the sandbox — almost always a `--dir` pointed at the wrong
   repository — and is reported as that rather than as a git error. A source
@@ -2229,6 +2255,13 @@ it.
   status check still runs and its entries are still reported (with
   `dirtyIgnored`): the flag means the user chose to leave that work in the
   sandbox, not that nobody needs to know it is there.
+- `sandboxDirtyBlocks` is that check, and both paths through a source make it
+  before deciding anything — including a source with no local directory, which
+  is blocked by a dirty working tree exactly like any other. A source is never
+  reported as having nothing to apply while uncommitted work sits in it. The
+  only thing the two paths differ on is the re-run they print: `applyRerun`
+  puts a `--dir` on it, the caller's or the `PATH` placeholder, so the way out
+  of being blocked does not fail the way the run that printed it did.
 - `--debug` additionally echoes every git command as it runs, via
   `gitutil.WithTracer`, on stderr so it never interleaves into the report.
   `gitutil` redacts credentials in traced arguments centrally, so no new git

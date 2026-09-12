@@ -6,6 +6,7 @@ package sandboxapply
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
@@ -62,4 +63,65 @@ func Fetch(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token
 		return fmt.Errorf("fetch source %q from discobox: %w", slug, err)
 	}
 	return nil
+}
+
+// Tip is the commit at the HEAD of a source's sandbox repository, read over the
+// same proxy Fetch uses but without bringing anything into a local repository:
+// `git ls-remote` needs no repository to run in.
+//
+// It is what lets a source whose local directory is unknown still be asked the
+// only question that matters about it — whether the sandbox has committed
+// anything at all — before that unknown directory is treated as a problem.
+func Tip(ctx context.Context, serverURL, projectID, sandboxID, token string, source apimodel.GitSource) (string, error) {
+	slug := source.Slug.Or("")
+	repoURL, err := sandboxgit.RepositoryURL(serverURL, projectID, sandboxID, source)
+	if err != nil {
+		return "", err
+	}
+	args := sandboxgit.AuthArgs(token, []string{"ls-remote", repoURL, "HEAD"})
+	out, err := gitutil.Output(ctx, "", nil, nil, args...)
+	if err != nil {
+		return "", fmt.Errorf("read the tip of source %q in the discobox: %w", slug, err)
+	}
+	tip, ok := lsRemoteCommit(out, "HEAD")
+	if !ok {
+		return "", fmt.Errorf("source %q has no HEAD in the discobox", slug)
+	}
+	return tip, nil
+}
+
+// lsRemoteCommit picks the commit `git ls-remote` reported for one ref out of
+// its output.
+//
+// It reads the ref lines rather than the first word of the output, because the
+// output is not only ref lines: gitutil.Output combines stdout and stderr, and
+// git writes to stderr on a remote operation whenever it has something to say
+// — "warning: redirecting to <url>/" when the server answers a 30x is the
+// routine one here. Taking the first token would return "warning:" as the
+// commit, which no comparison can then match.
+func lsRemoteCommit(out, ref string) (string, bool) {
+	for line := range strings.Lines(out) {
+		fields := strings.Fields(line)
+		// A ref line is exactly "<object id>\t<ref>". Anything git said to
+		// stderr fails one of those two tests.
+		if len(fields) != 2 || fields[1] != ref || !isObjectID(fields[0]) {
+			continue
+		}
+		return fields[0], true
+	}
+	return "", false
+}
+
+// isObjectID reports whether a field is a full git object id: SHA-1 or SHA-256,
+// which are the two hash lengths a repository can use.
+func isObjectID(field string) bool {
+	if len(field) != 40 && len(field) != 64 {
+		return false
+	}
+	for _, r := range field {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -106,6 +107,56 @@ func TestAppliedOutputNamesBothSidesAndEveryCommit(t *testing.T) {
 	}
 }
 
+// A source with no local directory on this machine says so where the local repo
+// would be, whatever it goes on to do. Every outcome that path can reach — a
+// dirty discobox blocking it, nothing to apply, commits stranded — can hand the
+// reader a --dir with a PATH to fill in, and none of those explains itself if
+// the reason never reaches the screen.
+func TestASourceWithNoLocalDirectorySaysSoWhereTheRepoWouldBe(t *testing.T) {
+	var buf bytes.Buffer
+	plainPrinter(&buf).sourceHeader(applySourceReport{
+		Slug:          "hooks",
+		SandboxDir:    "/work/hooks",
+		SandboxRef:    "refs/discobox/apply/sbx_1/hooks",
+		HostPathError: `source "hooks" has no local directory recorded — it was cloned from a remote; pass --dir hooks=PATH`,
+	})
+
+	out := buf.String()
+	for _, want := range []string{
+		"local repo     none — ",
+		"has no local directory recorded",
+		"pass --dir hooks=PATH",
+		"discobox repo  /work/hooks",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("header missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// The reason is a field of the report, not something the text output knows on
+// its own, so -o json carries it too — the report's rule is that the two can
+// never describe different things.
+func TestTheDirectoryReasonIsOnTheReportForEveryOutcome(t *testing.T) {
+	report := applySourceReport{
+		Slug:          "hooks",
+		Status:        applyStatusBlocked,
+		HostPathError: `source "hooks" has no local directory recorded`,
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"hostPathError":"source \"hooks\" has no local directory recorded"`) {
+		t.Fatalf("blocked report does not carry the directory reason: %s", encoded)
+	}
+	// A blocked source's verdict is its status, exactly as on the placed path;
+	// the directory is context, not the failure.
+	if strings.Contains(string(encoded), `"error"`) {
+		t.Fatalf("blocked report carries an error field: %s", encoded)
+	}
+}
+
 // A pipe, a file and a NO_COLOR terminal all get the report with nothing in it
 // but text. The whole report is written in color and the writer takes it away
 // (newApplyPrinter), so this is the check that the taking-away actually covers
@@ -115,7 +166,7 @@ func TestTheReportWritesNoEscapesToAPipe(t *testing.T) {
 	printer := plainPrinter(&buf)
 	renderApplyRun(printer)
 	printer.caution("--allow-dirty: applying anyway")
-	printer.nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", nil))
+	printer.nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", ""))
 	printer.detailLines([]string{" M server/main.go"})
 	printer.summary(applyReport{Sources: []applySourceReport{
 		{Status: applyStatusApplied}, {Status: applyStatusConflict},
@@ -302,7 +353,7 @@ func TestStatusLinesKeepPorcelainPrefixes(t *testing.T) {
 // A blocked source has to name both ways out, and spell the re-run for this
 // exact source so neither has to be reassembled by hand.
 func TestDirtyNextStepsOfferBothCommitAndAllowDirty(t *testing.T) {
-	steps := dirtyNextSteps("sbx_23x11jnw03w11nf2", "primary", "/work/disco2", nil)
+	steps := dirtyNextSteps("sbx_23x11jnw03w11nf2", "primary", "/work/disco2", "")
 	if len(steps) != 2 {
 		t.Fatalf("got %d next steps, want 2: %+v", len(steps), steps)
 	}
@@ -320,7 +371,7 @@ func TestDirtyNextStepsOfferBothCommitAndAllowDirty(t *testing.T) {
 // A source applied through --dir has no default local directory, so a re-run
 // that dropped the override would fail the same way every time.
 func TestDirtyNextStepsCarryDirOverride(t *testing.T) {
-	steps := dirtyNextSteps("sbx_1", "web", "/work/web", map[string]string{"web": "/home/ada/src/web"})
+	steps := dirtyNextSteps("sbx_1", "web", "/work/web", "/home/ada/src/web")
 	for _, step := range steps {
 		for _, command := range step.Commands {
 			if strings.HasPrefix(command, "discobox apply") && !strings.Contains(command, "--dir web=/home/ada/src/web") {
@@ -330,9 +381,24 @@ func TestDirtyNextStepsCarryDirOverride(t *testing.T) {
 	}
 }
 
+// A source with no local directory on this machine cannot be applied without
+// being given one, so every re-run printed for it has to carry a --dir the user
+// fills in — otherwise the way out of being blocked fails exactly the way the
+// run that printed it did.
+func TestDirtyNextStepsCarryAPlaceholderForASourceWithNoDirectory(t *testing.T) {
+	steps := dirtyNextSteps("sbx_1", "hooks", "/work/hooks", applyDirPlaceholder)
+	for _, step := range steps {
+		for _, command := range step.Commands {
+			if strings.HasPrefix(command, "discobox apply") && !strings.Contains(command, "--dir hooks=PATH") {
+				t.Fatalf("re-run for a source with no directory omits --dir: %q", command)
+			}
+		}
+	}
+}
+
 func TestNextStepsPrintDescriptionThenCommands(t *testing.T) {
 	var buf bytes.Buffer
-	plainPrinter(&buf).nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", nil))
+	plainPrinter(&buf).nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", ""))
 	out := buf.String()
 	for _, want := range []string{
 		"  commit them in the discobox, then apply again:",
@@ -367,7 +433,7 @@ func TestBaseOriginExplainsADiscoboxThatStartedFromNothing(t *testing.T) {
 // way to finish the job — commit the local work, which the discobox's commits
 // then cherry-pick on top of, since they never needed a shared history.
 func TestLocalChangesNextStepsLeadWithCommittingTheLocalWork(t *testing.T) {
-	steps := localChangesNextSteps("sbx_23x11jnw03w11nf2", "primary", "/home/ada/src/new", nil, true)
+	steps := localChangesNextSteps("sbx_23x11jnw03w11nf2", "primary", "/home/ada/src/new", "", true)
 	if len(steps) != 2 {
 		t.Fatalf("got %d next steps, want 2: %+v", len(steps), steps)
 	}
@@ -387,7 +453,7 @@ func TestLocalChangesNextStepsLeadWithCommittingTheLocalWork(t *testing.T) {
 }
 
 func TestLocalChangesNextStepsCarryDirOverride(t *testing.T) {
-	steps := localChangesNextSteps("sbx_1", "web", "/work/web", map[string]string{"web": "/home/ada/src/web"}, true)
+	steps := localChangesNextSteps("sbx_1", "web", "/work/web", "/home/ada/src/web", true)
 	for _, step := range steps {
 		for _, command := range step.Commands {
 			if strings.HasPrefix(command, "discobox apply") && !strings.Contains(command, "--dir web=/home/ada/src/web") {
@@ -430,11 +496,11 @@ func TestBlockedMessageDoesNotAccuseAUserWhoWithheldTheirFiles(t *testing.T) {
 // Doing that to files it was never given means deleting them, so that
 // alternative must not be offered there.
 func TestLocalChangesAlternativeNeverSuggestsDeletingWithheldFiles(t *testing.T) {
-	carried := localChangesNextSteps("sbx_1", "primary", "/work/new", nil, true)
+	carried := localChangesNextSteps("sbx_1", "primary", "/work/new", "", true)
 	if !strings.Contains(carried[1].Description, "put it back the way the discobox found it") {
 		t.Fatalf("carried alternative = %q", carried[1].Description)
 	}
-	withheld := localChangesNextSteps("sbx_1", "primary", "/work/new", nil, false)
+	withheld := localChangesNextSteps("sbx_1", "primary", "/work/new", "", false)
 	if strings.Contains(withheld[1].Description, "put it back the way the discobox found it") {
 		t.Fatalf("withheld alternative tells the user to delete their own files: %q", withheld[1].Description)
 	}

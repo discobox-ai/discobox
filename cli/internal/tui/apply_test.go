@@ -172,3 +172,57 @@ func TestDecliningTheApplyQuestionAppliesNothing(t *testing.T) {
 		t.Fatal("the offer went away with the question")
 	}
 }
+
+// An apply can succeed with a source that never had a local directory: one
+// cloned from a remote that the discobox committed nothing to needs nowhere to
+// land. The success dialog has to say that where it says a repository for every
+// other source, rather than drawing a label with nothing after it — an empty
+// value still takes a row (wrap returns one empty line for it).
+func TestTheSuccessDialogSaysWhyASourceHasNoRepository(t *testing.T) {
+	sections := appliedSourceSections(ApplyResult{Sources: []AppliedSource{
+		{
+			Slug:       "primary",
+			Status:     "applied",
+			Repository: "/home/ada/src/disco2",
+			Branch:     "main",
+			Commits:    []AppliedCommit{{Commit: "11aa22bb33cc44dd", Subject: "Fix the parser"}},
+		},
+		{
+			Slug:            "hooks",
+			Status:          "up-to-date",
+			RepositoryError: `source "hooks" has no local directory recorded; pass --dir hooks=PATH`,
+		},
+	}})
+
+	if len(sections) != 2 {
+		t.Fatalf("got %d sections, want one per source: %+v", len(sections), sections)
+	}
+	if got := sections[0].fields[0]; got.label != "repository" || got.value != "/home/ada/src/disco2" {
+		t.Fatalf("applied source names %q = %q, want its repository", got.label, got.value)
+	}
+	unplaced := sections[1]
+	if len(unplaced.fields) != 1 {
+		t.Fatalf("source with no repository has %d fields, want only the repository row: %+v", len(unplaced.fields), unplaced.fields)
+	}
+	if got := unplaced.fields[0]; got.label != "repository" || !strings.HasPrefix(got.value, "none — ") {
+		t.Fatalf("repository row = %q: %q, want it to say there is none and why", got.label, got.value)
+	}
+	if !strings.Contains(unplaced.fields[0].value, "pass --dir hooks=PATH") {
+		t.Fatalf("repository row drops the reason: %q", unplaced.fields[0].value)
+	}
+}
+
+// A report that says neither where a source landed nor why it did not draws no
+// repository row at all, rather than an empty one.
+func TestTheSuccessDialogDrawsNoEmptyRepositoryRow(t *testing.T) {
+	sections := appliedSourceSections(ApplyResult{Sources: []AppliedSource{{Slug: "primary", Status: "up-to-date"}}})
+
+	if len(sections) != 1 {
+		t.Fatalf("got %d sections, want 1: %+v", len(sections), sections)
+	}
+	for _, f := range sections[0].fields {
+		if strings.TrimSpace(f.value) == "" {
+			t.Fatalf("field %q drawn with no value: %+v", f.label, sections[0].fields)
+		}
+	}
+}

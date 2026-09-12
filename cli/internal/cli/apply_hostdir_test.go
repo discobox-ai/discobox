@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -199,4 +200,57 @@ func TestCreatedFromTreeIsTheSnapshotTheDiscoboxCarried(t *testing.T) {
 			t.Fatal("a discobox that carried nothing must not be compared against a snapshot")
 		}
 	})
+}
+
+// A source with no local directory here — a remote clone, most often — is only
+// a problem when the discobox has committed something to it. The commit it is
+// measured against is the last apply's when there has been one.
+func TestUnplacedSourceBasePrefersTheLastApply(t *testing.T) {
+	sandbox, entry := sandboxWithOrigin(t, thisHost, "laptop", "")
+	entry.source.Checkout = apiclientgen.NewOptGitSourceCheckout(apiclientgen.GitSourceCheckout{
+		Commit: apiclientgen.NewOptString("1111111111111111111111111111111111111111"),
+	})
+	sandbox.Runtime.AppliedCommits = apiclientgen.NewOptNilAppliedSourceCommitArray([]apimodel.AppliedSourceCommit{
+		{Slug: "other", Commit: "3333333333333333333333333333333333333333", AppliedAt: time.Now().Add(-time.Hour)},
+		{Slug: entry.slug, Commit: "2222222222222222222222222222222222222222", AppliedAt: time.Now()},
+	})
+
+	base, origin := unplacedSourceBase(sandbox, entry)
+	if base != "2222222222222222222222222222222222222222" || origin != baseOriginLastApplied {
+		t.Fatalf("base = %q (%s), want the last applied commit", base, origin)
+	}
+}
+
+// With no apply on record, the commit the source was created at is what the
+// discobox has to have moved past for anything to be stranded.
+func TestUnplacedSourceBaseFallsBackToTheCheckoutCommit(t *testing.T) {
+	sandbox, entry := sandboxWithOrigin(t, thisHost, "laptop", "")
+	entry.source.Checkout = apiclientgen.NewOptGitSourceCheckout(apiclientgen.GitSourceCheckout{
+		Commit: apiclientgen.NewOptString("1111111111111111111111111111111111111111"),
+	})
+
+	base, origin := unplacedSourceBase(sandbox, entry)
+	if base != "1111111111111111111111111111111111111111" || origin != baseOriginSourceCheckout {
+		t.Fatalf("base = %q (%s), want the source's checkout commit", base, origin)
+	}
+}
+
+// Nothing recorded means nothing to compare a tip against, so the source keeps
+// the directory error it already has rather than guessing it is up to date.
+func TestUnplacedSourceBaseIsEmptyWhenNothingRecordsWhereItStarted(t *testing.T) {
+	sandbox, entry := sandboxWithOrigin(t, thisHost, "laptop", "")
+
+	if base, origin := unplacedSourceBase(sandbox, entry); base != "" || origin != "" {
+		t.Fatalf("base = %q (%s), want neither", base, origin)
+	}
+}
+
+// The base a source with no local directory is measured against is explained in
+// the report like every other one, since it is not a merge base and a reader
+// should not have to assume it is.
+func TestBaseOriginExplainsTheSourceCheckout(t *testing.T) {
+	explained := formatBaseOrigin(baseOriginSourceCheckout)
+	if explained == string(baseOriginSourceCheckout) || !strings.Contains(explained, "created at") {
+		t.Fatalf("formatBaseOrigin(source-checkout) = %q, want it spelled out", explained)
+	}
 }

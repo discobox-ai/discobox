@@ -47,6 +47,11 @@ const (
 	// baseOriginMergeBase: no prior apply, so the base is the common ancestor
 	// of the sandbox tip and the host branch.
 	baseOriginMergeBase baseOrigin = "merge-base"
+	// baseOriginSourceCheckout: the commit the source was created at, used
+	// when there is no local repository to find a merge base in — the source
+	// has no local directory on this machine, so all that can be asked of it
+	// is whether the discobox committed anything after that commit.
+	baseOriginSourceCheckout baseOrigin = "source-checkout"
 	// baseOriginDiscoboxBase: the discobox was created from a repository with
 	// no commits, so it starts from an empty base commit of its own and there
 	// is no shared history to find a merge base in. Everything after that base
@@ -87,7 +92,13 @@ type applySourceReport struct {
 	HostPath string `json:"hostPath,omitempty"`
 	// HostPathOrigin is how that directory was chosen.
 	HostPathOrigin hostDirOrigin `json:"hostPathOrigin,omitempty"`
-	HostBranch     string        `json:"hostBranch,omitempty"`
+	// HostPathError says why no local directory could be chosen, when none
+	// could. It is not on its own a failure — a discobox that has committed
+	// nothing to the source has nothing that needs a directory — so it is
+	// reported whatever the source's status ends up being, and the report
+	// carries it for every outcome the text output mentions it in.
+	HostPathError string `json:"hostPathError,omitempty"`
+	HostBranch    string `json:"hostBranch,omitempty"`
 	// HostBase is the host commit the branch was on before this apply, and
 	// still is unless Status is applied.
 	HostBase string `json:"hostBase,omitempty"`
@@ -362,6 +373,12 @@ func (p applyPrinter) ruleWidth() int {
 func (p applyPrinter) sourceHeader(report applySourceReport) {
 	p.bareSourceHeader(report.Slug)
 	p.field("local repo", report.HostPath+p.branchAt(report.HostBranch, report.HostBase))
+	// Why there is no local repo row, in the row's own place: whatever this
+	// source goes on to do, a reader who sees a --dir in it should not have to
+	// reach the outcome line to find out what it is for.
+	if report.HostPath == "" && report.HostPathError != "" {
+		p.field("local repo", p.paint(applyStyleWarn, "none")+p.dim(" — ")+report.HostPathError)
+	}
 	if report.SandboxDir != "" {
 		p.field("discobox repo", report.SandboxDir)
 	}
@@ -553,6 +570,8 @@ func formatBaseOrigin(origin baseOrigin) string {
 		return "last commit applied from this source"
 	case baseOriginMergeBase:
 		return "merge base of the discobox tip and local HEAD"
+	case baseOriginSourceCheckout:
+		return "the commit this source was created at"
 	case baseOriginDiscoboxBase:
 		return "the empty base this discobox started from; local had no commits"
 	}

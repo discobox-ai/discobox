@@ -990,11 +990,17 @@ type ApplyResult struct {
 }
 
 type AppliedSource struct {
-	Slug       string          `json:"slug"`
-	Status     string          `json:"status"`
-	Repository string          `json:"hostPath"`
-	Branch     string          `json:"hostBranch"`
-	Commits    []AppliedCommit `json:"commits"`
+	Slug   string `json:"slug"`
+	Status string `json:"status"`
+	// Repository is the local directory the source's commits landed in, and
+	// RepositoryError is why there was none to land them in — a source cloned
+	// from a remote has no local checkout on this machine. A source can finish
+	// successfully with the second and not the first: one that the discobox
+	// committed nothing to needs no directory at all.
+	Repository      string          `json:"hostPath"`
+	RepositoryError string          `json:"hostPathError"`
+	Branch          string          `json:"hostBranch"`
+	Commits         []AppliedCommit `json:"commits"`
 }
 
 type AppliedCommit struct {
