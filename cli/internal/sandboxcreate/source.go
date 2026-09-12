@@ -15,6 +15,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/x/gitutil"
 	"github.com/discobox-ai/x/id"
 )
@@ -27,13 +28,19 @@ const (
 	runSourceRefTypeTag    = "tag"
 	runSourceRefTypeCommit = "commit"
 	runSnapshotRefPrefix   = "refs/discobox/run/"
-	defaultRunSourceDir    = "/workspace/source"
-	defaultRunWorkingDir   = "/workspace/source"
-	defaultRemoteBranch    = "HEAD"
+	// The source goes in a subdirectory of the sandbox's working root, and the
+	// discobox starts there. Derived from sandboxconfig rather than spelled
+	// out, because a destination this names is explicit in the create request
+	// and so overrides pool-agent's own default: a CLI that spelled the root
+	// itself would keep checking out under the old one while the sandbox worked
+	// in the new.
+	defaultRunSourceDir  = referenceRunSourceRoot + "/source"
+	defaultRunWorkingDir = defaultRunSourceDir
+	defaultRemoteBranch  = "HEAD"
 	// referenceRunSourceRoot holds an extra source with no host path of its own
 	// to keep: every remote one, and every local one whose path a sandbox may
 	// not hold (mirrorableSourceRoots).
-	referenceRunSourceRoot = "/workspace"
+	referenceRunSourceRoot = sandboxconfig.DefaultWorkingRoot
 	// wslDriveRoot is where WSL mounts the Windows drives, and so where a
 	// Windows host path is mirrored to inside a sandbox.
 	wslDriveRoot = "/mnt"

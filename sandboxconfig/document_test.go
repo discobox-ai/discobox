@@ -50,3 +50,36 @@ func TestSandboxGroupsHasOneAuthoritativeAnswer(t *testing.T) {
 		})
 	}
 }
+
+// Boot creates the working root and chowns it, and the agent starts execs
+// there. They have to name the same directory: a manifest written by a pool
+// agent too old to state one must not send the agent somewhere boot never
+// touched.
+func TestWorkingRootFallsBackToTheDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "stated",
+			cfg:  Config{AgentRuntime: AgentRuntime{WorkingRoot: "/srv/work"}},
+			want: "/srv/work",
+		},
+		{
+			name: "not stated",
+			want: DefaultWorkingRoot,
+		},
+		{
+			name: "whitespace is not a statement",
+			cfg:  Config{AgentRuntime: AgentRuntime{WorkingRoot: "  "}},
+			want: DefaultWorkingRoot,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.WorkingRoot(); got != tc.want {
+				t.Fatalf("WorkingRoot() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

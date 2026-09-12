@@ -125,7 +125,7 @@ const defaultListenAddress = ":3003"
 
 func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if cfg.WorkingRoot == "" {
-		cfg.WorkingRoot = "/workspace"
+		cfg.WorkingRoot = sandboxconfig.DefaultWorkingRoot
 	}
 	if cfg.RuntimeDir == "" {
 		cfg.RuntimeDir = "/run/discobox/harness-terminals"

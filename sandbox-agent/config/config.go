@@ -151,7 +151,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		},
 		ControlPlanePublicKey: publicKey(effective.Provider.PublicKeys),
 		ListenAddress:         effective.AgentRuntime.ListenAddress,
-		WorkingRoot:           effective.AgentRuntime.WorkingRoot,
+		WorkingRoot:           effective.WorkingRoot(),
 		RuntimeDir:            effective.AgentRuntime.RuntimeDir,
 		DatabasePath:          effective.AgentRuntime.DatabasePath,
 		Env:                   effective.Env,
@@ -287,8 +287,13 @@ func applyDefaults(cfg *Config) {
 	if cfg.ListenAddress == "" {
 		cfg.ListenAddress = ":3003"
 	}
+	// A manifest's working root is already normalized by
+	// sandboxconfig.Config.WorkingRoot in configFromEffective, so this answers
+	// only for the config Load builds when there is no manifest file at all --
+	// with the same constant, because there is one answer to where a sandbox
+	// works.
 	if cfg.WorkingRoot == "" {
-		cfg.WorkingRoot = "/workspace"
+		cfg.WorkingRoot = sandboxconfig.DefaultWorkingRoot
 	}
 	if cfg.RuntimeDir == "" {
 		cfg.RuntimeDir = "/run/discobox/harness-terminals"

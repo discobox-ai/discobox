@@ -269,6 +269,27 @@ func (c Config) SandboxGroups() []string {
 	return append([]string(nil), c.AdditionalGroups...)
 }
 
+// DefaultWorkingRoot is the directory a sandbox works in when the manifest
+// names no working root. It is one constant because four components have to
+// agree on it: pool-agent writes it into the manifest and places sources under
+// it, sandbox-agent falls back to it when reading a manifest an older pool
+// agent wrote, boot creates it and gives it to the sandbox user, and the CLI
+// derives the source destinations it asks for from it. A sandbox working in a
+// directory boot never chowned, or beside a checkout the CLI put under the old
+// root, is the failure that disagreement produces -- and the CLI's is the one
+// nothing server-side can correct, because a destination it names is explicit
+// in the create request and overrides pool-agent's own default.
+const DefaultWorkingRoot = "/workspace"
+
+// WorkingRoot is the directory this sandbox works in: the manifest's, or
+// DefaultWorkingRoot when it names none.
+func (c Config) WorkingRoot() string {
+	if root := strings.TrimSpace(c.AgentRuntime.WorkingRoot); root != "" {
+		return root
+	}
+	return DefaultWorkingRoot
+}
+
 // SandboxConfigDir is where the sandbox's config volume is bound inside the
 // container, and so where every file in this contract is read from. Boot places
 // the bind (sandbox-agent/boot); pool-agent writes the files behind it from the

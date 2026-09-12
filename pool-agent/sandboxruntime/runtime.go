@@ -1186,7 +1186,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 			},
 			AgentRuntime: sandboxconfig.AgentRuntime{
 				ListenAddress:          fmt.Sprintf(":%d", SandboxAgentPort),
-				WorkingRoot:            "/workspace",
+				WorkingRoot:            sandboxconfig.DefaultWorkingRoot,
 				RuntimeDir:             "/run/discobox/agent-terminals",
 				DatabasePath:           "/var/lib/discobox/sandbox-agent.db",
 				ResourceSampleInterval: time.Second.String(),
@@ -2585,7 +2585,7 @@ func normalizeSandboxConfig(config *workerapimodel.SandboxConfig) {
 	destination, _ := source.Destination.Get()
 	directory := cleanContainerPath(optString(destination.Directory))
 	if directory == "" {
-		directory = "/workspace"
+		directory = sandboxconfig.DefaultWorkingRoot
 	}
 	destination.Directory = workerclient.NewOptString(directory)
 	source.Destination = workerclient.NewOptGitSourceDestination(destination)
@@ -2611,7 +2611,7 @@ func sandboxSources(req *workerapimodel.PoolSandboxCreateRequest) []sandboxSourc
 	var out []sandboxSource
 	used := map[string]struct{}{}
 	if source, ok := req.Config.Source.Get(); ok {
-		out = append(out, sandboxSourceFor("primary", source, "/workspace", used))
+		out = append(out, sandboxSourceFor("primary", source, sandboxconfig.DefaultWorkingRoot, used))
 	}
 	if refs, ok := req.Config.SourceCodeReferences.Get(); ok {
 		keys := make([]string, 0, len(refs))
@@ -2623,7 +2623,7 @@ func sandboxSources(req *workerapimodel.PoolSandboxCreateRequest) []sandboxSourc
 			source := refs[key]
 			defaultTarget := cleanContainerPath(key)
 			if defaultTarget == "" {
-				defaultTarget = path.Join("/workspace", defaultSourceSlug(source, key))
+				defaultTarget = path.Join(sandboxconfig.DefaultWorkingRoot, defaultSourceSlug(source, key))
 			}
 			out = append(out, sandboxSourceFor(key, source, defaultTarget, used))
 		}
@@ -2640,7 +2640,7 @@ func sandboxSourceFor(seed string, source workerapimodel.GitSource, defaultTarge
 		}
 	}
 	if target == "" {
-		target = path.Join("/workspace", slug)
+		target = path.Join(sandboxconfig.DefaultWorkingRoot, slug)
 	}
 	keySlug := slugifySource(seed)
 	if keySlug == slug {
