@@ -268,6 +268,7 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 	}
 	defer cleanup()
 
+	var shutdownAsked atomic.Bool
 	var oldServer *http.Server
 	oldServer = &http.Server{
 		ReadHeaderTimeout: 5 * time.Second,
@@ -277,6 +278,7 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				writeStatus(t, w, health.Status{Status: health.StatusStarting, Phase: "stuck", Version: "v0.5.0"})
 			case "/shutdown":
+				shutdownAsked.Store(true)
 				w.WriteHeader(http.StatusAccepted)
 				go func() { _ = oldServer.Close() }()
 			default:
@@ -290,7 +292,15 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 	opts := LaunchOptions{
 		Endpoint: endpointURL,
 		LogPath:  filepath.Join(t.TempDir(), "server.log"),
-		Command:  staticCommand(os.Args[0], "-test.run=^TestAutolaunchReplacementHelper$"),
+		// Resolving is where a new version downloads its server and images, so
+		// it has to happen while the older server is still up: resolved after
+		// the shutdown, the user would have no server for the whole download.
+		Command: func(ctx context.Context) (Command, error) {
+			if shutdownAsked.Load() {
+				t.Error("the command was resolved after the older server had been asked to stop")
+			}
+			return staticCommand(os.Args[0], "-test.run=^TestAutolaunchReplacementHelper$")(ctx)
+		},
 		Env: []string{
 			"DISCOBOX_TEST_SERVER_ENDPOINT=" + endpointURL,
 			"DISCOBOX_TEST_SERVER_DELAY=150ms",

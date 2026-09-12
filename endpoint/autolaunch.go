@@ -95,12 +95,10 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		return false, err
 	}
 	defer unlock()
+	replaceOlder := false
 	if status, err := probeEndpoint(ctx, opts); err == nil {
 		if olderServer(status, opts.ExpectedVersion) {
-			if err := replaceOlderServer(ctx, opts); err != nil {
-				return false, err
-			}
-			replacedOlder = true
+			replaceOlder = true
 		} else if status.Starting() {
 			if err := waitReady(ctx, opts, time.Now().Add(opts.readyTimeout())); err != nil {
 				return false, err
@@ -111,7 +109,25 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	} else if !isProbeConnectionError(err) {
 		return false, err
 	}
-	child, err := startDetached(ctx, opts)
+	// Resolved before an older server is stopped, never after. Resolving can
+	// mean downloading a server and the images it runs (ADR 0099, ADR 0113) —
+	// minutes, on the first run of a new version — and the server being
+	// replaced goes on answering for all of it. Only the switch-over is a gap.
+	//
+	// Under the launch lock and after the last probe, so it is done once per
+	// machine that actually needs a server rather than once per CLI invocation,
+	// and two CLIs racing to start one do not both download it.
+	command, err := resolveCommand(ctx, opts)
+	if err != nil {
+		return false, err
+	}
+	if replaceOlder {
+		if err := replaceOlderServer(ctx, opts); err != nil {
+			return false, err
+		}
+		replacedOlder = true
+	}
+	child, err := startDetached(ctx, opts, command)
 	if err != nil {
 		return false, err
 	}
@@ -331,23 +347,23 @@ func (p *launchedProcess) exited() bool {
 	}
 }
 
-// startDetached resolves the server program and starts it in the background.
-//
-// Resolution happens here, under the launch lock and after the last probe, so
-// it is done once per machine that actually needs a server rather than once
-// per CLI invocation — and two CLIs racing to start one do not both download
-// it.
-func startDetached(ctx context.Context, opts LaunchOptions) (*launchedProcess, error) {
+// resolveCommand asks the caller which program to start.
+func resolveCommand(ctx context.Context, opts LaunchOptions) (Command, error) {
 	if opts.Command == nil {
-		return nil, fmt.Errorf("server command is required")
+		return Command{}, fmt.Errorf("server command is required")
 	}
 	command, err := opts.Command(ctx)
 	if err != nil {
-		return nil, err
+		return Command{}, err
 	}
 	if command.Path == "" {
-		return nil, fmt.Errorf("server command is required")
+		return Command{}, fmt.Errorf("server command is required")
 	}
+	return command, nil
+}
+
+// startDetached starts the resolved server program in the background.
+func startDetached(ctx context.Context, opts LaunchOptions, command Command) (*launchedProcess, error) {
 	// The child's output went nowhere, so a server that died on startup died
 	// silently and the only symptom was a caller waiting out its timeout on a
 	// socket nothing had bound. It goes to a file instead — opened here, before
