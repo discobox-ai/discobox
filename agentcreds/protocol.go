@@ -111,13 +111,32 @@ type RequestedUse struct {
 	Description string `json:"description"`
 }
 
+// MaxGrantTTLSeconds is the longest lifetime an agent may ask for: thirty days.
+//
+// An ask is bounded because of what it is for. It is shown to a human as the
+// answer already chosen, so it has to be an answer — one an approval can offer
+// as a row and a person can read as a span of time. Without a ceiling "forever"
+// arrives under another name: a ten-year ask is one Enter away from a
+// credential that outlives the project, and a number large enough to overflow a
+// duration lands back near zero, which is the one answer that never comes back
+// to be asked again.
+const MaxGrantTTLSeconds = 30 * 24 * 60 * 60
+
 // RequestBody asks a human for a credential.
+//
+// GrantTTLSeconds is how long the agent asks the approval to last. It is a
+// suggestion, not a term: the approver sees it as the answer already chosen and
+// may pick any other. Zero asks for nothing in particular, and the ceiling is
+// MaxGrantTTLSeconds, so forever is not something an agent can ask for — the
+// human may still grant it, but the one answer that never comes back to be
+// asked again is never the default.
 type RequestBody struct {
-	Name          string         `json:"name"`
-	EnvVar        string         `json:"envVar"`
-	Host          string         `json:"host"`
-	Justification string         `json:"justification,omitempty"`
-	Uses          []RequestedUse `json:"uses,omitempty"`
+	Name            string         `json:"name"`
+	EnvVar          string         `json:"envVar"`
+	Host            string         `json:"host"`
+	Justification   string         `json:"justification,omitempty"`
+	Uses            []RequestedUse `json:"uses,omitempty"`
+	GrantTTLSeconds int64          `json:"grantTTLSeconds,omitempty"`
 }
 
 // RequestStatus is what request and its poll both answer with. Uses is

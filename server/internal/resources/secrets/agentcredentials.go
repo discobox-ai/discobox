@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/discobox-ai/discobox/agentcreds"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -84,6 +85,22 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if err != nil {
 		return nil, err
 	}
+	// The lifetime asked for is recorded, not checked against any secret: which
+	// secret answers the request is the approval's choice, and so is whether
+	// its limit is raised to meet the ask.
+	//
+	// It is bounded on both sides all the same, because an ask becomes the
+	// answer a human is shown already chosen (ADR 0031 §5's approval is one
+	// keystroke). Unbounded, "forever" arrives under another name — a ten-year
+	// ask, or one large enough to overflow the duration a window converts it to
+	// and land back near zero. The ceiling is the protocol's own
+	// (agentcreds.MaxGrantTTLSeconds), so the sandbox-side CLI refuses the same
+	// asks this does rather than each end guessing.
+	grantTTL := input.GrantTTLSeconds.Or(0)
+	if grantTTL < 0 || grantTTL > agentcreds.MaxGrantTTLSeconds {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("a requested grant lifetime runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds)))
+	}
 
 	requestedBy := agentRequesterID(sandbox.ID)
 	existing, err := s.store.FindPendingAgentCredentialRequest(ctx, sandbox.ProjectID, sandbox.ID, envName, host)
@@ -107,6 +124,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		EnvName:       envName,
 		Justification: strings.TrimSpace(input.Justification.Or("")),
 		Uses:          uses,
+		GrantTTL:      grantTTL,
 		Status:        model.SecretRequestStatusPending,
 	}
 	if err := s.store.CreateSecretRequest(ctx, req); err != nil {

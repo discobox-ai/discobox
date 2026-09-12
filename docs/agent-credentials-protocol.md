@@ -102,13 +102,27 @@ POST /v1/credentials/requests
   "envVar": "GITHUB_TOKEN",
   "host": "api.github.com",
   "justification": "The task asks me to open a PR with the fix.",
-  "uses": [{ "description": "Open a pull request against the current repository" }]
+  "uses": [{ "description": "Open a pull request against the current repository" }],
+  "grantTTLSeconds": 14400
 }
 ```
 
 ```json
 { "requestId": "req_1a2b…", "status": "pending" }
 ```
+
+`grantTTLSeconds` is optional: how long the agent asks the approval to last. It
+is a suggestion, not a term — Discobox shows it to the approver as the answer
+already chosen, and they may choose any other. Absent or `0` asks for nothing in
+particular, so forever cannot be asked for: the approver may still grant it, but
+the one answer that never comes back to be asked again is never the default.
+
+An ask runs from 1 second to **2592000 (thirty days)**; outside that range it is
+`invalid`. The ceiling is part of the contract rather than a Discobox limit,
+because an ask is only worth anything if it can be shown to a human as an
+answer: a ten-year ask is one keystroke from a credential that outlives the
+work, and a number large enough to overflow the duration a client converts it to
+lands back near zero, which reads as forever.
 
 `host` is the destination the credential will be sent to. It is required by the
 Discobox implementation, which refuses to mint a host-unscoped approval through

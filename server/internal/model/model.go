@@ -1056,11 +1056,16 @@ type SecretRequest struct {
 	EnvName       string      `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for protocol-originated requests"`
 	Justification string      `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
 	Uses          []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Uses the agent asked for; approval mints their IDs onto the grant"`
-	SecretID      string      `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
-	Status        string      `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
-	GrantID       string      `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
-	CreatedAt     time.Time   `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt     time.Time   `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	// GrantTTL is how long the agent asked the grant to live, in seconds. It is
+	// what an approval starts from, never what it is held to: the approver
+	// chooses the lifetime. Zero is "nothing in particular", not forever — an
+	// agent cannot ask for a grant that never lapses.
+	GrantTTL  int64     `gorm:"column:grant_ttl_seconds;not null;default:0" json:"grantTTLSeconds,omitempty" doc:"Grant lifetime the agent asked for, in seconds; absent when it named none"`
+	SecretID  string    `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
+	Status    string    `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
+	GrantID   string    `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
+	CreatedAt time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }

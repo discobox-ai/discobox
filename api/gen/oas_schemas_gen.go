@@ -910,6 +910,10 @@ type CreateSandboxCredentialRequestBody struct {
 	Schema OptURI `json:"$schema"`
 	// Environment variable the credential is wanted in.
 	EnvVar string `json:"envVar"`
+	// How long the agent asks the grant to live, in seconds, up to thirty days. A suggestion the
+	// approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be
+	// asked for, and neither can a span longer than the ceiling.
+	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
 	// Destination host the credential will be sent to. Required, because approving this request may not
 	// mint a host-unscoped grant.
 	Host string `json:"host"`
@@ -931,6 +935,11 @@ func (s *CreateSandboxCredentialRequestBody) GetSchema() OptURI {
 // GetEnvVar returns the value of EnvVar.
 func (s *CreateSandboxCredentialRequestBody) GetEnvVar() string {
 	return s.EnvVar
+}
+
+// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
+func (s *CreateSandboxCredentialRequestBody) GetGrantTTLSeconds() OptInt64 {
+	return s.GrantTTLSeconds
 }
 
 // GetHost returns the value of Host.
@@ -966,6 +975,11 @@ func (s *CreateSandboxCredentialRequestBody) SetSchema(val OptURI) {
 // SetEnvVar sets the value of EnvVar.
 func (s *CreateSandboxCredentialRequestBody) SetEnvVar(val string) {
 	s.EnvVar = val
+}
+
+// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
+func (s *CreateSandboxCredentialRequestBody) SetGrantTTLSeconds(val OptInt64) {
+	s.GrantTTLSeconds = val
 }
 
 // SetHost sets the value of Host.
@@ -16116,6 +16130,9 @@ type SecretRequest struct {
 	EnvName OptString `json:"envName"`
 	// Grant that satisfied this request; set when approved.
 	GrantId OptString `json:"grantId"`
+	// How long the agent asked the grant to live, in seconds -- the lifetime an approval starts from. At
+	// most thirty days. Absent when it asked for nothing in particular; never forever.
+	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
 	// Host hint provided at request time.
 	Host OptString `json:"host"`
 	// Stable request ID.
@@ -16161,6 +16178,11 @@ func (s *SecretRequest) GetEnvName() OptString {
 // GetGrantId returns the value of GrantId.
 func (s *SecretRequest) GetGrantId() OptString {
 	return s.GrantId
+}
+
+// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
+func (s *SecretRequest) GetGrantTTLSeconds() OptInt64 {
+	return s.GrantTTLSeconds
 }
 
 // GetHost returns the value of Host.
@@ -16241,6 +16263,11 @@ func (s *SecretRequest) SetEnvName(val OptString) {
 // SetGrantId sets the value of GrantId.
 func (s *SecretRequest) SetGrantId(val OptString) {
 	s.GrantId = val
+}
+
+// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
+func (s *SecretRequest) SetGrantTTLSeconds(val OptInt64) {
+	s.GrantTTLSeconds = val
 }
 
 // SetHost sets the value of Host.

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/agentcreds"
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -48,6 +49,52 @@ func TestAgentCredentialRequestReusesAnOpenAsk(t *testing.T) {
 	second := createAgentRequest(ctx, t, svc)
 	if first.ID != second.ID {
 		t.Fatalf("second ask created %s, want the open request %s reused", second.ID, first.ID)
+	}
+}
+
+// How long the agent asks to keep the credential is kept with the ask, for the
+// approval to open on. It is not held against any secret's limit here — which
+// secret answers is the approval's choice — but a negative one is refused.
+func TestAgentCredentialRequestRecordsTheLifetimeAskedFor(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+
+	created, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId:       testSandboxID,
+		Name:            "github",
+		EnvVar:          "GITHUB_TOKEN",
+		Host:            "api.github.com",
+		Uses:            []apimodel.SecretUse{{Description: "open a pull request"}},
+		GrantTTLSeconds: serverapi.NewOptInt64(4 * 3600),
+	})
+	if err != nil {
+		t.Fatalf("create credential request: %v", err)
+	}
+	stored, _, err := svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, created.ID)
+	if err != nil {
+		t.Fatalf("get credential request: %v", err)
+	}
+	if stored.GrantTTL != 4*3600 {
+		t.Fatalf("stored lifetime = %d, want the 14400 seconds asked for", stored.GrantTTL)
+	}
+
+	// Bounded on both sides. The ceiling is the half that matters: an ask
+	// nobody bounded is shown to a human as the answer already chosen, so a
+	// ten-year one — or one large enough to overflow the duration the window
+	// converts it to, landing back at the zero that means forever — would be a
+	// keystroke from a credential that outlives the project.
+	for _, ask := range []int64{-1, int64(agentcreds.MaxGrantTTLSeconds) + 1, 18446744074} {
+		_, err = svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+			SandboxId:       testSandboxID,
+			Name:            "npm",
+			EnvVar:          "NPM_TOKEN",
+			Host:            "registry.npmjs.org",
+			Uses:            []apimodel.SecretUse{{Description: "publish the package"}},
+			GrantTTLSeconds: serverapi.NewOptInt64(ask),
+		})
+		if err == nil || !strings.Contains(err.Error(), "1 second to") {
+			t.Fatalf("asking for %d: err = %v, want it refused as outside what may be asked for", ask, err)
+		}
 	}
 }
 

@@ -41,6 +41,7 @@ discobox-access request --json <<'EOF'
   "host": "api.github.com",
   "justification": "the task asks me to open a pull request with the review fixes",
   "uses": [{"description": "Open a pull request against the current repo"}],
+  "grantTTLSeconds": 3600,
   "wait": true,
   "timeoutSeconds": 3600
 }
@@ -56,6 +57,11 @@ EOF
   what you will actually run**, because a model later checks your command
   against this sentence (see step 3). "Open a pull request against the current
   repo" is answerable; "GitHub operations" is not.
+- `grantTTLSeconds` — optional: how long you need the credential, in seconds,
+  from 1 to 2592000 (thirty days). The person sees it as the answer already
+  picked and may pick another. Ask for about as long as the task will take, not
+  longer; leave it out to let them choose. You cannot ask for forever, and an
+  ask outside that range is refused as `invalid`.
 - `wait: true` blocks until a human answers. Without it you get a request ID
   back and the request sits pending — poll by asking again with `wait`.
 

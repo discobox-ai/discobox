@@ -2730,6 +2730,12 @@ components:
                 envVar:
                     description: Environment variable the credential is wanted in
                     type: string
+                grantTTLSeconds:
+                    description: How long the agent asks the grant to live, in seconds, up to thirty days. A suggestion the approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be asked for, and neither can a span longer than the ceiling.
+                    format: int64
+                    maximum: 2592000
+                    minimum: 0
+                    type: integer
                 host:
                     description: Destination host the credential will be sent to. Required, because approving this request may not mint a host-unscoped grant.
                     type: string
@@ -3610,6 +3616,10 @@ components:
                 grantId:
                     description: Grant that satisfied this request; set when approved
                     type: string
+                grantTTLSeconds:
+                    description: How long the agent asked the grant to live, in seconds -- the lifetime an approval starts from. At most thirty days. Absent when it asked for nothing in particular; never forever.
+                    format: int64
+                    type: integer
                 host:
                     description: Host hint provided at request time
                     type: string

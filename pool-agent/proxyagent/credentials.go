@@ -80,12 +80,13 @@ type recordCredentialVerdictDoc struct {
 }
 
 type createCredentialRequestDoc struct {
-	SandboxID     string             `json:"sandboxId"`
-	Name          string             `json:"name"`
-	EnvVar        string             `json:"envVar"`
-	Host          string             `json:"host"`
-	Justification string             `json:"justification,omitempty"`
-	Uses          []credentialUseDoc `json:"uses"`
+	SandboxID       string             `json:"sandboxId"`
+	Name            string             `json:"name"`
+	EnvVar          string             `json:"envVar"`
+	Host            string             `json:"host"`
+	Justification   string             `json:"justification,omitempty"`
+	Uses            []credentialUseDoc `json:"uses"`
+	GrantTTLSeconds int64              `json:"grantTTLSeconds,omitempty"`
 }
 
 type credentialRequestStatusDoc struct {
@@ -250,12 +251,13 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 		uses = append(uses, credentialUseDoc{Description: use.Description})
 	}
 	doc, err := b.controlPlan.createRequest(ctx, createCredentialRequestDoc{
-		SandboxID:     b.sandboxID,
-		Name:          body.Name,
-		EnvVar:        body.EnvVar,
-		Host:          body.Host,
-		Justification: body.Justification,
-		Uses:          uses,
+		SandboxID:       b.sandboxID,
+		Name:            body.Name,
+		EnvVar:          body.EnvVar,
+		Host:            body.Host,
+		Justification:   body.Justification,
+		Uses:            uses,
+		GrantTTLSeconds: body.GrantTTLSeconds,
 	})
 	if err != nil {
 		return agentcreds.RequestStatus{}, err

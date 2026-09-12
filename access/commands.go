@@ -54,14 +54,19 @@ func runList(ctx context.Context, args []string) int {
 // requestInput is the JSON body `request --json` reads from stdin. It is the
 // protocol's RequestBody plus the two fields that describe how the CLI should
 // behave rather than what to ask for, so one document says everything.
+//
+// GrantTTLSeconds and TimeoutSeconds sit side by side and mean different
+// things: the first is how long the agent asks to keep the credential, the
+// second how long this process waits for somebody to answer.
 type requestInput struct {
-	Name           string                    `json:"name"`
-	EnvVar         string                    `json:"envVar"`
-	Host           string                    `json:"host"`
-	Justification  string                    `json:"justification,omitempty"`
-	Uses           []agentcreds.RequestedUse `json:"uses"`
-	Wait           bool                      `json:"wait,omitempty"`
-	TimeoutSeconds int                       `json:"timeoutSeconds,omitempty"`
+	Name            string                    `json:"name"`
+	EnvVar          string                    `json:"envVar"`
+	Host            string                    `json:"host"`
+	Justification   string                    `json:"justification,omitempty"`
+	Uses            []agentcreds.RequestedUse `json:"uses"`
+	GrantTTLSeconds int64                     `json:"grantTTLSeconds,omitempty"`
+	Wait            bool                      `json:"wait,omitempty"`
+	TimeoutSeconds  int                       `json:"timeoutSeconds,omitempty"`
 }
 
 func runRequest(ctx context.Context, args []string) int {
@@ -70,6 +75,7 @@ func runRequest(ctx context.Context, args []string) int {
 		uses       stringList
 		structured bool
 		timeout    time.Duration
+		grantTTL   time.Duration
 	)
 	flags := flag.NewFlagSet(Name+" request", flag.ContinueOnError)
 	flags.BoolVar(&structured, "json", false, "read the request as JSON on stdin and emit JSON")
@@ -78,6 +84,7 @@ func runRequest(ctx context.Context, args []string) int {
 	flags.StringVar(&input.Host, "host", "", "destination host it will be sent to")
 	flags.StringVar(&input.Justification, "why", "", "why you need it")
 	flags.Var(&uses, "use", "what you intend to use it for (repeatable)")
+	flags.DurationVar(&grantTTL, "grant-ttl", 0, "how long you ask to keep it (e.g. 30m, 4h); the approver may choose otherwise")
 	flags.BoolVar(&input.Wait, "wait", false, "block until the request is granted or denied")
 	flags.DurationVar(&timeout, "timeout", time.Hour, "how long --wait waits before giving up")
 	if !parse(flags, args) {
@@ -101,15 +108,28 @@ func runRequest(ctx context.Context, args []string) int {
 		for _, use := range uses {
 			input.Uses = append(input.Uses, agentcreds.RequestedUse{Description: use})
 		}
+		// Refused here rather than rounded: a lifetime truncated to zero
+		// seconds would go out as no ask at all.
+		if grantTTL < 0 || grantTTL%time.Second != 0 {
+			return usageError(out, "--grant-ttl %s is not a lifetime: give a positive whole number of seconds, such as 30m or 96h", grantTTL)
+		}
+		input.GrantTTLSeconds = int64(grantTTL / time.Second)
+	}
+	// Bounded on both sides, because what is asked for becomes the answer a
+	// human is shown already chosen. Refused here rather than trimmed to fit:
+	// an ask silently cut to thirty days is one nobody agreed to.
+	if input.GrantTTLSeconds < 0 || input.GrantTTLSeconds > agentcreds.MaxGrantTTLSeconds {
+		return usageError(out, "a lifetime to ask for runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds))
 	}
 
 	client := newClient()
 	status, err := client.Request(ctx, agentcreds.RequestBody{
-		Name:          input.Name,
-		EnvVar:        input.EnvVar,
-		Host:          input.Host,
-		Justification: input.Justification,
-		Uses:          input.Uses,
+		Name:            input.Name,
+		EnvVar:          input.EnvVar,
+		Host:            input.Host,
+		Justification:   input.Justification,
+		Uses:            input.Uses,
+		GrantTTLSeconds: input.GrantTTLSeconds,
 	})
 	if err != nil {
 		return out.report(err)

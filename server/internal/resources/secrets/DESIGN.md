@@ -23,8 +23,21 @@ are what tells them apart (`SecretRequest.FromProtocol`).
 | | Reactive | Protocol-originated |
 | --- | --- | --- |
 | Origin | The proxy hit an unresolvable sentinel | An agent asked, through the agent credentials protocol |
-| Carries | type, host, sandbox | plus name, env var, justification, declared uses |
+| Carries | type, host, sandbox | plus name, env var, justification, declared uses, and optionally the lifetime asked for |
 | Approval mints | a grant at the chosen scope | a sandbox-scoped, host-scoped grant with minted use IDs, and a stable binding |
+
+The lifetime an agent asks for (`SecretRequest.GrantTTL`) is recorded, never
+enforced: it is what the window and `secret request approve` start from, and
+approval still takes whatever lifetime it is sent. It is not checked against a
+secret's limit at the ask, because which secret answers is the approval's
+choice. Zero is no ask, not forever.
+
+It is bounded, though, at `agentcreds.MaxGrantTTLSeconds` — thirty days — and an
+ask outside `1..max` is a 400. The bound is not about what a grant may be; it is
+about what a *suggestion* may be. An ask becomes the answer a human is shown
+already chosen, so an unbounded one is how forever arrives under another name: a
+ten-year ask a keystroke away from approval, or one large enough to overflow the
+duration the window converts it to and land back at zero.
 
 The proxy's ask is deduplicated to one pending request per sandbox, secret, and
 host. A request made through the API (`CreateSecretRequest`) is the reactive

@@ -131,13 +131,20 @@ func usage(w io.Writer) {
           "host": "api.github.com",
           "justification": "the user's task asks me to open a PR",
           "uses": [{"description": "Open a PR against the current repo"}],
+          "grantTTLSeconds": 14400,
           "wait": true,
           "timeoutSeconds": 3600
         }
         EOF
 
+      grantTTLSeconds is how long you ask to keep the credential, in seconds,
+      from 1 to 2592000 (thirty days). It is the answer the human sees already
+      chosen, and they may choose another; leave it out to let them pick. You
+      cannot ask for forever. timeoutSeconds is only how long --wait waits.
+
       With flags: --name, --env-var, --host, --why, --use (repeatable),
-      --wait, --timeout.
+      --grant-ttl, --wait, --timeout. --grant-ttl takes a Go duration -- "30m",
+      "4h", "96h" for four days -- and the same thirty-day ceiling.
 
 There is no command that prints a credential's value on its own. "run" is the
 only way to use one — the value goes straight into the child it names and
