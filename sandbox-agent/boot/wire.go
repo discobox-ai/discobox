@@ -163,6 +163,33 @@ func applyOwnership(target string, v harness.ResolvedVolume) error {
 	return nil
 }
 
+// seedWorkingRoot creates the directory the sandbox works in and gives it to
+// the sandbox user.
+//
+// Nothing else here reaches it. The image ships it (`mkdir -p /workspace` in a
+// Dockerfile) root-owned, because the sandbox user does not exist until
+// ensureUser above creates it, and wireSources chowns only the targets it
+// binds -- which are directories *under* the working root, or somewhere else
+// entirely when a source keeps its host path. So a sandbox created with
+// --no-source, which has no source to bind at all, worked in a root-owned
+// directory it could not write in.
+//
+// Only the directory itself, not a walk of it: everything under it is either a
+// directory wireSources created and gave away with it (mkdirAllOwned), a source
+// with the ownership wireSources gave it, or work the sandbox user made and
+// already owns. Recursing into a checkout is the cost chownTreeOnOwnFilesystem
+// exists to avoid.
+//
+// Before wireVolumes and wireSources, so that a declared volume or a source
+// bound onto the working root itself -- which is the primary source's default
+// target -- states the ownership and this does not overwrite it.
+func (b *booter) seedWorkingRoot(root string, id identity) error {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	return os.Chown(root, id.uid, id.gid)
+}
+
 // wireSources bind-mounts each pool-agent-materialized source from
 // /.discobox/sources/<slug> onto its manifest target, owned by the sandbox user.
 //
@@ -187,13 +214,16 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 			}
 			return err
 		}
-		if err := os.MkdirAll(s.Target, 0o755); err != nil {
-			return err
+		uid, gid := sourceOwner(s, id)
+		if err := mkdirAllOwned(s.Target, uid, gid); err != nil {
+			return fmt.Errorf("create source target %s: %w", s.Target, err)
 		}
 		if err := bindMount(src, s.Target, false); err != nil {
 			return fmt.Errorf("wire source %s: %w", s.Slug, err)
 		}
-		uid, gid := sourceOwner(s, id)
+		// Not redundant with mkdirAllOwned, which speaks only for a mountpoint
+		// it created and only for the inode underneath: this one lands on the
+		// root of the tree now mounted over it, which is the source itself.
 		if err := os.Chown(s.Target, uid, gid); err != nil {
 			return fmt.Errorf("chown source %s: %w", s.Target, err)
 		}
@@ -224,6 +254,55 @@ func loadEffectiveConfig() (sandboxconfig.Config, error) {
 
 func loadResolvedVolumes(id identity, volumes []harness.Volume) ([]harness.ResolvedVolume, error) {
 	return harness.ResolveVolumes(volumes, harness.VolumeRuntime{Home: id.home, UID: id.uid, GID: id.gid})
+}
+
+// mkdirAllOwned creates dir, giving the components it had to create to
+// uid:gid and leaving the ownership of anything that already existed alone.
+//
+// The distinction is between a directory the image shipped -- whose ownership
+// is the image's statement and not boot's to overwrite -- and one boot invented
+// on the way to a mountpoint. A source target of /workspace/repos/api names an
+// intermediate directory nothing else in the sandbox describes: created as root
+// here, it is the failure seedWorkingRoot fixes for the working root, one level
+// down, and for a target outside the working root (/srv/code/api) nothing would
+// ever chown it. Source destinations are free-form, so this is reachable
+// without an unusual image.
+func mkdirAllOwned(dir string, uid, gid int) error {
+	created, err := missingDirs(dir)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, p := range created {
+		if err := os.Chown(p, uid, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
+// missingDirs is dir and each of its ancestors that does not exist yet, deepest
+// first. It is read before the mkdir rather than derived from it because
+// os.MkdirAll does not report what it created, and "did this path exist before
+// boot ran" is the whole question.
+func missingDirs(dir string) ([]string, error) {
+	var missing []string
+	for p := filepath.Clean(dir); ; {
+		if _, err := os.Lstat(p); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+		missing = append(missing, p)
+		parent := filepath.Dir(p)
+		if parent == p {
+			break
+		}
+		p = parent
+	}
+	return missing, nil
 }
 
 // sourceOwner decides who owns a wired source: the manifest's ids when the pool

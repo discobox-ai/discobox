@@ -68,6 +68,11 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		if err := b.wireConfig(); err != nil {
 			return fmt.Errorf("wire config: %w", err)
 		}
+		// Before the volumes and the sources, per seedWorkingRoot: anything
+		// wired onto the working root itself carries its own ownership.
+		if err := b.seedWorkingRoot(effective.WorkingRoot(), id); err != nil {
+			return fmt.Errorf("seed working root: %w", err)
+		}
 		volumes, err := loadResolvedVolumes(id, effective.Volumes)
 		if err != nil {
 			return fmt.Errorf("resolve volumes: %w", err)
