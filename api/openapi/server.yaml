@@ -4019,6 +4019,9 @@ components:
                 layersComplete:
                     description: Layers fully pulled, including those already present
                     type: integer
+                loading:
+                    description: The image named is being loaded from the image cache on the server's machine rather than pulled from its registry (ADR 0113). The byte counts are the same shape either way.
+                    type: boolean
                 error:
                     description: Why the last attempt failed. Staging retries on its own.
                     type: string
@@ -4043,12 +4046,17 @@ components:
                 it is the build of the pool, sandbox-base, and harness images on the pool's own
                 Docker, which on a VM backend is where a cold start spends its second stretch of
                 minutes, after the machine is up and before its agent exists to start.
+
+                loading_pool_image is pulling_pool_image's twin when the image is read from the
+                image cache the CLI staged on the server's machine (ADR 0113): the same byte counts,
+                read from disk rather than a registry.
             enum:
                 - fetching_vm_image
                 - starting_vm
                 - waiting_for_docker
                 - syncing_development_images
                 - pulling_pool_image
+                - loading_pool_image
                 - starting_pool_agent
                 - waiting_for_pool_agent
                 - preloading_images

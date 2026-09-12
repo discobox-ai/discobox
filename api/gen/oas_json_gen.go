@@ -13369,6 +13369,12 @@ func (s *PoolImageStage) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Loading.Set {
+			e.FieldStart("loading")
+			s.Loading.Encode(e)
+		}
+	}
+	{
 		if s.Error.Set {
 			e.FieldStart("error")
 			s.Error.Encode(e)
@@ -13376,7 +13382,7 @@ func (s *PoolImageStage) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolImageStage = [9]string{
+var jsonFieldsNameOfPoolImageStage = [10]string{
 	0: "state",
 	1: "image",
 	2: "done",
@@ -13385,7 +13391,8 @@ var jsonFieldsNameOfPoolImageStage = [9]string{
 	5: "size",
 	6: "layers",
 	7: "layersComplete",
-	8: "error",
+	8: "loading",
+	9: "error",
 }
 
 // Decode decodes PoolImageStage from json.
@@ -13480,6 +13487,16 @@ func (s *PoolImageStage) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"layersComplete\"")
+			}
+		case "loading":
+			if err := func() error {
+				s.Loading.Reset()
+				if err := s.Loading.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"loading\"")
 			}
 		case "error":
 			if err := func() error {
@@ -13857,6 +13874,8 @@ func (s *PoolProvisionPhase) Decode(d *jx.Decoder) error {
 		*s = PoolProvisionPhaseSyncingDevelopmentImages
 	case PoolProvisionPhasePullingPoolImage:
 		*s = PoolProvisionPhasePullingPoolImage
+	case PoolProvisionPhaseLoadingPoolImage:
+		*s = PoolProvisionPhaseLoadingPoolImage
 	case PoolProvisionPhaseStartingPoolAgent:
 		*s = PoolProvisionPhaseStartingPoolAgent
 	case PoolProvisionPhaseWaitingForPoolAgent:

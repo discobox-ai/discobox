@@ -166,7 +166,9 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 	if err != nil {
 		return nil, fmt.Errorf("exec driver docker endpoint %q: %w", endpoint, err)
 	}
-	return dockerworker.NewDockerClientLease(cli, func() { _ = cli.Close() }), nil
+	// Wherever the backend's endpoint points: a socket on this machine, or a
+	// daemon it forwards from somewhere else.
+	return dockerworker.NewDockerClientLease(cli, dockerworker.DaemonLocalityForHost(endpoint), func() { _ = cli.Close() }), nil
 }
 
 func (d *Driver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error) {

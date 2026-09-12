@@ -627,6 +627,10 @@ type PoolImageStage struct {
 	Size           int64 `json:"size,omitempty"`
 	Layers         int   `json:"layers,omitempty"`
 	LayersComplete int   `json:"layersComplete,omitempty"`
+	// Loading marks an image read from the image cache on the server's
+	// machine rather than pulled, so a client says so instead of claiming a
+	// second download (ADR 0113).
+	Loading bool `json:"loading,omitempty"`
 	// Error is why the last attempt failed. Staging retries on its own.
 	Error string `json:"error,omitempty"`
 }

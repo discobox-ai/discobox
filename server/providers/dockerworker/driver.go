@@ -9,6 +9,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/moby/moby/client"
@@ -98,14 +99,64 @@ type VMInfo struct {
 
 // DockerClientLease holds a Docker API client until Release is called.
 type DockerClientLease struct {
-	Client  *client.Client
-	release func()
-	once    sync.Once
+	Client *client.Client
+	// Locality is where the daemon this client reaches lives.
+	Locality DaemonLocality
+	release  func()
+	once     sync.Once
 }
 
-// NewDockerClientLease creates a lease around a Docker client and release callback.
-func NewDockerClientLease(cli *client.Client, release func()) *DockerClientLease {
-	return &DockerClientLease{Client: cli, release: release}
+// NewDockerClientLease creates a lease around a Docker client and release
+// callback.
+//
+// locality is a parameter rather than a field with a default because the
+// driver handing over the client is the only thing that knows which machine
+// answered it, and nothing else can work it out afterwards.
+func NewDockerClientLease(cli *client.Client, locality DaemonLocality, release func()) *DockerClientLease {
+	return &DockerClientLease{Client: cli, Locality: locality, release: release}
+}
+
+// DaemonLocality says where the Docker daemon a lease reaches lives, which
+// decides whether this machine's image store is closer to it than its registry
+// is (ADR 0113 §4).
+//
+// Every driver answers it for every client it hands over, because for two of
+// them the answer is not fixed: the docker provider's daemon may be a remote
+// host, and the exec provider resolves an endpoint per pool that may be a
+// socket here or an ssh:// target anywhere.
+type DaemonLocality int
+
+const (
+	// DaemonElsewhere is a daemon on another machine. Loading an image into it
+	// would send this machine's copy over the same network it would otherwise
+	// pull from, so nothing is loaded and it pulls as it always did. It is the
+	// zero value because it is the answer that costs only speed when it is
+	// wrong.
+	DaemonElsewhere DaemonLocality = iota
+	// DaemonOnThisMachine is a daemon reached without leaving the machine this
+	// server runs on: the host's own daemon, or one in a VM booted here.
+	DaemonOnThisMachine
+)
+
+// DaemonLocalityForHost answers for a daemon named by a Docker host URL, for
+// the drivers whose daemon is wherever their configuration points.
+//
+// Only socket transports qualify, which is the rule the docker provider
+// already applies to bind mounts: a unix or npipe socket means the daemon is on
+// this machine, Docker Desktop included, whose VM shares the host's paths. An
+// ssh:// or tcp:// daemon is somewhere else, and a tcp://localhost one may be
+// forwarded anywhere, so neither is taken at its word.
+func DaemonLocalityForHost(host string) DaemonLocality {
+	scheme, _, ok := strings.Cut(strings.TrimSpace(host), "://")
+	if !ok {
+		return DaemonElsewhere
+	}
+	switch scheme {
+	case "unix", "npipe":
+		return DaemonOnThisMachine
+	default:
+		return DaemonElsewhere
+	}
 }
 
 // Release returns the leased client and tears down its transport resources.

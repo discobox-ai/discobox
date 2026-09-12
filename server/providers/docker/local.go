@@ -98,8 +98,10 @@ func (d *LocalDriver) hostVM() *dockerworker.VMInfo {
 }
 
 func (d *LocalDriver) AcquireDockerClient(context.Context, string) (*dockerworker.DockerClientLease, error) {
-	// The shared client outlives leases; releasing a lease is a no-op.
-	return dockerworker.NewDockerClientLease(d.client, nil), nil
+	// The shared client outlives leases; releasing a lease is a no-op. Where
+	// the daemon is depends on the configured host: this provider runs pools on
+	// whichever daemon it was pointed at, which may be another machine.
+	return dockerworker.NewDockerClientLease(d.client, dockerworker.DaemonLocalityForHost(d.DaemonHost()), nil), nil
 }
 
 func (d *LocalDriver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error) {

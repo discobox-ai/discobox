@@ -17,6 +17,9 @@ import (
 type preloadDriver struct {
 	Driver
 	url string
+	// locality is what this driver says about the daemon it hands over, which
+	// is what decides whether an image is loaded into it or pulled.
+	locality DaemonLocality
 }
 
 func (d *preloadDriver) AcquireDockerClient(context.Context, string) (*DockerClientLease, error) {
@@ -24,14 +27,14 @@ func (d *preloadDriver) AcquireDockerClient(context.Context, string) (*DockerCli
 	if err != nil {
 		return nil, err
 	}
-	return &DockerClientLease{Client: cli, release: func() { _ = cli.Close() }}, nil
+	return NewDockerClientLease(cli, d.locality, func() { _ = cli.Close() }), nil
 }
 
 func preloadEngine(t *testing.T, daemon *fakePullDaemon) (*Engine, *httptest.Server) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
 	engine := &Engine{
-		driver: &preloadDriver{url: server.URL},
+		driver: &preloadDriver{url: server.URL, locality: DaemonOnThisMachine},
 		cfg: Config{
 			Image: testPoolImage,
 			// The fake answers at once; without this a daemon that did not
@@ -147,8 +150,8 @@ func TestPullBytesNeverGoBackwards(t *testing.T) {
 			seen = append(seen, progress.Pull.Current)
 		}
 	}
-	if err := engine.ensureImageRef(context.Background(), cli, "pool_1", "ghcr.io/x/a:v1",
-		sandbox.PoolPhasePreloadingImages, nil); err != nil {
+	if err := engine.ensureImageRef(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_1", "ghcr.io/x/a:v1",
+		stagedImagePhases, nil); err != nil {
 		t.Fatal(err)
 	}
 	for i := 1; i < len(seen); i++ {

@@ -68,8 +68,11 @@ const (
 	// from the local checkout before there is a pool agent to start.
 	PoolPhaseSyncingDevelopmentImages PoolProvisionPhase = "syncing_development_images"
 	PoolPhasePullingPoolImage         PoolProvisionPhase = "pulling_pool_image"
-	PoolPhaseStartingPoolAgent        PoolProvisionPhase = "starting_pool_agent"
-	PoolPhaseWaitingForPoolAgent      PoolProvisionPhase = "waiting_for_pool_agent"
+	// PoolPhaseLoadingPoolImage is pulling_pool_image's twin when the image is
+	// read from the image cache on the server's machine instead (ADR 0113).
+	PoolPhaseLoadingPoolImage    PoolProvisionPhase = "loading_pool_image"
+	PoolPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
+	PoolPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
 	// PoolPhasePreloadingImages is the startup pull of the images a sandbox
 	// will want, done before anybody asks for one.
 	PoolPhasePreloadingImages PoolProvisionPhase = "preloading_images"
@@ -115,6 +118,10 @@ type PreloadProgress struct {
 	// Pull is set while bytes are moving, and nil for an image that was
 	// already present.
 	Pull *PoolPullProgress
+	// Loading marks bytes read from the image cache on the server's machine
+	// rather than pulled from a registry: the same counts on the same line,
+	// and a different wait for the person reading it (ADR 0113).
+	Loading bool
 }
 
 // PoolProgressReporter is how a driver reports its progress without holding the

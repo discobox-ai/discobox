@@ -45,12 +45,12 @@ func (e *Engine) StageImages(ctx context.Context, pool *model.Pool, images []str
 			report(sandbox.PreloadProgress{Image: image, Done: i, Total: len(images)})
 		}
 		started := time.Now()
-		onPull := func(pull sandbox.PoolPullProgress) {
+		onProgress := func(pull sandbox.PoolPullProgress, loading bool) {
 			if report != nil {
-				report(sandbox.PreloadProgress{Image: image, Done: i, Total: len(images), Pull: &pull})
+				report(sandbox.PreloadProgress{Image: image, Done: i, Total: len(images), Pull: &pull, Loading: loading})
 			}
 		}
-		if err := e.ensureImageRef(ctx, lease.Client, pool.ID, image, sandbox.PoolPhasePreloadingImages, onPull); err != nil {
+		if err := e.ensureImageRef(ctx, lease, pool.ID, image, stagedImagePhases, onProgress); err != nil {
 			// A canceled preload is the server shutting down, not an image
 			// problem, and reporting every remaining image as broken would bury
 			// that.

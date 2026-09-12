@@ -562,7 +562,7 @@ func (d *deadDaemonDriver) AcquireDockerClient(context.Context, string) (*Docker
 	if err != nil {
 		return nil, err
 	}
-	return NewDockerClientLease(cli, func() { _ = cli.Close() }), nil
+	return NewDockerClientLease(cli, DaemonOnThisMachine, func() { _ = cli.Close() }), nil
 }
 
 func (d *deadDaemonDriver) DeleteVM(context.Context, string) error {
@@ -584,7 +584,7 @@ func (d *refusingDaemonDriver) AcquireDockerClient(context.Context, string) (*Do
 	if err != nil {
 		return nil, err
 	}
-	return NewDockerClientLease(cli, func() { _ = cli.Close() }), nil
+	return NewDockerClientLease(cli, DaemonOnThisMachine, func() { _ = cli.Close() }), nil
 }
 
 func (d *refusingDaemonDriver) DeleteVM(context.Context, string) error {

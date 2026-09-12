@@ -130,6 +130,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		HostStateRoot:  GuestStateRoot,
 		Image:          dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
 		ImageRetention: serverDefaults.ImageRetention,
+		ImageCache:     serverDefaults.ImageCache,
 		// The agent still listens on the guest's loopback; the control plane
 		// reaches it by opening a stream on the same relay session.
 		AgentPort: effectiveInt(cfg.AgentPort, defaultAgentPort),

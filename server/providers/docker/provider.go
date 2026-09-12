@@ -139,17 +139,12 @@ func localSourceRoots(daemonHost string, hostMounts []dockerworker.HostMount) []
 // tcp://localhost daemon may be forwarded anywhere, so none of them qualify:
 // binding a path the daemon cannot resolve fails at run time, while declining
 // costs only a source push.
+//
+// The rule itself is the engine's, because the image store asks the same
+// question of the same hosts (ADR 0113 §4) and two answers would eventually
+// disagree.
 func daemonIsLocal(daemonHost string) bool {
-	scheme, _, ok := strings.Cut(strings.TrimSpace(daemonHost), "://")
-	if !ok {
-		return false
-	}
-	switch scheme {
-	case "unix", "npipe":
-		return true
-	default:
-		return false
-	}
+	return dockerworker.DaemonLocalityForHost(daemonHost) == dockerworker.DaemonOnThisMachine
 }
 
 // engineConfig maps the docker provider configuration to the shared engine
@@ -160,6 +155,7 @@ func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serve
 		ControlPlaneURL:     strings.TrimSpace(cfg.ControlPlaneURL),
 		Image:               dockerworker.EffectivePoolImage(cfg.Image, serverDefaults.PoolImage),
 		ImageRetention:      serverDefaults.ImageRetention,
+		ImageCache:          serverDefaults.ImageCache,
 		Network:             cfg.Network,
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),
 		Privileged:          cfg.Privileged,

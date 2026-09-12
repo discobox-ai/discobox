@@ -66,7 +66,7 @@ func (e *Engine) OpenConsole(ctx context.Context, provider *model.SandboxProvide
 
 func (e *Engine) attachConsole(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (*consoleSession, error) {
 	cli := lease.Client
-	id, err := e.ensureConsoleContainer(ctx, cli, provider, pool)
+	id, err := e.ensureConsoleContainer(ctx, lease, provider, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -88,13 +88,14 @@ func (e *Engine) attachConsole(ctx context.Context, lease *DockerClientLease, pr
 // ensureConsoleContainer returns the pool host's console container, creating it
 // when absent, starting it when its shell exited, and replacing it when it was
 // built from a different image or console layout.
-func (e *Engine) ensureConsoleContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool) (string, error) {
+func (e *Engine) ensureConsoleContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool) (string, error) {
+	cli := lease.Client
 	name := ConsoleContainerName(pool.ID)
 	existing, existingErr := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if existingErr != nil && !cerrdefs.IsNotFound(existingErr) {
 		return "", existingErr
 	}
-	image, err := e.resolvePoolAgentImage(ctx, cli, pool.ID, existing.Container)
+	image, err := e.resolvePoolAgentImage(ctx, lease, pool.ID, existing.Container)
 	if err != nil {
 		return "", err
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/layout"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
@@ -130,6 +131,12 @@ type Config struct {
 	// DockerReadyTimeout bounds how long acquireDockerReady waits for a freshly
 	// launched VM's Docker daemon to become reachable.
 	DockerReadyTimeout time.Duration
+	// ImageCache is the image store on this machine, which an image absent from
+	// the pool's daemon is loaded from before it is pulled (ADR 0113) — but
+	// only into a daemon the lease reaching it says is on this machine, which
+	// is a property of the driver and often of its configuration rather than of
+	// the provider. Nil loads nothing.
+	ImageCache *imagecache.Layout
 	// ProgressReporter records what bringing this pool host up is doing right
 	// now, for a client whose sandbox is waiting for a pool to take it. Nil is
 	// a driver that says nothing.
@@ -285,7 +292,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, recreated, err := e.ensurePoolContainer(ctx, lease.Client, provider, pool, mint, false)
+	inst, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, false)
 	if err != nil {
 		return err
 	}
@@ -328,7 +335,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, _, err := e.ensurePoolContainer(ctx, lease.Client, provider, pool, mint, true)
+	inst, _, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, true)
 	if err != nil {
 		return err
 	}
@@ -456,7 +463,8 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string) (*Docker
 // The bootstrap is minted lazily: the healthy-container path below returns
 // without calling mint, so a steady-state drift check persists no single-use
 // token. Only the create path needs credentials.
-func (e *Engine) ensurePoolContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
+func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
+	cli := lease.Client
 	name := ContainerName(pool.ID)
 	labels := e.containerLabels(provider, pool)
 
@@ -464,7 +472,7 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, cli *client.Client, pr
 	if existingErr != nil && !cerrdefs.IsNotFound(existingErr) {
 		return nil, false, existingErr
 	}
-	image, err := e.resolvePoolAgentImage(ctx, cli, pool.ID, existing.Container)
+	image, err := e.resolvePoolAgentImage(ctx, lease, pool.ID, existing.Container)
 	if err != nil {
 		return nil, false, err
 	}
@@ -512,11 +520,11 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, cli *client.Client, pr
 // was before a fallback was possible. Every other case asks ensureImage, whose
 // pull attempt is both how a cold daemon gets the image and how a pool running
 // a fallback discovers that the configured one is reachable again.
-func (e *Engine) resolvePoolAgentImage(ctx context.Context, cli *client.Client, poolID string, existing container.InspectResponse) (string, error) {
+func (e *Engine) resolvePoolAgentImage(ctx context.Context, lease *DockerClientLease, poolID string, existing container.InspectResponse) (string, error) {
 	if existing.Config != nil && strings.TrimSpace(existing.Config.Image) == strings.TrimSpace(e.cfg.Image) {
 		return e.cfg.Image, nil
 	}
-	return e.ensureImage(ctx, cli, poolID)
+	return e.ensureImage(ctx, lease, poolID)
 }
 
 // createPoolContainer creates the pool-agent container from image, which the

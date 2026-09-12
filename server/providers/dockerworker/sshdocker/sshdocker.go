@@ -100,7 +100,9 @@ func (d *Dialer) AcquireDockerClient(ctx context.Context, target Target) (*docke
 		_ = sshClient.Close()
 		return nil, err
 	}
-	return dockerworker.NewDockerClientLease(dockerClient, func() {
+	// Reached by dialing another machine's socket over SSH, which is the whole
+	// point of this dialer.
+	return dockerworker.NewDockerClientLease(dockerClient, dockerworker.DaemonElsewhere, func() {
 		_ = dockerClient.Close()
 		_ = sshClient.Close()
 	}), nil

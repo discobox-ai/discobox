@@ -34,12 +34,12 @@ import (
 // It reports the reference to launch, which is the configured image whenever
 // that image can be had and a superseded one already on the daemon when it
 // cannot — see fallbackPoolImage.
-func (e *Engine) ensureImage(ctx context.Context, cli *client.Client, poolID string) (string, error) {
-	err := e.ensureImageRef(ctx, cli, poolID, e.cfg.Image, sandbox.PoolPhasePullingPoolImage, nil)
+func (e *Engine) ensureImage(ctx context.Context, lease *DockerClientLease, poolID string) (string, error) {
+	err := e.ensureImageRef(ctx, lease, poolID, e.cfg.Image, poolImagePhases, nil)
 	if err == nil {
 		return e.cfg.Image, nil
 	}
-	fallback, ok := e.fallbackPoolImage(ctx, cli)
+	fallback, ok := e.fallbackPoolImage(ctx, lease.Client)
 	if !ok {
 		return "", err
 	}
@@ -114,15 +114,41 @@ func imageRepository(image string) (string, error) {
 	return named.Name(), nil
 }
 
+// imagePhases are what an image arriving on a pool is reported as, by route.
+type imagePhases struct {
+	pull sandbox.PoolProvisionPhase
+	load sandbox.PoolProvisionPhase
+}
+
+var (
+	poolImagePhases   = imagePhases{pull: sandbox.PoolPhasePullingPoolImage, load: sandbox.PoolPhaseLoadingPoolImage}
+	stagedImagePhases = imagePhases{pull: sandbox.PoolPhasePreloadingImages, load: sandbox.PoolPhasePreloadingImages}
+)
+
+// imageProgress hears about an image's bytes arriving, for a caller that is
+// narrating them rather than merely recording them. loading is true while they
+// are read from the image cache rather than pulled.
+type imageProgress func(progress sandbox.PoolPullProgress, loading bool)
+
 // ensureImageRef is ensureImage for any image on this pool's daemon, reporting
-// under the phase the caller is in.
-// onPull, when set, is called with the running totals as they move, for a
-// caller that is narrating this pull rather than merely recording it.
-func (e *Engine) ensureImageRef(ctx context.Context, cli *client.Client, poolID, image string, phase sandbox.PoolProvisionPhase, onPull func(sandbox.PoolPullProgress)) error {
+// under the caller's phase for whichever route the image takes.
+//
+// An image that is absent is loaded from the image cache when the cache holds
+// it, and pulled otherwise — including when the load fails, which leaves the
+// daemon as it found it (loadFromCache).
+func (e *Engine) ensureImageRef(ctx context.Context, lease *DockerClientLease, poolID, image string, phases imagePhases, onProgress imageProgress) error {
+	cli := lease.Client
 	if _, err := cli.ImageInspect(ctx, image); err == nil {
 		return nil
 	} else if !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("inspect pool image %q: %w", image, err)
+	}
+	if e.loadFromCache(ctx, lease, poolID, image, phases.load, onProgress) {
+		return nil
+	}
+	var onPull func(sandbox.PoolPullProgress)
+	if onProgress != nil {
+		onPull = func(progress sandbox.PoolPullProgress) { onProgress(progress, false) }
 	}
 
 	logger := slog.Default()
@@ -137,7 +163,7 @@ func (e *Engine) ensureImageRef(ctx context.Context, cli *client.Client, poolID,
 	// runs the pull either way and this is the one phase of bringing a pool up
 	// that can say how far in it is. A sandbox waiting for a pool to take it
 	// spends most of its wait right here on a cold host.
-	if err := e.consumePoolImagePull(ctx, pull, poolID, image, phase, onPull); err != nil {
+	if err := e.consumePoolImagePull(ctx, pull, poolID, image, phases.pull, onPull); err != nil {
 		return fmt.Errorf("pull image %q: %w", image, err)
 	}
 	logger.Info("pulled image", "image", image, "pool", poolID, "duration", time.Since(started))

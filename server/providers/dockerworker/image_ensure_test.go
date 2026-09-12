@@ -104,7 +104,7 @@ func TestEnsureImagePullsWhenAbsent(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestEnsureImageDoesNotPullWhenPresent(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: image}}
-	got, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	got, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestEnsureImageReportsPullFailure(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	_, err = engine.ensureImage(context.Background(), cli, "pool_test")
+	_, err = engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -188,7 +188,7 @@ func TestEnsureImageReportsPullProgress(t *testing.T) {
 			reports = append(reports, progress)
 		},
 	}}
-	if _, err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+	if _, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -235,7 +235,7 @@ func TestEnsureImageReportsNothingWhenTheImageIsPresent(t *testing.T) {
 		Image:            image,
 		ProgressReporter: func(context.Context, string, sandbox.PoolProvisionProgress) { reported = true },
 	}}
-	if _, err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+	if _, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test"); err != nil {
 		t.Fatal(err)
 	}
 	if reported {
@@ -262,7 +262,7 @@ func TestEnsureImageFallsBackToACachedPoolImage(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatalf("a cached pool image was available, so the pull failure should not have: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestEnsureImageFallsBackToTheNewestCachedPoolImage(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestEnsureImageWillNotFallBackToAnotherRepository(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err == nil {
 		t.Fatalf("fell back to %q, which is not a pool agent", image)
 	}
@@ -343,7 +343,7 @@ func TestEnsureImageReportsPullFailureWithNoCachedPoolImage(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	_, err = engine.ensureImage(context.Background(), cli, "pool_test")
+	_, err = engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -424,7 +424,7 @@ func TestResolvePoolAgentImage(t *testing.T) {
 				existing.Config = &container.Config{Image: testCase.running}
 			}
 			engine := &Engine{cfg: Config{Image: testPoolImage}}
-			image, err := engine.resolvePoolAgentImage(context.Background(), cli, "pool_test", existing)
+			image, err := engine.resolvePoolAgentImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test", existing)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -91,6 +91,7 @@ func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) docker
 		ControlPlaneURL:     cfg.ControlPlaneURL,
 		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
 		ImageRetention:      serverDefaults.ImageRetention,
+		ImageCache:          serverDefaults.ImageCache,
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),
 		PublicAgentPort:     publicAgentPort,
 		Labels:              map[string]string{labelProviderType: ProviderType},

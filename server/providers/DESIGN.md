@@ -79,7 +79,13 @@ reading the engine:
   repair; `DeleteVM` removes it after pool deletion is authorized. The local
   Docker driver resolves every pool to the host and lifecycle is a no-op.
 - `AcquireDockerClient`: a Docker API client lease for the daemon hosting the
-  pool's containers — the host socket locally, the in-VM daemon over SSH for
+  pool's containers. The lease states that daemon's `DaemonLocality`, which the
+  driver passes to `NewDockerClientLease` and cannot omit: it is what decides
+  whether an image is loaded from this machine's store or pulled by the daemon
+  (ADR 0113 §4). `vz`, `libkrun` and `wslc` answer `DaemonOnThisMachine`;
+  `sshdocker`, and so DigitalOcean, answers `DaemonElsewhere`; `docker` and
+  `exec` answer `DaemonLocalityForHost` of the host they were pointed at, which
+  is the socket-transport rule the docker provider applies to bind mounts — the host socket locally, the in-VM daemon over SSH for
   DigitalOcean, VSOCK terminated at a private Unix socket for libkrun, a VSOCK
   connection to the VM for `vz`, or a guest Unix-socket dial over the WSL
   session for `wslc`. `NewDockerClientForDialer` adapts any `net.Conn`
@@ -134,9 +140,9 @@ Reports land on the pool row's `provisionProgress`, and a client reading a
 pending sandbox asks its pool what it is doing instead.
 
 The engine reports the phases every backend shares — starting the VM, waiting
-for Docker, preparing the development images, pulling the pool image, starting
-and waiting for the agent, and preloading sandbox images — around the calls that
-perform them. A driver refines that from inside: `vz` and `libkrun` report
+for Docker, preparing the development images, pulling or loading the pool image,
+starting and waiting for the agent, and preloading sandbox images — around the
+calls that perform them. A driver refines that from inside: `vz` and `libkrun` report
 fetching the VM image, which the engine can only see as part of starting a VM.
 
 A phase with a denominator reports it, and a phase without one is held. The two
@@ -280,6 +286,33 @@ The engine does the pulling because it owns what is on a pool daemon; *when* to
 stage is not a provider decision. The pools service drives it as its own
 reconciled resource (`poolImages`, `server/internal/resources/pools`), marked
 when a pool becomes active and refreshed periodically.
+
+### The Image Cache
+
+An image absent from a pool's daemon is loaded from the image cache on this
+machine before it is pulled (`Engine.loadFromCache`, `image_load.go`; ADR 0113).
+The cache is the `imagecache.Layout` the CLI staged a release's images into.
+`ServerDefaults.ImageCache` carries it from the server's `imageCacheDir` and
+every provider puts it on its engine's `Config.ImageCache`. What decides a load
+is the lease: an image is only loaded into a daemon whose lease says
+`DaemonOnThisMachine`, because one elsewhere is closer to its registry than to
+this disk. The driver answers for every client it hands over, so a docker
+provider pointed at a remote host and an exec pool whose endpoint is an
+`ssh://` target are both pulled to rather than loaded into.
+
+A load must arrive under the registry digest a sandbox is pinned to (ADR 0016
+§6), and the two image stores get there differently. The containerd store
+imports the archive's `index.json` as the registry's own index, so the digest
+holds as the image lands. The classic store — Docker 26.1.5 in the guest image
+— records no digest for a load, so the engine follows it with a pull of
+`repository@<index digest>`, which downloads no layer because the config is
+already present and records the digest. The engine then checks the daemon
+reports that digest; any failure removes what the load left and falls through
+to the pull, so the cache never makes an image harder to get.
+
+Both routes run through `ensureImageRef`, and each is reported as what it is:
+the pool-agent image as `loading_pool_image` rather than `pulling_pool_image`,
+a staged image with `PreloadProgress.Loading`.
 
 ## Pool Runtime Lifecycle
 
@@ -540,25 +573,36 @@ pool at its next reconcile; saving the provider instance does not trigger one.
 
 `server/providers/guestimage` resolves the boot artifacts a VM driver needs —
 kernel, initrd, root filesystem — from an OCI image, with no Docker daemon on
-the host (ADR 0062 §5). It pulls by digest with go-containerregistry, caches one
-directory per digest, and accepts a local override directory instead.
+the host (ADR 0062 §5). It fetches through the image store the server hands its
+providers (`ServerDefaults.ImageCache`, an `imagecache.Layout`; ADR 0113 §5),
+extracts one directory per digest, and accepts a local override directory
+instead. A provider never learns the store's layout: it asks for an image for a
+platform and reads the blobs back through the store, which verifies them.
+
+The store is also where the CLI staged the guest before starting the server
+(on macOS, where the default provider boots one), so a first pool extracts from
+local blobs without a registry request; a guest nothing staged is downloaded
+into the store on the way, for the next pool and the next stage to find. For a
+digest-pinned reference the extracted directory is checked first, so a machine
+that already has its guest asks nothing. A tag is revalidated on every
+resolution, and the server's registry keychain authorizes a private one.
 
 It is provider-neutral on purpose, and both VM backends use it. `vz` and
 `libkrun` resolve the same published guest image — one build, two architectures
 (ADR 0101 §1) — and `libkrun` resolves a second image for the libkrunfw-patched
 kernel, which is the one artifact a shared guest cannot carry for it.
 
-Resolution is by platform, and a stated mismatch is refused. `remote.WithPlatform`
-selects a child of an index and does nothing to a single-architecture manifest,
-so with one image name carrying two architectures the image's own config is what
-gets checked; the alternative is a VM that starts and panics on its first
-instruction.
+Resolution is by platform, and a stated mismatch is refused. Selecting a child
+of an index does nothing to a single-architecture manifest, so with one image
+name carrying two architectures the image's own config is what gets checked;
+the alternative is a VM that starts and panics on its first instruction.
 
 Two properties are load-bearing rather than incidental:
 
-- The cache is content-addressed by manifest digest, so a new guest release
-  lands beside the old one and an interrupted extraction is never mistaken for a
-  complete one — extraction stages into a temporary directory and renames it.
+- The extraction cache is content-addressed by manifest digest, so a new guest
+  release lands beside the old one and an interrupted extraction is never
+  mistaken for a complete one — extraction stages into a temporary directory and
+  renames it.
 - Only the artifacts a driver names are extracted. The guest image is a release
   artifact, not a tree to search.
 

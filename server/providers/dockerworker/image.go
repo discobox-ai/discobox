@@ -3,6 +3,8 @@ package dockerworker
 import (
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 // DefaultPoolImage is the default pool-agent container image launched by the
@@ -31,6 +33,10 @@ type ServerDefaults struct {
 	// ImageRetention is how long an unused Discobox image is kept. Zero means
 	// unconfigured, which is not the same as zero: see Config.ImageRetention.
 	ImageRetention time.Duration
+	// ImageCache is the image cache the CLI that launched this server stages
+	// into, when the configuration names one (ADR 0113). A provider whose
+	// daemon is on this machine hands it to its engine.
+	ImageCache *imagecache.Layout
 }
 
 // EffectivePoolImage resolves the pool-agent image from provider

@@ -255,7 +255,8 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 		_ = cli.Close()
 		return nil, err
 	}
-	return dockerworker.NewDockerClientLease(cli, func() { _ = cli.Close() }), nil
+	// The daemon is in the WSL Containers VM on this machine.
+	return dockerworker.NewDockerClientLease(cli, dockerworker.DaemonOnThisMachine, func() { _ = cli.Close() }), nil
 }
 
 func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*transport.HTTPClientLease, error) {

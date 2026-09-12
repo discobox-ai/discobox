@@ -101,10 +101,11 @@ func (r *PoolImagesReconciler) Reconcile(ctx context.Context, poolID string) (re
 	_ = r.record(ctx, pool, stage)
 	stageErr := runtime.StageImages(ctx, pool, images, func(progress sandbox.PreloadProgress) {
 		snapshot := model.PoolImageStage{
-			State: model.PoolImageStateStaging,
-			Image: progress.Image,
-			Done:  progress.Done,
-			Total: progress.Total,
+			State:   model.PoolImageStateStaging,
+			Image:   progress.Image,
+			Done:    progress.Done,
+			Total:   progress.Total,
+			Loading: progress.Loading,
 		}
 		if pull := progress.Pull; pull != nil {
 			snapshot.Current, snapshot.Size = pull.Current, pull.Total

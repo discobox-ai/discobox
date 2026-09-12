@@ -116,7 +116,9 @@ flowchart LR
   health state: an unstaged pool is active and schedulable. A failure is
   recorded on `ImageStage` and retried after 5m, never returned as a reconcile
   error; a staged pool re-stages every 6h. `ScanDirty` returns only ready,
-  unstaged pools.
+  unstaged pools. An image the engine loads from the image cache rather than
+  pulls is recorded with `ImageStage.Loading`, so a client says *Loading* and
+  not a second *Downloading* (ADR 0113).
 
 ## Offline is a liveness verdict
 

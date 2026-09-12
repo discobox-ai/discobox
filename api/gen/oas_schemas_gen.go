@@ -8601,6 +8601,9 @@ type PoolImageStage struct {
 	Layers OptInt `json:"layers"`
 	// Layers fully pulled, including those already present.
 	LayersComplete OptInt `json:"layersComplete"`
+	// The image named is being loaded from the image cache on the server's machine rather than pulled
+	// from its registry (ADR 0113). The byte counts are the same shape either way.
+	Loading OptBool `json:"loading"`
 	// Why the last attempt failed. Staging retries on its own.
 	Error OptString `json:"error"`
 }
@@ -8643,6 +8646,11 @@ func (s *PoolImageStage) GetLayers() OptInt {
 // GetLayersComplete returns the value of LayersComplete.
 func (s *PoolImageStage) GetLayersComplete() OptInt {
 	return s.LayersComplete
+}
+
+// GetLoading returns the value of Loading.
+func (s *PoolImageStage) GetLoading() OptBool {
+	return s.Loading
 }
 
 // GetError returns the value of Error.
@@ -8688,6 +8696,11 @@ func (s *PoolImageStage) SetLayers(val OptInt) {
 // SetLayersComplete sets the value of LayersComplete.
 func (s *PoolImageStage) SetLayersComplete(val OptInt) {
 	s.LayersComplete = val
+}
+
+// SetLoading sets the value of Loading.
+func (s *PoolImageStage) SetLoading(val OptBool) {
+	s.Loading = val
 }
 
 // SetError sets the value of Error.
@@ -8847,6 +8860,9 @@ func (s *PoolMemoryUsageAdditional) init() PoolMemoryUsageAdditional {
 // it is the build of the pool, sandbox-base, and harness images on the pool's own
 // Docker, which on a VM backend is where a cold start spends its second stretch of
 // minutes, after the machine is up and before its agent exists to start.
+// loading_pool_image is pulling_pool_image's twin when the image is read from the
+// image cache the CLI staged on the server's machine (ADR 0113): the same byte counts,
+// read from disk rather than a registry.
 // Ref: #/components/schemas/PoolProvisionPhase
 type PoolProvisionPhase string
 
@@ -8856,6 +8872,7 @@ const (
 	PoolProvisionPhaseWaitingForDocker         PoolProvisionPhase = "waiting_for_docker"
 	PoolProvisionPhaseSyncingDevelopmentImages PoolProvisionPhase = "syncing_development_images"
 	PoolProvisionPhasePullingPoolImage         PoolProvisionPhase = "pulling_pool_image"
+	PoolProvisionPhaseLoadingPoolImage         PoolProvisionPhase = "loading_pool_image"
 	PoolProvisionPhaseStartingPoolAgent        PoolProvisionPhase = "starting_pool_agent"
 	PoolProvisionPhaseWaitingForPoolAgent      PoolProvisionPhase = "waiting_for_pool_agent"
 	PoolProvisionPhasePreloadingImages         PoolProvisionPhase = "preloading_images"
@@ -8869,6 +8886,7 @@ func (PoolProvisionPhase) AllValues() []PoolProvisionPhase {
 		PoolProvisionPhaseWaitingForDocker,
 		PoolProvisionPhaseSyncingDevelopmentImages,
 		PoolProvisionPhasePullingPoolImage,
+		PoolProvisionPhaseLoadingPoolImage,
 		PoolProvisionPhaseStartingPoolAgent,
 		PoolProvisionPhaseWaitingForPoolAgent,
 		PoolProvisionPhasePreloadingImages,
@@ -8887,6 +8905,8 @@ func (s PoolProvisionPhase) MarshalText() ([]byte, error) {
 	case PoolProvisionPhaseSyncingDevelopmentImages:
 		return []byte(s), nil
 	case PoolProvisionPhasePullingPoolImage:
+		return []byte(s), nil
+	case PoolProvisionPhaseLoadingPoolImage:
 		return []byte(s), nil
 	case PoolProvisionPhaseStartingPoolAgent:
 		return []byte(s), nil
@@ -8916,6 +8936,9 @@ func (s *PoolProvisionPhase) UnmarshalText(data []byte) error {
 		return nil
 	case PoolProvisionPhasePullingPoolImage:
 		*s = PoolProvisionPhasePullingPoolImage
+		return nil
+	case PoolProvisionPhaseLoadingPoolImage:
+		*s = PoolProvisionPhaseLoadingPoolImage
 		return nil
 	case PoolProvisionPhaseStartingPoolAgent:
 		*s = PoolProvisionPhaseStartingPoolAgent
