@@ -10,7 +10,7 @@
 # every binary it uploaded, and run with no arguments installs exactly that
 # release. Asked for any other version or channel, it downloads the installer
 # that release uploaded and hands over to it, so the code installing a release
-# is always the code that release shipped (ADR 0109).
+# is always the code that release shipped (ADR 0110).
 #
 # Everything happens inside main, called on the last line, so a download cut
 # short part way through runs nothing at all.
@@ -316,7 +316,7 @@ option() {
 }
 
 # resolve prints the release a channel is at, with the same rules the Homebrew
-# tap uses for its two formulae, plus edge (ADR 0109 section 3).
+# tap uses for its two formulae, plus edge (ADR 0110 section 3).
 resolve() {
 	status=$(curl -sSL --retry 2 -o "$tmp/releases.json" -w '%{http_code}' \
 		-H 'Accept: application/vnd.github+json' "$api/releases?per_page=100") ||

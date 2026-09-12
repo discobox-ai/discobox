@@ -1287,7 +1287,7 @@ tasks:
     desc: Write install.sh and install.ps1 for RELEASE_TAG into build/release/bin
     # Stamped with the tag and the SHA-256 of each CLI binary beside them, which
     # is exactly what release:publish is about to upload, so every digest an
-    # installer checks describes a file its release carries (ADR 0109). The
+    # installer checks describes a file its release carries (ADR 0110). The
     # server binaries and the winget archives are left out: no installer
     # downloads them.
     cmds:

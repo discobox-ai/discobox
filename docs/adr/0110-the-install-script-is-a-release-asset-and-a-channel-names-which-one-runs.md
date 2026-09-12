@@ -1,4 +1,4 @@
-# 0109 — The install script is a release asset, and a channel names which one runs
+# 0110 — The install script is a release asset, and a channel names which one runs
 
 - **Status**: Accepted
 - **Date**: 2026-09-11

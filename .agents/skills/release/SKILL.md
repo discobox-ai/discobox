@@ -329,7 +329,7 @@ gh release view vX.Y.Z --repo discobox-ai/discobox \
 
 The assets include `install.sh` and `install.ps1`, which `release:publish`
 stamps with the tag and every CLI binary's SHA-256 just before it uploads
-(`release:installers`, ADR 0109). `edge.discobox.ai` serves the newest
+(`release:installers`, ADR 0110). `edge.discobox.ai` serves the newest
 release's installer, so once the release is up it should name this tag:
 
 ```bash

@@ -1,5 +1,5 @@
 // Command discobox-installer-logo draws the TUI's mark into the install
-// scripts, as the escape sequences each language can carry (ADR 0109).
+// scripts, as the escape sequences each language can carry (ADR 0110).
 //
 //	go generate ./installer
 //

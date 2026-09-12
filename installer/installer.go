@@ -1,5 +1,5 @@
 // Package installer holds the scripts that install the discobox CLI, and
-// stamps the copies a release uploads with what they install (ADR 0109).
+// stamps the copies a release uploads with what they install (ADR 0110).
 //
 // It is in the root module for the reason serverstage is: the stamp is a
 // release format with two ends. internal/cmd/discobox-installers writes it when

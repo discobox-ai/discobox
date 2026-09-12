@@ -1,6 +1,6 @@
 // Command discobox-installers writes the install scripts a release uploads,
 // stamped with that release and the SHA-256 of every binary they may install
-// (ADR 0109).
+// (ADR 0110).
 //
 //	discobox-installers -version v1.2.3 -out build/release/bin \
 //	  build/release/bin/discobox-linux-amd64 \

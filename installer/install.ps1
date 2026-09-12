@@ -9,7 +9,7 @@
 # every binary it uploaded, and run with no arguments installs exactly that
 # release. Asked for any other version or channel, it downloads the installer
 # that release uploaded and hands over to it, so the code installing a release
-# is always the code that release shipped (ADR 0109). install.sh is the same
+# is always the code that release shipped (ADR 0110). install.sh is the same
 # installer for sh: the two take the same options and follow the same rules.
 #
 #   -Channel CHANNEL   stable  the newest release marked stable
@@ -177,7 +177,7 @@ function Install-Discobox {
     }
 
     # The release a channel is at, with the same rules the Homebrew tap uses
-    # for its two formulae, plus edge (ADR 0109 section 3).
+    # for its two formulae, plus edge (ADR 0110 section 3).
     function Resolve-DiscoboxChannel([string]$Name) {
         try {
             $list = Invoke-RestMethod -Uri "$api/releases?per_page=100" -Headers @{ Accept = 'application/vnd.github+json' } -UseBasicParsing

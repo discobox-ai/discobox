@@ -3,7 +3,7 @@
 The scripts that install the discobox CLI — `install.sh` for sh and
 `install.ps1` for PowerShell — and `Stamp`, which turns these source copies into
 the ones a release uploads. The decision and the alternatives rejected are
-[ADR 0109](../docs/adr/0109-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md).
+[ADR 0110](../docs/adr/0110-the-install-script-is-a-release-asset-and-a-channel-names-which-one-runs.md).
 
 ```mermaid
 flowchart TD
