@@ -351,8 +351,8 @@ and sets iroh's internal tracing to the same level. One setting for both,
 because two knobs for one question is one too many, and both write to this
 server's log, which for an autolaunched server is the file
 `discobox admin server logs` prints. The client has the same knob as
-`discobox --iroh-log`, and `discobox status` asks the same question from the
-other end (see [cli](../cli/DESIGN.md)).
+`discobox --iroh-log`, and `discobox admin server status` asks the same
+question from the other end (see [cli](../cli/DESIGN.md)).
 
 Separately and always, a server that listens on iroh watches whether its
 listener has a relay (`irohd.ListenerWatch`). A peer ID is resolved through a

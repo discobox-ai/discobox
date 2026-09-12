@@ -27,9 +27,9 @@ import (
 // package's to see.
 const statusLayerAPI = "api"
 
-// statusReport is what `discobox status` prints and what -o json emits. It is
-// the transport's diagnosis plus the two things only this side knows: which
-// client asked, and whether the API answered it.
+// statusReport is what `discobox admin server status` prints and what -o json
+// emits. It is the transport's diagnosis plus the two things only this side
+// knows: which client asked, and whether the API answered it.
 type statusReport struct {
 	Client   statusClient       `json:"client"`
 	Endpoint endpoint.Diagnosis `json:"endpoint"`
@@ -85,6 +85,8 @@ func (a *App) newStatusCommand() *cobra.Command {
 			"socket, the relay, the connection to the peer, whether the server admits this\n" +
 			"machine, whether it is ready, and the route traffic ends up taking — so a\n" +
 			"failure names the layer to fix rather than the one on top of it.\n\n" +
+			"The report opens with this client's version and the server's, which reads\n" +
+			"\"unavailable\" when no server answered.\n\n" +
 			"This never starts a server: it reports what is there. For a running account of\n" +
 			"the same layers while another command connects, use --iroh-log=debug.",
 		Args: cobra.NoArgs,
@@ -277,8 +279,8 @@ func (a *App) writeStatus(cmd *cobra.Command, report statusReport) error {
 	return statusExit(report)
 }
 
-// statusExit makes an unreachable server a non-zero exit, so `discobox status`
-// is usable as a check in a script.
+// statusExit makes an unreachable server a non-zero exit, so `discobox admin
+// server status` is usable as a check in a script.
 //
 // The message is deliberately short and names no layer: the report on stdout
 // has already named it and said what to do about it, and an error line
@@ -306,8 +308,8 @@ var (
 	statusStyleLayer = lipgloss.NewStyle().Bold(true)
 )
 
-// printStatus draws the report: a header of what this is and what it is
-// dialing, then one row per layer, then the one thing to do about a failure.
+// printStatus draws the report: a header of both ends' versions and what is
+// being dialed, then one row per layer, then the one thing to do about a failure.
 //
 // The mark and the status word both appear, for the same reason the apply
 // report prints both — color is taken away by the writer for a pipe or a file,
@@ -326,7 +328,10 @@ func printStatus(out io.Writer, report statusReport) {
 	}
 
 	fmt.Fprintf(writer, "client    %s %s\n", paint(statusStyleBold, report.Client.Version), paint(statusStyleDim, report.Client.Platform))
-	fmt.Fprintf(writer, "server    %s\n", paint(statusStyleBold, report.Endpoint.Endpoint))
+	// The server's version is what its health answer said, so a server that
+	// never answered reads "unavailable" rather than a version from elsewhere.
+	serverVersion := serverVersionText(report.Endpoint.ServerStatus != "", report.Endpoint.ServerVersion)
+	fmt.Fprintf(writer, "server    %s %s\n", paint(statusStyleBold, serverVersion), paint(statusStyleDim, report.Endpoint.Endpoint))
 	if report.Endpoint.Transport != "" {
 		fmt.Fprintf(writer, "transport %s\n", paint(statusStyleDim, report.Endpoint.Transport))
 	}

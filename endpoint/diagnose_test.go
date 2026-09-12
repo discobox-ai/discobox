@@ -141,11 +141,16 @@ func TestDiagnoseRejectsAnUnreadableAddress(t *testing.T) {
 // ask it (server/internal/server's startupHandler).
 func TestDiagnoseCarriesTheServerStatus(t *testing.T) {
 	server, client := irohPair(t, admitAll)
-	serveHealth(t, server, health.Status{Status: health.StatusStarting, Phase: "migrating the database"})
+	serveHealth(t, server, health.Status{Status: health.StatusStarting, Phase: "migrating the database", Version: "v1.2.3"})
 
 	diagnosis := client.Diagnose(t.Context(), irohTestURL(t, server), fastDiagnose())
 	if diagnosis.ServerStatus != health.StatusStarting {
 		t.Fatalf("ServerStatus = %q, want %q", diagnosis.ServerStatus, health.StatusStarting)
+	}
+	// The version travels beside the status, for the header of a report that
+	// names both ends' versions: a starting server already knows its own.
+	if diagnosis.ServerVersion != "v1.2.3" {
+		t.Fatalf("ServerVersion = %q, want the version the server reported", diagnosis.ServerVersion)
 	}
 	// Starting is a warning, not a failure: everything the transport does
 	// worked, and the server said what is going on.

@@ -53,6 +53,7 @@ its own.`,
 	cmd.AddCommand(a.newServerManifestCommand())
 	cmd.AddCommand(a.newServerShutdownCommand())
 	cmd.AddCommand(a.newServerLogsCommand())
+	cmd.AddCommand(a.newStatusCommand())
 	return cmd
 }
 

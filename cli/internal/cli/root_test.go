@@ -23,6 +23,8 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/health"
+	"github.com/discobox-ai/discobox/version"
 )
 
 func TestWriteProviderTableIncludesConfig(t *testing.T) {
@@ -2019,7 +2021,24 @@ func TestPromptFlagIsARun(t *testing.T) {
 // `discobox version` prints what `discobox --version` prints: anything driving
 // the CLI without reading its help reaches for both spellings, and one of them
 // answering "unknown command" is not worth the tidiness of having only one.
+//
+// Both name this client's version and the server's. A server that does not
+// answer is "unavailable" and the command still succeeds — and it is never
+// started to answer, even where every other command would start one.
 func TestBareVersionWordPrintsTheVersion(t *testing.T) {
+	// Nothing listens here, and --auto-start-server=true has any command that
+	// autolaunches start a server on it.
+	noServer := "unix://" + filepath.Join(t.TempDir(), "server.sock")
+	autolaunched := func(app *App) bool {
+		// An invocation gets one autolaunch, guarded by this Once. If the
+		// version path had asked for one, the Once would be spent and this
+		// would not run — which is the only way to tell "never tried" from
+		// "tried and could not resolve a server", since both print the same
+		// line.
+		spent := true
+		app.autoLaunchOnce.Do(func() { spent = false })
+		return spent
+	}
 	run := func(env map[string]string, args ...string) string {
 		t.Helper()
 		for name, value := range env {
@@ -2030,30 +2049,80 @@ func TestBareVersionWordPrintsTheVersion(t *testing.T) {
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
 		cmd.SetIn(&bytes.Buffer{})
-		cmd.SetArgs(args)
+		cmd.SetArgs(append([]string{"--server", noServer, "--auto-start-server=true"}, args...))
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute %v: %v", args, err)
 		}
 		return out.String()
 	}
 
-	word := run(nil, "version")
-	if flag := run(nil, "--version"); word != flag {
-		t.Fatalf("`version` printed %q, `--version` printed %q", word, flag)
+	want := "client version " + version.String() + "\nserver version unavailable\n"
+	for _, args := range [][]string{{"version"}, {"--version"}, {"-v"}} {
+		if got := run(nil, args...); got != want {
+			t.Fatalf("%v printed %q, want %q", args, got, want)
+		}
 	}
-	if !strings.HasPrefix(word, "discobox version ") {
-		t.Fatalf("want a version line, got %q", word)
+	// And the line is not the proof: an autolaunch that failed to resolve a
+	// server binary would print "unavailable" too. The path is the proof.
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		cmd, app := newRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs(append([]string{"--server", noServer, "--auto-start-server=true"}, args...))
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute %v: %v", args, err)
+		}
+		if autolaunched(app) {
+			t.Fatalf("%v spent this invocation's autolaunch, so it tried to start a server", args)
+		}
 	}
 	// Neither spelling needs a working environment: what somebody diagnosing a
-	// broken one asks first is what they are running. cobra answers --version
-	// before the root's PersistentPreRunE; this answers it there.
-	if broken := run(map[string]string{keys.LeaderEnv: "not-a-key"}, "version"); broken != word {
-		t.Fatalf("with an unparseable leader `version` printed %q, want %q", broken, word)
+	// broken one asks first is what they are running.
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		if broken := run(map[string]string{keys.LeaderEnv: "not-a-key"}, args...); broken != want {
+			t.Fatalf("with an unparseable leader %v printed %q, want %q", args, broken, want)
+		}
 	}
-	// And it stays out of the help, which documents --version instead.
+	// And the word stays out of the help, which documents --version instead.
 	help := run(nil, "--help")
 	if strings.Contains(help, "\n  version") {
 		t.Fatalf("the version word should not be listed as a command:\n%s", help)
+	}
+	if !strings.Contains(help, "--version") {
+		t.Fatalf("the help should document --version:\n%s", help)
+	}
+}
+
+// A server that answers says which version it is, from its health endpoint:
+// the one request every server answers — still starting, or without a token.
+func TestVersionReportsTheServerVersion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != health.Path {
+			t.Errorf("version requested %s, want only %s", r.URL.Path, health.Path)
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"starting","phase":"migrating the database","version":"v9.8.7"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		cmd := NewRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs(append([]string{"--server", server.URL}, args...))
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute %v: %v", args, err)
+		}
+		if want := "client version " + version.String() + "\nserver version v9.8.7\n"; out.String() != want {
+			t.Fatalf("%v printed %q, want %q", args, out.String(), want)
+		}
 	}
 }
 

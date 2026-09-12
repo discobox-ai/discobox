@@ -349,9 +349,8 @@ discobox cp         copy files in and out
 discobox tools      run git, ssh, VS Code, or Zed against a box
 discobox secret     secrets, grants, and approval requests
 discobox configure  enable, disable, and set the default harness
-discobox status     check the connection to the server, layer by layer
 discobox id         print this machine's peer ID and the server's
-discobox admin      pools, projects, harness images, the server
+discobox admin      pools, projects, harness images, the server and its status
 ```
 
 A prompt at the bare command is `-p` and only `-p` — `discobox -p '...'`. After

@@ -110,9 +110,20 @@ transport helpers where OpenAPI does not model the stream.
 - `discobox version` is an ordinary hidden subcommand (`newVersionCommand`,
   `printVersion`), because anything driving the CLI without reading its help
   reaches for both spellings of a version. It is hidden rather than listed —
-  `--version` is what the help documents — and carries an empty
-  `PersistentPreRunE` so the root's does not run: what somebody diagnosing a
-  broken environment asks first is what they are running, so a leader key the
+  `--version` is what the help documents. Both print this client's version and
+  the server's, which is asked for on its health endpoint
+  (`endpoint.ProbeHealth`) with autolaunch off: a server that does not answer is
+  `unavailable` and the command still succeeds, and none is ever started to
+  answer. The client's line is written first, before the server is asked. The
+  wait for the server's is bounded at five seconds around the whole attempt
+  rather than the request alone, because over iroh preparing this machine's
+  identity and binding the transport happens on a context of its own and is most
+  of that wait — this dials exactly as any other command that reaches a peer
+  does, identity file included. `--version` (and `-v`) is therefore the root's own
+  flag rather than cobra's, whose template cannot make a request. Neither runs
+  the root's validation — the subcommand carries its own `PersistentPreRunE`,
+  and the root's returns early for the flag — because what somebody diagnosing
+  a broken environment asks first is what they are running, so a leader key the
   environment spells wrong must not be what stops them hearing it.
 - `discobox configure` is the same launcher opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
@@ -2003,7 +2014,7 @@ it is not comparing them by eye.
 `discobox admin peer id` stays what it is: one value, no server needed, for a
 script and for the machine that has no access yet.
 
-## Reaching the Server, and Saying Where It Stops (`discobox status`)
+## Reaching the Server, and Saying Where It Stops (`discobox admin server status`)
 
 Reaching a server is a stack, and the error a client is handed names only the
 top of it. Over iroh, `dial iroh endpoint d1-…: iroh: connect failed` is the
@@ -2012,18 +2023,38 @@ reach a relay, the peer ID names a server that is switched off, or the server
 is running and does not admit this machine — four problems with four fixes and
 one message.
 
-`discobox status` (`internal/cli/status.go`) prints
+`discobox admin server status` (`internal/cli/status.go`) prints
 `endpoint.Diagnose`'s answer: one row per layer, in the order a connection
 passes through them, each with a status word beside its mark so a report
 pasted into an issue still says which layer failed. The layers below the API
 are the `endpoint` package's, because only that package can see them; this
 command adds the one above — an authenticated `ListProjects`, which is what
-proves the connection is usable rather than merely open.
+proves the connection is usable rather than merely open. The header above the
+rows names this client's version and the server's — the one its health answer
+carried (`Diagnosis.ServerVersion`), or `unavailable` when none answered —
+written the way `discobox version` writes them.
+
+A command that cannot reach the server names this one in its own failure
+(`withUnreachableServerHint`, `internal/cli/execute.go`). It fires only on
+failures the control-plane transport marked as its own (`serverTransport`, the
+outermost layer of the API client), because a `*url.Error` says nothing about
+which endpoint it was for: a server that answered, a release asset that would
+not download, a local port that would not bind, and an interrupted command are
+all left alone. That is how somebody meets a diagnosis that is no longer a
+top-level word, at the moment they need it.
+
+It sits under `admin server` rather than at the top level
+([ADR 0112](../docs/adr/0112-the-top-level-is-for-people-not-a-transport-diagnosis.md)):
+what it prints is a transport diagnosis — relays, admission, routes — and the
+top level is for the commands somebody uses a discobox with. The cheap half of
+the question that used to send people here, whether a server is reachable and
+which versions the two ends run, is `discobox version`. The retired word is an
+unknown command like any other: no alias, and no hint naming the new path.
 
 Three properties are deliberate:
 
-- **It never starts a server.** Every other command may autolaunch one; this
-  one reports what is there, and a status that starts a server destroys the
+- **It never starts a server.** Most commands may autolaunch one; this one
+  reports what is there, and a status that starts a server destroys the
   question it was asked.
 - **A failure names the lowest layer, not the top one.** The failing layer
   carries the hint — enroll this peer, drop the `?addr=`, fix the relay — and

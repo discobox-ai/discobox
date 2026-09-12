@@ -112,6 +112,7 @@ func newRootCommand() (*cobra.Command, *App) {
 
 	app := &App{autoStart: autoStartServerAuto}
 	var run runCommandOptions
+	var showVersion bool
 	var runFlags *pflag.FlagSet
 	name := commandName()
 	cmd := &cobra.Command{
@@ -130,7 +131,6 @@ a misspelled one says so rather than quietly becoming a prompt.
 
 With nothing at all it opens the launcher, where the same run is one prompt and
 an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
-		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// The flags in front of a subcommand are parsed by the command they
@@ -149,6 +149,11 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 		SuggestionsMinimumDistance: 2,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			app.errOut = cmd.ErrOrStderr()
+			// --version is answered whatever else the environment gets wrong,
+			// for the reason the version command skips this hook altogether.
+			if showVersion && cmd == cmd.Root() {
+				return nil
+			}
 			if err := refuseRootOnlyArguments(cmd, args, runFlags); err != nil {
 				return err
 			}
@@ -176,6 +181,9 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 		// answer to a program that expected output. A run says where its output
 		// goes for itself, so this only covers the launcher.
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if showVersion {
+				return app.printVersion(cmd)
+			}
 			if runRequested(runFlags) {
 				return app.runPrompt(cmd, &run, nil)
 			}
@@ -197,9 +205,9 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	cmd.PersistentFlags().StringVar(&app.irohRelayURLs, "iroh-relay", envOrDefault("DISCOBOX_IROH_RELAY_URLS", ""), "Comma-separated iroh relay servers to use instead of the public ones; must match the server's")
 	// An iroh connection fails in layers and reports only the top one. This
 	// prints each layer as it happens — the socket, the relay, the dial, the
-	// stream — plus iroh's own tracing at the same level. `discobox status`
-	// answers the same question after the fact; this one answers it for the
-	// command that is failing.
+	// stream — plus iroh's own tracing at the same level. `discobox admin
+	// server status` answers the same question after the fact; this one answers
+	// it for the command that is failing.
 	cmd.PersistentFlags().StringVar(&app.irohLogLevel, "iroh-log", envOrDefault(endpoint.IrohLogEnv, ""), "Log the iroh transport as it connects: off, error, warn, info, debug, or trace")
 	// Long form only: -p is the prompt, on this command and on run, because a
 	// prompt is what somebody typing `discobox -p ...` means every time and a
@@ -219,6 +227,11 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
 	cmd.PersistentFlags().Var(&app.autoStart, "auto-start-server", "Whether to start a local server when the endpoint is unavailable: true, false, or auto (the build and environment default, off for a development build)")
 	cmd.PersistentFlags().Lookup("auto-start-server").NoOptDefVal = string(autoStartServerTrue)
+	// The root's own flag rather than the one cobra adds for a Version: cobra
+	// prints that from a template, and the server's half of the answer is a
+	// request. The spelling is cobra's, -v included, so nothing that asked
+	// before has to ask differently now.
+	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print the client and server versions")
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 	// The run's own flags, on the command that stands in for it. They are local
 	// rather than persistent, so `discobox ls --help` is still a list's flags
@@ -236,13 +249,12 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	cmd.AddCommand(app.newPushCommand())
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())
-	cmd.AddCommand(app.newStatusCommand())
 	cmd.AddCommand(app.newIDCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
 	cmd.AddCommand(app.newAdminCommand())
-	cmd.AddCommand(newVersionCommand())
+	cmd.AddCommand(app.newVersionCommand())
 	// Cobra's usage template always lists a subcommand literally named "help",
 	// even when hidden. Give the help command another name so it stays out of the
 	// command list; the --help flag still works on every command.
@@ -331,7 +343,7 @@ func commandWords(cmd *cobra.Command) []string {
 // Without TraverseChildren, Cobra would reject these as unknown flags for the
 // subcommand, and this keeps that loudness.
 //
-// `version` carries an empty PersistentPreRunE and so reaches neither check, on
+// `version` carries its own PersistentPreRunE and so reaches neither check, on
 // purpose: what somebody diagnosing a broken environment asks first is what
 // they are running, and printing it is not something a smuggled word can spoil.
 func refuseRootOnlyArguments(cmd *cobra.Command, args []string, runFlags *pflag.FlagSet) error {
@@ -457,13 +469,54 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 			base:  transport,
 		}
 	}
-	if transport == http.DefaultTransport {
-		return baseURL, http.DefaultClient, nil
+	// Outermost, so everything underneath is marked before it reaches a caller:
+	// the dial, the relay, a connection lost mid-request. There is no shortcut
+	// to http.DefaultClient any more — an unmarked client would be a request
+	// whose failure cannot be told from any other in the process.
+	transport = serverTransport{
+		base: transport,
 	}
 	return baseURL, &http.Client{
 		Transport: transport,
 	}, nil
 }
+
+// serverTransport marks what the control-plane transport could not do as this
+// client's own failure.
+//
+// A *url.Error means the request never completed, and nothing in its shape says
+// which endpoint it was for: `admin server stage` failing to download a release
+// asset produces exactly the same type, and a local listener that will not bind
+// produces the *net.OpError underneath it. Telling either of those to go and
+// diagnose the control plane sends the reader after a server that is answering
+// perfectly. The mark is the discriminator, and it belongs here because this is
+// the layer that knows whose transport this is. See withUnreachableServerHint.
+type serverTransport struct {
+	base http.RoundTripper
+}
+
+func (t serverTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	resp, err := base.RoundTrip(req)
+	if err != nil {
+		return nil, serverUnreachable{err: err}
+	}
+	return resp, nil
+}
+
+// serverUnreachable is that mark. It carries the transport's own error and
+// nothing of its own, so what a reader sees is unchanged and errors.Is still
+// finds the syscall underneath.
+type serverUnreachable struct {
+	err error
+}
+
+func (e serverUnreachable) Error() string { return e.err.Error() }
+
+func (e serverUnreachable) Unwrap() error { return e.err }
 
 // gitServerURL is the base URL git commands address the server through, along
 // with the func that releases it.

@@ -25,7 +25,8 @@ import (
 // with four different fixes.
 //
 // [Diagnose] takes the stack apart and reports each layer separately, in the
-// order a connection passes through them. It is what `discobox status` prints,
+// order a connection passes through them. It is what `discobox admin server
+// status` prints,
 // and it is deliberately a package-level function on the transport rather than
 // a CLI-local helper: the layers it reports are this package's, and only this
 // package can see the ones below `HTTPClient`.
@@ -136,8 +137,12 @@ type Diagnosis struct {
 	// above this package branches on it — a server that is starting answers
 	// every path with 503, so there is no point asking it anything else — and
 	// branching on rendered text is how that goes wrong later.
-	ServerStatus string          `json:"serverStatus,omitempty"`
-	Steps        []DiagnosisStep `json:"steps"`
+	ServerStatus string `json:"serverStatus,omitempty"`
+	// ServerVersion is the version the server reported, from the same
+	// [health.Status]. Empty when no server answered, or when one answered
+	// without saying.
+	ServerVersion string          `json:"serverVersion,omitempty"`
+	Steps         []DiagnosisStep `json:"steps"`
 }
 
 // OK reports whether every layer that was reached worked.
@@ -183,10 +188,11 @@ const (
 	// this runs after a dial has already spent its whole budget failing, and
 	// a report that hangs afterwards is worse than one without this line.
 	diagnoseResolveWait = 2 * time.Second
-	// diagnoseUserAgent identifies these probes in a server's access log, so a
-	// health request that arrived from `discobox status` is not mistaken for a
-	// client that is about to do something.
-	diagnoseUserAgent = "discobox-status (health probe)"
+	// healthProbeUserAgent identifies these probes in a server's access log, so
+	// a health request that arrived from `discobox admin server status` or
+	// `discobox version` is not mistaken for a client that is about to do
+	// something.
+	healthProbeUserAgent = "discobox (health probe)"
 )
 
 func (o DiagnoseOptions) withDefaults() DiagnoseOptions {
@@ -373,7 +379,7 @@ func diagnoseDialable(ctx context.Context, diagnosis *Diagnosis, parsed Endpoint
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, opts.RequestTimeout)
 	defer cancel()
-	status, err := probeHealthClient(requestCtx, baseURL, client)
+	status, err := ProbeHealth(requestCtx, baseURL, client)
 	if err != nil {
 		diagnosis.fail(DiagnosisLayerConnect, started, "nothing answered at this endpoint", err,
 			dialableHint(parsed))
@@ -601,8 +607,8 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	reportHealth(diagnosis, started, status)
 	diagnoseIrohRoute(diagnosis, conn)
 	// A diagnosis dials the same peer an ordinary command does, so it has the
-	// same thing to say about where that peer answered. `discobox status` is
-	// what somebody runs when connecting is slow, and it would be perverse for
+	// same thing to say about where that peer answered. `discobox admin server
+	// status` is what somebody runs when connecting is slow, and it would be perverse for
 	// the command asking about the connection to be the one that learns
 	// nothing from it.
 	configured.reached(peer, conn)
@@ -797,6 +803,7 @@ func admissionHint(reason string, local IrohID) string {
 // did, so it is reported as a warning with the phase it is on.
 func reportHealth(diagnosis *Diagnosis, started time.Time, status health.Status) {
 	diagnosis.ServerStatus = status.Status
+	diagnosis.ServerVersion = status.Version
 	summary := status.Status
 	if summary == "" {
 		summary = "answered"
@@ -877,7 +884,7 @@ func probeHealthConn(ctx context.Context, conn net.Conn, timeout time.Duration) 
 	if err != nil {
 		return health.Status{}, err
 	}
-	req.Header.Set("User-Agent", diagnoseUserAgent)
+	req.Header.Set("User-Agent", healthProbeUserAgent)
 	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
 		return health.Status{}, err
 	}
@@ -893,14 +900,23 @@ func probeHealthConn(ctx context.Context, conn net.Conn, timeout time.Duration) 
 	return decodeHealth(resp)
 }
 
-// probeHealthClient asks /healthz through an ordinary client, for the schemes
-// whose transport has no layers of its own to take apart.
-func probeHealthClient(ctx context.Context, baseURL string, client *http.Client) (health.Status, error) {
+// ProbeHealth asks /healthz through an ordinary client: for the schemes whose
+// transport has no layers of its own to take apart, and for a caller that only
+// wants the server's answer — `discobox version` asking which version it runs.
+//
+// An error means nothing served a Discobox health document here, which is
+// deliberately stricter than [EnsureRunning]'s own probe: that one counts a
+// bodyless or proxied answer as a server that is up, because it is deciding
+// whether to start a second one and a duplicate is the worse mistake. This one
+// is deciding what to tell a reader about the server it reached, and an empty
+// 200 from something in the way is no evidence of a Discobox server behind
+// it — so a report says so rather than naming a version it never heard.
+func ProbeHealth(ctx context.Context, baseURL string, client *http.Client) (health.Status, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+health.Path, nil)
 	if err != nil {
 		return health.Status{}, err
 	}
-	req.Header.Set("User-Agent", diagnoseUserAgent)
+	req.Header.Set("User-Agent", healthProbeUserAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		return health.Status{}, err

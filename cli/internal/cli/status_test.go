@@ -118,8 +118,8 @@ func TestStatusSkipsTheAPIWhenTheTransportFailed(t *testing.T) {
 	}
 }
 
-// An unreachable server is a non-zero exit, so `discobox status` is usable as a
-// check in a script; a reachable one is not.
+// An unreachable server is a non-zero exit, so `discobox admin server status` is
+// usable as a check in a script; a reachable one is not.
 func TestStatusExit(t *testing.T) {
 	if err := statusExit(brokenStatusReport()); err == nil {
 		t.Fatal("statusExit() = nil for an unreachable server")
@@ -149,17 +149,42 @@ func TestStatusReportSerializes(t *testing.T) {
 	}
 }
 
-// `discobox status` is a top-level command: it is what somebody reaches for
-// when nothing else works, and hunting through `admin` for it is one step too
-// many at that moment.
-func TestStatusCommandIsTopLevel(t *testing.T) {
-	root, _ := newRootCommand()
-	found, _, err := root.Find([]string{"status"})
-	if err != nil {
-		t.Fatalf("Find(status) error = %v", err)
+// The report opens with both ends' versions, because a mismatch between them
+// is one of the first things a broken connection is asked about. A server that
+// never answered has no version to report, and says so.
+func TestPrintStatusHeadsWithBothVersions(t *testing.T) {
+	printed := renderStatus(t, healthyStatusReport())
+	for _, want := range []string{"client    test linux/amd64", "server    v1.2.3 unix:///run/discobox/server.sock"} {
+		if !strings.Contains(printed, want) {
+			t.Fatalf("status report is missing %q:\n%s", want, printed)
+		}
 	}
-	if found.Name() != "status" || found.Parent() != root {
-		t.Fatalf("status resolved to %q under %v, want a top-level command", found.Name(), found.Parent())
+	if broken := renderStatus(t, brokenStatusReport()); !strings.Contains(broken, "server    unavailable discobox://d1-") {
+		t.Fatalf("an unreached server should read unavailable:\n%s", broken)
+	}
+}
+
+// Status is one of the server's commands, `discobox admin server status`, and
+// the top-level word is not a command at all: it is refused like any other
+// unknown one rather than taken for something else.
+func TestStatusCommandIsUnderAdminServer(t *testing.T) {
+	root, _ := newRootCommand()
+	found, _, err := root.Find([]string{"admin", "server", "status"})
+	if err != nil {
+		t.Fatalf("Find(admin server status) error = %v", err)
+	}
+	if found.Name() != "status" || found.Parent().Name() != "server" || found.Parent().Parent().Name() != "admin" {
+		t.Fatalf("admin server status resolved to %q", found.CommandPath())
+	}
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(&bytes.Buffer{})
+	cmd.SetArgs([]string{"status"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), `unknown command "status"`) {
+		t.Fatalf("`discobox status` error = %v, want an unknown command", err)
 	}
 }
 
@@ -199,6 +224,10 @@ func healthyStatusReport() statusReport {
 			Endpoint:  "unix:///run/discobox/server.sock",
 			Scheme:    "unix",
 			Transport: "a unix socket on this machine",
+			// What the server's health answer carried: the server row below
+			// says "ready", and the header names the version.
+			ServerStatus:  health.StatusReady,
+			ServerVersion: "v1.2.3",
 			Steps: []endpoint.DiagnosisStep{
 				{Layer: endpoint.DiagnosisLayerConnect, Status: endpoint.DiagnosisOK, Summary: "connected", DurationMS: 1},
 				{Layer: endpoint.DiagnosisLayerServer, Status: endpoint.DiagnosisOK, Summary: "ready", Detail: []string{"version test"}},
