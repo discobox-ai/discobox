@@ -652,12 +652,22 @@ func (s *upgradedResponseStream) Read(p []byte) (int, error) {
 }
 
 func (s *upgradedResponseStream) Write(p []byte) (int, error) {
+	// Counted before the bytes are handed on, not after. The origin can answer
+	// them the instant Write returns, and that answer travels the other
+	// direction — whose goroutine may reach finish() and snapshot the counters
+	// while this one has not yet run its Add. Counting first closes that
+	// window; a short write gives the difference back below, so the count is
+	// only ever transiently high and never loses a byte the origin has seen.
+	//
+	// The s2c direction needs no such care: its bytes reach the client only
+	// after Read returns, which is after its own Add.
+	s.c2sBytes.Add(int64(len(p)))
 	n, err := s.source.Write(p)
-	if n > 0 {
-		s.c2sBytes.Add(int64(n))
-		if s.stream != nil {
-			s.stream.RecordChunk(audit.StreamClientToServer, p[:n])
-		}
+	if n < len(p) {
+		s.c2sBytes.Add(int64(n) - int64(len(p)))
+	}
+	if n > 0 && s.stream != nil {
+		s.stream.RecordChunk(audit.StreamClientToServer, p[:n])
 	}
 	if err != nil {
 		s.finish()
