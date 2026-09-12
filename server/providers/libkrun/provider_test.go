@@ -28,7 +28,7 @@ func TestProviderIdentity(t *testing.T) {
 // its own: one publish has to be one edit, or a backend quietly keeps booting
 // the release before last.
 func TestGuestImageIsTheSharedPin(t *testing.T) {
-	guest, err := guestResolver(Config{})
+	guest, err := guestResolver(Config{}, nil)
 	if err != nil {
 		t.Fatalf("build guest resolver: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestGuestImageIsTheSharedPin(t *testing.T) {
 // image: it needs libkrunfw's patches, and a distribution kernel does not boot
 // under libkrun at all.
 func TestKernelIsResolvedFromItsOwnImage(t *testing.T) {
-	kernel, err := kernelResolver(Config{})
+	kernel, err := kernelResolver(Config{}, nil)
 	if err != nil {
 		t.Fatalf("build kernel resolver: %v", err)
 	}
@@ -58,11 +58,11 @@ func TestKernelIsResolvedFromItsOwnImage(t *testing.T) {
 // called vmlinux, so one directory would have them overwrite each other.
 func TestLocalBuildDirectoriesAreDistinctAndDefaulted(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	guest, err := guestResolver(Config{})
+	guest, err := guestResolver(Config{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernel, err := kernelResolver(Config{})
+	kernel, err := kernelResolver(Config{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

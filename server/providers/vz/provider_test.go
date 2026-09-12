@@ -180,7 +180,7 @@ func TestValidateAcceptsLocalGuestArtifacts(t *testing.T) {
 	if err := Validate(raw); err != nil {
 		t.Fatalf("Validate = %v", err)
 	}
-	resolver, err := guestResolver(Config{GuestImageDir: hostGuestDir()})
+	resolver, err := guestResolver(Config{GuestImageDir: hostGuestDir()}, nil)
 	if err != nil {
 		t.Fatalf("guestResolver: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestHostShareTagIsAcceptable(t *testing.T) {
 // appears to succeed and changes nothing.
 func TestGuestImageBuildSpecPointsAtTheGuestThisDriverBoots(t *testing.T) {
 	local := filepath.Join(t.TempDir(), "guest", "local")
-	guest, err := guestResolver(Config{GuestImageLocalDir: local})
+	guest, err := guestResolver(Config{GuestImageLocalDir: local}, nil)
 	if err != nil {
 		t.Fatalf("guestResolver: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestGuestImageBuildSpecDeclinesWithoutALocalDirectory(t *testing.T) {
 			t.Fatalf("seed override: %v", err)
 		}
 	}
-	guest, err := guestResolver(Config{GuestImageDir: override})
+	guest, err := guestResolver(Config{GuestImageDir: override}, nil)
 	if err != nil {
 		t.Fatalf("guestResolver: %v", err)
 	}

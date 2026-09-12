@@ -36,12 +36,16 @@ package registryauth
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 // shared is the process's keychain. One instance, so the warning about a
@@ -52,6 +56,36 @@ var shared = newKeychain(authn.DefaultKeychain)
 
 // Keychain returns the keychain every registry read in this server uses.
 func Keychain() authn.Keychain { return shared }
+
+// Credentials is the keychain's answer for a registry in the form the image
+// store asks for, for a provider that fetches through it (ADR 0113 §5).
+//
+// Empty when there is nothing to offer, which the store takes as anonymous:
+// the keychain already reads a registry anonymously when its credential store
+// will not answer, and records why so Explain can say so later. An identity
+// token, which is exchanged rather than presented, is not offered; the store
+// speaks the token exchange a public release registry uses and no other.
+func Credentials(ctx context.Context, registry string) imagecache.Credentials {
+	target, err := name.NewRegistry(registry)
+	if err != nil {
+		return imagecache.Credentials{}
+	}
+	auth, err := shared.ResolveContext(ctx, target)
+	if err != nil {
+		return imagecache.Credentials{}
+	}
+	config, err := authn.Authorization(ctx, auth)
+	if err != nil || config == nil {
+		return imagecache.Credentials{}
+	}
+	username, password := config.Username, config.Password
+	if username == "" && config.Auth != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(config.Auth); err == nil {
+			username, password, _ = strings.Cut(string(decoded), ":")
+		}
+	}
+	return imagecache.Credentials{Username: username, Password: password, Token: config.RegistryToken}
+}
 
 // Explain annotates an error from reading ref with the credential failure that
 // made that read anonymous, when there was one, and returns it unchanged when

@@ -13,7 +13,9 @@ VM image, hypervisor library, or launcher to install.
 
 Everything is ordered off that:
 
-1. `guestimage` pulls the guest boot artifacts by digest and caches them.
+1. `guestimage` fetches the guest image by digest through the server's image
+   store and extracts its boot artifacts. A CLI that launched the server has
+   staged it there already (ADR 0113), so on a first run this is local work.
 2. The VM boots and its Docker daemon comes up.
 3. The pool-agent image reaches that daemon. A release pulls its pinned image
    from the registry; in development, build-mode (`DevelopmentImageSync`)
@@ -21,8 +23,9 @@ Everything is ordered off that:
    daemon's own BuildKit, from the local checkout.
 4. The engine starts the pool-agent container.
 
-For the guest, the registry is load-bearing only for a machine's first boot of
-each pinned digest, and not at all once a locally built guest exists.
+For the guest, the registry is load-bearing only for a machine's first fetch of
+each pinned digest — made by the CLI before the server starts, when a CLI
+launched it — and not at all once a locally built guest exists.
 
 ## Process boundary
 
@@ -180,7 +183,7 @@ The root is shared read-only by every pool on the host. Each pool owns
 boot. Only raw images exist here: Virtualization.framework has no QCOW2 path.
 
 Everything lives under the XDG data home (`~/Library/Application
-Support/discobox/vz`): `guest/` caches one directory per pulled digest,
+Support/discobox/vz`): `guest/` holds the artifacts extracted from each digest,
 `guest/local/` is where a local guest build lands (`guestImageLocalDir`), and
 `pools/<poolID>/` holds `data.raw`, `cache.raw`, and `console.log`.
 `guestImageDir` bypasses resolution and boots a directory as-is, failing rather

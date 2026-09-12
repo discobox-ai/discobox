@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/imagecache"
 	guestvsock "github.com/discobox-ai/discobox/pool-agent/vsock"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -161,10 +162,10 @@ func Validate(data json.RawMessage) error {
 	}
 	// Building the resolvers is the configuration check: it is what rejects an
 	// unparseable reference or a relative path, and it touches no network.
-	if _, err := guestResolver(cfg); err != nil {
+	if _, err := guestResolver(cfg, nil); err != nil {
 		return err
 	}
-	if _, err := kernelResolver(cfg); err != nil {
+	if _, err := kernelResolver(cfg, nil); err != nil {
 		return err
 	}
 	return nil
@@ -181,11 +182,11 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	guest, err := guestResolver(cfg)
+	guest, err := guestResolver(cfg, serverDefaults.ImageCache)
 	if err != nil {
 		return nil, err
 	}
-	kernel, err := kernelResolver(cfg)
+	kernel, err := kernelResolver(cfg, serverDefaults.ImageCache)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +215,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
 		ImageRetention:       serverDefaults.ImageRetention,
+		ImageCache:           serverDefaults.ImageCache,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
 		ProgressReporter:     progress,
@@ -244,8 +246,12 @@ func driverConfig(cfg Config, guest, kernel *guestimage.Resolver, progress sandb
 // for: the guest image's kernel and initrd belong to backends that boot a
 // distribution kernel, and extracting artifacts this VM will never load would
 // cost a machine hundreds of megabytes of cache for nothing.
-func guestResolver(cfg Config) (*guestimage.Resolver, error) {
+//
+// Both resolvers fetch through images, the server's image store; Validate,
+// fetching nothing, passes none.
+func guestResolver(cfg Config, images *imagecache.Layout) (*guestimage.Resolver, error) {
 	return guestimage.New(guestimage.Config{
+		Images:      images,
 		Reference:   defaultString(cfg.GuestImage, guestimage.DefaultVMImage),
 		OverrideDir: strings.TrimSpace(cfg.GuestImageDir),
 		LocalDir:    defaultString(cfg.GuestImageLocalDir, effectiveGuestLocalDir("")),
@@ -254,8 +260,9 @@ func guestResolver(cfg Config) (*guestimage.Resolver, error) {
 	})
 }
 
-func kernelResolver(cfg Config) (*guestimage.Resolver, error) {
+func kernelResolver(cfg Config, images *imagecache.Layout) (*guestimage.Resolver, error) {
 	return guestimage.New(guestimage.Config{
+		Images:      images,
 		Reference:   defaultString(cfg.KernelImage, DefaultKernelImage),
 		OverrideDir: strings.TrimSpace(cfg.KernelImageDir),
 		LocalDir:    defaultString(cfg.KernelImageLocalDir, effectiveKernelLocalDir("")),

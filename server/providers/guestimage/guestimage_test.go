@@ -20,6 +20,8 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+
+	"github.com/discobox-ai/discobox/imagecache"
 )
 
 // pushGuestImage serves an in-process registry holding one image with the given
@@ -80,6 +82,7 @@ func TestResolveExtractsRequestedArtifacts(t *testing.T) {
 	})
 	resolver, err := New(Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		CacheDir:  t.TempDir(),
 		Platform:  linuxAMD64(),
 		Artifacts: []Artifact{{Name: "vmlinux"}, {Name: "initrd.img"}, {Name: "root.ext4"}},
@@ -120,6 +123,7 @@ func TestResolveCachesByDigestAcrossResolvers(t *testing.T) {
 	reference, requests := pushGuestImage(t, map[string][]byte{"vmlinux": []byte("kernel")})
 	config := Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		CacheDir:  t.TempDir(),
 		Platform:  linuxAMD64(),
 		Artifacts: []Artifact{{Name: "vmlinux"}},
@@ -150,9 +154,10 @@ func TestResolveCachesByDigestAcrossResolvers(t *testing.T) {
 	if bundle.Path("vmlinux") == "" {
 		t.Fatal("second Resolve returned no kernel path")
 	}
-	// The manifest is still fetched to learn the digest; no blob is transferred.
-	if blobs := requests.Load() - pulled; blobs > 2 {
-		t.Errorf("second Resolve made %d registry requests, want a manifest lookup only", blobs)
+	// A pinned digest's extraction is found on disk without asking the
+	// registry anything at all.
+	if extra := requests.Load() - pulled; extra != 0 {
+		t.Errorf("second Resolve made %d registry requests, want none", extra)
 	}
 }
 
@@ -162,6 +167,7 @@ func TestResolveFailsOnMissingRequiredArtifact(t *testing.T) {
 	reference, _ := pushGuestImage(t, map[string][]byte{"vmlinux": []byte("kernel")})
 	resolver, err := New(Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		CacheDir:  t.TempDir(),
 		Platform:  linuxAMD64(),
 		Artifacts: []Artifact{{Name: "vmlinux"}, {Name: "root.ext4"}},
@@ -184,6 +190,7 @@ func TestResolveToleratesAbsentOptionalArtifact(t *testing.T) {
 	reference, _ := pushGuestImage(t, map[string][]byte{"vmlinux": []byte("kernel")})
 	resolver, err := New(Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		CacheDir:  t.TempDir(),
 		Platform:  linuxAMD64(),
 		Artifacts: []Artifact{{Name: "vmlinux"}, {Name: "initrd.img", Optional: true}},
@@ -278,6 +285,7 @@ func TestResolvePrefersACompleteLocalDirectory(t *testing.T) {
 	}
 	resolver, err := New(Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		LocalDir:  local,
 		CacheDir:  t.TempDir(),
 		Platform:  linuxAMD64(),
@@ -324,6 +332,7 @@ func TestResolveFallsBackWhenTheLocalDirectoryIsIncomplete(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			resolver, err := New(Config{
 				Reference: reference,
+				Images:    imagecache.Open(t.TempDir()),
 				LocalDir:  local,
 				CacheDir:  t.TempDir(),
 				Platform:  linuxAMD64(),
@@ -377,6 +386,7 @@ func TestResolveReportsFetchProgress(t *testing.T) {
 	})
 	resolver, err := New(Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		CacheDir:  t.TempDir(),
 		Platform:  linuxAMD64(),
 		Artifacts: []Artifact{{Name: "vmlinux"}, {Name: "root.ext4"}},
@@ -409,8 +419,11 @@ func TestResolveReportsFetchProgress(t *testing.T) {
 	if first.Total <= 0 {
 		t.Errorf("first report total = %d, want the manifest's layer sizes", first.Total)
 	}
+	// The blob count comes from the manifest too, and its absence is how the
+	// layer tail went missing once already: nothing set these, and no test said
+	// so.
 	if first.Layers <= 0 {
-		t.Errorf("first report layers = %d, want the image's layer count", first.Layers)
+		t.Errorf("first report layers = %d, want the blobs being fetched", first.Layers)
 	}
 	last := reports[len(reports)-1]
 	if !last.Done {
@@ -419,8 +432,8 @@ func TestResolveReportsFetchProgress(t *testing.T) {
 	if last.Current != last.Total {
 		t.Errorf("closing report = %d of %d bytes, want every compressed byte counted", last.Current, last.Total)
 	}
-	if last.LayersComplete != last.Layers {
-		t.Errorf("closing report = %d of %d layers complete", last.LayersComplete, last.Layers)
+	if last.LayersComplete != last.Layers || last.Layers <= 0 {
+		t.Errorf("closing report = %d of %d blobs complete", last.LayersComplete, last.Layers)
 	}
 }
 
@@ -432,6 +445,7 @@ func TestResolveReportsNothingForACacheHit(t *testing.T) {
 	cache := t.TempDir()
 	config := Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		CacheDir:  cache,
 		Platform:  linuxAMD64(),
 		Artifacts: []Artifact{{Name: "vmlinux"}},
@@ -457,6 +471,42 @@ func TestResolveReportsNothingForACacheHit(t *testing.T) {
 	}
 }
 
+// A guest the CLI staged before starting the server is in the store already,
+// and a pool's first start extracts it without a single registry request: the
+// download happened where the user was watching (ADR 0113 §5).
+func TestResolveExtractsAGuestTheStoreAlreadyHolds(t *testing.T) {
+	reference, requests := pushGuestImage(t, map[string][]byte{"root.ext4": []byte("staged root")})
+	images := imagecache.Open(t.TempDir())
+	if _, err := images.Stage(context.Background(), []string{reference}, imagecache.Options{
+		Platform: imagecache.Platform{OS: "linux", Architecture: "amd64"},
+	}); err != nil {
+		t.Fatalf("stage: %v", err)
+	}
+	requests.Store(0)
+	resolver, err := New(Config{
+		Reference: reference,
+		Images:    images,
+		CacheDir:  t.TempDir(),
+		Platform:  linuxAMD64(),
+		Artifacts: []Artifact{{Name: "root.ext4"}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	reported := false
+	bundle, err := resolver.Resolve(context.Background(), func(Progress) { reported = true })
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	contents, err := os.ReadFile(bundle.Path("root.ext4"))
+	if err != nil || string(contents) != "staged root" {
+		t.Fatalf("root = %q, %v", contents, err)
+	}
+	if requests.Load() != 0 || reported {
+		t.Fatalf("a staged guest made %d registry requests (reported: %v), want none", requests.Load(), reported)
+	}
+}
+
 // A single-architecture manifest is returned whatever platform was asked for:
 // remote.WithPlatform only ever selects a child of an index. The guest image is
 // published for two architectures and its artifacts are a kernel and a root
@@ -468,6 +518,7 @@ func TestResolveRefusesAnImageBuiltForAnotherArchitecture(t *testing.T) {
 		&v1.Platform{OS: "linux", Architecture: "arm64"})
 	resolver, err := New(Config{
 		Reference: reference,
+		Images:    imagecache.Open(t.TempDir()),
 		CacheDir:  t.TempDir(),
 		Platform:  linuxAMD64(),
 		Artifacts: []Artifact{{Name: "root.ext4"}},

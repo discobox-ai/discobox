@@ -23,6 +23,7 @@ import (
 
 	"github.com/adrg/xdg"
 
+	"github.com/discobox-ai/discobox/imagecache"
 	guestvsock "github.com/discobox-ai/discobox/pool-agent/vsock"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -154,7 +155,7 @@ func Validate(data json.RawMessage) error {
 	}
 	// Building the resolver is the configuration check: it is what rejects an
 	// unparseable reference or a relative path, and it touches no network.
-	if _, err := guestResolver(cfg); err != nil {
+	if _, err := guestResolver(cfg, nil); err != nil {
 		return err
 	}
 	return nil
@@ -171,7 +172,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	guest, err := guestResolver(cfg)
+	guest, err := guestResolver(cfg, serverDefaults.ImageCache)
 	if err != nil {
 		return nil, err
 	}
@@ -259,6 +260,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
 		ImageRetention:       serverDefaults.ImageRetention,
+		ImageCache:           serverDefaults.ImageCache,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		HostMounts:           hostMounts(),
 		DevelopmentImageSync: imageSync,
@@ -270,9 +272,11 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 
 // guestResolver builds the artifact resolver for one configuration. It is
 // shared by Validate and construction so a bad guest image is reported when the
-// provider is configured rather than when a pool first starts.
-func guestResolver(cfg Config) (*guestimage.Resolver, error) {
+// provider is configured rather than when a pool first starts. images is the
+// store it fetches through, which Validate, fetching nothing, does not need.
+func guestResolver(cfg Config, images *imagecache.Layout) (*guestimage.Resolver, error) {
 	return guestimage.New(guestimage.Config{
+		Images:      images,
 		Reference:   effectiveGuestImage(cfg.GuestImage),
 		OverrideDir: strings.TrimSpace(cfg.GuestImageDir),
 		LocalDir:    effectiveGuestLocalDir(cfg.GuestImageLocalDir),

@@ -3,16 +3,19 @@
 // Docker daemon.
 //
 // This is what lets a pool backend bootstrap itself on macOS (ADR 0062 §5).
-// The guest image is built and released on its own line, and the artifacts are
-// pulled straight from the registry with go-containerregistry: no daemon, no
-// crane binary, and nothing to install before the first pool starts.
+// The guest image is built and released on its own line, and it is fetched
+// through the image store the server hands its providers (imagecache, ADR 0113
+// §5): no daemon, no crane binary, and nothing to install before the first pool
+// starts. A guest the CLI staged before starting the server is extracted from
+// local blobs; one it did not is downloaded into the store on the way.
 //
 // Resolution has two modes, and a driver treats them identically:
 //
-//   - A reference is pulled once per digest and cached under CacheDir. The
-//     cache is content-addressed by the image's manifest digest, so a new guest
-//     release lands beside the old one rather than replacing it in place, and
-//     an interrupted extraction can never be mistaken for a complete one.
+//   - A reference is fetched once per digest and its artifacts extracted under
+//     CacheDir. That cache is content-addressed by the image's manifest digest,
+//     so a new guest release lands beside the old one rather than replacing it
+//     in place, and an interrupted extraction can never be mistaken for a
+//     complete one.
 //   - An override directory is used as-is. That is how a guest image built from
 //     local sources — including one built inside a running pool VM and exported
 //     back to the host (ADR 0062 §7) — is booted without publishing it.
@@ -25,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -34,11 +38,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 // Artifact is one file a driver needs out of the guest image.
@@ -78,6 +82,13 @@ type Config struct {
 	// host's architecture. A VM guest is Linux whatever the host runs, and the
 	// architecture must match the hypervisor's, which is the host's.
 	Platform *v1.Platform
+	// Images is the image store a reference is fetched through (ADR 0113 §5).
+	// A resolver only checking its configuration may have none; resolving a
+	// reference without one is an error, and an override directory needs none.
+	Images *imagecache.Layout
+	// Client fetches from the registry when the store lacks something. Nil is
+	// the store's own.
+	Client *http.Client
 }
 
 // Bundle is a resolved artifact set on local disk.
@@ -103,17 +114,20 @@ func (b *Bundle) Path(artifact string) string {
 // Progress is one report about a guest image being fetched, shaped for a status
 // line rather than for a progress bar.
 //
-// Current counts the compressed bytes read from the registry, which is what the
-// wait is actually made of: extraction is streamed, so a layer is downloaded as
-// it is written out. Total is the sum of the layer sizes the manifest declares,
-// so unlike a Docker pull it is known before the first byte and does not grow.
+// Current counts the compressed bytes read from the registry into the image
+// store, which is what the wait is actually made of. Total is the sum of the
+// sizes of what the store lacked, declared by the manifest, so unlike a Docker
+// pull it is known before the first byte and does not grow. An image already in
+// the store reports nothing: extracting it is local work with no denominator.
 type Progress struct {
 	// Reference is the image being fetched.
 	Reference string
 	// Current and Total are compressed bytes.
 	Current int64
 	Total   int64
-	// Layers and LayersComplete count the image's layers.
+	// Layers and LayersComplete count the blobs the fetch is made of: how many
+	// the store had to download, and how many are in. Both are zero for an
+	// image it already held, which downloads nothing.
 	Layers         int
 	LayersComplete int
 	// Done marks the closing report, sent once the artifacts are on disk.
@@ -129,12 +143,9 @@ type ProgressFunc func(Progress)
 
 // progressInterval is how often a fetch in flight is reported. It matches the
 // pool image pull's rate, because both end up on the same status line and a
-// byte counter has to move at about this rate to read as movement.
-//
-// Reporting is on a ticker rather than on byte arrival, so a stalled download
-// keeps restating the phase. Nothing else does: unlike the phases a driver
-// holds, a fetch has no heartbeat of its own, and a status line that goes stale
-// mid-fetch reverts to saying only that the pool is being waited on.
+// byte counter has to move at about this rate to read as movement. The store
+// reports on a ticker rather than on byte arrival, so a stalled download keeps
+// restating the phase.
 const progressInterval = 500 * time.Millisecond
 
 // Resolver resolves one driver's guest artifacts, at most once per process for
@@ -277,38 +288,59 @@ func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, e
 	if err != nil {
 		return nil, fmt.Errorf("guestimage: parse reference %q: %w", r.cfg.Reference, err)
 	}
-	if _, pinned := ref.(name.Digest); !pinned {
+	pinned, isPinned := ref.(name.Digest)
+	if isPinned {
+		// A complete cache directory is the whole freshness check, and for a
+		// pinned reference it is known without asking anything: extraction
+		// renames a fully written directory into place, so one that exists
+		// with every required artifact in it was written by a completed
+		// extraction of exactly this digest.
+		if hash, err := v1.NewHash(pinned.DigestStr()); err == nil {
+			if bundle, err := r.collect(r.digestDir(hash), hash.String()); err == nil {
+				return bundle, nil
+			}
+		}
+	} else {
 		// Not an error: a tag is how a developer points at a guest build that has
 		// no digest yet. It is worth saying out loud, because it is the one way
 		// two servers on the same tag can boot different guests.
 		slog.WarnContext(ctx, "guest image reference is not digest-pinned", "reference", r.cfg.Reference)
 	}
+	if r.cfg.Images == nil {
+		return nil, fmt.Errorf("guestimage: no image store to fetch %s through", r.cfg.Reference)
+	}
 
-	descriptor, err := remote.Get(ref,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(registryauth.Keychain()),
-		remote.WithPlatform(r.platform()))
+	platform := r.platform()
+	fetched, err := r.cfg.Images.Fetch(ctx, r.cfg.Reference, imagecache.Options{
+		Platform:    imagecache.Platform{OS: platform.OS, Architecture: platform.Architecture, Variant: platform.Variant},
+		Client:      r.cfg.Client,
+		Credentials: registryauth.Credentials,
+		// A tag is asked about on every resolution, as it always was: it is
+		// how a developer's pushed guest reaches a running machine.
+		Revalidate: !isPinned,
+		OnProgress: fetchProgress(r.cfg.Reference, report),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("guestimage: fetch %s: %w", r.cfg.Reference, registryauth.Explain(ref, err))
 	}
-	digest := descriptor.Digest.String()
-	dir := r.digestDir(descriptor.Digest)
-
-	// A complete cache directory is the whole freshness check. Extraction
-	// renames a fully written directory into place, so a directory that exists
-	// with every required artifact in it was written by a completed extraction.
+	digest := fetched.Digest()
+	hash, err := v1.NewHash(digest)
+	if err != nil {
+		return nil, fmt.Errorf("guestimage: %s: %w", r.cfg.Reference, err)
+	}
+	dir := r.digestDir(hash)
 	if bundle, err := r.collect(dir, digest); err == nil {
 		return bundle, nil
 	}
 
-	image, err := descriptor.Image()
+	image, err := storedImage(fetched)
 	if err != nil {
 		return nil, fmt.Errorf("guestimage: read %s: %w", r.cfg.Reference, err)
 	}
 	if err := r.checkPlatform(image); err != nil {
 		return nil, err
 	}
-	if err := r.extract(ctx, image, dir, report); err != nil {
+	if err := r.extract(ctx, image, dir); err != nil {
 		return nil, err
 	}
 	bundle, err := r.collect(dir, digest)
@@ -320,13 +352,45 @@ func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, e
 	return bundle, nil
 }
 
+// fetchProgress narrates a fetch through the store, at the rate the pool image
+// pull reports at — both land on the same status line. The store reports only a
+// fetch that goes to the registry, so a guest already in it resolves without a
+// word, as a cache hit always did.
+func fetchProgress(reference string, report ProgressFunc) func(imagecache.Progress) {
+	if report == nil {
+		return nil
+	}
+	var last time.Time
+	return func(fetch imagecache.Progress) {
+		// The store opens with a report that names the image before its
+		// manifests say how big it is. The driver has announced the phase
+		// already, and a byte counter with no denominator says nothing more.
+		if fetch.Total == 0 && !fetch.Done {
+			return
+		}
+		if !fetch.Done && time.Since(last) < progressInterval {
+			return
+		}
+		last = time.Now()
+		report(Progress{
+			Reference:      reference,
+			Current:        fetch.Current,
+			Total:          fetch.Total,
+			Layers:         fetch.Layers,
+			LayersComplete: fetch.LayersComplete,
+			Done:           fetch.Done,
+		})
+	}
+}
+
 // checkPlatform refuses an image built for another architecture.
 //
-// remote.WithPlatform selects a child of an index and does nothing at all to a
-// plain single-architecture manifest, which is returned whatever was asked for.
-// That is a silent failure with no good symptom: the artifacts extract, the VM
+// Selecting a child of an index does nothing at all to a plain
+// single-architecture manifest, which is returned whatever was asked for. That
+// is a silent failure with no good symptom: the artifacts extract, the VM
 // boots, and the guest panics on its first instruction. The image's own config
-// is the authority, so it is what gets checked.
+// is the authority, so it is what gets checked — here as well as in the store,
+// because this is the check whose failure names the guest.
 //
 // Only a stated mismatch is refused. An image that declares no architecture
 // makes no claim to contradict, and refusing it would reject a hand-assembled
@@ -348,7 +412,7 @@ func (r *Resolver) checkPlatform(image v1.Image) error {
 // extract flattens the image and writes the wanted artifacts into dir. It
 // builds a temporary directory and renames it, so a partially extracted
 // directory is never visible under a digest.
-func (r *Resolver) extract(ctx context.Context, image v1.Image, dir string, report ProgressFunc) error {
+func (r *Resolver) extract(ctx context.Context, image v1.Image, dir string) error {
 	if err := os.MkdirAll(r.cfg.CacheDir, 0o755); err != nil {
 		return fmt.Errorf("guestimage: create cache directory: %w", err)
 	}
@@ -372,19 +436,6 @@ func (r *Resolver) extract(ctx context.Context, image v1.Image, dir string, repo
 		if !artifact.Optional {
 			required[clean] = struct{}{}
 		}
-	}
-
-	// Narration wraps the image rather than the tar stream, because the bytes
-	// worth counting are the compressed ones crossing the network. Extraction
-	// is what pulls them: mutate.Extract reads each layer as it flattens, so
-	// the download and the write to disk are one pass and one progress report.
-	if report != nil {
-		counted, stop, err := countedImage(image, r.cfg.Reference, report)
-		if err != nil {
-			return err
-		}
-		defer stop()
-		image = counted
 	}
 
 	contents := mutate.Extract(image)

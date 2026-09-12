@@ -9,8 +9,8 @@ Docker behavior, while this package owns one local libkrun microVM per pool.
 A linux/amd64 machine needs `discobox-server`, KVM, and two things the launcher
 reaches at run time: `passt` on `PATH`, and `libkrun.so.1` somewhere the dynamic
 loader looks. Nothing else, including for guest artifacts: the root filesystem
-and the kernel are pulled by digest from a registry, and no image is built on
-the host to start a pool.
+and the kernel are fetched by digest through the server's image store — from a
+registry the first time — and no image is built on the host to start a pool.
 
 Both are dlopened or exec'd by name, never linked, so "somewhere the loader
 looks" is the whole of the install contract and a Nix store path does not
@@ -21,9 +21,12 @@ provider's `libkrunPath` or puts it on the loader's path itself.
 
 Everything is ordered off that:
 
-1. `guestimage` pulls `root.ext4` from the shared guest image and `vmlinux` from
-   the kernel image, and caches both by digest. The pool reports this as
-   `sandbox.PoolPhaseFetchingVMImage`, with byte counts.
+1. `guestimage` fetches the shared guest image and the kernel image through the
+   server's image store (ADR 0113 §5) and extracts `root.ext4` and `vmlinux`,
+   one directory per digest. The pool reports this as
+   `sandbox.PoolPhaseFetchingVMImage`, with byte counts while anything is
+   downloaded. libkrun is not Linux's default provider, so a CLI does not stage
+   these ahead of a first run; the first pool fetches them into the store.
 2. The launcher child boots the VM and its Docker daemon comes up.
 3. With development image sync on, the engine converges the watcher's pool,
    sandbox-base, and harness images onto that daemon — copied from the host
@@ -151,7 +154,7 @@ has its own image and its own clock.
 | Path | Holds |
 | --- | --- |
 | `<stateDir>/<poolID>/{data,cache}.raw` | the pool's durable and disposable disks |
-| `<default stateDir>/.images/{guest,kernel}/` | pulled images, one directory per digest, and `local/` for a local build |
+| `<default stateDir>/.images/{guest,kernel}/` | artifacts extracted from each fetched digest, and `local/` for a local build |
 | `<runtimeDir>/<poolID>/` | `passt.sock` and the host-listening VSOCK sockets, the manifest `config.json`, `console.log`, `launcher.log`, `passt.log` |
 
 `stateDir` defaults under `XDG_DATA_HOME` and `runtimeDir` under
@@ -161,9 +164,10 @@ exists, so disks created under the old provider name are still found.
 The image cache follows neither that fallback nor a configured `stateDir`: it is
 always under the default directory, because `task build:vm-guest` has to write
 where the resolver reads and a task cannot know one provider instance's
-configuration. Configure `imageCacheDir` to move the digest cache; the `local/`
-build directories move separately, with `guestImageLocalDir` and
-`kernelImageLocalDir`. The leading dot is what
+configuration. This provider's `imageCacheDir` moves that extraction cache —
+the compressed images themselves live in the server's image store, the server
+configuration's own `imageCacheDir` — and the `local/` build directories move
+separately, with `guestImageLocalDir` and `kernelImageLocalDir`. The leading dot is what
 keeps `.images` from colliding with a pool in the default layout — a pool ID
 must start with a letter or a digit, so no pool can take that name — and where
 `stateDir` is configured elsewhere the two are not in the same directory at all.
