@@ -41,6 +41,14 @@ jq '{sandboxId, user, git, sources, harnessMode, prompt, volumes,
   `brew` group you are in rather than owned by a uid the image could not know.
   Auto-update is off, so `brew update` is not how you refresh — formula data
   comes from the JSON API and is current without it.
+- Upgrade the harness agent with `discobox-harness-upgrade`. The agent's own
+  updater is off on purpose: the version a box runs is pinned when the box is
+  first used and does not change under it, and new versions arrive in a
+  pool-shared store that a background check advances twice a day. So a box keeps
+  the version it started with for its whole life, a newly created box starts on
+  the newest version the pool has downloaded, and nothing goes to the network to
+  check at startup. `discobox-agent-store status` prints what this box is on and
+  what the store holds. An upgrade takes effect when the agent is restarted.
 - Docker, nested and real. `docker build` uses a pool-shared BuildKit builder,
   and the MITM CA is injected into every container you start, so nested builds
   and containers reach the network without trust wiring.

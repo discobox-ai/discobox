@@ -21,6 +21,10 @@ RUN npm install -g @anthropic-ai/claude-code \
     && install -d -m 0755 /usr/local/libexec/discobox /etc/claude-code
 
 COPY --chmod=0644 managed-settings.json /etc/claude-code/managed-settings.json
+# The agent this image installed, for the pool-cached version store
+# (ADR 0114 §7). The store is generic; this file is the only harness-specific
+# part of it.
+COPY --chmod=0644 agent.conf /usr/local/libexec/discobox/agent.conf
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-claude-code
 # The harness-run convention (ADR 0086 §3): the image installs its agent
 # under this name, overwriting the base image's no-op shim, and the runtime

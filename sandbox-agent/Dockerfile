@@ -388,6 +388,7 @@ RUN set -eux \
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
 COPY sandbox-agent/image/profile.d/sandbox-direnv.sh /etc/profile.d/sandbox-direnv.sh
 COPY sandbox-agent/image/profile.d/sandbox-desktop-scale.sh /etc/profile.d/sandbox-desktop-scale.sh
+COPY sandbox-agent/image/profile.d/sandbox-agent-store.sh /etc/profile.d/sandbox-agent-store.sh
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
@@ -489,6 +490,13 @@ COPY --chmod=0755 sandbox-agent/image/nix-shim /usr/local/lib/discobox/nix-shim
 # The harness-run convention's default implementation, for an image that
 # installs no agent of its own. A harness image overwrites it. See ADR 0086 §3.
 COPY --chmod=0755 sandbox-agent/image/harness-run /usr/local/bin/discobox-harness-run
+# The pool-cached agent store (ADR 0114): `pin` chooses the version this
+# sandbox runs and keeps it across restarts, `refresh` advances the store on a
+# stamp, and `discobox-harness-upgrade` is the by-hand "now". Both are inert in
+# an image that ships no agent.conf, so the `shell` harness carries them
+# harmlessly.
+COPY --chmod=0755 sandbox-agent/image/agent-store /usr/local/bin/discobox-agent-store
+COPY --chmod=0755 sandbox-agent/image/harness-upgrade /usr/local/bin/discobox-harness-upgrade
 COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
 # Installs as `runc` on a directory prepended to containerd's and dockerd's
 # PATH, so every container either one starts has the MITM CA bundles and proxy

@@ -1,0 +1,10 @@
+#!/bin/sh
+# discobox-harness-upgrade — fetch the newest release of this image's agent and
+# run it here (ADR 0114 §4).
+#
+# The agent's own updater is off (ADR 0114 §3) and the store's check window is
+# twice a day, so this is the way to say "now" — and it is a command a person
+# types rather than something that happens to a sandbox mid-session. It changes
+# only the sandbox it runs in; what it fetches is also what the next new sandbox
+# on this pool will start on.
+exec discobox-agent-store upgrade "$@"

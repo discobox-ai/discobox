@@ -22,6 +22,8 @@
     { "path": "/nix/var/nix/gcroots", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
     { "path": "%HOME%/.cache", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.local/share/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/.local/share/discobox/agents", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/.npm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/go/pkg/mod", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.cargo/registry", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.cargo/git", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },

@@ -9,6 +9,13 @@
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
+# The version a sandbox runs comes from the pool-cached store, chosen once and
+# kept across restarts (ADR 0114). Codex never installs an upgrade itself — it
+# prints the npm command — but it does ask a release endpoint on every startup,
+# which is the per-start network call the store exists to remove. Ask for a
+# newer one with `discobox-harness-upgrade`.
+check_for_update_on_startup = false
+
 # Discobox uses the primary terminal's OSC title as the sandbox display name.
 # Codex 0.150+ gives a new thread a provisional title from its first prompt,
 # then asynchronously replaces it with a generated title. Activity keeps the

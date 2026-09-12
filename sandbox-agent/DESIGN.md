@@ -578,6 +578,21 @@ development images without a registry.
   is a property of the directory and also covers an `.envrc` below the root.
   Written only when absent: direnv reads exactly one config, so a prefix
   somebody adds by hand has nowhere else to live.
+- The agent version a harness sandbox runs is chosen from the pool-cached
+  version store, by `/etc/profile.d/sandbox-agent-store.sh` calling the image's
+  `discobox-agent-store`
+  ([ADR 0114](../docs/adr/0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)).
+  The login sequence is the hook because the harness command is *typed* into a
+  terminal's login shell (ADR 0027), so it runs before the agent in every
+  harness image, ours and other people's, with no launcher changes. `pin` is
+  synchronous and touches only symlinks and directory names; `refresh` is
+  `setsid`-detached and returns immediately unless the store's 12h stamp has
+  expired, so no login waits on the network and a sandbox that powers off
+  mid-fetch (ADR 0108) loses a temp directory rather than a version. The script
+  is shell, in the image, rather than anything the agent runs: its whole
+  vocabulary is symlinks, version directories and npm, and nothing outside the
+  sandbox reads or decides any of it. `sandbox-agent/agentstore` exists to test
+  it.
 - Run identity is owned by [`runuser`](runuser/DESIGN.md): one call resolves who
   a process runs as, so nothing re-derives it. `execs.User` is that package's
   type. `execs.Manager.ResolveUser` is the entry point for execs and terminals —

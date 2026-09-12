@@ -122,9 +122,31 @@ launchers, and configure scripts.
     sandbox's own installs persist. The tree is handed to the `brew` group
     rather than to a uid
     ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)).
+  - The **agent version store**, `%HOME%/.local/share/discobox/agents` on
+    `cache`, and npm's download cache `%HOME%/.npm` beside it
+    ([ADR 0114](../docs/adr/0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)).
+    The store holds one directory per agent version, so a sandbox can be
+    pinned to one while the pool moves on; `~/.npm-global` is deliberately
+    *not* cached, because npm's global tree is unversioned and is ahead of
+    `/usr/local/bin`'s shims on PATH.
   - The rest of the persistent and cached paths, the `brew`, `docker`, and
     `kvm` supplementary groups, the `NIX_*`/`HOMEBREW_*`/`PATH`/
     `NPM_CONFIG_PREFIX` env, and the pnpm `storeDir` seed file.
+- **The agent version a sandbox runs comes from that store, not from the
+  image** ([ADR 0114](../docs/adr/0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)).
+  A harness image declares what it installed in
+  `/usr/local/libexec/discobox/agent.conf` (`AGENT_PACKAGE`, `AGENT_BIN`, and
+  optionally `AGENT_IMAGE_DIRS`), and the base image does the rest from
+  `/etc/profile.d/sandbox-agent-store.sh`: `discobox-agent-store pin` points
+  `~/.local/bin/<bin>` at the newest version in the store, once per sandbox and
+  never again, and a detached `refresh` advances the store at most twice a day
+  per pool user. Launchers are untouched by this — the pin is ahead of
+  `/usr/bin` on PATH, so `launch.sh` still just runs its agent — and an image
+  with no `agent.conf` (the `shell` harness) is unaffected. Because the store is
+  the version source, each image also turns its agent's own updater off:
+  `DISABLE_AUTOUPDATER` in claude-code's env layer, `check_for_update_on_startup`
+  in codex's system config. `discobox-harness-upgrade` is the by-hand "newest,
+  now".
 - Every harness image provides **`/usr/local/bin/discobox-prompt`**, a one-shot
   prompting interface in-sandbox tools ask for a model through
   ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):

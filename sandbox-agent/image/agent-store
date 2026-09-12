@@ -1,0 +1,472 @@
+#!/bin/sh
+# discobox-agent-store — the sandbox's half of the pool-cached agent store
+# (ADR 0114).
+#
+# The image installs an agent (Claude Code, Codex) with npm, and that copy is
+# the version the image was built with. Releases are near-daily and the download
+# is ~100MB for a ~250MB tree, so the version a sandbox runs lives in a
+# *versioned* store on the pool cache instead: one directory per version, shared
+# by every sandbox of the same user on the pool (ADR 0094 partitions it by uid).
+#
+# Three rules, and every command here serves one of them:
+#
+#   - A sandbox keeps its version across restarts. The pin is a symlink in
+#     ~/.local/bin, which is on the sandbox's own data volume and precedes
+#     /usr/bin on PATH. Once written it is never rewritten (except by `upgrade`,
+#     which a person asks for).
+#   - A new sandbox starts on the newest version the pool already downloaded.
+#     `pin` reads the store, not the network.
+#   - Nothing asks the network at startup. `refresh` is started detached from
+#     the login sequence and stamps the store, so the registry is asked at most
+#     twice a day however many sandboxes launch. The stamp is the schedule:
+#     sandboxes stop themselves when idle (ADR 0108), so a timer would only ever
+#     fire in a box that stayed up for the whole window.
+#
+# The image says which agent it installed in agent.conf (ADR 0114 §7); an image
+# that ships no agent.conf — the `shell` harness — makes every command here a
+# no-op.
+set -eu
+
+conf=${DISCOBOX_AGENT_CONF:-/usr/local/libexec/discobox/agent.conf}
+
+# Twice a day, keep two versions, and a pin counts as live for thirty days.
+# ADR 0114 §§4-5.
+check_window_minutes=720
+keep_versions=2
+pin_grace_days=30
+# How long `upgrade` waits for another sandbox's download before giving up on
+# the lock. Long enough to outlast a fetch (a minute or two), short enough that
+# a person is not left staring at a prompt.
+lock_wait_seconds=300
+
+usage() {
+	cat <<'EOF'
+Usage: discobox-agent-store <command>
+
+  pin       Point ~/.local/bin at the newest version in the store, once.
+  refresh   Fetch a new version into the store if the check window has passed.
+            --force checks now, whatever the stamp says. Says nothing either
+            way: this is what the login sequence runs detached.
+  upgrade   Refresh now, re-pin this sandbox to the result, and report what
+            happened — including when nothing could be checked.
+  status    Print the agent, the versions in the store, and this sandbox's pin.
+EOF
+}
+
+# An image with no agent.conf installed no agent, so there is nothing to pin,
+# fetch or report. Exiting 0 keeps the login sequence quiet on those images.
+if [ ! -r "$conf" ]; then
+	exit 0
+fi
+
+AGENT_PACKAGE=
+AGENT_BIN=
+# AGENT_IMAGE_DIRS is the space-separated list of global node_modules
+# directories to look for the image's own copy in. Images that install an agent
+# where npm's root prefixes are not may set it; ours do not.
+AGENT_IMAGE_DIRS=
+# shellcheck source=/dev/null
+. "$conf"
+
+if [ -z "$AGENT_PACKAGE" ] || [ -z "$AGENT_BIN" ]; then
+	printf 'discobox-agent-store: %s declares no AGENT_PACKAGE/AGENT_BIN\n' "$conf" >&2
+	exit 1
+fi
+
+# The store directory keeps the package's scope rather than its bare name: two
+# images whose agents share a basename under different scopes would otherwise
+# land in one directory and pin each other's versions (ADR 0114 §1).
+slug=$(printf '%s' "$AGENT_PACKAGE" | sed 's/^@//; s#[^A-Za-z0-9._-]#-#g')
+store=$HOME/.local/share/discobox/agents
+dir=$store/$slug
+link=$HOME/.local/bin/$AGENT_BIN
+
+# image_version prints the version of the agent the image itself installed, or
+# nothing if it cannot be found. Nothing is pinned in that case (cmd_pin): the
+# store may only be preferred when it is demonstrably newer.
+image_version() {
+	# Deliberately word-split: the setting is a search path, not one directory.
+	# shellcheck disable=SC2086
+	set -- ${AGENT_IMAGE_DIRS:-/usr/lib/node_modules /usr/local/lib/node_modules}
+	for image_dir in "$@"; do
+		if [ -r "$image_dir/$AGENT_PACKAGE/package.json" ]; then
+			# `q` after the first match rather than `| head -1`: this runs in
+			# the login sequence, where a saved process is a saved fork. The
+			# address demands the whole shape the substitution does — key,
+			# colon, opening quote — so a line it selects is always a line the
+			# substitution fires on, and `q` cannot quit on a nested "version"
+			# key having printed nothing.
+			sed -n '/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"/{s/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;q;}' \
+				"$image_dir/$AGENT_PACKAGE/package.json"
+			return 0
+		fi
+	done
+}
+
+# is_version is the one answer to "is this directory a usable version", and
+# every reader here asks it — store_versions, fetch and prune. They disagreed
+# once: fetch tested `[ -d ]` while the others tested the executable, and a
+# directory that existed without one wedged the store permanently. npm view kept
+# naming that version, fetch kept seeing a directory and skipping, nothing could
+# pin it and nothing rebuilt it.
+is_version() {
+	[ -x "$dir/$1/bin/$AGENT_BIN" ]
+}
+
+# store_versions prints one version directory name per line. A half-built or
+# half-deleted tree is not a version: it is never listed, never pinned, and
+# prune deletes it as wreckage.
+store_versions() {
+	[ -d "$dir" ] || return 0
+	for entry in "$dir"/*; do
+		version=${entry##*/}
+		case $version in
+		'*' | .*) continue ;;
+		esac
+		is_version "$version" || continue
+		printf '%s\n' "$version"
+	done
+}
+
+newest_version() {
+	store_versions | sort -V | tail -1
+}
+
+# newer_than A B is true when A sorts above B. Version strings, so sort -V.
+newer_than() {
+	[ "$1" != "$2" ] || return 1
+	[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
+}
+
+# worth_fetching is true only for a version this pool could actually end up
+# running: one above both the store's newest and the image's own copy.
+#
+# `npm view <pkg> version` answers the `latest` dist-tag, and a tag is a pointer,
+# not a high-water mark — a vendor who ships a bad release moves it *back*.
+# Without this, that costs a fetch of 100+ MiB, which prune then deletes on the
+# next line of the same function, because a version that just landed has no pin
+# and does not sort into the newest two. Every window. Forever, until the vendor
+# publishes above the store again, and silently, because the refresh is
+# detached. The same test skips a fetch the image already satisfies: §2 pins the
+# store only when it beats the image, so a version below it would be downloaded
+# for nobody.
+#
+# The alternative — keeping the tagged version whatever it sorts as — would have
+# redefined retention and still not have been pinned, since §2 pins the newest
+# in the store rather than the tagged one. Declining to fetch makes a rollback a
+# no-op instead, which is what "a pin is for life and the newest wins" already
+# implies.
+worth_fetching() {
+	reference=$(newest_version)
+	image=$(image_version)
+	if [ -n "$image" ] && { [ -z "$reference" ] || newer_than "$image" "$reference"; }; then
+		reference=$image
+	fi
+	[ -n "$reference" ] || return 0
+	newer_than "$1" "$reference"
+}
+
+# sandbox_id names this sandbox in a version's pins/ directory. The manifest is
+# the authority; a sandbox running outside one (a bare `docker run` debug
+# session) falls back to its hostname, which is only ever used to decide whether
+# a version is still in use.
+sandbox_id() {
+	id=$(sed -n '/"sandboxId"[[:space:]]*:[[:space:]]*"/{s/.*"sandboxId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;q;}' \
+		/etc/discobox/sandbox.json 2>/dev/null) || id=
+	if [ -z "$id" ]; then
+		id=$(hostname 2>/dev/null) || id=unknown
+	fi
+	printf '%s' "$id"
+}
+
+# touch_pin records that this sandbox is using a version. Retention reads the
+# mtime, so this runs on every login rather than only when the pin is created:
+# it is the only way one sandbox can tell another is still on a version.
+touch_pin() {
+	[ -d "$dir/$1" ] || return 0
+	mkdir -p "$dir/$1/pins" 2>/dev/null || return 0
+	touch "$dir/$1/pins/$(sandbox_id)" 2>/dev/null || true
+}
+
+# pinned_version prints the store version this sandbox is pinned to, or nothing
+# if the link is absent or points somewhere else — a link the sandbox's own user
+# put there is somebody's deliberate choice, and is not ours to read or replace.
+pinned_version() {
+	[ -L "$link" ] || return 0
+	target=$(readlink "$link")
+	case $target in
+	"$dir"/*) ;;
+	*) return 0 ;;
+	esac
+	target=${target#"$dir"/}
+	printf '%s' "${target%%/*}"
+}
+
+cmd_pin() {
+	pinned=$(pinned_version)
+	if [ -n "$pinned" ]; then
+		# Already pinned. Keep the version this sandbox is running, whatever
+		# the store has moved on to, and just say it is still in use.
+		touch_pin "$pinned"
+		return 0
+	fi
+	# Anything else already at the path — a real file, a directory, a link out
+	# of the store — belongs to whoever put it there.
+	if [ -e "$link" ] || [ -L "$link" ]; then
+		return 0
+	fi
+
+	candidate=$(newest_version)
+	[ -n "$candidate" ] || return 0
+	image=$(image_version)
+	if [ -z "$image" ]; then
+		# What the image ships cannot be read, so whether the store beats it
+		# cannot be decided. Leave the image's own copy on PATH: it is what the
+		# box runs today, and preferring it cannot downgrade anybody. Failing
+		# the other way pins whatever the cache happens to hold — and a cache
+		# that lags a freshly bumped image is the normal state, so the box would
+		# silently run an older agent for the rest of its life (ADR 0114 §2).
+		return 0
+	fi
+	if ! newer_than "$candidate" "$image"; then
+		# The image's own copy is at least as new, and it is already on PATH.
+		return 0
+	fi
+
+	mkdir -p "$HOME/.local/bin"
+	ln -sfn "$dir/$candidate/bin/$AGENT_BIN" "$link"
+	touch_pin "$candidate"
+}
+
+# pinned_recently is true while some sandbox still says it is using a version.
+pinned_recently() {
+	[ -d "$dir/$1/pins" ] || return 1
+	[ -n "$(find "$dir/$1/pins" -type f -mtime -"$pin_grace_days" 2>/dev/null | head -1)" ]
+}
+
+# prune enforces retention: the newest few versions always, anything a sandbox
+# has touched recently, and nothing else. Without it the store grows by a
+# quarter of a gigabyte per release.
+#
+# It walks every directory rather than every *version*, because the trees that
+# most need deleting are the ones that are not versions: a tree whose own delete
+# was interrupted has lost its executable, so a pass that iterated versions
+# could never see it again, and it would hold its hundreds of megabytes forever.
+prune() {
+	# A version string holds no spaces, so a space-delimited haystack is enough
+	# to ask "is this one of the ones we keep".
+	keep=$(store_versions | sort -V | tail -n "$keep_versions" | tr '\n' ' ')
+	for entry in "$dir"/*; do
+		version=${entry##*/}
+		case $version in
+		'*' | .*) continue ;;
+		esac
+		[ -d "$dir/$version" ] || continue
+		case " $keep " in
+		*" $version "*) continue ;;
+		esac
+		if is_version "$version" && pinned_recently "$version"; then
+			continue
+		fi
+		# Tolerated rather than trusted, and braced because this is an rm -rf.
+		# touch_pin is the one writer that does not hold this lock — it runs in
+		# every login, and holding a lock across somebody else's download would
+		# be far worse — so it can create a file under a tree this is walking
+		# and leave rm with ENOTEMPTY. Under `set -e` that would abort the whole
+		# refresh, and for `upgrade` it would exit before re-pinning, silently.
+		# What survives is a directory is_version refuses, which this pass
+		# deletes the next time it runs.
+		rm -rf "${dir:?}/${version:?}" 2>/dev/null || true
+	done
+	# Every fetch holds the lock this pass holds, and removes its own temporary
+	# tree on every exit path, so a .tmp-* still here belongs to a fetch that was
+	# killed — a sandbox powering itself off mid-download is ordinary
+	# (ADR 0108). Age would only delay reclaiming it.
+	for entry in "$dir"/.tmp-*; do
+		[ -e "$entry" ] || continue
+		rm -rf "$entry" 2>/dev/null || true
+	done
+}
+
+# fetch installs one version into the store. The tree is built under a dot name
+# and moved in with a single rename, so another sandbox either sees a complete
+# version or no version at all.
+fetch() {
+	if is_version "$1"; then
+		return 0
+	fi
+	# A directory under this name that is not a usable version is wreckage — an
+	# interrupted delete, or an install that died after its rename. Clearing it
+	# is what lets the store heal: asking `[ -d ]` here instead would skip the
+	# fetch forever while nothing could ever pin the name. Safe under the lock
+	# every writer takes, and for the same reason a stale .tmp of our own PID
+	# (PIDs repeat across sandboxes) is only ever an orphan.
+	rm -rf "${dir:?}/${1:?}" 2>/dev/null || true
+	tmp=$dir/.tmp-$$
+	rm -rf "$tmp"
+	if ! timeout 1800 npm install -g --prefix "$tmp" "$AGENT_PACKAGE@$1" >/dev/null 2>&1; then
+		rm -rf "$tmp"
+		return 1
+	fi
+	if [ ! -x "$tmp/bin/$AGENT_BIN" ]; then
+		rm -rf "$tmp"
+		return 1
+	fi
+
+	# The target must not exist when the rename lands. `mv` moves a source
+	# *into* an existing directory, so a target that came back during the
+	# install would bury the tree one level down, where is_version refuses it
+	# and prune deletes it next pass — half an hour of download thrown away and
+	# reported as a success. Half an hour is also why the clearing above is not
+	# this check: touch_pin can recreate the name in between, and the early
+	# `rm -rf` is allowed to fail quietly, which this one is not.
+	if [ -e "$dir/$1" ] && ! rm -rf "${dir:?}/${1:?}"; then
+		rm -rf "$tmp"
+		return 1
+	fi
+	if ! mv "$tmp" "$dir/$1"; then
+		rm -rf "$tmp"
+		return 1
+	fi
+	# Say fetched only if the store really gained a version somebody can pin.
+	is_version "$1"
+}
+
+# cmd_refresh reports what it did in refresh_outcome rather than only in its
+# exit status, because "nothing happened" has several causes and `upgrade` has
+# to tell a person which one it hit:
+#
+#   windowed    the check window has not passed; the registry was not asked
+#   busy        another sandbox holds the store lock
+#   unreachable the registry did not answer
+#   current     the published version is already in the store
+#   behind      the published version is not newer than what is already here
+#   fetched     a new version was installed
+#   failed      the download or install did not produce a usable version
+refresh_outcome=
+# refresh_latest is the version the registry named, for reporting it back.
+refresh_latest=
+
+cmd_refresh() {
+	mkdir -p "$dir"
+	exec 9>"$dir/.lock"
+	if [ "$1" = force ]; then
+		# A person is waiting on this one, so it queues behind a download in
+		# progress instead of walking away from it and reporting nothing to do
+		# (ADR 0114 §4's "newest, now").
+		if ! flock -w "$lock_wait_seconds" 9; then
+			refresh_outcome=busy
+			return 0
+		fi
+	elif ! flock -n 9; then
+		# One fetch per store at a time. A background refresh that arrives
+		# mid-download has nothing to add, so it leaves rather than waits.
+		refresh_outcome=busy
+		return 0
+	fi
+
+	stamp=$dir/.last-check
+	if [ "$1" != force ] && [ -f "$stamp" ] &&
+		[ -n "$(find "$stamp" -mmin -"$check_window_minutes" 2>/dev/null)" ]; then
+		refresh_outcome=windowed
+		return 0
+	fi
+
+	latest=$(timeout 60 npm view "$AGENT_PACKAGE" version 2>/dev/null | tr -d '[:space:]') || latest=
+	# Stamped on the attempt, not on its success: the registry query is the
+	# thing being rate-limited, and a sandbox with no way out should not ask
+	# again at every login. A download that fails leaves the version absent,
+	# and the next window fetches it.
+	touch "$stamp"
+	if [ -z "$latest" ]; then
+		refresh_outcome=unreachable
+		return 0
+	fi
+
+	refresh_latest=$latest
+	if is_version "$latest"; then
+		refresh_outcome=current
+	elif ! worth_fetching "$latest"; then
+		refresh_outcome=behind
+	elif fetch "$latest"; then
+		refresh_outcome=fetched
+	else
+		refresh_outcome=failed
+	fi
+	prune
+}
+
+cmd_upgrade() {
+	was=$(pinned_version)
+	[ -n "$was" ] || was=$(image_version)
+	cmd_refresh force
+	# Say which of these it was. Reporting "already the newest available" when
+	# the registry was never reached is the one answer a person cannot act on,
+	# and it is what every one of these used to print.
+	case $refresh_outcome in
+	busy)
+		printf 'discobox: another sandbox is fetching a new %s; try again shortly.\n' "$AGENT_BIN" >&2
+		return 1
+		;;
+	unreachable)
+		printf 'discobox: could not reach the registry to look for a newer %s.\n' "$AGENT_BIN" >&2
+		return 1
+		;;
+	failed)
+		printf 'discobox: installing the newest %s failed; still on %s.\n' "$AGENT_BIN" "$was" >&2
+		return 1
+		;;
+	behind)
+		# Not a failure, and not "you are up to date" either: the registry is
+		# publishing something older than this sandbox can already run.
+		printf 'discobox: the registry publishes %s %s, which is not newer than the %s here; staying on %s.\n' \
+			"$AGENT_BIN" "$refresh_latest" "$was" "$was"
+		return 0
+		;;
+	esac
+	# An upgrade is asked for, so unlike pin it replaces a pin this sandbox
+	# already holds. A link it did not write is still left alone.
+	if [ -n "$(pinned_version)" ]; then
+		rm -f "$link"
+	fi
+	cmd_pin
+	now=$(pinned_version)
+	[ -n "$now" ] || now=$(image_version)
+	if [ "$now" = "$was" ]; then
+		printf 'discobox: %s is %s, already the newest available.\n' "$AGENT_BIN" "$now"
+	else
+		printf 'discobox: %s upgraded from %s to %s.\n' "$AGENT_BIN" "$was" "$now"
+		printf 'discobox: restart %s for it to take effect.\n' "$AGENT_BIN"
+	fi
+}
+
+cmd_status() {
+	printf 'package: %s\n' "$AGENT_PACKAGE"
+	printf 'image:   %s\n' "$(image_version)"
+	printf 'pinned:  %s\n' "$(pinned_version)"
+	printf 'store:   %s\n' "$dir"
+	store_versions | sort -V | sed 's/^/  /'
+}
+
+case ${1-} in
+pin)
+	cmd_pin
+	;;
+refresh)
+	if [ "${2-}" = --force ]; then
+		cmd_refresh force
+	else
+		cmd_refresh window
+	fi
+	;;
+upgrade)
+	cmd_upgrade
+	;;
+status)
+	cmd_status
+	;;
+*)
+	usage >&2
+	exit 2
+	;;
+esac

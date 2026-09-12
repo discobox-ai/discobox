@@ -1,5 +1,8 @@
 {
   "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  },
   "harness": {
     "id": "claude-code",
     "name": "Claude Code",
