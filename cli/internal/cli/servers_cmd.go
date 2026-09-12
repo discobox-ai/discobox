@@ -188,14 +188,30 @@ func (a *App) addServer(cmd *cobra.Command, address, name string) error {
 	// The peer ID is what makes this address one more way to reach a server
 	// already registered under another, which only the server can say.
 	peerID := target.peerID(ctx)
-	if i, ok := reg.byServer(address, peerID); ok {
-		return fmt.Errorf("%s is peer %s, already registered as %s", address, peerID, reg.Servers[i].Name)
-	}
+	// Both answers the server owes are collected before the lock, so the
+	// registry is held for no longer than the edit takes.
+	offered := ""
 	if name == "" {
-		name = uniqueServerName(reg, registrationName(offeredName(ctx, client), address))
+		offered = offeredName(ctx, client)
 	}
-	reg.Servers = append(reg.Servers, registeredServer{Name: name, Address: address, ID: peerID})
-	if err := reg.save(); err != nil {
+	// Checked again here, against the registry as it is under the lock: the
+	// checks above ran before two round trips, and are there to fail early
+	// rather than to decide.
+	if err := withServerRegistry(func(reg *serverRegistry) (bool, error) {
+		if i, ok := reg.byServer(address, peerID); ok {
+			return false, fmt.Errorf("%s is peer %s, already registered as %s", address, peerID, reg.Servers[i].Name)
+		}
+		if i, ok := reg.byServer(address, ""); ok {
+			return false, fmt.Errorf("%s is already registered, as %s", address, reg.Servers[i].Name)
+		}
+		if name == "" {
+			name = uniqueServerName(*reg, registrationName(offered, address))
+		} else if _, taken := reg.byName(name); taken {
+			return false, fmt.Errorf("a server named %s is already registered", name)
+		}
+		reg.Servers = append(reg.Servers, registeredServer{Name: name, Address: address, ID: peerID})
+		return true, nil
+	}); err != nil {
 		return err
 	}
 	// Its discoboxes are listed from here now, so ssh reaches them from here
@@ -219,22 +235,20 @@ func (a *App) newServersRenameCommand() *cobra.Command {
 		ValidArgsFunction: completeServerNames(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			from, to := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
-			reg, err := loadServerRegistry()
-			if err != nil {
-				return err
-			}
-			i, ok := reg.byName(from)
-			if !ok {
-				return fmt.Errorf("no server named %s is registered", from)
-			}
 			if err := validServerName(to); err != nil {
 				return err
 			}
-			if j, taken := reg.byName(to); taken && j != i {
-				return fmt.Errorf("a server named %s is already registered", to)
-			}
-			reg.Servers[i].Name = to
-			return reg.save()
+			return withServerRegistry(func(reg *serverRegistry) (bool, error) {
+				i, ok := reg.byName(from)
+				if !ok {
+					return false, fmt.Errorf("no server named %s is registered", from)
+				}
+				if j, taken := reg.byName(to); taken && j != i {
+					return false, fmt.Errorf("a server named %s is already registered", to)
+				}
+				reg.Servers[i].Name = to
+				return true, nil
+			})
 		},
 	}
 }
@@ -247,18 +261,16 @@ func (a *App) newServersRemoveCommand() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeServerNames(-1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			reg, err := loadServerRegistry()
-			if err != nil {
-				return err
-			}
-			for _, name := range args {
-				i, ok := reg.byName(strings.TrimSpace(name))
-				if !ok {
-					return fmt.Errorf("no server named %s is registered", name)
+			return withServerRegistry(func(reg *serverRegistry) (bool, error) {
+				for _, name := range args {
+					i, ok := reg.byName(strings.TrimSpace(name))
+					if !ok {
+						return false, fmt.Errorf("no server named %s is registered", name)
+					}
+					reg.Servers = append(reg.Servers[:i], reg.Servers[i+1:]...)
 				}
-				reg.Servers = append(reg.Servers[:i], reg.Servers[i+1:]...)
-			}
-			return reg.save()
+				return true, nil
+			})
 		},
 	}
 }

@@ -18,6 +18,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/internal/filelock"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -31,6 +32,74 @@ import (
 // them — which is the line <state> is drawn on.
 func serversFile() string {
 	return filepath.Join(xdg.ConfigHome, "discobox", "servers.json")
+}
+
+// serversLockName is held across a read-modify-write of the registry, beside
+// the file it guards.
+const serversLockName = "servers.lock"
+
+const (
+	// registryLockWait is how long one command waits for another's
+	// read-modify-write. Long enough that two overlapping registrations queue
+	// rather than fail, short enough that a lock left by a killed process does
+	// not look like a hang.
+	registryLockWait = 5 * time.Second
+	// registryLockRetry is how often the wait looks again.
+	registryLockRetry = 20 * time.Millisecond
+)
+
+// withServerRegistry runs change against the registry with the lock held
+// across the read, the change, and the write, saving what change leaves
+// behind when it reports it changed anything.
+//
+// Every writer goes through this because the loser of a race here is not a
+// convenience: this file decides which servers exist. Load, edit and save as
+// three separate steps means a second command that read the same file appends
+// its own entry and renames its copy over the first, so a registration the
+// user was told had succeeded is gone — and a `servers rm` in that window
+// brings the removed server back. Registering is also the one write no user
+// asks for, since any command handed an address does it, so two of them
+// overlapping is ordinary rather than unlucky.
+func withServerRegistry(change func(reg *serverRegistry) (bool, error)) error {
+	path := serversFile()
+	dir := filepath.Dir(path)
+	if err := ensureStateDir(dir); err != nil {
+		return err
+	}
+	lock, err := acquireServerRegistry(filepath.Join(dir, serversLockName))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
+	reg, err := loadServerRegistry()
+	if err != nil {
+		return err
+	}
+	changed, err := change(&reg)
+	if err != nil || !changed {
+		return err
+	}
+	return reg.save()
+}
+
+// acquireServerRegistry waits for the registry lock rather than failing on the
+// first busy answer: the window it guards is short, and two commands wanting
+// it at once is what it is for.
+func acquireServerRegistry(path string) (*filelock.Lock, error) {
+	deadline := time.Now().Add(registryLockWait)
+	for {
+		lock, err := filelock.TryAcquire(path)
+		if err == nil {
+			return lock, nil
+		}
+		if !errors.Is(err, filelock.ErrBusy) {
+			return nil, err
+		}
+		if !time.Now().Before(deadline) {
+			return nil, errors.New("another discobox command is still changing the registered servers; try again")
+		}
+		time.Sleep(registryLockRetry)
+	}
 }
 
 // registeredServer is one server the user registered: the name it is listed
@@ -519,8 +588,23 @@ func (s *server) findSandbox(ctx context.Context, value string) (projectID, sand
 	case 1:
 		return projectID, matches[0], client, true, nil
 	default:
-		return "", "", nil, false, fmt.Errorf("short discobox ID %q is ambiguous on %s; matches %s", value, s.name, strings.Join(matches, ", "))
+		return "", "", nil, false, &ambiguousShortID{server: s.name, value: value, matches: matches}
 	}
+}
+
+// ambiguousShortID is a server that answered and found more than one discobox
+// for a short ID. It is not a server that could not be reached, and the
+// difference matters once more than one server is asked (ADR 0114 §4): the
+// matching IDs are the answer the caller needs to tell them apart, and filing
+// this with the transport failures throws them away.
+type ambiguousShortID struct {
+	server  string
+	value   string
+	matches []string
+}
+
+func (e *ambiguousShortID) Error() string {
+	return fmt.Sprintf("short discobox ID %q is ambiguous on %s; matches %s", e.value, e.server, strings.Join(e.matches, ", "))
 }
 
 // matchSandboxIDs is what value names among ids: itself when it is a whole ID
@@ -561,10 +645,11 @@ func (a *App) findOnEveryServer(ctx context.Context, set []*server, value string
 		client             *apiclientgen.Client
 	}
 	var (
-		mu     sync.Mutex
-		hits   []hit
-		silent []string
-		wg     sync.WaitGroup
+		mu        sync.Mutex
+		hits      []hit
+		silent    []string
+		ambiguous []error
+		wg        sync.WaitGroup
 	)
 	for _, s := range set[1:] {
 		wg.Add(1)
@@ -575,6 +660,11 @@ func (a *App) findOnEveryServer(ctx context.Context, set []*server, value string
 			defer mu.Unlock()
 			switch {
 			case err != nil:
+				var short *ambiguousShortID
+				if errors.As(err, &short) {
+					ambiguous = append(ambiguous, err)
+					break
+				}
 				silent = append(silent, s.name)
 			case found:
 				hits = append(hits, hit{server: s, projectID: projectID, sandbox: sandboxID, client: client})
@@ -582,6 +672,13 @@ func (a *App) findOnEveryServer(ctx context.Context, set []*server, value string
 		}()
 	}
 	wg.Wait()
+	// A server that found more than one discobox answered, and one such answer
+	// settles the argument whatever the others found: the ID is short enough to
+	// mean two discoboxes. Its matches are what says which, so they are what is
+	// reported rather than the server's name under "did not answer".
+	if len(ambiguous) > 0 {
+		return nil, "", "", nil, errors.Join(ambiguous...)
+	}
 	switch len(hits) {
 	case 1:
 		return hits[0].server.app, hits[0].projectID, hits[0].sandbox, hits[0].client, nil
@@ -645,20 +742,22 @@ func (a *App) selectAddressedSandbox(cmd *cobra.Command, address endpoint.Sandbo
 func registerServer(ctx context.Context, s *server, client *apiclientgen.Client) (name string, added bool, err error) {
 	offered := offeredName(ctx, client)
 	peerID := s.app.peerID(ctx)
-	reg, err := loadServerRegistry()
-	if err != nil {
+	// What the server had to be asked is asked before the lock: the registry is
+	// held only for as long as it takes to read, edit and write it.
+	if err := withServerRegistry(func(reg *serverRegistry) (bool, error) {
+		if i, ok := reg.byServer(s.address, peerID); ok {
+			s.name, s.registered = reg.Servers[i].Name, true
+			name, added = s.name, false
+			return false, nil
+		}
+		name = uniqueServerName(*reg, registrationName(offered, s.address))
+		s.id = peerID
+		reg.Servers = append(reg.Servers, registeredServer{Name: name, Address: s.address, ID: peerID})
+		s.name, s.registered = name, true
+		added = true
+		return true, nil
+	}); err != nil {
 		return "", false, err
 	}
-	if i, ok := reg.byServer(s.address, peerID); ok {
-		s.name, s.registered = reg.Servers[i].Name, true
-		return s.name, false, nil
-	}
-	name = uniqueServerName(reg, registrationName(offered, s.address))
-	s.id = peerID
-	reg.Servers = append(reg.Servers, registeredServer{Name: name, Address: s.address, ID: peerID})
-	if err := reg.save(); err != nil {
-		return "", false, err
-	}
-	s.name, s.registered = name, true
-	return name, true, nil
+	return name, added, nil
 }

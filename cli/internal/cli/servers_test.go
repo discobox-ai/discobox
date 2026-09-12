@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/adrg/xdg"
@@ -185,5 +187,66 @@ func TestServersListsARegisteredPrimaryOnce(t *testing.T) {
 	// and is not handed the token the primary was given.
 	if other.app.autoStart != autoStartServerFalse || other.app.projectID != defaultProjectAlias || other.app.token != "" {
 		t.Fatalf("registered server's app: autoStart %q, project %q, token %q", other.app.autoStart, other.app.projectID, other.app.token)
+	}
+}
+
+// Two commands changing the registry at once both survive. Registering is the
+// write no user asks for — any command handed an address does it — so two of
+// them overlapping is ordinary, and read-edit-write as three loose steps means
+// the second renames its copy over the first and a registration the user was
+// told had succeeded is gone.
+func TestConcurrentRegistryWritesAllSurvive(t *testing.T) {
+	useTempServersFile(t)
+
+	const writers = 8
+	var wg sync.WaitGroup
+	errs := make([]error, writers)
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = withServerRegistry(func(reg *serverRegistry) (bool, error) {
+				reg.Servers = append(reg.Servers, registeredServer{
+					Name:    fmt.Sprintf("s%d", i),
+					Address: fmt.Sprintf("discobox+http://127.0.0.1:%d", 9000+i),
+				})
+				return true, nil
+			})
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("writer %d: %v", i, err)
+		}
+	}
+	reg, err := loadServerRegistry()
+	if err != nil {
+		t.Fatalf("loadServerRegistry() error = %v", err)
+	}
+	if len(reg.Servers) != writers {
+		t.Fatalf("registry holds %d servers, want %d — a write was lost:\n%+v", len(reg.Servers), writers, reg.Servers)
+	}
+}
+
+// A change that reports nothing changed leaves the file alone, so a command
+// that decides against writing does not rewrite what another just wrote.
+func TestAnUnchangedRegistryIsNotRewritten(t *testing.T) {
+	useTempServersFile(t)
+	registerForTest(t, registeredServer{Name: "box", Address: "discobox://box.example.com"})
+
+	if err := withServerRegistry(func(reg *serverRegistry) (bool, error) {
+		reg.Servers = nil
+		return false, nil
+	}); err != nil {
+		t.Fatalf("withServerRegistry() error = %v", err)
+	}
+	reg, err := loadServerRegistry()
+	if err != nil {
+		t.Fatalf("loadServerRegistry() error = %v", err)
+	}
+	if len(reg.Servers) != 1 || reg.Servers[0].Name != "box" {
+		t.Fatalf("registry = %+v, want the server left alone", reg.Servers)
 	}
 }

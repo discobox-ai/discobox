@@ -188,3 +188,34 @@ func TestRunOptionsPreviewDropsTheProjectOnAnotherServer(t *testing.T) {
 		t.Fatalf("command = %q, want no --project for a run on another server", got)
 	}
 }
+
+// A server that did not answer is said so however long the list is. Its
+// section is reserved out of the window before the rows are drawn, because
+// nothing scrolls to it — offset and cursor walk rows — so a list longer than
+// the window, which is the list the launcher is for, would otherwise never say
+// a server was missing at all.
+func TestTheNotAnsweringSectionSurvivesAFullList(t *testing.T) {
+	boxes := make([]Sandbox, 40)
+	for i := range boxes {
+		boxes[i] = Sandbox{
+			ID:    fmt.Sprintf("sbx_%02d", i),
+			Name:  fmt.Sprintf("box-%02d", i),
+			State: StateRunning,
+		}
+	}
+	l := listForTest(Session{}, boxes)
+	l.setUnreachable([]string{"beta"})
+
+	out := l.view(newStyles(false), &zones{}, true)
+	if !strings.Contains(out, "not answering") {
+		t.Fatalf("a list that fills the window dropped the section saying beta is missing:\n%s", out)
+	}
+
+	// And at the bottom, where the rows have had every chance to take the room.
+	l.cursor = len(boxes) - 1
+	l.clamp()
+	out = l.view(newStyles(false), &zones{}, true)
+	if !strings.Contains(out, "not answering") {
+		t.Fatalf("scrolled to the end of the list, the section is gone:\n%s", out)
+	}
+}

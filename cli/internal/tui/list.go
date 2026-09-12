@@ -463,6 +463,16 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		}
 	}
 
+	// A server that did not answer takes its line the same way the machine line
+	// and the column header take theirs: out of the budget, before the rows are
+	// drawn. Appended after them instead, it is drawn only while the rows leave
+	// room — so exactly the list the launcher is for, one longer than the
+	// window, would never say a server is missing, and nothing could scroll to
+	// it, because offset and cursor walk rows.
+	missing := min(len(l.unreachable), max(rowBudget, 0))
+	rowBudget -= missing
+	bodyBudget := rowBudget + missing
+
 	// The cursor has to be inside the window, and what the rows above it cost
 	// is only known here: a section header is a line, and how many there are
 	// between the offset and the cursor depends on where the sections fall.
@@ -471,7 +481,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		l.offset++
 	}
 
-	body := make([]string, 0, max(rowBudget, 0))
+	body := make([]string, 0, max(bodyBudget, 0))
 	// The invitation is for a list with nothing in it at all: rows, and the
 	// sections that say where the missing ones went, are both something drawn.
 	if len(rows) == 0 && len(l.unreachable) == 0 {
@@ -479,7 +489,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
 	if l.sectioned() {
-		l.drawn.rows = make([]int, 0, max(rowBudget, 0))
+		l.drawn.rows = make([]int, 0, max(bodyBudget, 0))
 	}
 	// How many each server has, for its band to say, counted once rather than
 	// per header: a section scrolled into twice is one section.
@@ -512,13 +522,13 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// missing from this listing rather than gone, and a section saying so is
 	// where a reader looks for them.
 	for _, name := range l.unreachable {
-		if len(body) >= rowBudget {
+		if len(body) >= bodyBudget {
 			break
 		}
 		body = append(body, l.sectionHeader(st, name, "not answering", 0))
 		l.drawn.rows = append(l.drawn.rows, -1)
 	}
-	for len(body) < rowBudget {
+	for len(body) < bodyBudget {
 		body = append(body, blank)
 	}
 	// One blank after the last row, so a list long enough to reach the composer

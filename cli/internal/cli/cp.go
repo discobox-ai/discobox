@@ -37,8 +37,11 @@ terminal and the title takes the column, so the ID is what always resolves; the
 title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
 discobox this directory started, or a prompt to pick one when there is more than
 one. A discobox on another server is written by its address,
-DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox> as "discobox ls" and
-"discobox servers" give it. Everything without a colon is a local path.
+DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox>, where <server> is what
+"discobox servers" prints in its ADDRESS column: a peer ID, or a host. The
+SERVER column "discobox ls" prints is the name this machine registered that
+server under, and names nothing anywhere else. Everything without a colon is a
+local path.
 
 Both ends may name a discobox, and they need not be the same discobox — but
 they must be on the same server, since one copy runs over one connection. An
@@ -384,11 +387,6 @@ func splitCPPath(operand string) (reference, path string, remote bool) {
 	return "", "", false
 }
 
-// splitCPAddress splits an operand written as a discobox's address. The
-// authority runs to the first slash after the scheme and may carry a colon of
-// its own (a port); the discobox segment follows it and can carry neither, so
-// the next colon is the one that ends the address. An address with no colon
-// after it names no path, which resolveCPTarget reports.
 // splitCPAddress splits an operand written as a discobox's address into the
 // address and the path after it.
 //

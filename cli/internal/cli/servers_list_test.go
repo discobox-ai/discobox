@@ -848,3 +848,27 @@ func TestAFailedNameLookupIsNotRemembered(t *testing.T) {
 		t.Fatalf("the App remembered a failed lookup: done=%v resolved=%#v", app.resolveDone, app.resolved)
 	}
 }
+
+// A server that found more than one discobox answered, and which discoboxes it
+// found is the answer the user needs. Filing that with the servers that could
+// not be reached says the opposite happened and throws the matches away, so the
+// same typo behaves differently depending on which server holds the boxes.
+func TestAnAmbiguousShortIDOnAnotherServerSaysWhichDiscoboxes(t *testing.T) {
+	useTempServersFile(t)
+	primary := fakeServer(t, "alpha", "sbx_1t1t1t1t1t1t1t1t")
+	other := fakeServer(t, "beta", sandboxB, sandboxC)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	cmd, _ := commandForTest()
+
+	_, _, _, _, err := app.selectSandbox(cmd, "sbx_9qk5n25t2hh2rv0")
+	if err == nil {
+		t.Fatal("an ambiguous short discobox ID resolved to one discobox")
+	}
+	if !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), sandboxB) || !strings.Contains(err.Error(), sandboxC) {
+		t.Fatalf("error = %v, want it to name both discoboxes", err)
+	}
+	if strings.Contains(err.Error(), "did not") {
+		t.Fatalf("error = %v, want beta reported as a server that answered", err)
+	}
+}
