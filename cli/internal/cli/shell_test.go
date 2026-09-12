@@ -82,7 +82,7 @@ func TestMatchSandboxArgAmbiguousShortIDErrors(t *testing.T) {
 func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/sandboxes"):
 			t.Fatal("shell listed sandboxes despite a full generated ID")
@@ -131,7 +131,7 @@ func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var listed bool
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
 			listed = true
@@ -182,7 +182,7 @@ func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 func TestShellUnmatchedFirstArgIsCommandAndPicksSoleSandbox(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
 			w.Header().Set("Content-Type", "application/json")
@@ -228,7 +228,7 @@ func TestShellUnmatchedFirstArgIsCommandAndPicksSoleSandbox(t *testing.T) {
 func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
 			w.Header().Set("Content-Type", "application/json")
@@ -271,7 +271,7 @@ func TestShellNoArgsRunsLoginShell(t *testing.T) {
 
 func TestShellNoArgsIgnoresArchivedSandbox(t *testing.T) {
 	const archivedID = "sbx_9kvq9z81yq2t3dwn"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -306,7 +306,7 @@ func TestShellNoArgsIgnoresArchivedSandbox(t *testing.T) {
 func TestShellAmbiguousShortIDErrorsBeforeAnyExecCall(t *testing.T) {
 	id1 := "sbx_ab" + strings.Repeat("1", 14)
 	id2 := "sbx_ab" + strings.Repeat("2", 14)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
 			w.Header().Set("Content-Type", "application/json")
@@ -340,7 +340,7 @@ func TestShellAmbiguousShortIDErrorsBeforeAnyExecCall(t *testing.T) {
 func TestShellSeparatorAfterSandboxIsNotPartOfTheCommand(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
 			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
@@ -379,7 +379,7 @@ func TestShellSeparatorAfterSandboxIsNotPartOfTheCommand(t *testing.T) {
 func TestShellSeparatorBeforeSandboxStopsSandboxMatching(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
 			w.Header().Set("Content-Type", "application/json")
@@ -419,7 +419,7 @@ func TestShellSeparatorBeforeSandboxStopsSandboxMatching(t *testing.T) {
 func TestShellSeparatorInsideCommandIsPassedThrough(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
 			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
@@ -456,7 +456,7 @@ func TestShellSeparatorInsideCommandIsPassedThrough(t *testing.T) {
 func TestShellSeparatorWithNoCommandRunsLoginShell(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
 			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
@@ -580,7 +580,7 @@ func TestResolveShellTargetLeavesATitleToTheCommand(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
 	t.Chdir(t.TempDir())
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

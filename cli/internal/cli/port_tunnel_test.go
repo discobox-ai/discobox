@@ -21,7 +21,7 @@ import (
 func tunnelTestServer(t *testing.T, closedWrite chan<- struct{}) *httptest.Server {
 	t.Helper()
 	var once sync.Once
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/tcp/attach") && !strings.HasSuffix(r.URL.Path, "/udp/attach") {
 			http.NotFound(w, r)
 			return
@@ -134,7 +134,7 @@ func TestSandboxTCPDialerReportsTheHandshakeError(t *testing.T) {
 // tunnel that closed outright instead would look to a caller like a connection
 // dropped mid-request (ADR 0024 §4).
 func TestSandboxTCPDialerReportsTheFarEndsHalfClose(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
@@ -185,7 +185,7 @@ func TestSandboxTCPDialerReportsTheFarEndsHalfClose(t *testing.T) {
 // split across reads (ADR 0109 §4).
 func TestSandboxPortDialerKeepsDatagramsWholeOverTheUDPTunnel(t *testing.T) {
 	routes := make(chan string, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		routes <- r.URL.Path
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {

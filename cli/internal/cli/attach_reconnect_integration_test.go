@@ -80,7 +80,7 @@ func TestOpenReconnectingSandboxExecAttachPreservesInputAcrossWebSocketReplaceme
 			http.NotFound(w, r)
 		}
 	})
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(ignoringPortProbe(handler))
 	defer server.Close()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -197,7 +197,7 @@ func TestOpenReconnectingSandboxExecAttachPreservesInputAcrossWebSocketReplaceme
 func TestAttachWebSocketKeepaliveClosesUnresponsivePeerAndUnblocksRead(t *testing.T) {
 	releaseServer := make(chan struct{})
 	serverSocket := make(chan *websocket.Conn, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		socket, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return

@@ -64,7 +64,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	var posted map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if serveSSHSync(w, r) {
 			return
 		}
@@ -145,7 +145,7 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(repo)
 	var posted map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if serveSSHSync(w, r) {
 			return
 		}
@@ -193,7 +193,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	var sawCreate bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if serveSSHSync(w, r) {
 			return
 		}
@@ -307,7 +307,7 @@ func runAttachesVirtualPrimaryTerminal(t *testing.T, flags []string) {
 	repo := newRunSourceTestRepo(t)
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	var attachPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if serveSSHSync(w, r) {
 			return
 		}

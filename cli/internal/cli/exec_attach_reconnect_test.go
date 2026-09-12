@@ -36,7 +36,7 @@ func TestOpenExecAttachConnReconnectsForTTY(t *testing.T) {
 	accepted := make(chan net.Conn, 2)
 	allowReplacement := make(chan struct{})
 	var handlerWG sync.WaitGroup
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == execPath:
 			// Consulted by the reconnect-or-stop decision between dials.
@@ -109,7 +109,7 @@ func TestOpenExecAttachConnDoesNotReconnectForNonTTY(t *testing.T) {
 
 	var attachCount atomic.Int32
 	accepted := make(chan net.Conn, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != execPath+"/attach" {
 			http.NotFound(w, r)
 			return

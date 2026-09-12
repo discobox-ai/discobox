@@ -13,7 +13,7 @@ import (
 // the command captures the host's log and nothing the CLI had to say about it.
 func TestStreamPoolLogsSeparatesSourceFromLog(t *testing.T) {
 	var gotPath, gotQuery string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
 		w.Header().Set(poolLogSourceHeader, "vz guest serial console")
 		w.WriteHeader(http.StatusOK)
@@ -45,7 +45,7 @@ func TestStreamPoolLogsSeparatesSourceFromLog(t *testing.T) {
 // server to interpret.
 func TestStreamPoolLogsOmitsAnUnboundedTail(t *testing.T) {
 	var gotQuery string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -63,7 +63,7 @@ func TestStreamPoolLogsOmitsAnUnboundedTail(t *testing.T) {
 // A backend with no host log answers 501 with its reason; that reason is the
 // whole point of asking, so it has to reach the operator as the error.
 func TestStreamPoolLogsSurfacesTheBackendReason(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
 		_, _ = w.Write([]byte(`{"error":"pool host logs are not available from this backend: no journalctl here"}`))

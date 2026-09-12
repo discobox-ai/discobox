@@ -124,7 +124,7 @@ func TestHarnessSecretsResolveBindings(t *testing.T) {
 func TestDoHarnessDisableReleasesTheDefaultFirst(t *testing.T) {
 	const harnessID = "hc_1"
 	var gotPaths []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		gotPaths = append(gotPaths, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -169,7 +169,7 @@ func TestDoHarnessDisableReleasesTheDefaultFirst(t *testing.T) {
 func TestDoHarnessDisableKeepsAnotherDefault(t *testing.T) {
 	const harnessID = "hc_1"
 	var gotPaths []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		gotPaths = append(gotPaths, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		switch {

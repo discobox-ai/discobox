@@ -34,7 +34,7 @@ func watchTestApp(t *testing.T, runtimes ...string) (*App, func() int) {
 	t.Helper()
 	var mu sync.Mutex
 	reads := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {
 			// The client probes the endpoint before it will use it.
 			return

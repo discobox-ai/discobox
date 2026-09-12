@@ -306,7 +306,7 @@ func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 
 func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/projects/project-1/sandboxes" {
 			t.Fatalf("path = %q, want project sandboxes path", got)
 		}
@@ -330,7 +330,7 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 
 func TestTerminalListUsesAdminCommand(t *testing.T) {
 	var requested bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		requested = true
 		if got := r.URL.Path; got != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
 			t.Fatalf("path = %q, want sandbox exec path", got)
@@ -359,7 +359,7 @@ func TestTerminalListUsesAdminCommand(t *testing.T) {
 func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	const terminalID = "terminal-full-id"
 	var created, started, listed bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs":
@@ -400,7 +400,7 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 // the agent's own rejection is what the user sees.
 func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 	var attachPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		// Every terminal attach asks what the discobox's sources are, to push
 		// the commits made here into its origin (ADR 0095 on automatic push).
 		// This one has none.
@@ -441,7 +441,7 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 // nothing between the two may change which exec that is.
 func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 	var attachPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		// Every terminal attach asks what the discobox's sources are, to push
 		// the commits made here into its origin (ADR 0095 on automatic push).
 		// This one has none.
@@ -478,7 +478,7 @@ func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 }
 
 func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -507,7 +507,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 	const terminalID = "terminal-full-id"
 	t.Setenv("SHELL_ENV_VALUE", "from-shell")
 	var env map[string]string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs":
@@ -546,7 +546,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 
 func TestHarnessSetDefaultCommand(t *testing.T) {
 	const harnessID = "harness-full-id"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
@@ -577,7 +577,7 @@ func TestHarnessSetDefaultCommand(t *testing.T) {
 
 func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
 	var posted map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/secrets" {
 			t.Fatalf("request = %s %s, want POST create secret path", r.Method, r.URL.Path)
 		}
@@ -620,7 +620,7 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 		secretID  = "secret-1"
 	)
 	var approved map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
@@ -661,7 +661,7 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 		secretID  = "secret-1"
 	)
 	var approved map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
@@ -726,7 +726,7 @@ func TestSecretRequestApproveDefaultsToTheLifetimeTheAgentAskedFor(t *testing.T)
 		secretID  = "secret-1"
 	)
 	var approved map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
@@ -776,7 +776,7 @@ func TestSecretRequestApproveIgnoresAnAskOutsideWhatMayBeAsked(t *testing.T) {
 		secretID  = "secret-1"
 	)
 	var approved map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
@@ -810,7 +810,7 @@ func TestSecretRequestApproveIgnoresAnAskOutsideWhatMayBeAsked(t *testing.T) {
 func TestHarnessListShowsProjectDefault(t *testing.T) {
 	const defaultHarnessID = "harness-default-full-id"
 	requested := map[string]int{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		requested[r.Method+" "+r.URL.Path]++
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -911,7 +911,7 @@ func TestParseHarnessFileFlagsRejectsMissingCreateOnlyMatch(t *testing.T) {
 func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 	const harnessID = "harness-full-id"
 	var gotFiles []apimodel.HarnessConfigFile
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/harness-configs" {
 			t.Fatalf("request = %s %s, want create harness config path", r.Method, r.URL.Path)
 		}
@@ -964,7 +964,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	const harnessID = "harness-full-id"
 	var gotFiles []apimodel.HarnessConfigFile
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/harness-configs" {
 			t.Fatalf("request = %s %s, want create harness config path", r.Method, r.URL.Path)
 		}
@@ -1077,7 +1077,7 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 func TestJobsCommandListsProjectJobs(t *testing.T) {
 	const jobID = "job_9qk5n25t2hh2rv00"
 	const resourceID = "sbx_hqnk550g3821ck00"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/projects/project-1/jobs" {
 			t.Fatalf("path = %q, want project jobs path", got)
 		}
@@ -1107,7 +1107,7 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 
 func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	const jobID = "job_9qk5n25t2hh2rv00"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/projects/project-1/jobs" {
 			t.Fatalf("path = %q, want project jobs path", got)
 		}
@@ -1296,7 +1296,7 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	sandboxJSON := testSandboxJSON(fullID, "alpha", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z")
 	var sawList bool
 	var sawGet bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/projects/project-1/sandboxes":
@@ -1344,7 +1344,7 @@ func TestResolveShortIDMatchesPrefix(t *testing.T) {
 
 func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
 	var deleted []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Method; got != http.MethodDelete {
 			t.Fatalf("method = %q, want DELETE", got)
 		}
@@ -1392,7 +1392,7 @@ func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
 }
 
 func TestJobGetCommandShowsError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/projects/project-1/jobs/job-1" {
 			t.Fatalf("path = %q, want project job path", got)
 		}
@@ -1419,7 +1419,7 @@ func TestJobGetCommandShowsError(t *testing.T) {
 
 func TestJobRunNowCommandForcesJob(t *testing.T) {
 	var sawForce bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Method; got != http.MethodPost {
 			t.Fatalf("method = %q, want POST", got)
 		}
@@ -1459,7 +1459,7 @@ func TestProjectIDRejectsEmptyExplicitProject(t *testing.T) {
 }
 
 func TestHTTPClientAddsAuthorizationHeader(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(_ http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token-1" {
 			t.Fatalf("authorization header = %q, want bearer token", got)
 		}
@@ -1533,7 +1533,7 @@ func TestDebugTransportPrintsRequestAndRedactsAuthorization(t *testing.T) {
 }
 
 func TestHTTPClientDebugLogsAddedHeaders(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(_ http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token-1" {
 			t.Fatalf("authorization header = %q, want bearer token", got)
 		}
@@ -1680,7 +1680,7 @@ func TestRootCommandIncludesServerSubcommand(t *testing.T) {
 
 func TestServerShutdownWaitCommandWaitsForServerToStop(t *testing.T) {
 	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server = httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/shutdown":
 			w.WriteHeader(http.StatusAccepted)
@@ -1710,7 +1710,7 @@ func TestServerShutdownWaitCommandWaitsForServerToStop(t *testing.T) {
 }
 
 func TestServerShutdownFallsBackToDefaultHTTPWhenSocketMissing(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/shutdown" {
 			t.Fatalf("request = %s %s, want POST /shutdown", r.Method, r.URL.Path)
 		}
@@ -1824,7 +1824,7 @@ func TestGlobalFlagsReachCommandsThatParseNoFlags(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var asked string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 				asked = r.URL.Path
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				_, _ = w.Write([]byte(`{"items":[]}`))
@@ -1985,7 +1985,7 @@ func TestPromptFlagIsARun(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	var posted map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if serveSSHSync(w, r) {
 			return
 		}
@@ -2098,7 +2098,7 @@ func TestBareVersionWordPrintsTheVersion(t *testing.T) {
 // A server that answers says which version it is, from its health endpoint:
 // the one request every server answers — still starting, or without a token.
 func TestVersionReportsTheServerVersion(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != health.Path {
 			t.Errorf("version requested %s, want only %s", r.URL.Path, health.Path)
 			http.NotFound(w, r)

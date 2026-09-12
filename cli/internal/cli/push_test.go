@@ -36,7 +36,7 @@ func awaitingSourceServer(t *testing.T, source map[string]any, paths *[]string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		*paths = append(*paths, r.URL.Path)
 		if !strings.HasSuffix(r.URL.Path, "/sandboxes/"+pushTestSandboxID) {
 			http.Error(w, "unexpected request "+r.Method+" "+r.URL.Path, http.StatusNotFound)

@@ -62,7 +62,7 @@ func TestSandboxExecAttachDoneDistinguishesGracefulExitFromLostRuntime(t *testin
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				_, _ = w.Write([]byte(tc.exec))
 			}))
@@ -95,7 +95,7 @@ func TestSandboxExecAttachDoneEndsWhenSandboxStops(t *testing.T) {
 	for _, phase := range []string{"stopping", "stopped"} {
 		t.Run(phase, func(t *testing.T) {
 			var started bool
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/execs/primary"):
@@ -134,7 +134,7 @@ func TestSandboxExecAttachDoneEndsWhenSandboxStops(t *testing.T) {
 // reconnecting rather than ending the session on a control-plane blip.
 func TestSandboxExecAttachDoneRetriesTransientReadFailure(t *testing.T) {
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/execs/primary"):

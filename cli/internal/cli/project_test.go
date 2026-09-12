@@ -68,7 +68,7 @@ func TestProjectUpdateWelcomedFlag(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var posted map[string]any
 			var method, path string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 				method, path = r.Method, r.URL.Path
 				defer r.Body.Close()
 				if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {

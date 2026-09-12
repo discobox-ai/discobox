@@ -98,7 +98,7 @@ func TestExecCompletionUsesSandboxScope(t *testing.T) {
 
 func completionServer(t *testing.T, responses map[string]string) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		body, ok := responses[r.URL.Path]
 		if !ok {
 			t.Fatalf("unexpected completion path %q", r.URL.Path)

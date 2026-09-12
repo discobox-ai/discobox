@@ -40,7 +40,7 @@ func servedManifest(t *testing.T, version string) (serverstage.Manifest, *int) {
 	t.Helper()
 	body := []byte("the downloaded server")
 	fetches := new(int)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 		*fetches++
 		_, _ = w.Write(body)
 	}))

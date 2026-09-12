@@ -97,7 +97,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	git := runSourceTestGit(t, repo)
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 	var posted map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if serveSSHSync(w, r) {
 			return
 		}

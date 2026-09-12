@@ -122,7 +122,7 @@ func TestListCommandForARemoteSourceFiltersByItsURL(t *testing.T) {
 func listedOriginKeys(t *testing.T, args ...string) []string {
 	t.Helper()
 	var got []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

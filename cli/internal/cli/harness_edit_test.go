@@ -95,7 +95,7 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 	fakeEditor(t, "edited")
 
 	var gotBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/projects/project-1/harness-configs/hc_1" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -142,7 +142,7 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 func TestEditHarnessFileNoChangeSkipsUpdate(t *testing.T) {
 	fakeEditor(t, "")
 
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(_ http.ResponseWriter, r *http.Request) {
 		t.Fatalf("unexpected request %s %s; unchanged edits must not call the API", r.Method, r.URL.Path)
 	}))
 	t.Cleanup(server.Close)

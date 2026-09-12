@@ -180,7 +180,7 @@ func TestHumanBytes(t *testing.T) {
 // about the server it started and then nothing at all.
 func TestWaitForStagedPoolsEndsWhenTheServerStopsAnswering(t *testing.T) {
 	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(http.ResponseWriter, *http.Request) {
 		<-release
 	}))
 	t.Cleanup(func() {
@@ -200,7 +200,7 @@ func TestWaitForStagedPoolsEndsWhenTheServerStopsAnswering(t *testing.T) {
 // than a blip — and staging is a head start, so giving up on it costs the pull
 // later, where the operation that needs the image narrates it.
 func TestWaitForStagedPoolsGivesUpWhenThePoolsCannotBeRead(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)
@@ -215,7 +215,7 @@ func TestWaitForStagedPoolsGivesUpWhenThePoolsCannotBeRead(t *testing.T) {
 // soon as it is staged.
 func TestWaitForStagedPoolsReportsUntilEverythingIsStaged(t *testing.T) {
 	var polls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		staged := polls.Add(1) > 1
 		_, _ = w.Write([]byte(`{"pools":[` + testPoolJSON(staged) + `]}`))

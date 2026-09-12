@@ -12,6 +12,25 @@ import (
 	"github.com/discobox-ai/x/shorttmp"
 )
 
+// portProbeUserAgent is how the sandbox-agent's port probe names itself
+// (`sandbox-agent/ports/probe.go`).
+const portProbeUserAgent = "discobox-sandbox-agent (port probe)"
+
+// ignoringPortProbe answers the sandbox-agent's port probe itself rather than
+// passing it to the handler: every port that starts listening on the machine is
+// asked `HEAD /` once, and this repository is worked on inside a sandbox, so a
+// server that fails on an unexpected request — or records what reached it —
+// would otherwise be judging a request no command here ever made. See the
+// repository REVIEW.md.
+func ignoringPortProbe(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == portProbeUserAgent {
+			return
+		}
+		handler(w, r)
+	}
+}
+
 func preparePromptCreateSSHSync(t *testing.T) func(http.ResponseWriter, *http.Request) bool {
 	t.Helper()
 	setHome(t, t.TempDir())

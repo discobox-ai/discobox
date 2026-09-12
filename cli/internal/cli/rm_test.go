@@ -31,7 +31,7 @@ func rmTestServerListing(t *testing.T, archived *[]string, sandboxes string) *ht
 	t.Helper()
 	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
 	t.Chdir(t.TempDir())
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		const collection = "/projects/project-1/sandboxes"
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == collection:

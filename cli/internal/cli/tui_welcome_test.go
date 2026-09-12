@@ -19,7 +19,7 @@ func TestProjectWelcomedReadsTheProject(t *testing.T) {
 		body := fmt.Sprintf(`{"id":"project-1","ownerUserId":"user-1","name":"Project",`+
 			`"default":true,"welcomed":%t,"createdAt":"2026-01-01T00:00:00Z",`+
 			`"updatedAt":"2026-01-01T00:00:00Z"}`, welcomed)
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1" {
 				t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 				w.WriteHeader(http.StatusNotFound)
@@ -48,7 +48,7 @@ func TestProjectWelcomedReadsTheProject(t *testing.T) {
 // A server that cannot describe the project is worth stopping on: everything
 // the window does needs the project, so opening anyway only defers the failure.
 func TestProjectWelcomedFailsWithTheServer(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)
@@ -67,7 +67,7 @@ func TestProjectWelcomedFailsWithTheServer(t *testing.T) {
 // project commands use.
 func TestMarkWelcomedUpdatesTheProject(t *testing.T) {
 	var got map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut && r.Method != http.MethodPatch && r.Method != http.MethodPost {
 			t.Errorf("unexpected method %s", r.Method)
 		}

@@ -17,7 +17,7 @@ import (
 
 func TestProviderCreateHelpDoesNotHitAPI(t *testing.T) {
 	hit := false
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(http.ResponseWriter, *http.Request) {
 		hit = true
 	}))
 	defer server.Close()
@@ -39,7 +39,7 @@ func TestProviderCreateHelpDoesNotHitAPI(t *testing.T) {
 }
 
 func TestProviderCreateHelpProviderLoadsDynamicFields(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/providers/catalog" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -85,7 +85,7 @@ func TestProviderCreateHelpProviderLoadsDynamicFields(t *testing.T) {
 
 func TestProviderUpdateHelpDoesNotHitAPI(t *testing.T) {
 	hit := false
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(http.ResponseWriter, *http.Request) {
 		hit = true
 	}))
 	defer server.Close()
@@ -107,7 +107,7 @@ func TestProviderUpdateHelpDoesNotHitAPI(t *testing.T) {
 }
 
 func TestProviderUpdateHelpProviderLoadsDynamicFields(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/providers/catalog" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -252,7 +252,7 @@ func TestDynamicProviderCreateAllowsMissingName(t *testing.T) {
 func TestProviderUpdateCommandSendsDynamicConfig(t *testing.T) {
 	const providerID = "prov_0000000000000010"
 	var patched map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		switch {
@@ -320,7 +320,7 @@ func TestProviderUpdateCommandSendsDynamicConfig(t *testing.T) {
 
 func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 	var posted map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/providers/catalog":
@@ -376,7 +376,7 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 }
 
 func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/providers/catalog":

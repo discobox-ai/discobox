@@ -224,7 +224,7 @@ func pushDataSource(t *testing.T, dir string) (*apiDataSource, *pathLog) {
 		`"origin":{"hostId":"` + thisHost + `"},` +
 		`"runtime":{"state":"ready","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},` +
 		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		paths.add(r.URL.Path)
 		if r.URL.Path == "/projects/project-1/sandboxes/sbx_1" {
 			w.Header().Set("Content-Type", "application/json")

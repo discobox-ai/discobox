@@ -22,7 +22,7 @@ func forwardTestServer(t *testing.T, sandboxPort int) *httptest.Server {
 	t.Helper()
 	ports := `[{"port":` + strconv.Itoa(sandboxPort) +
 		`,"addresses":["127.0.0.1"],"protocol":"http","firstSeenAt":"2026-08-18T00:00:00Z"}]`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/tcp/attach"):
 			conn, err := websocket.Accept(w, r, nil)
