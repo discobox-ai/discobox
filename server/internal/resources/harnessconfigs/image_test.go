@@ -244,8 +244,27 @@ func TestIncludedImageJSONFilesAreValid(t *testing.T) {
 // A harness manifest must not restate what the base layer already declares.
 // Restating is how the duplication ADR 0086 removed accumulated in the first
 // place, and a stale copy silently outranks the base.
+//
+// Declaring a fact the base does not is the point of a leaf layer — "a layer
+// states what its own image installed" (ADR 0086 §2) — so what is checked is
+// the overlap with the base, not whether the leaf declares anything at all.
 func TestHarnessManifestsDeclareNoBaseFacts(t *testing.T) {
-	matches, err := filepath.Glob(filepath.Join("..", "..", "..", "..", "harness", "*", "image.json"))
+	repoRoot := filepath.Join("..", "..", "..", "..")
+
+	var base harness.ImageMetadata
+	if err := json.Unmarshal([]byte(compactFile(t, filepath.Join(repoRoot, "sandbox-agent", "image.json"))), &base); err != nil {
+		t.Fatal(err)
+	}
+	baseVolumes := make(map[string]bool, len(base.Volumes))
+	for _, volume := range base.Volumes {
+		baseVolumes[volume.Path] = true
+	}
+	baseGroups := make(map[string]bool, len(base.AdditionalGroups))
+	for _, group := range base.AdditionalGroups {
+		baseGroups[group] = true
+	}
+
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "harness", "*", "image.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,9 +276,20 @@ func TestHarnessManifestsDeclareNoBaseFacts(t *testing.T) {
 		if err := json.Unmarshal([]byte(compactFile(t, match)), &manifest); err != nil {
 			t.Fatal(err)
 		}
-		if len(manifest.Env) != 0 || len(manifest.Volumes) != 0 || len(manifest.AdditionalGroups) != 0 {
-			t.Errorf("%s restates base-layer facts: env=%v volumes=%v groups=%v",
-				match, manifest.Env, manifest.Volumes, manifest.AdditionalGroups)
+		for name, value := range manifest.Env {
+			if _, ok := base.Env[name]; ok {
+				t.Errorf("%s restates base-layer env %s=%q", match, name, value)
+			}
+		}
+		for _, volume := range manifest.Volumes {
+			if baseVolumes[volume.Path] {
+				t.Errorf("%s restates base-layer volume %s", match, volume.Path)
+			}
+		}
+		for _, group := range manifest.AdditionalGroups {
+			if baseGroups[group] {
+				t.Errorf("%s restates base-layer group %s", match, group)
+			}
 		}
 		if manifest.Harness == nil {
 			continue
