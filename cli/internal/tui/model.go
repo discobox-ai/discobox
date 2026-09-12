@@ -1069,7 +1069,7 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 const repaintKey = "ctrl+l"
 
 // reportUnreachable says which registered servers the list is missing, once,
-// when that changes (ADR 0114 §4). The list is polled, and a window that
+// when that changes (ADR 0116 §4). The list is polled, and a window that
 // repeats the same complaint every refresh is a window you stop reading — but
 // rows that vanish with nothing said look like discoboxes that are gone.
 func (m *Model) reportUnreachable(servers []string) tea.Cmd {

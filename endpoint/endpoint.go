@@ -17,7 +17,7 @@
 //	          discobox+http://127.0.0.1:8081     http, said outright
 //
 // A name is the one endpoint whose transport the address does not say:
-// [Parse] leaves it unresolved and [Resolve] looks it up (ADR 0114 §1).
+// [Parse] leaves it unresolved and [Resolve] looks it up (ADR 0116 §1).
 //
 // An endpoint's capabilities are asked, not inferred: see
 // [Endpoint.AutoLaunchable] and [Endpoint.DirectlyDialable]. The pool agent's
@@ -44,7 +44,7 @@ const SchemeDiscobox = "discobox"
 // infer: a bare host is https, and a plain-http server — a development server
 // on a port, a deployment behind something that terminates TLS elsewhere — has
 // no other way to be written as a Discobox address, which is what carries a
-// discobox (ADR 0114 §1).
+// discobox (ADR 0116 §1).
 const (
 	SchemeDiscoboxHTTP  = SchemeDiscobox + "+http"
 	SchemeDiscoboxHTTPS = SchemeDiscobox + "+https"
@@ -109,7 +109,7 @@ func Parse(raw string) (Endpoint, error) {
 		// The result says "iroh" whichever was written, so nothing below Parse
 		// has a second scheme to learn.
 		//
-		// discobox:// also names a server by host (ADR 0114 §1). A peer ID is
+		// discobox:// also names a server by host (ADR 0116 §1). A peer ID is
 		// recognized first, so it never reaches a resolver; an IP or a host
 		// with a port is https; a bare name is left for Resolve.
 		host := strings.TrimSpace(u.Host)
@@ -139,7 +139,7 @@ func Parse(raw string) (Endpoint, error) {
 
 // parseDiscoboxTransport reads a discobox+http:// or discobox+https:// address:
 // the Discobox address family with its transport named rather than inferred
-// (ADR 0114 §1). It is an http endpoint like any other, so it is settled here
+// (ADR 0116 §1). It is an http endpoint like any other, so it is settled here
 // and nothing below Parse sees the spelling.
 func parseDiscoboxTransport(raw string, u *url.URL, transport string) (Endpoint, error) {
 	host := strings.TrimSpace(u.Host)

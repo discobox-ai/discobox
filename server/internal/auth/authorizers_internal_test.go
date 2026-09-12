@@ -14,7 +14,7 @@ func TestAuthenticatedAllowedPaths(t *testing.T) {
 		want bool
 	}{
 		{"this server's own peer ID (ADR 0098)", "/peer", true},
-		{"what this server calls itself (ADR 0114)", "/server", true},
+		{"what this server calls itself (ADR 0116)", "/server", true},
 		{"enrolled peers", "/peers", true},
 		{"one enrolled peer", "/peers/d1-dtztd73", true},
 		{"projects", "/projects", true},

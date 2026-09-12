@@ -187,7 +187,7 @@ const (
 	optSecret
 	optSource
 	// optServer is last because it is the one row that is not always there:
-	// it exists only when there is a server to choose (ADR 0114 §5), and the
+	// it exists only when there is a server to choose (ADR 0116 §5), and the
 	// rows before it keep their places either way. See optionSet.server.
 	optServer
 )
@@ -806,7 +806,7 @@ func (o *optionSet) command(prompt string) string {
 		args = append(args, "--server", req.Server)
 	}
 	// --project names a project on the primary, and a run on another server
-	// goes to that server's default (ADR 0114 §4): naming this one would offer
+	// goes to that server's default (ADR 0116 §4): naming this one would offer
 	// a line that fails where it was told to run.
 	if p := o.session.Project; p != "" && p != o.session.DefaultProject && req.Server == "" {
 		args = append(args, "--project", p)

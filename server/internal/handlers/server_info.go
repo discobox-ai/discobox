@@ -7,7 +7,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
-// GetServerInfo serves what this server calls itself (ADR 0114 §2): the name
+// GetServerInfo serves what this server calls itself (ADR 0116 §2): the name
 // a client offers when it registers this server, which the client may replace
 // with one of its own.
 //

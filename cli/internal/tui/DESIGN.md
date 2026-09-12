@@ -499,7 +499,7 @@ What went is one status line; nothing to send says nothing at all.
 
 ## Many servers
 
-The window lists every server the CLI knows (ADR 0114 §4) and otherwise knows
+The window lists every server the CLI knows (ADR 0116 §4) and otherwise knows
 servers only by name. `List` returns a `Listing`: the rows, each with
 `Sandbox.Server` naming its server, and `Unreachable`, the registered servers
 that did not answer.

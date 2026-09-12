@@ -68,7 +68,7 @@ func TestServerPeerRouteServesThePeerID(t *testing.T) {
 }
 
 // A service holding no ID omits the field rather than serving the zero one,
-// and the request still succeeds. Every server has an ID now (ADR 0115), so
+// and the request still succeeds. Every server has an ID now (ADR 0117), so
 // this is the shape of a server that predates that, which a client still has
 // to read.
 func TestServerPeerRouteOmitsTheIDWhenThereIsNone(t *testing.T) {

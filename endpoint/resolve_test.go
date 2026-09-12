@@ -57,7 +57,7 @@ func peerWithKeyByte(t *testing.T, b byte) IrohID {
 }
 
 // Every spelling of a server says which transport it means, except a bare
-// name, whose DNS decides (ADR 0114 §1).
+// name, whose DNS decides (ADR 0116 §1).
 func TestParseDiscoboxServerForms(t *testing.T) {
 	id := testPeerID(t)
 	for _, tc := range []struct{ raw, scheme, value string }{
@@ -267,7 +267,7 @@ func TestParseSandboxAddress(t *testing.T) {
 
 // The transport said outright, for a server whose transport no rule infers:
 // nothing is looked up, and what comes out is an ordinary http endpoint
-// (ADR 0114 §1).
+// (ADR 0116 §1).
 func TestParseDiscoboxTransportSchemes(t *testing.T) {
 	asked := answerTXT(t, nil)
 	for _, tc := range []struct{ raw, scheme, value string }{

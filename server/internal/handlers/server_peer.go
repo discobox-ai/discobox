@@ -16,7 +16,7 @@ import (
 // over the transport that client already has — and it exists for the same
 // reason: the alternative is grepping a startup log line.
 //
-// Every server has one, whatever it listens on (ADR 0115). The field is still
+// Every server has one, whatever it listens on (ADR 0117). The field is still
 // omitted when the service holds none, rather than served as the zero ID,
 // which would render as a well-formed peer ID that reaches nothing.
 func (h *Handler) GetServerPeer(context.Context) (serverapi.GetServerPeerRes, error) {

@@ -4399,7 +4399,7 @@ components:
             type: object
         ServerPeer:
             additionalProperties: false
-            description: This server's own peer identity (ADR 0098), which every server has whatever it listens on (ADR 0115). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers, and the identity a client records for it otherwise.
+            description: This server's own peer identity (ADR 0098), which every server has whatever it listens on (ADR 0117). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers, and the identity a client records for it otherwise.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -4415,7 +4415,7 @@ components:
             type: object
         ServerInfo:
             additionalProperties: false
-            description: What this server calls itself (ADR 0114). A client registering this server offers the name as the one to register it under; nothing else depends on it, and two servers may share one.
+            description: What this server calls itself (ADR 0116). A client registering this server offers the name as the one to register it under; nothing else depends on it, and two servers may share one.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.

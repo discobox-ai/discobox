@@ -103,7 +103,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 
 // writeEverySSHConfig syncs the stanzas of every server this client lists:
 // each server's own project, into files named by that project, so one ssh
-// reaches the discoboxes on all of them (ADR 0114 §4).
+// reaches the discoboxes on all of them (ADR 0116 §4).
 //
 // The primary failing fails the command, as it did when it was the only server
 // there was; a registered server that cannot be reached is a note, and every

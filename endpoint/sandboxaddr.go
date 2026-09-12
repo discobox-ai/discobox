@@ -7,7 +7,7 @@ import (
 )
 
 // SandboxAddress is an address that names one discobox on a server:
-// discobox://<server>/<discobox> (ADR 0114 §1), or the same with the transport
+// discobox://<server>/<discobox> (ADR 0116 §1), or the same with the transport
 // named — discobox+http://<host>:<port>/<discobox>. It is what somebody pastes
 // to somebody else, and what a command that takes a discobox accepts in place
 // of an ID.

@@ -15,7 +15,7 @@ import (
 // asks for one, installs its iroh endpoint and admission policy.
 //
 // The identity is loaded on every start, whatever the server listens on
-// (ADR 0115): an ed25519 key in the data directory, written by Go like the SSH
+// (ADR 0117): an ed25519 key in the data directory, written by Go like the SSH
 // host key, whose public half is the peer ID `GET /peer` serves (ADR 0098).
 // Loading it binds nothing. What is skipped without an iroh endpoint is the
 // endpoint — the native library, the UDP socket, the relay — none of which a

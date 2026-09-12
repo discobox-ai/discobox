@@ -76,7 +76,7 @@ type Config struct {
 	Port   int      `yaml:"port" env:"PORT" default:"18080" doc:"TCP port for an http:// listen endpoint that does not name one."`
 	Listen []string `yaml:"listen" env:"DISCOBOX_SERVER_LISTEN" doc:"Endpoints to listen on. Local IPC is added when none is named, so the CLI can always reach the server."`
 	// Name is what this server calls itself, and what a client offers as the
-	// name to register it under (ADR 0114 §2). It identifies nothing: two
+	// name to register it under (ADR 0116 §2). It identifies nothing: two
 	// servers may share one, and nothing but a client's default choice reads it.
 	Name string `yaml:"name" env:"DISCOBOX_SERVER_NAME" doc:"What this server calls itself: the name a client registering it is offered. Defaults to this machine's hostname."`
 

@@ -128,7 +128,7 @@ var authenticatedAllowedPaths = []string{
 	// is entitled to know — it is the address they reached this server at, or
 	// the one they would.
 	"/peer",
-	// What this server calls itself (ADR 0114 §2), for the same reason as
+	// What this server calls itself (ADR 0116 §2), for the same reason as
 	// /peer: server-scoped, and nothing an authenticated caller is not
 	// entitled to.
 	"/server",

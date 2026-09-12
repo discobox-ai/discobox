@@ -309,7 +309,7 @@ unwritable or corrupt file costs the convenience and never the command.
   under it, and a prompt past the cap is cut on a rune boundary — a state file
   is not where a pasted log belongs.
 
-## Many Servers (ADR 0114)
+## Many Servers (ADR 0116)
 
 A client has one **primary** server — `--server`, `DISCOBOX_SERVER`, or the
 local default — and any number of **registered** ones, kept in
@@ -336,7 +336,7 @@ is an error rather than a lost convenience.
 - **A registration records the server's peer ID** (`registeredServer.ID`),
   read the way `discobox id` reads it: off the address when that names a peer,
   a `discobox://` name resolved to one included, and from `GET /peer`
-  otherwise. Every current server has one, whatever it listens on (ADR 0115),
+  otherwise. Every current server has one, whatever it listens on (ADR 0117),
   so it is empty only for a server from before that. It is
   what `discobox servers` lists in its ID column, and what recognizes one
   server registered again under another address — its http address and its
@@ -359,7 +359,7 @@ is an error rather than a lost convenience.
   (`applySelected`, `pushSelected`, `runToolInSelected`). A
   `discobox://<server>/<discobox>` address (`endpoint.ParseSandboxAddress`) —
   or `discobox+http://<host>:<port>/<discobox>`, which is how a discobox on a
-  plain-http server is named, a bare host being https (ADR 0114 §1) —
+  plain-http server is named, a bare host being https (ADR 0116 §1) —
   names the server outright, and finding the discobox on one that is neither
   the primary nor registered registers it under the name it offers
   (`registerServer`) — only then, so a mistyped address leaves nothing
@@ -380,7 +380,7 @@ is an error rather than a lost convenience.
   the ID alias is unambiguous either way.
 - **An address is taken everywhere a discobox is named; a name is not.**
   `shell` resolves one through `selectSandbox` like every other command that
-  takes a discobox (ADR 0114 §6) — it has to, since `matchSandboxArg` finds
+  takes a discobox (ADR 0116 §6) — it has to, since `matchSandboxArg` finds
   nothing in an address and the word would otherwise become the command a
   picked discobox runs. `cp` takes one too: the `discobox://` prefix is what
   makes the operand safe to recognize, and `splitCPAddress` cuts it where the
@@ -987,7 +987,7 @@ positional argument shared with the command itself (`shell`, resolved by
 
 - Candidates are exactly what `discobox ls` shows — `listProjectSandboxes` filtered
   to this machine's origin keys for `-C`, on every server (see
-  [Many Servers](#many-servers-adr-0114)) — so the command and the listing can
+  [Many Servers](#many-servers-adr-0116)) — so the command and the listing can
   never disagree.
 - One candidate is used. Several with a terminal on stdin and stderr open the
   inline Bubble Tea picker; several without one is an error, since there is
@@ -2129,14 +2129,14 @@ the other machine says is the whole of what a person does with them.
   the same file and the same generation `discobox admin peer id` performs, so
   the two commands can never mint different identities for one machine.
 - **The server half** comes from `--server` when the address names a peer —
-  a `discobox://` name whose `_discobox` record names one included (ADR 0114
+  a `discobox://` name whose `_discobox` record names one included (ADR 0116
   §1) — and from `GET /peer` otherwise (ADR 0098). The address first because it costs no
   round trip and answers while the server is down; the row says which source it
   was, since an ID read out of an address was never confirmed by the server
   that answers to it.
 - **A half that is missing is still a row.** A server that answers with no
   peer ID has answered — only one from before every server had one does
-  (ADR 0115) — and exits zero. A server that could not be *asked* has not, and that is a
+  (ADR 0117) — and exits zero. A server that could not be *asked* has not, and that is a
   non-zero exit so a script does not proceed with one of the two IDs it wanted.
   Either way the client half is still printed: an unreachable server is often
   why somebody is asking.

@@ -397,7 +397,7 @@ func TestLoadRejectsUnusableRetentions(t *testing.T) {
 }
 
 // A server nobody named takes this machine's hostname, which is what a client
-// registering it is offered (ADR 0114 §2). The setting wins, trimmed.
+// registering it is offered (ADR 0116 §2). The setting wins, trimmed.
 func TestLoadNameDefaultsToTheHostname(t *testing.T) {
 	clearConfigEnv(t)
 	hostname, err := os.Hostname()

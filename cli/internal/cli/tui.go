@@ -162,7 +162,7 @@ type apiDataSource struct {
 	projectID string
 
 	// servers is every server the window lists, the primary first, when there
-	// is more than one (ADR 0114 §4). Nil with one, and on the data source
+	// is more than one (ADR 0116 §4). Nil with one, and on the data source
 	// aimed at one server, which routes nothing.
 	servers []*tuiServer
 
@@ -384,7 +384,7 @@ func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
 	return d.listEveryServer(ctx)
 }
 
-// listEveryServer is List across servers, asked concurrently (ADR 0114 §4).
+// listEveryServer is List across servers, asked concurrently (ADR 0116 §4).
 // The primary failing fails the listing, as it always did. A registered server
 // that fails is reported as not answering, and left alone until retryAt. A
 // discobox two servers both list is one server registered under two
@@ -871,7 +871,7 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 		}
 		return d.create(ctx, req, report)
 	}
-	// Empty is the primary, which is `--server` unset (ADR 0114 §5).
+	// Empty is the primary, which is `--server` unset (ADR 0116 §5).
 	target := d.servers[0]
 	if req.Server != "" {
 		// A name picks among the registered servers, whose names are unique

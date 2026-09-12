@@ -121,7 +121,7 @@ func (l *sandboxList) rows() []Sandbox {
 	}
 	// Grouped by server, and newest-first inside a section as everywhere else:
 	// the sort is stable, so the order the listing arrived in is what orders a
-	// section (ADR 0114 §4).
+	// section (ADR 0116 §4).
 	if l.grouped() {
 		sort.SliceStable(out, func(i, j int) bool {
 			return l.section(out[i].Server) < l.section(out[j].Server)

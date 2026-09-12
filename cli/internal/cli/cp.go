@@ -133,7 +133,7 @@ type cpTarget struct {
 
 // resolveCPTarget decides which server the copy runs against.
 //
-// An address names its server (ADR 0114 §6), so the first one decides it —
+// An address names its server (ADR 0116 §6), so the first one decides it —
 // and registers it, since it resolves through selectSandbox like every other
 // address. One scp runs over one bridge, so a second address naming a
 // different server is refused rather than half-copied; a name or an ID in the
@@ -143,7 +143,7 @@ func (a *App) resolveCPTarget(cmd *cobra.Command, operands []cpOperand) (cpTarge
 	target := cpTarget{app: a, resolved: map[string]string{}}
 	// Everything decidable from the operands is decided first, so a copy this
 	// cannot make contacts nothing — and registers nothing, since reaching a
-	// server through its address registers it (ADR 0114 §6) and a refused copy
+	// server through its address registers it (ADR 0116 §6) and a refused copy
 	// must not leave one behind.
 	addresses := make([]string, 0, len(operands))
 	servers := map[string]string{}
