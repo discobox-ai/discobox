@@ -13,12 +13,6 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
-// ErrSandboxPoolNotReachable marks the acquire refusal that means the pool
-// hosting the sandbox is not taking traffic yet. It is a condition, not an
-// answer: the pool agent registers and reports ready on its own, so a caller
-// that can wait will see it clear.
-var ErrSandboxPoolNotReachable = errors.New("sandbox pool is not reachable")
-
 // ErrSandboxProvisioning marks a sandbox that can be reached but is not ready
 // to be used: its reconciler has not finished the generation it is acting on,
 // or it is parked waiting for its source to be pushed.
@@ -36,7 +30,9 @@ var ErrSandboxProvisioning = errors.New("sandbox is still being provisioned")
 // It is a stall budget rather than a cap on how long the wait may take: every
 // write to this sandbox or to the pool hosting it restarts it, so a multi-
 // gigabyte image pull that keeps reporting progress waits as long as the pull
-// takes, and a sandbox that has gone silent gives up in two minutes. The tiers
+// takes, and a sandbox that has gone silent gives up in two minutes. A pool
+// host that is not there is bounded by sandboxPoolHostWaitCeiling instead,
+// because that refusal moves the mark this budget reads. The tiers
 // below take budgets that fit inside this one, so the innermost stage to stall
 // is the one that reports.
 const sandboxReachableStallTimeout = 2 * time.Minute
@@ -48,6 +44,23 @@ const sandboxReachableStallTimeout = 2 * time.Minute
 // against work that takes seconds at best: a container being created, an image
 // being pulled, a source tree being materialized.
 const sandboxReachablePollInterval = 500 * time.Millisecond
+
+// sandboxPoolHostWaitCeiling bounds how long tier 1 waits for the pool host
+// itself to come back, whatever the stall budget says.
+//
+// The stall budget cannot bound this one, because the wait causes the progress
+// it reads. Reaching the host is the provider's acquire, a failed acquire marks
+// the pool for reconcile, and every reconcile of a pool stamps its provision
+// progress — one of the signals provisioningMark counts as movement. Left to
+// the stall budget alone, a wait on a host that is never coming back renews
+// itself for as long as the pool keeps reconciling.
+//
+// The create path meets the same problem with the same answer, and this is its
+// poolAgentWaitCeiling: long enough for a container recreate that pulls a new
+// pool-agent image, and no longer.
+//
+// A var so a test can reach the ceiling without spending five minutes on it.
+var sandboxPoolHostWaitCeiling = 5 * time.Minute
 
 // AwaitSandboxHTTPClient is AcquireSandboxHTTPClient for a caller that means
 // "I want to use this sandbox now": it waits for the sandbox to become
@@ -65,6 +78,7 @@ const sandboxReachablePollInterval = 500 * time.Millisecond
 func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	stallDeadline := time.Now().Add(sandboxReachableStallTimeout)
 	var observed provisioningMark
+	var hostDownSince time.Time
 	for {
 		lease, sandboxModel, err := s.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
 		if err == nil && !sandboxProvisioningPending(sandboxModel) {
@@ -91,6 +105,18 @@ func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandbox
 		if !sandboxCanBecomeReachable(err, sandboxModel) {
 			return nil, sandboxModel, err
 		}
+		// A host that is not there has its own ceiling, for the reason
+		// sandboxPoolHostWaitCeiling gives: this wait stamps the progress that
+		// would otherwise re-arm the stall budget forever.
+		if errors.Is(err, sandbox.ErrPoolNotReachable) {
+			if hostDownSince.IsZero() {
+				hostDownSince = time.Now()
+			} else if time.Since(hostDownSince) >= sandboxPoolHostWaitCeiling {
+				return nil, sandboxModel, err
+			}
+		} else {
+			hostDownSince = time.Time{}
+		}
 		// The first pass always counts as progress, which only re-arms a budget
 		// armed a moment ago.
 		if mark := s.provisioningMark(ctx, sandboxModel); mark != observed {
@@ -114,8 +140,8 @@ func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandbox
 // on, plus the counters that tick while the work behind that gate proceeds.
 //
 // Both resources are in it. A sandbox waiting on a pool that is still coming up
-// does not change at all, and `ErrSandboxPoolNotReachable` is a refusal only the
-// pool row can clear. Unrelated project traffic is in neither, so a busy project
+// does not change at all, and `sandbox.ErrPoolNotReachable` is a refusal only
+// the pool can clear. Unrelated project traffic is in neither, so a busy project
 // cannot hold a stalled sandbox open.
 type provisioningMark struct {
 	sandboxState      string
@@ -196,8 +222,9 @@ func sandboxProvisioningPending(sb *model.Sandbox) bool {
 //
 // Three refusals are "not yet": the sandbox has no runtime state naming a pool,
 // because its reconciler has not created the runtime and persisted it yet; the
-// pool it is on is not taking traffic yet; and the sandbox is reachable but
-// still being provisioned. Every other refusal — a row that is not there, a
+// pool it is on is not taking traffic yet, whether its row says so or its
+// driver sees a host still coming up; and the sandbox is reachable but still
+// being provisioned. Every other refusal — a row that is not there, a
 // scope the caller does not hold, a provider that cannot be resolved — is an
 // answer, and waiting on one would replace a precise error with a deadline.
 //
@@ -208,7 +235,7 @@ func sandboxProvisioningPending(sb *model.Sandbox) bool {
 // (ADR 0017 §4).
 func sandboxCanBecomeReachable(err error, sb *model.Sandbox) bool {
 	if !errors.Is(err, sandbox.ErrNotFound) &&
-		!errors.Is(err, ErrSandboxPoolNotReachable) &&
+		!errors.Is(err, sandbox.ErrPoolNotReachable) &&
 		!errors.Is(err, ErrSandboxProvisioning) {
 		return false
 	}

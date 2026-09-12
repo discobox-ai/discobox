@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -583,6 +584,67 @@ func TestPoolProviderOnlyCreateWaitsForAPoolHost(t *testing.T) {
 	}
 	if runtimeProvider.acquireCalls != 2 {
 		t.Fatalf("AcquirePoolAgentClient calls = %d, want 2", runtimeProvider.acquireCalls)
+	}
+}
+
+// The reconcile wait running out says nothing about the host, so it must not
+// replace what the driver said about it. `ErrNoSandboxCapacity` is an answer to
+// the attach wait — not in its list of "not yet" refusals — so returning it
+// here for a host that is merely still coming up fails the attach that the
+// driver's own refusal would have kept waiting.
+func TestPoolProviderKeepsTheDriverRefusalWhenTheReconcileWaitRunsOut(t *testing.T) {
+	oldTimeout, oldInterval := poolCapacityWaitTimeout, poolCapacityPollInterval
+	poolCapacityWaitTimeout = 20 * time.Millisecond
+	poolCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldInterval })
+
+	hostDown := fmt.Errorf("pool %q: %w: container abc health check is starting", "pool-1", sandbox.ErrPoolNotReachable)
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.unreachable = hostDown
+	// Unconverged intent, so the reconcile this acquire asks for never settles
+	// inside its budget: a spec change or repair that is pulling a new
+	// pool-agent image is exactly this shape.
+	pool := activePool("pool-1")
+	pool.Generation, pool.ObservedGeneration = 2, 1
+	manager := &fakePoolManager{pool: pool, schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
+
+	_, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{poolagentauth.ScopeSandboxRead})
+	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("AcquireHTTPClient error = %v, want the driver refusal (%v)", err, sandbox.ErrPoolNotReachable)
+	}
+	if errors.Is(err, sandbox.ErrNoSandboxCapacity) {
+		t.Fatalf("AcquireHTTPClient error = %v, want the driver refusal rather than a capacity answer", err)
+	}
+}
+
+// A caller that polls this acquire — the attach wait, twice a second for as
+// long as it waits — must not ask for a reconcile of the same pool on every
+// pass. The marks coalesce in the dirty set; the reconciles they queue do not,
+// and each one re-runs the host's drift checks and re-stamps its progress.
+func TestPoolProviderMarksAPoolForReconcileOnceWhileItsHostIsDown(t *testing.T) {
+	oldInterval := poolReconcileMarkInterval
+	poolReconcileMarkInterval = time.Minute
+	t.Cleanup(func() { poolReconcileMarkInterval = oldInterval })
+
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.unreachable = fmt.Errorf("pool %q: %w: container abc health check is starting", "pool-1", sandbox.ErrPoolNotReachable)
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
+
+	for pass := range 3 {
+		if _, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{poolagentauth.ScopeSandboxRead}); err == nil {
+			t.Fatalf("pass %d: AcquireHTTPClient succeeded against an unreachable host", pass)
+		}
+	}
+	if manager.scheduledReconciles != 1 {
+		t.Fatalf("scheduled reconciles = %d, want 1 for three passes over the same unreachable pool", manager.scheduledReconciles)
+	}
+	// Every pass still looks at the driver — that is what the poll is for.
+	if runtimeProvider.acquireCalls < 3 {
+		t.Fatalf("driver acquires = %d, want one per pass at least", runtimeProvider.acquireCalls)
 	}
 }
 

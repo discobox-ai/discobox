@@ -383,7 +383,7 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 			// A pool that is not up yet is a condition a wait can resolve, and
 			// the sentinel is how AwaitSandboxHTTPClient tells it apart from
 			// the refusals that are answers.
-			Cause: ErrSandboxPoolNotReachable,
+			Cause: sandbox.ErrPoolNotReachable,
 		}
 	}
 	if s.sandboxProviders == nil {
@@ -395,6 +395,13 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	}
 	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, scopes)
 	if err != nil {
+		// The row outlives the host: a pool whose container is being replaced,
+		// or whose agent has not passed its healthcheck yet, still reads ready
+		// until its agent is noticed gone. The driver that can see that says
+		// so, and it is the same condition as the gate above.
+		if errors.Is(err, sandbox.ErrPoolNotReachable) {
+			return nil, sandboxModel, apperrors.StatusError{Status: http.StatusConflict, Message: err.Error(), Cause: err}
+		}
 		return nil, nil, err
 	}
 	return lease, sandboxModel, nil

@@ -3,6 +3,7 @@ package sandboxes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -18,14 +19,21 @@ import (
 // provisioningProvider answers acquires the way the pool-backed provider does
 // for a sandbox that has not been dispatched yet: ErrNotFound until the runtime
 // state names a pool, a lease once it does.
+//
+// hostDown stands in for the driver seeing the pool host itself still coming
+// up while the pool row reads ready.
 type provisioningProvider struct {
 	recordingProvider
-	ready atomic.Bool
+	ready    atomic.Bool
+	hostDown atomic.Bool
 }
 
 func (p *provisioningProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte, []string) (*transport.HTTPClientLease, error) {
 	if !p.ready.Load() {
 		return nil, sandbox.ErrNotFound
+	}
+	if p.hostDown.Load() {
+		return nil, fmt.Errorf(`pool "pool-1": %w: container abc health check is starting`, sandbox.ErrPoolNotReachable)
 	}
 	return transport.NewHTTPClientLease(http.DefaultClient, func() {}), nil
 }
@@ -125,6 +133,101 @@ func TestAwaitSandboxHTTPClientWaitsForProvisioning(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("await did not wake once the sandbox was reachable")
+	}
+}
+
+// The pool row outlives the pool host. A container being replaced or restarted
+// still reads ready until its agent is noticed gone, and the new one refuses
+// traffic until its healthcheck passes. Only the driver sees that, and an
+// attach landing then waits for the host rather than failing with "health check
+// is starting".
+func TestAwaitSandboxHTTPClientWaitsForAPoolHostComingUp(t *testing.T) {
+	service, provider := attachWaitFixture(t)
+	provider.ready.Store(true)
+	provider.hostDown.Store(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	sb.SetState(model.SandboxStateReady)
+	if err := service.store.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatalf("update sandbox: %v", err)
+	}
+
+	// A caller that cannot wait is told the same thing the pool row would
+	// have told it: a conflict, not a server error.
+	_, _, err = service.AcquireSandboxHTTPClient(ctx, "project-1", "sb-1", nil)
+	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("acquire on a pool host coming up = %v, want %v", err, sandbox.ErrPoolNotReachable)
+	}
+	var statusErr interface{ StatusCode() int }
+	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusConflict {
+		t.Fatalf("acquire on a pool host coming up = %v, want a %d", err, http.StatusConflict)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := service.AwaitSandboxHTTPClient(ctx, "project-1", "sb-1", nil)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("await returned while the pool host was still coming up: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	provider.hostDown.Store(false)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("await once the pool host was up: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("await did not wake once the pool host was up")
+	}
+}
+
+// The ceiling is the only thing that ends this wait. Every pass marks the pool
+// for reconcile, every reconcile stamps the pool progress provisioningMark
+// reads as movement, so a host that is never coming back renews the stall
+// budget for as long as the pool keeps reconciling. What comes back is the
+// host's own refusal, which names what never became true — not a deadline.
+func TestAwaitSandboxHTTPClientGivesUpOnAPoolHostAtTheCeiling(t *testing.T) {
+	service, provider := attachWaitFixture(t)
+	provider.ready.Store(true)
+	provider.hostDown.Store(true)
+	restore := sandboxPoolHostWaitCeiling
+	sandboxPoolHostWaitCeiling = 50 * time.Millisecond
+	t.Cleanup(func() { sandboxPoolHostWaitCeiling = restore })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	sb.SetState(model.SandboxStateReady)
+	if err := service.store.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatalf("update sandbox: %v", err)
+	}
+
+	started := time.Now()
+	_, _, err = service.AwaitSandboxHTTPClient(ctx, "project-1", "sb-1", nil)
+	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("await at the ceiling = %v, want the host's own refusal (%v)", err, sandbox.ErrPoolNotReachable)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("await at the ceiling = %v, want the refusal rather than the caller's deadline", err)
+	}
+	// The stall budget is two minutes and nothing here moves the mark, so a
+	// wait that ran to any other bound would have outlived this.
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Fatalf("await took %s, want the ceiling to end it", elapsed)
 	}
 }
 
@@ -330,7 +433,7 @@ func TestSandboxCanBecomeReachableAnswersTerminalConditions(t *testing.T) {
 	if !sandboxCanBecomeReachable(sandbox.ErrNotFound, present(model.SandboxStatePending)) {
 		t.Fatal("a pending sandbox is not waited for")
 	}
-	if !sandboxCanBecomeReachable(ErrSandboxPoolNotReachable, present(model.SandboxStateReady)) {
+	if !sandboxCanBecomeReachable(sandbox.ErrPoolNotReachable, present(model.SandboxStateReady)) {
 		t.Fatal("a pool that is not up yet is not waited for")
 	}
 	if sandboxCanBecomeReachable(errors.New("provider is not configured"), present(model.SandboxStatePending)) {

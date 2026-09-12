@@ -680,6 +680,17 @@ Only a driver whose acquire can see the pool container can refuse it. The
 local driver inspects the container for its port anyway, and refuses one that
 is not running or whose healthcheck is still starting
 (`dockerworker.PoolAgentUnreachable`); that reason is the error when the wait
-runs out. The VM and cloud drivers return a lease without touching the
-container, so on those backends a create landing on a container being replaced
-still fails on its first call to the agent.
+runs out. The refusal wraps `sandbox.ErrPoolNotReachable`, so the operations
+that do not wait here still let their caller wait: the attach wait
+([sandboxes](../internal/resources/sandboxes/DESIGN.md#attach-waits-acquire-does-not))
+treats it as "not yet". The VM and cloud drivers return a lease without
+touching the container, so on those backends a create landing on a container
+being replaced still fails on its first call to the agent.
+
+
+That is also why a failed acquire marks the pool at most once per
+`poolReconcileMarkInterval`. The mark exists to notice a host nobody else has
+noticed, and a caller polling this acquire — the attach wait, twice a second —
+would otherwise queue a reconcile per pass, each one re-running the host's
+drift checks and re-stamping the progress that the caller's own stall budget
+reads as movement.

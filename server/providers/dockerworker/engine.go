@@ -847,11 +847,14 @@ func containerReadyError(inspect container.InspectResponse) error {
 // It is narrower than the readiness wait's containerReadyError on purpose. An
 // unhealthy container is still running an agent that may answer, and refusing
 // it would cut every request to a live pool whenever its probe flapped.
+//
+// Every refusal wraps sandbox.ErrPoolNotReachable. Each is a host on its way up,
+// and a caller that can wait, such as an attach, must wait rather than fail.
 func PoolAgentUnreachable(inspect container.InspectResponse) error {
 	if inspect.State != nil && inspect.State.Running && !containerHealthStarting(inspect) {
 		return nil
 	}
-	return containerReadyError(inspect)
+	return fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, containerReadyError(inspect))
 }
 
 func containerHealthStarting(inspect container.InspectResponse) bool {

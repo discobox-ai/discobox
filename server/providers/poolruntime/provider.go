@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
@@ -105,11 +106,21 @@ type Provider struct {
 	runtimeProvider RuntimeProvider
 	definition      sandbox.ProviderDefinition
 	manager         PoolManager
+
+	// reconcileMarks is when this provider last asked each pool to reconcile
+	// because its host could not be reached. See markPoolForReconcile.
+	reconcileMarksMu sync.Mutex
+	reconcileMarks   map[string]time.Time
 }
 
 // New creates a pool-backed sandbox provider over a runtime provider.
 func New(runtimeProvider RuntimeProvider, definition sandbox.ProviderDefinition, manager PoolManager) *Provider {
-	return &Provider{runtimeProvider: runtimeProvider, definition: definition, manager: manager}
+	return &Provider{
+		runtimeProvider: runtimeProvider,
+		definition:      definition,
+		manager:         manager,
+		reconcileMarks:  map[string]time.Time{},
+	}
 }
 
 func (p *Provider) Initialize(ctx context.Context, provider *model.SandboxProviderInstance) error {
@@ -589,18 +600,67 @@ func (p *Provider) acquirePoolAgentClient(ctx context.Context, pool *model.Pool)
 	if p.manager == nil || pool == nil || strings.TrimSpace(pool.ID) == "" {
 		return nil, err
 	}
-	pool, retryErr := p.reconcilePoolAfterClientError(ctx, pool)
+	current, retryErr := p.reconcilePoolAfterClientError(ctx, pool)
+	if errors.Is(retryErr, sandbox.ErrNoSandboxCapacity) {
+		// The reconcile did not settle inside its own budget, which says
+		// nothing about the host. The driver's account of why it cannot be
+		// reached is the more specific answer, and the one a caller that can
+		// wait recognizes (sandbox.ErrPoolNotReachable), so that is what goes
+		// back rather than a capacity error the attach wait reads as final.
+		return nil, err
+	}
 	if retryErr != nil {
 		return nil, retryErr
 	}
-	return p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	return p.runtimeProvider.AcquirePoolAgentClient(ctx, current)
 }
 
 func (p *Provider) reconcilePoolAfterClientError(ctx context.Context, pool *model.Pool) (*model.Pool, error) {
+	if !p.markPoolForReconcile(pool.ID) {
+		// Asked for already, recently. The caller's retry is then one more look
+		// at the driver, which is what a polling caller wants from this path.
+		return pool, nil
+	}
 	if err := p.manager.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
 		return nil, err
 	}
 	return p.waitForPoolReconcile(ctx, pool.ProjectID, pool.ID)
+}
+
+// poolReconcileMarkInterval is the shortest gap between two reconcile marks
+// this provider asks for on the same pool.
+//
+// A failed acquire marks the pool, and the attach wait re-enters the acquire
+// twice a second for as long as it waits (ADR 0039 tier 1). The marks coalesce
+// in the dirty set, but the reconciles they queue do not: each one re-runs the
+// host's drift checks and re-stamps the pool's provision progress. What this
+// path is for is noticing a host nobody else has noticed, and asking for that
+// faster than a reconcile can run adds nothing.
+var poolReconcileMarkInterval = 5 * time.Second
+
+// markPoolForReconcile reports whether this pool should be marked for
+// reconciliation now, recording the mark when it should.
+//
+// Entries older than the interval are dropped as it goes, so what is held is
+// one instant per pool whose host is currently unreachable, and every
+// remaining entry is by construction too recent to mark again.
+func (p *Provider) markPoolForReconcile(poolID string) bool {
+	p.reconcileMarksMu.Lock()
+	defer p.reconcileMarksMu.Unlock()
+	now := time.Now()
+	for id, at := range p.reconcileMarks {
+		if now.Sub(at) >= poolReconcileMarkInterval {
+			delete(p.reconcileMarks, id)
+		}
+	}
+	if _, ok := p.reconcileMarks[poolID]; ok {
+		return false
+	}
+	if p.reconcileMarks == nil {
+		p.reconcileMarks = map[string]time.Time{}
+	}
+	p.reconcileMarks[poolID] = now
+	return true
 }
 
 // waitForPoolReconcile polls the pool row until its recorded operation reaches

@@ -87,7 +87,16 @@ rather than polling for readiness (ADR 0039 tier 1).
   complete sync's restamp move that on a timer, and a budget they refreshed
   could never expire.
 - Three refusals are "not yet": no runtime state naming a pool, a pool that is
-  not taking traffic, and a sandbox that is reachable but not usable yet. Every
+  not taking traffic (`sandbox.ErrPoolNotReachable`), and a sandbox that is
+  reachable but not usable yet. The pool refusal comes from either side of the
+  acquire: the gate reads the pool row, and the provider's driver refuses a
+  host whose container is being replaced or whose healthcheck has not passed,
+  which the row cannot see because it reads ready until the agent is noticed
+  gone. The service answers both with 409. The host refusal carries its own
+  ceiling (`sandboxPoolHostWaitCeiling`) because the stall budget cannot bound
+  it: a failed acquire marks the pool for reconcile, and every reconcile stamps
+  the pool progress the budget reads as movement, so the wait would renew
+  itself for as long as the pool kept reconciling. Every
   other refusal is an answer and is returned immediately, as is any refusal for
   a sandbox that is failed, archived, or on its way out — no write will clear
   those.

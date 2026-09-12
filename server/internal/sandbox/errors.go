@@ -29,6 +29,14 @@ var (
 	// ErrAlreadyRunning indicates the runtime sandbox is already running.
 	ErrAlreadyRunning = errors.New("sandbox already running")
 
+	// ErrPoolNotReachable indicates the pool hosting a sandbox is not taking
+	// traffic yet: its host is being replaced or restarted, or its agent has not
+	// passed its healthcheck. It is a condition, not an answer. The pool agent
+	// comes up and reports ready on its own, so a caller that can wait (the
+	// attach wait, ADR 0039) waits it out, and the wrapping error carries the
+	// reason for when the wait runs out.
+	ErrPoolNotReachable = errors.New("pool agent is not reachable")
+
 	// ErrNoSandboxCapacity indicates no provider capacity is available for sandbox placement.
 	ErrNoSandboxCapacity = errors.New("no sandbox capacity")
 
