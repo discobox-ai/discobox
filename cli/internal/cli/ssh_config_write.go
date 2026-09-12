@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -95,7 +96,7 @@ func managedConfigHeader(projectID string) string {
 // stanzas is empty when the project has no sandboxes, and that writes an empty
 // config rather than skipping the write: these files mirror the server, so a
 // project whose last sandbox is gone must stop offering stanzas for it.
-func writeManagedSSHConfig(built managedSSHConfig, projectID string, notes noteFunc) error {
+func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, projectID string, notes noteFunc) error {
 	target := built.target
 	configPath, knownHostsPath := target.configPath(projectID), target.knownHostsPath(projectID)
 	if err := ensureStateDir(filepath.Dir(configPath.local)); err != nil {
@@ -116,19 +117,32 @@ func writeManagedSSHConfig(built managedSSHConfig, projectID string, notes noteF
 	if err := os.WriteFile(configPath.local, []byte(managedConfigHeader(projectID)+built.stanzas), 0o600); err != nil {
 		return fmt.Errorf("write SSH config: %w", err)
 	}
-	// The files as well as the directory they are in: a run before this one may
-	// have left them readable by whoever the profile grants, and ssh refuses a
-	// config it does not like the look of rather than ignoring it. Across the
-	// WSL boundary this is a no-op — the process doing the writing is the Linux
-	// one — and the ACL those files need is the one they inherit from the
-	// Windows directory they were created in.
-	for _, path := range []string{knownHostsPath.local, configPath.local} {
-		if err := restrictToUser(path); err != nil {
-			return fmt.Errorf("restrict %s to this user: %w", filepath.Base(path), err)
+	// Both files, every run, and not the directory holding them: ensureStateDir
+	// restricts that where this process can, which across the WSL boundary is
+	// nowhere, and ssh judges the file it opens rather than where it sits. A
+	// run before this one may have left these readable by whoever the profile
+	// grants — os.WriteFile over an existing file keeps the old DACL — and ssh
+	// refuses a config it does not like the look of rather than ignoring it.
+	// Across the boundary that judgement is Windows', and so is the ACL: a file
+	// this process creates on a drive mount carries what WSL and the profile
+	// put on it, and an Include ssh refuses is an Include that fails every host
+	// in the user's config (sshTarget.restrict).
+	//
+	// A file this cannot vouch for is taken back, both of them together, for
+	// the reason ADR 0102 §3 removes a mirrored key it cannot vouch for: the
+	// caller carries on from this failure for an optional target, and what
+	// would be left behind is an Include'd config ssh refuses — which fails
+	// every host in the user's ssh_config, their own among them, where the
+	// missing file an Include names is one ssh passes over without a word.
+	for _, path := range []sshPath{knownHostsPath, configPath} {
+		if err := target.restrict(ctx, path); err != nil {
+			return errors.Join(
+				fmt.Errorf("restrict %s to this user: %w", filepath.Base(path.local), err),
+				removeFiles(configPath.local, knownHostsPath.local))
 		}
 	}
 
-	edits, err := target.ensureUserConfigInclude(configPath)
+	edits, err := target.ensureUserConfigInclude(ctx, configPath)
 	if err != nil {
 		return err
 	}
@@ -142,7 +156,35 @@ func writeManagedSSHConfig(built managedSSHConfig, projectID string, notes noteF
 	for _, repaired := range edits.repaired {
 		notes("rewrote an Include of %s that ssh could not read", repaired)
 	}
+	if edits.none() {
+		// A run with no edit to make did not rewrite that file, so nothing has
+		// set its permissions since whatever last did — an older CLI, or this
+		// one writing from the other side of a WSL boundary onto a drive mount
+		// that hands out an ACL of its own. ssh reads it under the rule it
+		// reads a key under and refuses every host in it over the answer, and
+		// the Include that put the user in front of that file is ours, so each
+		// run makes sure it is still one ssh will read.
+		//
+		// Best-effort, unlike the write above: this is a repair of a file that
+		// may well need none, and a run that has already made a discobox does
+		// not end over it (ADR 0102 §3).
+		if err := target.restrict(ctx, target.userConfig); err != nil {
+			notes("could not narrow %s to the principals ssh reads it under: %v", target.userConfig.client, err)
+		}
+	}
 	return nil
+}
+
+// removeFiles takes back files this run wrote, reporting what it could not
+// remove and passing over what is already gone.
+func removeFiles(paths ...string) error {
+	var errs []error
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("remove %s: %w", path, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // includeEdits is what ensureUserConfigInclude did to a config the user owns,
@@ -169,7 +211,7 @@ func (e includeEdits) none() bool {
 // The line goes at the top because ssh_config takes the *first* value obtained
 // for each keyword: an Include placed after a `Host *` block the user already
 // has would lose every setting that block also sets.
-func (t sshTarget) ensureUserConfigInclude(managed sshPath) (includeEdits, error) {
+func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath) (includeEdits, error) {
 	userConfig := t.userConfig.local
 	existing, err := os.ReadFile(userConfig)
 	if err != nil && !os.IsNotExist(err) {
@@ -198,16 +240,17 @@ func (t sshTarget) ensureUserConfigInclude(managed sshPath) (includeEdits, error
 	}
 	defer os.Remove(tmp.Name())
 	// Chmod is the whole story on Unix and none of it on Windows, where the
-	// file this replaces is one ssh reads and checks. Restricted before the
-	// rename, so what lands is already private. A file this process creates on
-	// a mounted Windows drive has neither: the mount does not carry a mode, and
-	// the ACL comes from the directory. Refusing over that would be refusing
-	// over the one thing the boundary cannot give us.
+	// file this replaces is one ssh reads and checks. A file this process
+	// creates on a mounted Windows drive has no mode at all — the mount does not
+	// carry one — and an ACL it inherited from the directory, which is the ACL
+	// ssh refuses. So the mode is set where there is one to set and the ACL
+	// where only Windows can set it, and both happen before the rename: what
+	// lands in the user's ssh_config is already a file ssh will read.
 	if err := tmp.Chmod(0o600); err != nil && !t.acrossWSL() {
 		_ = tmp.Close()
 		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}
-	if err := restrictToUser(tmp.Name()); err != nil {
+	if err := t.restrict(ctx, t.join(t.dir(t.userConfig), filepath.Base(tmp.Name()))); err != nil {
 		_ = tmp.Close()
 		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}

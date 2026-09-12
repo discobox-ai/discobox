@@ -279,7 +279,7 @@ func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRe
 	}
 	written := make([]managedSSHConfig, 0, len(built))
 	for _, config := range built {
-		if err := writeManagedSSHConfig(config, req.resolvedProjectID, req.notes); err != nil {
+		if err := writeManagedSSHConfig(ctx, config, req.resolvedProjectID, req.notes); err != nil {
 			if !config.target.optional {
 				return nil, err
 			}

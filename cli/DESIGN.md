@@ -1415,19 +1415,43 @@ level or layering on the attach transports above.
   inside. Quoting each word the Windows way gets the Linux side an `execvp` of a
   program named `"…"`, and ssh a UTF-16 error message where the banner belongs
   — which it reports as "banner line contains invalid characters".
-  **The key's ACL**: set with `icacls` and read back, never inherited. A file
-  written from WSL onto a drive mount carries an explicit `S-1-5-32` ACE, one
-  created from Windows inherits whatever the profile grants below it, and
-  `os.WriteFile` over an existing file keeps the old DACL. What is granted
-  instead is what `restrictToUser` grants natively and what Windows OpenSSH
-  reads a private key under — the user, SYSTEM and Administrators — the
-  well-known two by SID, since their names are localized (ADR 0102 §1). The
+  **The ACL of every file written for that side**: set with `icacls` and read
+  back, never inherited. A file written from WSL onto a drive mount carries an
+  explicit `S-1-5-32` ACE, one created from Windows inherits whatever the
+  profile grants below it, and `os.WriteFile` over an existing file keeps the
+  old DACL. What is granted instead is what `restrictToUser` grants natively and
+  what Windows OpenSSH reads a file under — the user, SYSTEM and Administrators
+  — the well-known two by SID, since their names are localized (ADR 0102 §1).
+  `sshTarget.restrict` is the seam: the mode or the ACL this process can set
+  itself on this side, `windowsTools.restrictFile` across the boundary.
+  Every file, not only the mirrored key. ssh checks the `ssh_config` it opens
+  and every file that config `Include`s by the rule it checks a key by, and
+  refuses the *whole* config over any one of them — so a managed config left
+  under what the drive mount gave it fails every host in the Windows user's
+  `ssh_config`, this CLI's stanzas and the user's own hosts alike. That user
+  config is narrowed as the temporary file it is written through, so what the
+  rename lands is already readable; on a run with no edit to make to it, it is
+  narrowed where it stands, because the `Include` in it is ours and a file an
+  earlier CLI left inheriting stays refused until something repairs it — that
+  one is best-effort and reported through the note sink, since it is a repair of
+  a file that may well need none and no reason to end a run that has already
+  made a discobox. The
   read-back counts: three ACEs with the user's among them is that grant and
   nothing else, and a fourth is an explicit entry that survived
-  `/inheritance:r`, which is what reading back exists to catch. A copy this
-  cannot vouch for is removed again — a wide ACL, or an `icacls` that could not
-  be run at all — because the failure is only a warning, and a key left behind
-  under permissions nothing confirmed is what reading back is for.
+  `/inheritance:r`, which is what reading back exists to catch — reported by
+  principal, not removed, since `/grant:r` replaces only the grants of the three
+  it names. The owner is left alone here, unlike `restrictToUser`: a drive mount
+  hands out one ssh accepts already, and taking ownership from this side needs a
+  right over the file the user may not hold. A file this cannot vouch for is
+  removed again — the mirrored key, and the managed config with its known_hosts
+  — because the failure is only a warning and the caller carries on: what would
+  be left is a key under permissions nothing confirmed, or an `Include`d config
+  ssh refuses, which fails every host in the Windows user's `ssh_config` where
+  an `Include` naming nothing is passed over without a word.
+  What the boundary is asked for it is asked once: `windowsSSHTarget` resolves
+  the icacls path and `%USERNAME%` with the folders that come from the same two
+  programs and carries them on the target (`windowsTools`), because a run
+  narrows four files and a Windows spawn under interop is not free.
 - Paths are spelled for ssh's config parser, not printed: `sshConfigPath`
   quotes what contains a space and escapes what contains a percent sign, and
   `sshConfigFields` reads them back so a re-run recognizes its own line. It

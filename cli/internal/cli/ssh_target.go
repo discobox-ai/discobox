@@ -50,6 +50,12 @@ type sshTarget struct {
 	// userConfig the ssh_config that gains an Include of them.
 	state      sshPath
 	userConfig sshPath
+	// tools is what the Windows side had to be asked for before anything could
+	// be written there: where icacls is, and what this user is called over
+	// there. Resolved with the folders beside it and empty everywhere else,
+	// since nothing but a WSL process writing for Windows shells into Windows
+	// at all.
+	tools windowsTools
 	// optional says that failing to write for this target is worth reporting
 	// and no reason to fail the work that asked for the write. It is the
 	// Windows side of a WSL machine and nothing else: everything there runs
@@ -91,6 +97,13 @@ func windowsSSHTarget(ctx context.Context) (sshTarget, error) {
 	}
 	target := sshTarget{windows: true, wslDistro: distro}
 	localAppData, err := wslWindowsFolder(ctx, "LOCALAPPDATA")
+	if err != nil {
+		return sshTarget{}, err
+	}
+	// Asked here rather than per file: every file written for this target is
+	// narrowed with the same icacls under the same name, and each question
+	// costs a Windows process launch.
+	target.tools, err = resolveWindowsTools(ctx)
 	if err != nil {
 		return sshTarget{}, err
 	}
@@ -190,6 +203,34 @@ func (t sshTarget) join(base sshPath, elems ...string) sshPath {
 	return joined
 }
 
+// dir is the directory a path is in, in both spellings — the inverse of join
+// for one element, for the callers that have a file and need the directory it
+// sits in on the side that reads it.
+func (t sshTarget) dir(p sshPath) sshPath {
+	parent := sshPath{local: filepath.Dir(p.local)}
+	parent.client = parent.local
+	if slash := strings.LastIndex(p.client, `\`); t.windows && slash > 0 {
+		parent.client = p.client[:slash]
+	}
+	return parent
+}
+
+// restrict gives a file this CLI wrote the permissions the ssh that reads it
+// insists on, on the side that reads it. Locally that is restrictToUser — the
+// ACL on Windows, and nothing on Unix, where the mode the file was written with
+// already said it. Across the boundary only Windows can set an ACL, so it is
+// set with icacls (windowsTools.restrictFile).
+//
+// Every file this CLI writes for an ssh to read goes through it. Windows
+// OpenSSH checks the ssh_config it reads, every file that config Includes, and
+// every key it opens, and refuses the whole config over any one of them.
+func (t sshTarget) restrict(ctx context.Context, p sshPath) error {
+	if t.acrossWSL() {
+		return t.tools.restrictFile(ctx, p.client)
+	}
+	return restrictToUser(p.local)
+}
+
 // The written artifacts live beside the generated key, under the state
 // directory of whichever side reads them, one directory per project.
 func (t sshTarget) sshDir() sshPath { return t.join(t.state, "ssh") }
@@ -262,7 +303,7 @@ func (t sshTarget) proxyCommandLine(serverURL string) (string, error) {
 // on a drive mount, and one created on the Windows side inherits whatever the
 // profile grants, where a group with read access is enough to be refused. So
 // the ACL is set, not inherited, which from here means icacls
-// (restrictWindowsKey). See ADR 0102 §1.
+// (windowsTools.restrictFile). See ADR 0102 §1.
 //
 // A copy this cannot vouch for is removed again — a wide ACL, but equally an
 // icacls that could not be run or did not answer. It is on the Windows
@@ -294,7 +335,7 @@ func (t sshTarget) mirrorSSHIdentity(ctx context.Context, source string) (sshPat
 		if suffix == "" {
 			// Only the private half. The public one is public, and ssh reads
 			// it without an opinion about who else can.
-			if err := restrictWindowsKey(ctx, mirrored.client); err != nil {
+			if err := t.tools.restrictFile(ctx, mirrored.client); err != nil {
 				if removeErr := os.Remove(mirrored.local); removeErr != nil {
 					return sshPath{}, errors.Join(err, fmt.Errorf("remove the copy: %w", removeErr))
 				}

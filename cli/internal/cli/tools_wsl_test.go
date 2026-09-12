@@ -71,7 +71,7 @@ esac
 	if err := os.MkdirAll(system32, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	fakeWindowsTools(t, system32, machine.leakyKeyACL)
+	fakeWindowsTools(t, system32, machine.leakyACL)
 	// The Windows programs are on PATH because WSL appends the Windows PATH,
 	// unless a test says this is a distribution configured not to.
 	if machine.windowsPathOnPATH {
@@ -97,9 +97,11 @@ type wslMachine struct {
 	// distribution's. A distribution with appendWindowsPath=false has none of
 	// it, and the Windows programs are still installed.
 	windowsPathOnPATH bool
-	// leakyKeyACL makes icacls report a key another principal can still read,
-	// which is the state ssh refuses to use one in.
-	leakyKeyACL bool
+	// leakyACL makes icacls report a file whose path contains it as still
+	// readable by another principal, which is the state ssh refuses to use one
+	// in. Chosen per path rather than for every file, so a test can have the
+	// key narrow cleanly and the config not, or the other way round.
+	leakyACL string
 }
 
 type wslMachineOption func(*wslMachine)
@@ -132,7 +134,12 @@ func withWindowsEditor(family editorFamily) wslMachineOption {
 	return func(m *wslMachine) { m.editor = family }
 }
 
-func withLeakyKeyACL(m *wslMachine) { m.leakyKeyACL = true }
+func withLeakyKeyACL(m *wslMachine) { m.leakyACL = "id_ed25519" }
+
+// withLeakyConfigACL makes the ACL of the written configs the one ssh refuses,
+// and leaves the mirrored key alone -- the failure that strands an Include'd
+// config the whole file is then refused over.
+func withLeakyConfigACL(m *wslMachine) { m.leakyACL = `\config` }
 
 func linkFakeTool(t *testing.T, from, to string) {
 	t.Helper()
@@ -142,11 +149,12 @@ func linkFakeTool(t *testing.T, from, to string) {
 }
 
 // fakeWindowsTools writes the Windows programs the bridge shells out to: cmd.exe
-// for the environment WSL does not inherit, and icacls for the ACL a mirrored
-// key needs. The fake icacls records what it was asked to set and answers for
-// what the file has, so a test can have it report a key another principal can
-// still read -- the state ssh refuses to use one in.
-func fakeWindowsTools(t *testing.T, dir string, leakyKeyACL bool) {
+// for the environment WSL does not inherit, and icacls for the ACL the files
+// written for that side need. The fake icacls records what it was asked to set
+// and answers for what the file has, so a test can have it report a chosen file
+// as one another principal can still read -- the state ssh refuses to use one
+// in.
+func fakeWindowsTools(t *testing.T, dir string, leakyACL string) {
 	t.Helper()
 	writeFakeTool(t, filepath.Join(dir, "cmd.exe"), `#!/bin/sh
 case "$*" in
@@ -156,11 +164,16 @@ case "$*" in
 *) exit 1 ;;
 esac
 `)
+	// A fourth ACE on whichever path the test named, printed under the three
+	// like icacls prints an entry that survived the grant.
 	leak := ""
-	if leakyKeyACL {
-		leak = `\n                     BUILTIN\\Users:(RX)`
+	if leakyACL != "" {
+		leak = `case "$path" in
+*` + leakyACL + `*) printf '                     BUILTIN\\Users:(RX)\n' ;;
+esac
+`
 	}
-	// The three a granted key carries, in the shape icacls prints them: the
+	// The three a granted file carries, in the shape icacls prints them: the
 	// user on the path's own line and the well-known two indented under it.
 	writeFakeTool(t, filepath.Join(dir, "icacls.exe"), `#!/bin/sh
 path=$1
@@ -170,8 +183,8 @@ if [ $# -gt 0 ]; then
 	echo "Successfully processed 1 files; Failed processing 0 files"
 	exit 0
 fi
-printf '%s BEENIE\\Ada:(F)\n                     NT AUTHORITY\\SYSTEM:(F)\n                     BUILTIN\\Administrators:(F)`+leak+`\n' "$path"
-echo "Successfully processed 1 files; Failed processing 0 files"
+printf '%s BEENIE\\Ada:(F)\n                     NT AUTHORITY\\SYSTEM:(F)\n                     BUILTIN\\Administrators:(F)\n' "$path"
+`+leak+`echo "Successfully processed 1 files; Failed processing 0 files"
 `)
 }
 
@@ -309,7 +322,7 @@ func TestToolsVSCodeOnWSLRefusesALeakyKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected tools vscode to refuse a key another principal can read")
 	}
-	for _, want := range []string{"BUILTIN\\Users", "private key"} {
+	for _, want := range []string{"BUILTIN\\Users", "ssh reads a key or a config"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error should name what can read the key and why it matters, got: %v", err)
 		}
@@ -365,7 +378,7 @@ func TestSSHConfigWriteOnWSLReportsTheWindowsSide(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config --write: %v", err)
 	}
-	for _, want := range []string{"not writing the Windows ssh_config", `BUILTIN\Users`, "private key"} {
+	for _, want := range []string{"not writing the Windows ssh_config", `BUILTIN\Users`, "ssh reads a key or a config"} {
 		if !strings.Contains(errOut.String(), want) {
 			t.Fatalf("the report is missing %q:\n%s", want, errOut.String())
 		}
@@ -469,5 +482,106 @@ func TestToolsZedOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	want := []string{"--new", "ssh://devbox/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
+	}
+}
+
+// Every file written for the Windows side carries the ACL ssh reads, not the
+// one a drive mount hands out. ssh checks the ssh_config it opens and every
+// file that config Includes by the same rule it checks a private key by, and
+// refuses the *whole* config over any one of them -- so a managed config left
+// under what WSL and the profile put on it takes down every host in the user's
+// ssh_config, this CLI's stanzas and the user's own hosts alike.
+func TestSSHConfigOnWSLNarrowsEveryFileWindowsReads(t *testing.T) {
+	root, _ := fakeWSLMachine(t)
+	home, state := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+	server := writeFakeServer().start(t)
+
+	write := func() {
+		t.Helper()
+		cmd := NewRootCommand()
+		var out, errOut strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetErr(&errOut)
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute ssh-config --write: %v\n%s", err, errOut.String())
+		}
+	}
+
+	write()
+	windowsSSH := `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + resolvedTestProjectID
+	acl := readFile(t, aclLog(windowsToolsDir(root)))
+	for _, want := range []string{
+		windowsSSH + `\config`,
+		windowsSSH + `\known_hosts`,
+		// The user's own ssh_config is narrowed as the temporary file it is
+		// written through, so what the rename lands is already a file ssh
+		// will read.
+		`C:\Users\Ada Lovelace\.ssh\.discobox-ssh-config-`,
+	} {
+		if !strings.Contains(acl, want) {
+			t.Fatalf("%s was not narrowed to the principals ssh reads:\n%s", want, acl)
+		}
+	}
+
+	// A second run has no edit to make to that config and still makes sure ssh
+	// can read it. The line that put the user there is one of ours, and a file
+	// an older CLI -- or one writing from this side of the boundary -- left
+	// under an inherited ACL stays refused until something repairs it.
+	if err := os.Remove(aclLog(windowsToolsDir(root))); err != nil {
+		t.Fatal(err)
+	}
+	write()
+	if acl := readFile(t, aclLog(windowsToolsDir(root))); !strings.Contains(acl, `C:\Users\Ada Lovelace\.ssh\config /inheritance:r`) {
+		t.Fatalf("a run that edits nothing left the user's ssh_config unchecked:\n%s", acl)
+	}
+}
+
+// A config this run wrote and could not narrow does not stay on the Windows
+// filesystem. The Windows target is optional, so the caller carries on from the
+// failure (ADR 0102 §3) -- and what would be left behind is worse than the
+// mirrored key that rule was written for: the managed config is Include'd, so
+// an ssh that refuses it refuses every host in the Windows user's ssh_config,
+// their own among them. A missing file an Include names costs nothing; ssh
+// passes over it.
+func TestSSHConfigOnWSLRemovesAConfigItCannotNarrow(t *testing.T) {
+	root, _ := fakeWSLMachine(t, withLeakyConfigACL)
+	home, state := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var out, errOut strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+	for _, want := range []string{"not writing the Windows ssh_config", `BUILTIN\Users`} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("the report is missing %q:\n%s", want, errOut.String())
+		}
+	}
+	windowsSSH := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
+		"discobox", "cli", "ssh", resolvedTestProjectID)
+	for _, name := range []string{"config", "known_hosts"} {
+		if _, err := os.Stat(filepath.Join(windowsSSH, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s was left behind under an ACL ssh refuses: %v", name, err)
+		}
+	}
+	// And nothing points the Windows user at it: the write returned before the
+	// Include, so that file is as it was.
+	if _, err := os.Stat(filepath.Join(root, "Users", "Ada Lovelace", ".ssh", "config")); !os.IsNotExist(err) {
+		t.Fatalf("the Windows user's ssh_config was touched: %v", err)
+	}
+	// This side is written and correct, which is the point of the Windows side
+	// being optional.
+	local, _ := managedPaths(state)
+	if _, err := os.Stat(local); err != nil {
+		t.Fatalf("this distribution's config was not written: %v", err)
 	}
 }

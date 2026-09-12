@@ -121,39 +121,79 @@ func wslWindowsFolder(ctx context.Context, name string) (sshPath, error) {
 	return sshPath{local: local, client: value}, nil
 }
 
-// restrictWindowsKey narrows a mirrored private key to the principals ssh.exe
-// will read one for, and checks that it worked.
+// windowsTools is what a call across the boundary needs Windows to have already
+// answered: where icacls is, and what this user is called over there. Both are
+// constants for the life of the process and each costs a Windows process launch
+// to learn, so they are asked once — with the folders that come from the same
+// two programs, when the Windows target is resolved — and carried on the target
+// rather than re-asked per file. A run narrows four files, and a Windows spawn
+// under interop is not free.
+type windowsTools struct {
+	icacls string
+	user   string
+}
+
+// resolveWindowsTools asks Windows both questions. It is the Windows target's
+// to ask: a machine where interop cannot answer has no Windows side to write
+// for, and that is the failure windowsSSHTarget already reports (ADR 0102 §3).
+func resolveWindowsTools(ctx context.Context) (windowsTools, error) {
+	icacls, err := windowsCommand(ctx, "icacls.exe", `C:\Windows\System32\icacls.exe`)
+	if err != nil {
+		return windowsTools{}, err
+	}
+	user, err := windowsEnv(ctx, "USERNAME")
+	if err != nil {
+		return windowsTools{}, err
+	}
+	return windowsTools{icacls: icacls, user: user}, nil
+}
+
+// restrictFile narrows a file written for the Windows side to the
+// principals ssh.exe will read one under, and checks that it worked.
 //
 // This is restrictToUser's job from the other side of the boundary: a mode bit
 // written from here means nothing to Windows, and ssh.exe refuses to read a
-// private key a principal it does not trust can reach. Neither default is safe
-// to inherit — WSL puts an explicit S-1-5-32 ACE on everything it creates on a
-// drive mount, and a Windows profile hands its own groups read access downward
-// — so both are removed and the ACL is granted outright. Full control rather
-// than read: this CLI rewrites the key on every run.
+// private key — or a config, or a known_hosts — that a principal it does not
+// trust can reach. Neither default is safe to inherit — WSL puts an explicit
+// S-1-5-32 ACE on everything it creates on a drive mount, and a Windows profile
+// hands its own groups read access downward — so both are removed and the ACL
+// is granted outright. Full control rather than read: this CLI rewrites these
+// files on every run.
+//
+// Every file this CLI puts on that side, not only the key. ssh checks the
+// user's ssh_config and every file that config Includes by the same rule it
+// checks a key by, and refuses the *whole* config over any one of them: a
+// managed config left under a wide ACL takes every host in that file down with
+// it, this CLI's stanzas and the user's own hosts alike.
 //
 // The three it grants are the three restrictToUser grants natively, which are
 // the three Windows OpenSSH accepts: the user, SYSTEM, and Administrators. The
-// last two are on every file a Windows profile holds, ssh reads those keys, and
-// removing them would take away the user's own recovery path without taking
+// last two are on every file a Windows profile holds, ssh reads those files,
+// and removing them would take away the user's own recovery path without taking
 // anything away from anybody else. See ADR 0102.
 //
 // The result is read back rather than assumed. icacls reports success for a
 // grant that leaves another principal's ACE in place, which is exactly the
-// failure this exists to prevent, and a key ssh will not read is worth an error
-// here rather than "Permissions for … are too open" from a program the user did
-// not run themselves.
-func restrictWindowsKey(ctx context.Context, windowsPath string) error {
+// failure this exists to prevent, and a file ssh will not read is worth an
+// error naming what can reach it rather than OpenSSH's "Bad owner or
+// permissions", which names neither the principal nor the file it read.
+//
+// What the read-back catches it does not repair. `/grant:r` replaces the grants
+// of the three principals named and nothing else, so an explicit ACE for a
+// fourth survives `/inheritance:r` and is reported rather than removed (ADR
+// 0102 §2).
+//
+// The owner it leaves alone, which restrictToUser does not. This side did not
+// create most of these files — the user's own ssh_config least of all — and the
+// owner a drive mount hands out is one ssh accepts already: the user, or
+// Administrators when the distribution was started elevated. Taking ownership
+// of a file from here needs a right over it the user may not hold, and failing
+// over that would drop the Windows side of a machine whose files ssh is
+// perfectly happy with. An owner ssh does reject is left for ssh to say so.
+func (w windowsTools) restrictFile(ctx context.Context, windowsPath string) error {
 	ctx, cancel := context.WithTimeout(ctx, wslProbeTimeout)
 	defer cancel()
-	icacls, err := windowsCommand(ctx, "icacls.exe", `C:\Windows\System32\icacls.exe`)
-	if err != nil {
-		return err
-	}
-	user, err := windowsEnv(ctx, "USERNAME")
-	if err != nil {
-		return err
-	}
+	icacls, user := w.icacls, w.user
 	granted := []string{user, localSystemSID, administratorsSID}
 	args := []string{windowsPath, "/inheritance:r", "/remove:g", builtinDomainSID}
 	for _, principal := range granted {
@@ -176,7 +216,7 @@ func restrictWindowsKey(ctx context.Context, windowsPath string) error {
 	// back to catch.
 	principals := aclPrincipals(string(out), windowsPath)
 	if len(principals) != len(granted) || !aclNamesUser(principals, user) {
-		return fmt.Errorf("%s is readable by %s, and ssh reads a private key only when nothing "+
+		return fmt.Errorf("%s is readable by %s, and ssh reads a key or a config only when nothing "+
 			"but %s, SYSTEM and Administrators can; grant it to those three alone",
 			windowsPath, strings.Join(principals, ", "), user)
 	}

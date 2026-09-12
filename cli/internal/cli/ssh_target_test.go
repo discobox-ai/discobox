@@ -24,7 +24,7 @@ func wslTestWindowsTools(t *testing.T, opts ...wslMachineOption) string {
 		opt(&machine)
 	}
 	dir := t.TempDir()
-	fakeWindowsTools(t, dir, machine.leakyKeyACL)
+	fakeWindowsTools(t, dir, machine.leakyACL)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return dir
 }
@@ -36,7 +36,9 @@ func wslTestWindowsTools(t *testing.T, opts ...wslMachineOption) string {
 // The user's name has a space in it on purpose. A Windows profile routinely
 // does, and every path this writes ends up inside one.
 func wslTestTarget(root string) sshTarget {
-	target := sshTarget{windows: true, wslDistro: "Ubuntu"}
+	// The tools windowsSSHTarget would have resolved from the fakes: icacls on
+	// PATH, and the user cmd.exe answers %USERNAME% with.
+	target := sshTarget{windows: true, wslDistro: "Ubuntu", tools: windowsTools{icacls: "icacls.exe", user: "Ada"}}
 	target.state = target.join(sshPath{
 		local:  filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local"),
 		client: `C:\Users\Ada Lovelace\AppData\Local`,
@@ -257,10 +259,11 @@ func TestSSHTargetLeavesTheIdentityAloneLocally(t *testing.T) {
 // The Include is written and recognized in the spelling the reading ssh uses,
 // quotes and backslashes included — otherwise every run appends another line.
 func TestSSHTargetIncludeIsIdempotentAcrossTheBoundary(t *testing.T) {
+	wslTestWindowsTools(t)
 	target := wslTestTarget(t.TempDir())
 	managed := target.configPath("proj_1")
 
-	edits, err := target.ensureUserConfigInclude(managed)
+	edits, err := target.ensureUserConfigInclude(t.Context(), managed)
 	if err != nil {
 		t.Fatalf("ensureUserConfigInclude: %v", err)
 	}
@@ -272,7 +275,7 @@ func TestSSHTargetIncludeIsIdempotentAcrossTheBoundary(t *testing.T) {
 		t.Fatalf("user config = %q, want %q", first, want)
 	}
 
-	edits, err = target.ensureUserConfigInclude(managed)
+	edits, err = target.ensureUserConfigInclude(t.Context(), managed)
 	if err != nil {
 		t.Fatalf("ensureUserConfigInclude again: %v", err)
 	}
@@ -288,6 +291,7 @@ func TestSSHTargetIncludeIsIdempotentAcrossTheBoundary(t *testing.T) {
 // is spelled: ssh fails outright on an Include it cannot read, so one left over
 // from an older state directory breaks every host in the file.
 func TestSSHTargetDropsStaleManagedIncludes(t *testing.T) {
+	wslTestWindowsTools(t)
 	target := wslTestTarget(t.TempDir())
 	managed := target.configPath("proj_1")
 	stale := `C:\Users\Ada Lovelace\AppData\Roaming\discobox\cli\ssh\proj_1\config`
@@ -299,7 +303,7 @@ func TestSSHTargetDropsStaleManagedIncludes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	edits, err := target.ensureUserConfigInclude(managed)
+	edits, err := target.ensureUserConfigInclude(t.Context(), managed)
 	if err != nil {
 		t.Fatalf("ensureUserConfigInclude: %v", err)
 	}
