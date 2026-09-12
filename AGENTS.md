@@ -41,7 +41,10 @@
   `discobox-docker-image-watch` (local base, pool-agent, sandbox-agent, and
   harness image rebuild watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
   `discobox-gzip` (portable file compression for the build),
-  `discobox-server-manifest` (the server manifest a release CLI is linked with).
+  `discobox-server-manifest` (the server manifest a release CLI is linked with),
+  `discobox-installers` (stamps the install scripts a release uploads with that
+  release and its binaries' digests), `discobox-installer-logo` (draws the TUI's
+  mark into those scripts, from the TUI's own cell data).
 - `scripts`: shell and Node helpers the Taskfile and hooks run.
 - `docs`: user/developer documentation and ADRs (`docs/adr`).
 - `test`: Bats integration tests, the test-only harness stub image, and terminal performance tests.

@@ -107,6 +107,9 @@ type server struct {
 	// sortedAPI serves the release list compact and with its keys sorted,
 	// rather than in GitHub's own order, so prerelease comes before tag_name.
 	sortedAPI bool
+	// hideTag misspells one release's tag_name key, which is what a parser
+	// pairing the two keys by hand cannot see past.
+	hideTag string
 	// apiCalls counts the requests the API has answered.
 	apiCalls atomic.Int32
 }
@@ -178,11 +181,15 @@ func newServer(t *testing.T, releases []release) *server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		body := githubJSON
 		if s.sortedAPI {
-			_, _ = w.Write(sortedJSON)
-			return
+			body = sortedJSON
 		}
-		_, _ = w.Write(githubJSON)
+		if s.hideTag != "" {
+			body = []byte(strings.Replace(string(body), `"tag_name": "`+s.hideTag+`"`, `"tag_nam": "`+s.hideTag+`"`, 1))
+			body = []byte(strings.Replace(string(body), `"tag_name":"`+s.hideTag+`"`, `"tag_nam":"`+s.hideTag+`"`, 1))
+		}
+		_, _ = w.Write(body)
 	})
 	s.Server = httptest.NewServer(mux)
 	t.Cleanup(s.Close)
@@ -657,6 +664,135 @@ func TestPowerShellDrawsTheMarkOnlyWhereItShows(t *testing.T) {
 			none := runPowerShell(t, shell, s, script, false, append(append([]string{}, styleEnv...), "NO_COLOR=1"), "")
 			if strings.Contains(none.output, "\x1b[") {
 				t.Errorf("NO_COLOR got escape sequences:\n%q", none.output)
+			}
+		})
+	}
+}
+
+// TestScriptsAreASCII guards the rule install.ps1 depends on: Windows
+// PowerShell 5.1 reads a file with no byte order mark in the ANSI code page, so
+// one em dash in a comment — the punctuation the rest of this repository is
+// written with — makes the script unreadable to half of its Windows users.
+// Nothing else would notice until a release shipped it.
+func TestScriptsAreASCII(t *testing.T) {
+	for name, script := range map[string][]byte{ShellName: shellScript, PowerShellName: powerShellScript} {
+		line := 1
+		for i, b := range script {
+			switch {
+			case b == '\n':
+				line++
+			case b == '\r':
+				t.Errorf("%s:%d: a carriage return at byte %d", name, line, i)
+			case b > 0x7f:
+				t.Errorf("%s:%d: a non-ASCII byte %#x at byte %d", name, line, b, i)
+			}
+		}
+	}
+}
+
+func TestShellRefusesAReleaseListItCannotRead(t *testing.T) {
+	requireShell(t)
+	// Pairing tag_name with prerelease by hand cannot see a release boundary,
+	// so a key it misses would pair this release's flag with the next one's
+	// tag and misreport every release after it — an alpha installed as stable.
+	s := newServer(t, ladder)
+	s.hideTag = "v1.2.0"
+	got := runShell(t, s, s.script(t, "v1.1.0", ShellName), nil, "--channel", "stable")
+	if got.err == nil {
+		t.Fatalf("installed %q from a release list it could not read:\n%s", got.version, got.output)
+	}
+	if !strings.Contains(got.output, "could not read the release list") {
+		t.Errorf("output does not say the list was unreadable:\n%s", got.output)
+	}
+}
+
+func TestShellStagesTheServerOnlyWhenAsked(t *testing.T) {
+	requireShell(t)
+	s := newServer(t, ladder)
+	script := s.script(t, "v1.1.0", ShellName)
+
+	// Without --stage the server is left for first use, and the installer says
+	// where it comes from, as the Homebrew formula's caveats do.
+	quiet := runShell(t, s, script, nil)
+	if quiet.err != nil {
+		t.Fatalf("err %v:\n%s", quiet.err, quiet.output)
+	}
+	if strings.Contains(quiet.output, "staged the server") {
+		t.Errorf("the server was staged without being asked for:\n%s", quiet.output)
+	}
+	if !strings.Contains(quiet.output, "admin server stage") {
+		t.Errorf("output does not say how to stage the server:\n%s", quiet.output)
+	}
+
+	staged := runShell(t, s, script, nil, "--stage")
+	if staged.err != nil || !strings.Contains(staged.output, "staged the server for v1.1.0") {
+		t.Fatalf("--stage did not stage: err %v:\n%s", staged.err, staged.output)
+	}
+
+	// It reaches the installer a hand-over runs, like --dir does.
+	delegated := runShell(t, s, script, nil, "--version", "v1.2.0", "--stage")
+	if delegated.err != nil || !strings.Contains(delegated.output, "staged the server for v1.2.0") {
+		t.Fatalf("--stage did not survive the hand-over: err %v:\n%s", delegated.err, delegated.output)
+	}
+
+	// A failed stage is a failed run — it was what was asked for — but it says
+	// the CLI is installed, because it is.
+	failed := runShell(t, s, script, []string{"DISCOBOX_FAKE_STAGE_FAILS=1"}, "--stage")
+	if failed.err == nil {
+		t.Fatalf("a failed stage passed:\n%s", failed.output)
+	}
+	if failed.version != "v1.1.0" {
+		t.Errorf("the CLI is not installed after a failed stage: %q", failed.version)
+	}
+	if !strings.Contains(failed.output, "is installed at") {
+		t.Errorf("a failed stage does not say the CLI installed:\n%s", failed.output)
+	}
+}
+
+func TestPowerShellStagesTheServerOnlyWhenAsked(t *testing.T) {
+	for _, shell := range powerShells(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			s := newServer(t, ladder)
+			script := s.script(t, "v1.1.0", PowerShellName)
+
+			quiet := runPowerShell(t, shell, s, script, false, nil, "")
+			if quiet.err != nil {
+				t.Fatalf("err %v:\n%s", quiet.err, quiet.output)
+			}
+			if strings.Contains(quiet.output, "staged the server") {
+				t.Errorf("the server was staged without being asked for:\n%s", quiet.output)
+			}
+			if !strings.Contains(quiet.output, "admin server stage") {
+				t.Errorf("output does not say how to stage the server:\n%s", quiet.output)
+			}
+
+			staged := runPowerShell(t, shell, s, script, false, nil, "-Stage")
+			if staged.err != nil || !strings.Contains(staged.output, "staged the server for v1.1.0") {
+				t.Fatalf("-Stage did not stage: err %v:\n%s", staged.err, staged.output)
+			}
+
+			failed := runPowerShell(t, shell, s, script, false, []string{"DISCOBOX_FAKE_STAGE_FAILS=1"}, "-Stage")
+			if failed.err == nil {
+				t.Fatalf("a failed stage passed:\n%s", failed.output)
+			}
+			if failed.version != "v1.1.0" {
+				t.Errorf("the CLI is not installed after a failed stage: %q", failed.version)
+			}
+		})
+	}
+}
+
+func TestPowerShellRefusesAReleaseListItCannotRead(t *testing.T) {
+	for _, shell := range powerShells(t) {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			s := newServer(t, ladder)
+			s.hideTag = "v1.2.0"
+			got := runPowerShell(t, shell, s, s.script(t, "v1.1.0", PowerShellName), false, nil, "-Channel stable")
+			if got.err == nil {
+				t.Fatalf("installed %q from a release list it could not read:\n%s", got.version, got.output)
+			}
+			if !strings.Contains(got.output, "could not read the release list") {
+				t.Errorf("output does not say the list was unreadable:\n%s", got.output)
 			}
 		})
 	}

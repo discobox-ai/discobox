@@ -47,6 +47,10 @@ sym_ok=
 sym_warn=
 sym_err=
 
+# Which of the two digest tools this machine has, decided by need_sha256 before
+# anything is downloaded.
+sha_tool=
+
 # The mark, in 24-bit color and in the nearest xterm-256 indices, escaped for
 # printf %b. Written by `go generate ./installer` from the TUI's own cell data;
 # see internal/cmd/discobox-installer-logo.
@@ -67,13 +71,14 @@ Usage: install.sh [--channel CHANNEL | --version VERSION] [--dir DIR]
   --version VERSION  one release, such as v0.7.1
   --dir DIR          where to put the discobox command
                      (default: /usr/local/bin as root, ~/.local/bin otherwise)
+  --stage            download the server too, rather than on first use
 
 With neither --channel nor --version it installs the release this copy of the
 script came with: stable from discobox.ai, edge from edge.discobox.ai.
 
 Each option can also be set in the environment as DISCOBOX_CHANNEL,
-DISCOBOX_VERSION, or DISCOBOX_INSTALL_DIR. A flag beats the environment, and a
-version beats a channel.
+DISCOBOX_VERSION, DISCOBOX_INSTALL_DIR, or DISCOBOX_INSTALL_STAGE. A flag beats
+the environment, and a version beats a channel.
 USAGE
 }
 
@@ -217,14 +222,20 @@ main() {
 	need curl
 	need uname
 	need mktemp
+	need_sha256
 
 	channel=${DISCOBOX_CHANNEL:-}
 	version=${DISCOBOX_VERSION:-}
 	dir=${DISCOBOX_INSTALL_DIR:-}
+	stage=${DISCOBOX_INSTALL_STAGE:-}
 	flag_channel=
 	flag_version=
 	while [ $# -gt 0 ]; do
 		case $1 in
+			--stage)
+				stage=yes
+				shift
+				;;
 			--channel | --version | --dir)
 				[ $# -ge 2 ] || die "$1 needs a value"
 				option "$1" "$2"
@@ -319,20 +330,36 @@ resolve() {
 	# One "<tag> <prerelease>" line per release, newest first. No jq, so this
 	# leans on two facts about the JSON GitHub returns: each release has one
 	# tag_name and one prerelease, and neither key appears anywhere else in it.
-	# A quote inside a string is escaped, so a release body that mentions
-	# either key cannot match these patterns. Whichever of the two comes first,
-	# a release is complete once both have been seen. Only CLI tags count.
+	# A quote inside a string is escaped, so a release body that mentions either
+	# key cannot match these patterns, the leading [^"]* cannot cross the quote
+	# that opens the string it would be inside. Whichever key comes first, a
+	# release is complete once both have been seen.
 	tr -d '\r\n' <"$tmp/releases.json" | tr ',' '\n' |
 		sed -n \
-			-e 's/^[[:space:]{]*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/tag \1/p' \
-			-e 's/^[[:space:]{]*"prerelease"[[:space:]]*:[[:space:]]*\([a-z]*\).*/prerelease \1/p' |
-		awk '
-			$1 == "tag" { tag = $2; seen_tag = 1 }
-			$1 == "prerelease" { pre = $2; seen_pre = 1 }
-			seen_tag && seen_pre {
-				if (tag ~ /^v[0-9]/) print tag, pre
-				seen_tag = seen_pre = 0
-			}' >"$tmp/releases"
+			-e 's/^[^"]*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/tag \1/p' \
+			-e 's/^[^"]*"prerelease"[[:space:]]*:[[:space:]]*\([a-z]*\).*/prerelease \1/p' \
+			>"$tmp/keys"
+
+	# Pairing has no way to see a release boundary, so a key these patterns
+	# missed would pair the next release's tag with this one's flag and every
+	# pairing after it would be off by one, a prerelease recorded as blessed,
+	# installed with no error anywhere. The counts are what catch that: one of
+	# each per release, or this answer is not one this can read.
+	tags=$(grep -c '^tag ' "$tmp/keys" || true)
+	flags=$(grep -c '^prerelease ' "$tmp/keys" || true)
+	if [ "${tags:-0}" -ne "${flags:-0}" ]; then
+		die "could not read the release list from $api: $tags releases state a tag and $flags state whether they are a prerelease. Pin a release with --version instead (see $releases_page)"
+	fi
+
+	# Only CLI tags count: the vm/* and vm-kernel/* lines are their own
+	# releases and no installer installs them.
+	awk '
+		$1 == "tag" { tag = $2; seen_tag = 1 }
+		$1 == "prerelease" { pre = $2; seen_pre = 1 }
+		seen_tag && seen_pre {
+			if (tag ~ /^v[0-9]/) print tag, pre
+			seen_tag = seen_pre = 0
+		}' <"$tmp/keys" >"$tmp/releases"
 
 	stable=$(awk '$2 == "false" { print $1; exit }' "$tmp/releases")
 	case $1 in
@@ -382,14 +409,26 @@ fetch() {
 	return 1
 }
 
-sha256() {
+# need_sha256 picks the digest tool up front. Deciding it inside sha256 would
+# put the die() inside the command substitution that hashes a download, where it
+# kills the subshell and nothing else: every source would then be reported as
+# serving bytes that do not match, which is a lie about the mirror and about
+# GitHub, for a machine that simply cannot hash anything.
+need_sha256() {
 	if command -v sha256sum >/dev/null 2>&1; then
-		sha256sum "$1" | cut -d' ' -f1
+		sha_tool=sha256sum
 	elif command -v shasum >/dev/null 2>&1; then
-		shasum -a 256 "$1" | cut -d' ' -f1
+		sha_tool=shasum
 	else
 		die "this installer needs sha256sum or shasum to check what it downloads"
 	fi
+}
+
+sha256() {
+	case $sha_tool in
+		sha256sum) sha256sum "$1" | cut -d' ' -f1 ;;
+		*) shasum -a 256 "$1" | cut -d' ' -f1 ;;
+	esac
 }
 
 delegate() {
@@ -400,7 +439,34 @@ delegate() {
 	if [ -n "$dir" ]; then
 		set -- "$@" --dir "$dir"
 	fi
+	if [ -n "$stage" ]; then
+		set -- "$@" --stage
+	fi
 	DISCOBOX_INSTALL_DELEGATED=$2 sh "$tmp/install.sh" "$@" </dev/null
+}
+
+# server_note says where the other half comes from, as the Homebrew formula's
+# caveats do. The server is not in this download and never was: the CLI fetches
+# the one it was cut against, checked against digests it carries (ADR 0099).
+server_note() {
+	say ""
+	say "The Discobox server is a separate program. The CLI downloads the one it"
+	say "was cut against the first time something needs a server on this machine,"
+	say "keeps it under your state directory by version, and checks it against the"
+	say "SHA-256 it carries for it. To do that now rather than then:"
+	say ""
+	say "  $dir/discobox admin server stage      download and verify it now"
+	say "  $dir/discobox admin server manifest   show exactly what that fetches"
+}
+
+# stage_server does that download here, for --stage. The install itself has
+# already succeeded, so a failure says so rather than reading as a broken
+# install, but it is still a failure, because it is what was asked for.
+stage_server() {
+	step "staging the server discobox $release runs"
+	if ! "$dir/discobox" admin server stage </dev/null >&2; then
+		die "discobox $release is installed at $dir/discobox, but staging its server failed. Run '$dir/discobox admin server stage' to try again."
+	fi
 }
 
 # platform sets os and arch to the release's names for this machine, refusing
@@ -468,6 +534,12 @@ install_release() {
 		*) die "installed $dir/discobox, but it says it is '$out' rather than $release" ;;
 	esac
 	ok "installed discobox $release to $dir/discobox"
+
+	if [ -n "$stage" ]; then
+		stage_server
+	else
+		server_note
+	fi
 
 	case ":${PATH:-}:" in
 		*":$dir:"*)

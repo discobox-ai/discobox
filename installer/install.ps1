@@ -18,12 +18,13 @@
 #   -Version VERSION   one release, such as v0.7.1
 #   -InstallDir DIR    where to put the discobox command
 #                      (default: %LOCALAPPDATA%\Programs\Discobox on Windows)
+#   -Stage             download the server too, rather than on first use
 #   -NoModifyPath      leave the user's PATH alone
 #
 # Each can also be set in the environment as DISCOBOX_CHANNEL, DISCOBOX_VERSION,
-# DISCOBOX_INSTALL_DIR, or DISCOBOX_NO_MODIFY_PATH, which is the only way to
-# pass one through `iex`. A parameter beats the environment, and a version beats
-# a channel.
+# DISCOBOX_INSTALL_DIR, DISCOBOX_INSTALL_STAGE, or DISCOBOX_NO_MODIFY_PATH,
+# which is the only way to pass one through `iex`. A parameter beats the
+# environment, and a version beats a channel.
 #
 # This runs under Windows PowerShell 5.1 as well as PowerShell 7, and stays
 # ASCII because 5.1 reads a file with no byte order mark in the ANSI code page.
@@ -35,6 +36,7 @@ param(
     [string]$Channel,
     [string]$Version,
     [string]$InstallDir,
+    [switch]$Stage,
     [switch]$NoModifyPath
 )
 
@@ -43,6 +45,7 @@ function Install-Discobox {
         [string]$Channel,
         [string]$Version,
         [string]$InstallDir,
+        [switch]$Stage,
         [switch]$NoModifyPath
     )
 
@@ -184,6 +187,16 @@ function Install-Discobox {
                 throw "GitHub is rate limiting this address, so the $Name channel cannot be looked up right now; pin a release with -Version instead (see $releasesPage)"
             }
             throw "could not look up the $Name channel at ${api}: $($_.Exception.Message)"
+        }
+        # A release that states neither its tag nor whether it is a prerelease
+        # is an answer this cannot read. install.sh refuses it because pairing
+        # the two keys by hand would otherwise misreport every release after it;
+        # this half parses structurally and could skip it, but the two scripts
+        # answer the same way on the same input, so it refuses too.
+        foreach ($entry in $list) {
+            if (-not $entry.PSObject.Properties['tag_name'] -or -not $entry.PSObject.Properties['prerelease']) {
+                throw "could not read the release list from ${api}: a release states no tag, or no prerelease flag. Pin a release with -Version instead (see $releasesPage)"
+            }
         }
         # Only CLI tags count, newest first, as GitHub returns them.
         $releases = @($list | Where-Object { $_.tag_name -match '^v[0-9]' })
@@ -340,6 +353,30 @@ function Install-Discobox {
         if (-not $out.Contains($release)) { throw "installed $dest, but it says it is '$out' rather than $release" }
         Write-DiscoboxOk "installed discobox $release to $dest"
 
+        if ($Stage) {
+            # The install itself has already succeeded, so a failure here says
+            # so rather than reading as a broken install, but it is still a
+            # failure, because it is what was asked for.
+            Write-DiscoboxStep "staging the server discobox $release runs"
+            & $dest admin server stage
+            if ($LASTEXITCODE -ne 0) {
+                throw "discobox $release is installed at $dest, but staging its server failed. Run '$dest admin server stage' to try again."
+            }
+        } else {
+            # Where the other half comes from, as the Homebrew formula's caveats
+            # say it. The server is not in this download and never was: the CLI
+            # fetches the one it was cut against, checked against digests it
+            # carries (ADR 0099).
+            Write-Host ''
+            Write-Host 'The Discobox server is a separate program. The CLI downloads the one it'
+            Write-Host 'was cut against the first time something needs a server on this machine,'
+            Write-Host 'keeps it under your state directory by version, and checks it against the'
+            Write-Host 'SHA-256 it carries for it. To do that now rather than then:'
+            Write-Host ''
+            Write-Host "  $dest admin server stage      download and verify it now"
+            Write-Host "  $dest admin server manifest   show exactly what that fetches"
+        }
+
         $separator = [IO.Path]::PathSeparator
         if (@($env:PATH -split $separator) -notcontains $dir) {
             if ($platform.OS -eq 'windows' -and -not $NoModifyPath) {
@@ -362,6 +399,7 @@ function Install-Discobox {
     }
     if (-not $InstallDir -and $env:DISCOBOX_INSTALL_DIR) { $InstallDir = $env:DISCOBOX_INSTALL_DIR }
     if ($env:DISCOBOX_NO_MODIFY_PATH) { $NoModifyPath = $true }
+    if ($env:DISCOBOX_INSTALL_STAGE) { $Stage = $true }
 
     if ($Version) {
         if ($Version -notmatch '^v') { $Version = "v$Version" }
@@ -400,6 +438,7 @@ function Install-Discobox {
         $params = @{ Version = $target }
         if ($InstallDir) { $params['InstallDir'] = $InstallDir }
         if ($NoModifyPath) { $params['NoModifyPath'] = $true }
+        if ($Stage) { $params['Stage'] = $true }
         # A script block rather than the file, because an execution policy may
         # refuse to run a downloaded .ps1 and never refuses this, which is also
         # how `iex` ran the first one.
@@ -414,4 +453,4 @@ function Install-Discobox {
     }
 }
 
-Install-Discobox -Channel $Channel -Version $Version -InstallDir $InstallDir -NoModifyPath:$NoModifyPath
+Install-Discobox -Channel $Channel -Version $Version -InstallDir $InstallDir -Stage:$Stage -NoModifyPath:$NoModifyPath

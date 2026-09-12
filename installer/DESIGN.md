@@ -41,6 +41,12 @@ flowchart TD
 - **Downloads** try `assets.discobox.ai/discobox/<tag>/` and then the GitHub
   release URL, moving on when a source is missing or its bytes miss the digest
   (ADR 0106).
+- **The server is not part of the install.** Both scripts close by saying what
+  the Homebrew formula's caveats say: the CLI fetches the server it was cut
+  against on first use, checked against digests it carries (ADR 0099).
+  `--stage` / `-Stage` does that download here instead. It is opt-in because it
+  is the heaviest download we serve, and a failed stage is a failed run that
+  says the CLI installed anyway.
 
 ## Rules
 
@@ -54,14 +60,22 @@ flowchart TD
 - Everything runs inside `main` / `Install-Discobox`, called on the last line:
   a truncated download runs nothing, and `iex` leaves no preference behind.
   `install.ps1` never calls `exit`, which would close the caller's session.
-- Both scripts are ASCII: Windows PowerShell 5.1 reads a file with no byte
-  order mark in the ANSI code page. `install.sh` is POSIX sh with BSD-compatible
-  `sed` and `awk`, since macOS runs it; `install.ps1` runs under 5.1 and 7.
+- Both scripts are ASCII, asserted by `TestScriptsAreASCII`: Windows PowerShell
+  5.1 reads a file with no byte order mark in the ANSI code page, so one em dash
+  in a comment — the punctuation the rest of this repository's prose is written
+  with — would make `install.ps1` unreadable to half its Windows users.
+  `install.sh` is POSIX sh with BSD-compatible `sed` and `awk`, since macOS runs
+  it; `install.ps1` runs under 5.1 and 7.
 - A handed-over installer that is not stamped for the tag it was asked for
   stops (`DISCOBOX_INSTALL_DELEGATED`) rather than handing over again.
 - The API is parsed without jq, relying on each release carrying one
   `tag_name` and one `prerelease`, in either order, and on escaped quotes
-  keeping release notes from matching.
+  keeping release notes from matching. Pairing cannot see a release boundary,
+  so a key the patterns missed would pair one release's tag with the next
+  one's flag and misreport every release after it — a prerelease installed as
+  the stable channel, with nothing erroring. The counts of the two keys are
+  compared before pairing for exactly that: unequal means an answer this cannot
+  read, and it refuses rather than installing something else.
 
 ## How it looks
 
@@ -78,12 +92,15 @@ Both scripts draw the TUI's mark and use its palette
   `BEGIN generated logo` markers, so `task verify` fails on drift.
 - **Both files stay ASCII.** sh carries the art as octal escapes for
   `printf %b`; PowerShell carries it as base64 it decodes at run time. The two
-  decode to the same bytes.
+  decode to the same bytes, and a test asserts both.
 - **Styling is off unless it is wanted.** A pipe, a redirected stream, a
   console with no virtual terminal sequences, `TERM=dumb`, and `NO_COLOR` all
   give plain sentences; `CLICOLOR_FORCE` or `FORCE_COLOR` turns it back on. The
   unstyled text is the same sentence, so nothing reads only in color.
-- **Messages go to stderr**, leaving stdout to whatever a caller is piping.
+- **Neither script writes its messages into a pipeline.** `install.sh` sends
+  them to stderr, leaving stdout to whatever a caller is piping. `install.ps1`
+  uses `Write-Host`, which goes to the host rather than down the pipeline —
+  `2>` does not capture it, and `irm | iex` is unaffected either way.
 
 ## Tests
 
