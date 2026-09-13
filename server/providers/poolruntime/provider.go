@@ -199,10 +199,18 @@ func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManag
 		// so no transport, which failed resolving the literal `https://pool` --
 		// a DNS error standing in for a sync that could only ever land on its
 		// first try.
-		client, err := p.agentClientForPool(ctx, pool)
+		//
+		// The lease is taken from the runtime directly, not through
+		// agentClientForPool: that one answers a failed acquire by scheduling
+		// this pool's reconcile and waiting for it, and this runs inside that
+		// reconcile. The mark is rejected (reconcile.ErrSelfMark), which then
+		// stands in for the real reason the agent could not be reached, on
+		// every attempt.
+		lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
 		if err != nil {
 			return err
 		}
+		client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
 		return client.SyncKnownPools(ctx, provider.ProjectID, known)
 	})
 }
