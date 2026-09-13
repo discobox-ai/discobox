@@ -62,8 +62,10 @@ const (
 	// where the pointer is.
 	hitInput
 
-	// hitFolder is the header's folder filter: the dropdown, closed.
+	// hitFolder is the header's folder filter, and hitServer the server filter
+	// beside it: each one the dropdown, closed.
 	hitFolder
+	hitServer
 
 	// hitGit is the workspace header's git position and status. Pressing it
 	// opens the diff tool, the same as the leader's tools, diff chord.

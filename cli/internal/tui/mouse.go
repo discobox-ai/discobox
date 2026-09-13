@@ -334,6 +334,12 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		m.dialog = m.folderDialog()
 		return nil, true
 
+	case hitServer:
+		m.prompt.Blur()
+		m.focus = focusServer
+		m.dialog = m.serverDialog()
+		return nil, true
+
 	case hitGit:
 		// The leader's tools key is handled by the pane asynchronously, but a
 		// pointer is already aimed at the diff choice. Build the same picker and

@@ -37,7 +37,10 @@ type fakeSource struct {
 
 	session   Session
 	sandboxes []Sandbox
-	workspace SourceWorkspace
+	// unreachable are the servers the listing reports it did not hear back
+	// from, the way a window listing more than one server does.
+	unreachable []string
+	workspace   SourceWorkspace
 	// resolved records every source handed to ResolveSource, and sourceErr is
 	// what it answers with — a directory that is not on this machine.
 	resolved  []string
@@ -308,7 +311,10 @@ func (f *fakeSource) List(context.Context) (Listing, error) {
 	if f.listErr != nil {
 		return Listing{}, f.listErr
 	}
-	return Listing{Sandboxes: append([]Sandbox(nil), f.sandboxes...)}, nil
+	return Listing{
+		Sandboxes:   append([]Sandbox(nil), f.sandboxes...),
+		Unreachable: append([]string(nil), f.unreachable...),
+	}, nil
 }
 
 func (f *fakeSource) Resources(context.Context) (Resources, error) {

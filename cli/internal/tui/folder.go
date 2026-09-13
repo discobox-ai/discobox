@@ -136,12 +136,25 @@ func (m *Model) updateFolder(msg tea.KeyPressMsg) tea.Cmd {
 		m.focus = focusList
 		m.list.moveTo(0)
 		return nil
-	case "esc", "tab":
+	case "tab":
+		// On round the ring to the server when there is one to choose, and
+		// back to the prompt when there is not.
+		if m.manyServers() {
+			m.focus = focusServer
+			return nil
+		}
+		m.backToPrompt()
+		return nil
+	case "esc":
 		m.backToPrompt()
 		return nil
 	case "up", "k":
-		// The filter is the top of the window. Up has nowhere left to go, and
-		// jumping to the prompt from here would be moving down the screen.
+		// Up climbs to the server filter, the one rung above this. Without
+		// one the folder is the top of the window, and Up has nowhere left to
+		// go: jumping to the prompt from here would be moving down the screen.
+		if m.manyServers() {
+			m.focus = focusServer
+		}
 		return nil
 	case "shift+tab":
 		m.optionsOpen = true
@@ -191,15 +204,22 @@ type folderChosenMsg struct{ folder folder }
 
 // folderDetail is what each choice is worth knowing: how many sandboxes it
 // holds, and whether it is the one this window is running in.
+//
+// The count is taken on the server the header names, since that filter stays
+// where it is when a folder is chosen: a count of every server's is a number
+// the choice then does not list.
 func (m *Model) folderDetail(choice folder) string {
-	if choice.key == "" {
-		return plural(len(m.list.all), "box", "boxes") + " in the project"
-	}
 	n := 0
 	for _, s := range m.list.all {
-		if choice.holds(s, m.session) {
+		if m.list.onServer(s) && choice.holds(s, m.session) {
 			n++
 		}
+	}
+	if choice.key == "" {
+		if m.list.server != "" {
+			return plural(n, "box", "boxes") + " on " + m.list.server
+		}
+		return plural(n, "box", "boxes") + " in the project"
 	}
 	detail := plural(n, "box", "boxes")
 	if choice.key == m.session.OriginKey {

@@ -219,3 +219,376 @@ func TestTheNotAnsweringSectionSurvivesAFullList(t *testing.T) {
 		t.Fatalf("scrolled to the end of the list, the section is gone:\n%s", out)
 	}
 }
+
+// The window opens on every server, which is the listing ADR 0116 §4 describes:
+// seeing them side by side is the point of registering them. The filter is
+// there to narrow that down, not to hide it until asked.
+func TestTheWindowOpensOnEveryServer(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(
+		Sandbox{ID: "sbx_a1", Name: "alpha-box", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2")},
+		Sandbox{ID: "sbx_b1", Name: "beta-box", Server: "beta", State: StateRunning, OriginKey: testKey("/src/disco2")},
+	)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+
+	if m.list.server != "" {
+		t.Fatalf("the window opened on %q, want every server", m.list.server)
+	}
+	if rows := m.list.rows(); len(rows) != 2 {
+		t.Fatalf("rows = %+v, want both servers'", rows)
+	}
+	out := plainFrame(m)
+	if !strings.Contains(out, allServers) {
+		t.Fatalf("the header does not say it is showing every server:\n%s", out)
+	}
+	// Every server on screen is more than one to tell apart, so the rows are
+	// sectioned under the server each is on.
+	if !m.list.grouped() {
+		t.Fatalf("the list is not sectioned by server:\n%s", out)
+	}
+
+	// And narrowing to one is a press: the section bands go, because the
+	// header now says the name a band over every row would repeat.
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"), keyPress("right"))
+	if m.list.server != "alpha" {
+		t.Fatalf("the list is showing %q, want alpha", m.list.server)
+	}
+	if m.list.grouped() {
+		t.Fatal("the list is sectioned by server while it is showing one")
+	}
+	out = plainFrame(m)
+	if !strings.Contains(out, "server alpha") {
+		t.Fatalf("the header does not name the server:\n%s", out)
+	}
+	if !strings.Contains(out, "alpha-box") || strings.Contains(out, "beta-box") {
+		t.Fatalf("the list is not alpha's discoboxes alone:\n%s", out)
+	}
+}
+
+// The server on screen is the server the prompt creates on: the header and the
+// run options' Server row are one control, so what Enter would do is what the
+// window says.
+func TestTheHeaderServerIsWhereThePromptRuns(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+
+	// Up out of the list reaches the folder, and Up again the server; right
+	// walks off "all servers" onto the servers themselves, in the order the
+	// session names them.
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"))
+	if m.focus != focusServer {
+		t.Fatalf("focus = %v, want the server filter", m.focus)
+	}
+	send(t, m, keyPress("right"), keyPress("right"))
+	if m.list.server != "beta" {
+		t.Fatalf("the list is showing %q, want beta", m.list.server)
+	}
+	if got := m.opts.command("fix it"); !strings.Contains(got, "--server beta") {
+		t.Fatalf("command = %q, want --server beta", got)
+	}
+
+	send(t, m, keyPress("esc"))
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"))
+	if len(ds.runs) != 1 || ds.runs[0].Server != "beta" {
+		t.Fatalf("runs = %+v, want one on beta", ds.runs)
+	}
+}
+
+// Every server at once is no answer to which server a create belongs on, so it
+// falls back to the primary — where `discobox run` with no --server goes
+// (ADR 0116 §5) — however the window arrived back there.
+func TestEveryServerStillCreatesOnThePrimary(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+
+	// Out to beta and back, so this is the choice being made rather than the
+	// window never having been touched.
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"), keyPress("left"), keyPress("right"))
+	if m.list.server != "" {
+		t.Fatalf("the list is showing %q, want every server", m.list.server)
+	}
+	if !m.list.grouped() {
+		t.Fatal("the list showing every server is not sectioned by server")
+	}
+	if got := m.opts.command("fix it"); strings.Contains(got, "--server") {
+		t.Fatalf("command = %q, want no --server, which is the primary", got)
+	}
+}
+
+// And the same control from the other side: the Server row in the run options
+// moves the list, the way the Source row moves the folder.
+func TestTheRunOptionsServerRowMovesTheList(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+
+	m.optionsOpen = true
+	m.opts.moveTo(optServer)
+	send(t, m, keyPress("right"))
+	if m.list.server != "beta" {
+		t.Fatalf("the list is showing %q, want the server the row moved to", m.list.server)
+	}
+	send(t, m, keyPress("left"))
+	if m.list.server != "alpha" {
+		t.Fatalf("the list is showing %q, want alpha", m.list.server)
+	}
+}
+
+// A server that did not answer is said where its discoboxes would have been:
+// showing every server, or showing that one. Showing another server it is
+// somewhere else's news, and the section would be a row about a machine whose
+// discoboxes were never going to be on screen.
+func TestTheNotAnsweringSectionFollowsTheFilter(t *testing.T) {
+	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
+	})
+	l.setUnreachable([]string{"beta"})
+
+	l.server = "alpha"
+	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "not answering") {
+		t.Fatalf("showing alpha, the list says beta is missing:\n%s", out)
+	}
+	l.server = "beta"
+	out := l.view(newStyles(false), &zones{}, true)
+	if !strings.Contains(out, "not answering") {
+		t.Fatalf("showing beta, the list does not say it is not answering:\n%s", out)
+	}
+	if strings.Contains(out, "one") {
+		t.Fatalf("showing beta, the list has alpha's discoboxes in it:\n%s", out)
+	}
+}
+
+// Tab goes round the window in the order Up climbs it: the prompt, the
+// discoboxes, the folder they were cut from, the server they are on, and back
+// to the prompt.
+func TestTabWalksBothHeaderFilters(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+
+	for _, want := range []focusArea{focusList, focusFolder, focusServer, focusPrompt} {
+		send(t, m, keyPress("tab"))
+		if m.focus != want {
+			t.Fatalf("Tab reached %v, want %v", m.focus, want)
+		}
+	}
+}
+
+// Up climbs the same ladder Tab walks — discoboxes, folder, server — and stops
+// at the top; Down comes back down it one rung at a time, to the prompt.
+func TestUpAndDownClimbBothHeaderFilters(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"))
+	m.list.moveTo(0)
+	for _, want := range []focusArea{focusFolder, focusServer, focusServer} {
+		send(t, m, keyPress("up"))
+		if m.focus != want {
+			t.Fatalf("Up reached %v, want %v", m.focus, want)
+		}
+	}
+	// Down past the last row is the prompt, so the walk down ends there.
+	for _, want := range []focusArea{focusFolder, focusList} {
+		send(t, m, keyPress("down"))
+		if m.focus != want {
+			t.Fatalf("Down reached %v, want %v", m.focus, want)
+		}
+	}
+	m.list.moveTo(len(m.list.rows()) - 1)
+	send(t, m, keyPress("down"))
+	if m.focus != focusPrompt {
+		t.Fatalf("Down off the last row reached %v, want the prompt", m.focus)
+	}
+}
+
+// With one server there is nothing to pick, so the header has no filter to
+// reach and Tab goes round the window it always went round.
+func TestOneServerLeavesTheHeaderAsItWas(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	for _, want := range []focusArea{focusList, focusFolder, focusPrompt} {
+		send(t, m, keyPress("tab"))
+		if m.focus != want {
+			t.Fatalf("Tab reached %v, want %v", m.focus, want)
+		}
+	}
+	// And the folder is the top of the ladder, with no server above it.
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"))
+	if m.focus != focusFolder {
+		t.Fatalf("Up past the folder reached %v, want it to stay on the folder", m.focus)
+	}
+	if strings.Contains(plainFrame(m), allServers) {
+		t.Fatalf("the header offers a server filter with one server:\n%s", plainFrame(m))
+	}
+}
+
+// onServer puts a listing's discoboxes on one server, the way a window that
+// lists more than one stamps every row with the server it came from.
+func onServer(server string, boxes []Sandbox) []Sandbox {
+	for i := range boxes {
+		boxes[i].Server = server
+	}
+	return boxes
+}
+
+// A server that did not answer is said where the window shows it: in the
+// dropdown, beside its name, and as its own section when the list is narrowed
+// to it — while narrowed to another server nothing says it at all.
+func TestANarrowedServerThatIsNotAnsweringSaysSo(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	ds.unreachable = []string{"beta"}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"), keyPress("enter"))
+	if got := dialogText(m); !strings.Contains(got, "not answering") {
+		t.Fatalf("the server dropdown does not say beta is not answering:\n%s", got)
+	}
+	send(t, m, keyPress("esc"))
+
+	// all servers → alpha: alpha's rows, and not a word about beta.
+	send(t, m, keyPress("right"))
+	if out := plainFrame(m); strings.Contains(out, "not answering") {
+		t.Fatalf("narrowed to alpha, the list says beta is not answering:\n%s", out)
+	}
+	// alpha → beta: no rows, and the section saying why.
+	send(t, m, keyPress("right"))
+	if out := plainFrame(m); !strings.Contains(out, "not answering") {
+		t.Fatalf("narrowed to beta, the list does not say it is not answering:\n%s", out)
+	}
+}
+
+// The harnesses and secrets screens share the header and are the primary's
+// whatever the list is narrowed to, so the server filter is not over them: a
+// live "server beta" there would say the secret being added goes to beta.
+func TestTheServerFilterIsNotOverThePrimarysScreens(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{harnessesKey, secretsKey} {
+		ds := newFakeSource(onServer("alpha", testSandboxes())...)
+		ds.session.Servers = []string{"alpha", "beta"}
+		m := newTestModel(t, ds)
+		send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"), keyPress("left"))
+		if m.list.server != "beta" {
+			t.Fatalf("the list is showing %q, want beta", m.list.server)
+		}
+		send(t, m, keyPress("esc"))
+		if header := frame(m)[1]; !strings.Contains(header, "server beta") {
+			t.Fatalf("the launcher's header does not carry the filter to begin with: %q", header)
+		}
+		send(t, m, keyPress(key))
+
+		header := frame(m)[1]
+		if strings.Contains(header, "server beta") {
+			t.Fatalf("%s: the screen is headed with the server filter: %q", key, header)
+		}
+		if _, ok := m.zones.find(hitServer); ok {
+			t.Fatalf("%s: the screen marks a server filter that is not drawn", key)
+		}
+	}
+}
+
+// The archived offer counts what A would show: a discobox archived on another
+// server is not one pressing A brings back into a list narrowed to this one.
+func TestTheArchivedOfferCountsTheServerOnScreen(t *testing.T) {
+	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
+		{ID: "sbx_b1", Name: "gone", Server: "beta", State: StateArchived},
+	})
+	if n := l.archivedCount(); n != 1 {
+		t.Fatalf("every server: archived = %d, want 1", n)
+	}
+	l.server = "alpha"
+	if n := l.archivedCount(); n != 0 {
+		t.Fatalf("narrowed to alpha: archived = %d, want beta's left out", n)
+	}
+}
+
+// The folder filter sits inside the server one: its choices and its counts are
+// the server's, so a folder only another server has something in is not a
+// choice that then lists nothing.
+func TestTheFolderDropdownIsTheServersFolders(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	for i := range boxes {
+		boxes[i].Server = "alpha"
+		// /src/obot's discoboxes are all on beta.
+		if boxes[i].OriginKey == testKey("/src/obot") {
+			boxes[i].Server = "beta"
+		}
+	}
+	ds := newFakeSource(boxes...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+
+	has := func() bool {
+		for _, f := range m.folderChoices() {
+			if f.key == testKey("/src/obot") {
+				return true
+			}
+		}
+		return false
+	}
+	if !has() {
+		t.Fatal("every server: the folders do not include beta's /src/obot")
+	}
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"), keyPress("right"))
+	if m.list.server != "alpha" {
+		t.Fatalf("the list is showing %q, want alpha", m.list.server)
+	}
+	if has() {
+		t.Fatal("narrowed to alpha: the folders offer /src/obot, which only beta has")
+	}
+	onAlpha := 0
+	for _, s := range boxes {
+		if s.Server == "alpha" {
+			onAlpha++
+		}
+	}
+	if got, want := m.folderDetail(everyFolder), plural(onAlpha, "box", "boxes")+" on alpha"; got != want {
+		t.Fatalf("all folders detail = %q, want %q", got, want)
+	}
+}
+
+// The machine line is the primary's figures, unnamed. Above a list narrowed to
+// another server it would read as that server's capacity, so it is not there.
+func TestTheMachineLineIsOnlyOverThePrimary(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	ds.setResources(Resources{Known: true, CPUVCPUs: 4.2, CPUCapacity: 24})
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("up"))
+	for _, step := range []struct {
+		key    string
+		server string
+		shown  bool
+	}{
+		{"", "", true},
+		{"right", "alpha", true},
+		{"right", "beta", false},
+	} {
+		if step.key != "" {
+			send(t, m, keyPress(step.key))
+		}
+		if m.list.server != step.server {
+			t.Fatalf("the list is showing %q, want %q", m.list.server, step.server)
+		}
+		if got := strings.Contains(plainFrame(m), "cpu 4.2/24"); got != step.shown {
+			t.Fatalf("showing %q: machine line drawn = %v, want %v:\n%s", step.server, got, step.shown, plainFrame(m))
+		}
+	}
+}

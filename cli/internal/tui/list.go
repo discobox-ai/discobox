@@ -32,6 +32,12 @@ type sandboxList struct {
 	// no key it is every folder, which is the one choice that is not a place.
 	folder folder
 
+	// server is the server the list is filtered to, chosen in the header
+	// beside the folder. Empty is every server at once, which is the one
+	// choice that is not a server; it is also what a window with only the
+	// primary to list holds, where there is nothing to filter.
+	server string
+
 	// Archived sandboxes are history: kept, listed on request, and out of the
 	// way until then.
 	showArchived bool
@@ -111,7 +117,7 @@ func (l *sandboxList) setPending(byBox map[string][]CredentialRequest) {
 func (l *sandboxList) rows() []Sandbox {
 	out := make([]Sandbox, 0, len(l.all))
 	for _, s := range l.all {
-		if !l.folder.holds(s, l.session) {
+		if !l.inView(s) {
 			continue
 		}
 		if !l.showArchived && s.State == StateArchived {
@@ -130,16 +136,47 @@ func (l *sandboxList) rows() []Sandbox {
 	return out
 }
 
+// inView reports whether a discobox is inside the header's two filters: on the
+// server they name, in the folder they name. It is one predicate rather than
+// two tests repeated wherever a count is taken, so everything that says how many
+// discoboxes there are — the rows, the archived offer — counts the same ones.
+func (l *sandboxList) inView(s Sandbox) bool {
+	return l.onServer(s) && l.folder.holds(s, l.session)
+}
+
+// onServer reports whether a discobox is on the server the header names. Every
+// discobox is on every server at once.
+func (l *sandboxList) onServer(s Sandbox) bool {
+	return l.server == "" || s.Server == l.server
+}
+
 // setUnreachable takes the servers the last listing could not reach.
 func (l *sandboxList) setUnreachable(servers []string) {
 	l.unreachable = append(l.unreachable[:0], servers...)
 }
 
 // grouped reports whether the list is drawn as one section per server, which
-// it is once there is more than one server to tell apart. With one, naming it
-// on every row — or over them — says nothing.
+// it is once there is more than one server on screen to tell apart. With one —
+// because there is one, or because the header is filtered to one — naming it
+// on every row, or over them, says what the header already says.
 func (l *sandboxList) grouped() bool {
-	return len(l.session.Servers) > 1
+	return l.server == "" && len(l.session.Servers) > 1
+}
+
+// missing is the servers the last listing could not reach, as this list has to
+// say them: every one of them when it is showing every server, and otherwise
+// only the one it is filtered to. A note about a server whose discoboxes are
+// not on screen anyway is a note about somewhere else.
+func (l *sandboxList) missing() []string {
+	if l.server == "" {
+		return l.unreachable
+	}
+	for i, name := range l.unreachable {
+		if name == l.server {
+			return l.unreachable[i : i+1]
+		}
+	}
+	return nil
 }
 
 // sectioned reports whether the body carries any line that is not a row: the
@@ -148,7 +185,7 @@ func (l *sandboxList) grouped() bool {
 // schedules, so a server can be missing from a list the window does not yet
 // know is grouped, and it is still missing.
 func (l *sandboxList) sectioned() bool {
-	return l.grouped() || len(l.unreachable) > 0
+	return l.grouped() || len(l.missing()) > 0
 }
 
 // section is where a server's rows go: the order the session lists its
@@ -184,8 +221,13 @@ func (l *sandboxList) folders() []folder {
 		out = append(out, f)
 	}
 	add(l.session.folder())
+	// The folders on the server the header names: the folder filter sits
+	// inside the server one, and a folder only another server has something in
+	// is a choice that lists nothing.
 	for _, s := range l.all {
-		add(s.folder(l.session))
+		if l.onServer(s) {
+			add(s.folder(l.session))
+		}
 	}
 	add(l.folder)
 	return out
@@ -219,7 +261,7 @@ func (l *sandboxList) sources() []Source {
 func (l *sandboxList) archivedCount() int {
 	n := 0
 	for _, s := range l.all {
-		if s.State == StateArchived && l.folder.holds(s, l.session) {
+		if s.State == StateArchived && l.inView(s) {
 			n++
 		}
 	}
@@ -440,7 +482,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// whatever it chooses to put there.
 	rowBudget := l.height
 	var out []string
-	if l.height > 1 {
+	if l.height > 1 && l.onPrimary() {
 		if machine := l.machine(st); machine != "" {
 			out = append(out, machine)
 			rowBudget--
@@ -469,7 +511,8 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// room — so exactly the list the launcher is for, one longer than the
 	// window, would never say a server is missing, and nothing could scroll to
 	// it, because offset and cursor walk rows.
-	missing := min(len(l.unreachable), max(rowBudget, 0))
+	absent := l.missing()
+	missing := min(len(absent), max(rowBudget, 0))
 	rowBudget -= missing
 	bodyBudget := rowBudget + missing
 
@@ -484,7 +527,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	body := make([]string, 0, max(bodyBudget, 0))
 	// The invitation is for a list with nothing in it at all: rows, and the
 	// sections that say where the missing ones went, are both something drawn.
-	if len(rows) == 0 && len(l.unreachable) == 0 {
+	if len(rows) == 0 && len(absent) == 0 {
 		body = append(body, st.dimText.Render(pad("  no discoboxes here yet — type a prompt below", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
@@ -521,7 +564,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// The servers that did not answer, after the ones that did: their rows are
 	// missing from this listing rather than gone, and a section saying so is
 	// where a reader looks for them.
-	for _, name := range l.unreachable {
+	for _, name := range absent {
 		if len(body) >= bodyBudget {
 			break
 		}
@@ -1039,6 +1082,15 @@ func (l *sandboxList) nameSpace(glyph bool) int {
 	cols.add("", usageWidth+1)
 	cols.add("", 11)
 	return max(l.width-l.headOffset(glyph)-lipgloss.Width(cols.text), 4)
+}
+
+// onPrimary reports whether the list is showing the primary's discoboxes —
+// alone or among every server's — which is when the machine line belongs above
+// it. The figures are the primary's (DataSource.Resources), and above a list
+// narrowed to another server an unnamed capacity line reads as that server's,
+// which is the number somebody checks before creating there.
+func (l *sandboxList) onPrimary() bool {
+	return l.server == "" || len(l.session.Servers) == 0 || l.server == l.session.Servers[0]
 }
 
 // machine is what this machine has and how much of it Discobox is using.

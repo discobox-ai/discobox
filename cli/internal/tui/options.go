@@ -261,6 +261,29 @@ func (o *optionSet) server() *option {
 	return nil
 }
 
+// setServer points a create at the server the header has moved to, for the same
+// reason setFolder points the source at its folder: the header is where the
+// window says which server it is working on, and a run option left behind it
+// would create somewhere the window does not say.
+//
+// A name the row does not carry — and the empty name the header's "all servers"
+// holds — leaves it on the primary, which is where a create with no --server at
+// all goes (ADR 0116 §5): every server at once is not an answer to which one a
+// new discobox belongs on.
+func (o *optionSet) setServer(name string) {
+	row := o.server()
+	if row == nil {
+		return
+	}
+	row.idx = 0
+	for i, value := range row.values {
+		if value == name {
+			row.idx = i
+			return
+		}
+	}
+}
+
 // sourceHint is what the Source row says: what it sets, and the one thing about
 // it that left and right cannot do.
 const sourceHint = "-C · where the discobox is cut from · Enter opens the whole list, and a path of your own"

@@ -499,14 +499,48 @@ What went is one status line; nothing to send says nothing at all.
 
 ## Many servers
 
-The window lists every server the CLI knows (ADR 0116 §4) and otherwise knows
+The window reads every server the CLI knows (ADR 0116 §4) and otherwise knows
 servers only by name. `List` returns a `Listing`: the rows, each with
 `Sandbox.Server` naming its server, and `Unreachable`, the registered servers
-that did not answer.
+that did not answer. Which of them is on screen is the header's to say.
 
-**The list is one section per server** once there is more than one
-(`sandboxList.grouped`, from `Session.Servers`, the primary first). Rows are
-ordered by section and newest-first within one, and each section is introduced
+**The header can narrow the list to one server** (`server.go`,
+`sandboxList.server`). It is the folder filter's twin, drawn in front of it —
+left and right change it, Enter or a click opens the dropdown — and it is there
+only when `Session.Servers` has more than one. It is the top rung of the focus
+ladder, above the folder, so Down from it steps back to the folder (see "Focus
+is a ladder" below). It opens on `all servers`, which leads the choices and is
+the listing §4 describes; the servers follow it, the primary first.
+
+**The two filters are one filter.** `sandboxList.inView` is the server and the
+folder together, and everything that counts discoboxes counts through it — the
+rows, the archived offer — so a filter added to one count cannot be forgotten
+in another. The dropdowns count the same way from the other side: the folder
+dropdown offers the folders on the server the header names and counts on it,
+and the server dropdown counts in the folder the header names, because the
+filter a choice leaves in place is part of what the choice will list.
+
+**The server on screen is the server the prompt creates on.** The header filter
+and the run options' Server row are one control in both directions, the way the
+folder and the Source row are: `selectServer` → `optionSet.setServer`, and
+`Model.followServer` back the other way when the row is cycled in the panel. So
+narrowing the list to a machine is also the way to send the next prompt there.
+`all servers` is no answer to which server, so a create from there goes to the
+primary — `--server` unset, as §5 has it.
+
+**Only the list narrows.** The harnesses, secrets and credential inbox are the
+primary's, so the filter is not drawn over the harnesses and secrets screens,
+which share the header: a live `server beta` above them would say the secret
+being added goes to beta. The machine line is the primary's figures too
+(`DataSource.Resources`), and is drawn only while the list shows the primary's
+discoboxes (`sandboxList.onPrimary`) — unnamed above a list narrowed to another
+server, it reads as that server's capacity, which is the number checked before
+creating there.
+
+**The list is one section per server** while it is showing every one of them
+(`sandboxList.grouped`, from `Session.Servers`, the primary first; filtered to
+one server there is nothing to tell apart and the header has said the name).
+Rows are ordered by section and newest-first within one, and each section is introduced
 by the band the list's own title is drawn as (`renderTitle`, in the dim of the
 two): `server <name>` with that section's count, or `not answering` for a
 server that did not answer, whose section has no rows under it — rows that are
@@ -517,17 +551,20 @@ A header is a label and not a row: the cursor never lands on one, and the
 mouse walks past it onto the block (`drawn.rows`, marked from the walk that
 draws). Scrolling counts headers as the lines they are, which is why the window
 adjusts its own offset where it draws rather than in `clamp`: only the draw
-knows what a row costs. A server that stops answering is also reported once,
-when that changes (`reportUnreachable`) — the list is polled, and a complaint
-on every refresh is one you stop reading.
+knows what a row costs. A server that did not answer is said where its
+discoboxes would have been and nowhere else (`sandboxList.missing`): showing
+every server, or showing that one. It is also reported once, when that changes
+(`reportUnreachable`) — the list is polled, and a complaint on every refresh is
+one you stop reading.
 
 Every `DataSource` method that takes a sandbox ID is routed by the CLI to the
 server the row was listed from (`apiDataSource.at`), so nothing here carries a
-server beside an ID. The run options gain a **Server** row — last, and only when
-`Session.Servers` has more than one — whose first choice is the primary, marked
+server beside an ID. The run options carry a **Server** row — last, and only
+when `Session.Servers` has more than one — whose first choice is the primary, marked
 `(primary)`, so an untouched panel creates where it always did; anything else
-is `RunRequest.Server`, and `--server <name>` in the preview. The harnesses,
-secrets and credential screens are the primary's.
+is `RunRequest.Server`, and `--server <name>` in the preview. It is the header's
+filter from the other side (above). The harnesses, secrets and credential
+screens are the primary's.
 
 ## Decisions
 
@@ -1476,7 +1513,7 @@ the last selection, which is what the middle button pastes everywhere else
 (`Model.primaryText` — X11's primary, not the clipboard).
 
 Every screen the window draws marks its own controls: the rows of all four
-lists (`markList`), the folder filter, the workspace header's git summary
+lists (`markList`), the folder and server filters, the workspace header's git summary
 (which opens discobox-review) and its links (the desktop and the forwarded web
 ports), the composer and the strip under it, the
 title band's two offers, a menu's rows and a card's, the run options and the
@@ -2165,20 +2202,24 @@ the thing the question exists to avoid. Both are `includeDirtyDialog`: the
 excluding answer leads and Esc means no, since the discobox is created either
 way.
 
-**Focus is a ladder, and its ends stop.** The folder filter sits above the list
-sits above the prompt, and the arrows climb it: Up off the top of the list
-reaches the filter, Down past the bottom returns to the prompt. Neither end
-wraps — Down at the prompt stays in the prompt and Up at the filter stays there,
-because a key that jumped from one end to the other would be moving the opposite
-way to the one it names.
+**Focus is a ladder, and its ends stop.** Prompt, discoboxes, folder filter,
+server filter, bottom to top, and the arrows climb it one rung at a time: Up off
+the top of the list reaches the folder, Up again the server; Down steps back
+the same way, and past the last row returns to the prompt. The server rung is
+there only when there is more than one server, and without it the folder is the
+top. Neither end wraps — Down at the prompt stays in the prompt and Up at the
+top stays there, because a key that jumped from one end to the other would be
+moving the opposite way to the one it names. The server is above the folder
+although it is drawn to the left of it: it is the wider scope, and the one you
+change least.
 
-Tab is the one key that does go round, in the order the window is drawn, bottom
-to top: prompt → discoboxes → folder → prompt. Esc is the short way straight out
-to the prompt from either stop. With an empty list, leaving the
-prompt lands on the folder filter instead — that is exactly when it is the
-control you want, and refusing to move would leave no way to reach it. Down
-from there passes straight through the empty list to the prompt: there is
-nothing to move through, and the empty list's own line says to type a prompt.
+Tab is the one key that does go round, in the order Up climbs: prompt →
+discoboxes → folder → server → prompt. Esc is the short way straight out to the
+prompt from any stop. With an empty list, leaving the prompt lands on the folder
+filter instead — that is exactly when it is the control you want, and refusing
+to move would leave no way to reach it. Down from there passes straight through
+the empty list to the prompt: there is nothing to move through, and the empty
+list's own line says to type a prompt.
 
 **A prompt with text in it keeps Up.** Up leaves the composer only while the
 composer is empty; with anything typed it is a cursor key in the text, and
@@ -2275,6 +2316,7 @@ the newest one where the busy line goes.
 | `data.go` | `Sandbox`, `Session`, `Harness`, `RunRequest`, `Verb`, `Interaction`, `DataSource` |
 | `harnesses.go` | the harnesses screen: the list, its actions, the config card, `F3` |
 | `folder.go` | the header's folder filter: the choices, the dropdown, and applying one |
+| `server.go` | the header's server filter: the choices, the dropdown, and the create that follows it |
 | `compact.go` | the opening window: the prompt beside the mark, and opening out |
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
 | `model.go` | the window: update, actions, run, layout, view, help |
