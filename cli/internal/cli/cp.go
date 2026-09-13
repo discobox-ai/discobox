@@ -38,8 +38,8 @@ title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
 discobox this directory started, or a prompt to pick one when there is more than
 one. A discobox on another server is written by its address,
 DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox>, where <server> is what
-"discobox servers" prints in its ADDRESS column: a peer ID, or a host. The
-SERVER column "discobox ls" prints is the name this machine registered that
+"discobox admin remote" prints in its ADDRESS column: a peer ID, or a host.
+The SERVER column "discobox ls" prints is the name this machine registered that
 server under, and names nothing anywhere else. Everything without a colon is a
 local path.
 
@@ -164,7 +164,7 @@ func (a *App) resolveCPTarget(cmd *cobra.Command, operands []cpOperand) (cpTarge
 				operand.reference, operand.reference, operand.reference)
 		case operand.addressWithQuery:
 			return cpTarget{}, fmt.Errorf("%s carries a query, and cp cannot tell where it ends: ?addr= holds host:port, so the colon after it is as likely the port's as the path's. "+
-				"Register the server once (`discobox servers add <address>`) and name the discobox on it instead", operand.reference)
+				"Register the server once (`discobox admin remote add <address>`) and name the discobox on it instead", operand.reference)
 		}
 		address, _, err := endpoint.ParseSandboxAddress(operand.reference)
 		if err != nil {

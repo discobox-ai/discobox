@@ -14,12 +14,12 @@ import (
 	"github.com/discobox-ai/discobox/endpoint"
 )
 
-// newServersCommand implements `discobox servers`: the servers this client
+// newServersCommand implements `discobox admin remote`: the servers this client
 // lists discoboxes from beside its primary (ADR 0116 §3).
 func (a *App) newServersCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "servers",
-		Aliases: []string{"server"},
+		Use:     "remote",
+		Aliases: []string{"remotes"},
 		Short:   "List and manage the servers discoboxes are listed from",
 		Long: `List and manage the servers this client lists discoboxes from.
 
@@ -44,11 +44,11 @@ A discobox's address is its server's with the discobox after it,
 discobox://<server>/<discobox>. Attaching to one registers the server it names.
 
 With no subcommand, this lists the servers.`,
-		Example: `  discobox servers
-  discobox servers add discobox://box.example.com
-  discobox servers add discobox://10.0.0.5:8443 --name lab
-  discobox servers rename lab workstation
-  discobox servers rm workstation`,
+		Example: `  discobox admin remote
+  discobox admin remote add discobox://box.example.com
+  discobox admin remote add discobox://10.0.0.5:8443 --name lab
+  discobox admin remote rename lab workstation
+  discobox admin remote rm workstation`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.listServers(cmd)
@@ -72,7 +72,7 @@ func (a *App) newServersListCommand() *cobra.Command {
 	}
 }
 
-// serverRow is one server as `discobox servers` prints it.
+// serverRow is one server as `discobox admin remote` prints it.
 type serverRow struct {
 	Name       string `json:"name"`
 	Address    string `json:"address"`
@@ -138,10 +138,10 @@ func (a *App) newServersAddCommand() *cobra.Command {
 The server is reached before anything is written down, so what gets registered
 is a server that answered rather than a typo. It is registered under the name it
 offers — its name setting, or its hostname — unless --name says otherwise, and
-with its peer ID, which "discobox servers" lists and which recognizes the same
+with its peer ID, which "discobox admin remote" lists and which recognizes the same
 server registered again under another address.`,
-		Example: `  discobox servers add discobox://box.example.com
-  discobox servers add discobox://10.0.0.5:8443 --name lab`,
+		Example: `  discobox admin remote add discobox://box.example.com
+  discobox admin remote add discobox://10.0.0.5:8443 --name lab`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.addServer(cmd, strings.TrimSpace(args[0]), strings.TrimSpace(name))

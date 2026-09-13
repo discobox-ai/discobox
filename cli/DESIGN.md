@@ -314,7 +314,7 @@ unwritable or corrupt file costs the convenience and never the command.
 A client has one **primary** server — `--server`, `DISCOBOX_SERVER`, or the
 local default — and any number of **registered** ones, kept in
 `<user config dir>/discobox/servers.json` (`internal/cli/servers.go`). That file
-is configuration rather than state: it is what `discobox servers
+is configuration rather than state: it is what `discobox admin remote
 add|rename|rm` write and what a person may edit, so it sits beside the
 server's `server.yaml` rather than under `<state>`, and one that does not parse
 is an error rather than a lost convenience.
@@ -338,9 +338,9 @@ is an error rather than a lost convenience.
   a `discobox://` name resolved to one included, and from `GET /peer`
   otherwise. Every current server has one, whatever it listens on (ADR 0117),
   so it is empty only for a server from before that. It is
-  what `discobox servers` lists in its ID column, and what recognizes one
+  what `discobox admin remote` lists in its ID column, and what recognizes one
   server registered again under another address — its http address and its
-  peer address are two keys and one peer (`byServer`), so `servers add`
+  peer address are two keys and one peer (`byServer`), so `admin remote add`
   refuses the second and an address that connects does not register it twice.
   It is recorded, not refreshed: a server registered before it had an ID
   shows none until it is registered again.
@@ -390,8 +390,8 @@ is an error rather than a lost convenience.
   is the home directory exactly as `mybox:` is; a `?` is a query this cannot
   split past, since `?addr=` holds `host:port` and the colon after it is as
   likely the port's as the path's, so such an operand is refused by name with
-  `discobox servers add` as the way round it. One scp runs over one bridge, so
-  `resolveCPTarget` decides from the operands alone — before anything is
+  `discobox admin remote add` as the way round it. One scp runs over one
+  bridge, so `resolveCPTarget` decides from the operands alone — before anything is
   contacted, and so before an address registers its server — that they name one
   server, refuses two, and then resolves each address there. **A name or a bare
   `:PATH` in the same command resolves on that server too**, not on the
@@ -611,8 +611,14 @@ so where a server's output lives does not depend on whether this machine had
 Advanced configuration and low-level resource commands are grouped beneath the
 visible `discobox admin` command (`internal/cli/admin.go`): `project`, `box`,
 `terminal`, `exec`, `services`, `provider`, `pool`, `job`, `harnesses`,
-`hooks`, `server`, `peer`, `ssh-key`, `ssh-config` and `ssh-proxy` are not root
-commands.
+`hooks`, `server`, `remote`, `peer`, `ssh-key`, `ssh-config` and `ssh-proxy` are
+not root commands.
+
+`admin server` runs the API server process; `admin remote` is the registry of
+servers this client lists discoboxes from (ADR 0116 §3, spelled by ADR 0119).
+The registry is spelled `remote`, git's name for the same thing — `add`,
+`rename` and `rm` change it and running it bare lists it — because
+`admin server` already names the process.
 
 The global `--project` flag is hidden from help alongside `--chdir`: it
 still works everywhere, and the launcher and scripts still pass it, but a

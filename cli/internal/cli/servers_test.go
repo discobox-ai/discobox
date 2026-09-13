@@ -155,7 +155,7 @@ func TestServerFlagTakesARegisteredName(t *testing.T) {
 	}
 
 	app = &App{serverURL: "nowhere"}
-	if err := app.resolveServerName(); err == nil || !strings.Contains(err.Error(), "discobox servers") {
+	if err := app.resolveServerName(); err == nil || !strings.Contains(err.Error(), "discobox admin remote") {
 		t.Fatalf("resolveServerName() on an unknown name error = %v, want it to say where names come from", err)
 	}
 }

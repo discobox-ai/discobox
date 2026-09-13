@@ -320,31 +320,31 @@ func TestServersCommandRegistersRenamesAndRemoves(t *testing.T) {
 		return out.String(), err
 	}
 
-	if out, err := run("servers", "add", delta.URL); err != nil || out != "delta-box\n" {
+	if out, err := run("admin", "remote", "add", delta.URL); err != nil || out != "delta-box\n" {
 		t.Fatalf("servers add = %q, %v, want the name it offers", out, err)
 	}
 	// Two servers offering one name are both registered, under two names.
-	if out, err := run("servers", "add", epsilon.URL); err != nil || out != "delta-box-2\n" {
+	if out, err := run("admin", "remote", "add", epsilon.URL); err != nil || out != "delta-box-2\n" {
 		t.Fatalf("servers add (same offered name) = %q, %v", out, err)
 	}
-	if _, err := run("servers", "add", delta.URL); err == nil {
+	if _, err := run("admin", "remote", "add", delta.URL); err == nil {
 		t.Fatal("servers add registered one server twice")
 	}
-	if _, err := run("servers", "add", deadServer(t)); err == nil {
+	if _, err := run("admin", "remote", "add", deadServer(t)); err == nil {
 		t.Fatal("servers add registered a server that does not answer")
 	}
-	if _, err := run("servers", "rename", "delta-box", "delta-box-2"); err == nil {
+	if _, err := run("admin", "remote", "rename", "delta-box", "delta-box-2"); err == nil {
 		t.Fatal("servers rename took a name already registered")
 	}
-	if _, err := run("servers", "rename", "delta-box", "lab"); err != nil {
+	if _, err := run("admin", "remote", "rename", "delta-box", "lab"); err != nil {
 		t.Fatalf("servers rename: %v", err)
 	}
-	if _, err := run("servers", "rm", "delta-box-2"); err != nil {
+	if _, err := run("admin", "remote", "rm", "delta-box-2"); err != nil {
 		t.Fatalf("servers rm: %v", err)
 	}
 
 	// Through the alias, which is the same command.
-	out, err := run("server", "-o", "json")
+	out, err := run("admin", "remotes", "-o", "json")
 	if err != nil {
 		t.Fatalf("servers: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestServersAddRecordsThePeerID(t *testing.T) {
 		return out.String(), err
 	}
 
-	if _, err := run("servers", "add", byHTTP.URL); err != nil {
+	if _, err := run("admin", "remote", "add", byHTTP.URL); err != nil {
 		t.Fatalf("servers add: %v", err)
 	}
 	reg, err := loadServerRegistry()
@@ -453,11 +453,11 @@ func TestServersAddRecordsThePeerID(t *testing.T) {
 	if want := []registeredServer{{Name: "box", Address: byHTTP.URL, ID: peer}}; !reflect.DeepEqual(reg.Servers, want) {
 		t.Fatalf("registry = %+v, want %+v", reg.Servers, want)
 	}
-	if _, err := run("servers", "add", again.URL); err == nil || !strings.Contains(err.Error(), "already registered as box") {
+	if _, err := run("admin", "remote", "add", again.URL); err == nil || !strings.Contains(err.Error(), "already registered as box") {
 		t.Fatalf("servers add of the same peer at another address error = %v, want it refused", err)
 	}
 
-	out, err := run("servers", "-o", "json")
+	out, err := run("admin", "remote", "-o", "json")
 	if err != nil {
 		t.Fatalf("servers: %v", err)
 	}
@@ -470,7 +470,7 @@ func TestServersAddRecordsThePeerID(t *testing.T) {
 	if len(body.Servers) != 2 || body.Servers[1].ID != peer || body.Servers[0].ID != "" {
 		t.Fatalf("servers = %+v, want box with its peer ID and a primary with none", body.Servers)
 	}
-	table, err := run("servers")
+	table, err := run("admin", "remote")
 	if err != nil {
 		t.Fatalf("servers: %v", err)
 	}
@@ -595,7 +595,7 @@ func TestServersAddSyncsItsSSHConfig(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", primary.URL, "servers", "add", other.URL})
+	cmd.SetArgs([]string{"--server", primary.URL, "admin", "remote", "add", other.URL})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("servers add: %v", err)
 	}
@@ -807,7 +807,7 @@ func TestCPRefusesAnAddressCarryingAQuery(t *testing.T) {
 		t.Fatalf("operand = %+v, want a query the split does not guess past", operands[0])
 	}
 	_, err := app.resolveCPTarget(cmd, operands)
-	if err == nil || !strings.Contains(err.Error(), "query") || !strings.Contains(err.Error(), "servers add") {
+	if err == nil || !strings.Contains(err.Error(), "query") || !strings.Contains(err.Error(), "remote add") {
 		t.Fatalf("resolveCPTarget() error = %v, want it refused with the way round it", err)
 	}
 	if reg, regErr := loadServerRegistry(); regErr != nil || len(reg.Servers) != 0 {

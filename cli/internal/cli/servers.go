@@ -56,7 +56,7 @@ const (
 // convenience: this file decides which servers exist. Load, edit and save as
 // three separate steps means a second command that read the same file appends
 // its own entry and renames its copy over the first, so a registration the
-// user was told had succeeded is gone — and a `servers rm` in that window
+// user was told had succeeded is gone — and an `admin remote rm` in that window
 // brings the removed server back. Registering is also the one write no user
 // asks for, since any command handed an address does it, so two of them
 // overlapping is ordinary rather than unlucky.
@@ -321,7 +321,7 @@ func (a *App) resolveServerName() error {
 	}
 	i, ok := reg.byName(value)
 	if !ok {
-		return fmt.Errorf("--server %q is neither an address nor a registered server; `discobox servers` lists the registered ones", value)
+		return fmt.Errorf("--server %q is neither an address nor a registered server; `discobox admin remote` lists the registered ones", value)
 	}
 	a.serverURL = reg.Servers[i].Address
 	return nil

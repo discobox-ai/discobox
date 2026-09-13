@@ -33,8 +33,8 @@ Discoboxes cut from anywhere else, or created on another machine, are not
 listed; pass --all (or use "discobox admin box ls") to list every discobox in
 the project.
 
-Every server is listed: the primary, and the ones "discobox servers" registered,
-with a SERVER column once there is more than one. A registered server that does
+Every server is listed: the primary, and the ones "discobox admin remote"
+registered, with a SERVER column once there is more than one. A registered server that does
 not answer is left out, and says so on stderr.`,
 		Example: `  discobox ls
   discobox ls --all

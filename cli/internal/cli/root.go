@@ -270,7 +270,6 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newIDCommand())
-	cmd.AddCommand(app.newServersCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())

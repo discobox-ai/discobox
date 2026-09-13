@@ -26,9 +26,9 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			"With --write, the stanzas and the server's host key are written to files this\n" +
 			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
 			"at them. Nothing else in ~/.ssh is edited.\n\n" +
-			"--write covers every server: the primary and the ones `discobox servers` lists,\n" +
-			"each into its own files. Without it, the stanzas printed are the primary's, since\n" +
-			"what is printed is one block to paste; --server picks another.\n\n" +
+			"--write covers every server: the primary and the ones `discobox admin remote`\n" +
+			"lists, each into its own files. Without it, the stanzas printed are the\n" +
+			"primary's, since what is printed is one block to paste; --server picks another.\n\n" +
 			"On WSL that happens twice, once for each of the machine's two ssh installations:\n" +
 			"this distribution's, and the Windows one that a Windows VS Code or JetBrains\n" +
 			"Gateway drives. Without --write, the printed stanzas are this side's.\n\n" +
