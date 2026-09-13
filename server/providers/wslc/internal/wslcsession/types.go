@@ -25,20 +25,28 @@ import "fmt"
 //
 // wslc.idl is the service's private interface, whose own header says "ABI
 // breaking changes in this file are OK, since both client & server always
-// ship together. The WSLC SDK must not use this file". Two methods this
-// library needs have no SDK-facing equivalent - MountWindowsFolder ("used
-// only for testing (and by the plugin API)") and CreateRootNamespaceProcess
-// ("meant for debugging") - and those two calls, alone, are made on it. The
-// same session object implements both interfaces, so one QueryInterface
-// reaches them.
+// ship together. The WSLC SDK must not use this file". One method this
+// library needs has no SDK-facing equivalent - CreateRootNamespaceProcess
+// ("meant for debugging") - and that call, alone, is made on it. The same
+// session object implements both interfaces, so one QueryInterface reaches
+// it.
+//
+// MountWindowsFolder used to be the second. It was how a guest-side program
+// was delivered: mount a Windows folder, run the binary out of it. WSL 2.9.10
+// on Windows 11 26200 fails that mount inside its own guest init - the 9p
+// options it passes (rfdno/wfdno/cache=mmap) are not what this WSL kernel's
+// v9fs accepts, so mount(2) returns EINVAL and the call comes back E_FAIL -
+// while the supported path for sharing a host folder has moved to virtiofs.
+// Programs are streamed into the guest over a process's stdin now, which
+// needs no share of any kind, so the call is gone rather than fixed.
 //
 // What that division buys: no struct this library sends is defined by the
 // private interface any more, which is what broke on WSL 2.9.10 (2.9.5 had
 // added two fields to WSLCSessionSettings; the SDK-facing copy of that
-// struct was left alone, and still is). What it does not buy: the two
-// private methods still sit at vtable slots that move - 2.9.10 inserted
-// GetEvents as method 6 and pushed both of them down one - so their slots
-// are chosen from the version the service reports.
+// struct was left alone, and still is). What it does not buy: the one
+// private method still sits at a vtable slot that moves - 2.9.10 inserted
+// GetEvents as method 6 and pushed it down one - so its slot is chosen from
+// the version the service reports.
 
 var (
 	clsidWSLCSessionManager = mustGUID("a9b7a1b9-0671-405c-95f1-e0612cb4ce8f")
@@ -49,7 +57,7 @@ var (
 
 	// wslc.idl - the private session interface, reached by QueryInterface on
 	// the session the SDK-facing CreateSession returns, and used for nothing
-	// but MountWindowsFolder and CreateRootNamespaceProcess.
+	// but CreateRootNamespaceProcess.
 	iidIWSLCSession = mustGUID("EF0661E4-6364-40EA-B433-E2FDF11F3519")
 )
 
@@ -75,34 +83,27 @@ const (
 	slotCompatProcessGetStdHandle = 5 // IWSLCCompatProcess method 3
 )
 
-// sessionSlots holds the two private IWSLCSession slots this library still
-// calls, because the SDK-facing interface exposes no equivalent. They are
-// the one part of the vtable that moves: WSL 2.9.10 inserted GetEvents as
-// method 6, so on an older build both of these sit one slot lower. A call
-// made at the wrong slot is a call to a different method with this one's
-// arguments - MountWindowsFolder landing on UnmountWindowsFolder - so the
-// set is chosen from the version the service reports rather than assumed.
+// sessionSlots holds the one private IWSLCSession slot this library still
+// calls, because the SDK-facing interface exposes no equivalent. It is the
+// one part of the vtable that moves: WSL 2.9.10 inserted GetEvents as method
+// 6, so on an older build it sits one slot lower. A call made at the wrong
+// slot is a call to a different method with this one's arguments -
+// CreateRootNamespaceProcess landing on CreateProcess - so the slot is
+// chosen from the version the service reports rather than assumed.
 type sessionSlots struct {
 	createRootNamespaceProcess int
-	mountWindowsFolder         int
 }
 
 // slotsForVersion returns the private IWSLCSession slots the given service
 // exposes.
 func slotsForVersion(v wslcVersion) sessionSlots {
 	if v.atLeast(getEventsVersion) {
-		// CreateRootNamespaceProcess is method 22, MountWindowsFolder 25.
-		return sessionSlots{
-			createRootNamespaceProcess: 24,
-			mountWindowsFolder:         27,
-		}
+		// CreateRootNamespaceProcess is method 22.
+		return sessionSlots{createRootNamespaceProcess: 24}
 	}
-	// 2.9.5 through 2.9.9, with no GetEvents ahead of them:
-	// CreateRootNamespaceProcess is method 21, MountWindowsFolder 24.
-	return sessionSlots{
-		createRootNamespaceProcess: 23,
-		mountWindowsFolder:         26,
-	}
+	// 2.9.5 through 2.9.9, with no GetEvents ahead of it:
+	// CreateRootNamespaceProcess is method 21.
+	return sessionSlots{createRootNamespaceProcess: 23}
 }
 
 // wslcVersion mirrors _WSLCCompatVersion: the WSL package version the

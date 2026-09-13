@@ -149,8 +149,6 @@ func (s *fakeSession) CreateVolume(VolumeOptions) error {
 	return nil
 }
 
-func (s *fakeSession) MountWindowsFolder(string, string, bool) error { return nil }
-
 func (s *fakeSession) CreateRootNamespaceProcess(string, []string, bool) (wslcProcess, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

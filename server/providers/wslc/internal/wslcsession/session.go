@@ -57,9 +57,6 @@ type Session struct {
 
 	mgr  sessionManager
 	sess wslcSession
-
-	bridgeDir  string
-	bridgeDone bool
 }
 
 // ErrSessionExists reports that a VM of the requested name is already running.
@@ -220,92 +217,21 @@ func (s *Session) Close() error {
 	return nil
 }
 
-// DockerConn returns a connection to dockerd's Docker Engine API socket
-// inside the guest, relayed entirely over the guest's private vsock control
-// channel - no TCP port, public or otherwise, is ever created.
-func (s *Session) DockerConn() (net.Conn, error) {
-	return s.DialGuestUnix("/var/run/docker.sock")
-}
-
-// DialGuestUnix connects to a unix domain socket at the given path inside
-// the guest's root namespace.
-func (s *Session) DialGuestUnix(path string) (net.Conn, error) {
-	return s.dial("unix:" + path)
-}
-
-// DialGuestTCP connects to a TCP address as seen from inside the guest's own
-// network namespace (e.g. a container-published port bound to
-// 127.0.0.1:<port> inside the VM). This is the general-purpose counterpart
-// to DockerConn - same mechanism, arbitrary target.
-func (s *Session) DialGuestTCP(addr string) (net.Conn, error) {
-	return s.dial("tcp:" + addr)
-}
-
-func (s *Session) dial(target string) (net.Conn, error) {
-	bridgeDir, err := s.ensureBridgeMounted()
-	if err != nil {
-		return nil, err
-	}
-
-	// Exec via /bin/sh explicitly rather than relying on entrypoint.sh's own
-	// executable bit: it arrives in the guest through a 9p-mounted Windows
-	// folder (MountWindowsFolder), and Windows has no POSIX-mode concept to
-	// preserve in the first place - not worth depending on whatever
-	// permission bits the 9p layer happens to expose.
-	script := bridgeDir + "/entrypoint.sh"
-
-	var process wslcProcess
-	var callErr error
-	s.do(func() {
-		// wslcsession.exe backs this with the exact same
-		// Fork(WSLC_FORK::Process) primitive its own DockerHTTPClient uses
-		// for its private docker.sock relay (WSLCVirtualMachine.cpp) - this
-		// is the supported front door onto that same fork machinery.
-		process, callErr = s.sess.CreateRootNamespaceProcess("/bin/sh", []string{"/bin/sh", script, target}, true)
-	})
-	if callErr != nil {
-		return nil, fmt.Errorf("wslcsession: spawn bridge for %q: %w", target, callErr)
-	}
-
-	var stdin, stdout socketHandle
-	var hErr error
-	s.do(func() {
-		stdin, hErr = process.GetStdHandle(fdStdin)
-		if hErr != nil {
-			return
-		}
-		stdout, hErr = process.GetStdHandle(fdStdout)
-	})
-	if hErr != nil {
-		s.releaseProcess(process)
-		return nil, hErr
-	}
-
-	return newGuestConn(s, process, stdin, stdout), nil
-}
-
-// MountFolder mounts a Windows directory into the guest. It is how a caller
-// delivers its own guest-side program: the guest has no toolchain, so a binary
-// cross-compiled on the host is mounted in and executed. Mounting the same
-// pair twice is not an error.
-func (s *Session) MountFolder(windowsPath, guestPath string, readOnly bool) error {
-	var callErr error
-	s.do(func() {
-		err := s.sess.MountWindowsFolder(windowsPath, guestPath, readOnly)
-		if err != nil && !isHRESULT(err, hrErrorAlreadyExists) {
-			callErr = fmt.Errorf("wslcsession: MountWindowsFolder: %w", err)
-		}
-	})
-	return callErr
-}
-
 // StartProcess runs a program in the guest's root namespace and returns its
 // stdin and stdout as one net.Conn.
 //
-// Unlike DialGuestUnix and DialGuestTCP, which spawn a short-lived bridge per
-// connection, this is for a long-lived guest process whose stdio *is* the
-// transport — a multiplexer, for instance, which turns that single pipe into
-// many logical connections in both directions.
+// This is the whole of what the guest can be asked to do from here, and
+// deliberately so: everything the caller wants from a guest — a program
+// delivered into it, a socket inside it dialed, a log read out of it — is that
+// program's stdio, and a session that offers one primitive has one private
+// vtable slot to be wrong about. The caller supplies the program; see the wslc
+// driver, which streams one Linux binary in over a first process's stdin and
+// then runs it for everything else.
+//
+// wslcsession.exe backs this with the exact same Fork(WSLC_FORK::Process)
+// primitive its own DockerHTTPClient uses for its private docker.sock relay
+// (WSLCVirtualMachine.cpp), so this is the front door onto machinery the
+// service itself depends on rather than a corner of it nothing exercises.
 //
 // The returned connection owns the process: closing it releases the guest
 // process reference, and the process ends when the session does.
@@ -389,32 +315,4 @@ func (s *Session) takeProcesses() []wslcProcess {
 	}
 	s.procs = nil
 	return out
-}
-
-func (s *Session) ensureBridgeMounted() (string, error) {
-	var dir string
-	var callErr error
-	s.do(func() {
-		if s.bridgeDone {
-			dir = s.bridgeDir
-			return
-		}
-
-		extractedDir, err := extractBridgeBinary()
-		if err != nil {
-			callErr = err
-			return
-		}
-
-		err = s.sess.MountWindowsFolder(extractedDir, guestBridgeMountPath, true)
-		if err != nil && !isHRESULT(err, hrErrorAlreadyExists) {
-			callErr = fmt.Errorf("wslcsession: MountWindowsFolder: %w", err)
-			return
-		}
-
-		s.bridgeDir = guestBridgeMountPath
-		s.bridgeDone = true
-		dir = s.bridgeDir
-	})
-	return dir, callErr
 }

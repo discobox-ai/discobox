@@ -50,9 +50,9 @@ func TestBridgeHalfCloseE2E(t *testing.T) {
 	}
 
 	t.Run("CloseWriteStillReceivesResponse", func(t *testing.T) {
-		conn, err := session.DialGuestUnix(guestDockerSocket)
+		conn, err := dialGuest(session, "unix:"+guestDockerSocket)
 		if err != nil {
-			t.Fatalf("DialGuestUnix: %v", err)
+			t.Fatalf("dialGuest: %v", err)
 		}
 		defer func() { _ = conn.Close() }()
 
@@ -92,9 +92,9 @@ func TestBridgeHalfCloseE2E(t *testing.T) {
 	})
 
 	t.Run("TargetCloseSurfacesEOF", func(t *testing.T) {
-		conn, err := session.DialGuestUnix(guestDockerSocket)
+		conn, err := dialGuest(session, "unix:"+guestDockerSocket)
 		if err != nil {
-			t.Fatalf("DialGuestUnix: %v", err)
+			t.Fatalf("dialGuest: %v", err)
 		}
 		defer func() { _ = conn.Close() }()
 

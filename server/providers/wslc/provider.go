@@ -59,9 +59,6 @@ type Config struct {
 	MemoryMiB     int    `json:"memoryMiB,omitempty"`
 	MaxStorageMiB int64  `json:"maxStorageMiB,omitempty"`
 	AgentPort     int    `json:"agentPort,omitempty"`
-	// RelayStagingDir overrides where the embedded guest relay is written before
-	// being mounted into guests.
-	RelayStagingDir string `json:"relayStagingDir,omitempty"`
 }
 
 func Decode(data json.RawMessage) (Config, error) {
@@ -157,7 +154,6 @@ func driverConfig(cfg Config, streams StreamSink) DriverConfig {
 		MemoryMiB:           effectiveInt(cfg.MemoryMiB, defaultMemoryMiB),
 		MaxStorageMiB:       effectiveInt64(cfg.MaxStorageMiB, defaultMaxStgMiB),
 		AgentPort:           effectiveInt(cfg.AgentPort, defaultAgentPort),
-		RelayStagingDir:     effectiveRelayStagingDir(cfg.RelayStagingDir),
 		ControlPlaneStreams: streams,
 	}
 }
@@ -181,18 +177,6 @@ func effectiveStorageDir(configured string) string {
 		return filepath.Join(local, "discobox", "wslc")
 	}
 	return filepath.Join(os.TempDir(), "discobox-wslc")
-}
-
-// effectiveRelayStagingDir picks where the embedded relay is written for
-// mounting into guests. All pools share it: the binary is identical.
-func effectiveRelayStagingDir(configured string) string {
-	if value := strings.TrimSpace(configured); value != "" {
-		return value
-	}
-	if local := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); local != "" {
-		return filepath.Join(local, "discobox", "relay")
-	}
-	return filepath.Join(os.TempDir(), "discobox-relay")
 }
 
 func effectiveInt(value, fallback int) int {

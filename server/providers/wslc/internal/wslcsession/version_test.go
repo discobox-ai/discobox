@@ -10,9 +10,9 @@ import (
 
 // A version comparison that only looked at one component would pick the wrong
 // vtable slots, which is not a failed call but a call to a different method:
-// Terminate() landing on FormatVirtualDisk, MountWindowsFolder on
-// UnmountWindowsFolder. Nothing downstream can detect that, so the ordering
-// has to be right here.
+// Terminate() landing on FormatVirtualDisk, CreateRootNamespaceProcess on
+// CreateProcess. Nothing downstream can detect that, so the ordering has to
+// be right here.
 func TestVersionOrderingComparesEveryComponent(t *testing.T) {
 	for _, tc := range []struct {
 		version wslcVersion
@@ -37,24 +37,18 @@ func TestVersionOrderingComparesEveryComponent(t *testing.T) {
 }
 
 // The slot shift is the whole reason the version is asked for at all: WSL
-// 2.9.10 inserted GetEvents as IWSLCSession method 6, and both of the private
-// methods still called there sit after it. Both sets are asserted whole,
-// because a single wrong number is a silent call to the neighbouring method.
+// 2.9.10 inserted GetEvents as IWSLCSession method 6, and the one private
+// method still called there sits after it. Both sets are asserted whole,
+// because a wrong number is a silent call to the neighbouring method.
 func TestSlotsFollowTheGetEventsInsertion(t *testing.T) {
 	before := slotsForVersion(wslcVersion{2, 9, 9})
-	want := sessionSlots{
-		createRootNamespaceProcess: 23,
-		mountWindowsFolder:         26,
-	}
+	want := sessionSlots{createRootNamespaceProcess: 23}
 	if before != want {
 		t.Errorf("slots for 2.9.9 = %+v, want %+v", before, want)
 	}
 
 	after := slotsForVersion(wslcVersion{2, 9, 10})
-	want = sessionSlots{
-		createRootNamespaceProcess: 24,
-		mountWindowsFolder:         27,
-	}
+	want = sessionSlots{createRootNamespaceProcess: 24}
 	if after != want {
 		t.Errorf("slots for 2.9.10 = %+v, want %+v", after, want)
 	}

@@ -3,10 +3,8 @@
 package wslcsession
 
 import (
-	"bufio"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,9 +45,9 @@ func TestSessionCompatCallsE2E(t *testing.T) {
 	// A volume the guest's own dockerd reports back is the only proof that
 	// CreateVolume reached CreateVolume, and that the .vhdx behind it was
 	// really created.
-	body := dockerGet(t, session, "/volumes/"+volumeName)
-	if !strings.Contains(body, `"Name":"`+volumeName+`"`) {
-		t.Fatalf("dockerd does not know volume %q; it answered %q", volumeName, body)
+	inspect := guestOutput(t, session, "docker volume inspect "+volumeName+" 2>&1")
+	if !strings.Contains(inspect, `"Name": "`+volumeName+`"`) {
+		t.Fatalf("dockerd does not know volume %q; it answered %q", volumeName, inspect)
 	}
 
 	if err := session.Close(); err != nil {
@@ -83,34 +81,25 @@ func TestSessionCompatCallsE2E(t *testing.T) {
 	}
 }
 
-// dockerGet performs one HTTP/1.0 request against the guest's dockerd over the
-// session's own relay and returns the response body. HTTP/1.0 with no
-// keep-alive means dockerd answers and closes, so no client machinery is
-// needed to know where the response ends.
-func dockerGet(t *testing.T, session *Session, path string) string {
+// guestOutput runs one shell command in the guest and returns everything it
+// wrote to stdout.
+//
+// The guest ships a docker CLI of its own, which is what makes this the whole
+// of the machinery needed to ask dockerd a question: this package can start a
+// guest process and nothing else, by design, so a test that needed to speak the
+// Engine API over a socket would have to bring a guest-side program with it.
+func guestOutput(t *testing.T, session *Session, command string) string {
 	t.Helper()
 
-	conn, err := session.DockerConn()
+	conn, err := session.StartProcess("/bin/sh", []string{"/bin/sh", "-c", command})
 	if err != nil {
-		t.Fatalf("DockerConn: %v", err)
+		t.Fatalf("StartProcess(%q): %v", command, err)
 	}
 	defer func() { _ = conn.Close() }()
 
-	if _, err := io.WriteString(conn, "GET "+path+" HTTP/1.0\r\n\r\n"); err != nil {
-		t.Fatalf("write request: %v", err)
-	}
-	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	out, err := io.ReadAll(conn)
 	if err != nil {
-		t.Fatalf("read response: %v", err)
+		t.Fatalf("read output of %q: %v", command, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("drain body: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET %s = %s: %s", path, resp.Status, body)
-	}
-	return string(body)
+	return string(out)
 }

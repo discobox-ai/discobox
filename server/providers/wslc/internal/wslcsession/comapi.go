@@ -37,11 +37,10 @@ type sessionManager interface {
 
 // wslcSession is one session object, addressed through both of the
 // interfaces it implements: Terminate and CreateVolume are
-// IWSLCCompatSession's, MountWindowsFolder and CreateRootNamespaceProcess
-// are IWSLCSession's, which has no SDK-facing counterpart for either.
+// IWSLCCompatSession's, CreateRootNamespaceProcess is IWSLCSession's, which
+// has no SDK-facing counterpart for it.
 type wslcSession interface {
 	Terminate() error
-	MountWindowsFolder(windowsPath, linuxPath string, readOnly bool) error
 	CreateRootNamespaceProcess(executable string, argv []string, withStdin bool) (wslcProcess, error)
 	CreateVolume(opts VolumeOptions) error
 	Release()
@@ -61,19 +60,6 @@ type wslcProcess interface {
 // call sites read as "this is a handle", not "this is some pointer-sized
 // number".
 type socketHandle uintptr
-
-// GuestExecError wraps a CreateRootNamespaceProcess failure together with
-// the guest-side errno reported alongside it. WSLCSession.cpp initializes
-// the errno to -1 before attempting the exec, specifically "to make sure
-// not to return 0 if something fails" - so Errno == -1 means "no specific
-// errno available", not "success".
-type GuestExecError struct {
-	Err   error
-	Errno int32
-}
-
-func (e *GuestExecError) Error() string { return fmt.Sprintf("%v (guest errno=%d)", e.Err, e.Errno) }
-func (e *GuestExecError) Unwrap() error { return e.Err }
 
 // activateSessionManager calls CoCreateInstance for CLSID
 // a9b7a1b9-0671-405c-95f1-e0612cb4ce8f (WSLCSessionManager), which lives
@@ -177,7 +163,7 @@ func abiError(err error, version wslcVersion) error {
 }
 
 // acquireVmLease is the AcquireVmLease argument WSL 2.9.5 added to
-// CreateRootNamespaceProcess and MountWindowsFolder. TRUE is the ordinary
+// CreateRootNamespaceProcess. TRUE is the ordinary
 // client value: start the VM if none is running, and wait out an announced
 // stop so the call is served by a fresh one rather than by a VM already
 // committed to going away. It also attaches a keep-alive token to the
@@ -283,33 +269,7 @@ func (s *comSession) Terminate() error {
 	return hrErr(vtblCall(s.compat, slotCompatSessionTerminate))
 }
 
-// MountWindowsFolder is one of the two private calls. The SDK-facing
-// interface mounts a Windows directory only into a container
-// (WSLCCompatVolume), never into the VM's own namespace, which is where the
-// relay and the bridge have to find it.
-func (s *comSession) MountWindowsFolder(windowsPath, linuxPath string, readOnly bool) error {
-	wPtr, err := syscall.UTF16PtrFromString(windowsPath)
-	if err != nil {
-		return err
-	}
-	lPtr, err := syscall.BytePtrFromString(linuxPath)
-	if err != nil {
-		return err
-	}
-
-	var ro uintptr
-	if readOnly {
-		ro = 1
-	}
-
-	hr := vtblCall(s.private, s.slots.mountWindowsFolder,
-		uintptr(unsafe.Pointer(wPtr)), uintptr(unsafe.Pointer(lPtr)), ro, acquireVmLease)
-	runtime.KeepAlive(wPtr)
-	runtime.KeepAlive(lPtr)
-	return abiError(hrErr(hr), s.version)
-}
-
-// CreateRootNamespaceProcess is the other private call: the SDK-facing
+// CreateRootNamespaceProcess is the one private call left: the SDK-facing
 // interface can start a process only inside a container (Exec, or a
 // container's init process), and everything this library runs in the guest
 // runs in the VM's root namespace instead.

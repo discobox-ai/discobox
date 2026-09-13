@@ -60,9 +60,10 @@ func (c *guestConn) Write(b []byte) (int, error) {
 }
 
 // CloseWrite shuts down the write half of the connection - it signals EOF to
-// the guest-side process (which propagates it as a real half-close on the
-// underlying unix/TCP target - see bridgesrc/bridge.c) while leaving Read
-// available to consume the rest of the response. This is the same
+// the guest-side process, which is what lets that process propagate a real
+// half-close onto whatever it is relaying (a shell's `cat` ending its input, a
+// bridge shutting down the write half of its target socket), while leaving
+// Read available to consume the rest of the response. This is the same
 // convention *net.TCPConn.CloseWrite() establishes, so code that
 // type-asserts for a `CloseWrite() error` method (a common Go idiom for
 // half-close-aware protocols) picks this up automatically.

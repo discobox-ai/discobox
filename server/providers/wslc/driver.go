@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -36,9 +37,6 @@ type DriverConfig struct {
 	MemoryMiB     int
 	MaxStorageMiB int64
 	AgentPort     int
-	// RelayStagingDir holds the extracted guest relay binary, mounted into every
-	// guest. It is shared across pools because the binary is identical.
-	RelayStagingDir string
 	// ControlPlaneStreams receives control-plane connections opened by guests.
 	// When nil the relay still runs, but the agent cannot register.
 	ControlPlaneStreams StreamSink
@@ -55,8 +53,7 @@ type Driver struct {
 	maxStorageMiB int64
 	agentPort     int
 
-	relayStagingDir string
-	streams         StreamSink
+	streams StreamSink
 
 	mu       sync.Mutex
 	sessions map[string]*wslcsession.Session
@@ -77,15 +74,14 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		storageDir = filepath.Clean(storageDir)
 	}
 	return &Driver{
-		storageDir:      storageDir,
-		cpuCount:        effectiveInt(cfg.CPUCount, defaultCPUCount),
-		memoryMiB:       effectiveInt(cfg.MemoryMiB, defaultMemoryMiB),
-		maxStorageMiB:   effectiveInt64(cfg.MaxStorageMiB, defaultMaxStgMiB),
-		agentPort:       effectiveInt(cfg.AgentPort, defaultAgentPort),
-		relayStagingDir: defaultRelayStagingDir(cfg.RelayStagingDir),
-		streams:         cfg.ControlPlaneStreams,
-		sessions:        map[string]*wslcsession.Session{},
-		relays:          map[string]*relaySession{},
+		storageDir:    storageDir,
+		cpuCount:      effectiveInt(cfg.CPUCount, defaultCPUCount),
+		memoryMiB:     effectiveInt(cfg.MemoryMiB, defaultMemoryMiB),
+		maxStorageMiB: effectiveInt64(cfg.MaxStorageMiB, defaultMaxStgMiB),
+		agentPort:     effectiveInt(cfg.AgentPort, defaultAgentPort),
+		streams:       cfg.ControlPlaneStreams,
+		sessions:      map[string]*wslcsession.Session{},
+		relays:        map[string]*relaySession{},
 	}, nil
 }
 
@@ -115,8 +111,26 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if _, ok := d.sessions[poolID]; ok {
-		return runningVM(poolID), nil
+	if session, ok := d.sessions[poolID]; ok {
+		if d.relays[poolID].healthy() {
+			return runningVM(poolID), nil
+		}
+		// A VM whose relay has ended is not running in any sense the engine
+		// can use, and EnsureVM is the only lifecycle call an ordinary pool
+		// reconcile makes: RepairPool, which would stop it first, runs only
+		// when that reconcile fails, and with the agent's container still up
+		// it does not. Reporting this VM running is what left a condemned pool
+		// unreachable and never replaced. It is torn down here and started
+		// fresh below, the same replacement a repair would make.
+		if relay := d.relays[poolID]; relay != nil {
+			relay.close()
+		}
+		if err := session.Close(); err != nil {
+			return nil, fmt.Errorf("replace wslc VM for %s, whose relay has ended: %w", poolID, err)
+		}
+		delete(d.sessions, poolID)
+		delete(d.relays, poolID)
+		slog.WarnContext(ctx, "replacing wslc VM whose control-plane relay has ended", "pool_id", poolID)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -145,7 +159,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 	// The relay carries every control-plane byte, in both directions, so a VM
 	// without one is useless: fail here rather than hand back a pool whose agent
 	// can never register.
-	relay, err := startRelay(ctx, session, poolID, d.relayStagingDir, d.streams)
+	relay, err := startRelay(ctx, session, poolID, d.streams)
 	if err != nil {
 		// The VM has to actually go here, not just be dropped: it holds the
 		// name, and a VM left running under it makes every retry of this
@@ -246,7 +260,11 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 		return nil, err
 	}
 	cli, err := dockerworker.NewDockerClientForDialer(func(_ context.Context, _, _ string) (net.Conn, error) {
-		return session.DialGuestUnix(guestDockerSocket)
+		conn, dialErr := dialGuest(session, "unix:"+guestDockerSocket)
+		if dialErr != nil {
+			d.condemnOnGuestExecFailure(poolID, dialErr)
+		}
+		return conn, dialErr
 	})
 	if err != nil {
 		return nil, err
@@ -307,6 +325,45 @@ func (d *Driver) PoolLogs(_ context.Context, poolID string, opts sandbox.PoolLog
 	}, nil
 }
 
+// condemnOnGuestExecFailure marks a VM for replacement when its guest could not
+// start the relay at all.
+//
+// Every dial runs the relay as a fresh guest process, so a guest that cannot
+// exec it has no Docker path left - and nothing above would notice on its own.
+// InspectVM and EnsureVM answer for the control-plane mux, which is a different
+// process and keeps running perfectly well while dials fail, so every reconcile
+// would be handed the session it already has: the same broken guest, retried
+// on a backoff forever.
+//
+// Only a failure the guest itself reported condemns: a *GuestExecError whose
+// errno is positive, which the service fills in from the guest's failed exec.
+// Every other failure of the call comes back as a *GuestExecError too, with the
+// errno still at the -1 the service starts it at - an RPC error, a service
+// hiccup, a failed QueryInterface - and none of those says anything about the
+// guest, so one of them is not worth what replacement costs.
+//
+// Closing the relay is the condemnation: healthy() goes false, InspectVM reports
+// the VM stopped, and the next EnsureVM - the pool's own reconcile, or a repair
+// after StopVM - replaces it with one whose relay was installed fresh. Replacement restarts the VM, which stops every sandbox container
+// running in the pool; images and volumes survive only when a StorageDir keeps
+// /var/lib/docker on a persistent VHD. That is the cost weighed here, against a
+// pool that can never start a container again.
+func (d *Driver) condemnOnGuestExecFailure(poolID string, err error) {
+	var execErr *wslcsession.GuestExecError
+	if !errors.As(err, &execErr) || execErr.Errno <= 0 {
+		return
+	}
+	d.mu.Lock()
+	relay := d.relays[poolID]
+	d.mu.Unlock()
+	if !relay.healthy() {
+		return
+	}
+	slog.Warn("guest could not start the relay; condemning the VM so it is replaced",
+		"pool_id", poolID, "guest_errno", execErr.Errno, "error", err)
+	relay.close()
+}
+
 func (d *Driver) session(poolID string) (*wslcsession.Session, error) {
 	if err := validatePoolID(poolID); err != nil {
 		return nil, err
@@ -318,15 +375,6 @@ func (d *Driver) session(poolID string) (*wslcsession.Session, error) {
 		return nil, fmt.Errorf("wslc VM %s: %w", poolID, sandbox.ErrNotFound)
 	}
 	return session, nil
-}
-
-// defaultRelayStagingDir keeps a directly constructed driver usable: the relay
-// is mandatory for every VM, so an unset path would fail every EnsureVM.
-func defaultRelayStagingDir(configured string) string {
-	if value := strings.TrimSpace(configured); value != "" {
-		return value
-	}
-	return filepath.Join(os.TempDir(), "discobox-relay")
 }
 
 func (d *Driver) relay(poolID string) (*relaySession, error) {

@@ -26,11 +26,6 @@ func NewSession(Options) (*Session, error) {
 	return nil, errUnsupported
 }
 
-func (*Session) Close() error                           { return errUnsupported }
-func (*Session) DockerConn() (net.Conn, error)          { return nil, errUnsupported }
-func (*Session) DialGuestUnix(string) (net.Conn, error) { return nil, errUnsupported }
-func (*Session) DialGuestTCP(string) (net.Conn, error)  { return nil, errUnsupported }
-
-func (*Session) MountFolder(string, string, bool) error { return errUnsupported }
+func (*Session) Close() error { return errUnsupported }
 
 func (*Session) StartProcess(string, []string) (net.Conn, error) { return nil, errUnsupported }

@@ -4,8 +4,10 @@
 // The relay is a Linux program that must run inside the pool guest, which has
 // no Go toolchain and — on first connect — no guaranteed network. Cross
 // compiling it on the host and carrying it inside the server binary avoids both
-// problems, unlike the stdio bridge, which compiles itself in-guest using the
-// guest's Docker daemon and therefore needs an image pull the first time.
+// problems. The driver then streams it into the guest over a guest process's
+// stdin, so nothing here is ever written to a Windows directory or shared into
+// the VM: the relay is the only program the guest needs, and it is also what
+// backs every other guest connection (see its --dial mode).
 //
 // The payload is gzipped: the relay is ~2.4 MB stripped and ~1.0 MB compressed,
 // nearly all of which is the Go runtime floor rather than anything the relay
@@ -13,9 +15,9 @@
 //
 // The compressed binary is a build artifact, not source. `task build:cp-relay`
 // produces it; the artifacts directory's committed README keeps `go build ./...`
-// working in a fresh checkout with no artifact present, and Extract reports a
-// clear error rather than writing a truncated file if the build step has not
-// run.
+// working in a fresh checkout with no artifact present, and Binary reports a
+// clear error rather than handing back a truncated file if the build step has
+// not run.
 package relay
 
 import (
@@ -27,8 +29,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"runtime"
 )
 
@@ -61,12 +61,11 @@ func relayGzip() []byte {
 	return data
 }
 
-// GuestPath is where the relay is mounted inside the guest.
-const GuestPath = "/mnt/discobox-relay"
-
-// BinaryName is the relay's file name, both on the host staging directory and
-// under GuestPath.
-const BinaryName = "discobox-cp-relay"
+// GuestPath is where the driver installs the relay inside the guest. It is
+// under /tmp, which is tmpfs and wiped when the VM restarts - the same
+// lifetime as the session that installed it, so a rebooted guest never runs a
+// relay left by an older server.
+const GuestPath = "/tmp/discobox-cp-relay"
 
 // ErrNotBuilt reports that the server was built without the guest relay
 // artifact, so no pool can start.
@@ -79,52 +78,20 @@ const minimumSize = 64 * 1024
 // Available reports whether a usable relay is embedded.
 func Available() bool { return len(relayGzip()) >= 512 }
 
-// Extract writes the relay into dir and returns its path. The directory is
-// mounted into the guest read-only, so the file is rewritten only when its
-// contents differ, letting concurrent pools share one staging directory.
-func Extract(dir string) (string, error) {
+// Binary returns the relay program, decompressed and ready to be streamed
+// into a guest.
+func Binary() ([]byte, error) {
 	if !Available() {
-		return "", ErrNotBuilt
+		return nil, ErrNotBuilt
 	}
 	binary, err := decompress()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(binary) < minimumSize {
-		return "", fmt.Errorf("%w (embedded artifact is only %d bytes)", ErrNotBuilt, len(binary))
+		return nil, fmt.Errorf("%w (embedded artifact is only %d bytes)", ErrNotBuilt, len(binary))
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("create relay directory: %w", err)
-	}
-	path := filepath.Join(dir, BinaryName)
-	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, binary) {
-		return path, nil
-	}
-	// Write to a unique temporary name and rename, so a pool starting
-	// concurrently never mounts a half-written binary.
-	tmp, err := os.CreateTemp(dir, "."+BinaryName+".*")
-	if err != nil {
-		return "", fmt.Errorf("stage relay: %w", err)
-	}
-	tmpPath := tmp.Name()
-	installed := false
-	defer func() {
-		_ = tmp.Close()
-		if !installed {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmp.Write(binary); err != nil {
-		return "", fmt.Errorf("write relay: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return "", fmt.Errorf("install relay: %w", err)
-	}
-	installed = true
-	return path, nil
+	return binary, nil
 }
 
 // Digest identifies the embedded relay, for logging which build a guest is

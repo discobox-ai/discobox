@@ -13,9 +13,18 @@
 // control plane with an ordinary unix:// URL and needs no transport-specific
 // code of its own.
 //
+// --dial is the same program in one-shot form: dial one guest address and
+// splice this process's own stdio to it, no multiplexing. That is what the
+// host uses for Docker traffic, which carries image loads and build contexts
+// and would head-of-line block the agent behind the single muxed stream. One
+// binary covers both because the guest dials the same way either way; the
+// alternative was a second program in the guest, and the only one available
+// there was a C file compiled on first use by the guest's own dockerd.
+//
 // Usage:
 //
 //	discobox-cp-relay --socket /run/discobox/cp.sock
+//	discobox-cp-relay --dial unix:/var/run/docker.sock
 package main
 
 import (
@@ -28,6 +37,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -36,12 +46,44 @@ import (
 
 func main() {
 	socket := flag.String("socket", "/run/discobox/cp.sock", "unix socket the pool agent dials for the control plane")
+	dial := flag.String("dial", "", "splice this process's stdio to one guest address (\"unix:/path\", \"tcp:host:port\") and exit, instead of serving the control plane")
 	flag.Parse()
 
-	if err := run(*socket); err != nil && !errors.Is(err, context.Canceled) {
+	// The two modes are exclusive: --dial is one connection's worth of work,
+	// not a relay that also serves a socket.
+	var err error
+	if *dial != "" {
+		err = dialOnce(*dial)
+	} else {
+		err = run(*socket)
+	}
+	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "discobox-cp-relay:", err)
 		os.Exit(1)
 	}
+}
+
+// dialOnce is the bridge mode: one guest connection, spliced to this process's
+// stdio, which the host holds as a net.Conn of its own.
+//
+// Splice is what carries the half-closes, and both of them matter here. The
+// host closing its write half has to reach the target as a real shutdown, or a
+// server waiting for the end of a request never answers; the target closing has
+// to reach the host as EOF, or a caller that wrote a request and is reading the
+// response to completion waits forever. The stdio side of that is stdioConn's
+// CloseWrite, which closes stdout alone and leaves stdin readable.
+func dialOnce(target string) error {
+	conn, err := dialGuest(context.Background(), target)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	stdio := newStdioConn()
+	defer func() { _ = stdio.Close() }()
+
+	cpmux.Splice(stdio, conn)
+	return nil
 }
 
 func run(socket string) error {
@@ -119,8 +161,8 @@ func acceptLocal(ctx context.Context, listener net.Listener, session *cpmux.Sess
 	}
 }
 
-// dialGuest connects to an address inside the guest, using the same target
-// vocabulary as the stdio bridge.
+// dialGuest connects to an address inside the guest, in the unix:/tcp: target
+// vocabulary shared by --dial and the streams the host opens on the mux.
 func dialGuest(ctx context.Context, target string) (net.Conn, error) {
 	var dialer net.Dialer
 	switch {
@@ -139,6 +181,8 @@ func dialGuest(ctx context.Context, target string) (net.Conn, error) {
 type stdioConn struct {
 	in  *os.File
 	out *os.File
+
+	writeCloseOnce sync.Once
 }
 
 func newStdioConn() net.Conn { return &stdioConn{in: os.Stdin, out: os.Stdout} }
@@ -146,9 +190,20 @@ func newStdioConn() net.Conn { return &stdioConn{in: os.Stdin, out: os.Stdout} }
 func (c *stdioConn) Read(b []byte) (int, error)  { return c.in.Read(b) }
 func (c *stdioConn) Write(b []byte) (int, error) { return c.out.Write(b) }
 
+// CloseWrite closes stdout alone, which is how this end signals EOF to the
+// host while still reading whatever the host has left to send. The host's own
+// read of the relayed handle is very likely blocked on exactly this, so it has
+// to be a real close rather than a flag: see the same reasoning, and the same
+// bug it once caused, in cpmux.Splice's half-close handling.
+func (c *stdioConn) CloseWrite() error {
+	var err error
+	c.writeCloseOnce.Do(func() { err = c.out.Close() })
+	return err
+}
+
 func (c *stdioConn) Close() error {
 	err := c.in.Close()
-	if outErr := c.out.Close(); err == nil {
+	if outErr := c.CloseWrite(); err == nil {
 		err = outErr
 	}
 	return err

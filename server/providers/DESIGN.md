@@ -672,6 +672,52 @@ for the server process, and the CLI passes its own environment to a server it
 autolaunches — so exporting it is enough, once an already-running server has
 been shut down rather than reused.
 
+### One guest program, streamed in over stdin
+
+The guest gets exactly one program from the host: `discobox-cp-relay`, cross
+compiled for Linux, embedded in the server binary (`wslc/relay`), and installed
+at `/tmp/discobox-cp-relay` each time `EnsureVM` starts a VM. It runs in two modes —
+`--socket`, the long-lived multiplexer whose stdio carries the control plane,
+and `--dial <target>`, one connection spliced to this process's stdio, which is
+how every Docker Engine call reaches the guest's dockerd. Docker stays off the
+mux deliberately: image loads and build contexts would head-of-line block the
+pool agent behind them.
+
+Installing it is a guest `sh` reading its own stdin (`installGuestBinary`), and
+the guest echoes back the SHA-256 of what it received — a short write would
+otherwise surface much later as a mux handshake that never completes.
+
+Every short-lived exchange with a guest process goes through `runGuestCommand`,
+which bounds it at one minute. A `guestConn`'s deadlines are deliberate no-ops,
+and these calls run inside `EnsureVM` while it holds the driver mutex, so a
+guest that starts and then wedges would otherwise take the whole driver down for
+every pool with no error anywhere. Closing the connection is what returns a read
+already parked in `recv`.
+
+A guest that cannot *exec* the relay is the one failure with no natural alarm:
+the mux is a separate, still-running process, so the VM keeps reporting healthy
+while every new dial fails, and each reconcile would be handed the same broken
+session forever. `condemnOnGuestExecFailure` closes the relay when a dial fails
+with a `*GuestExecError` carrying a positive guest errno. A VM whose relay has
+ended reports stopped from `InspectVM`, and `EnsureVM` replaces it rather than
+returning it: an ordinary pool reconcile calls only `EnsureVM`, and reaches
+`RepairPool` only when that fails. The
+same type with errno `-1` is the service's own failure and condemns nothing:
+replacement restarts the VM and stops every sandbox container in the pool, and
+keeps images and volumes only when `StorageDir` persists `/var/lib/docker`.
+
+The stock guest also lacks things every other Linux host has, so guest setup
+supplies them each time `EnsureVM` starts a VM: the directories the engine bind-mounts
+(`prepareGuestDirs`), and a tmpfs at `/dev/shm` (`mountGuestSharedMemory`), which
+Docker requires before it will start a container with `--ipc=host` — the pool
+console's shape on every backend. The mount is checked first, and failing it is
+logged rather than fatal: only the console needs it, and a pool with no console
+beats no pool.
+
+Nothing is shared into the VM from Windows: the guest's only program arrives
+over stdin, and the session makes exactly one private COM call
+(`CreateRootNamespaceProcess`) (docs/adr/0120).
+
 ## DigitalOcean Driver
 
 `server/providers/digitalocean` implements the `dockerworker.Driver` contract

@@ -44,9 +44,6 @@ func TestDriverConfigCarriesDefaultedStorage(t *testing.T) {
 	if cfg.StorageDir == "" {
 		t.Fatal("driver config has no storage directory; pools would run on tmpfs")
 	}
-	if cfg.RelayStagingDir == "" {
-		t.Fatal("driver config has no relay staging directory")
-	}
 }
 
 // wslc persists only /var/lib/docker, so pool state must be placed inside that

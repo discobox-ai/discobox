@@ -80,7 +80,7 @@ func (h hresultError) code() uint32 { return uint32(h) }
 // Win32 headers) and converted via bit-reinterpretation rather than manual
 // two's-complement arithmetic, which is easy to get subtly wrong by hand.
 const (
-	hrErrorAlreadyExists uint32 = 0x800700B7 // HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS); MountWindowsFolder returns this if already mounted.
+	hrErrorAlreadyExists uint32 = 0x800700B7 // HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS); CreateSession returns this for a display name a live VM already holds.
 	hrRPCETooLate        uint32 = 0x80010119 // RPC_E_TOO_LATE; CoInitializeSecurity was already called by something else in this process.
 	hrRPCXBadStubData    uint32 = 0x800706F7 // HRESULT_FROM_WIN32(RPC_X_BAD_STUB_DATA); the service unmarshalled this call as a layout it did not arrive in.
 )
