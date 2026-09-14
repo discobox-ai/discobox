@@ -678,8 +678,8 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	return sandbox, nil
 }
 
-// UpgradeHarnessConfigSandboxes moves this harness config's stopped sandboxes
-// onto the image it now resolves to (ADR 0082).
+// UpgradeHarnessConfigSandboxes moves this harness config's stopped sandboxes,
+// healthy or failed, onto the image it now resolves to (ADR 0082, ADR 0121).
 //
 // It is the same operation as UpgradeSandbox, performed for a caller that is
 // not a person: the same imageRepin, applied through the same
@@ -692,7 +692,11 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 // in SandboxManifest.Fingerprint(), so the pool agent rebuilds the container
 // whose spec_fingerprint label no longer matches and — because it found that
 // container stopped — leaves the replacement stopped (ADR 0021 §3). Nothing
-// here starts anything.
+// here starts anything. A failed sandbox takes the same path: the recorded
+// intent clears its latched error, so the reconciler retries the create on the
+// new image instead of treating the failure as settled (ADR 0017 §4). One whose
+// client push never landed is left alone, because the retry could only park it
+// again.
 //
 // Best-effort per sandbox: one that cannot be re-pinned is logged and the rest
 // still move. A harness image landing must not be all-or-nothing across a
@@ -721,6 +725,14 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 	}
 	for i := range candidates {
 		sb := &candidates[i]
+		// A sandbox still owed a client push cannot be retried into anything but
+		// another wait: the create re-parks it at `awaiting_source` with a fresh
+		// deadline, it reads as starting while nobody pushes, and it fails again
+		// with the timeout in place of the cause it had (ADR 0121). A new image
+		// delivers no source, so there is nothing for the re-pin to fix.
+		if awaitingSourcePush(sb) {
+			continue
+		}
 		repin, err := s.currentImageRepin(ctx, sb)
 		if err != nil {
 			slog.WarnContext(ctx, "skip automatic sandbox upgrade; cannot resolve target",
@@ -737,7 +749,8 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 		}
 		slog.InfoContext(ctx, "upgraded stopped sandbox to its harness image",
 			"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", harnessConfigID,
-			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Digest)
+			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Digest,
+			"retryingFailure", sb.ErrorMessage != nil || sb.State == model.SandboxStateFailed)
 	}
 	return nil
 }

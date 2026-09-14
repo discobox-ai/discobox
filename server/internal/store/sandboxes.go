@@ -157,7 +157,7 @@ func (s *Store) ListArchivedSandboxRefsExpiredBefore(ctx context.Context, defaul
 
 // ListStoppedSandboxesForHarnessConfig returns the sandboxes on one harness
 // config that a change to that config's image may be applied to unattended
-// (ADR 0082 §2).
+// (ADR 0082 §2, ADR 0121).
 //
 // Every condition here is a state question. Whether a sandbox is *behind* is
 // not asked here at all: that rule is services.SandboxUpgradeTarget, the same
@@ -169,9 +169,12 @@ func (s *Store) ListArchivedSandboxRefsExpiredBefore(ctx context.Context, defaul
 //
 // `runtime_state = 'stopped'` is an observation with exactly one writer
 // (ADR 0034 §2), which is what makes it safe to act on without asking anyone.
-// The empty runtime state is excluded on purpose: it means *not observed*,
-// which is a different answer from stopped, and upgrading on it would be
-// upgrading on no observation at all.
+// The empty runtime state means *not observed*, which is a different answer
+// from stopped. A `ready` sandbox that nobody has reported on is in the brief
+// window before its create's own report lands, and is excluded. A `failed` one
+// is admitted (ADR 0121): that is the first create that failed before any
+// container was seen, which has nothing running to restart and is exactly the
+// sandbox a new image may fix.
 func (s *Store) ListStoppedSandboxesForHarnessConfig(ctx context.Context, projectID, harnessConfigID string) ([]model.Sandbox, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
@@ -181,13 +184,16 @@ func (s *Store) ListStoppedSandboxesForHarnessConfig(ctx context.Context, projec
 	err = read.
 		Where("project_id = ? AND harness_config_id = ?", projectID, harnessConfigID).
 		Where("desired_state = ?", model.DesiredStatePresent).
-		// Converged against its spec, and nothing in flight against it: an
-		// unsettled row is already being acted on, and a settled failure needs
-		// intent aimed at the failure, which is what repair is (ADR 0064).
-		Where("state = ?", model.SandboxStateReady).
+		// Settled, and nothing in flight against it: an unsettled row is
+		// already being acted on. A settled failure is included (ADR 0121) —
+		// the image it failed on is the likeliest cause, and the re-pin is new
+		// intent that clears the latched error and retries on the new image.
+		// Retries are bounded by the caller: it only re-pins a sandbox whose
+		// pin differs from a digest that just moved.
 		Where("generation = observed_generation").
-		Where("error_message IS NULL").
-		Where("runtime_state = ?", model.SandboxRuntimeStateStopped).
+		Where("(state = ? AND runtime_state = ?) OR (state = ? AND runtime_state IN ?)",
+			model.SandboxStateReady, model.SandboxRuntimeStateStopped,
+			model.SandboxStateFailed, []string{model.SandboxRuntimeStateStopped, ""}).
 		Order("id ASC").
 		Find(&sandboxes).Error
 	return sandboxes, err

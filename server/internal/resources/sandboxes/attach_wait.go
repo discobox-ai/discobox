@@ -231,6 +231,12 @@ func sandboxProvisioningPending(sb *model.Sandbox) bool {
 // sandbox has no container by intent (ADR 0022 §5), a deleting one is going
 // away, and a settled failure needs new intent rather than another wait
 // (ADR 0017 §4).
+//
+// A failure is settled only while its generation is observed. Once new intent
+// is recorded — an upgrade, typed or automatic (ADR 0121), or a repair — the
+// row still reads `failed` until the reconciler writes, but the create it is
+// retrying is exactly what the wait is for, and the answer arrives either way:
+// `ready`, or `failed` again and settled.
 func sandboxCanBecomeReachable(err error, sb *model.Sandbox) bool {
 	if !errors.Is(err, sandbox.ErrNotFound) &&
 		!errors.Is(err, sandbox.ErrPoolNotReachable) &&
@@ -241,7 +247,9 @@ func sandboxCanBecomeReachable(err error, sb *model.Sandbox) bool {
 		return false
 	}
 	switch sb.State {
-	case model.SandboxStateFailed, model.SandboxStateArchived, model.SandboxStateDeleted:
+	case model.SandboxStateFailed:
+		return !sb.Converged()
+	case model.SandboxStateArchived, model.SandboxStateDeleted:
 		return false
 	}
 	return true

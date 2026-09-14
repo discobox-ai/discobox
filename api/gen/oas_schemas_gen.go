@@ -9741,8 +9741,8 @@ type Project struct {
 	// How long archived sandboxes are kept before being purged, in seconds. Zero means the server
 	// default.
 	ArchiveRetentionSeconds OptInt64 `json:"archiveRetentionSeconds"`
-	// Whether this project's stopped sandboxes follow their harness config's image. Absent means the
-	// server default, which is automatic.
+	// Whether this project's stopped and failed sandboxes follow their harness config's image. Absent
+	// means the server default, which is automatic.
 	SandboxUpgradePolicy OptProjectSandboxUpgradePolicy `json:"sandboxUpgradePolicy"`
 	// Stable project ID.
 	ID string `json:"id"`
@@ -10019,8 +10019,8 @@ func (s *ProjectMember) SetUserId(val string) {
 	s.UserId = val
 }
 
-// Whether this project's stopped sandboxes follow their harness config's image. Absent means the
-// server default, which is automatic.
+// Whether this project's stopped and failed sandboxes follow their harness config's image. Absent
+// means the server default, which is automatic.
 type ProjectSandboxUpgradePolicy string
 
 const (
@@ -16880,9 +16880,10 @@ type UpdateProjectBody struct {
 	// How long this project's archived sandboxes are kept before they are purged, in seconds. Zero
 	// restores the server default, which the project then follows as it changes.
 	ArchiveRetentionSeconds OptInt64 `json:"archiveRetentionSeconds"`
-	// Whether this project's stopped sandboxes are moved onto their harness config's image when that
-	// image changes. `manual` holds every sandbox on the image it was built with. An empty string
-	// restores the server default, which the project then follows as it changes.
+	// Whether this project's stopped and failed sandboxes are moved onto their harness config's image
+	// when that image changes; a failed one is rebuilt on the new image, which clears its error.
+	// `manual` holds every sandbox on the image it was built with. An empty string restores the server
+	// default, which the project then follows as it changes.
 	SandboxUpgradePolicy OptUpdateProjectBodySandboxUpgradePolicy `json:"sandboxUpgradePolicy"`
 	// Whether this project has already shown its introduction. The launcher sets it once, the first time
 	// it welcomes someone to the project; clearing it shows the welcome again.
@@ -16939,9 +16940,10 @@ func (s *UpdateProjectBody) SetWelcomed(val OptBool) {
 	s.Welcomed = val
 }
 
-// Whether this project's stopped sandboxes are moved onto their harness config's image when that
-// image changes. `manual` holds every sandbox on the image it was built with. An empty string
-// restores the server default, which the project then follows as it changes.
+// Whether this project's stopped and failed sandboxes are moved onto their harness config's image
+// when that image changes; a failed one is rebuilt on the new image, which clears its error.
+// `manual` holds every sandbox on the image it was built with. An empty string restores the server
+// default, which the project then follows as it changes.
 type UpdateProjectBodySandboxUpgradePolicy string
 
 const (

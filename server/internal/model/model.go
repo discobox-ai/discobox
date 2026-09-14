@@ -79,8 +79,8 @@ const (
 	GitSourceDeliveryPush  = "push"
 
 	// SandboxUpgradePolicyAutomatic and SandboxUpgradePolicyManual are a
-	// project's answer to whether its stopped sandboxes follow their harness
-	// image (ADR 0082 §3).
+	// project's answer to whether its stopped and failed sandboxes follow their
+	// harness image (ADR 0082 §3, ADR 0121).
 	//
 	// The empty value is the third member of this vocabulary and means *the
 	// server default*, which is automatic: a project that has never chosen
@@ -230,7 +230,7 @@ type Project struct {
 	// wants almost always; what it buys is the ability to hold a discobox on
 	// the image it was built with, since a rebuild discards whatever was written
 	// to the container's filesystem outside its durable volumes.
-	SandboxUpgradePolicy string `gorm:"column:sandbox_upgrade_policy;not null;type:text;default:''" json:"sandboxUpgradePolicy,omitempty" doc:"Whether this project's stopped sandboxes follow their harness config's image. Empty means the server default, which is automatic." enum:"automatic,manual"`
+	SandboxUpgradePolicy string `gorm:"column:sandbox_upgrade_policy;not null;type:text;default:''" json:"sandboxUpgradePolicy,omitempty" doc:"Whether this project's stopped and failed sandboxes follow their harness config's image. Empty means the server default, which is automatic." enum:"automatic,manual"`
 	// Welcomed records that this project has shown its introduction, so the
 	// launcher shows it once and never again. It is here rather than in client
 	// state because a person meets Discobox once, not once per machine they

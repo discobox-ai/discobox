@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// eligibleSandbox stores a sandbox in the one shape an automatic upgrade acts
-// on (ADR 0082 §2): converged at `ready`, observed `stopped`, no error, and
-// present. mutate bends exactly one of those for the negative cases.
+// eligibleSandbox stores a sandbox in the healthy shape an automatic upgrade
+// acts on (ADR 0082 §2): converged at `ready`, observed `stopped`, and present.
+// mutate bends exactly one of those for the negative cases, or turns it into
+// the failed shape ADR 0121 also admits.
 //
 // RuntimeState is set at create because that is the only place a test can put
 // it: UpdateSandbox omits the column so no path but a state report can write it
@@ -73,9 +75,62 @@ func TestAutomaticUpgradeMovesAStoppedSandbox(t *testing.T) {
 	}
 }
 
+// A failed sandbox is the one most likely to be failing because of its image,
+// so it moves with the rest (ADR 0121). The re-pin is intent like any other:
+// it clears the latched error, which is what lets the reconciler retry the
+// create on the new image rather than treat the failure as settled.
+//
+// Never observed is admitted for a failed sandbox, unlike a ready one: it is
+// the first create that failed before any container was seen, so there is
+// nothing running to restart.
+func TestAutomaticUpgradeMovesAFailedSandbox(t *testing.T) {
+	cases := []struct {
+		name         string
+		runtimeState string
+	}{
+		{"stopped", model.SandboxRuntimeStateStopped},
+		{"never observed", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			svc, st := newUpgradeEngineFixture(t)
+			config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+			failed := "image not found"
+			sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old", func(sb *model.Sandbox) {
+				sb.State = model.SandboxStateFailed
+				sb.ErrorMessage = &failed
+				sb.RuntimeState = tc.runtimeState
+			})
+			before := sb.Generation
+
+			if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
+				t.Fatalf("upgrade harness config sandboxes: %v", err)
+			}
+
+			stored, err := st.GetSandbox(ctx, "project-1", sb.ID)
+			if err != nil {
+				t.Fatalf("get sandbox: %v", err)
+			}
+			if stored.ImageDigest != "sha256:new" {
+				t.Fatalf("pin = %q, want the config's current image", stored.ImageDigest)
+			}
+			if stored.Generation <= before || stored.Converged() {
+				t.Fatalf("generation = %d observed %d, want an unsettled bump past %d", stored.Generation, stored.ObservedGeneration, before)
+			}
+			if stored.ErrorMessage != nil {
+				t.Fatalf("error = %q, want it cleared so the reconciler retries", *stored.ErrorMessage)
+			}
+			if stored.RepairGeneration == stored.Generation {
+				t.Fatal("recorded a repair; an automatic upgrade of a failed sandbox is the plain re-pin")
+			}
+		})
+	}
+}
+
 // Everything the eligibility rule excludes, in one table. Each case bends
 // exactly one condition, so a failure names the condition that stopped working.
-func TestAutomaticUpgradeSkipsAnythingButAStoppedConvergedSandbox(t *testing.T) {
+func TestAutomaticUpgradeSkipsAnythingButAStoppedSettledSandbox(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
@@ -88,15 +143,25 @@ func TestAutomaticUpgradeSkipsAnythingButAStoppedConvergedSandbox(t *testing.T) 
 		{"running", func(sb *model.Sandbox) { sb.RuntimeState = model.SandboxRuntimeStateRunning }},
 		{"starting", func(sb *model.Sandbox) { sb.RuntimeState = model.SandboxRuntimeStateStarting }},
 		{"stopping", func(sb *model.Sandbox) { sb.RuntimeState = model.SandboxRuntimeStateStopping }},
-		// Not observed is not stopped (ADR 0034 §2): acting on it would be
-		// acting on no observation at all.
+		// Not observed is not stopped (ADR 0034 §2): a ready sandbox nobody
+		// has reported on is in the window before its create's report lands.
 		{"never observed", func(sb *model.Sandbox) { sb.RuntimeState = "" }},
 		{"still creating", func(sb *model.Sandbox) { sb.State = model.SandboxStatePending }},
 		{"awaiting its source", func(sb *model.Sandbox) { sb.State = model.SandboxStateAwaitingSource }},
-		// A settled failure needs intent aimed at the failure, which is repair
-		// (ADR 0064), not another image.
-		{"failed", func(sb *model.Sandbox) { sb.State = model.SandboxStateFailed }},
-		{"carrying an error", func(sb *model.Sandbox) { sb.ErrorMessage = &failed }},
+		// Failed is admitted stopped or never observed, never running
+		// (ADR 0121): a failed sandbox that is running would be restarted
+		// unattended.
+		{"failed and running", func(sb *model.Sandbox) {
+			sb.State = model.SandboxStateFailed
+			sb.ErrorMessage = &failed
+			sb.RuntimeState = model.SandboxRuntimeStateRunning
+		}},
+		{"failed and unsettled", func(sb *model.Sandbox) {
+			sb.State = model.SandboxStateFailed
+			sb.ErrorMessage = &failed
+			sb.Generation = 4
+			sb.ObservedGeneration = 3
+		}},
 		{"unsettled", func(sb *model.Sandbox) { sb.Generation = 4; sb.ObservedGeneration = 3 }},
 		{"being archived", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateArchived }},
 		{"being deleted", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateDeleted }},
@@ -191,5 +256,106 @@ func TestAutomaticUpgradeSkipsASandboxAlreadyOnTheImage(t *testing.T) {
 	}
 	if _, _, generation := storedPin(t, st, sb.ID); generation != before {
 		t.Fatalf("generation = %d, want it untouched at %d", generation, before)
+	}
+}
+
+// retryRecordingProvider records what the reconcile after an automatic upgrade
+// asks of the provider: whether it rebuilt, whether it was told to start, and
+// whether it tore down first as a repair would.
+type retryRecordingProvider struct {
+	recordingProvider
+	creates  int
+	started  bool
+	archives int
+}
+
+func (p *retryRecordingProvider) Create(_ context.Context, _ sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
+	p.creates++
+	p.started = p.started || opts.Start
+	return &sandbox.Sandbox{ID: "runtime-1"}, state, nil
+}
+
+func (p *retryRecordingProvider) Archive(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
+	p.archives++
+	return nil, nil
+}
+
+// What ADR 0121 claims happens after the re-pin, driven through the reconciler
+// rather than read off the row: the failed create is retried on the new image,
+// is not a repair, starts nothing, and settles `ready`.
+func TestAutomaticUpgradeRetriesAFailedSandboxWithoutStartingIt(t *testing.T) {
+	for _, runtimeState := range []string{model.SandboxRuntimeStateStopped, ""} {
+		name := runtimeState
+		if name == "" {
+			name = "never observed"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			svc, st := newUpgradeEngineFixture(t)
+			config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+			failed := "pull image: not found"
+			sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old", func(sb *model.Sandbox) {
+				sb.State = model.SandboxStateFailed
+				sb.ErrorMessage = &failed
+				sb.RuntimeState = runtimeState
+			})
+
+			if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
+				t.Fatalf("upgrade harness config sandboxes: %v", err)
+			}
+			repinned, err := st.GetSandbox(ctx, "project-1", sb.ID)
+			if err != nil {
+				t.Fatalf("get sandbox: %v", err)
+			}
+			provider := &retryRecordingProvider{}
+			if _, err := NewSandboxReconciler(st, WithSandboxProvider(provider)).ReconcileSandbox(ctx, repinned); err != nil {
+				t.Fatalf("reconcile: %v", err)
+			}
+
+			if provider.creates != 1 {
+				t.Fatalf("creates = %d, want 1: the failure must be retried", provider.creates)
+			}
+			if provider.started {
+				t.Fatal("the retry asked the provider to start the sandbox; an automatic upgrade starts nothing")
+			}
+			if provider.archives != 0 {
+				t.Fatalf("archives = %d, want 0: an automatic upgrade is not a repair", provider.archives)
+			}
+			stored, err := st.GetSandbox(ctx, "project-1", sb.ID)
+			if err != nil {
+				t.Fatalf("get sandbox: %v", err)
+			}
+			if stored.State != model.SandboxStateReady || stored.ErrorMessage != nil || !stored.Converged() {
+				t.Fatalf("state = %q, error = %v, generation %d observed %d; want ready, clear, and settled",
+					stored.State, stored.ErrorMessage, stored.Generation, stored.ObservedGeneration)
+			}
+		})
+	}
+}
+
+// A failed sandbox still owed a client push is left where it is: a retry could
+// only park it at `awaiting_source` again, reading as starting while nobody
+// pushes, and then replace its cause with the push timeout (ADR 0121).
+func TestAutomaticUpgradeSkipsAFailedSandboxAwaitingItsPush(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newUpgradeEngineFixture(t)
+	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+	failed := "pull image: not found"
+	sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old", func(sb *model.Sandbox) {
+		sb.State = model.SandboxStateFailed
+		sb.ErrorMessage = &failed
+		sb.Source = &model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryPush}
+	})
+
+	if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
+		t.Fatalf("upgrade harness config sandboxes: %v", err)
+	}
+	stored, err := st.GetSandbox(ctx, "project-1", sb.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if stored.ImageDigest != "sha256:old" || stored.Generation != sb.Generation || stored.ErrorMessage == nil {
+		t.Fatalf("pin = %q, generation %d (was %d), error = %v; want it untouched",
+			stored.ImageDigest, stored.Generation, sb.Generation, stored.ErrorMessage)
 	}
 }

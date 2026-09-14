@@ -2256,7 +2256,7 @@ components:
                     minimum: 0
                     type: integer
                 sandboxUpgradePolicy:
-                    description: Whether this project's stopped sandboxes are moved onto their harness config's image when that image changes. `manual` holds every sandbox on the image it was built with. An empty string restores the server default, which the project then follows as it changes.
+                    description: Whether this project's stopped and failed sandboxes are moved onto their harness config's image when that image changes; a failed one is rebuilt on the new image, which clears its error. `manual` holds every sandbox on the image it was built with. An empty string restores the server default, which the project then follows as it changes.
                     enum:
                         - ""
                         - automatic
@@ -2299,7 +2299,7 @@ components:
                     format: int64
                     type: integer
                 sandboxUpgradePolicy:
-                    description: Whether this project's stopped sandboxes follow their harness config's image. Absent means the server default, which is automatic.
+                    description: Whether this project's stopped and failed sandboxes follow their harness config's image. Absent means the server default, which is automatic.
                     enum:
                         - automatic
                         - manual

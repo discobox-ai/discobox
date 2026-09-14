@@ -98,8 +98,9 @@ rather than polling for readiness (ADR 0039 tier 1).
   the pool progress the budget reads as movement, so the wait would renew
   itself for as long as the pool kept reconciling. Every
   other refusal is an answer and is returned immediately, as is any refusal for
-  a sandbox that is failed, archived, or on its way out — no write will clear
-  those.
+  a sandbox that is archived, on its way out, or failed and settled — no write
+  will clear those. A failed sandbox whose generation is unobserved is a retry
+  in flight (an upgrade or repair recorded new intent), and is waited for.
 - Reachable is not usable, and the gap is push-delivered source. Such a sandbox
   has a container — and so a runtime state naming its pool — from the moment it
   parks at `awaiting_source`, so the acquire succeeds while its workspace is
@@ -172,10 +173,17 @@ rider on a rebuild that is happening anyway.
 
 `UpgradeHarnessConfigSandboxes` is the automatic author of that same upgrade
 (ADR 0082). `resources/harnessconfigs` calls it wherever a harness config's
-`ImageDigest` moves, and it re-pins the config's sandboxes that are converged at
-`ready`, observed `stopped`, unerrored, and present — the eligibility query is
+`ImageDigest` moves, and it re-pins the config's present, settled sandboxes
+that are `ready` and observed `stopped`, or `failed` and observed `stopped` or
+never observed at all — the eligibility query is
 `Store.ListStoppedSandboxesForHarnessConfig`, and whether each is actually
 behind is still `SandboxUpgradeTarget`'s answer, never restated in SQL.
+A failed sandbox is included (ADR 0121): the re-pin is intent, so it clears the
+latched error and the reconciler retries the create on the new image — at most
+once per digest move, since only a pin that differs from the new digest is
+re-pinned. It is the plain upgrade, not a repair: no teardown, no start. A
+sandbox still owed a client push is skipped, because the retry could only park
+it at `awaiting_source` again.
 
 There is no automatic-upgrade code path, only an automatic author of the upgrade
 every sandbox already had: the same `imageRepin`, the same

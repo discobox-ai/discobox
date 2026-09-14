@@ -681,8 +681,9 @@ tag never moves a running sandbox.
 - **A stopped sandbox follows its harness image; a live one never moves.** When
   a harness config's resolved digest changes, `applyResolvedImageDigest` runs
   `UpgradeHarnessConfigSandboxes`: the same re-pin as the action, through the
-  same `recordSandboxIntent`, for that config's sandboxes observed stopped
-  (ADR 0082). A project opts out with `sandboxUpgradePolicy: manual`. No
+  same `recordSandboxIntent`, for that config's sandboxes observed stopped,
+  and its failed sandboxes that are stopped or were never observed
+  (ADR 0082, ADR 0121). A project opts out with `sandboxUpgradePolicy: manual`. No
   reconcile moves the pin; every other sandbox runs the image it is pinned to
   until somebody upgrades it.
 - **An unpinned sandbox is upgrade eligible, not excluded.** Sandboxes created

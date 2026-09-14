@@ -131,10 +131,12 @@ before they are purged. Deleting a discobox archives it, so this is how long a
 deleted discobox can still be restored with "discobox admin box unarchive".
 Zero restores the server default.
 
---sandbox-upgrade-policy decides whether this project's *stopped* discoboxes
-follow their harness image. Under "automatic" (the default), a new harness image
-rebuilds them where they rest, so the next start is already on it; a running
-discobox is never touched, and nothing is ever started. "manual" holds every
+--sandbox-upgrade-policy decides whether this project's *stopped* and *errored*
+discoboxes follow their harness image. Under "automatic" (the default), a new
+harness image rebuilds them where they rest, so the next start is already on it;
+an errored one is retried on the new image, and its error is cleared unless the
+retry fails again. A running discobox is never touched, and nothing is ever
+started. "manual" holds every
 discobox on the image it was built with, and "discobox admin box upgrade" is
 then the only way one moves. Rebuilding a discobox keeps its volumes, sources
 and history, but discards whatever was written to its container filesystem
@@ -190,7 +192,7 @@ the launcher opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Project display name")
 	cmd.Flags().DurationVar(&archiveRetention, "archive-retention", 0, "How long archived discoboxes are kept before being purged (e.g. 48h); 0 restores the server default")
-	cmd.Flags().StringVar(&upgradePolicy, "sandbox-upgrade-policy", "", `Whether stopped discoboxes follow their harness image: "automatic" or "manual"; empty restores the server default`)
+	cmd.Flags().StringVar(&upgradePolicy, "sandbox-upgrade-policy", "", `Whether stopped and errored discoboxes follow their harness image: "automatic" or "manual"; empty restores the server default`)
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
 	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the launcher show it again`)

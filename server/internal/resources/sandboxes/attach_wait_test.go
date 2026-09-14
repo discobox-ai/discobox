@@ -446,6 +446,13 @@ func TestSandboxCanBecomeReachableAnswersTerminalConditions(t *testing.T) {
 			t.Fatalf("a %s sandbox is waited on", state)
 		}
 	}
+	// A failure with new intent recorded is a retry in flight, not an answer.
+	retrying := present(model.SandboxStateFailed)
+	retrying.Generation = 2
+	retrying.ObservedGeneration = 1
+	if !sandboxCanBecomeReachable(ErrSandboxProvisioning, retrying) {
+		t.Fatal("a failed sandbox being retried is answered rather than waited for")
+	}
 	archived := present(model.SandboxStateReady)
 	archived.DesiredState = model.DesiredStateArchived
 	if sandboxCanBecomeReachable(sandbox.ErrNotFound, archived) {
