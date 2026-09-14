@@ -2,7 +2,7 @@ package sandboxruntime
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"iter"
 	"time"
 
@@ -155,7 +155,9 @@ func consumePullProgress(
 			return err
 		}
 		if msg.Error != nil {
-			return fmt.Errorf("pull image %q: %s", image, msg.Error.Message)
+			// Unwrapped: the caller names the image, for this and the stream
+			// and context errors above and below alike.
+			return errors.New(msg.Error.Message)
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()

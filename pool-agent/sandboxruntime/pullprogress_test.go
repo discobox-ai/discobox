@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"iter"
-	"strings"
 	"testing"
 	"time"
 
@@ -212,7 +211,8 @@ func TestConsumePullProgressSurfacesStreamErrors(t *testing.T) {
 }
 
 // The daemon reports a failed pull in-band, as an errorDetail on an otherwise
-// ordinary message.
+// ordinary message. It comes back as the daemon said it: the caller names the
+// image, and naming it here too printed it twice on every failed pull.
 func TestConsumePullProgressSurfacesDaemonErrors(t *testing.T) {
 	err := consumePullProgress(
 		context.Background(),
@@ -224,7 +224,7 @@ func TestConsumePullProgressSurfacesDaemonErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the daemon's error to surface")
 	}
-	if got := err.Error(); !strings.Contains(got, "manifest unknown") {
-		t.Fatalf("err = %q, want it to name the daemon's reason", got)
+	if got := err.Error(); got != "manifest unknown" {
+		t.Fatalf("err = %q, want the daemon's reason alone", got)
 	}
 }
