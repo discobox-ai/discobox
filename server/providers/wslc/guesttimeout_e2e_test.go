@@ -82,7 +82,10 @@ func TestGuestExecFailureCondemnsTheVME2E(t *testing.T) {
 		t.Skip("set DISCOBOX_WSLC_E2E=1 to run the real wslc VM e2e test")
 	}
 
-	driver, err := NewDriver(DriverConfig{CPUCount: 2, MemoryMiB: 2048})
+	// Persistent storage, as every real pool has by default (effectiveStorageDir).
+	// It is the part that makes replacement hard: the new VM needs the same
+	// storage.vhdx the old one has only just let go of.
+	driver, err := NewDriver(DriverConfig{CPUCount: 2, MemoryMiB: 2048, StorageDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("NewDriver: %v", err)
 	}
