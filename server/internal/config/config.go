@@ -16,6 +16,8 @@ import (
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/x/gormdb"
 )
@@ -72,6 +74,10 @@ func LoadEnvFile() {
 // `doc` the description an operator reads in their editor. A field tagged
 // `yaml:"-"` is derived rather than configured, and appears in neither.
 type Config struct {
+	ReleaseManifest string                    `yaml:"releaseManifest" env:"DISCOBOX_RELEASE_MANIFEST" doc:"Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization."`
+	Release         *releasemanifest.Manifest `yaml:"-"`
+	HarnessImages   map[string]string         `yaml:"-"`
+
 	// Server settings.
 	Port   int      `yaml:"port" env:"PORT" default:"18080" doc:"TCP port for an http:// listen endpoint that does not name one."`
 	Listen []string `yaml:"listen" env:"DISCOBOX_SERVER_LISTEN" doc:"Endpoints to listen on. Local IPC is added when none is named, so the CLI can always reach the server."`
@@ -317,6 +323,25 @@ func Load() (*Config, error) {
 	}
 	cfg.HostID = hostID
 
+	cfg.HarnessImages = harnessdefs.ImageOverridesFromEnv(os.Getenv)
+	if cfg.ReleaseManifest != "" {
+		manifest, err := releasemanifest.Read(cfg.ReleaseManifest)
+		if err != nil {
+			return nil, err
+		}
+		for slug := range manifest.Images.Harnesses {
+			if err := harnessdefs.ValidateSlug(slug); err != nil {
+				return nil, fmt.Errorf("release manifest harness: %w", err)
+			}
+		}
+		cfg.Release = &manifest
+		cfg.DockerPoolImage = manifest.Images.PoolAgent
+		cfg.DefaultSandboxImage = manifest.Images.SandboxAgent
+		cfg.DefaultSandboxImageDigest = ""
+		cfg.HarnessImages = manifest.Images.Harnesses
+		cfg.DevImageSync = false
+		cfg.DevImageManifest = ""
+	}
 	if cfg.DevImageSync {
 		if cfg.DevImageManifest == "" {
 			return nil, fmt.Errorf("devImageManifest is required when devImageSync is set")

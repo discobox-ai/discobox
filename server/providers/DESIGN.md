@@ -211,6 +211,12 @@ upgrades itself as soon as the registry answers and is left alone until then.
 Comparing against the configured image instead would remove and recreate a
 working pool agent on every reconcile for as long as the outage lasted.
 
+An explicit release manifest in `ServerDefaults.Release` pins provider images
+before constructing a driver or engine, including guest and kernel references.
+VM resolvers bypass local guest builds in this mode. The manifest's image roles
+also supply startup cache staging; see
+[release manifests](../../releasemanifest/DESIGN.md).
+
 ## Development Image Convergence
 
 The development image watcher publishes a versioned manifest of

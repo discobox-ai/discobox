@@ -23,6 +23,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) == 2 && os.Args[1] == "manifest" {
+		if err := server.PrintReleaseManifest(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	// And the images a first run here will want, which the CLI that staged this
 	// binary asks for before starting it, so it can download them where the
 	// user is watching (ADR 0113 §1). It reads the configuration and starts

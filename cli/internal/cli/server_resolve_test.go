@@ -17,6 +17,7 @@ import (
 
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/imagecache/imagecachetest"
+	"github.com/discobox-ai/discobox/releasemanifest"
 	"github.com/discobox-ai/discobox/serverstage"
 	"github.com/discobox-ai/discobox/version"
 )
@@ -394,5 +395,42 @@ func TestLocalServerEnvNamesTheImageCache(t *testing.T) {
 	want := ImageCacheEnv + "=" + filepath.Join(state, "discobox", "images")
 	if env := localServerEnv("unix:///tmp/discobox.sock"); !slices.Contains(env, want) {
 		t.Fatalf("env = %v, want %s", env, want)
+	}
+}
+
+func TestExplicitReleaseStagesImagesWithADevelopmentBinary(t *testing.T) {
+	registry := imagecachetest.NewRegistry(t)
+	image := registry.Publish("x/agent", "v1", []byte("base"))
+	m := releasemanifest.Manifest{Format: 1, Version: "v0.8.0", Images: releasemanifest.Images{
+		PoolAgent: image.Reference, SandboxAgent: image.Reference, VM: image.Reference, Kernel: image.Reference,
+		Harnesses: map[string]string{"shell": image.Reference},
+	}}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "release.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolver := serverResolver{source: serverSource{releaseManifest: path}, imageRoot: t.TempDir(), client: registry.Client(),
+		serverImages: func(context.Context, string, []string) ([]string, error) {
+			t.Fatal("must not execute a server to discover manifest images")
+			return nil, nil
+		},
+	}
+	staged, err := resolver.stageImages(context.Background(), "/development/server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(staged) != 1 || staged[0].Digest != image.Index {
+		t.Fatalf("staged %+v", staged)
+	}
+	fetched := registry.Fetches()
+	if _, err := resolver.stageImages(context.Background(), "/development/server"); err != nil {
+		t.Fatal(err)
+	}
+	if registry.Fetches() != fetched {
+		t.Fatal("downloaded cached layers again")
 	}
 }

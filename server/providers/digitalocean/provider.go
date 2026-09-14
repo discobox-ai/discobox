@@ -123,7 +123,7 @@ func driverConfigFrom(cfg Config) DriverConfig {
 func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
 	return dockerworker.Config{
 		ControlPlaneURL:     cfg.ControlPlaneURL,
-		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),

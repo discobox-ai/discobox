@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/releasemanifest"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
@@ -29,7 +30,7 @@ func TestProviderIdentity(t *testing.T) {
 // its own: one publish has to be one edit, or a backend quietly keeps booting
 // the release before last.
 func TestGuestImageIsTheSharedPin(t *testing.T) {
-	guest, err := guestResolver(Config{}, nil)
+	guest, err := guestResolver(Config{}, dockerworker.ServerDefaults{})
 	if err != nil {
 		t.Fatalf("build guest resolver: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestGuestImageIsTheSharedPin(t *testing.T) {
 // image: it needs libkrunfw's patches, and a distribution kernel does not boot
 // under libkrun at all.
 func TestKernelIsResolvedFromItsOwnImage(t *testing.T) {
-	kernel, err := kernelResolver(Config{}, nil)
+	kernel, err := kernelResolver(Config{}, dockerworker.ServerDefaults{})
 	if err != nil {
 		t.Fatalf("build kernel resolver: %v", err)
 	}
@@ -59,11 +60,11 @@ func TestKernelIsResolvedFromItsOwnImage(t *testing.T) {
 // called vmlinux, so one directory would have them overwrite each other.
 func TestLocalBuildDirectoriesAreDistinctAndDefaulted(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	guest, err := guestResolver(Config{}, nil)
+	guest, err := guestResolver(Config{}, dockerworker.ServerDefaults{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernel, err := kernelResolver(Config{}, nil)
+	kernel, err := kernelResolver(Config{}, dockerworker.ServerDefaults{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,5 +358,22 @@ func requireLinuxHost(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("libkrun is x86-64 Linux only")
+	}
+}
+
+func TestReleaseManifestBypassesLocalGuestAndKernelOverrides(t *testing.T) {
+	m := &releasemanifest.Manifest{Images: releasemanifest.Images{VM: "example.com/guest:v8", Kernel: "example.com/kernel:v3"}}
+	defaults := dockerworker.ServerDefaults{Release: m}
+	cfg := Config{GuestImage: "old:local", KernelImage: "old:local", GuestImageDir: t.TempDir(), KernelImageDir: t.TempDir(), GuestImageLocalDir: t.TempDir(), KernelImageLocalDir: t.TempDir()}
+	guest, err := guestResolver(cfg, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kernel, err := kernelResolver(cfg, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guest.Reference() != m.Images.VM || kernel.Reference() != m.Images.Kernel || guest.LocalDir() != "" || kernel.LocalDir() != "" {
+		t.Fatal("release references did not supersede local overrides")
 	}
 }

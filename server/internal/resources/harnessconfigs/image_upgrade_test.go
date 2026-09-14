@@ -53,7 +53,7 @@ func TestReseedingABuiltInImageUpgradesItsSandboxes(t *testing.T) {
 	const image = "discobox-harness-stub:local"
 
 	overrides := map[string]string{}
-	for _, seed := range harnessdefs.Seeds(nil) {
+	for _, seed := range harnessdefs.Seeds(nil, false) {
 		overrides[seed.Slug] = image
 	}
 	if len(overrides) == 0 {

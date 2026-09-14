@@ -3,8 +3,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/discobox-ai/discobox/harness/registry"
+	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/guestimage"
+	"github.com/discobox-ai/discobox/version"
 
 	internalserver "github.com/discobox-ai/discobox/server/internal/server"
 	"github.com/discobox-ai/discobox/server/providers/libkrun"
@@ -50,4 +58,23 @@ func PrintImages(w io.Writer) error {
 // main is what guarantees it does none of them.
 func RunVMLauncherIfInvoked() {
 	libkrun.RunLauncherIfInvoked()
+}
+
+// PrintReleaseManifest exports the image set this binary was built against.
+// It does not read machine configuration, so a release build exports its own
+// artifacts even on a machine configured for a different release.
+func PrintReleaseManifest(w io.Writer) error {
+	m := releasemanifest.Manifest{Format: 1, Version: version.String(), Images: releasemanifest.Images{
+		PoolAgent: dockerworker.DefaultPoolImage, SandboxAgent: sandbox.DefaultSandboxImageName,
+		VM: guestimage.DefaultVMImage, Kernel: libkrun.DefaultKernelImage, Harnesses: map[string]string{},
+	}}
+	for _, definition := range registry.Definitions() {
+		m.Images.Harnesses[definition.ID] = definition.Image
+	}
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(m)
 }

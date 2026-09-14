@@ -30,6 +30,9 @@ flowchart LR
 `internal/server.NewApp` assigns the one `*Service` to every field of
 `services.Services`, so API calls reach the resource package directly.
 
+Options carries the resolved harness image map from configuration to harness
+seeding, including any release manifest selection.
+
 The root service should:
 
 1. Build the `sandbox.ProviderManager`, `pools.ControlPlane`, and built-in

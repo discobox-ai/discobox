@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/releasemanifest"
+
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
@@ -11,26 +13,26 @@ func TestEffectivePoolImagePrefersTheProviderThenTheServer(t *testing.T) {
 	const serverWide = "worker:server"
 
 	// A provider that names its own image wins over the server-wide override.
-	if got := dockerworker.EffectivePoolImage("worker:provider", serverWide); got != "worker:provider" {
+	if got := dockerworker.EffectivePoolImage("worker:provider", dockerworker.ServerDefaults{PoolImage: serverWide}); got != "worker:provider" {
 		t.Fatalf("effective worker image = %q, want the provider image", got)
 	}
-	if got := dockerworker.PoolImageSource("worker:provider", serverWide); got != "provider" {
+	if got := dockerworker.PoolImageSource("worker:provider", dockerworker.ServerDefaults{PoolImage: serverWide}); got != "provider" {
 		t.Fatalf("worker image source = %q, want provider", got)
 	}
 
 	// A provider that names none takes the server's.
-	if got := dockerworker.EffectivePoolImage("", serverWide); got != serverWide {
+	if got := dockerworker.EffectivePoolImage("", dockerworker.ServerDefaults{PoolImage: serverWide}); got != serverWide {
 		t.Fatalf("effective worker image = %q, want the server override", got)
 	}
-	if got := dockerworker.PoolImageSource("", serverWide); got != "server" {
+	if got := dockerworker.PoolImageSource("", dockerworker.ServerDefaults{PoolImage: serverWide}); got != "server" {
 		t.Fatalf("worker image source = %q, want server", got)
 	}
 
 	// With neither, the image this build shipped with.
-	if got := dockerworker.EffectivePoolImage("", ""); got != DefaultImage() {
+	if got := dockerworker.EffectivePoolImage("", dockerworker.ServerDefaults{}); got != DefaultImage() {
 		t.Fatalf("effective worker image = %q, want the static default", got)
 	}
-	if got := dockerworker.PoolImageSource("", ""); got != "default" {
+	if got := dockerworker.PoolImageSource("", dockerworker.ServerDefaults{}); got != "default" {
 		t.Fatalf("worker image source = %q, want default", got)
 	}
 }
@@ -83,5 +85,15 @@ func TestDefinitionOffersTheSharedPoolPolicyFields(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Definition() does not offer proxyAuditRetention")
+	}
+}
+
+func TestReleaseManifestSupersedesProviderPoolImage(t *testing.T) {
+	defaults := dockerworker.ServerDefaults{PoolImage: "server:local", Release: &releasemanifest.Manifest{Images: releasemanifest.Images{PoolAgent: "example.com/pool:v8"}}}
+	if got := dockerworker.EffectivePoolImage("provider:local", defaults); got != "example.com/pool:v8" {
+		t.Fatalf("pool image = %s", got)
+	}
+	if got := dockerworker.PoolImageSource("provider:local", defaults); got != "release manifest" {
+		t.Fatalf("image source = %s", got)
 	}
 }

@@ -124,7 +124,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// The container still sees layout.ContainerRoot; only the daemon-side
 		// location moves, which is exactly what HostStateRoot expresses.
 		HostStateRoot:  GuestStateRoot,
-		Image:          dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		Image:          dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		ImageRetention: serverDefaults.ImageRetention,
 		ImageCache:     serverDefaults.ImageCache,
 		// The agent still listens on the guest's loopback; the control plane

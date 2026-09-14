@@ -9,6 +9,7 @@ package harnessdefs
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
@@ -39,9 +40,31 @@ const ShellSlug = harness.ShellSlug
 // Seeds returns the built-in harness configs to seed, with each image replaced
 // by imageOverrides[slug] when present. Dev builds inject freshly tagged images
 // this way (see ImageEnvVar); an empty map yields the baked-in images.
+// With exact set, only the manifest entries are seeded, including harnesses
+// absent from this binary's registry. Their metadata comes from their image.
 
-func Seeds(imageOverrides map[string]string) []Seed {
+func Seeds(imageOverrides map[string]string, exact bool) []Seed {
 	definitions := registry.Definitions()
+	if exact {
+		names := map[string]string{}
+		for _, definition := range definitions {
+			names[definition.ID] = definition.Name
+		}
+		slugs := make([]string, 0, len(imageOverrides))
+		for slug := range imageOverrides {
+			slugs = append(slugs, slug)
+		}
+		sort.Strings(slugs)
+		out := make([]Seed, 0, len(slugs))
+		for _, slug := range slugs {
+			name := names[slug]
+			if name == "" {
+				name = slug
+			}
+			out = append(out, Seed{Slug: slug, Name: name, Image: imageOverrides[slug]})
+		}
+		return out
+	}
 	out := make([]Seed, 0, len(definitions))
 	for _, definition := range definitions {
 		image := definition.Image

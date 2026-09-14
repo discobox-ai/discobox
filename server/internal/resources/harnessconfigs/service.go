@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/discobox-ai/discobox/devimage"
@@ -20,21 +19,20 @@ import (
 )
 
 type Service struct {
-	store         *store.Store
-	inspector     imageInspector
-	harnessImages map[string]string
-	sandboxes     SandboxRuntime
-	dirtier       Dirtier
+	store                *store.Store
+	inspector            imageInspector
+	harnessImages        map[string]string
+	requireBuiltInImages bool
+	sandboxes            SandboxRuntime
+	dirtier              Dirtier
 }
 
-func NewService(store *store.Store) *Service {
+func NewService(store *store.Store, images map[string]string, requireBuiltInImages bool) *Service {
 	return &Service{
-		store:     store,
-		inspector: defaultImageInspector{},
-		// Read here rather than threaded down from config: seeding is what the
-		// override is for, and every process that seeds — the server, and a
-		// test binary that constructs a project — has to honor it.
-		harnessImages: harnessdefs.ImageOverridesFromEnv(os.Getenv),
+		store:                store,
+		inspector:            defaultImageInspector{},
+		harnessImages:        images,
+		requireBuiltInImages: requireBuiltInImages,
 	}
 }
 
@@ -390,6 +388,9 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		}
 		metadata, inspectErr := s.inspector.Inspect(ctx, image)
 		if inspectErr != nil {
+			if s.requireBuiltInImages {
+				return fmt.Errorf("inspect release harness %s (%s): %w", seed.Slug, image, inspectErr)
+			}
 			slog.WarnContext(ctx, "skip built-in harness seed; image unavailable",
 				"slug", seed.Slug, "image", image, "error", inspectErr)
 			continue
@@ -519,7 +520,7 @@ func (s *Service) applyResolvedImageDigest(ctx context.Context, projectID, confi
 // `shell` included. `shell` is an ordinary harness image rather than a
 // different kind of thing, so nothing here treats it differently (ADR 0043).
 func (s *Service) seeds() []harnessdefs.Seed {
-	return harnessdefs.Seeds(s.harnessImages)
+	return harnessdefs.Seeds(s.harnessImages, s.requireBuiltInImages)
 }
 
 // conventionCommands resolves what a terminal types for this harness: the

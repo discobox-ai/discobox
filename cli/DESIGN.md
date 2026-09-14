@@ -402,6 +402,13 @@ is an error rather than a lost convenience.
 
 ## The Server Is a Separate Program
 
+`DISCOBOX_RELEASE_MANIFEST` selects a full release artifact manifest independently
+of the CLI/server binary version. An explicit binary or sibling can run against
+its image set; without a local binary the manifest's matching `servers` entry
+supplies the verified download. The manifest's image roles supply staging
+directly, including for development binaries, and the environment passes the
+same file to the server. See [release manifests](../releasemanifest/DESIGN.md).
+
 The CLI does not contain the control plane. `discobox admin server` resolves a
 `discobox-server` binary and runs it as a child, passing through its stdio and
 its exit status; the autolaunch starts the same binary in the background

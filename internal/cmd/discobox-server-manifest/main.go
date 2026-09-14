@@ -35,6 +35,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -43,6 +44,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/discobox-ai/discobox/releasemanifest"
 	"github.com/discobox-ai/discobox/serverstage"
 )
 
@@ -64,13 +66,15 @@ func main() {
 
 func run() error {
 	var (
-		version    = flag.String("version", "", "release version the assets belong to")
-		targetOS   = flag.String("os", "", "GOOS the assets are for")
-		targetArch = flag.String("arch", "", "GOARCH the assets are for")
-		command    = flag.String("command", "", "staged name of the asset to run")
-		baseURLs   stringList
-		assets     stringList
-		executable stringList
+		releaseInput  = flag.String("release-images", "", "release image manifest to include in the full manifest")
+		releaseOutput = flag.String("release-output", "", "write the full release manifest to this file")
+		version       = flag.String("version", "", "release version the assets belong to")
+		targetOS      = flag.String("os", "", "GOOS the assets are for")
+		targetArch    = flag.String("arch", "", "GOARCH the assets are for")
+		command       = flag.String("command", "", "staged name of the asset to run")
+		baseURLs      stringList
+		assets        stringList
+		executable    stringList
 	)
 	flag.Var(&baseURLs, "base-url", "URL the assets are published under, without a trailing slash (repeatable; tried in the order given)")
 	flag.Var(&assets, "asset", "staged name=path of a built asset (repeatable)")
@@ -107,6 +111,26 @@ func run() error {
 	encoded, err := serverstage.EncodeManifest(manifest)
 	if err != nil {
 		return err
+	}
+	if (*releaseInput == "") != (*releaseOutput == "") {
+		return fmt.Errorf("-release-images and -release-output must be supplied together")
+	}
+	if *releaseInput != "" {
+		release, err := releasemanifest.Read(*releaseInput)
+		if err != nil {
+			return err
+		}
+		release.Servers = []serverstage.Manifest{manifest}
+		if err := release.Validate(); err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(release, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(*releaseOutput, append(data, '\n'), 0o600); err != nil {
+			return err
+		}
 	}
 	fmt.Println(encoded)
 	return nil

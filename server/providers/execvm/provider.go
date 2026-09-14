@@ -89,7 +89,7 @@ func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) docker
 	}
 	return dockerworker.Config{
 		ControlPlaneURL:     cfg.ControlPlaneURL,
-		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),

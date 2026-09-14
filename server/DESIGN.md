@@ -236,6 +236,13 @@ permits fetch.
 
 ## Configuration
 
+`releaseManifest` (`DISCOBOX_RELEASE_MANIFEST`) selects a complete runtime image
+set independently of the server binary version. It takes precedence over image
+settings, disables development image sync, and supplies harness seeding and
+provider image pins from the same inventory. Startup stages those images before
+service initialization and exposes the download phase through startup health.
+See [release manifests](../releasemanifest/DESIGN.md).
+
 `config.Load` resolves three layers in order: literal defaults from struct
 tags, then the configuration file, then the environment. The environment wins
 (ADR 0096).

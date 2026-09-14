@@ -46,6 +46,10 @@ func newStartupHandler(phase string) *startupHandler {
 // the foreground says the same thing its /healthz does.
 func (h *startupHandler) setPhase(phase string) {
 	h.mu.Lock()
+	if h.phase == phase {
+		h.mu.Unlock()
+		return
+	}
 	h.phase = phase
 	h.mu.Unlock()
 	log.Printf("starting: %s", phase)

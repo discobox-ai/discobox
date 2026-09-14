@@ -23,7 +23,6 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/discobox-ai/discobox/imagecache"
 	guestvsock "github.com/discobox-ai/discobox/pool-agent/vsock"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -156,7 +155,7 @@ func Validate(data json.RawMessage) error {
 	}
 	// Building the resolver is the configuration check: it is what rejects an
 	// unparseable reference or a relative path, and it touches no network.
-	if _, err := guestResolver(cfg, nil); err != nil {
+	if _, err := guestResolver(cfg, dockerworker.ServerDefaults{}); err != nil {
 		return err
 	}
 	return nil
@@ -173,7 +172,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	guest, err := guestResolver(cfg, serverDefaults.ImageCache)
+	guest, err := guestResolver(cfg, serverDefaults)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +258,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// requests. macOS opens no TCP listener and raises no firewall prompt.
 		ControlPlaneURL:      wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
-		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		ImageRetention:       serverDefaults.ImageRetention,
 		ImageCache:           serverDefaults.ImageCache,
 		Labels:               map[string]string{labelProviderType: ProviderType},
@@ -275,12 +274,20 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 // shared by Validate and construction so a bad guest image is reported when the
 // provider is configured rather than when a pool first starts. images is the
 // store it fetches through, which Validate, fetching nothing, does not need.
-func guestResolver(cfg Config, images *imagecache.Layout) (*guestimage.Resolver, error) {
+func guestResolver(cfg Config, defaults dockerworker.ServerDefaults) (*guestimage.Resolver, error) {
+	if defaults.Release != nil {
+		cfg.GuestImage = defaults.Release.Images.VM
+		cfg.GuestImageDir = ""
+	}
+	localDir := effectiveGuestLocalDir(cfg.GuestImageLocalDir)
+	if defaults.Release != nil {
+		localDir = ""
+	}
 	return guestimage.New(guestimage.Config{
-		Images:      images,
+		Images:      defaults.ImageCache,
 		Reference:   effectiveGuestImage(cfg.GuestImage),
 		OverrideDir: strings.TrimSpace(cfg.GuestImageDir),
-		LocalDir:    effectiveGuestLocalDir(cfg.GuestImageLocalDir),
+		LocalDir:    localDir,
 		CacheDir:    effectiveGuestCacheDir(cfg.GuestImageCacheDir),
 		Artifacts: []guestimage.Artifact{
 			{Name: kernelArtifact},

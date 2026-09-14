@@ -178,6 +178,13 @@
       "description": "TCP port for an http:// listen endpoint that does not name one. Environment: PORT (takes precedence over this file).",
       "type": "integer"
     },
+    "releaseManifest": {
+      "description": "Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization. Environment: DISCOBOX_RELEASE_MANIFEST (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "sandboxReconcileJobConcurrency": {
       "default": 4,
       "description": "How many sandbox reconcile jobs run at once. Environment: SANDBOX_RECONCILE_JOB_CONCURRENCY (takes precedence over this file).",

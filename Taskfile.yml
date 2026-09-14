@@ -450,6 +450,16 @@ tasks:
       - dev:server
       - dev:docker-image-watch
 
+  dev:released-images:
+    desc: Hot-reload local binaries using an existing release manifest (MANIFEST=path)
+    requires:
+      vars: [MANIFEST]
+    env:
+      DISCOBOX_RELEASE_MANIFEST: '{{.MANIFEST}}'
+    cmds:
+      # A subprocess carries this task's environment into the development loop.
+      - go tool task dev:server
+
   dev:server:
     desc: Run discobox-server with watchnbuild hot reload on the local socket
     deps:
@@ -1059,6 +1069,11 @@ tasks:
             set -- "$@" -base-url "{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"
           fi
           set -- "$@" -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}"
+          # Export from a host build even when the server asset targets Windows.
+          go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/version.Version={{.PIN_TAG}}" \
+            ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
+          set -- "$@" -release-images "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" \
+            -release-output "build/release/bin/discobox-manifest-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
           manifest="$(go run ./internal/cmd/discobox-server-manifest "$@")"
         fi
         cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
@@ -1137,6 +1152,7 @@ tasks:
         for binary in build/release/bin/*; do
           [ -e "$binary" ] || continue
           name=$(basename "$binary")
+          case "$name" in *.json) continue ;; esac
           found=$((found + 1))
 
           # A Windows server reaches its WSL guest through the relay embedded
@@ -1333,7 +1349,7 @@ tasks:
         for bin in build/release/bin/discobox-*; do
           [ -f "$bin" ] || continue
           case "$(basename "$bin")" in
-            discobox-server-* | *.zip) ;;
+            discobox-server-* | *.zip | *.json) ;;
             *) set -- "$@" "$bin" ;;
           esac
         done

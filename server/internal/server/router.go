@@ -31,7 +31,8 @@ const (
 
 // AppOptions controls application wiring.
 type AppOptions struct {
-	UserID string
+	HarnessImages map[string]string
+	UserID        string
 
 	// SSHIngress is what GET /ssh serves: the endpoint SSH clients should dial
 	// and the host key to pin. It is resolved by the caller because the
@@ -169,6 +170,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 		DevelopmentImageSync:           developmentImageSync,
 		DevelopmentImages:              opts.DevelopmentImages,
+		HarnessImages:                  opts.HarnessImages,
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
 		ArchiveRetention:               opts.ArchiveRetention,

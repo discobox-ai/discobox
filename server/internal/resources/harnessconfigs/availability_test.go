@@ -79,3 +79,11 @@ func TestEnsureHarnessAvailableAcceptsAConfigItDidNotSeed(t *testing.T) {
 		t.Fatalf("EnsureHarnessAvailable = %v, want nil when the project already has a harness", err)
 	}
 }
+
+func TestReleaseManifestDoesNotSilentlyKeepOldHarnessImages(t *testing.T) {
+	failure := errors.New("release image unavailable")
+	svc := &Service{store: newTestStore(t), inspector: unavailableInspector{err: failure}, requireBuiltInImages: true, harnessImages: map[string]string{"shell": "example.com/shell:v8"}}
+	if err := svc.SeedBuiltIns(context.Background(), "project-1"); !errors.Is(err, failure) {
+		t.Fatalf("seeding = %v; want release image failure", err)
+	}
+}

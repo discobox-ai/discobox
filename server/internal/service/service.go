@@ -54,6 +54,7 @@ type Service struct {
 }
 
 type Options struct {
+	HarnessImages                  map[string]string
 	SandboxReconcileJobConcurrency int
 	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer
 	// DevelopmentImages is the watcher-built image set. Harness seeding reads
@@ -100,7 +101,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	poolService.SetSandboxStateReporter(sandboxService)
 	jobsService := resourcejobs.NewService(store, engine)
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
-	harnessConfigService := harnessconfigs.NewService(store)
+	harnessConfigService := harnessconfigs.NewService(store, options.HarnessImages, options.ServerDefaults.Release != nil)
 	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)
 	// The configure flow runs an ephemeral sandbox and watches it through the
 	// reconcile engine, so it needs both.

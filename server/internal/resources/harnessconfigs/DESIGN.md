@@ -70,16 +70,18 @@ true of it, and true *by rule* rather than by slug:
 - Built-in configs **track** their image: `SeedBuiltIns` clobbers `Image` and
   re-snapshots the label whenever the resolved image changes, which is how a dev
   rebuild (`DISCOBOX_HARNESS_<SLUG>_IMAGE` → `.env` → server restart) reaches a
-  running server. `NewService` reads that override from the environment itself
-  rather than having it threaded down from config, so a test binary that seeds a
-  project honors it too. Seeding never changes `Configured`.
+  running server. `NewService` receives the resolved image map from server
+  configuration; an explicitly selected release manifest replaces the environment
+  overrides. Seeding never changes `Configured`.
 - Seeding is **not** how a test gets a harness config. It reads metadata off an
   image label, so it needs a daemon holding images a checkout may never have
   built — and on Windows it cannot reach a Linux image at all. Tests that need a
   selectable harness write the config to the store directly, which is what
   ADR 0066 §7 named as the end state; CI builds no stand-in images.
-- Seeding is best-effort per harness: an uninspectable image is logged and
-  skipped so it cannot block startup. **Skipping all of them is not**.
+- With an explicit release manifest, failed image inspection fails seeding;
+  startup must not silently keep harness images from a different release.
+- Otherwise, seeding is best-effort per harness: an uninspectable image is logged
+  and skipped so it cannot block startup. **Skipping all of them is not**.
   `EnsureHarnessAvailable` reports a project with no harness config at all —
   any config counts, not only a built-in — and the server process refuses to
   serve when the default project has none, because sandbox create resolves a

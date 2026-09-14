@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/releasemanifest"
 )
 
 // DefaultPoolImage is the default pool-agent container image launched by the
@@ -27,6 +28,8 @@ var DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
 // a provider that read them from the environment would be reading a file it
 // does not own.
 type ServerDefaults struct {
+	// Release pins the complete runtime image set when explicitly selected.
+	Release *releasemanifest.Manifest
 	// PoolImage overrides the pool-agent image, for a provider whose own
 	// configuration names none.
 	PoolImage string
@@ -45,7 +48,11 @@ type ServerDefaults struct {
 // The override arrives as an argument rather than being read from the
 // environment here: it is server configuration, and the server is what holds
 // configuration (ADR 0096 §5, configuration file).
-func EffectivePoolImage(image, override string) string {
+func EffectivePoolImage(image string, defaults ServerDefaults) string {
+	if defaults.Release != nil {
+		return defaults.Release.Images.PoolAgent
+	}
+	override := defaults.PoolImage
 	if image = strings.TrimSpace(image); image != "" {
 		return image
 	}
@@ -56,7 +63,11 @@ func EffectivePoolImage(image, override string) string {
 }
 
 // PoolImageSource reports where the effective pool image came from.
-func PoolImageSource(image, override string) string {
+func PoolImageSource(image string, defaults ServerDefaults) string {
+	if defaults.Release != nil {
+		return "release manifest"
+	}
+	override := defaults.PoolImage
 	if strings.TrimSpace(image) != "" {
 		return "provider"
 	}

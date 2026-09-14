@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "version": "v0.8.0",
+  "images": {
+    "poolAgent": "ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0",
+    "sandboxAgent": "ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0",
+    "vm": "ghcr.io/discobox-ai/discobox-vm@sha256:af1d6ee4ac0b833c7432f61651b29dacaad7a9c71e7e080ac3dfcdc1c8e46a48",
+    "kernel": "ghcr.io/discobox-ai/discobox-vm-kernel@sha256:23f0ce879e1dc3939fd0f498237d857d11478bec1c570d3f7222194ccf81955f",
+    "harnesses": {
+      "claude-code": "ghcr.io/discobox-ai/discobox-harness-claude-code:v0.8.0",
+      "codex": "ghcr.io/discobox-ai/discobox-harness-codex:v0.8.0",
+      "shell": "ghcr.io/discobox-ai/discobox-harness-shell:v0.8.0"
+    }
+  }
+}

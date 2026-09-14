@@ -36,7 +36,7 @@ func newBindingService(t *testing.T) (*harnessconfigs.Service, *store.Store, str
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	return harnessconfigs.NewService(st), st, config.ID
+	return harnessconfigs.NewService(st, nil, false), st, config.ID
 }
 
 func badRequest(t *testing.T, err error) {

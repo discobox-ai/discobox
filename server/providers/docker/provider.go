@@ -153,7 +153,7 @@ func daemonIsLocal(daemonHost string) bool {
 func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serverDefaults dockerworker.ServerDefaults) (dockerworker.Config, error) {
 	engineCfg := dockerworker.Config{
 		ControlPlaneURL:     strings.TrimSpace(cfg.ControlPlaneURL),
-		Image:               dockerworker.EffectivePoolImage(cfg.Image, serverDefaults.PoolImage),
+		Image:               dockerworker.EffectivePoolImage(cfg.Image, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
 		Network:             cfg.Network,

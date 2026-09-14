@@ -5,7 +5,7 @@ import (
 )
 
 func TestSeedsCoverIncludedHarnesses(t *testing.T) {
-	seeds := Seeds(nil)
+	seeds := Seeds(nil, false)
 	bySlug := map[string]Seed{}
 	for _, seed := range seeds {
 		bySlug[seed.Slug] = seed
@@ -33,7 +33,7 @@ func TestImageEnvVar(t *testing.T) {
 func TestSeedsApplyImageOverrides(t *testing.T) {
 	overrides := map[string]string{"codex": "discobox-harness-codex:dev-abc"}
 	bySlug := map[string]Seed{}
-	for _, seed := range Seeds(overrides) {
+	for _, seed := range Seeds(overrides, false) {
 		bySlug[seed.Slug] = seed
 	}
 	if got := bySlug["codex"].Image; got != "discobox-harness-codex:dev-abc" {
@@ -80,5 +80,12 @@ func TestValidateSlug(t *testing.T) {
 		if err := ValidateSlug(bad); err == nil {
 			t.Fatalf("ValidateSlug(%q) = nil, want error", bad)
 		}
+	}
+}
+
+func TestManifestSeedsAreExactlyItsHarnesses(t *testing.T) {
+	seeds := Seeds(map[string]string{"other-agent": "example.com/other:v1", "shell": "example.com/shell:v1"}, true)
+	if len(seeds) != 2 || seeds[0].Slug != "other-agent" || seeds[0].Image != "example.com/other:v1" || seeds[1].Slug != "shell" {
+		t.Fatalf("seeds = %+v", seeds)
 	}
 }

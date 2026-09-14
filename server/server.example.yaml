@@ -20,6 +20,12 @@
 # This file is generated from the tags on config.Config by
 # `go tool task generate`. Edit the struct, not this.
 
+# Path to a release manifest supplying the runtime image set, including
+# built-in harnesses. Overrides individual image settings and disables
+# development image synchronization.
+# Environment: DISCOBOX_RELEASE_MANIFEST
+#releaseManifest:
+
 # TCP port for an http:// listen endpoint that does not name one.
 # Environment: PORT
 #port: 18080

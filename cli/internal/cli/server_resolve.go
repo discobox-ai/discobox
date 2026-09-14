@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/releasemanifest"
 	"github.com/discobox-ai/discobox/serverstage"
 	"github.com/discobox-ai/discobox/version"
 )
@@ -38,6 +39,7 @@ const (
 // serverSource is where the server binary is to come from: what the flags and
 // the environment say, before resolution consults the machine.
 type serverSource struct {
+	releaseManifest string
 	// binary is --binary, or ServerBinaryEnv.
 	binary string
 	// manifest is --manifest, or ServerManifestEnv.
@@ -85,6 +87,9 @@ func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolv
 	}
 	if source.manifest == "" {
 		source.manifest = strings.TrimSpace(os.Getenv(ServerManifestEnv))
+	}
+	if source.releaseManifest == "" {
+		source.releaseManifest = strings.TrimSpace(os.Getenv(releasemanifest.Env))
 	}
 	executable, err := os.Executable()
 	if err == nil {
@@ -191,6 +196,19 @@ func serverBinaryName() string {
 // manifest is the description of the server to stage: the one the caller named,
 // or the one this build carries.
 func (r serverResolver) manifest(ctx context.Context) (serverstage.Manifest, error) {
+	if r.source.releaseManifest != "" {
+		m, err := releasemanifest.Read(r.source.releaseManifest)
+		if err != nil {
+			return serverstage.Manifest{}, err
+		}
+		for _, server := range m.Servers {
+			if server.ForThisPlatform() {
+				return server, nil
+			}
+		}
+		return serverstage.Manifest{}, fmt.Errorf("release manifest has no server for %s/%s; select a local binary with %s", runtime.GOOS, runtime.GOARCH, ServerBinaryEnv)
+	}
+
 	if named := r.source.manifest; named != "" {
 		return serverstage.Load(ctx, named)
 	}
@@ -223,6 +241,17 @@ func (r serverResolver) stage(ctx context.Context, manifest serverstage.Manifest
 // — named with --binary, installed beside this one, or staged from another
 // version's --manifest — would take the argument as nothing and start serving.
 func (r serverResolver) stageImages(ctx context.Context, server string) ([]imagecache.Staged, error) {
+	if r.source.releaseManifest != "" {
+		m, err := releasemanifest.Read(r.source.releaseManifest)
+		if err != nil {
+			return nil, err
+		}
+		if err := ensureStateDir(r.imageRoot); err != nil {
+			return nil, err
+		}
+		return imagecache.Open(r.imageRoot).Stage(ctx, m.Images.References(runtime.GOOS, runtime.GOARCH), imagecache.Options{Client: r.client, OnProgress: r.onImageProgress})
+	}
+
 	manifest, err := r.manifest(ctx)
 	if errors.Is(err, serverstage.ErrNoManifest) {
 		return nil, nil
