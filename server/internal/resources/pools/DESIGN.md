@@ -130,7 +130,8 @@ columns migrate additively; an old row without a status timestamp is unknown
 until its agent reports. No backfill should certify an old report as fresh.
 
 `services.PoolToAPI` exposes health and masks stale `Ready`/`Schedulable` flags,
-including pools nested in sandbox responses. Placement and sandbox traffic use the same `Pool.IsReady` gate. Fresh health permits placement
+including pools nested in sandbox responses. Clients accept an omitted health
+field from older servers as `unknown`. Placement and sandbox traffic use the same `Pool.IsReady` gate. Fresh health permits placement
 even if a blocked runtime reconcile still carries an older `offline` state.
 API health does not wait for runtime reconciliation. Placement additionally
 keeps pending/registering runtimes gated through image preload. The reconciler's existing `State`/`ErrorMessage` remains its lifecycle

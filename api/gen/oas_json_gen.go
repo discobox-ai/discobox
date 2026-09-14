@@ -10661,6 +10661,39 @@ func (s *OptPool) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes PoolHealth as json.
+func (o OptPoolHealth) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes PoolHealth from json.
+func (o *OptPoolHealth) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolHealth to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolHealth) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolHealth) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolProvisionProgress as json.
 func (o OptPoolProvisionProgress) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -12141,8 +12174,10 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 		e.Int64(s.StorageBytes)
 	}
 	{
-		e.FieldStart("health")
-		s.Health.Encode(e)
+		if s.Health.Set {
+			e.FieldStart("health")
+			s.Health.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("ready")
@@ -12305,6 +12340,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 		return errors.New("invalid: unable to decode Pool to nil")
 	}
 	var requiredBitSet [5]uint8
+	s.setDefaults()
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -12425,8 +12461,8 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"storageBytes\"")
 			}
 		case "health":
-			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
+				s.Health.Reset()
 				if err := s.Health.Decode(d); err != nil {
 					return err
 				}
@@ -12694,7 +12730,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
 		0b01111110,
-		0b00111111,
+		0b00111011,
 		0b11000111,
 		0b00000110,
 		0b00000010,

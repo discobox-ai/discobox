@@ -2006,8 +2006,9 @@ components:
                     format: int64
                     type: integer
                 health:
-                    description: Current agent health, derived from status reports received since this server started. Independent of runtime reconciliation and image staging.
+                    description: Current agent health, derived from status reports received since this server started. Independent of runtime reconciliation. Defaults to unknown when omitted by an older server.
                     enum: [unknown, ready, not_ready, offline]
+                    default: unknown
                     type: string
                 ready:
                     description: Whether the pool host is alive and healthy
@@ -2118,7 +2119,6 @@ components:
                 - cpuVcpus
                 - memoryBytes
                 - storageBytes
-                - health
                 - ready
                 - schedulable
                 - degraded

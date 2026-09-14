@@ -2113,8 +2113,15 @@ func (s *Pool) Validate() error {
 		})
 	}
 	if err := func() error {
-		if err := s.Health.Validate(); err != nil {
-			return err
+		if value, ok := s.Health.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
 		}
 		return nil
 	}(); err != nil {

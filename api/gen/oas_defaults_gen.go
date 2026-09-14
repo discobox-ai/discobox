@@ -22,3 +22,11 @@ func (s *GitSourceWorkspace) setDefaults() {
 		s.Mode.SetTo(val)
 	}
 }
+
+// setDefaults set default value of fields.
+func (s *Pool) setDefaults() {
+	{
+		val := PoolHealth("unknown")
+		s.Health.SetTo(val)
+	}
+}

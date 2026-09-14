@@ -6203,6 +6203,52 @@ func (o OptPool) Or(d Pool) Pool {
 	return d
 }
 
+// NewOptPoolHealth returns new OptPoolHealth with value set to v.
+func NewOptPoolHealth(v PoolHealth) OptPoolHealth {
+	return OptPoolHealth{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolHealth is optional PoolHealth.
+type OptPoolHealth struct {
+	Value PoolHealth
+	Set   bool
+}
+
+// IsSet returns true if OptPoolHealth was set.
+func (o OptPoolHealth) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolHealth) Reset() {
+	var v PoolHealth
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolHealth) SetTo(v PoolHealth) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolHealth) Get() (v PoolHealth, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolHealth) Or(d PoolHealth) PoolHealth {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolProvisionProgress returns new OptPoolProvisionProgress with value set to v.
 func NewOptPoolProvisionProgress(v PoolProvisionProgress) OptPoolProvisionProgress {
 	return OptPoolProvisionProgress{
@@ -7903,8 +7949,8 @@ type Pool struct {
 	// zero is unset.
 	StorageBytes int64 `json:"storageBytes"`
 	// Current agent health, derived from status reports received since this server started. Independent
-	// of runtime reconciliation and image staging.
-	Health PoolHealth `json:"health"`
+	// of runtime reconciliation. Defaults to unknown when omitted by an older server.
+	Health OptPoolHealth `json:"health"`
 	// Whether the pool host is alive and healthy.
 	Ready bool `json:"ready"`
 	// Whether the pool accepts new sandboxes.
@@ -8011,7 +8057,7 @@ func (s *Pool) GetStorageBytes() int64 {
 }
 
 // GetHealth returns the value of Health.
-func (s *Pool) GetHealth() PoolHealth {
+func (s *Pool) GetHealth() OptPoolHealth {
 	return s.Health
 }
 
@@ -8181,7 +8227,7 @@ func (s *Pool) SetStorageBytes(val int64) {
 }
 
 // SetHealth sets the value of Health.
-func (s *Pool) SetHealth(val PoolHealth) {
+func (s *Pool) SetHealth(val OptPoolHealth) {
 	s.Health = val
 }
 
@@ -8520,7 +8566,7 @@ func (s *PoolFilesystemUsageAdditional) init() PoolFilesystemUsageAdditional {
 }
 
 // Current agent health, derived from status reports received since this server started. Independent
-// of runtime reconciliation and image staging.
+// of runtime reconciliation. Defaults to unknown when omitted by an older server.
 type PoolHealth string
 
 const (

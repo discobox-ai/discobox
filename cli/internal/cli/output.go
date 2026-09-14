@@ -348,7 +348,7 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
 	fmt.Fprintf(tw, "STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
 	fmt.Fprintf(tw, "STATE\t%s\n", pool.State)
-	fmt.Fprintf(tw, "HEALTH\t%s\n", pool.Health)
+	fmt.Fprintf(tw, "HEALTH\t%s\n", pool.Health.Or("unknown"))
 	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)
 	fmt.Fprintf(tw, "SCHEDULABLE\t%t\n", pool.Schedulable)
 	fmt.Fprintf(tw, "CAPACITY\t%s\n", formatPoolCapacity(*pool))
@@ -380,7 +380,7 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 			pool.ProviderInstanceId,
 			formatDefaultMarker(pool.ID == defaultID),
 			pool.State,
-			pool.Health,
+			pool.Health.Or("unknown"),
 			pool.Ready,
 			formatPoolCPU(pool.CpuVcpus),
 			formatPoolBytes(pool.MemoryBytes),

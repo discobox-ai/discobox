@@ -32,7 +32,7 @@ func TestGetPoolAcceptsRetiredReleaseFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool, ok := response.(*Pool)
-	if !ok || pool.ID != "pool-1" || !pool.Ready {
+	if !ok || pool.ID != "pool-1" || !pool.Ready || pool.Health.Or("") != PoolHealthUnknown {
 		t.Fatalf("pool response = %#v", response)
 	}
 }

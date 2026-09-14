@@ -17,7 +17,7 @@ func TestPoolAPIHealthMasksStaleFlagsWithoutChangingObservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(view.Health) != model.PoolHealthUnknown || view.Ready || view.Schedulable || string(view.State) != model.PoolStateActive {
+	if string(view.Health.Or("")) != model.PoolHealthUnknown || view.Ready || view.Schedulable || string(view.State) != model.PoolStateActive {
 		t.Fatalf("startup view = %+v", view)
 	}
 	if !pool.Ready || !pool.Schedulable {
@@ -28,7 +28,7 @@ func TestPoolAPIHealthMasksStaleFlagsWithoutChangingObservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(view.Health) != model.PoolHealthReady || !view.Ready || !view.Schedulable {
+	if string(view.Health.Or("")) != model.PoolHealthReady || !view.Ready || !view.Schedulable {
 		t.Fatalf("fresh heartbeat view = %+v", view)
 	}
 	stale := now.Add(-model.PoolHeartbeatTimeout - time.Second)
@@ -38,7 +38,7 @@ func TestPoolAPIHealthMasksStaleFlagsWithoutChangingObservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(view.Health) != model.PoolHealthOffline || view.Ready || view.Schedulable {
+	if string(view.Health.Or("")) != model.PoolHealthOffline || view.Ready || view.Schedulable {
 		t.Fatalf("stale heartbeat view = %+v", view)
 	}
 }
