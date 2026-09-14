@@ -787,3 +787,16 @@ func TestRemovePoolSurfacesAReachableDaemonsFailure(t *testing.T) {
 		t.Errorf("DeleteVM was called %d times despite a live daemon refusing", driver.deleteCalls)
 	}
 }
+
+// The pool's size is for the VM layer, so it has to reach the driver: a driver
+// that runs one VM per pool sizes that VM from it.
+func TestVMSpecCarriesThePoolSize(t *testing.T) {
+	engine := newTestEngine(t, Config{})
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
+	pool.CPUVCPUs = 3.5
+	pool.MemoryBytes = 6 << 30
+	spec := engine.vmSpec(&model.SandboxProviderInstance{ID: "provider-1"}, pool)
+	if spec.CPUVCPUs != 3.5 || spec.MemoryBytes != 6<<30 {
+		t.Fatalf("VMSpec size = %v vCPUs, %d bytes; want the pool's 3.5 vCPUs and %d bytes", spec.CPUVCPUs, spec.MemoryBytes, int64(6<<30))
+	}
+}

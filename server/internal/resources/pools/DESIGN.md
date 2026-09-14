@@ -33,7 +33,9 @@ flowchart LR
 - `service.go` — pool CRUD, the project default pool, and intent submission.
   Create validates the backing provider instance and schedules the first
   reconcile; update never touches `ProviderInstanceID` (immutable) and
-  re-schedules the reconcile so envelope changes converge.
+  re-schedules the reconcile so size changes converge. Both refuse a non-zero
+  size field the pool's provider does not declare in
+  `ProviderDefinition.PoolSizeFields` (`size.go`).
   `SetDefaultPool`/`UnsetDefaultPool` point the project's `DefaultPoolID` at a
   pool or clear it (unset rejects a pool that is not the default). Delete
   requires the pool to be empty of sandboxes (assignment is immutable, so

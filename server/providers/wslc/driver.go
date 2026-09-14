@@ -18,12 +18,20 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/vmsize"
 	"github.com/discobox-ai/discobox/server/providers/wslc/internal/wslcsession"
 )
 
 const (
 	guestDockerSocket = "/var/run/docker.sock"
 	bootTimeout       = 2 * time.Minute
+
+	// minVCPUs and minMemoryMiB are the floor a resolved size is clamped to.
+	// wslc publishes no range of its own, so the floor is the smallest VM that
+	// boots a dockerd and the pool agent; above it, the service is left to
+	// refuse what it cannot run, with an error that names the call.
+	minVCPUs     = 1
+	minMemoryMiB = 1024
 )
 
 var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
@@ -32,7 +40,10 @@ var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 type DriverConfig struct {
 	// StorageDir is the root under which each pool gets a persistent
 	// /var/lib/docker VHD at <StorageDir>/<poolID>. Empty means ephemeral.
-	StorageDir    string
+	StorageDir string
+	// CPUCount and MemoryMiB size every pool VM this driver starts, and zero
+	// leaves each to the host (see vmsize). A pool's own size overrides
+	// either for that pool.
 	CPUCount      int
 	MemoryMiB     int
 	MaxStorageMiB int64
@@ -48,8 +59,7 @@ type DriverConfig struct {
 // Windows (the VM is meant to die with the server).
 type Driver struct {
 	storageDir    string
-	cpuCount      int
-	memoryMiB     int
+	size          vmsize.Size // this provider's size for its pools, already defaulted from the host
 	maxStorageMiB int64
 	agentPort     int
 
@@ -58,6 +68,9 @@ type Driver struct {
 	mu       sync.Mutex
 	sessions map[string]*wslcsession.Session
 	relays   map[string]*relaySession
+	// sizes records what each running VM was started with, so EnsureVM can
+	// tell a VM whose pool now wants a different size from one that is fine.
+	sizes map[string]vmsize.Size
 }
 
 // NewDriver validates configuration and creates a wslc driver. It does not
@@ -75,13 +88,13 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	}
 	return &Driver{
 		storageDir:    storageDir,
-		cpuCount:      effectiveInt(cfg.CPUCount, defaultCPUCount),
-		memoryMiB:     effectiveInt(cfg.MemoryMiB, defaultMemoryMiB),
+		size:          vmsize.Resolve(vmsize.Size{VCPUs: cfg.CPUCount, MemoryMiB: cfg.MemoryMiB}).Clamp(minVCPUs, 0, minMemoryMiB, 0),
 		maxStorageMiB: effectiveInt64(cfg.MaxStorageMiB, defaultMaxStgMiB),
 		agentPort:     effectiveInt(cfg.AgentPort, defaultAgentPort),
 		streams:       cfg.ControlPlaneStreams,
 		sessions:      map[string]*wslcsession.Session{},
 		relays:        map[string]*relaySession{},
+		sizes:         map[string]vmsize.Size{},
 	}, nil
 }
 
@@ -93,6 +106,7 @@ func (d *Driver) Close() error {
 	relays := d.relays
 	d.sessions = map[string]*wslcsession.Session{}
 	d.relays = map[string]*relaySession{}
+	d.sizes = map[string]vmsize.Size{}
 	d.mu.Unlock()
 	// Relays first: each one owns a guest process reachable only through its
 	// session, so tearing the VM down first would strand it.
@@ -105,32 +119,47 @@ func (d *Driver) Close() error {
 	return nil
 }
 
-func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
 	if err := validatePoolID(poolID); err != nil {
 		return nil, err
 	}
+	want := d.sizeFor(spec)
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if session, ok := d.sessions[poolID]; ok {
-		if d.relays[poolID].healthy() {
+		relayHealthy := d.relays[poolID].healthy()
+		running := d.sizes[poolID]
+		if relayHealthy && running == want {
 			return runningVM(poolID), nil
 		}
-		// A VM whose relay has ended is not running in any sense the engine
-		// can use, and EnsureVM is the only lifecycle call an ordinary pool
-		// reconcile makes: RepairPool, which would stop it first, runs only
-		// when that reconcile fails, and with the agent's container still up
-		// it does not. Reporting this VM running is what left a condemned pool
-		// unreachable and never replaced. It is torn down here and started
-		// fresh below, the same replacement a repair would make.
+		// EnsureVM is the only lifecycle call an ordinary pool reconcile makes:
+		// RepairPool, which would stop the VM first, runs only when that
+		// reconcile fails, and with the agent's container still up it does not.
+		// So anything that makes a running VM the wrong one is dealt with here,
+		// by the same replacement a repair would make.
+		//
+		// A VM whose relay has ended is not running in any sense the engine can
+		// use; reporting it running is what left a condemned pool unreachable
+		// and never replaced. A VM of the wrong size is the pool or provider
+		// size having changed: a VM cannot be resized in place, and a size that
+		// only took effect on some later restart would not be a setting anyone
+		// could rely on.
+		reason := "its control-plane relay has ended"
+		if relayHealthy {
+			reason = fmt.Sprintf("it was started with %d vCPUs and %d MiB and the pool now wants %d vCPUs and %d MiB",
+				running.VCPUs, running.MemoryMiB, want.VCPUs, want.MemoryMiB)
+		}
 		if relay := d.relays[poolID]; relay != nil {
 			relay.close()
 		}
 		if err := session.Close(); err != nil {
-			return nil, fmt.Errorf("replace wslc VM for %s, whose relay has ended: %w", poolID, err)
+			return nil, fmt.Errorf("replace wslc VM for %s, because %s: %w", poolID, reason, err)
 		}
 		delete(d.sessions, poolID)
 		delete(d.relays, poolID)
-		slog.WarnContext(ctx, "replacing wslc VM whose control-plane relay has ended", "pool_id", poolID)
+		delete(d.sizes, poolID)
+		slog.WarnContext(ctx, "replacing wslc VM", "pool_id", poolID, "reason", reason)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -138,8 +167,8 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 
 	opts := wslcsession.Options{
 		DisplayName: "discobox-" + poolID,
-		CPUCount:    uint32(d.cpuCount),
-		MemoryMB:    uint32(d.memoryMiB),
+		CPUCount:    uint32(want.VCPUs),
+		MemoryMB:    uint32(want.MemoryMiB),
 		BootTimeout: bootTimeout,
 	}
 	if d.storageDir != "" {
@@ -175,7 +204,16 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 
 	d.sessions[poolID] = session
 	d.relays[poolID] = relay
+	d.sizes[poolID] = want
+	slog.InfoContext(ctx, "started wslc pool VM", "pool_id", poolID, "vcpus", want.VCPUs, "memory_mib", want.MemoryMiB)
 	return runningVM(poolID), nil
+}
+
+// sizeFor resolves the size a pool's VM should have: the pool's own size,
+// then this provider's size, then the host.
+func (d *Driver) sizeFor(spec dockerworker.VMSpec) vmsize.Size {
+	return vmsize.Resolve(vmsize.FromPool(spec.CPUVCPUs, spec.MemoryBytes), d.size).
+		Clamp(minVCPUs, 0, minMemoryMiB, 0)
 }
 
 // StopVM tears the VM down but preserves its /var/lib/docker VHD under
@@ -187,8 +225,10 @@ func (d *Driver) StopVM(_ context.Context, poolID string) error {
 	d.mu.Lock()
 	session := d.sessions[poolID]
 	relay := d.relays[poolID]
+	size := d.sizes[poolID]
 	delete(d.sessions, poolID)
 	delete(d.relays, poolID)
+	delete(d.sizes, poolID)
 	d.mu.Unlock()
 	if relay != nil {
 		relay.close()
@@ -208,6 +248,7 @@ func (d *Driver) StopVM(_ context.Context, poolID string) error {
 		d.mu.Lock()
 		if _, taken := d.sessions[poolID]; !taken {
 			d.sessions[poolID] = session
+			d.sizes[poolID] = size
 		}
 		d.mu.Unlock()
 		return err

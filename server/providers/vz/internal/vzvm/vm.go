@@ -29,7 +29,7 @@ var ErrUnsupported = errors.New("vzvm: this build cannot run Apple Virtualizatio
 type Options struct {
 	// Name identifies the VM in logs. It is not visible to the guest.
 	Name string
-	// CPUCount and MemoryBytes are the guest's envelope.
+	// CPUCount and MemoryBytes are the guest's size.
 	CPUCount    uint
 	MemoryBytes uint64
 	// KernelPath is an uncompressed kernel image. Virtualization.framework

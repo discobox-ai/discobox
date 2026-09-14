@@ -25,6 +25,7 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
+	"github.com/discobox-ai/discobox/server/providers/vmsize"
 	"github.com/discobox-ai/discobox/server/providers/wslc/relay"
 )
 
@@ -32,8 +33,6 @@ const (
 	ProviderType = "wslc"
 
 	defaultAgentPort  = 3002
-	defaultCPUCount   = 2
-	defaultMemoryMiB  = 4096
 	defaultMaxStgMiB  = 65536 // 64 GiB, dynamically expanding
 	labelProviderType = "discobox.provider_type"
 )
@@ -150,8 +149,8 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 func driverConfig(cfg Config, streams StreamSink) DriverConfig {
 	return DriverConfig{
 		StorageDir:          effectiveStorageDir(cfg.StorageDir),
-		CPUCount:            effectiveInt(cfg.CPUCount, defaultCPUCount),
-		MemoryMiB:           effectiveInt(cfg.MemoryMiB, defaultMemoryMiB),
+		CPUCount:            cfg.CPUCount,
+		MemoryMiB:           cfg.MemoryMiB,
 		MaxStorageMiB:       effectiveInt64(cfg.MaxStorageMiB, defaultMaxStgMiB),
 		AgentPort:           effectiveInt(cfg.AgentPort, defaultAgentPort),
 		ControlPlaneStreams: streams,
@@ -199,10 +198,12 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "wslc",
 		Icon:        "server",
 		Description: "Runs one WSL Containers (wslc) VM per pool on Windows, with its own dockerd. Only /var/lib/docker persists; no host TCP port is opened.",
+		// Each pool VM is sized from the pool's own size first (see vmsize).
+		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultCPUCount)},
-			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB)},
+			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().VCPUs), Description: "Defaults to every host CPU. A pool's own cpuVcpus overrides it for that pool."},
+			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().MemoryMiB), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "maxStorageMiB", Label: "Max /var/lib/docker (MiB)", Type: "number", Placeholder: strconv.FormatInt(defaultMaxStgMiB, 10)},
 			{Key: "storageDir", Label: "VM Storage Directory", Type: "string", Placeholder: effectiveStorageDir(""), Description: "Root directory holding each pool's persistent /var/lib/docker VHD.", Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},

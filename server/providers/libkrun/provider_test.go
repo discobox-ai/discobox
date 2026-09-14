@@ -13,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
+	"github.com/discobox-ai/discobox/server/providers/vmsize"
 )
 
 func TestProviderIdentity(t *testing.T) {
@@ -225,12 +226,10 @@ func TestManifestPlacesEveryPortAndSocket(t *testing.T) {
 	driver := &Driver{
 		runtimeDir:         "/run/user/1000/discobox/libkrun",
 		controlPlaneSocket: "/run/user/1000/discobox/server.sock",
-		vcpus:              2,
-		memoryMiB:          2048,
 	}
 	guest := bundleAt(t, rootArtifact)
 	kernel := bundleAt(t, kernelArtifact)
-	manifest := driver.manifest("pool_1", guest, kernel, "/state/pool_1/data.raw", "/state/pool_1/cache.raw")
+	manifest := driver.manifest("pool_1", guest, kernel, "/state/pool_1/data.raw", "/state/pool_1/cache.raw", vmsize.Size{VCPUs: 2, MemoryMiB: 2048})
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("the driver rendered a manifest its own launcher rejects: %v", err)
 	}

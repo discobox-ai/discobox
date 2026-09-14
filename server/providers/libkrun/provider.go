@@ -29,6 +29,7 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
+	"github.com/discobox-ai/discobox/server/providers/vmsize"
 )
 
 const (
@@ -300,7 +301,8 @@ func effectiveInt64(value, fallback int64) int64 {
 }
 
 // defaultVCPUs and defaultMemoryMiB size a pool VM from the host: every vCPU,
-// and half the memory (see krunvm.DefaultHostResources). They are functions
+// and half the memory (see vmsize, which every local VM provider shares, and
+// krunvm.DefaultHostResources, which clamps it to libkrun). They are functions
 // rather than constants because the answer depends on the machine.
 func defaultVCPUs() int {
 	return int(krunvm.DefaultHostResources().CPUCount)
@@ -316,6 +318,8 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "libkrun",
 		Icon:        "server",
 		Description: "Runs one Linux KVM-backed libkrun microVM per pool with VSOCK control traffic and outbound-only user-mode networking.",
+		// Each pool VM is sized from the pool's own size first (see vmsize).
+		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "guestImage", Label: "Guest Image", Type: "string", Placeholder: guestimage.DefaultVMImage, Description: "Published guest image carrying the root filesystem.", Advanced: true},
 			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
@@ -324,8 +328,8 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "kernelImageDir", Label: "Kernel Artifact Directory", Type: "string", Description: "Boot this kernel instead of the published image, and fail if it is missing.", Advanced: true},
 			{Key: "kernelImageLocalDir", Label: "Local Kernel Build", Type: "string", Placeholder: effectiveKernelLocalDir(""), Advanced: true},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU."},
-			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory."},
+			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU, up to libkrun's limit of 255. A pool's own cpuVcpus overrides it for that pool."},
+			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "dataDiskGiB", Label: "Data Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultDataDiskGiB, 10)},
 			{Key: "cacheDiskGiB", Label: "Cache Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultCacheDiskGiB, 10)},
 			{Key: "stateDir", Label: "Pool Disk Directory", Type: "string", Placeholder: defaultStateDir(), Advanced: true},

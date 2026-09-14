@@ -19,6 +19,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
+	"github.com/discobox-ai/discobox/server/providers/vmsize"
 	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
 )
 
@@ -92,8 +93,7 @@ type DriverConfig struct {
 type Driver struct {
 	guest        *guestimage.Resolver
 	stateDir     string
-	vcpus        int
-	memoryMiB    int
+	size         vmsize.Size // as configured; unset fields fall to the host in sizeFor
 	dataDiskGiB  int64
 	cacheDiskGiB int64
 	shares       []vzvm.SharedDirectory
@@ -110,6 +110,10 @@ type Driver struct {
 type guestVM struct {
 	vm       *vzvm.VM
 	listener net.Listener
+	// size is what the VM was started with, compared on every EnsureVM so a
+	// pool or provider size change replaces it rather than waiting for a
+	// restart nobody asked for.
+	size vmsize.Size
 
 	stopOnce sync.Once
 	stopped  chan struct{}
@@ -132,8 +136,7 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	return &Driver{
 		guest:        cfg.Guest,
 		stateDir:     filepath.Clean(cfg.StateDir),
-		vcpus:        effectiveInt(cfg.VCPUs, defaultVCPUs()),
-		memoryMiB:    effectiveInt(cfg.MemoryMiB, defaultMemoryMiB()),
+		size:         vmsize.Size{VCPUs: cfg.VCPUs, MemoryMiB: cfg.MemoryMiB},
 		dataDiskGiB:  effectiveInt64(cfg.DataDiskGiB, defaultDataDiskGiB),
 		cacheDiskGiB: effectiveInt64(cfg.CacheDiskGiB, defaultCacheDiskGiB),
 		shares:       cfg.SharedDirectories,
@@ -156,12 +159,25 @@ func (d *Driver) Close() error {
 	return nil
 }
 
-func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
 	if err := validatePoolID(poolID); err != nil {
 		return nil, err
 	}
+	want := d.sizeFor(spec)
 	if existing := d.runningVM(poolID); existing != nil {
-		return runningInfo(poolID), nil
+		if existing.size == want {
+			return runningInfo(poolID), nil
+		}
+		// A VM cannot be resized in place, and a size that only took effect on
+		// some later restart would not be a setting anyone could rely on. The
+		// stop is StopVM's, which shuts the guest down in order so neither disk
+		// is unmounted dirty; the disks are kept.
+		slog.WarnContext(ctx, "replacing vz pool VM whose size changed", "pool_id", poolID,
+			"running_vcpus", existing.size.VCPUs, "running_memory_mib", existing.size.MemoryMiB,
+			"vcpus", want.VCPUs, "memory_mib", want.MemoryMiB)
+		if err := d.StopVM(ctx, poolID); err != nil {
+			return nil, fmt.Errorf("replace vz VM for pool %s for a size change: %w", poolID, err)
+		}
 	}
 
 	// Resolved outside the lock: the first pool on a machine pulls the guest
@@ -216,8 +232,8 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 
 	vm, err := vzvm.Start(vzvm.Options{
 		Name:           poolID,
-		CPUCount:       uint(d.vcpus),
-		MemoryBytes:    uint64(d.memoryMiB) * 1024 * 1024,
+		CPUCount:       uint(want.VCPUs),
+		MemoryBytes:    uint64(want.MemoryMiB) * 1024 * 1024,
 		KernelPath:     bundle.Path(kernelArtifact),
 		InitrdPath:     bundle.Path(initrdArtifact),
 		KernelCmdline:  kernelCmdline,
@@ -232,7 +248,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 		return nil, fmt.Errorf("start vz VM for pool %s: %w", poolID, err)
 	}
 
-	guest := &guestVM{vm: vm, stopped: make(chan struct{})}
+	guest := &guestVM{vm: vm, size: want, stopped: make(chan struct{})}
 	listener, err := vm.Listen(controlPlaneVSOCKPort)
 	if err != nil {
 		guest.close()
@@ -243,7 +259,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 
 	d.vms[poolID] = guest
 	slog.InfoContext(ctx, "started vz pool VM",
-		"pool_id", poolID, "guest_image", bundle.Source, "vcpus", d.vcpus, "memory_mib", d.memoryMiB)
+		"pool_id", poolID, "guest_image", bundle.Source, "vcpus", want.VCPUs, "memory_mib", want.MemoryMiB)
 	return runningInfo(poolID), nil
 }
 
@@ -466,6 +482,14 @@ func (d *Driver) guestVM(poolID string) (*guestVM, error) {
 		return nil, fmt.Errorf("vz VM %s: %w", poolID, sandbox.ErrNotFound)
 	}
 	return guest, nil
+}
+
+// sizeFor resolves the size a pool's VM should have - the pool's own size,
+// then this provider's size, then the host - clamped to what the framework
+// accepts.
+func (d *Driver) sizeFor(spec dockerworker.VMSpec) vmsize.Size {
+	resolved := vmsize.Resolve(vmsize.FromPool(spec.CPUVCPUs, spec.MemoryBytes), d.size)
+	return vzvm.ClampSize(resolved).Size()
 }
 
 func (d *Driver) runningVM(poolID string) *guestVM {

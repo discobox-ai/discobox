@@ -60,10 +60,6 @@ const (
 	LabelPoolConfig         = "discobox.pool_agent.config_revision"
 	LabelProviderInstanceID = "discobox.provider_instance_id"
 	LabelPoolID             = "discobox.pool_id"
-	// LabelPoolEnvelope records the pool envelope applied to the pool-agent
-	// container, so an envelope change recreates the container through the
-	// normal label drift check.
-	LabelPoolEnvelope = "discobox.pool_envelope"
 )
 
 // Config configures the pool runtime engine. It describes the pool-agent
@@ -453,7 +449,12 @@ func (e *Engine) vmSpec(provider *model.SandboxProviderInstance, pool *model.Poo
 		LabelProjectID:          pool.ProjectID,
 		LabelProviderInstanceID: provider.ID,
 	}
-	return VMSpec{Name: ContainerName(pool.ID), Metadata: metadata}
+	return VMSpec{
+		Name:        ContainerName(pool.ID),
+		Metadata:    metadata,
+		CPUVCPUs:    pool.CPUVCPUs,
+		MemoryBytes: pool.MemoryBytes,
+	}
 }
 
 // dockerReadyTimeout is how long a freshly booted VM gets to bring Docker up.
@@ -623,17 +624,12 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		config.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
 		waitForHealth = false
 	}
-	// The pool envelope is the pool-agent container limit: per-sandbox limits nest
-	// inside it, so overcommit falls out of the runtime hierarchy rather than
-	// scheduler arithmetic. Zero values leave the container host-sized.
-	if pool != nil {
-		if pool.CPUVCPUs > 0 {
-			hostConfig.NanoCPUs = int64(pool.CPUVCPUs * 1_000_000_000)
-		}
-		if pool.MemoryBytes > 0 {
-			hostConfig.Memory = pool.MemoryBytes
-		}
-	}
+	// No CPU or memory limit, deliberately. The pool's size sizes the VM a
+	// pool runs in (see VMSpec), not this container: sandboxes are created on
+	// the host daemon through the bind-mounted socket, as siblings of this
+	// container rather than nested inside it, so a limit here would bound
+	// only the pool's own services - agent, BuildKit, registry, proxy - and
+	// starve them first while the sandboxes they serve ran unlimited.
 	if e.cfg.CgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(e.cfg.CgroupNSMode)
 	} else {
@@ -750,15 +746,7 @@ func (e *Engine) containerLabels(provider *model.SandboxProviderInstance, pool *
 	labels[LabelProjectID] = pool.ProjectID
 	labels[LabelProviderInstanceID] = provider.ID
 	labels[LabelPoolConfig] = e.configRevision
-	labels[LabelPoolEnvelope] = poolEnvelopeRevision(pool)
 	return labels
-}
-
-// poolEnvelopeRevision encodes the envelope values applied to the pool-agent
-// container, compared through the label drift check so envelope changes
-// recreate the container.
-func poolEnvelopeRevision(pool *model.Pool) string {
-	return fmt.Sprintf("cpu=%.3f,mem=%d", pool.CPUVCPUs, pool.MemoryBytes)
 }
 
 // ShouldReconcileWorkerContainer reports whether a pool-agent container drifted

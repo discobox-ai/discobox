@@ -24,6 +24,7 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
+	"github.com/discobox-ai/discobox/server/providers/vmsize"
 )
 
 const (
@@ -100,8 +101,7 @@ type Driver struct {
 	controlPlaneSocket string
 	passtPath          string
 	libraryPath        string
-	vcpus              int
-	memoryMiB          int
+	size               vmsize.Size // as configured; unset fields fall to the host in sizeFor
 	dataDiskBytes      int64
 	cacheDiskBytes     int64
 	progress           sandbox.PoolProgressReporter
@@ -120,6 +120,11 @@ type guestVM struct {
 	// sockets are the Unix sockets this launcher creates. The driver deletes
 	// them before starting it, so their presence means this process bound them.
 	sockets []string
+
+	// size is what the VM was started with, compared on every EnsureVM so a
+	// pool or provider size change replaces it rather than waiting for a
+	// restart nobody asked for.
+	size vmsize.Size
 
 	exited   chan struct{}
 	stopOnce sync.Once
@@ -148,8 +153,6 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	if !filepath.IsAbs(controlPlaneSocket) {
 		return nil, errors.New("libkrun: control plane socket must be an absolute path")
 	}
-	vcpus := effectiveInt(cfg.VCPUs, defaultVCPUs())
-	memoryMiB := effectiveInt(cfg.MemoryMiB, defaultMemoryMiB())
 	dataBytes, err := gibibytes(effectiveInt64(cfg.DataDiskGiB, defaultDataDiskGiB))
 	if err != nil {
 		return nil, fmt.Errorf("libkrun data disk size: %w", err)
@@ -166,8 +169,7 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		controlPlaneSocket: filepath.Clean(controlPlaneSocket),
 		passtPath:          strings.TrimSpace(cfg.PasstPath),
 		libraryPath:        strings.TrimSpace(cfg.LibraryPath),
-		vcpus:              vcpus,
-		memoryMiB:          memoryMiB,
+		size:               vmsize.Size{VCPUs: cfg.VCPUs, MemoryMiB: cfg.MemoryMiB},
 		dataDiskBytes:      dataBytes,
 		cacheDiskBytes:     cacheBytes,
 		progress:           cfg.ProgressReporter,
@@ -190,12 +192,25 @@ func (d *Driver) Close() error {
 	return nil
 }
 
-func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
 	if err := validatePoolID(poolID); err != nil {
 		return nil, err
 	}
+	want := d.sizeFor(spec)
 	if guest := d.runningVM(poolID); guest != nil {
-		return runningInfo(poolID), nil
+		if guest.size == want {
+			return runningInfo(poolID), nil
+		}
+		// A VM cannot be resized in place, and a size that only took effect on
+		// some later restart would not be a setting anyone could rely on. The
+		// stop is StopVM's, which shuts the guest down in order so neither disk
+		// is unmounted dirty; the disks are kept.
+		slog.WarnContext(ctx, "replacing libkrun pool VM whose size changed", "pool_id", poolID,
+			"running_vcpus", guest.size.VCPUs, "running_memory_mib", guest.size.MemoryMiB,
+			"vcpus", want.VCPUs, "memory_mib", want.MemoryMiB)
+		if err := d.StopVM(ctx, poolID); err != nil {
+			return nil, fmt.Errorf("replace libkrun VM for pool %s for a size change: %w", poolID, err)
+		}
 	}
 
 	// Resolved outside the lock: the first pool on a machine pulls the guest
@@ -210,7 +225,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 		return nil, err
 	}
 
-	guest, started, err := d.launch(ctx, poolID, root, kernel)
+	guest, started, err := d.launch(ctx, poolID, root, kernel, want)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +243,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 	}
 	slog.InfoContext(ctx, "started libkrun pool VM",
 		"pool_id", poolID, "guest_image", root.Source, "kernel_image", kernel.Source,
-		"vcpus", d.vcpus, "memory_mib", d.memoryMiB, "pid", guest.cmd.Process.Pid)
+		"vcpus", want.VCPUs, "memory_mib", want.MemoryMiB, "pid", guest.cmd.Process.Pid)
 	return runningInfo(poolID), nil
 }
 
@@ -238,7 +253,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 //
 // started is false when the VM was already running, which is the only case
 // where the caller has nothing to wait for.
-func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guestimage.Bundle) (*guestVM, bool, error) {
+func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guestimage.Bundle, size vmsize.Size) (*guestVM, bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -267,7 +282,7 @@ func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guesti
 		return nil, false, err
 	}
 
-	manifest := d.manifest(poolID, root, kernel, dataDisk, cacheDisk)
+	manifest := d.manifest(poolID, root, kernel, dataDisk, cacheDisk, size)
 	if err := manifest.Validate(); err != nil {
 		return nil, false, fmt.Errorf("libkrun VM %s: %w", poolID, err)
 	}
@@ -294,6 +309,7 @@ func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guesti
 	if err != nil {
 		return nil, false, err
 	}
+	guest.size = size
 	d.vms[poolID] = guest
 	return guest, true, nil
 }
@@ -493,7 +509,7 @@ func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error)
 }
 
 // manifest renders one VM for the launcher.
-func (d *Driver) manifest(poolID string, root, kernel *guestimage.Bundle, dataDisk, cacheDisk string) krunvm.Config {
+func (d *Driver) manifest(poolID string, root, kernel *guestimage.Bundle, dataDisk, cacheDisk string, size vmsize.Size) krunvm.Config {
 	runtimeDir := d.poolRuntimeDir(poolID)
 	return krunvm.Config{
 		Version:     krunvm.ConfigVersion,
@@ -507,8 +523,8 @@ func (d *Driver) manifest(poolID string, root, kernel *guestimage.Bundle, dataDi
 		PasstPath:   d.passtPath,
 		LibraryPath: d.libraryPath,
 		ConsoleLog:  filepath.Join(runtimeDir, consoleLogName),
-		VCPUs:       d.vcpus,
-		MemoryMiB:   d.memoryMiB,
+		VCPUs:       size.VCPUs,
+		MemoryMiB:   size.MemoryMiB,
 		MACAddress:  macAddress(poolID),
 		VSOCK: []krunvm.VSOCKMapping{
 			{Name: "control-plane", Port: controlPlaneVSOCKPort, Socket: d.controlPlaneSocket, Direction: krunvm.GuestConnects},
@@ -675,6 +691,13 @@ func (d *Driver) runningSocket(poolID, name string) (string, error) {
 		return "", fmt.Errorf("libkrun VM %s socket %s is unavailable", poolID, name)
 	}
 	return path, nil
+}
+
+// sizeFor resolves the size a pool's VM should have - the pool's own size, then
+// this provider's size, then the host - clamped to what libkrun accepts.
+func (d *Driver) sizeFor(spec dockerworker.VMSpec) vmsize.Size {
+	resolved := vmsize.Resolve(vmsize.FromPool(spec.CPUVCPUs, spec.MemoryBytes), d.size)
+	return krunvm.ClampSize(resolved).Size()
 }
 
 func (d *Driver) runningVM(poolID string) *guestVM {

@@ -52,6 +52,9 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 	if err != nil {
 		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
+	if err := s.checkPoolSize(provider, sizeOf(input)); err != nil {
+		return nil, err
+	}
 	pool := &model.Pool{
 		ProjectID: projectID,
 		PoolManifest: model.PoolManifest{
@@ -85,6 +88,15 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
+	}
+	if sizes := updatedSizeOf(input); len(sizes) > 0 {
+		provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
+		if err != nil {
+			return nil, apperrors.NotFound(err, "provider instance not found")
+		}
+		if err := s.checkPoolSize(provider, sizes); err != nil {
+			return nil, err
+		}
 	}
 	if name, ok := input.Name.Get(); ok {
 		name = strings.TrimSpace(name)

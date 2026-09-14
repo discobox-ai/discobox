@@ -9,8 +9,9 @@ the pool-agent package for pool host boot metadata.
 Providers own runtime mechanics only; services own persistence, authorization,
 orchestration, and API shape.
 
-A pool is its own runtime host (ADR-0006): one container or VM runs the pool
-agent and hosts the pool's sandboxes.
+A pool is its own runtime host (ADR-0006): a VM, a Docker host, or (later) a pod
+runs the pool-agent container, and the pool's sandboxes run beside it on the
+same Docker daemon — never nested inside it.
 
 `providers.RegisterBuiltInSandboxProviderFactories` registers the portable
 providers (`docker`, `digitalocean`, `exec`, `libkrun`) everywhere, plus one
@@ -50,8 +51,8 @@ flowchart TD
 `server/providers/poolruntime.Provider` is the registered `sandbox.Provider`
 for pool-backed provider instances. It owns sandbox placement gating (the
 sandbox's pool must be ready and schedulable — there is no candidate search
-and no capacity check; sandboxes share their pool's CPU/memory/storage
-envelope with no per-sandbox reservation, docs/adr/0029), capacity waits,
+and no capacity check; sandboxes share their pool's CPU, memory, and storage
+with no per-sandbox reservation, docs/adr/0029), capacity waits,
 bootstrap credential minting, pool runtime convergence
 (`sandbox.PoolRuntime`), and user-sandbox operations through the
 pool-agent API. Docker never appears at this layer or above: the boundary
@@ -65,11 +66,16 @@ runtime contract for sandboxes is the pool-agent HTTP API reached through
 `dockerworker.Engine` is its only implementation. The engine owns everything
 Docker: launching the pool-agent container with boot env, socket bind and host
 mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
-config-revision drift detection, container replacement during repair, and
-applying the pool envelope (CPU/memory) as the container limit. A sandbox
-container created inside it gets no nested CPU/memory limit of its own — it
-shares the worker container's cgroup with its siblings (docs/adr/0029). It
-obtains Docker access exclusively through the driver.
+config-revision drift detection, and container replacement during repair. It
+hands the pool's size (CPU/memory) to the driver in `VMSpec`, where it sizes
+the VM layer (see Local VM Sizing), and sets no CPU or memory limit on any
+container. The pool-agent container does not host sandboxes: it gets the
+daemon's socket bound in and creates each sandbox container on that daemon, as a
+sibling of itself in the daemon's cgroup tree. A limit on the pool-agent
+container would therefore bound only the pool's own services — agent, BuildKit,
+registry, proxy — and never the sandboxes they serve; it is a remnant of an
+abandoned design in which the pool container nested its own Docker like a VM.
+The engine obtains Docker access exclusively through the driver.
 
 `dockerworker.Driver` is the backend seam, sized so a backend is added without
 reading the engine:
@@ -387,7 +393,7 @@ The console is deliberately outside the pool's convergence machinery:
   off `discobox.sandbox.managed`, which the console also does not carry.
 - Nothing reconciles it away, so `RemovePool` removes it as part of pool
   teardown.
-- It gets no pool envelope: the console is not workload, and an operator
+- It gets no CPU or memory limit: the console is not workload, and an operator
   debugging a host that is out of memory should not be capped by the pool's
   share of it.
 
@@ -580,6 +586,50 @@ reads it from `DISCOBOX_SANDBOX_IDLE_TIMEOUT` and writes it into a sandbox's
 start; the decision itself is the sandbox-agent's. Unset, the sandbox-agent's
 default of 30 minutes applies. Like every pool policy field, a change reaches a
 pool at its next reconcile; saving the provider instance does not trigger one.
+
+## Local VM Sizing
+
+Every provider that runs one VM per pool on the server's own machine — vz,
+libkrun, wslc — sizes it by one rule, `server/providers/vmsize`:
+
+1. The pool's own size (`Pool.CPUVCPUs`, `Pool.MemoryBytes`), when set.
+2. Otherwise the provider instance's `vcpus`/`cpuCount` and `memoryMiB`.
+3. Otherwise the host: every logical CPU and half of physical memory.
+
+Each field falls through on its own, so a pool that names only its memory still
+takes its vCPUs from the provider or the host. The host default is not a
+reservation on any backend: vCPUs are scheduled against the host's own work, and
+every guest balloons unused memory back. Each backend clamps the result to what
+it accepts — Virtualization.framework's reported range, libkrun's 255 vCPUs and
+1024 MiB floor, a 1 vCPU / 1 GiB floor on wslc, which publishes no range — and
+clamps rather than refusing, because the value is rarely one anybody typed for
+that backend: a host bigger than it supports, or a pool size set without the
+backend's floor in mind. Explicitly configured provider values outside a
+backend's range are still refused at validation.
+
+The pool's size reaches the driver in `VMSpec` and nothing else: it sizes the
+VM layer and limits no container. `vmsize.FromPool` converts it with both
+fields rounded up, since the pool's size is fractional vCPUs and exact bytes while a
+VM is whole vCPUs and MiB, and a pool asking for 1.5 vCPUs should get 2 rather
+than 1. Which size fields a provider acts on is declared in its
+`ProviderDefinition.PoolSizeFields`; the VM providers declare `vmsize.PoolSizeFields()`.
+The pool service refuses any non-zero field a pool's provider does not declare,
+at create and update alike, so a size is never stored only to be ignored — on
+`docker`, `execvm`, and DigitalOcean, whose droplet size is provider
+configuration, every size field is refused. Unset sizing is passed through unset from provider config to
+driver — a number filled in at the provider layer would outrank the host default
+it only stood in for, which is how every wslc VM once came out at 2 vCPUs and
+4 GiB.
+
+A VM cannot be resized in place, so each driver's `EnsureVM` compares the size a
+running VM was started with against the resolved size and replaces it when they
+differ, through that driver's own stop: vz's ordered guest shutdown, libkrun's
+`StopVM` with its disks kept, wslc's session close. `EnsureVM` is the only
+lifecycle call an ordinary reconcile makes, so a size that took effect only at
+some later restart would be a setting nobody could rely on. Each driver records
+the size it started a VM with, which is enough: the VMs of all three belong to
+the server process and die with it. Replacing a VM stops the pool's containers;
+images and volumes survive on its persistent disks.
 
 ## Guest Image Artifacts
 

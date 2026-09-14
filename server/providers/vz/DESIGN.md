@@ -176,10 +176,14 @@ carries `panic=-1`. A guest that is running but broken without panicking is the
 engine's to catch, by its Docker daemon not answering a repair.
 
 Sizing comes from the host, not from constants: every vCPU, half the memory
-(`vzvm.DefaultHostResources`, clamped to the range Virtualization.framework
-reports), a 100 GiB data disk, and a 32 GiB cache disk. None of it is a
-reservation — vCPUs are shared with macOS by the scheduler, the guest has a
-memory balloon, and both disks are sparse, costing only what the guest writes.
+(`vmsize.Host`, the rule every local VM provider shares, clamped by
+`vzvm.Clamp` to the range Virtualization.framework reports), a 100 GiB data
+disk, and a 32 GiB cache disk. A pool's own size or the provider's
+`vcpus`/`memoryMiB` narrows the vCPUs and memory, and a running VM whose size
+no longer matches is replaced (`server/providers/DESIGN.md`, Local VM Sizing).
+None of it is a reservation — vCPUs are shared with macOS by the scheduler, the
+guest has a memory balloon, and both disks are sparse, costing only what the
+guest writes.
 
 Disk sizes are therefore ceilings a pool can be given more of. `ensureDisks`
 grows an existing image when the configured size is raised and never shrinks

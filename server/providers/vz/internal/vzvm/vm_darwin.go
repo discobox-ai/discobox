@@ -119,9 +119,9 @@ func Start(opts Options) (*VM, error) {
 	}
 	config.SetEntropyDevicesVirtualMachineConfiguration([]*vz.VirtioEntropyDeviceConfiguration{entropy})
 
-	// A pool's memory envelope is a ceiling, not a reservation. The balloon lets
-	// a guest that is doing nothing hand memory back to macOS instead of holding
-	// the whole envelope for the life of the pool.
+	// A pool VM's memory is a ceiling, not a reservation. The balloon lets a
+	// guest that is doing nothing hand memory back to macOS instead of holding
+	// all of it for the life of the pool.
 	balloon, err := vz.NewVirtioTraditionalMemoryBalloonDeviceConfiguration()
 	if err != nil {
 		return nil, fmt.Errorf("vzvm: memory balloon device: %w", err)

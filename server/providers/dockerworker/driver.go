@@ -28,8 +28,9 @@ type Driver interface {
 	Close() error
 
 	// EnsureVM idempotently creates and starts the VM for a pool. The local
-	// driver is a no-op that resolves every pool to the host. Instance
-	// sizing, region, and image come from driver configuration, not the spec.
+	// driver is a no-op that resolves every pool to the host. Region and image
+	// come from driver configuration; a driver that runs one VM per pool sizes it
+	// from the pool's size in the spec first, then its configuration (see VMSpec).
 	EnsureVM(ctx context.Context, poolID string, spec VMSpec) (*VMInfo, error)
 	// StopVM stops the pool's VM while preserving any driver-owned persistent
 	// state needed by a later EnsureVM. Drivers without separately attached
@@ -82,6 +83,13 @@ type VMSpec struct {
 	Name string
 	// Metadata carries labels/tags, including the pool identity labels.
 	Metadata map[string]string
+	// CPUVCPUs and MemoryBytes are the pool's size, zero where the pool
+	// leaves it to the provider. The pool's size is for the VM layer and
+	// nothing else: a driver that runs one VM per pool on this machine sizes
+	// that VM from them first (see vmsize.Resolve), and replaces a running VM
+	// whose size no longer matches. No container is ever limited by them.
+	CPUVCPUs    float64
+	MemoryBytes int64
 }
 
 // VMInfo is the driver-neutral VM runtime state.

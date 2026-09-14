@@ -31,6 +31,7 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
+	"github.com/discobox-ai/discobox/server/providers/vmsize"
 	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
 )
 
@@ -333,7 +334,7 @@ func defaultStorageRoot() string {
 }
 
 // defaultVCPUs and defaultMemoryMiB size a pool VM from the host: every vCPU,
-// and half the memory (see vzvm.HostResources). They are functions rather than
+// and half the memory (see vmsize, which every local VM provider shares). They are functions rather than
 // constants because the answer depends on the machine, and they are clamped to
 // what Virtualization.framework accepts.
 func defaultVCPUs() int {
@@ -364,13 +365,15 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "Apple Virtualization",
 		Icon:        "server",
 		Description: "Runs one Virtualization.framework VM per pool on macOS, with VSOCK control traffic and no Docker daemon on the host.",
+		// Each pool VM is sized from the pool's own size first (see vmsize).
+		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "guestImage", Label: "Guest Image", Type: "string", Placeholder: DefaultGuestImage, Description: "Published guest image carrying the kernel, initrd, and root filesystem.", Advanced: true},
 			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
 			{Key: "guestImageLocalDir", Label: "Local Guest Build", Type: "string", Placeholder: effectiveGuestLocalDir(""), Description: "Where a local guest image build lands; used automatically when complete.", Advanced: true},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU."},
-			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory."},
+			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU. A pool's own cpuVcpus overrides it for that pool."},
+			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "dataDiskGiB", Label: "Data Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultDataDiskGiB, 10)},
 			{Key: "cacheDiskGiB", Label: "Cache Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultCacheDiskGiB, 10)},
 			{Key: "stateDir", Label: "Pool Disk Directory", Type: "string", Placeholder: effectiveStateDir(""), Advanced: true},

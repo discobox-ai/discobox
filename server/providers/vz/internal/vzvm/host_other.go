@@ -2,11 +2,15 @@
 
 package vzvm
 
-import "runtime"
-
-// DefaultHostResources reports sizing that keeps the provider's configuration
-// and tests meaningful in a build with no bindings, where no VM is ever
-// started.
-func DefaultHostResources() HostResources {
-	return HostResources{CPUCount: uint(runtime.NumCPU()), MemoryBytes: fallbackMemoryBytes}
+// Clamp has no framework to ask in a build with no bindings, where no VM is
+// ever started; it only keeps both fields at least one unit, so the provider's
+// configuration and tests stay meaningful.
+func Clamp(resources HostResources) HostResources {
+	if resources.CPUCount < 1 {
+		resources.CPUCount = 1
+	}
+	if resources.MemoryBytes < mib {
+		resources.MemoryBytes = mib
+	}
+	return resources
 }
