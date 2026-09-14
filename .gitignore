@@ -58,3 +58,7 @@ server/providers/wslc/relay/artifacts/*.gz
 # a file the next person following those instructions will also produce.
 /result
 /result-*
+
+# Windows version resources release:binary writes beside each main package for
+# the length of one build (internal/cmd/discobox-winres).
+zz_version_windows_*.syso

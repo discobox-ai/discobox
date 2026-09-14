@@ -1001,8 +1001,30 @@ tasks:
       # A release build autolaunches a server; a development build never does
       # (cli/internal/cli/server_autolaunch_test.go).
       CLI_LDFLAGS: -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true
+      # The Windows version resource each binary links, as Go finds one: a .syso
+      # in the main package's directory, named for the architecture it is for.
+      SERVER_SYSO: server/{{.SERVER_MAIN}}/zz_version_windows_{{.TARGET_ARCH}}.syso
+      CLI_SYSO: cli/{{.CLI_MAIN}}/zz_version_windows_{{.TARGET_ARCH}}.syso
     cmds:
       - mkdir -p build/release/bin
+      # The -X that stamps version.Version is invisible to Windows, which reads
+      # a file's version from its VS_VERSIONINFO resource: without one,
+      # Get-Command and Explorer report 0.0.0.0. Written into the source tree
+      # because that is the only place go build looks, and removed however the
+      # build ends so a later build for another target never links a stale one.
+      - defer: rm -f "{{.SERVER_SYSO}}" "{{.CLI_SYSO}}"
+      - cmd: >-
+          go run ./internal/cmd/discobox-winres write
+          -version "{{.PIN_TAG}}" -arch {{.TARGET_ARCH}}
+          -name "{{.SERVER_NAME}}" -description "Discobox server"
+          -out "{{.SERVER_SYSO}}"
+        if: '[ "{{.TARGET_OS}}" = windows ]'
+      - cmd: >-
+          go run ./internal/cmd/discobox-winres write
+          -version "{{.PIN_TAG}}" -arch {{.TARGET_ARCH}}
+          -name discobox.exe -description "Discobox CLI"
+          -out "{{.CLI_SYSO}}"
+        if: '[ "{{.TARGET_OS}}" = windows ]'
       # The server first: the CLI is linked against its digest, so it cannot be
       # built until the file it describes is final.
       - >-
@@ -1138,6 +1160,15 @@ tasks:
               size=$(wc -c < "$relay")
               [ "$size" -gt 65536 ] || { echo "$name: guest relay for linux/$arch is $size bytes, not a real binary" >&2; exit 1; }
               echo "$name: guest relay linux/$arch ($size bytes)"
+              ;;
+          esac
+
+          # Every Windows executable, whether or not this host can run it: the
+          # resource is read from the file, and a .syso go build did not find
+          # fails nothing but this. The CLI's .zip carries the same executable.
+          case "$name" in
+            *-windows-*.exe)
+              go run ./internal/cmd/discobox-winres verify -version "{{.PIN_TAG}}" "$binary"
               ;;
           esac
 
