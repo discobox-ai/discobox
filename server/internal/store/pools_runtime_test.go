@@ -174,8 +174,14 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1, 1, nil); err != nil {
+	reported, err := s.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1, 1, nil)
+	if err != nil {
 		t.Fatal(err)
+	}
+	// A restart follows the report it invalidates. Windows' clock can return
+	// the same instant for both, which reads as a report from after the restart.
+	for !time.Now().After(*reported.StatusReportedAt) {
+		time.Sleep(time.Millisecond)
 	}
 	if err := s.BeginPoolHealthChecks(ctx); err != nil {
 		t.Fatal(err)
