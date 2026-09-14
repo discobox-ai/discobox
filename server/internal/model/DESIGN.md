@@ -263,6 +263,9 @@ the sandbox's pool must be unrevoked, desired `present`, currently healthy,
 and schedulable. `Pool.Health` derives health from `StatusReportedAt` and the
 startup epoch `HealthCheckStartedAt`; `IsReady` is the shared runtime gate.
 The nullable timestamps are additive schema changes and preserve old observations.
+`ReconciledAt` separately dates the last settled runtime attempt, so a startup
+wait can distinguish a previous-run error from a new failure without using
+telemetry's `UpdatedAt`.
 `services.PoolToAPI` masks stale flags without altering the stored report.
 See [pool health](../resources/pools/DESIGN.md#health-is-independent-of-runtime-reconciliation). No capacity is gated; sandboxes share the pool's CPU, memory,
 and storage with no per-sandbox reservation (ADR 0029). Pending/registering runtimes remain gated during image

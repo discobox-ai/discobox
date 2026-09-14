@@ -134,7 +134,12 @@ including pools nested in sandbox responses. Placement and sandbox traffic use t
 even if a blocked runtime reconcile still carries an older `offline` state.
 API health does not wait for runtime reconciliation. Placement additionally
 keeps pending/registering runtimes gated through image preload. The reconciler's existing `State`/`ErrorMessage` remains its lifecycle
-verdict; it may record offline on its own later pass.
+verdict; it may record offline on its own later pass. Startup grants the first
+heartbeat the same 90s grace before that pass may derive another offline error.
+`ReconciledAt` records when a runtime attempt settles. Waiters ignore saved
+failures older than `HealthCheckStartedAt`, including legacy rows without this
+nullable timestamp; current runtime failures still terminate the wait. Telemetry
+cannot refresh a runtime verdict.
 
 Reconciliation is level-triggered: intent writers mark `(pool, id)` dirty and
 the engine (`internal/reconcile`) drives convergence; `ScanDirty` re-checks
@@ -151,7 +156,7 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |
-| `State`, `ErrorMessage`, `ObservedGeneration`, `RuntimeState` | reconciler | `PoolReconciler`, and nothing else |
+| `State`, `ErrorMessage`, `ObservedGeneration`, `RuntimeState`, `ReconciledAt` | reconciler | `PoolReconciler`, and nothing else |
 
 Health answers "can this host take work right now"; `State`/`ErrorMessage` are
 the reconciler's verdict on whether the runtime converged, and

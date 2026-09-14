@@ -592,6 +592,8 @@ type Pool struct {
 	HealthCheckStartedAt *time.Time `gorm:"column:health_check_started_at" json:"-"`
 	// Only a status heartbeat stamps this; registration only stamps LastSeenAt.
 	StatusReportedAt *time.Time `gorm:"column:status_reported_at" json:"-"`
+	// When the runtime reconciler last settled an attempt, independent of telemetry.
+	ReconciledAt *time.Time `gorm:"column:reconciled_at" json:"-"`
 
 	RevokedAt *time.Time `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
 	CreatedAt time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`

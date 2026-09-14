@@ -33,6 +33,9 @@ func TestCreateWaitsForPostRestartHeartbeat(t *testing.T) {
 	old := now.Add(-time.Second)
 	pool := activePool("pool-1")
 	pool.StatusReportedAt, pool.HealthCheckStartedAt = &old, &now
+	pool.ReconciledAt = &old
+	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported since the previous server run")
+	pool.UpdatedAt = now // unrelated writes cannot renew the previous verdict
 	manager := healthPoolManager{&fakePoolManager{pool: pool}}
 	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -70,5 +73,23 @@ func TestUnknownPoolTimeoutExplainsTheAgentWait(t *testing.T) {
 	_, err := provider.schedulablePool(context.Background(), &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"})
 	if err == nil || !strings.Contains(err.Error(), "timed out waiting for the pool agent to become ready") {
 		t.Fatalf("timeout = %v", err)
+	}
+}
+
+func TestStartupWaitSurfacesOnlyCurrentRuntimeFailures(t *testing.T) {
+	now := time.Now()
+	old := now.Add(-time.Minute)
+	pool := activePool("pool-1")
+	pool.HealthCheckStartedAt = &now
+	pool.RecordFailure(model.PoolStateOffline, "runtime could not start")
+	for _, at := range []*time.Time{nil, &old} {
+		pool.ReconciledAt = at
+		if err := settledFailure(pool); err != nil {
+			t.Fatalf("previous-run failure ended startup wait: %v", err)
+		}
+	}
+	pool.ReconciledAt = &now
+	if err := settledFailure(pool); err == nil || !strings.Contains(err.Error(), "runtime could not start") {
+		t.Fatalf("current runtime failure = %v", err)
 	}
 }

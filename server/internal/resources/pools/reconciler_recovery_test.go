@@ -469,7 +469,7 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 	now := time.Now().UTC()
 	pool := &model.Pool{ID: "pool-1", ProjectID: provider.ProjectID,
 		PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID},
-		Ready:        true, Schedulable: true, RegisteredAt: &now, LastSeenAt: &now,
+		Ready:        true, Schedulable: true, RegisteredAt: &now, LastSeenAt: &now, StatusReportedAt: &now,
 	}
 	pool.SetState(model.PoolStateActive)
 	if err := appStore.CreatePool(ctx, pool); err != nil {
@@ -501,5 +501,54 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 	}
 	if _, err := appStore.SchedulablePoolForSandbox(ctx, sb); err != nil {
 		t.Fatalf("completed startup still gated: %v", err)
+	}
+}
+
+func TestStartupReconcileDoesNotRenewPreviousOfflineFailure(t *testing.T) {
+	ctx := context.Background()
+	st, _ := newPoolReconcilerTestStore(t)
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", stubPoolProvider{})
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := st.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1", Ready: true, Schedulable: true,
+		RegisteredAt: &old, LastSeenAt: &old, StatusReportedAt: &old, ReconciledAt: &old,
+		PoolManifest:      model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent}}
+	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported")
+	if err := st.CreatePool(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BeginPoolHealthChecks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rec := NewPoolReconciler(st, manager, NewControlPlane(st, nil))
+	if _, err := rec.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := st.GetPoolByID(ctx, pool.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ErrorMessage != nil || updated.Health(time.Now()) != model.PoolHealthUnknown {
+		t.Fatalf("startup renewed the old offline failure: %+v", updated)
+	}
+	if updated.ReconciledAt == nil || updated.ReconciledAt.Before(*updated.HealthCheckStartedAt) {
+		t.Fatal("runtime result lacks a current observation timestamp")
+	}
+	// An actual provider failure on this run must still end the wait promptly.
+	manager.RegisterProvider("stub", failingPoolProvider{stubPoolProvider{}})
+	if _, err := rec.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err == nil {
+		t.Fatal("expected runtime failure")
+	}
+	updated, err = st.GetPoolByID(ctx, pool.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ErrorMessage == nil || updated.ReconciledAt == nil || updated.ReconciledAt.Before(*updated.HealthCheckStartedAt) {
+		t.Fatal("current runtime failure was not timestamped")
 	}
 }

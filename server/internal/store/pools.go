@@ -147,7 +147,7 @@ func (s *Store) UpdatePoolWithGeneration(ctx context.Context, pool *model.Pool, 
 	result := write.Model(&model.Pool{}).
 		Where("id = ? AND generation = ?", pool.ID, generation).
 		Select("desired_state", "state", "state_changed_at", "generation",
-			"observed_generation", "error_message", "runtime_state", "revoked_at", "updated_at").
+			"observed_generation", "error_message", "runtime_state", "reconciled_at", "revoked_at", "updated_at").
 		Updates(pool)
 	if result.Error != nil {
 		return result.Error

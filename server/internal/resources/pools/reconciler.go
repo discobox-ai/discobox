@@ -59,7 +59,13 @@ func heartbeatStale(pool *model.Pool) bool {
 	if poolHeartbeatTimeout <= 0 || pool.LastSeenAt == nil {
 		return false
 	}
-	return time.Since(*pool.LastSeenAt) > poolHeartbeatTimeout
+	lastSeen := *pool.LastSeenAt
+	// A previous server run's silence must not immediately re-create an
+	// offline failure while this run is waiting for its first heartbeat.
+	if pool.HealthCheckStartedAt != nil && pool.HealthCheckStartedAt.After(lastSeen) {
+		lastSeen = *pool.HealthCheckStartedAt
+	}
+	return time.Since(lastSeen) > poolHeartbeatTimeout
 }
 
 // PoolReconciler converges one pool's runtime host toward its desired state.
@@ -208,6 +214,8 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// DB with the stale pre-call value.
 	current.RuntimeState = pool.RuntimeState
 	current.ObservedGeneration = generation
+	settledAt := time.Now().UTC()
+	current.ReconciledAt = &settledAt
 	// The state is derived on every success, never carried over. A pool whose
 	// agent has called home is active; one whose runtime exists but has not
 	// been heard from is still registering. Preserving current.State on a
@@ -336,6 +344,8 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 // Agent health belongs to status reports. A lifecycle write never overwrites
 // one, even if a heartbeat arrived while the runtime operation was failing.
 func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, message string) {
+	settledAt := time.Now().UTC()
+	pool.ReconciledAt = &settledAt
 	pool.ObservedGeneration = generation
 	if !pool.EverCreated() {
 		pool.RecordFailure(model.PoolStateFailed, message)

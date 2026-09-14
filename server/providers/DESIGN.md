@@ -883,4 +883,6 @@ reads as movement.
 Pool placement waits allow two minutes without progress, including time for a
 post-restart heartbeat. Advancing driver progress renews that silence budget.
 Expiry reports "timed out waiting for the pool agent to become ready" with the
-pool ID; settled runtime failures retain their concrete cause.
+pool ID; settled runtime failures retain their concrete cause. A previous-run
+failure is not terminal during startup: its `ReconciledAt` must be at least the
+pool's `HealthCheckStartedAt` before it may end the wait.

@@ -501,6 +501,13 @@ func settledFailure(pool *model.Pool) error {
 	if pool.ErrorMessage == nil || !pool.Converged() {
 		return nil
 	}
+	// Startup invalidates the previous runtime verdict as well as confidence
+	// in health. Wait for this run to settle an attempt; a telemetry write
+	// must not make an old error look current.
+	if pool.HealthCheckStartedAt != nil &&
+		(pool.ReconciledAt == nil || pool.ReconciledAt.Before(*pool.HealthCheckStartedAt)) {
+		return nil
+	}
 	return &sandbox.PoolFailure{PoolID: pool.ID, Message: *pool.ErrorMessage}
 }
 
