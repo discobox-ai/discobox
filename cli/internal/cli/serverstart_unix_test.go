@@ -15,6 +15,8 @@ import (
 
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/health"
+	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/serverstage"
 	"github.com/discobox-ai/x/shorttmp"
 )
 
@@ -151,5 +153,68 @@ func TestAnInvocationAutolaunchesAtMostOnce(t *testing.T) {
 	}
 	if got := probes.Load(); got != first {
 		t.Fatalf("the launch path ran again for a later client: %d probes, want the %d from startup", got, first)
+	}
+}
+
+func TestAutolaunchKeepsSelectedOlderServerAcrossInvocations(t *testing.T) {
+	setVersion(t, "v0.9.0")
+	t.Setenv(ServerBinaryEnv, "")
+	t.Setenv(ServerManifestEnv, "")
+	t.Setenv(releasemanifest.Env, "")
+	for _, source := range []string{"release", "legacy", "binary"} {
+		t.Run(source, func(t *testing.T) {
+			manifest, fetches := servedManifest(t, "v0.8.0")
+			selected := serverSource{manifest: manifestFile(t, manifest)}
+			if source != "legacy" {
+				full, err := releasemanifest.Read("../../../releasemanifest/examples/v0.8.0.json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				full.Servers = []serverstage.Manifest{manifest}
+				data, err := json.Marshal(full)
+				if err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(t.TempDir(), "release.json")
+				write(t, path, string(data))
+				selected = serverSource{releaseManifest: path}
+			}
+			runningVersion := "v0.8.0"
+			if source == "binary" {
+				selected.binary = filepath.Join(t.TempDir(), serverBinaryName())
+				write(t, selected.binary, "unused binary")
+				runningVersion = "v0.7.0"
+			}
+			endpointURL := "unix://" + filepath.Join(shorttmp.Dir(t), "s.sock")
+			listener, _, cleanup, err := endpoint.Listen(endpointURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			var shutdowns atomic.Int32
+			server := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/healthz" {
+					shutdowns.Add(1)
+					http.Error(w, "unexpected shutdown", http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				encodeStatus(t, w, health.Status{Status: health.StatusReady, Version: runningVersion})
+			})}
+			defer server.Close()
+			go func() { _ = server.Serve(listener) }()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			for range 2 {
+				_, app := newRootCommand()
+				app.serverURL, app.quiet, app.serverSource = endpointURL, true, selected
+				if err := app.ensureLocalServer(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if *fetches != 0 || shutdowns.Load() != 0 {
+				t.Fatalf("running selected server replaced: %d downloads, %d shutdowns", *fetches, shutdowns.Load())
+			}
+		})
 	}
 }

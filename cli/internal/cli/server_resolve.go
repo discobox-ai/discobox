@@ -172,6 +172,23 @@ func (r serverResolver) resolve(ctx context.Context) (string, error) {
 	return filepath.Join(dir, manifest.Command), nil
 }
 
+// expectedVersion follows the selected server source without staging a binary.
+// An explicit binary has no declared version; release metadata must not cause
+// that binary to be replaced on every invocation.
+func (r serverResolver) expectedVersion(ctx context.Context) (string, error) {
+	if r.source.binary != "" {
+		return "", nil
+	}
+	if r.source.releaseManifest != "" || r.source.manifest != "" {
+		manifest, err := r.manifest(ctx)
+		if err != nil {
+			return "", err
+		}
+		return manifest.Version, nil
+	}
+	return version.String(), nil
+}
+
 // sibling is a server binary installed next to this one.
 func (r serverResolver) sibling() (string, bool) {
 	if r.executable == "" {

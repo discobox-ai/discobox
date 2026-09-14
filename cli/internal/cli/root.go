@@ -25,7 +25,6 @@ import (
 	"github.com/discobox-ai/discobox/health"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/serverstage"
-	"github.com/discobox-ai/discobox/version"
 )
 
 const defaultProjectAlias = "default"
@@ -645,6 +644,10 @@ func (a *App) ensureLocalServerOnce() error {
 }
 
 func (a *App) ensureLocalServer(ctx context.Context) error {
+	expectedVersion, err := a.serverResolver(nil).expectedVersion(ctx)
+	if err != nil {
+		return err
+	}
 	// One line for the whole start, rewritten in place and taken back down
 	// before the command that wanted the server writes anything of its own.
 	// A line per phase would leave a first run five of them scrolled above
@@ -671,7 +674,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 			return endpoint.Command{Path: path}, nil
 		},
 		Env:             localServerEnv(a.serverURL),
-		ExpectedVersion: version.String(),
+		ExpectedVersion: expectedVersion,
 		OnProgress: func(status health.Status) {
 			progress.set(serverStartupText(status))
 		},

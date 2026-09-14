@@ -568,11 +568,13 @@ attempt is told how it went; a later one dials the endpoint and reports the
 connection error, rather than being handed a stale failure it cannot act on.
 
 That first check also compares release versions from `/healthz`. When the local
-server is an older semantic version than the autolaunching CLI, the CLI resolves
-its own server first, then asks the old one to shut down, waits for the endpoint
+server is an older semantic version than the selected server manifest (or the
+CLI version when no manifest is selected), the CLI resolves
+its selected server first, then asks the old one to shut down, waits for the endpoint
 to be released, and launches the one it resolved. It never downgrades a newer server, and development or
 legacy responses without semantic versions are left alone because they do not
-establish which process is older.
+establish which process is older. An explicitly named local server binary has
+no declared version, so it disables this replacement check.
 
 `endpoint.LaunchOptions.Command` is a func, not a path, and `EnsureRunning`
 calls it only when a server actually has to be started — under the launch lock,
