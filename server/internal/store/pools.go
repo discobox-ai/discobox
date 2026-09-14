@@ -72,7 +72,7 @@ func (s *Store) UpdatePool(ctx context.Context, pool *model.Pool) error {
 	if err != nil {
 		return err
 	}
-	return write.Save(pool).Error
+	return write.Model(pool).Select("name", "cpu_vcpus", "memory_bytes", "storage_bytes", "updated_at").Updates(pool).Error
 }
 
 func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error {
@@ -136,8 +136,9 @@ func (s *Store) GetPoolByID(ctx context.Context, poolID string, options ...PoolG
 	return pool, nil
 }
 
-// UpdatePoolWithGeneration persists the pool only when its generation still
-// matches, so reconciler writes lose cleanly to newer intent.
+// UpdatePoolWithGeneration persists lifecycle and runtime fields only when the
+// generation matches. Agent observations and other telemetry have separate
+// writers and must survive a reconcile holding an older snapshot.
 func (s *Store) UpdatePoolWithGeneration(ctx context.Context, pool *model.Pool, generation int64) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -145,7 +146,8 @@ func (s *Store) UpdatePoolWithGeneration(ctx context.Context, pool *model.Pool, 
 	}
 	result := write.Model(&model.Pool{}).
 		Where("id = ? AND generation = ?", pool.ID, generation).
-		Select("*").
+		Select("desired_state", "state", "state_changed_at", "generation",
+			"observed_generation", "error_message", "runtime_state", "revoked_at", "updated_at").
 		Updates(pool)
 	if result.Error != nil {
 		return result.Error
@@ -265,6 +267,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 		pool.AvailableStorageBytes = availableStorageBytes
 		pool.Conditions = conditions
 		pool.LastSeenAt = &now
+		pool.StatusReportedAt = &now
 		return tx.Save(&pool).Error
 	})
 	if err != nil {
@@ -323,14 +326,12 @@ func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resource
 	return nil
 }
 
-// SchedulablePoolForSandbox gates placement: the sandbox's pool must be
-// ready, schedulable, unrevoked, and active. Ready and Schedulable are
-// the agent's own word; the offline check covers their blind spot — an agent
-// that stopped answering leaves its last (stale) flags behind, and `offline`
-// is the reconciler's verdict that the host is gone. No capacity is gated —
-// sandboxes share their pool's CPU, memory, and storage with no per-sandbox
-// reservation (docs/adr/0029). There is no candidate search —
-// the pool is the host.
+// SchedulablePoolForSandbox gates placement on current heartbeat health and
+// the agent's schedulable flag, independently of a blocked runtime reconcile.
+// Pending/registering runtimes remain gated during upstream image preload.
+// No capacity is gated: sandboxes share their pool's CPU, memory, and storage
+// with no per-sandbox reservation (docs/adr/0029).
+// There is no candidate search; the sandbox's assigned pool is its host.
 func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error) {
 	if sandbox == nil || sandbox.PoolID == "" {
 		return nil, ErrNotFound
@@ -341,8 +342,8 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 	}
 	if pool.RevokedAt != nil ||
 		pool.DesiredState != model.DesiredStatePresent ||
-		pool.State != model.PoolStateActive ||
-		!pool.Ready || !pool.Schedulable {
+		(pool.State != model.PoolStateActive && pool.State != model.PoolStateOffline) ||
+		!pool.IsReady() || !pool.Schedulable {
 		return nil, ErrNotFound
 	}
 	return pool, nil
@@ -358,4 +359,15 @@ func (s *Store) PurgeSpentPoolBootstrapTokens(ctx context.Context, expiredBefore
 	result := write.Where("expires_at < ? OR used_at IS NOT NULL OR revoked_at IS NOT NULL", expiredBefore).
 		Delete(&model.PoolBootstrapToken{})
 	return result.RowsAffected, result.Error
+}
+
+// BeginPoolHealthChecks invalidates reports from the previous server process.
+// It runs before workers or HTTP listeners start. Identity and lifecycle survive.
+func (s *Store) BeginPoolHealthChecks(ctx context.Context) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.WithContext(ctx).Model(&model.Pool{}).Where("1 = 1").
+		UpdateColumn("health_check_started_at", time.Now().UTC()).Error
 }

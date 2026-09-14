@@ -43,7 +43,7 @@ var poolRegistrationTimeout = 2 * time.Minute
 // every 30s (pool-agent statusReportInterval), so this is three missed beats:
 // long enough that one slow report or dropped connection does not flap the
 // state, short enough that a dead host is called out within a scan or two.
-var poolHeartbeatTimeout = 90 * time.Second
+var poolHeartbeatTimeout = model.PoolHeartbeatTimeout
 
 // poolHostComingUpRequeue is how long to wait before re-checking a pool whose
 // host is up but not yet taking traffic — a container whose healthcheck has not
@@ -304,9 +304,6 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	}
 
 	now := time.Now().UTC()
-	pool.Ready = false
-	pool.Schedulable = false
-	pool.Degraded = false
 	pool.RevokedAt = &now
 	pool.RuntimeState = nil
 	pool.ObservedGeneration = generation
@@ -336,14 +333,11 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 // attempted, and it lost" — schedulers rely on that to tell a settled failure
 // from one with a repair pending.
 //
-// Ready and Schedulable are cleared only on the never-created path: for a
-// created pool they are the agent's facts (see the ownership table in
-// DESIGN.md), and a live agent would repaint them within a heartbeat anyway.
+// Agent health belongs to status reports. A lifecycle write never overwrites
+// one, even if a heartbeat arrived while the runtime operation was failing.
 func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, message string) {
 	pool.ObservedGeneration = generation
 	if !pool.EverCreated() {
-		pool.Ready = false
-		pool.Schedulable = false
 		pool.RecordFailure(model.PoolStateFailed, message)
 		return
 	}

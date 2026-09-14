@@ -55,7 +55,8 @@ var yamlEnumAliases = map[string]string{
 // the reason. The contract in server.yaml is the single source of truth for
 // these; server code must follow it.
 var yamlOwnedEnums = map[string]string{
-	"Job.status": "job status values are owned by the orchestration module; model.Job.Status is untagged text",
+	"Pool.health": "derived by Pool.Health from heartbeat freshness and reported readiness",
+	"Job.status":  "job status values are owned by the orchestration module; model.Job.Status is untagged text",
 	// Both axes now diverge per resource, which is what a single embedded tag
 	// cannot express: the shared tag is the union, and each resource's schema
 	// narrows it (ADR 0017 §2, ADR 0022 §1).

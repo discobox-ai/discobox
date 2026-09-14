@@ -20,7 +20,7 @@ func sandboxWithResources(t *testing.T, runtimeResources, poolResources string) 
 	pool := ""
 	if poolResources != "" {
 		pool = `,"pool":{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
-			`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,` +
+			`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"health":"ready","ready":true,"schedulable":true,"degraded":false,` +
 			`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
 			`"resources":` + poolResources + `,` +
 			`"desiredState":"present","state":"active","generation":1,"observedGeneration":1,` +

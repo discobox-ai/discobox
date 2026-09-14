@@ -34,6 +34,7 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 		model []string
 		api   []string
 	}{
+		{"pool health", model.PoolHealthStatuses, values(apigen.PoolHealth("").AllValues())},
 		{"pool state", model.PoolStates, values(apigen.PoolState("").AllValues())},
 		{"pool desired state", model.PoolDesiredStates, values(apigen.PoolDesiredState("").AllValues())},
 		{"sandbox state", model.SandboxStates, values(apigen.SandboxRuntimeState("").AllValues())},
@@ -79,6 +80,7 @@ func TestModelEnumConstsAreRegistered(t *testing.T) {
 	// since ADR 0022 §1: a value belonging to either resource is registered.
 	registries := map[string][][]string{
 		"PoolState":            {model.PoolStates},
+		"PoolHealth":           {model.PoolHealthStatuses},
 		"SandboxState":         {model.SandboxStates},
 		"SandboxRuntimeState":  {model.SandboxRuntimeStates},
 		"DesiredState":         {model.SandboxDesiredStates, model.PoolDesiredStates},

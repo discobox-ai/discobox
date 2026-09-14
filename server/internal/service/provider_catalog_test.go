@@ -156,6 +156,41 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
+	ctx := context.Background()
+	svc, _, st, projectID := newSandboxTestService(t, nil)
+	harnessSlug := imagelessHarnessConfig(ctx, t, st, projectID)
+	svc.RegisterSandboxProvider("recording", &recordingSandboxProvider{})
+	instance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{Type: "recording", Name: "recording"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	poolID := createPoolForInstance(ctx, t, svc, projectID, instance.ID)
+	if _, err := st.UpdatePoolStatus(ctx, poolID, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BeginPoolHealthChecks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
+		HarnessName: serverapi.NewOptString(harnessSlug), PoolId: serverapi.NewOptString(poolID),
+		Config: serverapi.SandboxCreateConfig{Name: "waiting-for-pool"},
+	})
+	if err != nil {
+		t.Fatalf("create rejected unknown pool: %v", err)
+	}
+	if sb.PoolID != poolID || sb.State != model.SandboxStatePending || sb.Converged() {
+		t.Fatalf("create did not persist pending intent on the chosen pool: %+v", sb)
+	}
+	view, err := services.SandboxToAPI(sb, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.PoolId.Or("") != poolID {
+		t.Fatal("response lost the pool assignment")
+	}
+}
+
 func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)

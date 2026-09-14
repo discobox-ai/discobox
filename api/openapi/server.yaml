@@ -2005,6 +2005,10 @@ components:
                     description: Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset.
                     format: int64
                     type: integer
+                health:
+                    description: Current agent health, derived from status reports received since this server started. Independent of runtime reconciliation and image staging.
+                    enum: [unknown, ready, not_ready, offline]
+                    type: string
                 ready:
                     description: Whether the pool host is alive and healthy
                     type: boolean
@@ -2114,6 +2118,7 @@ components:
                 - cpuVcpus
                 - memoryBytes
                 - storageBytes
+                - health
                 - ready
                 - schedulable
                 - degraded

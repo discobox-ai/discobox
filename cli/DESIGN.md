@@ -2491,3 +2491,10 @@ Re-running reconfigures and clobbers any in-flight attempt. Nothing here parses
 the configure output or creates secrets: a client that crashes mid-flow cannot
 leave a half-applied harness, and an abandoned sandbox is reaped by the server.
 See `server/internal/resources/harnessconfigs/DESIGN.md`.
+
+## Pool Health Display
+
+Pool list/get output shows lifecycle `STATE` separately from `HEALTH` and
+server-derived `READY`. Unknown health after server restart is a wait for the
+pool agent, with current driver provisioning progress shown when available.
+`UPDATED` remains the row update timestamp, not proof of a fresh heartbeat.

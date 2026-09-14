@@ -85,7 +85,9 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    `Options.SandboxReconcileJobConcurrency`), `harnessConfig`
    (`harnessconfigs.Service`, so in-flight configure flows survive a restart),
    and `pool` (`pools.ControlPlane.RegisterJobs`).
-2. Starts the engine.
+2. Invalidates previous pool health with `Store.BeginPoolHealthChecks`, then
+   starts the engine. This runs before any worker or HTTP listener can use old
+   readiness; pool identity and lifecycle survive.
 3. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`.
 4. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving
    every enabled provider instance; on failure it stops the engine and returns

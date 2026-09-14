@@ -100,8 +100,7 @@ flowchart LR
   `RequeueAt` only while waiting) is repaired with a fresh bootstrap token;
   delete refuses while sandboxes are assigned, removes the runtime, and then
   the row. Failure latching follows `EverCreated` (`RegisteredAt` set):
-  never-registered pools fail terminally (`failed`, `Ready`/`Schedulable`
-  cleared); a created pool keeps its state and records the failure as
+  never-registered pools fail terminally (`failed`); a created pool keeps its state and records the failure as
   `ErrorMessage` — its runtime keeps serving what it already hosts, so a
   failed convergence is not a phase. The reconciler supplies the default sandbox
   image and the project's harness
@@ -114,20 +113,28 @@ flowchart LR
   server-resolved default image. Development `:local` images are handled by the
   development image sync.
 
-## Offline is a liveness verdict
+## Health is independent of runtime reconciliation
 
-`offline` means exactly its ADR 0017 §4 sense: the pool agent stopped
-answering and the host is expected back. It is derived from heartbeat
-staleness (`LastSeenAt` older than `poolHeartbeatTimeout`, three missed 30s
-beats), never from a failed reconcile — a heartbeating pool whose reconcile is
-failing is `active` with an `ErrorMessage`, not offline. The reconciler still
-owns the write (staleness is checked on every pass, including the 60s drift
-scan); a heartbeat arriving at an offline pool marks it dirty so the reconcile
-that proves recovery runs promptly. Consumers gate accordingly: placement
-(`SchedulablePoolForSandbox`) and sandbox traffic
-(`AcquireSandboxHTTPClient`) refuse offline pools — the last-reported
-`Ready`/`Schedulable` flags are stale facts from a silent agent — but neither
-refuses a pool for an unconverged reconcile.
+The API's `health` is derived by `model.Pool.Health` at the point of use:
+`unknown` until a status report arrives in the current server run, `ready` or
+`not_ready` from a fresh report, and `offline` after 90s without one. Startup
+stamps `HealthCheckStartedAt` on every pool before workers start, preserving
+registration, identity, lifecycle, and the previous observations. The startup
+stamp gives a pool 90s to report before unknown becomes offline. New pools use
+their creation time for that deadline.
+
+Only `UpdatePoolStatus` stamps `StatusReportedAt`; registration, image builds,
+and other telemetry cannot establish or renew health. `LastSeenAt` retains its
+existing registration/heartbeat diagnostic meaning. The nullable timestamp
+columns migrate additively; an old row without a status timestamp is unknown
+until its agent reports. No backfill should certify an old report as fresh.
+
+`services.PoolToAPI` exposes health and masks stale `Ready`/`Schedulable` flags,
+including pools nested in sandbox responses. Placement and sandbox traffic use the same `Pool.IsReady` gate. Fresh health permits placement
+even if a blocked runtime reconcile still carries an older `offline` state.
+API health does not wait for runtime reconciliation. Placement additionally
+keeps pending/registering runtimes gated through image preload. The reconciler's existing `State`/`ErrorMessage` remains its lifecycle
+verdict; it may record offline on its own later pass.
 
 Reconciliation is level-triggered: intent writers mark `(pool, id)` dirty and
 the engine (`internal/reconcile`) drives convergence; `ScanDirty` re-checks
@@ -139,8 +146,9 @@ Every pool status field has exactly one writer, and writers must not overlap:
 
 | Fields | Owner | Written by |
 | --- | --- | --- |
+| `HealthCheckStartedAt` | server startup | `Store.BeginPoolHealthChecks`, before workers/listeners |
 | `PublicKey`, `KeyType`, `RegisteredAt` | pool agent | `RegisterPool` (bootstrap-token redemption; also stamps `LastSeenAt`) |
-| `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt` | pool agent | `UpdatePoolStatus` heartbeats |
+| `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |
 | `State`, `ErrorMessage`, `ObservedGeneration`, `RuntimeState` | reconciler | `PoolReconciler`, and nothing else |
@@ -148,7 +156,8 @@ Every pool status field has exactly one writer, and writers must not overlap:
 Health answers "can this host take work right now"; `State`/`ErrorMessage` are
 the reconciler's verdict on whether the runtime converged, and
 `ObservedGeneration` says the reconciler finished acting on a generation.
-Scheduling gates on the health flags plus the active state
+Scheduling gates on current health and the schedulable flag, with
+pending/registering runtimes gated until image preload finishes
 (`SchedulablePoolForSandbox`), so no agent call has any reason to write the
 reconciler's fields. The telemetry writers (resources and provisioning progress) use narrow column updates, never a whole-row save, so they cannot
 clobber a concurrent reconcile.

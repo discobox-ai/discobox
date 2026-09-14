@@ -439,3 +439,13 @@ launch.
 bindings (`rebindSandboxSecretRows`) before building the create options. That
 catches a binding change the live fan-out (`RebindHarnessConfigSecrets`) missed
 while the sandbox was down.
+
+## Creation While Pool Health Is Unknown
+
+Create accepts and persists the requested pool assignment without requiring
+current health. The pool-backed provider waits for `Pool.IsReady` and the
+schedulable report before launching the sandbox. The sandbox stays pending;
+client narration reads pool provisioning progress, falling back to "waiting
+for the pool agent to become ready". Fresh health resumes creation, even while
+the pool lifecycle verdict still reflects a previous server run. Concrete pool
+failures and a silent startup timeout propagate to the sandbox error.

@@ -132,30 +132,79 @@ func TestSchedulablePoolForSandboxRequiresReadiness(t *testing.T) {
 	}
 }
 
-// TestSchedulablePoolForSandboxRefusesOfflinePool pins the offline check's
-// reason to exist: Ready and Schedulable are the agent's last words, and an
-// agent that stopped answering leaves them behind looking healthy. `offline`
-// is the reconciler's verdict that the host is gone, so it must veto the
-// stale flags.
-func TestSchedulablePoolForSandboxRefusesOfflinePool(t *testing.T) {
+// A fresh heartbeat recovers placement even if the runtime reconciler is still
+// blocked and has not refreshed its older offline verdict.
+func TestSchedulablePoolForSandboxUsesFreshHealthRatherThanLifecycle(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
-		t.Fatalf("update status: %v", err)
-	}
-
 	pool, err := s.GetPool(ctx, "project-1", "pool-1")
 	if err != nil {
-		t.Fatalf("get pool: %v", err)
+		t.Fatal(err)
 	}
 	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported")
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
-		t.Fatalf("record offline: %v", err)
+		t.Fatal(err)
 	}
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); err != nil {
+		t.Fatalf("fresh heartbeat did not recover placement: %v", err)
+	}
+}
 
-	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("schedulable pool error = %v, want ErrNotFound for an offline pool", err)
+func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	pool, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := sha256.Sum256([]byte("startup-health-token"))
+	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: pool.ID, TokenHash: token[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	pool, err = s.RegisterPool(ctx, pool.ID, token[:], "durable-key", "ed25519")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetState(model.PoolStateActive)
+	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.BeginPoolHealthChecks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	pool, err = s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pool.Health(time.Now()) != model.PoolHealthUnknown || pool.PublicKey != "durable-key" || pool.RegisteredAt == nil || pool.State != model.PoolStateActive {
+		t.Fatalf("restart changed identity/lifecycle or kept health: %+v", pool)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("startup placement = %v, want wait", err)
+	}
+	if _, err := s.UpdatePoolStatus(ctx, pool.ID, false, false, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	// A reconcile holding a pre-heartbeat snapshot must not erase freshness.
+	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("stale reconcile overwrote a negative heartbeat: %v", err)
+	}
+	if _, err := s.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); err != nil {
+		t.Fatalf("fresh heartbeat did not reopen placement: %v", err)
 	}
 }
 
@@ -217,5 +266,25 @@ func TestPurgeSpentPoolBootstrapTokens(t *testing.T) {
 	// The live token still redeems: purging must not touch it.
 	if _, err := s.RegisterPool(ctx, "pool-1", live[:], "public", "ed25519"); err != nil {
 		t.Fatalf("register pool with surviving live token: %v", err)
+	}
+}
+
+func TestSchedulablePoolKeepsPreloadGateDespiteFreshHeartbeat(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetState(model.PoolStateRegistering)
+	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("placement during preload = %v, want ErrNotFound", err)
 	}
 }

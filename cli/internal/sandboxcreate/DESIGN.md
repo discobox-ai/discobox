@@ -161,3 +161,8 @@ sandbox create requests.
   name a bounded number of times. Only a generated name is replaced this way: a
   name the user typed is theirs, so `discobox admin box create --name` reports
   the conflict instead of quietly creating something else.
+
+An unknown pool after server restart is narrated as "waiting for the pool agent
+to become ready". Fresh driver provisioning progress refines that message;
+image preparation can continue while the health wait is pending. The server
+holds creation until a current status report permits placement.

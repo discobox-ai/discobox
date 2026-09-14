@@ -259,9 +259,15 @@ row:
 The agent also reports `available*` capacity and an opaque `conditions` JSON
 blob for display and diagnostics; the control plane does not interpret either
 for scheduling. Placement is a gate, not a search (`Store.SchedulablePoolForSandbox`):
-the sandbox's pool must be unrevoked, desired `present`, `active`, ready,
-and schedulable. No capacity is gated; sandboxes share the pool's CPU, memory,
-and storage with no per-sandbox reservation (ADR 0029). Image preload progress uses `ProvisionProgress`.
+the sandbox's pool must be unrevoked, desired `present`, currently healthy,
+and schedulable. `Pool.Health` derives health from `StatusReportedAt` and the
+startup epoch `HealthCheckStartedAt`; `IsReady` is the shared runtime gate.
+The nullable timestamps are additive schema changes and preserve old observations.
+`services.PoolToAPI` masks stale flags without altering the stored report.
+See [pool health](../resources/pools/DESIGN.md#health-is-independent-of-runtime-reconciliation). No capacity is gated; sandboxes share the pool's CPU, memory,
+and storage with no per-sandbox reservation (ADR 0029). Pending/registering runtimes remain gated during image
+preload; fresh health may override an old offline verdict. Image preload
+progress uses `ProvisionProgress`.
 
 ## Pool Deletion
 
@@ -274,7 +280,7 @@ and keeps the state. It never converts the pool to deleted.
 
 Pool delete is intent-based: `desiredState=deleted` is recorded while `state`
 stays put until runtime cleanup succeeds. Only successful cleanup may set
-`state=deleted`, clear the scheduling flags, revoke the pool, clear runtime
+`state=deleted`, revoke the pool, clear runtime
 state, and delete the row. `Pool.BootstrapTokens` declares `OnDelete:CASCADE`
 in the GORM relationship because registration credentials have no identity
 without their pool; deleting the pool must remove live and spent

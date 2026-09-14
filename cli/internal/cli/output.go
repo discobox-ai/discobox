@@ -18,6 +18,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
 
 func writeJSON(w io.Writer, value any) error {
@@ -347,6 +348,7 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
 	fmt.Fprintf(tw, "STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
 	fmt.Fprintf(tw, "STATE\t%s\n", pool.State)
+	fmt.Fprintf(tw, "HEALTH\t%s\n", pool.Health)
 	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)
 	fmt.Fprintf(tw, "SCHEDULABLE\t%t\n", pool.Schedulable)
 	fmt.Fprintf(tw, "CAPACITY\t%s\n", formatPoolCapacity(*pool))
@@ -370,14 +372,15 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 		defaultID = defaultPoolID[0]
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tDEFAULT\tSTATE\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
+	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tDEFAULT\tSTATE\tHEALTH\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, pool := range pools {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
 			pool.ID,
 			pool.Name,
 			pool.ProviderInstanceId,
 			formatDefaultMarker(pool.ID == defaultID),
 			pool.State,
+			pool.Health,
 			pool.Ready,
 			formatPoolCPU(pool.CpuVcpus),
 			formatPoolBytes(pool.MemoryBytes),
@@ -420,6 +423,12 @@ func formatPoolCapacity(pool apimodel.Pool) string {
 func poolMessage(pool apimodel.Pool) string {
 	if message, ok := pool.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
 		return message
+	}
+	if !pool.Ready && pool.DesiredState == apiclientgen.PoolDesiredStatePresent {
+		if step := sandboxcreate.PoolProvisionStatus(&pool); step != "" {
+			return string(step)
+		}
+		return string(sandboxcreate.StepWaitingForPool)
 	}
 	return ""
 }

@@ -60,8 +60,10 @@ func attachWaitFixture(t *testing.T) (*Service, *provisioningProvider) {
 	}); err != nil {
 		t.Fatalf("create provider instance: %v", err)
 	}
+	reportedAt := time.Now()
 	pool := &model.Pool{
-		ID: "pool-1", ProjectID: "project-1", Ready: true,
+		StatusReportedAt: &reportedAt,
+		ID:               "pool-1", ProjectID: "project-1", Ready: true,
 		PoolManifest:      model.PoolManifest{Name: "pool-1", ProviderInstanceID: "prov-1"},
 		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.PoolStateActive},
 	}

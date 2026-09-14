@@ -164,3 +164,14 @@ Keep files split by resource area:
 | `ssh_keys.go` | Project SSH keys. |
 | `peers.go` | Enrolled peers, looked up by ID or validated prefix. |
 | `server_state.go` | Server-wide key/value markers (e.g. one-time seeding). |
+
+## Pool Health Freshness
+
+`BeginPoolHealthChecks` stamps all pools before service workers start, leaving
+identity, registration, lifecycle, and agent observations intact. Only a new
+`UpdatePoolStatus` stamps `StatusReportedAt`. Generation-guarded pool updates
+write lifecycle and runtime fields only; metadata updates write the editable
+manifest only. Neither can overwrite a newer heartbeat, registration, or
+telemetry report.
+Placement uses `Pool.IsReady`, not a persisted lifecycle verdict. API projections
+use the same health derivation; see [pools](../resources/pools/DESIGN.md).

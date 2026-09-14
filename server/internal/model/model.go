@@ -587,9 +587,15 @@ type Pool struct {
 	ResourceLifecycle   `gorm:"embedded"`
 	RegisteredAt        *time.Time `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
 	LastSeenAt          *time.Time `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
-	RevokedAt           *time.Time `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
-	CreatedAt           time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+
+	// Startup invalidates health without discarding identity or the last report.
+	HealthCheckStartedAt *time.Time `gorm:"column:health_check_started_at" json:"-"`
+	// Only a status heartbeat stamps this; registration only stamps LastSeenAt.
+	StatusReportedAt *time.Time `gorm:"column:status_reported_at" json:"-"`
+
+	RevokedAt *time.Time `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
+	CreatedAt time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Backing sandbox provider instance"`

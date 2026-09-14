@@ -338,7 +338,7 @@ func TestReportedResourcesSurviveTheAPIProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get pool: %v", err)
 	}
-	apiPool, err := services.Convert[serverapi.Pool](poolModel)
+	apiPool, err := services.PoolToAPI(poolModel)
 	if err != nil {
 		t.Fatalf("project pool through the API schema: %v\nstored: %s", err, poolModel.Resources)
 	}
@@ -406,7 +406,7 @@ func TestAPoolResourceBlobFromAnotherVersionDoesNotFailThePoolRead(t *testing.T)
 	if err != nil {
 		t.Fatalf("get pool: %v", err)
 	}
-	apiPool, err := services.Convert[serverapi.Pool](poolModel)
+	apiPool, err := services.PoolToAPI(poolModel)
 	if err != nil {
 		t.Fatalf("an unreadable resource blob failed the whole pool read: %v", err)
 	}

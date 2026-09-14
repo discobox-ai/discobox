@@ -50,7 +50,7 @@ flowchart TD
 
 `server/providers/poolruntime.Provider` is the registered `sandbox.Provider`
 for pool-backed provider instances. It owns sandbox placement gating (the
-sandbox's pool must be ready and schedulable — there is no candidate search
+sandbox's pool must have fresh health and be schedulable — there is no candidate search
 and no capacity check; sandboxes share their pool's CPU, memory, and storage
 with no per-sandbox reservation, docs/adr/0029), capacity waits,
 bootstrap credential minting, pool runtime convergence
@@ -879,3 +879,8 @@ noticed, and a caller polling this acquire — the attach wait, twice a second �
 would otherwise queue a reconcile per pass, each one re-running the host's
 drift checks and re-stamping the progress that the caller's own stall budget
 reads as movement.
+
+Pool placement waits allow two minutes without progress, including time for a
+post-restart heartbeat. Advancing driver progress renews that silence budget.
+Expiry reports "timed out waiting for the pool agent to become ready" with the
+pool ID; settled runtime failures retain their concrete cause.

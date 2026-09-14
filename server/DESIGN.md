@@ -229,7 +229,7 @@ permits fetch.
   nothing about desired or observed runtime state changes, so there is
   nothing for the reconcile engine to act on.
 - `AcquireSandboxHTTPClient` checks that the sandbox exists and is not being
-  deleted and that its pool is reachable (not `offline`, and `Ready`), and
+  deleted and that its pool has current ready health (`Pool.IsReady`), and
   nothing about whether it is running. A stopped sandbox is started on demand
   by the pool agent when the request reaches it (ADR 0017 §12), so gating here
   would refuse traffic the agent would have served.

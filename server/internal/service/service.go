@@ -157,6 +157,9 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.registerReconcilers(); err != nil {
 		return err
 	}
+	if err := s.store.BeginPoolHealthChecks(ctx); err != nil {
+		return err
+	}
 	if err := s.engine.Start(ctx); err != nil {
 		return err
 	}

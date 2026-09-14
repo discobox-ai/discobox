@@ -376,10 +376,10 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	// own word on taking work. A pool whose reconcile is failing for other
 	// reasons (State active, ErrorMessage set) still serves the sandboxes it
 	// already hosts, so traffic onto them must not be refused for it.
-	if pool.State == model.PoolStateOffline || !pool.Ready {
+	if !pool.IsReady() {
 		return nil, sandboxModel, apperrors.StatusError{
 			Status:  http.StatusConflict,
-			Message: fmt.Sprintf("sandbox pool is not reachable: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.Ready),
+			Message: fmt.Sprintf("sandbox pool is not reachable: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.IsReady()),
 			// A pool that is not up yet is a condition a wait can resolve, and
 			// the sentinel is how AwaitSandboxHTTPClient tells it apart from
 			// the refusals that are answers.

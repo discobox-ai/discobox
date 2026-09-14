@@ -187,7 +187,7 @@ func (s *Service) provisioningMark(ctx context.Context, sb *model.Sandbox) provi
 		return mark
 	}
 	mark.poolState = pool.State
-	mark.poolReady = pool.Ready
+	mark.poolReady = pool.IsReady()
 	mark.poolProgressAt = markTime(pool.ProvisionProgressAt)
 	return mark
 }

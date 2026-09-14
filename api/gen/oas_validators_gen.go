@@ -2113,6 +2113,17 @@ func (s *Pool) Validate() error {
 		})
 	}
 	if err := func() error {
+		if err := s.Health.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "health",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.ProvisionProgress.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -2240,6 +2251,21 @@ func (s PoolDesiredState) Validate() error {
 	case "present":
 		return nil
 	case "deleted":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s PoolHealth) Validate() error {
+	switch s {
+	case "unknown":
+		return nil
+	case "ready":
+		return nil
+	case "not_ready":
+		return nil
+	case "offline":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

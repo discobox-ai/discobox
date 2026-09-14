@@ -66,8 +66,8 @@ var (
 	ErrGuestImageBuildUnsupported = errors.New("this backend boots no guest image of its own to build")
 )
 
-// PoolFailure reports that a pool has no capacity because its runtime FAILED,
-// not because it is still coming up. It carries the pool's recorded error so
+// PoolFailure reports a failed pool startup or an expired readiness wait.
+// It carries the pool's concrete error so
 // the cause (a missing image, an unreachable daemon) reaches the sandbox
 // instead of a bare capacity error. It unwraps to ErrNoSandboxCapacity:
 // callers classifying capacity exhaustion still match.

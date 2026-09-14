@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultPoolCapacityWaitTimeout  = 30 * time.Second
+	defaultPoolCapacityWaitTimeout  = 2 * time.Minute
 	defaultPoolCapacityPollInterval = time.Second
 	// defaultPoolProvisionStallTimeout is how long a pool that is visibly being
 	// built gets before this gives up on it.
@@ -422,7 +422,7 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*mod
 		return err == nil, err
 	})
 	if errors.Is(err, errPoolWaitExpired) {
-		return nil, sandbox.ErrNoSandboxCapacity
+		return nil, &sandbox.PoolFailure{PoolID: sb.PoolID, Message: "timed out waiting for the pool agent to become ready"}
 	}
 	if err != nil {
 		return nil, err

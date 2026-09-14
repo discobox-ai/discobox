@@ -293,13 +293,21 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.CreatedBy != nil {
 		fields["createdBy"] = sandbox.CreatedBy
 	}
-	if sandbox.Pool != nil {
-		fields["pool"] = sandbox.Pool
-	}
 	if sandbox.HarnessConfig != nil {
 		fields["harnessConfig"] = sandbox.HarnessConfig
 	}
-	return Convert[serverapi.Sandbox](fields)
+	result, err := Convert[serverapi.Sandbox](fields)
+	if err != nil {
+		return result, err
+	}
+	if sandbox.Pool != nil {
+		pool, err := PoolToAPI(sandbox.Pool)
+		if err != nil {
+			return result, err
+		}
+		result.Pool = serverapi.NewOptPool(pool)
+	}
+	return result, nil
 }
 
 // SandboxImageTarget is an image identity: the reference to run and the digest

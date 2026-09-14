@@ -11,7 +11,7 @@ import (
 // which the two discoboxes below account for 3.75 — so 4.35 is overhead, which
 // is the number the view exists to surface.
 const poolWithResources = `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
-	`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,` +
+	`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"health":"ready","ready":true,"schedulable":true,"degraded":false,` +
 	`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
 	`"resources":{"reportedAt":"2026-08-27T12:00:00Z",` +
 	`"cpu":{"usageUsec":900000000,"userUsec":700000000,"systemUsec":200000000,"vcpus":8.10,"capacityVcpus":16},` +
@@ -131,7 +131,7 @@ func TestPoolResourcesShowsUnreportedSandboxAsUnmeasured(t *testing.T) {
 // zeroes, which would read as a measurement.
 func TestPoolResourcesExplainsAPoolThatHasNotReported(t *testing.T) {
 	const bare = `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
-		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":false,"schedulable":false,"degraded":false,` +
+		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"health":"unknown","ready":false,"schedulable":false,"degraded":false,` +
 		`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
 		`"desiredState":"present","state":"pending","generation":1,"observedGeneration":1,` +
 		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
@@ -223,7 +223,7 @@ func TestFormatAgeReadsAsElapsed(t *testing.T) {
 // a strictly-typed field made one stale row 500 every pool listing.
 func TestPoolResourcesToleratesABlobFromAnotherVersion(t *testing.T) {
 	const stale = `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
-		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,` +
+		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"health":"ready","ready":true,"schedulable":true,"degraded":false,` +
 		`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
 		// The pre-walk shape: cacheBytes flat on storage, where nothing expects
 		// it.
@@ -254,7 +254,7 @@ func TestPoolResourcesToleratesABlobFromAnotherVersion(t *testing.T) {
 // a pool nothing has ever measured — over one field nothing depends on.
 func TestPoolResourcesReadsASweepWithoutTheDataTotal(t *testing.T) {
 	const older = `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
-		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,` +
+		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"health":"ready","ready":true,"schedulable":true,"degraded":false,` +
 		`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
 		`"resources":{"reportedAt":"2026-08-27T12:00:00Z",` +
 		`"cpu":{"usageUsec":1,"userUsec":1,"systemUsec":0,"vcpus":8.10,"capacityVcpus":16},` +

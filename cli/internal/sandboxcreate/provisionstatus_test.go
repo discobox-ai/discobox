@@ -66,7 +66,7 @@ func TestProvisionStatusIgnoresAStalePhase(t *testing.T) {
 	runtime.ProvisionProgressAt = apiclientgen.NewOptDateTime(time.Now().Add(-2 * ProvisionProgressFresh))
 
 	got := ProvisionStatus(provisioning(runtime))
-	if got != "waiting for a pool to take it" {
+	if got != "waiting for the pool agent to become ready" {
 		t.Fatalf("status = %q, want the state-based answer once the phase has aged out", got)
 	}
 }

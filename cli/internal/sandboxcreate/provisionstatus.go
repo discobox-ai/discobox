@@ -200,7 +200,7 @@ func humanBytes(bytes int64) string {
 // A named constant because it is the one status a caller acts on rather than
 // merely prints: it is the cue to go and ask the pool what it is doing, and
 // comparing against a string literal in two packages is how those two drift.
-const StepWaitingForPool Step = "waiting for a pool to take it"
+const StepWaitingForPool Step = "waiting for the pool agent to become ready"
 
 // PoolProvisionStatus is one line saying what a pool host is being brought
 // through, or "" when its driver has nothing current to report.

@@ -7902,6 +7902,9 @@ type Pool struct {
 	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
 	// zero is unset.
 	StorageBytes int64 `json:"storageBytes"`
+	// Current agent health, derived from status reports received since this server started. Independent
+	// of runtime reconciliation and image staging.
+	Health PoolHealth `json:"health"`
 	// Whether the pool host is alive and healthy.
 	Ready bool `json:"ready"`
 	// Whether the pool accepts new sandboxes.
@@ -8005,6 +8008,11 @@ func (s *Pool) GetProviderInstanceId() string {
 // GetStorageBytes returns the value of StorageBytes.
 func (s *Pool) GetStorageBytes() int64 {
 	return s.StorageBytes
+}
+
+// GetHealth returns the value of Health.
+func (s *Pool) GetHealth() PoolHealth {
+	return s.Health
 }
 
 // GetReady returns the value of Ready.
@@ -8170,6 +8178,11 @@ func (s *Pool) SetProviderInstanceId(val string) {
 // SetStorageBytes sets the value of StorageBytes.
 func (s *Pool) SetStorageBytes(val int64) {
 	s.StorageBytes = val
+}
+
+// SetHealth sets the value of Health.
+func (s *Pool) SetHealth(val PoolHealth) {
+	s.Health = val
 }
 
 // SetReady sets the value of Ready.
@@ -8504,6 +8517,63 @@ func (s *PoolFilesystemUsageAdditional) init() PoolFilesystemUsageAdditional {
 		*s = m
 	}
 	return m
+}
+
+// Current agent health, derived from status reports received since this server started. Independent
+// of runtime reconciliation and image staging.
+type PoolHealth string
+
+const (
+	PoolHealthUnknown  PoolHealth = "unknown"
+	PoolHealthReady    PoolHealth = "ready"
+	PoolHealthNotReady PoolHealth = "not_ready"
+	PoolHealthOffline  PoolHealth = "offline"
+)
+
+// AllValues returns all PoolHealth values.
+func (PoolHealth) AllValues() []PoolHealth {
+	return []PoolHealth{
+		PoolHealthUnknown,
+		PoolHealthReady,
+		PoolHealthNotReady,
+		PoolHealthOffline,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolHealth) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolHealthUnknown:
+		return []byte(s), nil
+	case PoolHealthReady:
+		return []byte(s), nil
+	case PoolHealthNotReady:
+		return []byte(s), nil
+	case PoolHealthOffline:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolHealth) UnmarshalText(data []byte) error {
+	switch PoolHealth(data) {
+	case PoolHealthUnknown:
+		*s = PoolHealthUnknown
+		return nil
+	case PoolHealthReady:
+		*s = PoolHealthReady
+		return nil
+	case PoolHealthNotReady:
+		*s = PoolHealthNotReady
+		return nil
+	case PoolHealthOffline:
+		*s = PoolHealthOffline
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // What the pool's own services hold, from the pool container's own cgroup. Excludes the sandboxes,
