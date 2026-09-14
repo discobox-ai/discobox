@@ -59,6 +59,35 @@ func truncate(s string, w int) string {
 	return ansi.Truncate(s, w, "…")
 }
 
+// truncateMiddle shortens text to w display cells by cutting it out of the
+// middle, giving a third of the room to the start and the rest to the end.
+//
+// It is for a message. An error is wrapped as what was being done, each step
+// down from there, and then the cause, so the start says what failed and the
+// end says why — and cutting the tail, as truncate does, keeps the half that
+// explains nothing.
+func truncateMiddle(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	width := lipgloss.Width(s)
+	if width <= w {
+		return s
+	}
+	if w == 1 {
+		return "…"
+	}
+	head := (w - 1) / 3
+	tail := w - 1 - head
+	// TruncateLeft keeps a wide character the cut lands inside, which would
+	// overrun the room by its other half; cutting one cell further drops it.
+	end := ansi.TruncateLeft(s, width-tail, "")
+	if lipgloss.Width(end) > tail {
+		end = ansi.TruncateLeft(s, width-tail+1, "")
+	}
+	return ansi.Truncate(s, head, "") + "…" + end
+}
+
 // highlight paints a background across a row that already carries foreground
 // color of its own.
 //

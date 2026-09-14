@@ -1134,3 +1134,58 @@ func TestRepaintWorksOffThePanes(t *testing.T) {
 		t.Fatalf("prompt = %q, want the repaint to leave it alone", got)
 	}
 }
+
+// An error stays until something is done. Time alone does not take it down,
+// and neither does typing: a create that fails while the next prompt is being
+// written would otherwise be wiped by its first letter.
+func TestAnErrorStaysUntilSomethingIsDone(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	send(t, m, statusMsg{text: "cannot create the discobox: no space left on device", err: true})
+	send(t, m, statusExpiredMsg{generation: m.statusGen})
+	if !m.statusE {
+		t.Fatalf("status = %q (error %v), want the error kept past its hold", m.status, m.statusE)
+	}
+
+	send(t, m, typeString("fix ")...)
+	press(t, m, "backspace")
+	if !m.statusE {
+		t.Fatalf("status = %q (error %v), want the error kept while the prompt is typed into", m.status, m.statusE)
+	}
+	if got := m.prompt.Value(); got != "fix" {
+		t.Fatalf("prompt = %q, want the typing to have gone to the prompt", got)
+	}
+
+	press(t, m, "left")
+	if m.status != "" || m.statusE {
+		t.Fatalf("status = %q (error %v), want a key that does something to clear it", m.status, m.statusE)
+	}
+}
+
+// A message that is not an error still goes by itself: a line that stays green
+// all afternoon stops meaning "just happened".
+func TestAMessageClearsAfterItsHold(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	send(t, m, statusMsg{text: "copied"})
+	send(t, m, statusExpiredMsg{generation: m.statusGen})
+	if m.status != "" {
+		t.Fatalf("status = %q, want the message gone after its hold", m.status)
+	}
+}
+
+// Typing into the prompt keeps an error only while the prompt is what the key
+// reaches. A letter the list takes is an action.
+func TestAnErrorClearsOnAListKey(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	press(t, m, "tab")
+
+	send(t, m, statusMsg{text: "cannot archive", err: true})
+	press(t, m, "j")
+	if m.statusE {
+		t.Fatalf("status = %q (error %v), want a key on the list to clear it", m.status, m.statusE)
+	}
+}

@@ -626,6 +626,7 @@ type runActionMsg struct {
 }
 
 // statusHolds is how long a message sits there when nothing else is pressed.
+// An error is not timed out; see the statusMsg case in Update.
 const statusHolds = 4 * time.Second
 
 type statusExpiredMsg struct{ generation int }
@@ -784,15 +785,24 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// A message is an answer to the last key, so it goes when the next
 		// one is pressed — and if none is, it still goes: a line that stays
 		// green all afternoon stops meaning "just happened".
+		//
+		// An error is the exception, and stays until something is done. It
+		// is often not an answer to a key at all: a create fails a minute
+		// after the Enter that started it, with the pull's progress gone and
+		// nothing else on screen saying why, and a reason that has gone by
+		// the time anyone looks up is no report.
 		m.status, m.statusE = msg.text, msg.err
 		m.statusGen++
+		if msg.err {
+			return nil
+		}
 		expires := m.statusGen
 		return tea.Tick(statusHolds, func(time.Time) tea.Msg {
 			return statusExpiredMsg{generation: expires}
 		})
 
 	case statusExpiredMsg:
-		if msg.generation == m.statusGen {
+		if msg.generation == m.statusGen && !m.statusE {
 			m.status, m.statusE = "", false
 		}
 		return nil
@@ -1146,8 +1156,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Whatever was reported was about the previous key. Clearing here rather
 	// than in each handler means a message cannot outlive its moment, and the
 	// handlers that report something simply report it again.
-	m.status, m.statusE = "", false
-	m.statusGen++
+	//
+	// Except an error under typing. The failure that arrives while the next
+	// prompt is being written is exactly the one that would otherwise be
+	// wiped by the first letter of it, unread.
+	if !m.statusE || !m.typingIntoPrompt(msg) {
+		m.status, m.statusE = "", false
+		m.statusGen++
+	}
 
 	// A copy chord over a selection the window is drawing is that copy,
 	// wherever the selection was made: the window took the terminal's own
@@ -1290,6 +1306,21 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	default:
 		return m.updatePrompt(msg)
 	}
+}
+
+// typingIntoPrompt is whether a key reaches the composer as an edit of its
+// text: a character typed or one deleted. Everything else — Enter, Esc, a
+// motion, a chord, a key some other screen takes first — counts as doing
+// something.
+func (m *Model) typingIntoPrompt(msg tea.KeyPressMsg) bool {
+	if m.focus != focusPrompt || m.modalUp() || m.inPanes() || m.harnessesOpen || m.secretsOpen {
+		return false
+	}
+	switch keyName(msg) {
+	case "backspace", "delete":
+		return true
+	}
+	return inserting(msg)
 }
 
 // promptEdited takes back what the editor saved. The buffer is replaced
@@ -3203,9 +3234,10 @@ func (m *Model) statusIdentity() string {
 // cannot show is a key that looks like it did nothing at all.
 //
 // The keys give up whole offers to fit, from the tail, where the least of them
-// is (`fitFields`): half a key hint is not one. A message is returned whole —
-// it is one thing and there is nothing of it to drop — and the caller's own
-// truncation is what deals with one too long for the row.
+// is (`fitFields`): half a key hint is not one. A message has nothing to drop,
+// so one too long for the row is cut out of the middle (`truncateMiddle`),
+// keeping what failed and why. Left to the caller's truncation it would lose
+// its end, which is where an error's cause is.
 //
 // Each offer that survives is marked where it landed, because a hint that
 // names a key is a button for that key: the press is handled as the key press
@@ -3214,9 +3246,9 @@ func (m *Model) statusIdentity() string {
 func (m *Model) statusLine(room int) string {
 	switch {
 	case m.statusE:
-		return m.st.statusER.Render("✗ " + m.status)
+		return m.st.statusER.Render(truncateMiddle("✗ "+m.status, room))
 	case m.status != "":
-		return m.st.statusOK.Render(m.status)
+		return m.st.statusOK.Render(truncateMiddle(m.status, room))
 	case m.busy != "":
 		return m.st.statusWA.Render(m.busy)
 	}

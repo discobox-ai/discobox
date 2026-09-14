@@ -994,3 +994,22 @@ func TestMachineRowDropsTheDiskSplitBeforeTheFreeSpace(t *testing.T) {
 		t.Errorf("machine row %q kept the split it had no room for", machine)
 	}
 }
+
+// An error too long for the status row is cut from the middle, so the row still
+// says what failed and why.
+func TestALongErrorKeepsItsCause(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, sizeMsg(100, 40))
+	send(t, m, statusMsg{err: true, text: `cannot create the discobox: discobox failed before it could receive its source: ` +
+		`pool-agent request failed: pull image "ghcr.io/discobox-ai/discobox-harness-claude-code:v0.8.0": ` +
+		`failed to register layer: write /usr/lib/tmpfiles.d/tmux.conf: no space left on device`})
+
+	status := statusRow(m)
+	if !strings.Contains(status, "✗ cannot create") || !strings.Contains(status, "no space left on device") {
+		t.Fatalf("status = %q, want what failed and why", status)
+	}
+	if !strings.Contains(status, "…") {
+		t.Fatalf("status = %q, want the middle cut out", status)
+	}
+}

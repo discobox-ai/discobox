@@ -719,7 +719,15 @@ else — F1 spells every key out. `statusLine` takes the room it has and drops
 whole offers from the tail to fit it (`fitFields`), on the workspace's copy of
 the line as well: half a key hint is not one. A message is the exception — it
 is one thing with nothing to drop — and it displaces the keys, never the right
-end: what is true is not what was said.
+end: what is true is not what was said. One too long for its room is cut out of
+the middle (`truncateMiddle`), because an error's start says what failed and
+its end says why.
+
+**A message clears on the next key or click; an error does not time out.** A
+message that is not an error also goes after `statusHolds`. An error stays
+until something is done, and typing into the prompt is not that
+(`typingIntoPrompt`): a create fails a minute after its Enter, often while the
+next prompt is being written, and would otherwise be gone before anyone read it.
 
 **vscode is a fourth kind** (`vscodeKey`,
 `openEditor`, `DataSource.OpenEditor`). It is neither a `Verb` — it changes

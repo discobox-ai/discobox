@@ -112,3 +112,33 @@ func TestShellQuote(t *testing.T) {
 		}
 	}
 }
+
+// A message too long for its row keeps both ends: an error's start says what
+// failed and its end says why.
+func TestTruncateMiddleKeepsBothEnds(t *testing.T) {
+	t.Parallel()
+	msg := "cannot create the discobox: pull image: failed to register layer: no space left on device"
+	got := truncateMiddle(msg, 60)
+	if w := lipgloss.Width(got); w != 60 {
+		t.Fatalf("truncateMiddle = %q, %d cells wide, want 60", got, w)
+	}
+	if !strings.HasPrefix(got, "cannot create") || !strings.HasSuffix(got, "no space left on device") || !strings.Contains(got, "…") {
+		t.Fatalf("truncateMiddle = %q, want the start and the cause either side of an ellipsis", got)
+	}
+
+	if got := truncateMiddle("short", 10); got != "short" {
+		t.Errorf("truncateMiddle = %q, want text that fits left alone", got)
+	}
+	if got := truncateMiddle("abcdef", 1); got != "…" {
+		t.Errorf("truncateMiddle = %q, want the ellipsis alone in one cell", got)
+	}
+	if got := truncateMiddle("abcdef", 0); got != "" {
+		t.Errorf("truncateMiddle = %q, want nothing in no room", got)
+	}
+	// Wide characters are measured in cells, so the result never overruns.
+	for w := 1; w <= 12; w++ {
+		if got := truncateMiddle("文字化けの原因はここ", w); lipgloss.Width(got) > w {
+			t.Errorf("truncateMiddle at %d = %q, %d cells wide", w, got, lipgloss.Width(got))
+		}
+	}
+}
