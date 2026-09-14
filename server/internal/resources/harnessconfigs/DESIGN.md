@@ -72,7 +72,8 @@ true of it, and true *by rule* rather than by slug:
   rebuild (`DISCOBOX_HARNESS_<SLUG>_IMAGE` → `.env` → server restart) reaches a
   running server. `NewService` receives the resolved image map from server
   configuration; an explicitly selected release manifest replaces the environment
-  overrides. Seeding never changes `Configured`.
+  overrides. Seeding never changes `Configured`. A seed whose slug belongs to
+  a user-created config fails visibly before inspection or mutation.
 - Seeding is **not** how a test gets a harness config. It reads metadata off an
   image label, so it needs a daemon holding images a checkout may never have
   built — and on Windows it cannot reach a Linux image at all. Tests that need a

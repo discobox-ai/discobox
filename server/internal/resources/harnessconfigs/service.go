@@ -386,6 +386,9 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
+		if existing != nil && !existing.BuiltIn {
+			return fmt.Errorf("built-in harness %s conflicts with a user-created harness config", seed.Slug)
+		}
 		metadata, inspectErr := s.inspector.Inspect(ctx, image)
 		if inspectErr != nil {
 			if s.requireBuiltInImages {

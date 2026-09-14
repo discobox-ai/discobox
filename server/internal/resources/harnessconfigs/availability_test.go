@@ -3,6 +3,7 @@ package harnessconfigs
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,5 +86,35 @@ func TestReleaseManifestDoesNotSilentlyKeepOldHarnessImages(t *testing.T) {
 	svc := &Service{store: newTestStore(t), inspector: unavailableInspector{err: failure}, requireBuiltInImages: true, harnessImages: map[string]string{"shell": "example.com/shell:v8"}}
 	if err := svc.SeedBuiltIns(context.Background(), "project-1"); !errors.Is(err, failure) {
 		t.Fatalf("seeding = %v; want release image failure", err)
+	}
+}
+
+func TestReleaseManifestPreservesCustomHarnessOnSlugCollision(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	custom := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "other-agent", Name: "My agent",
+		Image: "example.com/mine:v1", ImageDigest: "sha256:mine",
+		RunCommand: []string{"mine"}, Configured: true,
+		ConfiguredFiles: []model.HarnessConfigFile{{Path: "auth.json", Content: "secret"}},
+	}
+	if err := st.CreateHarnessConfig(ctx, custom); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.GetHarnessConfigBySlug(ctx, "project-1", custom.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{store: st, inspector: unavailableInspector{err: errors.New("must not inspect")},
+		requireBuiltInImages: true, harnessImages: map[string]string{custom.Slug: "example.com/release:v8"}}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err == nil || !strings.Contains(err.Error(), "other-agent conflicts with a user-created") {
+		t.Fatalf("seed = %v; want a visible slug collision", err)
+	}
+	after, err := st.GetHarnessConfigBySlug(ctx, "project-1", custom.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("custom config changed: before %#v; after %#v", before, after)
 	}
 }
