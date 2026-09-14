@@ -83,9 +83,9 @@ type PoolReport struct {
 // has to spend.
 //
 // Capacity is the host's, which is what this agent can measure. Where an
-// operator set a smaller envelope on the pool it is that envelope that is
-// really dedicated, and a consumer holding the pool record prefers it — an
-// envelope of zero means "sized by the host" (model.PoolManifest), so the
+// operator set a smaller size on the pool it is that size that is really
+// dedicated, and a consumer holding the pool record prefers it — a size of
+// zero means "sized by the host" (model.PoolManifest), so the
 // substitution belongs where both numbers are known, not here.
 type PoolTotalUsage struct {
 	// VCPUs is nil when any part of the sum was not measured, rather than a

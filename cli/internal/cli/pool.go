@@ -92,8 +92,8 @@ func (a *App) newPoolCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "create NAME", Short: "Create a pool", Long: `Create a pool.
 
 A pool is the sharing boundary discoboxes are scheduled into, and its own
-runtime host: discoboxes in the same pool share a cache volume, a resource
-envelope, and a kernel/host. The pool binds to one provider instance at create
+runtime host: discoboxes in the same pool share a cache volume, the pool's
+CPU and memory, and a kernel/host. The pool binds to one provider instance at create
 time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
@@ -255,9 +255,9 @@ func (a *App) defaultPoolID(ctx context.Context, client *apiclientgen.Client, pr
 }
 
 func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
-	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Total CPU capacity of the pool envelope in vCPUs (0 = host-sized)")
-	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Total memory capacity of the pool envelope in bytes (0 = host-sized)")
-	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Total storage capacity of the pool envelope in bytes (0 = host-sized)")
+	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "vCPUs for the pool's VM, on providers that size a VM per pool (0 = provider and host default)")
+	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Memory in bytes for the pool's VM, on providers that size a VM per pool (0 = provider and host default)")
+	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Storage in bytes for the pool; no provider accepts it today (0 = unset)")
 }
 
 func (a *App) newPoolDeleteCommand() *cobra.Command {

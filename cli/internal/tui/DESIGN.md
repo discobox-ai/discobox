@@ -2004,7 +2004,7 @@ against the machine's capacity, where this is the right number to read against
 another discobox. The two do not sum to each other and are not meant to.
 
 The cpu share's denominator is the host capacity its own pool reports, since the
-pool's envelope is usually zero meaning "sized by the host", and a share of zero
+pool's own size is usually zero meaning "sized by the host", and a share of zero
 is not a share. The listing already carries each discobox's pool, so the column
 costs no extra request.
 

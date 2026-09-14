@@ -343,9 +343,9 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "ID\t%s\n", pool.ID)
 	fmt.Fprintf(tw, "NAME\t%s\n", pool.Name)
 	fmt.Fprintf(tw, "PROVIDER\t%s\n", pool.ProviderInstanceId)
-	fmt.Fprintf(tw, "ENVELOPE CPU\t%s\n", formatPoolCPU(pool.CpuVcpus))
-	fmt.Fprintf(tw, "ENVELOPE MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
-	fmt.Fprintf(tw, "ENVELOPE STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
+	fmt.Fprintf(tw, "CPU\t%s\n", formatPoolCPU(pool.CpuVcpus))
+	fmt.Fprintf(tw, "MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
+	fmt.Fprintf(tw, "STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
 	fmt.Fprintf(tw, "STATE\t%s\n", pool.State)
 	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)
 	fmt.Fprintf(tw, "SCHEDULABLE\t%t\n", pool.Schedulable)
@@ -389,8 +389,8 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 	return tw.Flush()
 }
 
-// formatPoolCPU renders a pool envelope CPU value, where zero means the
-// envelope is sized by the host.
+// formatPoolCPU renders a pool's CPU size, where zero means it is left to the
+// provider and the host.
 func formatPoolCPU(value float64) string {
 	if value <= 0 {
 		return "host"
@@ -398,8 +398,8 @@ func formatPoolCPU(value float64) string {
 	return fmt.Sprintf("%.2f", value)
 }
 
-// formatPoolBytes renders a pool envelope byte value, where zero means the
-// envelope is sized by the host.
+// formatPoolBytes renders a pool's memory or storage size, where zero means it
+// is left to the provider and the host.
 func formatPoolBytes(value int64) string {
 	if value <= 0 {
 		return "host"

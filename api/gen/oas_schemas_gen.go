@@ -624,15 +624,18 @@ func (s *CreatePeerBody) SetName(val OptString) {
 type CreatePoolBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
+	// to the provider's configuration, then the host.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
-	// Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
+	// leaves the size to the provider's configuration, then the host.
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Pool display name.
 	Name string `json:"name"`
 	// Backing sandbox provider instance ID. Immutable after create.
 	ProviderInstanceId string `json:"providerInstanceId"`
-	// Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
+	// zero is unset.
 	StorageBytes OptInt64 `json:"storageBytes"`
 }
 
@@ -7924,13 +7927,15 @@ func (*Peer) createPeerRes() {}
 type Pool struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
+	// to the provider's configuration, then the host.
 	CpuVcpus float64 `json:"cpuVcpus"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Stable pool ID.
 	ID string `json:"id"`
-	// Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
+	// leaves the size to the provider's configuration, then the host.
 	MemoryBytes int64 `json:"memoryBytes"`
 	// Pool display name.
 	Name string `json:"name"`
@@ -7940,7 +7945,8 @@ type Pool struct {
 	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
 	// Backing sandbox provider instance ID. Immutable after create.
 	ProviderInstanceId string `json:"providerInstanceId"`
-	// Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
+	// zero is unset.
 	StorageBytes int64 `json:"storageBytes"`
 	// Whether the pool host is alive and healthy.
 	Ready bool `json:"ready"`
@@ -9667,8 +9673,8 @@ type PoolTotalUsage struct {
 	// Absent until there are two samples to difference.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// The host's own CPU count, which is what the agent can measure. Where an operator set a smaller
-	// envelope on the pool, that envelope is what is really dedicated and a reader holding the pool
-	// record prefers it; an envelope of zero means "sized by the host".
+	// size on the pool, that size is what is really dedicated and a reader holding the pool record
+	// prefers it; a size of zero means "sized by the host".
 	CapacityVcpus float64 `json:"capacityVcpus"`
 	// Memory charged across everything Discobox runs here.
 	MemoryBytes int64 `json:"memoryBytes"`
@@ -16851,13 +16857,16 @@ func (s *UpdateHarnessConfigBody) SetName(val OptString) {
 type UpdatePoolBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Total CPU capacity of the pool envelope in vCPUs.
+	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
+	// to the provider's configuration, then the host.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
-	// Total memory capacity of the pool envelope in bytes.
+	// Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero
+	// leaves the size to the provider's configuration, then the host.
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Pool display name.
 	Name OptString `json:"name"`
-	// Total storage capacity of the pool envelope in bytes.
+	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
+	// zero is unset.
 	StorageBytes OptInt64 `json:"storageBytes"`
 }
 

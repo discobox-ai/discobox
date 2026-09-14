@@ -347,8 +347,8 @@ func (s *Store) RecordPoolImageStage(ctx context.Context, poolID string, stage j
 // the agent's own word; the offline check covers their blind spot — an agent
 // that stopped answering leaves its last (stale) flags behind, and `offline`
 // is the reconciler's verdict that the host is gone. No capacity is gated —
-// sandboxes share their pool's overcommitted CPU/memory/storage envelope with
-// no per-sandbox reservation (docs/adr/0029). There is no candidate search —
+// sandboxes share their pool's CPU, memory, and storage with no per-sandbox
+// reservation (docs/adr/0029). There is no candidate search —
 // the pool is the host.
 func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error) {
 	if sandbox == nil || sandbox.PoolID == "" {

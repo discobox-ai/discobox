@@ -497,9 +497,9 @@ func dropLegacyProjectSlug(db *gorm.DB) error {
 
 // dropSandboxResourceRequestColumns removes the retired per-sandbox
 // cpu_vcpus/memory_bytes/storage_bytes request columns (docs/adr/0029):
-// sandboxes no longer reserve a slice of their pool's envelope, so nothing
-// writes these columns anymore. The same-named columns on pools are the
-// envelope itself and are untouched.
+// sandboxes no longer reserve a slice of their pool's CPU, memory, or storage,
+// so nothing writes these columns anymore. The same-named columns on pools are
+// the pool's own size and are untouched.
 func dropSandboxResourceRequestColumns(db *gorm.DB) error {
 	for _, column := range []string{"cpu_vcpus", "memory_bytes", "storage_bytes"} {
 		if err := dropRetiredColumn(db, &model.Sandbox{}, "sandboxes", column); err != nil {

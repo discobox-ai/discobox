@@ -570,7 +570,7 @@ components:
                     format: double
                     type: number
                 capacityVcpus:
-                    description: The host's own CPU count, which is what the agent can measure. Where an operator set a smaller envelope on the pool, that envelope is what is really dedicated and a reader holding the pool record prefers it; an envelope of zero means "sized by the host".
+                    description: The host's own CPU count, which is what the agent can measure. Where an operator set a smaller size on the pool, that size is what is really dedicated and a reader holding the pool record prefers it; a size of zero means "sized by the host".
                     format: double
                     type: number
                 memoryBytes:
@@ -1973,7 +1973,7 @@ components:
                     readOnly: true
                     type: string
                 cpuVcpus:
-                    description: Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+                    description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double
                     type: number
                 createdAt:
@@ -1984,7 +1984,7 @@ components:
                     description: Stable pool ID
                     type: string
                 memoryBytes:
-                    description: Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    description: Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: int64
                     type: integer
                 name:
@@ -2001,7 +2001,7 @@ components:
                     description: Backing sandbox provider instance ID. Immutable after create.
                     type: string
                 storageBytes:
-                    description: Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    description: Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset.
                     format: int64
                     type: integer
                 ready:
@@ -2145,11 +2145,11 @@ components:
                     readOnly: true
                     type: string
                 cpuVcpus:
-                    description: Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+                    description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double
                     type: number
                 memoryBytes:
-                    description: Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    description: Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: int64
                     type: integer
                 name:
@@ -2160,7 +2160,7 @@ components:
                     description: Backing sandbox provider instance ID. Immutable after create.
                     type: string
                 storageBytes:
-                    description: Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    description: Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset.
                     format: int64
                     type: integer
             required:
@@ -2177,11 +2177,11 @@ components:
                     readOnly: true
                     type: string
                 cpuVcpus:
-                    description: Total CPU capacity of the pool envelope in vCPUs
+                    description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double
                     type: number
                 memoryBytes:
-                    description: Total memory capacity of the pool envelope in bytes
+                    description: Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: int64
                     type: integer
                 name:
@@ -2189,7 +2189,7 @@ components:
                     maxLength: 200
                     type: string
                 storageBytes:
-                    description: Total storage capacity of the pool envelope in bytes
+                    description: Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset.
                     format: int64
                     type: integer
             type: object

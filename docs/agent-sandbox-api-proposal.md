@@ -867,8 +867,8 @@ control plane resolves those concepts and supplies the public non-secret
 sandbox manifest and separate provider-owned bootstrap channel.
 
 The current provider input carries no per-sandbox resource fields: sandboxes
-have no per-sandbox resource requests, and a pool carries the resource
-envelope ([ADR 0029](adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)).
+have no per-sandbox resource requests, and a pool carries its own size
+([ADR 0029](adr/0029-sandboxes-have-no-per-sandbox-resource-requests.md)).
 The `resources` field in the sketch above and `--cpu`/`--memory` in the
 candidate CLI would reopen that decision. A contract that does so must
 supersede that ADR and represent requested and effective values clearly.

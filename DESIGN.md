@@ -23,7 +23,7 @@ At the system boundary, Discobox comprises these cooperating concepts:
   instructions forwarded to it (ADR 0017 §9).
 - **Pool**: the user-visible sharing boundary sandboxes are scheduled into,
   and its own runtime host (ADR-0003, ADR-0006). Sandboxes in one pool share a
-  cache volume, a resource envelope, and a kernel/host; a pool binds immutably
+  cache volume, the pool's CPU and memory, and a kernel/host; a pool binds immutably
   to one provider instance, and its host runtime (container/VM/pod) is
   replaceable in place under the pool's identity.
 - **Sandbox provider**: the Go-level runtime integration interface implemented

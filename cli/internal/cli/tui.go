@@ -483,8 +483,8 @@ func (d *apiDataSource) listHere(ctx context.Context) ([]tui.Sandbox, error) {
 // every discobox — at one tick, so nothing is summed across rows here.
 //
 // Capacity is what is dedicated to Discobox. The agent can only measure the
-// host, so the envelope an operator set on the pool is preferred here, where
-// both numbers are known; an envelope of zero means "sized by the host".
+// host, so the size an operator set on the pool is preferred here, where
+// both numbers are known; a size of zero means "sized by the host".
 func (d *apiDataSource) Resources(ctx context.Context) (tui.Resources, error) {
 	res, err := d.client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: d.projectID})
 	if err != nil {
@@ -532,11 +532,12 @@ func (d *apiDataSource) Resources(ctx context.Context) (tui.Resources, error) {
 	return out, nil
 }
 
-// dedicated prefers the envelope an operator set over the host's own capacity.
-// Zero is not a smaller envelope, it is the absence of one (model.PoolManifest).
-func dedicated(envelope, capacity float64) float64 {
-	if envelope > 0 {
-		return envelope
+// dedicated prefers the size an operator set on the pool over the host's own
+// capacity. Zero is not a smaller size, it is the absence of one
+// (model.PoolManifest).
+func dedicated(size, capacity float64) float64 {
+	if size > 0 {
+		return size
 	}
 	return capacity
 }
@@ -547,7 +548,7 @@ func dedicated(envelope, capacity float64) float64 {
 //
 // The denominators come from the sandbox's own pool, which the listing already
 // carries, so drawing the column costs no extra request. They are the host's
-// capacity rather than the pool's envelope because the envelope is usually
+// capacity rather than the pool's own size because that is usually
 // zero, meaning "sized by the host" — a share of zero is not a share.
 //
 // Everything here is absent-or-measured, never defaulted. A share needs both a

@@ -89,7 +89,7 @@ func TestUpdatePoolStatusLeavesReconcilerVerdictAlone(t *testing.T) {
 
 // TestSchedulablePoolForSandboxIgnoresCapacity pins that placement is never
 // refused for low reported CPU/memory/storage (docs/adr/0029): sandboxes
-// share their pool's envelope with no per-sandbox reservation, so a pool
+// share their pool's resources with no per-sandbox reservation, so a pool
 // reporting almost no available capacity is still schedulable as long as it
 // is ready and schedulable.
 func TestSchedulablePoolForSandboxIgnoresCapacity(t *testing.T) {

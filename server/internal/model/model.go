@@ -528,19 +528,19 @@ func SandboxOriginKey(origin *Origin, source *GitSource) string {
 type PoolManifest struct {
 	Name               string `gorm:"column:name;not null;type:text;uniqueIndex:idx_pool_project_name,priority:2" json:"name" doc:"Pool display name" maxLength:"200"`
 	ProviderInstanceID string `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Backing sandbox provider instance ID. Immutable after create."`
-	// Envelope: total capacity available to the pool. Sandbox resource requests
-	// are scheduled against the envelope and may overcommit it. Zero means the
-	// envelope is sized by the pool's host.
-	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host."`
-	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
-	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
+	// The pool's size. A provider that runs one VM per pool sizes that VM from
+	// these; a provider declares which it acts on (ProviderDefinition.
+	// PoolSizeFields), and the pool service refuses the rest. Zero is unset.
+	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host."`
+	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host."`
+	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset."`
 }
 
 // Pool is the user-visible sharing boundary sandboxes are scheduled into,
 // and its own runtime host (ADR-0006).
 //
-// Sandboxes in the same pool share a cache volume, a resource envelope, and a
-// weaker isolation boundary (same kernel/host); cross-tenant or mutually
+// Sandboxes in the same pool share a cache volume, the pool's CPU and memory,
+// and a weaker isolation boundary (same kernel/host); cross-tenant or mutually
 // untrusted work belongs in different pools. A pool binds to exactly one
 // provider instance at create time, immutably: the provider instance is
 // backend identity (type, credentials, connection config), while everything
