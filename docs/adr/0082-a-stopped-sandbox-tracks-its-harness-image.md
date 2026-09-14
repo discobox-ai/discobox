@@ -1,6 +1,7 @@
 # 0082 — A stopped sandbox tracks its harness image
 
 - **Status**: Accepted
+- **§2's `state = ready` and `error_message IS NULL` conditions superseded by**: [0121](0121-a-stopped-sandbox-that-failed-tracks-its-harness-image-too.md) — a `failed` sandbox that is stopped or was never observed is upgraded too, and the rejected *"Include `failed` sandboxes"* is reversed. The rest of §2 stands.
 - **Date**: 2026-09-02
 - **Supersedes**: [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md) §2
   ("No implicit re-pin, ever"). §§1, 3–5 stand, and this ADR is built on them.
