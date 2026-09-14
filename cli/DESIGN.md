@@ -1080,12 +1080,16 @@ session, `execstream/client`.
   the display back. The real one is `client.OSConsole`; it is the seam that lets
   suspend ordering, the signal set, and the reset be tested without a PTY,
   including on platforms this repository cannot run.
-- A terminal lent to a remote program is handed back reset. The attach ends
-  where it stands — detached, disconnected, killed — so the program that turned
-  on the alternate screen, mouse reporting or bracketed paste never turns them
-  off, and the session does it instead (`client.terminalReset`), after the
-  remote's last output and before the mode goes back. It resets modes only:
-  the caller's screen and scrollback are not the remote's to clear.
+- A terminal lent to a remote program is handed back as it was lent. The attach
+  ends where it stands — detached, disconnected, killed — so the program that
+  turned on the alternate screen, mouse reporting or bracketed paste never
+  turns them off, and the session does it instead, after the remote's last
+  output and before the mode goes back. It undoes what the output stream turned
+  on and left on (`client.displayState`), never a fixed reset: turning off a
+  mode that was never on is not a no-op — leaving an alternate screen that was
+  never entered and resetting the scrolling region both move the cursor — so a
+  remote that changed nothing is handed back a terminal nothing is written to.
+  The caller's screen and scrollback are never cleared.
 - What that follows is `Options.Terminal` — the remote runs under a PTY, so
   what it writes is the caller's screen — and not `RawMode`, which is about
   whether this side's keys are taken. `exec -t` without `-i` is the case that

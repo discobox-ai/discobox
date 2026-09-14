@@ -41,11 +41,12 @@ type Console interface {
 	MakeRaw() (restore func(), raw bool, err error)
 	// Size reports the terminal size, or ok=false when there is no terminal.
 	Size() (cols, rows int, ok bool)
-	// ResetTerminal turns off the display modes the remote program turned on
-	// and had no chance to turn off — the alternate screen, mouse reporting,
-	// bracketed paste, and the rest. It runs when the session hands the
-	// terminal back, and does nothing when there is no terminal to hand back.
-	ResetTerminal()
+	// ResetTerminal writes undo, the sequence that turns off the display modes
+	// the remote program turned on and had no chance to turn off — the
+	// alternate screen, mouse reporting, bracketed paste, and the rest. It runs
+	// when the session hands the terminal back, and does nothing when undo is
+	// empty or there is no terminal to hand back.
+	ResetTerminal(undo string)
 	// Suspend stops this process and returns once it is resumed.
 	Suspend()
 	// NotifySignals starts delivering the signals worth forwarding to ch.
@@ -120,9 +121,18 @@ type Session struct {
 	// both the same nanosecond — Windows regularly is — answers that wrongly.
 	framesIn   atomic.Uint64
 	interrupts interruptRun
+	// display is what the remote has turned on in the caller's terminal, and
+	// so what handing it back turns off. Nil unless Options.Terminal.
+	display *displayState
 }
 
-func New(opts Options) *Session { return &Session{opts: opts} }
+func New(opts Options) *Session {
+	s := &Session{opts: opts}
+	if opts.Terminal {
+		s.display = newDisplayState()
+	}
+	return s
+}
 
 // Stdin is the caller's input, for CopyInput implementations.
 func (s *Session) Stdin() io.Reader { return s.opts.Stdin }
@@ -194,7 +204,7 @@ func (s *Session) Run(ctx context.Context) error {
 			// what the remote was in the middle of saying.
 			defer func() {
 				waitForOutput(outputDone)
-				s.opts.Console.ResetTerminal()
+				s.opts.Console.ResetTerminal(s.display.undo())
 			}()
 		}
 	}
@@ -287,10 +297,12 @@ func (s *Session) copyOutput() error {
 		s.framesIn.Add(1)
 		switch next.Type {
 		case frame.Stdout:
+			s.observeDisplay(next.Payload)
 			if _, err := s.opts.Stdout.Write(next.Payload); err != nil {
 				return err
 			}
 		case frame.Stderr:
+			s.observeDisplay(next.Payload)
 			if _, err := s.opts.Stderr.Write(next.Payload); err != nil {
 				return err
 			}
@@ -304,6 +316,15 @@ func (s *Session) copyOutput() error {
 		default:
 			return fmt.Errorf("%s: unexpected frame type %d", s.opts.Action, next.Type)
 		}
+	}
+}
+
+// observeDisplay reads output on its way to the caller's terminal for the modes
+// it turns on. It is read before the write, so a write that fails part-way
+// still counts as having reached the screen.
+func (s *Session) observeDisplay(p []byte) {
+	if s.display != nil {
+		s.display.observe(p)
 	}
 }
 

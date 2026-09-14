@@ -44,6 +44,8 @@ type fakeConsole struct {
 	ready   chan struct{}
 	cols    int
 	rows    int
+	// undo is what the last ResetTerminal was asked to write.
+	undo string
 	// suspended is closed each time Suspend is entered; resume releases it.
 	resume chan struct{}
 }
@@ -69,7 +71,18 @@ func (c *fakeConsole) MakeRaw() (func(), bool, error) {
 	return func() { c.record("restore") }, true, nil
 }
 
-func (c *fakeConsole) ResetTerminal() { c.record("reset") }
+func (c *fakeConsole) ResetTerminal(undo string) {
+	c.record("reset")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.undo = undo
+}
+
+func (c *fakeConsole) Undo() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.undo
+}
 
 func (c *fakeConsole) Size() (int, int, bool) {
 	c.mu.Lock()
@@ -315,6 +328,9 @@ func TestTheTerminalIsResetAfterTheLastOutputAndBeforeTheModeGoesBack(t *testing
 	if events := console.Events(); !ordered(events, "makeraw", "output", "reset", "restore") {
 		t.Fatalf("events = %v, want the reset after the output and before the restore", events)
 	}
+	if got, want := console.Undo(), "\x1b[?1049l\x1b[?1000l"; got != want {
+		t.Fatalf("undo = %q, want %q", got, want)
+	}
 }
 
 // What the remote wrote is display state only when it came from a terminal on
@@ -365,41 +381,4 @@ func runToExit(t *testing.T, opts Options) []string {
 		t.Fatal("session did not finish")
 	}
 	return console.Events()
-}
-
-// What the reset has to turn off. Each of these is a mode a remote program
-// turns on for itself and a killed one leaves behind, and each has its own way
-// of making the terminal that outlives it useless.
-func TestTerminalResetTurnsOffWhatAProgramLeavesOn(t *testing.T) {
-	for _, mode := range []struct {
-		name     string
-		sequence string
-	}{
-		{"the alternate screen", "\x1b[?1049l"},
-		{"X10 mouse reporting", "\x1b[?9l"},
-		{"mouse click reporting", "\x1b[?1000l"},
-		{"mouse highlight tracking", "\x1b[?1001l"},
-		{"mouse drag reporting", "\x1b[?1002l"},
-		{"mouse motion reporting", "\x1b[?1003l"},
-		{"focus reporting", "\x1b[?1004l"},
-		{"SGR mouse encoding", "\x1b[?1006l"},
-		{"bracketed paste", "\x1b[?2004l"},
-		{"the kitty keyboard stack", "\x1b[<u"},
-		{"kitty keyboard flags", "\x1b[=0;1u"},
-		{"modifyOtherKeys", "\x1b[>4;0m"},
-		{"application cursor keys", "\x1b[?1l"},
-		{"the application keypad", "\x1b>"},
-		{"synchronized output", "\x1b[?2026l"},
-		{"a hidden cursor", "\x1b[?25h"},
-		{"a scrolling region", "\x1b[r"},
-		{"line-drawing characters", "\x1b(B"},
-	} {
-		if !strings.Contains(terminalReset, mode.sequence) {
-			t.Errorf("the reset leaves %s on: %q is missing from %q", mode.name, mode.sequence, terminalReset)
-		}
-	}
-	// The caller's own screen and scrollback are not the remote's to take.
-	if strings.Contains(terminalReset, "\x1bc") || strings.Contains(terminalReset, "\x1b[2J") {
-		t.Errorf("the reset clears the caller's screen: %q", terminalReset)
-	}
 }

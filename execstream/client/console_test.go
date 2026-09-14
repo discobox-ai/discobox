@@ -17,7 +17,7 @@ func TestResetTerminalStaysOutOfARedirect(t *testing.T) {
 	}
 	defer file.Close()
 
-	NewOSConsole(os.Stdin, file).ResetTerminal()
+	NewOSConsole(os.Stdin, file).ResetTerminal("\x1b[?1049l")
 
 	written, err := os.ReadFile(path)
 	if err != nil {
@@ -35,5 +35,5 @@ func TestResetTerminalWithoutAnOutputFile(t *testing.T) {
 	if console == nil {
 		t.Fatal("a console over stdin should exist whatever stdout is")
 	}
-	console.ResetTerminal()
+	console.ResetTerminal("\x1b[?1049l")
 }
