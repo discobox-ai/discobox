@@ -345,13 +345,6 @@ func defaultMemoryMiB() int {
 	return int(vzvm.DefaultHostResources().MemoryBytes / (1024 * 1024))
 }
 
-func effectiveInt(value, fallback int) int {
-	if value <= 0 {
-		return fallback
-	}
-	return value
-}
-
 func effectiveInt64(value, fallback int64) int64 {
 	if value <= 0 {
 		return fallback
