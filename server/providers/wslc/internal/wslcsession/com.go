@@ -182,6 +182,21 @@ func coCreateInstance(clsid, iid *GUID, clsctx uint32) (unsafe.Pointer, error) {
 // never converts an integer back into a pointer. COM owns both obj and its
 // vtable; unsafe.Add expresses the slot offset without hiding that ownership
 // from Go's pointer analysis.
+//
+// The directive is load-bearing. Callers pass out-parameters as
+// uintptr(unsafe.Pointer(&local)), converted before this function runs, and Go
+// only keeps such a pointer valid when the conversion is written in the call to
+// syscall.SyscallN itself - not through a wrapper like this one. Without it the
+// compiler leaves the local on the goroutine's stack, a stack that grows at
+// this function's entry is copied elsewhere, and the COM method writes its
+// result into the abandoned copy: the call reports success, the local keeps its
+// zero value, and the write lands in freed stack memory. That surfaced as a nil
+// IWSLCCompatProcess from a successful QueryInterface, and a server crash in
+// GetStdHandle. //go:uintptrescapes moves every such local to the heap and keeps
+// it alive for the call, as syscall.LazyProc.Call does
+// (TestVTableCallOutParametersSurviveStackGrowth).
+//
+//go:uintptrescapes
 func vtblCall(obj unsafe.Pointer, slot int, args ...uintptr) uintptr {
 	vtbl := *(*unsafe.Pointer)(obj)
 	fn := *(*uintptr)(unsafe.Add(vtbl, uintptr(slot)*unsafe.Sizeof(uintptr(0))))
