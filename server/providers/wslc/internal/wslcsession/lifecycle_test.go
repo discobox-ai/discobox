@@ -124,6 +124,7 @@ type fakeManager struct {
 }
 
 func (m *fakeManager) CreateSession(Options) (wslcSession, error) { return m.session, nil }
+func (m *fakeManager) TerminateExisting(Options) error            { return nil }
 func (m *fakeManager) Release()                                   { m.released.Add(1) }
 
 func (m *fakeManager) releasedProcesses() int {

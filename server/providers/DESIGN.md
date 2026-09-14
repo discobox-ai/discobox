@@ -722,6 +722,30 @@ for the server process, and the CLI passes its own environment to a server it
 autolaunches — so exporting it is enough, once an already-running server has
 been shut down rather than reused.
 
+### A VM left by a killed server is ended, not waited out
+
+A wslc session is not persistent: its VM ends when the process that created it
+does. But not at once when that process is killed rather than closed — and
+`task dev` restarts the server with a forced kill (`taskkill /T /F`; Windows has
+no signal to send), so every development restart leaves the old VM holding
+`discobox-<poolID>` until the service notices the dead process, which takes
+seconds to minutes. `CreateSession` refuses a taken name (`0x800700B7`,
+`wslcsession.ErrSessionExists`).
+
+The driver sets `wslcsession.Options.ReplaceExisting`: on that collision
+`NewSession` opens the session registered under the name
+(`WSLCSessionFlagsOpenExisting`), terminates it, and creates its own. The name
+is free about 350 ms after a forced kill, and a replacement boots on the same
+`storage.vhdx` about two seconds after it (`TestReplaceExistingE2E`). It is
+opt-in because the service hands back any session of that name, a live
+process's included; the driver can take it because the name is the pool's and
+`server.lock` gives one server a data directory.
+
+A collision that survives the takeover — the old VM could not be ended, or the
+name was taken again — is retried for five seconds (`newSessionAfterStale`) and
+only then reported, with the `hcsdiag list`/`hcsdiag kill` diagnosis for a VM
+that has really been abandoned.
+
 ### One guest program, streamed in over stdin
 
 The guest gets exactly one program from the host: `discobox-cp-relay`, cross

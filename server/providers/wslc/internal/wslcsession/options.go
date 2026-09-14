@@ -12,9 +12,21 @@ type Options struct {
 	// DisplayName identifies the session; if empty, a name derived from this
 	// process's PID is generated so concurrent runs don't collide.
 	DisplayName string
-	CPUCount    uint32
-	MemoryMB    uint32
-	BootTimeout time.Duration
+
+	// ReplaceExisting makes a session already registered under DisplayName
+	// something to end rather than an error: NewSession terminates it and
+	// starts this one in its place.
+	//
+	// The session it ends is usually a VM whose process was killed rather than
+	// closed - the service keeps its name until it notices, which takes seconds
+	// to minutes - but it need not be: the service hands back any session of
+	// that name, a live process's included. So it is off by default, and a
+	// caller sets it only for a name it alone owns. Without it, a taken name is
+	// ErrSessionExists.
+	ReplaceExisting bool
+	CPUCount        uint32
+	MemoryMB        uint32
+	BootTimeout     time.Duration
 
 	// StoragePath, if set, makes /var/lib/docker (and anything else backed
 	// by the session's storage) persist across VM restarts in a real VHD at

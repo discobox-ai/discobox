@@ -11,9 +11,12 @@ import (
 // A duplicate session reports itself as such rather than as a bare HRESULT.
 //
 // 0x800700B7 is the failure a developer actually hits, because a force-killed
-// server leaves its VM running and the next start collides with it. Left raw it
-// reads like a wslc defect; callers also need to match it to tell "wait for the
-// old process to finish exiting" apart from a real failure.
+// server leaves its VM running for a moment and the next start collides with
+// it. Left raw it reads like a wslc defect; callers also need to match it to
+// tell "wait for the old VM to be cleaned up" apart from a real failure. The
+// advice for a VM that never goes away is the caller's to give, once it knows
+// the collision has lasted - so the collision itself does not tell anyone to
+// kill anything.
 func TestAlreadyExistsIsIdentifiableAndExplained(t *testing.T) {
 	// Via a variable: converting the constant directly does not compile, since
 	// an HRESULT's high bit makes it exceed int32's range as an untyped value.
@@ -25,6 +28,9 @@ func TestAlreadyExistsIsIdentifiableAndExplained(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "discobox-pool_abc") {
 		t.Fatalf("error = %v, want it to name the session", err)
+	}
+	if strings.Contains(err.Error(), "hcsdiag") {
+		t.Fatalf("error = %v, want no kill-it-by-hand advice on a collision that may be transient", err)
 	}
 }
 

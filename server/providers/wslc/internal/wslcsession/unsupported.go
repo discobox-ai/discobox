@@ -28,4 +28,6 @@ func NewSession(Options) (*Session, error) {
 
 func (*Session) Close() error { return errUnsupported }
 
+func (*Session) ReplacedExisting() bool { return false }
+
 func (*Session) StartProcess(string, []string) (net.Conn, error) { return nil, errUnsupported }

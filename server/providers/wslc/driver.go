@@ -167,9 +167,16 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 
 	opts := wslcsession.Options{
 		DisplayName: "discobox-" + poolID,
-		CPUCount:    uint32(want.VCPUs),
-		MemoryMB:    uint32(want.MemoryMiB),
-		BootTimeout: bootTimeout,
+		// The name is this pool's, and only one server owns a data directory
+		// (server.lock), so a session already registered under it is a VM an
+		// earlier server left behind - in development, every restart, since
+		// task dev stops the server with a forced kill that never closes its
+		// VM. Ending it lets the restart boot at once instead of waiting on
+		// the service to notice the old process is gone.
+		ReplaceExisting: true,
+		CPUCount:        uint32(want.VCPUs),
+		MemoryMB:        uint32(want.MemoryMiB),
+		BootTimeout:     bootTimeout,
 	}
 	if d.storageDir != "" {
 		storagePath := filepath.Join(d.storageDir, poolID)
@@ -180,9 +187,13 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		opts.MaxStorageSizeMB = uint64(d.maxStorageMiB)
 	}
 
-	session, err := wslcsession.NewSession(opts)
+	session, err := newSessionAfterStale(ctx, wslcsession.NewSession, opts, staleSessionGrace, staleSessionPoll)
 	if err != nil {
 		return nil, fmt.Errorf("start wslc VM for %s: %w", poolID, err)
+	}
+	if session.ReplacedExisting() {
+		slog.InfoContext(ctx, "ended a wslc VM an earlier server left running under this pool's name",
+			"pool_id", poolID)
 	}
 
 	// The relay carries every control-plane byte, in both directions, so a VM
@@ -403,6 +414,65 @@ func (d *Driver) condemnOnGuestExecFailure(poolID string, err error) {
 	slog.Warn("guest could not start the relay; condemning the VM so it is replaced",
 		"pool_id", poolID, "guest_errno", execErr.Errno, "error", err)
 	relay.close()
+}
+
+// staleSessionGrace is how long EnsureVM keeps trying a name that is still
+// taken before calling the collision an error, and staleSessionPoll how often
+// it tries again.
+//
+// The ordinary collision never reaches this: a VM an earlier server left behind
+// is ended by NewSession itself (Options.ReplaceExisting), and the name is free
+// well under a second after a forced kill. What is left is a VM that could not
+// be ended, or a name taken again before it could be claimed - worth a short
+// wait, since either may be the service still settling, and no longer than
+// that, since the wait holds the driver mutex. One that outlasts it is left to
+// the reconcile's own backoff, with the error saying so.
+const (
+	staleSessionGrace = 5 * time.Second
+	staleSessionPoll  = 250 * time.Millisecond
+)
+
+// newSessionAfterStale starts a session, waiting out a name that stays taken.
+//
+// wslc refuses a second session under a name still held (see
+// wslcsession.ErrSessionExists). Reporting that the instant it happens told the
+// operator to kill a VM by hand for what was, every time in development, a VM a
+// moment from going away. NewSession now ends such a VM itself; a collision
+// that survives that is retried for up to grace, and only one that outlasts it
+// is an error - with the diagnosis for a VM that really has been abandoned.
+func newSessionAfterStale(ctx context.Context, newSession func(wslcsession.Options) (*wslcsession.Session, error),
+	opts wslcsession.Options, grace, poll time.Duration) (*wslcsession.Session, error) {
+	deadline := time.Now().Add(grace)
+	waited := false
+	for {
+		session, err := newSession(opts)
+		if !errors.Is(err, wslcsession.ErrSessionExists) {
+			if err == nil && waited {
+				slog.InfoContext(ctx, "started wslc VM after an earlier process's VM of the same name was cleaned up",
+					"name", opts.DisplayName)
+			}
+			return session, err
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("%w; it could not be ended and has not gone away after %s. A server "+
+				"that stops without closing its VM leaves it running until WSL notices and ends it, which "+
+				"usually takes seconds and can take longer, so a later attempt may succeed. If it persists, "+
+				"the VM was abandoned: find its id with `hcsdiag list` and end it with `hcsdiag kill <id>`, "+
+				"both from an elevated prompt", err, grace)
+		}
+		if !waited {
+			slog.InfoContext(ctx, "a wslc VM of the same name is still running; waiting for it to be cleaned up",
+				"name", opts.DisplayName, "grace", grace)
+			waited = true
+		}
+		timer := time.NewTimer(poll)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (d *Driver) session(poolID string) (*wslcsession.Session, error) {

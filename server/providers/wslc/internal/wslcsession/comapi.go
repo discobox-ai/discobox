@@ -24,14 +24,18 @@ import (
 // wslc.idl carries the two it does not. types.go explains why that division
 // is where it is; the comments below say which side each method is on.
 
-// sessionManager mirrors IWSLCCompatSessionManager, restricted to the one
-// method this library uses beyond the version handshake in
-// activateSessionManager.
+// sessionManager mirrors IWSLCCompatSessionManager, restricted to the method
+// this library uses beyond the version handshake in activateSessionManager.
 type sessionManager interface {
 	// CreateSession calls IWSLCCompatSessionManager::CreateSession. Never
 	// sets WSLCSessionFlagsPersistent - see the Session doc comment in
 	// session.go for why.
 	CreateSession(opts Options) (wslcSession, error)
+	// TerminateExisting ends the session already registered under
+	// opts.DisplayName: CreateSession with WSLCSessionFlagsOpenExisting, which
+	// hands back a reference to that session whichever process created it,
+	// then Terminate on it. See Options.ReplaceExisting.
+	TerminateExisting(opts Options) error
 	Release()
 }
 
@@ -181,6 +185,51 @@ type comSessionManager struct {
 func (m *comSessionManager) Release() { comRelease(m.ptr) }
 
 func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
+	compatPtr, err := m.createSession(opts, sessionFlagNone)
+	if err != nil {
+		return nil, err
+	}
+
+	// The session object implements the private interface too, and the two
+	// methods this library cannot reach any other way are on it. Both
+	// pointers are references to that one object, so both are released
+	// together.
+	privatePtr, err := queryInterface(compatPtr, &iidIWSLCSession)
+	if err != nil {
+		comRelease(compatPtr)
+		return nil, fmt.Errorf("wslcsession: QueryInterface(IWSLCSession): %w", err)
+	}
+
+	return &comSession{
+		compat:  compatPtr,
+		private: privatePtr,
+		version: m.version,
+		slots:   slotsForVersion(m.version),
+	}, nil
+}
+
+// TerminateExisting opens the session registered under opts.DisplayName and
+// terminates it.
+//
+// The reference OpenExisting hands back is to the other process's session, and
+// Terminate on it ends that VM at once - where waiting for the service to
+// notice a killed process and end the VM itself takes seconds to minutes.
+// Released straight after: the reference is only ever used to end the VM.
+func (m *comSessionManager) TerminateExisting(opts Options) error {
+	compatPtr, err := m.createSession(opts, sessionFlagOpenExisting)
+	if err != nil {
+		return err
+	}
+	defer comRelease(compatPtr)
+	if err := hrErr(vtblCall(compatPtr, slotCompatSessionTerminate)); err != nil {
+		return fmt.Errorf("wslcsession: Terminate existing session %q: %w", opts.DisplayName, err)
+	}
+	return nil
+}
+
+// createSession calls IWSLCCompatSessionManager::CreateSession with the given
+// flags and returns the SDK-facing session reference.
+func (m *comSessionManager) createSession(opts Options, flags uint32) (unsafe.Pointer, error) {
 	displayName := opts.DisplayName
 	if displayName == "" {
 		displayName = fmt.Sprintf("wslcsession-%d", os.Getpid())
@@ -225,7 +274,7 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 	var compatPtr unsafe.Pointer
 	hr := vtblCall(m.ptr, slotCompatManagerCreateSession,
 		uintptr(unsafe.Pointer(&settings)),
-		uintptr(sessionFlagNone),
+		uintptr(flags),
 		0, // warning callback
 		uintptr(unsafe.Pointer(&compatPtr)))
 	runtime.KeepAlive(dnPtr)
@@ -234,23 +283,7 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 	if err := hrErr(hr); err != nil {
 		return nil, fmt.Errorf("wslcsession: CreateSession: %w", abiError(err, m.version))
 	}
-
-	// The session object implements the private interface too, and the two
-	// methods this library cannot reach any other way are on it. Both
-	// pointers are references to that one object, so both are released
-	// together.
-	privatePtr, err := queryInterface(compatPtr, &iidIWSLCSession)
-	if err != nil {
-		comRelease(compatPtr)
-		return nil, fmt.Errorf("wslcsession: QueryInterface(IWSLCSession): %w", err)
-	}
-
-	return &comSession{
-		compat:  compatPtr,
-		private: privatePtr,
-		version: m.version,
-		slots:   slotsForVersion(m.version),
-	}, nil
+	return compatPtr, nil
 }
 
 type comSession struct {

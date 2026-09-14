@@ -1,6 +1,20 @@
 package wslcsession
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrSessionExists reports that a VM of the requested name is already running.
+//
+// wslc keys sessions by display name and refuses a duplicate. A session belongs
+// to the process that created it and dies with it, but not at once when that
+// process is killed rather than closing it: the service ends a dead process's
+// session only once it has noticed the process is gone, which takes seconds and
+// can take minutes. So this usually means an earlier process has not been
+// cleaned up after yet - not that anything is misconfigured - and a caller can
+// match it to wait rather than treat the pool as failed.
+var ErrSessionExists = errors.New("wslcsession: session already exists")
 
 // GuestExecError wraps a CreateRootNamespaceProcess failure together with
 // the guest-side errno reported alongside it. WSLCSession.cpp initializes

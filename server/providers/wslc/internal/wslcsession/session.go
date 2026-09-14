@@ -3,7 +3,6 @@
 package wslcsession
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"runtime"
@@ -57,34 +56,26 @@ type Session struct {
 
 	mgr  sessionManager
 	sess wslcSession
+
+	// replacedExisting records that NewSession ended a session of the same
+	// name to start this one; see Options.ReplaceExisting.
+	replacedExisting bool
 }
 
-// ErrSessionExists reports that a VM of the requested name is already running.
-//
-// wslc keys sessions by display name and refuses a duplicate. Because a session
-// belongs to the process that created it and dies with it, this means an
-// earlier process is still alive or has not finished exiting -- not that
-// anything is misconfigured. Callers can match it to retry rather than treat
-// the pool as failed.
-var ErrSessionExists = errors.New("wslcsession: session already exists")
-
-// createSessionError explains a CreateSession failure.
+// createSessionError names a CreateSession failure.
 //
 // A bare HRESULT says nothing, and the one callers actually hit is not a
-// misconfiguration: 0x800700B7 means a VM of this name is already running,
-// left by a process that exited without closing it. There is no API to
-// enumerate or reattach to that session -- the session manager exposes only
-// CreateSession -- and the VM is a Host Compute Service one, so it does not
-// appear in `wsl --list` either. hcsdiag is what can see and end it, from an
-// elevated prompt. Every other failure is returned unchanged, so a real fault
+// misconfiguration: 0x800700B7 means a VM of this name is already running. The
+// message states that and no more. Whether it is a problem depends on how long
+// it lasts - moments after a killed server, it is the old VM being cleaned up -
+// and only the caller knows that, so the advice for one that persists is the
+// caller's to give. Every other failure is returned unchanged, so a real fault
 // is not mistaken for a collision.
 func createSessionError(err error, displayName string) error {
 	if !isHRESULT(err, hrErrorAlreadyExists) {
 		return err
 	}
-	return fmt.Errorf("%w: a VM named %q is already running, left by a process that did not shut "+
-		"down cleanly; end it with `hcsdiag kill <id>` using the id `hcsdiag list` reports for "+
-		"that name, both from an elevated prompt: %w", ErrSessionExists, displayName, err)
+	return fmt.Errorf("%w: a VM named %q is already running: %w", ErrSessionExists, displayName, err)
 }
 
 // activateManager is how comThread reaches the session manager, indirected so a
@@ -141,6 +132,15 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 	}
 
 	sess, err := mgr.CreateSession(opts)
+	if err != nil && opts.ReplaceExisting && isHRESULT(err, hrErrorAlreadyExists) {
+		// The name is held by a session this caller owns the name of; see
+		// Options.ReplaceExisting. If ending it fails, or the name is still
+		// taken afterwards, the collision is reported as it would have been.
+		if termErr := mgr.TerminateExisting(opts); termErr == nil {
+			sess, err = mgr.CreateSession(opts)
+			s.replacedExisting = err == nil
+		}
+	}
 	if err != nil {
 		mgr.Release()
 		fail(createSessionError(err, opts.DisplayName))
@@ -188,6 +188,10 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 	s.mgr.Release()
 	close(s.closed)
 }
+
+// ReplacedExisting reports whether starting this session ended one already
+// registered under its name (Options.ReplaceExisting).
+func (s *Session) ReplacedExisting() bool { return s.replacedExisting }
 
 // do runs f on the session's COM thread and waits for it to finish. Safe to
 // call after Close (f simply never runs).
