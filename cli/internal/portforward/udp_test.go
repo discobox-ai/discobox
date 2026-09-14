@@ -21,6 +21,9 @@ func udpEchoServer(t *testing.T) net.Addr {
 		t.Fatalf("listen udp: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
+	// A sandbox is Linux, whose default send buffer carries any datagram; this
+	// stand-in has to ask for that on macOS. See socketSendBuffer.
+	_ = conn.(*net.UDPConn).SetWriteBuffer(socketSendBuffer)
 	go func() {
 		buf := make([]byte, datagramLimit)
 		for {
@@ -44,7 +47,12 @@ func udpDialerTo(addr net.Addr, dials *atomic.Int32) Dialer {
 		}
 		dials.Add(1)
 		var dialer net.Dialer
-		return dialer.DialContext(ctx, "udp", addr.String())
+		conn, err := dialer.DialContext(ctx, "udp", addr.String())
+		if err != nil {
+			return nil, err
+		}
+		_ = conn.(*net.UDPConn).SetWriteBuffer(socketSendBuffer)
+		return conn, nil
 	})
 }
 
@@ -56,6 +64,9 @@ func dialUDPTest(t *testing.T, port int) net.Conn {
 		t.Fatalf("dial udp: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
+	// A local client that sends large datagrams has asked for a send buffer that
+	// holds them; on macOS the default does not.
+	_ = conn.(*net.UDPConn).SetWriteBuffer(socketSendBuffer)
 	return conn
 }
 
@@ -110,6 +121,28 @@ func TestForwarderForwardsDatagramsWithTheirBoundaries(t *testing.T) {
 	}
 	if accepted := events.awaitUDP(t, Accepted, remotePort); accepted.Peer != client.LocalAddr().String() {
 		t.Fatalf("flow peer = %q, want %q", accepted.Peer, client.LocalAddr())
+	}
+}
+
+// A datagram far past the 9216 bytes macOS lets a UDP socket send by default
+// reaches the sandbox and comes back to the local client whole. The reply is
+// written by the binding socket, which is the forwarder's own.
+func TestForwarderCarriesALargeDatagramBothWays(t *testing.T) {
+	var dials atomic.Int32
+	sandbox := udpEchoServer(t)
+	events := newCollector()
+	forwarder := New(t.Context(), Options{Dialer: udpDialerTo(sandbox, &dials), Observe: events.observe})
+	defer forwarder.Close()
+
+	remotePort := freeUDPPort(t)
+	forwarder.Set([]Target{{Network: UDP, Port: remotePort, Protocol: "udp"}})
+	bound := events.awaitUDP(t, Bound, remotePort)
+
+	// Short of the UDP maximum by enough for the echo's address prefix.
+	datagram := strings.Repeat("x", 60000)
+	reply := exchange(t, dialUDPTest(t, bound.Local), datagram)
+	if _, body, _ := strings.Cut(reply, "|"); len(body) != len(datagram) {
+		t.Fatalf("reply carried %d bytes, want %d", len(body), len(datagram))
 	}
 }
 

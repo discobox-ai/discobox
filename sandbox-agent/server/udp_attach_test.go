@@ -56,6 +56,7 @@ func udpEcho(t *testing.T, address string) net.PacketConn {
 		t.Fatalf("listen udp: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
+	raiseSendBuffer(conn.(*net.UDPConn))
 	go func() {
 		buf := make([]byte, udpDatagramLimit)
 		for {
@@ -76,7 +77,16 @@ func dialUDP(t *testing.T, address string) net.Conn {
 	if err != nil {
 		t.Fatalf("dial udp: %v", err)
 	}
+	raiseSendBuffer(conn.(*net.UDPConn))
 	return conn
+}
+
+// raiseSendBuffer lets a test socket send the largest datagram UDP allows.
+// The sandbox is Linux, where a socket's default send buffer already does;
+// macOS refuses any datagram larger than the buffer and defaults a UDP socket
+// to 9216 bytes, so a test run there has to ask.
+func raiseSendBuffer(conn *net.UDPConn) {
+	_ = conn.SetWriteBuffer(4 * udpDatagramLimit)
 }
 
 // Each Input frame is one datagram and each datagram back is one Stdout frame,

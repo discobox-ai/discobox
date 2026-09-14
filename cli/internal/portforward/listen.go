@@ -77,6 +77,11 @@ func listenPackets(ctx context.Context, addresses []string, port int) ([]net.Pac
 			}
 			return nil, err
 		}
+		// A socket left at its default still carries every datagram that fits
+		// the default, so a refusal here is not a reason to fail the binding.
+		if udp, ok := socket.(*net.UDPConn); ok {
+			_ = udp.SetWriteBuffer(socketSendBuffer)
+		}
 		sockets = append(sockets, socket)
 		port = addrPort(socket.LocalAddr())
 	}

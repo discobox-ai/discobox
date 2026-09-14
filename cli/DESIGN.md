@@ -1270,7 +1270,10 @@ instead (below).
   `localhost`: a UDP connect never fails, so a name would pin whichever family
   resolved first. For the same reason a loopback UDP binding listens on both
   `127.0.0.1` and `::1`, at one port — a local client of `localhost` may send
-  to either and cannot tell it chose wrong.
+  to either and cannot tell it chose wrong. Binding sockets ask for a send
+  buffer of several maximum datagrams (`socketSendBuffer`): macOS refuses to
+  send a datagram larger than the buffer and defaults UDP to 9216 bytes, so a
+  larger reply would otherwise never reach the local client.
 - A port is bound at its own number when that is free and at the nearest one
   above it when it is not, so a sandbox's 8080 is `localhost:8081` when
   something local already has 8080. A privileged port gets one try at its own

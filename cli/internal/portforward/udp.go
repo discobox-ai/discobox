@@ -40,6 +40,16 @@ const flowQueue = 64
 // UDP payload can be, rounded up, so nothing is truncated on the way through.
 const datagramLimit = 64 * 1024
 
+// socketSendBuffer is the send buffer a binding socket asks for, so a reply as
+// large as datagramLimit can leave it for the peer. macOS refuses to send a
+// datagram larger than the socket's send buffer, and a UDP socket's default
+// there is 9216 bytes (net.inet.udp.maxdgram): without this, every larger reply
+// was dropped on its way to the local client. It is several datagrams rather
+// than one because Linux caps the request at net.core.wmem_max, which by
+// default is what a socket already has — asking for exactly one datagram would
+// shrink the buffer there instead.
+const socketSendBuffer = 4 * datagramLimit
+
 type flow struct {
 	peer net.Addr
 	// socket is the binding socket the peer's datagrams arrived on, and so the
