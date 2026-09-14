@@ -181,11 +181,23 @@ func (l *Layout) Fetch(ctx context.Context, reference string, opts Options) (*Im
 }
 
 // init creates the layout's skeleton.
+//
+// The oci-layout file is written under the index lock: two fetches starting on
+// an empty cache would otherwise both find it missing and both rename one into
+// place, and Windows refuses a rename over a file another has just put there.
 func (l *Layout) init() error {
 	if err := os.MkdirAll(l.blobDir(), 0o700); err != nil {
 		return fmt.Errorf("create image cache: %w", err)
 	}
 	path := filepath.Join(l.dir, layoutFileName)
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	lock, err := l.lockIndex()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
