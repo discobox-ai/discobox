@@ -358,7 +358,7 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/tursodatabase/turso-go-platform-libs v0.7.2 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/image v0.12.0 // indirect
+	golang.org/x/image v0.25.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260625142307-59b4966ccb57 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	golang.org/x/tools/gopls v0.23.0-pre.2 // indirect
