@@ -97,6 +97,9 @@ func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 		if !contains(found.files, sandboxDockerfile) {
 			t.Fatalf("%s watcher does not rebuild when the sandbox base Dockerfile changes", name)
 		}
+		if name != "shell" && !contains(found.files, filepath.Join(repoRoot, "harness", harnessDir(name), "prompt.sh")) {
+			t.Fatalf("%s watcher does not watch its model prompt wrapper", name)
+		}
 		for _, file := range found.files {
 			if strings.HasSuffix(file, "image.json") && strings.Contains(file, string(filepath.Separator)+"harness"+string(filepath.Separator)) &&
 				!strings.Contains(file, filepath.Join("harness", harnessDir(name), "image.json")) {

@@ -843,7 +843,9 @@ by simply being re-fetched if it does age out.
 ## Dedicated judge harness
 
 `judges` reconciles one pool-owned runtime from the authenticated control-plane
-`judge-runtime` recipe. The project selects `judgeHarnessConfigId`, with empty
+`judge-runtime` recipe. Its requests reuse the registered control-plane HTTP
+client, including its Unix/VSOCK dialer; the logical HTTP hostname must never
+be resolved again as a TCP endpoint. The project selects `judgeHarnessConfigId`, with empty
 following `defaultHarnessConfigId`. An unavailable selection fails closed.
 `discobox admin project update PROJECT_ID --judge-harness HARNESS_CONFIG_ID`
 sets the override; an empty value restores the default.

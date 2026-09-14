@@ -9,8 +9,7 @@ set -eu
 # Contract:
 #   discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]
 #   stdout: the model's answer, and, when a schema is given, one JSON document
-#           conforming to it. `codex exec` frames its answer in a transcript,
-#           so a caller parsing a schema'd answer must find the JSON in it.
+#           conforming to it, without the CLI transcript.
 #   exit 0: the model answered. Anything else: it did not.
 #
 # --model names a role, never a model id: the caller does not know what this
@@ -78,7 +77,15 @@ fi
 # is a real outage — bump this when the model line moves.
 #
 # Anything else is left to the account's configured model.
-set -- codex exec --skip-git-repo-check --color never
+answer_dir="$(mktemp -d)"
+trap 'rm -rf "$answer_dir"' EXIT HUP INT TERM
+
+# Approval policy is a global Codex option, before the exec subcommand.
+set -- codex --ask-for-approval never exec --ephemeral --skip-git-repo-check --color never --output-last-message "$answer_dir/answer"
+if [ -n "$schema" ]; then
+ printf '%s\n' "$schema" > "$answer_dir/schema.json"
+ set -- "$@" --output-schema "$answer_dir/schema.json"
+fi
 case "$model" in
 judge) set -- "$@" --model gpt-5.6-terra ;;
 fast | "") ;;
@@ -91,7 +98,9 @@ esac
 # read-only command execution are the residual this leaves (ADR 0090 §1); a
 # judge here is not tool-free, only unable to write.
 if [ -n "$no_tools" ]; then
-	set -- "$@" --sandbox read-only --ask-for-approval never
+	set -- "$@" --sandbox read-only
 fi
 
-exec "$@" "$composed"
+# Keep progress and transcript output off the schema response channel.
+"$@" "$composed" > /dev/null
+cat "$answer_dir/answer"

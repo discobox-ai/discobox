@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
@@ -259,7 +260,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("provider.publicKeys.%s is required", ControlPlanePublicKeyName)
 	}
 	switch c.HarnessMode {
-	case "", "run", "config":
+	case "", "run", "config", judge.Mode:
 	default:
 		return fmt.Errorf("unsupported harnessMode %q", c.HarnessMode)
 	}

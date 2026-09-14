@@ -212,6 +212,9 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 
 	var sawSandboxIDs []string
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			return
+		}
 		sawSandboxIDs = append(sawSandboxIDs, r.URL.Query().Get("sandboxId"))
 		_ = json.NewEncoder(w).Encode(listCredentialsDoc{Credentials: []credentialDoc{{
 			Name: "github", EnvVar: "GITHUB_TOKEN", Host: "api.github.com",

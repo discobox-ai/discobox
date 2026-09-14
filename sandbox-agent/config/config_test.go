@@ -186,3 +186,21 @@ func TestValidateRejectsABlankHarnessCommand(t *testing.T) {
 		t.Fatal("expected a blank harness command to be rejected")
 	}
 }
+
+func TestLoadAcceptsJudgeServiceMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sandbox.json")
+	if err := os.WriteFile(path, []byte(`{"apiVersion":"discobox.dev/sandbox/v1","sandboxId":"judge-runtime","harnessMode":"judge","provider":{"kind":"discobox-pool","projectId":"project-test","poolId":"pool-test","publicKeys":{"controlPlane":"`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("judge runtime cannot boot: %v", err)
+	}
+	if cfg.HarnessMode != "judge" {
+		t.Fatalf("mode = %q", cfg.HarnessMode)
+	}
+	cfg.HarnessMode = "invalid"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("unknown runtime mode accepted")
+	}
+}

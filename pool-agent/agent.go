@@ -239,7 +239,7 @@ func ExecSystemdChildIfRequested() error {
 }
 
 // Serve starts the pool-agent HTTP server.
-func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporters ...SandboxStateClient) error {
+func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporter *HTTPClient) error {
 	runtime, err := sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
 		ProjectID:             bootstrap.ProjectID,
 		PoolID:                bootstrap.PoolID,
@@ -250,88 +250,76 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 	if err != nil {
 		return err
 	}
-	var reporter SandboxStateClient
-	if len(reporters) > 0 {
-		reporter = reporters[0]
+	if reporter == nil {
+		return errors.New("control plane client is required")
 	}
-	if reporter != nil {
-		if registration == nil {
-			return errors.New("pool registration is required for sandbox state reporting")
+	if registration == nil {
+		return errors.New("pool registration is required for sandbox state reporting")
+	}
+	// One boot ID per agent process, and a sequence within it. The control
+	// plane uses the pair to drop a delayed delta that would otherwise
+	// overwrite a newer complete sync (ADR 0017 §10).
+	bootID := id.NewString(id.PrefixPoolAgentBoot)
+	var sequence atomic.Int64
+	go runtime.WatchSandboxStates(ctx, logger, func(reportCtx context.Context, batch sandboxruntime.SandboxStateBatch) error {
+		states := make([]SandboxState, 0, len(batch.States))
+		for _, observed := range batch.States {
+			states = append(states, SandboxState{
+				SandboxID: observed.SandboxID,
+				State:     observed.State,
+				Error:     observed.Error,
+			})
 		}
-		// One boot ID per agent process, and a sequence within it. The control
-		// plane uses the pair to drop a delayed delta that would otherwise
-		// overwrite a newer complete sync (ADR 0017 §10).
-		bootID := id.NewString(id.PrefixPoolAgentBoot)
-		var sequence atomic.Int64
-		go runtime.WatchSandboxStates(ctx, logger, func(reportCtx context.Context, batch sandboxruntime.SandboxStateBatch) error {
-			states := make([]SandboxState, 0, len(batch.States))
-			for _, observed := range batch.States {
-				states = append(states, SandboxState{
-					SandboxID: observed.SandboxID,
-					State:     observed.State,
-					Error:     observed.Error,
-				})
-			}
-			return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
-				ControlPlaneURL: bootstrap.ControlPlaneURL,
-				ProjectID:       bootstrap.ProjectID,
-				PoolID:          bootstrap.PoolID,
-				PrivateKey:      registration.PrivateKey,
-				BootID:          bootID,
-				Sequence:        sequence.Add(1),
-				ReportedAt:      batch.ReportedAt,
-				Complete:        batch.Complete,
-				States:          states,
-			})
+		return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
+			ControlPlaneURL: bootstrap.ControlPlaneURL,
+			ProjectID:       bootstrap.ProjectID,
+			PoolID:          bootstrap.PoolID,
+			PrivateKey:      registration.PrivateKey,
+			BootID:          bootID,
+			Sequence:        sequence.Add(1),
+			ReportedAt:      batch.ReportedAt,
+			Complete:        batch.Complete,
+			States:          states,
 		})
-		// Provisioning progress rides the same channel, reported by whoever is
-		// doing the work rather than derived from the Docker event stream, so it
-		// is a sink to hold rather than a stream to watch (ADR 0039). It shares
-		// the boot id and sequence, so the control plane orders progress and
-		// state against each other exactly as it already orders state.
-		go runtime.WatchSandboxProgress(ctx, func(reportCtx context.Context, observed sandboxruntime.SandboxProgressObservation) error {
-			progress := SandboxProgress{SandboxID: observed.SandboxID, Phase: observed.Phase}
-			if observed.Pull != nil {
-				progress.Pull = &SandboxPullProgress{
-					Image:          observed.Pull.Image,
-					Layers:         observed.Pull.Layers,
-					LayersComplete: observed.Pull.LayersComplete,
-					Current:        observed.Pull.Current,
-					Total:          observed.Pull.Total,
-					Done:           observed.Pull.Done,
-				}
-			}
-			return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
-				ControlPlaneURL: bootstrap.ControlPlaneURL,
-				ProjectID:       bootstrap.ProjectID,
-				PoolID:          bootstrap.PoolID,
-				PrivateKey:      registration.PrivateKey,
-				BootID:          bootID,
-				Sequence:        sequence.Add(1),
-				ReportedAt:      time.Now().UTC(),
-				// A progress report carries no state observation, so States is
-				// empty and Complete is false: a complete sync's "every sandbox
-				// I host" claim is about States, and marking this one complete
-				// would read as "this pool hosts nothing".
-				States:   []SandboxState{},
-				Progress: []SandboxProgress{progress},
-			})
-		})
-		// reporter's concrete client (HTTPClient in production) also implements
-		// SandboxAgentStatusClient; test doubles that only implement
-		// SandboxStateClient simply skip starting the poller.
-		if statusClient, ok := reporter.(SandboxAgentStatusClient); ok {
-			poller := startSandboxAgentStatusPoller(ctx, logger, bootstrap, registration, runtime, statusClient)
-			// The resource reporter reads the counters that poll already
-			// collected rather than polling every sandbox a second time, so it
-			// only runs where the poller does (ADR 0071 §2).
-			if resourceClient, ok := reporter.(PoolResourceClient); ok && poller != nil {
-				startPoolResourceReporter(ctx, logger, bootstrap, registration, runtime, poller, resourceClient)
+	})
+	// Provisioning progress rides the same channel, reported by whoever is
+	// doing the work rather than derived from the Docker event stream, so it
+	// is a sink to hold rather than a stream to watch (ADR 0039). It shares
+	// the boot id and sequence, so the control plane orders progress and
+	// state against each other exactly as it already orders state.
+	go runtime.WatchSandboxProgress(ctx, func(reportCtx context.Context, observed sandboxruntime.SandboxProgressObservation) error {
+		progress := SandboxProgress{SandboxID: observed.SandboxID, Phase: observed.Phase}
+		if observed.Pull != nil {
+			progress.Pull = &SandboxPullProgress{
+				Image:          observed.Pull.Image,
+				Layers:         observed.Pull.Layers,
+				LayersComplete: observed.Pull.LayersComplete,
+				Current:        observed.Pull.Current,
+				Total:          observed.Pull.Total,
+				Done:           observed.Pull.Done,
 			}
 		}
-	}
+		return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
+			ControlPlaneURL: bootstrap.ControlPlaneURL,
+			ProjectID:       bootstrap.ProjectID,
+			PoolID:          bootstrap.PoolID,
+			PrivateKey:      registration.PrivateKey,
+			BootID:          bootID,
+			Sequence:        sequence.Add(1),
+			ReportedAt:      time.Now().UTC(),
+			// A progress report carries no state observation, so States is
+			// empty and Complete is false: a complete sync's "every sandbox
+			// I host" claim is about States, and marking this one complete
+			// would read as "this pool hosts nothing".
+			States:   []SandboxState{},
+			Progress: []SandboxProgress{progress},
+		})
+	})
+	poller := startSandboxAgentStatusPoller(ctx, logger, bootstrap, registration, runtime, reporter)
+	startPoolResourceReporter(ctx, logger, bootstrap, registration, runtime, poller, reporter)
+
 	go func() {
-		if err := servePoolJudge(ctx, logger, bootstrap, registration, runtime); err != nil && ctx.Err() == nil {
+		if err := servePoolJudge(ctx, logger, bootstrap, registration, runtime, reporter); err != nil && ctx.Err() == nil {
 			logger.Error("pool judge service stopped", "error", err)
 		}
 	}()

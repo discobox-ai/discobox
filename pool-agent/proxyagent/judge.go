@@ -42,8 +42,11 @@ func callPoolJudge(ctx context.Context, job judge.Job) (judge.Verdict, error) {
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 2*(judge.MaxInput+judge.MaxOutput)+4096)).Decode(&v); err != nil {
 		return judge.Verdict{}, err
 	}
-	if v.Role != judge.Role || v.PromptVersion == "" || v.Revision == "" || v.Reason == "" {
+	if v.Role != judge.Role || v.PromptVersion == "" || v.Reason == "" {
 		return v, fmt.Errorf("incomplete pool judge verdict")
+	}
+	if v.Allow && (v.Revision == "" || v.HarnessConfigID == "") {
+		return v, fmt.Errorf("incomplete pool judge authorization")
 	}
 	return v, nil
 }

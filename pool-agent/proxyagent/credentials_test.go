@@ -213,3 +213,13 @@ func TestGrantRevokedDuringCommandJudgeDoesNotMint(t *testing.T) {
 		t.Fatalf("revoked use minted: %v", err)
 	}
 }
+
+func TestJudgeUnavailableKeepsTheReasonWithoutAllowProvenance(t *testing.T) {
+	stubPoolJudge(t, func(judge.Job) (judge.Verdict, error) {
+		return judge.Verdict{Allow: false, Reason: "select a default or judge harness", Role: judge.Role, PromptVersion: judge.PromptVersion}, nil
+	})
+	verdict, err := callPoolJudge(t.Context(), judge.Job{Kind: "command", Purpose: "read status", Host: "github.com", Command: []string{"git", "status"}})
+	if err != nil || verdict.Allow || verdict.Reason != "select a default or judge harness" {
+		t.Fatalf("lost unavailable explanation: verdict=%+v err=%v", verdict, err)
+	}
+}
