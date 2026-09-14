@@ -235,7 +235,7 @@ func (d *Driver) InspectVM(_ context.Context, poolID string) (*dockerworker.VMIn
 	if !relay.healthy() {
 		// Report the VM unhealthy rather than running: the engine replaces it,
 		// which is the only way to get a working control-plane channel back.
-		return &dockerworker.VMInfo{ID: "wslc-" + poolID, Status: sandbox.StatusStopped}, nil
+		return &dockerworker.VMInfo{ID: "wslc-" + poolID, Status: sandbox.StatusStopped, HostedHere: true}, nil
 	}
 	return runningVM(poolID), nil
 }
@@ -343,7 +343,7 @@ func (d *Driver) relay(poolID string) (*relaySession, error) {
 }
 
 func runningVM(poolID string) *dockerworker.VMInfo {
-	return &dockerworker.VMInfo{ID: "wslc-" + poolID, Status: sandbox.StatusRunning}
+	return &dockerworker.VMInfo{ID: "wslc-" + poolID, Status: sandbox.StatusRunning, HostedHere: true}
 }
 
 func validatePoolID(poolID string) error {

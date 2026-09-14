@@ -29,7 +29,7 @@ func (e *Engine) StageImages(ctx context.Context, pool *model.Pool, images []str
 	if pool == nil || len(images) == 0 {
 		return nil
 	}
-	lease, err := e.acquireDockerReady(ctx, pool.ID)
+	lease, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
 	if err != nil {
 		return fmt.Errorf("reach the pool's Docker daemon: %w", err)
 	}

@@ -405,7 +405,7 @@ func (d *Driver) InspectVM(_ context.Context, poolID string) (*dockerworker.VMIn
 	if ok || regularFileExists(filepath.Join(d.poolStateDir(poolID), "data.raw")) {
 		// Reported unhealthy rather than absent so the engine replaces the VM
 		// in place and the pool keeps its disks.
-		return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusStopped}, nil
+		return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusStopped, HostedHere: true}, nil
 	}
 	return nil, sandbox.ErrNotFound
 }
@@ -892,7 +892,7 @@ func isUnixSocket(path string) bool {
 }
 
 func runningInfo(poolID string) *dockerworker.VMInfo {
-	return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusRunning}
+	return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusRunning, HostedHere: true}
 }
 
 func vmID(poolID string) string { return "libkrun-" + poolID }

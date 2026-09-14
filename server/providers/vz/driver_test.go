@@ -136,6 +136,14 @@ func TestInspectVMReportsNotFoundWithoutAVM(t *testing.T) {
 	}
 }
 
+// A vz VM runs in this process and is reached over VSOCK, so its Docker daemon
+// not answering is the guest's fault; the engine restarts only a VM that says so.
+func TestRunningInfoReportsTheVMHostedHere(t *testing.T) {
+	if !runningInfo("pool-1").HostedHere {
+		t.Fatal("a vz VM is not reported as hosted here, so repair never restarts a guest whose Docker is gone")
+	}
+}
+
 // Stopping a pool that has no VM is how repair and shutdown both start; it must
 // be a no-op rather than an error that aborts the caller.
 func TestStopVMWithoutAVMSucceeds(t *testing.T) {

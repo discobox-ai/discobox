@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -47,13 +48,14 @@ func (nopDriver) PoolLogs(context.Context, string, sandbox.PoolLogOptions) (*san
 type lifecycleDriver struct {
 	nopDriver
 	status       sandbox.Status
+	hostedHere   bool
 	stopCalls    int
 	deleteCalls  int
 	ensureCalled bool
 }
 
 func (d *lifecycleDriver) InspectVM(context.Context, string) (*VMInfo, error) {
-	return &VMInfo{ID: "local", Status: d.status}, nil
+	return &VMInfo{ID: "local", Status: d.status, HostedHere: d.hostedHere}, nil
 }
 
 func (d *lifecycleDriver) StopVM(context.Context, string) error {
@@ -109,6 +111,149 @@ func TestRepairStopsUnhealthyVMWithoutDeletingPersistentState(t *testing.T) {
 			driver.deleteCalls,
 			driver.ensureCalled,
 		)
+	}
+}
+
+// A VM the hypervisor calls running can still be a guest nothing answers in —
+// storage that never mounted, a kernel wedged — and repair is the only thing
+// that would ever restart it, so a silent Docker daemon replaces a VM hosted
+// here.
+func TestRepairRestartsARunningVMWhoseDockerDoesNotAnswer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		driver := &lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}
+		engine, err := New(Config{Image: "worker-image"}, driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = engine.RepairPool(
+			context.Background(),
+			nil,
+			&model.SandboxProviderInstance{ID: "provider-1"},
+			&model.Pool{ID: "pool-1", ProjectID: "project-1"},
+			nil,
+			"",
+		)
+		if err == nil || !strings.Contains(err.Error(), "docker daemon not ready") {
+			t.Fatalf("RepairPool error = %v, want the rebooted VM's Docker wait to fail", err)
+		}
+		if driver.stopCalls != 1 || driver.deleteCalls != 0 || !driver.ensureCalled {
+			t.Fatalf(
+				"lifecycle calls = stop:%d delete:%d ensure:%v, want stop:1 delete:0 ensure:true",
+				driver.stopCalls,
+				driver.deleteCalls,
+				driver.ensureCalled,
+			)
+		}
+	})
+}
+
+// A daemon behind a network can be silent because of the network — a bad SSH
+// key, a firewall — and restarting the VM for that would kill a healthy pool on
+// every retry, so a VM not hosted here is left running.
+func TestRepairKeepsARunningVMReachedOverANetwork(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		driver := &lifecycleDriver{status: sandbox.StatusRunning}
+		engine, err := New(Config{Image: "worker-image"}, driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = engine.RepairPool(
+			context.Background(),
+			nil,
+			&model.SandboxProviderInstance{ID: "provider-1"},
+			&model.Pool{ID: "pool-1", ProjectID: "project-1"},
+			nil,
+			"",
+		)
+		if err == nil || !strings.Contains(err.Error(), "docker daemon not ready") {
+			t.Fatalf("RepairPool error = %v, want the Docker wait to fail", err)
+		}
+		if driver.stopCalls != 0 || driver.deleteCalls != 0 || !driver.ensureCalled {
+			t.Fatalf(
+				"lifecycle calls = stop:%d delete:%d ensure:%v, want stop:0 delete:0 ensure:true",
+				driver.stopCalls,
+				driver.deleteCalls,
+				driver.ensureCalled,
+			)
+		}
+	})
+}
+
+// answeringDriver is a running VM whose Docker daemon answers pings and
+// nothing else.
+type answeringDriver struct {
+	lifecycleDriver
+	url string
+}
+
+func (d *answeringDriver) AcquireDockerClient(context.Context, string) (*DockerClientLease, error) {
+	cli, err := testDockerClient(d.url)
+	if err != nil {
+		return nil, err
+	}
+	return NewDockerClientLease(cli, DaemonOnThisMachine, func() { _ = cli.Close() }), nil
+}
+
+// A VM whose Docker answers keeps running through a repair: the containers and
+// images on it survive, and only the pool container is replaced.
+func TestRepairKeepsARunningVMWhoseDockerAnswers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if stripDockerAPIVersion(request.URL.Path) == "/_ping" {
+			w.Header().Set("Api-Version", "1.51")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Error(w, "not faked", http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+	driver := &answeringDriver{lifecycleDriver: lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}, url: server.URL}
+	engine, err := New(Config{Image: "worker-image"}, driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RepairPool(
+		context.Background(),
+		nil,
+		&model.SandboxProviderInstance{ID: "provider-1"},
+		&model.Pool{ID: "pool-1", ProjectID: "project-1"},
+		nil,
+		"",
+	); err == nil {
+		t.Fatal("RepairPool succeeded against a daemon that only answers pings")
+	}
+	if driver.stopCalls != 0 || driver.deleteCalls != 0 || !driver.ensureCalled {
+		t.Fatalf(
+			"lifecycle calls = stop:%d delete:%d ensure:%v, want stop:0 delete:0 ensure:true",
+			driver.stopCalls,
+			driver.deleteCalls,
+			driver.ensureCalled,
+		)
+	}
+}
+
+// A repair abandoned while it checks the daemon has learned nothing about the
+// guest, and must not reboot it on the way out.
+func TestRepairCanceledWhileCheckingDockerKeepsTheVM(t *testing.T) {
+	driver := &lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}
+	engine, err := New(Config{Image: "worker-image"}, driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = engine.RepairPool(
+		ctx,
+		nil,
+		&model.SandboxProviderInstance{ID: "provider-1"},
+		&model.Pool{ID: "pool-1", ProjectID: "project-1"},
+		nil,
+		"",
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RepairPool error = %v, want canceled", err)
+	}
+	if driver.stopCalls != 0 || driver.ensureCalled {
+		t.Fatalf("lifecycle calls = stop:%d ensure:%v, want neither", driver.stopCalls, driver.ensureCalled)
 	}
 }
 

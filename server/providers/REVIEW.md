@@ -15,8 +15,11 @@
   VM) for an existing pool, but must preserve the pool host row and pool ID.
 - Pool repair must preserve state: container recreation keeps state in named
   volumes that survive container removal, and the engine replaces the VM only
-  when it is missing or unhealthy. Never invoke repair from a pool host delete
-  path.
+  when it is missing or unhealthy. A VM `HostedHere` whose Docker daemon does
+  not answer is unhealthy whatever its running state says. Set `HostedHere`
+  only for a VM this process runs and reaches without a network: for any other,
+  a silent daemon may be the path's fault, and a restart kills a healthy pool.
+  Never invoke repair from a pool host delete path.
 - Terminal `failed` is only for pools that never completed create. Gate any
   new terminal-failure transition on `!Pool.EverCreated()`. A created pool
   that fails a reconcile/repair keeps its state and records the error against

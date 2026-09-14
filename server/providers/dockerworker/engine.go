@@ -38,11 +38,16 @@ import (
 const (
 	// containerLogTailLines and containerLogLimit bound the diagnostic output
 	// attached to a failed container: only the tail explains a startup failure.
-	containerLogTailLines     = 100
-	containerLogLimit         = 16 << 10
-	defaultAgentPort          = 3002
-	defaultDockerReadyWait    = 3 * time.Minute
-	dockerReadyPollDelay      = 2 * time.Second
+	containerLogTailLines  = 100
+	containerLogLimit      = 16 << 10
+	defaultAgentPort       = 3002
+	defaultDockerReadyWait = 3 * time.Minute
+	dockerReadyPollDelay   = 2 * time.Second
+	// dockerAnswerWait bounds repair's check that a running VM's Docker daemon
+	// still answers. It is not a boot wait — a VM that booted has had
+	// defaultDockerReadyWait by the time anything repairs it — only long enough
+	// that a daemon restarting in place is not taken for a dead guest.
+	dockerAnswerWait          = 15 * time.Second
 	noHealthWaitTimeout       = 30 * time.Second
 	healthPollDelay           = 500 * time.Millisecond
 	dockerSocketPath          = "/var/run/docker.sock"
@@ -276,7 +281,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
-	lease, err := e.acquireDockerReady(ctx, pool.ID)
+	lease, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
 	releaseDocker()
 	if err != nil {
 		return err
@@ -301,13 +306,43 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 }
 
 func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, _ string) error {
-	// Replace the VM only when it is missing or unhealthy; pool-local state
-	// such as named volumes survives container replacement on a healthy VM.
+	// Replace the VM only when it is missing or unhealthy, which includes a VM
+	// hosted here whose Docker daemon does not answer; pool-local state such as
+	// named volumes survives container replacement on a healthy VM.
 	vmInfo, err := e.driver.InspectVM(ctx, pool.ID)
 	if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		return err
 	}
-	if vmInfo == nil || vmInfo.Status != sandbox.StatusRunning {
+	replaceVM := vmInfo == nil || vmInfo.Status != sandbox.StatusRunning
+	if !replaceVM && vmInfo.HostedHere {
+		// Running is the hypervisor's word, and it says nothing about the guest.
+		// A guest whose storage never mounted runs without Docker, and one wedged
+		// in its kernel runs without anything; both report running for as long as
+		// the VM exists. Nothing but repair ever restarts one, so repair that
+		// trusted the state would retry a guest that cannot come back forever.
+		//
+		// Only a VM hosted here is judged this way: a daemon behind a network
+		// can be silent because of the network, and restarting the VM for that
+		// would kill a healthy pool on every retry.
+		//
+		// The context only bounds an attempt that hangs. It outlasts the wait by a
+		// poll so that a daemon refusing connections is reported by its own error
+		// rather than by the deadline.
+		answerCtx, cancel := context.WithTimeout(ctx, dockerAnswerWait+dockerReadyPollDelay)
+		lease, answerErr := e.acquireDockerReady(answerCtx, pool.ID, dockerAnswerWait)
+		cancel()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if answerErr != nil {
+			slog.WarnContext(ctx, "restarting pool VM whose Docker daemon does not answer",
+				"pool_id", pool.ID, "error", answerErr)
+			replaceVM = true
+		} else {
+			lease.Release()
+		}
+	}
+	if replaceVM {
 		if err := e.driver.StopVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return err
 		}
@@ -319,7 +354,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
-	lease, err := e.acquireDockerReady(ctx, pool.ID)
+	lease, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
 	releaseDocker()
 	if err != nil {
 		return err
@@ -421,14 +456,18 @@ func (e *Engine) vmSpec(provider *model.SandboxProviderInstance, pool *model.Poo
 	return VMSpec{Name: ContainerName(pool.ID), Metadata: metadata}
 }
 
-// acquireDockerReady acquires the pool's Docker client and waits for the
-// daemon to answer pings, bounding the time a freshly booted VM gets to bring
-// Docker up. Drivers do not implement readiness waiting themselves.
-func (e *Engine) acquireDockerReady(ctx context.Context, poolID string) (*DockerClientLease, error) {
-	timeout := e.cfg.DockerReadyTimeout
-	if timeout <= 0 {
-		timeout = defaultDockerReadyWait
+// dockerReadyTimeout is how long a freshly booted VM gets to bring Docker up.
+func (e *Engine) dockerReadyTimeout() time.Duration {
+	if e.cfg.DockerReadyTimeout > 0 {
+		return e.cfg.DockerReadyTimeout
 	}
+	return defaultDockerReadyWait
+}
+
+// acquireDockerReady acquires the pool's Docker client and waits up to timeout
+// for the daemon to answer pings. Drivers do not implement readiness waiting
+// themselves.
+func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout time.Duration) (*DockerClientLease, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {

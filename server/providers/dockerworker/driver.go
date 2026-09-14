@@ -95,6 +95,16 @@ type VMInfo struct {
 	// Address is the host that reaches the VM's published ports, when the
 	// backend has one.
 	Address string
+	// HostedHere reports a VM this server process runs and reaches without a
+	// network: vz, libkrun, and wslc. Nothing but the guest stands between the
+	// engine and such a VM's Docker daemon, so a daemon that does not answer is
+	// the guest's fault, and repair restarts the VM for it.
+	//
+	// It is false for a VM reached over a network, where the path can fail
+	// while the guest is fine and a restart would kill a healthy pool without
+	// fixing anything, and for a driver with no VM of its own to restart. That
+	// is why it is the zero value.
+	HostedHere bool
 }
 
 // DockerClientLease holds a Docker API client until Release is called.

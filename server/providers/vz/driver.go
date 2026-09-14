@@ -299,7 +299,7 @@ func (d *Driver) InspectVM(_ context.Context, poolID string) (*dockerworker.VMIn
 	if !guest.vm.Running() {
 		// Reported unhealthy rather than absent so the engine replaces the VM
 		// in place and the pool keeps its disks.
-		return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusStopped}, nil
+		return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusStopped, HostedHere: true}, nil
 	}
 	return runningInfo(poolID), nil
 }
@@ -510,7 +510,7 @@ func (g *guestVM) close() {
 }
 
 func runningInfo(poolID string) *dockerworker.VMInfo {
-	return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusRunning}
+	return &dockerworker.VMInfo{ID: vmID(poolID), Status: sandbox.StatusRunning, HostedHere: true}
 }
 
 func vmID(poolID string) string { return "vz-" + poolID }

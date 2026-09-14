@@ -76,7 +76,10 @@ reading the engine:
 
 - `EnsureVM` / `StopVM` / `DeleteVM` / `InspectVM`: idempotent VM lifecycle
   keyed by pool ID. `StopVM` preserves driver-owned persistent state for
-  repair; `DeleteVM` removes it after pool deletion is authorized. The local
+  repair; `DeleteVM` removes it after pool deletion is authorized. The
+  `VMInfo` a driver reports says whether the VM is `HostedHere` — run by this
+  process and reached without a network — which decides whether repair may
+  restart it for a Docker daemon that does not answer. The local
   Docker driver resolves every pool to the host and lifecycle is a no-op.
 - `AcquireDockerClient`: a Docker API client lease for the daemon hosting the
   pool's containers. The lease states that daemon's `DaemonLocality`, which the
@@ -337,7 +340,16 @@ and that error keeps driving the reconcile.
 `RepairPool` is the recovery hook for pools whose runtime is known to be
 unhealthy, including a runtime whose agent never registered within the
 registration timeout. The engine replaces the container and replaces the VM
-only when `InspectVM` reports it missing or unhealthy.
+only when it is missing or unhealthy: `InspectVM` reports it not running, or it
+reports a running VM `HostedHere` whose Docker daemon does not answer within a
+short check. The second case exists because a hypervisor's running state says
+nothing about the guest — a guest whose storage never mounted, or whose kernel
+is wedged, stays running for as long as the VM exists, and nothing but repair
+would ever restart it. It is confined to VMs hosted here (`vz`, `libkrun`,
+`wslc`), where nothing but the guest stands between the engine and the daemon.
+A VM reached over a network can go silent because of the network, and a restart
+would kill a healthy pool on every retry without fixing it; the local Docker
+driver has no VM to restart at all.
 
 The control plane launches the pool-agent container over the VM's Docker
 daemon on every backend. Cloud VM images therefore stay generic: DigitalOcean

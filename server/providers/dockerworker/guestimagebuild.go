@@ -68,7 +68,7 @@ func (e *Engine) BuildGuestImage(ctx context.Context, _ *model.SandboxProviderIn
 
 	// The lease is held for the life of the build, not of this call, so it is
 	// released by the stream rather than deferred here.
-	lease, err := e.acquireDockerReady(ctx, pool.ID)
+	lease, err := e.acquireDockerReady(ctx, pool.ID, e.dockerReadyTimeout())
 	if err != nil {
 		return nil, fmt.Errorf("reach the pool's Docker daemon: %w", err)
 	}

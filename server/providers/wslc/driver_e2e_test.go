@@ -56,8 +56,8 @@ func TestDriverE2E(t *testing.T) {
 		t.Fatalf("second EnsureVM: %v", err)
 	}
 
-	if info, err := driver.InspectVM(ctx, poolID); err != nil || info.Status != sandbox.StatusRunning {
-		t.Fatalf("InspectVM = (%v, %v), want running/nil", info, err)
+	if info, err := driver.InspectVM(ctx, poolID); err != nil || info.Status != sandbox.StatusRunning || !info.HostedHere {
+		t.Fatalf("InspectVM = (%+v, %v), want running and hosted here/nil", info, err)
 	}
 
 	lease, err := driver.AcquireDockerClient(ctx, poolID)
