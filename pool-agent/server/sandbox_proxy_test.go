@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -379,4 +381,59 @@ func TestSandboxUDPTunnelProxyRequiresUDPConnectScope(t *testing.T) {
 	if gotQuery != "host=127.0.0.1&port=53" {
 		t.Fatalf("upstream query = %q, want host/port forwarded", gotQuery)
 	}
+}
+
+// A sandbox the proxy cannot reach is a failure worth a line and a 502.
+func TestSandboxProxyReportsAnUnreachableSandbox(t *testing.T) {
+	logged := captureProxyLog(t)
+	upstream := httptest.NewServer(http.NotFoundHandler())
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream.Close()
+
+	recorder := httptest.NewRecorder()
+	sandboxProxy(target, "").ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sandbox", nil))
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+	if !strings.Contains(logged.String(), "http: proxy error") {
+		t.Fatalf("log = %q, want the proxy error reported", logged.String())
+	}
+}
+
+// The control plane cancels its request whenever its own client leaves. That
+// is not a failure, so nothing is logged for it.
+func TestSandboxProxyIgnoresAClientThatWentAway(t *testing.T) {
+	logged := captureProxyLog(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("the proxy reached the sandbox for a request whose client had gone")
+	}))
+	t.Cleanup(upstream.Close)
+	target, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/sandbox", nil)
+	sandboxProxy(target, "").ServeHTTP(httptest.NewRecorder(), request)
+
+	if logged.Len() != 0 {
+		t.Fatalf("log = %q, want nothing for a client that went away", logged.String())
+	}
+}
+
+// captureProxyLog redirects the standard logger, which is where the proxy
+// reports a failure, for the length of a test.
+func captureProxyLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	return &buf
 }

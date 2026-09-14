@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -216,5 +217,19 @@ func sandboxProxy(target *url.URL, downstreamAuth string) *httputil.ReverseProxy
 			}
 			req.SetXForwarded()
 		},
+		ErrorHandler: sandboxProxyError,
 	}
+}
+
+// sandboxProxyError answers a request the sandbox could not be asked, as the
+// default handler does, except for a request whose client has already gone.
+// The control plane cancels its request here whenever its own client leaves, so
+// that one is not a failure, and logging it would print a line for every
+// closed terminal and abandoned fetch.
+func sandboxProxyError(w http.ResponseWriter, r *http.Request, err error) {
+	if r.Context().Err() != nil {
+		return
+	}
+	log.Printf("http: proxy error: %v", err)
+	w.WriteHeader(http.StatusBadGateway)
 }
