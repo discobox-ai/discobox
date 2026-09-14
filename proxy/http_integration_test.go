@@ -1240,9 +1240,7 @@ func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
 	server.http.proxy.Tr = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // test origin is self-signed
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()
-	var closeOnce sync.Once
-	closeServer := func() { closeOnce.Do(func() { _ = server.Close(); <-errCh }) }
-	t.Cleanup(closeServer)
+	t.Cleanup(func() { _ = server.Close(); <-errCh })
 	addr := waitForAddr(t, server)
 
 	// Client trusts both the mTLS CA (proxy) and the MITM CA (intercepted origin),
@@ -1289,17 +1287,10 @@ func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
 		}
 	}
 
-	closeServer()
-
-	pools, err := gormdb.Open(gormdb.Config{DSN: filepath.Join(dir, "audit.db")})
-	if err != nil {
-		t.Fatalf("open audit db: %v", err)
-	}
-	t.Cleanup(func() { _ = pools.Close() })
-	var exchange audit.HTTPExchange
-	if err := pools.Read.Where("method = ?", http.MethodGet).Order("id DESC").First(&exchange).Error; err != nil {
-		t.Fatalf("read audit exchange for MITM'd request: %v", err)
-	}
+	// The exchange is recorded once goproxy has finished copying the response
+	// body, which can be after the client has read it; wait for the row rather
+	// than closing the server on a request still being finished.
+	exchange := waitForHTTPExchange(t, filepath.Join(dir, "audit.db"), "method = ?", http.MethodGet)
 	if exchange.ClientID != "sandbox-1" {
 		t.Fatalf("MITM'd request client_id = %q, want sandbox-1 (identity must reach MITM'd requests)", exchange.ClientID)
 	}
