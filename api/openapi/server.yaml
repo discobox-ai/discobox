@@ -1964,7 +1964,8 @@ components:
                 - hostId
             type: object
         Pool:
-            additionalProperties: false
+            # Response fields may differ across releases selected by the CLI.
+            # Leave unknown fields ignorable, including retired staging fields.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
