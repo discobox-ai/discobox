@@ -17,13 +17,16 @@ import (
 // Env names the local release manifest shared by the CLI and server.
 const Env = "DISCOBOX_RELEASE_MANIFEST"
 
-// Manifest can be used with locally built binaries. Servers, when present,
-// describe downloadable binaries; Images always describes what the server runs.
+// Manifest describes release binaries and runtime images. Binary descriptors
+// include platform, URLs, sizes, and verified digests. Development binaries may
+// adopt this metadata while keeping their own build identity.
 type Manifest struct {
-	Format  int                    `json:"format"`
-	Version string                 `json:"version"`
-	Images  Images                 `json:"images"`
-	Servers []serverstage.Manifest `json:"servers,omitempty"`
+	Format   int                    `json:"format"`
+	Version  string                 `json:"version"`
+	Revision string                 `json:"revision,omitempty"`
+	Images   Images                 `json:"images"`
+	Servers  []serverstage.Manifest `json:"servers,omitempty"`
+	Clients  []serverstage.Manifest `json:"clients,omitempty"`
 }
 
 // Images names each image by its runtime role. The staging list is derived
@@ -80,18 +83,20 @@ func (m Manifest) Validate() error {
 			return fmt.Errorf("release manifest harness %s: %w", slug, err)
 		}
 	}
-	seen := map[string]bool{}
-	for _, server := range m.Servers {
-		if err := server.Validate(); err != nil {
-			return err
+	for role, binaries := range map[string][]serverstage.Manifest{"server": m.Servers, "client": m.Clients} {
+		seen := map[string]bool{}
+		for _, binary := range binaries {
+			if err := binary.Validate(); err != nil {
+				return fmt.Errorf("%s: %w", role, err)
+			}
+			if binary.Version != m.Version {
+				return fmt.Errorf("%s version %s differs from release %s", role, binary.Version, m.Version)
+			}
+			if seen[binary.Platform()] {
+				return fmt.Errorf("duplicate %s platform %s", role, binary.Platform())
+			}
+			seen[binary.Platform()] = true
 		}
-		if server.Version != m.Version {
-			return fmt.Errorf("server version %s differs from release %s", server.Version, m.Version)
-		}
-		if seen[server.Platform()] {
-			return fmt.Errorf("duplicate server platform %s", server.Platform())
-		}
-		seen[server.Platform()] = true
 	}
 	return nil
 }

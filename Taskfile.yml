@@ -460,6 +460,17 @@ tasks:
       # A subprocess carries this task's environment into the development loop.
       - go tool task dev:server
 
+  dev:released-server:
+    desc: Run a manifest's released server using the local CLI (MANIFEST=path)
+    requires:
+      vars: [MANIFEST]
+    deps: [build:cli]
+    env:
+      DISCOBOX_RELEASE_MANIFEST: '{{.MANIFEST}}'
+      DISCOBOX_SERVER_BINARY: ''
+    cmds:
+      - ./{{.CLI_BINARY}} admin server
+
   dev:server:
     desc: Run discobox-server with watchnbuild hot reload on the local socket
     deps:
@@ -1072,14 +1083,22 @@ tasks:
           # Export from a host build even when the server asset targets Windows.
           go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/version.Version={{.PIN_TAG}}" \
             ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
-          set -- "$@" -release-images "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" \
-            -release-output "build/release/bin/discobox-manifest-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
           manifest="$(go run ./internal/cmd/discobox-server-manifest "$@")"
         fi
         cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
           go build -trimpath \
           -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/serverstage.DefaultManifest=$manifest}" \
           -o "../{{.OUT}}" {{.CLI_MAIN}}
+        cd ..
+        if [ -n "$manifest" ]; then
+          # The full external manifest is written after the CLI's final link:
+          # embedding its own digest would be self-referential.
+          go run ./internal/cmd/discobox-server-manifest "$@" \
+            -revision "$(git rev-parse HEAD)" \
+            -client-asset "discobox{{.EXT}}={{.OUT}}" \
+            -release-images "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" \
+            -release-output "build/release/bin/discobox-manifest-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" >/dev/null
+        fi
 
   release:windows-zip:
     desc: Package each Windows binary as the archive winget installs from
@@ -1307,6 +1326,7 @@ tasks:
     cmds:
       # Here rather than in release:build because the installers are stamped
       # with every platform's binary, and only this job has all of them.
+      - task: release:manifest
       - task: release:installers
       - |
         set -eu
@@ -1329,6 +1349,11 @@ tasks:
         gh release view "$tag" >/dev/null 2>&1 ||
           gh release create "$tag" --verify-tag --title "$tag" --generate-notes --prerelease
         gh release upload "$tag" build/release/bin/* --clobber
+
+  release:manifest:
+    desc: Assemble every platform's CLI, server, and image metadata into release.json
+    cmds:
+      - go run ./internal/cmd/discobox-release-manifest -out build/release/bin/release.json build/release/bin/discobox-manifest-*.json
 
   release:installers:
     desc: Write install.sh and install.ps1 for RELEASE_TAG into build/release/bin

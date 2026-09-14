@@ -11,5 +11,190 @@
       "codex": "ghcr.io/discobox-ai/discobox-harness-codex:v0.8.0",
       "shell": "ghcr.io/discobox-ai/discobox-harness-shell:v0.8.0"
     }
-  }
+  },
+  "revision": "10d735194f8e7c6fe87b992e2f97b760fc9f3616",
+  "servers": [
+    {
+      "version": "v0.8.0",
+      "os": "darwin",
+      "arch": "arm64",
+      "command": "discobox-server",
+      "assets": [
+        {
+          "name": "discobox-server",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-server-darwin-arm64",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-server-darwin-arm64"
+          ],
+          "sha256": "cbab4660897089e093b52ffb4dbf169db870df3149df5921e23df6eb3934f569",
+          "size": 66583600,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "linux",
+      "arch": "amd64",
+      "command": "discobox-server",
+      "assets": [
+        {
+          "name": "discobox-server",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-server-linux-amd64",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-server-linux-amd64"
+          ],
+          "sha256": "63783be738c0145fe012a779e8c932bfd43dc1a65938dca67a21388f6bc30fe1",
+          "size": 76812553,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "linux",
+      "arch": "arm64",
+      "command": "discobox-server",
+      "assets": [
+        {
+          "name": "discobox-server",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-server-linux-arm64",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-server-linux-arm64"
+          ],
+          "sha256": "514fdc0a02eaf2c7e5a79a59ef363a23affcf9346fa81ef7e3d100e2e83d33c7",
+          "size": 70648073,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "windows",
+      "arch": "amd64",
+      "command": "discobox-server.exe",
+      "assets": [
+        {
+          "name": "discobox-server.exe",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-server-windows-amd64.exe",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-server-windows-amd64.exe"
+          ],
+          "sha256": "1a9768093ac57a96e11507619d81f0bc8bc033e6bfb055b3ab8b94f9ebbe74ff",
+          "size": 75403264,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "windows",
+      "arch": "arm64",
+      "command": "discobox-server.exe",
+      "assets": [
+        {
+          "name": "discobox-server.exe",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-server-windows-arm64.exe",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-server-windows-arm64.exe"
+          ],
+          "sha256": "d9db6b106ec2bf14108651d9ef738f3de3e6f0b611a6eb6d83b59bd7d2547ca6",
+          "size": 54664704,
+          "executable": true
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "version": "v0.8.0",
+      "os": "darwin",
+      "arch": "arm64",
+      "command": "discobox",
+      "assets": [
+        {
+          "name": "discobox",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-darwin-arm64",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-darwin-arm64"
+          ],
+          "sha256": "d84b71f77b18733035d7591c0cd3a1c9a9946fd2b84fbf946a4ccdd23277f645",
+          "size": 27429458,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "linux",
+      "arch": "amd64",
+      "command": "discobox",
+      "assets": [
+        {
+          "name": "discobox",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-linux-amd64",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-linux-amd64"
+          ],
+          "sha256": "db3f6bfccd4f2d6f4fc5de6a199098d3403b1cb9618c147d27fdbbda04814deb",
+          "size": 32039177,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "linux",
+      "arch": "arm64",
+      "command": "discobox",
+      "assets": [
+        {
+          "name": "discobox",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-linux-arm64",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-linux-arm64"
+          ],
+          "sha256": "df701fae18151e4e084997f2e3a54f1afa6da141cc2b3535fc50d86db475bc7e",
+          "size": 29032713,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "windows",
+      "arch": "amd64",
+      "command": "discobox.exe",
+      "assets": [
+        {
+          "name": "discobox.exe",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-windows-amd64.exe",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-windows-amd64.exe"
+          ],
+          "sha256": "375d1b86e7a4e8e719886b4f96ecd789556c3d7c63c072dba5580d4e32bf4245",
+          "size": 32205824,
+          "executable": true
+        }
+      ]
+    },
+    {
+      "version": "v0.8.0",
+      "os": "windows",
+      "arch": "arm64",
+      "command": "discobox.exe",
+      "assets": [
+        {
+          "name": "discobox.exe",
+          "urls": [
+            "https://assets.discobox.ai/discobox/v0.8.0/discobox-windows-arm64.exe",
+            "https://github.com/discobox-ai/discobox/releases/download/v0.8.0/discobox-windows-arm64.exe"
+          ],
+          "sha256": "0aeaeee4c7ab2c66818d363ba3fd0a239903bf7ee3161e14eab0cb99d446a18c",
+          "size": 28347904,
+          "executable": true
+        }
+      ]
+    }
+  ]
 }

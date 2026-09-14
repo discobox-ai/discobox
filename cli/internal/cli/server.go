@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/execstream/client"
 	"github.com/discobox-ai/discobox/imagecache"
+	"github.com/discobox-ai/discobox/releasemanifest"
 	"github.com/discobox-ai/discobox/serverstage"
 )
 
@@ -236,11 +237,22 @@ It says which files the server is made of, where each one is published, and
 what each one's SHA-256 has to be. A build with no manifest — every build that
 is not a release — says so and exits non-zero.
 
+When DISCOBOX_RELEASE_MANIFEST is set, prints that complete release metadata,
+including CLI binaries, server binaries, and runtime images.
+
 This is the answer to "what would this binary download, and from where", which
 is otherwise only visible as a directory of files after the fact.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			manifest, err := a.serverResolver(nil).manifest(cmd.Context())
+			resolver := a.serverResolver(nil)
+			if resolver.source.releaseManifest != "" {
+				manifest, err := releasemanifest.Read(resolver.source.releaseManifest)
+				if err != nil {
+					return err
+				}
+				return writeJSON(cmd.OutOrStdout(), manifest)
+			}
+			manifest, err := resolver.manifest(cmd.Context())
 			if err != nil {
 				return err
 			}

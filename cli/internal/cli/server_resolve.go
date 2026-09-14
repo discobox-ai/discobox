@@ -144,7 +144,7 @@ func (r serverResolver) resolve(ctx context.Context) (string, error) {
 	}
 	// An explicit manifest is an instruction, so it outranks whatever happens
 	// to be lying beside the binary.
-	if r.source.manifest == "" {
+	if r.source.manifest == "" && r.source.releaseManifest == "" {
 		if sibling, ok := r.sibling(); ok {
 			return sibling, nil
 		}

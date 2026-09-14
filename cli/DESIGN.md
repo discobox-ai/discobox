@@ -403,9 +403,9 @@ is an error rather than a lost convenience.
 ## The Server Is a Separate Program
 
 `DISCOBOX_RELEASE_MANIFEST` selects a full release artifact manifest independently
-of the CLI/server binary version. An explicit binary or sibling can run against
-its image set; without a local binary the manifest's matching `servers` entry
-supplies the verified download. The manifest's image roles supply staging
+of the CLI/server binary version. An explicit `--binary` can run against its image set. Otherwise an explicit
+release manifest outranks a sibling binary: its matching `servers` entry supplies
+the verified download, including when this CLI is a development build. The manifest's image roles supply staging
 directly, including for development binaries, and the environment passes the
 same file to the server. See [release manifests](../releasemanifest/DESIGN.md).
 

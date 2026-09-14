@@ -434,3 +434,61 @@ func TestExplicitReleaseStagesImagesWithADevelopmentBinary(t *testing.T) {
 		t.Fatal("downloaded cached layers again")
 	}
 }
+
+func TestReleaseManifestDownloadsInsteadOfUsingDevelopmentSibling(t *testing.T) {
+	binary, fetches := servedManifest(t, "v0.8.0")
+	m, err := releasemanifest.Read("../../../releasemanifest/examples/v0.8.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Servers = []serverstage.Manifest{binary}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "release.json")
+	write(t, path, string(data))
+	install := fakeInstall(t, true)
+	resolver := serverResolver{source: serverSource{releaseManifest: path}, executable: filepath.Join(install, "discobox"), stageRoot: t.TempDir()}
+	got, err := resolver.resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == filepath.Join(install, serverBinaryName()) || *fetches != 1 {
+		t.Fatalf("resolved %s; downloads %d", got, *fetches)
+	}
+	if _, err := resolver.resolve(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if *fetches != 1 {
+		t.Fatal("redownloaded verified server")
+	}
+	resolver.source.binary = filepath.Join(install, serverBinaryName())
+	got, err = resolver.resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != resolver.source.binary || *fetches != 1 {
+		t.Fatal("explicit development binary did not win")
+	}
+}
+
+func TestReleaseManifestRejectsCorruptServerDownload(t *testing.T) {
+	binary, _ := servedManifest(t, "v0.8.0")
+	binary.Assets[0].SHA256 = strings.Repeat("0", 64)
+	m, err := releasemanifest.Read("../../../releasemanifest/examples/v0.8.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Servers = []serverstage.Manifest{binary}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "release.json")
+	write(t, path, string(data))
+	resolver := serverResolver{source: serverSource{releaseManifest: path}, executable: filepath.Join(fakeInstall(t, true), "discobox"), stageRoot: t.TempDir()}
+	if _, err := resolver.resolve(context.Background()); err == nil {
+		t.Fatal("accepted corrupt release server")
+	}
+}

@@ -66,6 +66,8 @@ func main() {
 
 func run() error {
 	var (
+		clientAsset   = flag.String("client-asset", "", "CLI staged name=path, after its final link")
+		revision      = flag.String("revision", "", "source revision of this release build")
 		releaseInput  = flag.String("release-images", "", "release image manifest to include in the full manifest")
 		releaseOutput = flag.String("release-output", "", "write the full release manifest to this file")
 		version       = flag.String("version", "", "release version the assets belong to")
@@ -120,7 +122,26 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		release.Revision = *revision
 		release.Servers = []serverstage.Manifest{manifest}
+		if *clientAsset == "" {
+			return fmt.Errorf("-client-asset is required for a full release manifest")
+		}
+		name, path, ok := strings.Cut(*clientAsset, "=")
+		if !ok {
+			return fmt.Errorf("-client-asset must be name=path")
+		}
+		digest, size, err := sha256File(path)
+		if err != nil {
+			return err
+		}
+		urls := make([]string, 0, len(baseURLs))
+		for _, base := range baseURLs {
+			urls = append(urls, strings.TrimSuffix(base, "/")+"/"+filepath.Base(path))
+		}
+		release.Clients = []serverstage.Manifest{{Version: *version, OS: *targetOS, Arch: *targetArch, Command: name,
+			Assets: []serverstage.Asset{{Name: name, URLs: urls, SHA256: digest, Size: size, Executable: true}},
+		}}
 		if err := release.Validate(); err != nil {
 			return err
 		}
