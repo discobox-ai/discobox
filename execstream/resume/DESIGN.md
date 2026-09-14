@@ -54,6 +54,37 @@ sequenceDiagram
 - An attach that never sends `Session` stays a plain direct attach. Once a
   session exists, the host rejects an unpositioned action frame.
 
+## Host Replacement
+
+Positions belong to one process. `NewServer` draws a random host instance;
+`SessionOK` carries it, and the client sends the instance it last established
+with in every `Session`.
+
+- Same instance (or none yet): ordinary resume. An unknown token asking to
+  resume past position 1 is still rejected — this host evicted it, and
+  retransmitting could duplicate input.
+- Different instance: the process was replaced under the same exec id (a
+  terminal revived in place, e.g. after its pool restarted). The host starts
+  the session at the client's newest accepted position; the client abandons its
+  retained actions instead of retransmitting them into the new process, then
+  restores resize and ready and reconnects normally. The replay attach repaints
+  the new process's screen.
+- Abandoned actions count as acknowledged in `Positions`, which stays monotonic,
+  and emit no acknowledgement timing or observer events.
+
+## Wire Compatibility
+
+The handshake is not negotiated: `Session` and `SessionOK` are exact-length, and
+the client and the host must share one format. The host runs in the exec shim
+inside the sandbox image, which stays pinned until the sandbox is upgraded, so a
+CLI and a running sandbox from different releases can disagree. That mismatch is
+unsupported — attach fails until the sandbox is upgraded. The host detects it and
+answers with an error frame, so the client reports `ErrRejected` carrying the
+host's protocol message (e.g. `session payload is 56 bytes, want 40`), not
+`ErrProtocol`.
+Changing a handshake payload is a deliberate break, not a compatibility path to
+maintain.
+
 ## Timing Events
 
 Enable timing observations with `Options.Timing`. With no observer, timing is

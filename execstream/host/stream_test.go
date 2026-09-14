@@ -309,7 +309,7 @@ func TestReadFramesDeduplicatesResumedActions(t *testing.T) {
 	}})
 
 	token := bytes.Repeat([]byte{0x55}, 32)
-	sessionPayload, err := resume.EncodeSession(token, 1)
+	sessionPayload, err := resume.EncodeNewSession(token)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestReadFramesDeduplicatesResumedActions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		position, err := resume.DecodePosition(established.Payload)
+		position, err := resume.DecodeSessionOK(established.Payload)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -392,13 +392,13 @@ func (s *Stream) readFrames(attach *Attacher) {
 				s.failAttach(attach, fmt.Errorf("%w: session already established", resume.ErrProtocol))
 				return
 			}
-			var position uint64
-			receiver, position, err = s.resumes.Accept(next.Payload)
+			var established []byte
+			receiver, established, err = s.resumes.Accept(next.Payload)
 			if err != nil {
 				s.failAttach(attach, err)
 				return
 			}
-			if err := attach.writeControlFrame(frame.SessionOK, resume.EncodePosition(position)); err != nil {
+			if err := attach.writeControlFrame(frame.SessionOK, established); err != nil {
 				attach.Close()
 				return
 			}

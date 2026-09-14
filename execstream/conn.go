@@ -52,6 +52,7 @@ type Prober interface {
 type Delivery interface {
 	// Positions reports the last client action position accepted locally and
 	// the last one the host acknowledged applying. Both are monotonic, so
-	// acknowledged >= accepted means nothing is outstanding.
+	// acknowledged >= accepted means nothing is outstanding. Actions abandoned
+	// because the process they addressed was replaced count as acknowledged.
 	Positions() (accepted, acknowledged uint64)
 }

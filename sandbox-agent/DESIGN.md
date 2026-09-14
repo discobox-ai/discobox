@@ -726,7 +726,9 @@ development images without a registry.
   `execstream/resume`. Input, signal, and close-input actions are positioned and
   acknowledged only after the shim applies them. The host retains the highest
   applied position for the process lifetime, so retransmission after a lost
-  acknowledgement is deduplicated rather than applied twice. Ready remains
+  acknowledgement is deduplicated rather than applied twice. A revived
+  terminal's shim is a new host instance: a client that last spoke to its
+  predecessor starts its session over rather than being rejected. Ready remains
   connection-local and resize remains coalesced idempotent state. Repaint is
   neither: it is unpositioned like both, and retained like neither, because a
   reconnect replays on its own and a repaint held across one would land behind

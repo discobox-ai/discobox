@@ -33,7 +33,9 @@ const (
 	// can drop bytes buffered before its tunnel is wired up.
 	Ready byte = 8
 	// Session opens or resumes one logical client session over a physical attach
-	// connection. SessionOK reports the highest action position the host applied.
+	// connection. SessionOK reports the highest action position the host applied
+	// and the host instance, which tells a client whether the process it resumed
+	// is the one its positions describe.
 	// Action carries a positioned Input, Signal, or CloseInput frame, and Ack
 	// cumulatively acknowledges applied actions. Together these frames let a
 	// client reconnect and retransmit without losing or duplicating process input.

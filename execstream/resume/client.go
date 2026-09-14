@@ -73,6 +73,7 @@ type Conn struct {
 	connecting      execstream.Conn
 	closed          bool
 	terminalErr     error
+	instance        instance
 	lastAck         uint64
 	nextPosition    uint64
 	pending         []pendingAction
@@ -337,7 +338,9 @@ func (c *Conn) writeUnpositioned(typ byte, payload []byte) error {
 // Positions implements execstream.Delivery: the last action position accepted
 // from the caller and the last one the host acknowledged applying. A caller
 // that recorded the accepted position of one action can tell whether the host
-// has applied it without holding on to the action itself.
+// has applied it without holding on to the action itself. Actions abandoned
+// because their process was replaced count as acknowledged: nothing will ever
+// apply them.
 func (c *Conn) Positions() (accepted, acknowledged uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -376,13 +379,18 @@ func (c *Conn) closeTransports() error {
 
 func (c *Conn) establishLocked(conn execstream.Conn) error {
 	c.mu.Lock()
-	firstAvailable := c.lastAck + 1
+	request := sessionRequest{
+		token:          c.token,
+		firstAvailable: c.lastAck + 1,
+		accepted:       c.nextPosition,
+		instance:       c.instance,
+	}
 	c.mu.Unlock()
-	request, err := encodeSession(c.token, firstAvailable)
+	payload, err := encodeSession(request)
 	if err != nil {
 		return err
 	}
-	if err := conn.WriteFrame(frame.Session, request); err != nil {
+	if err := conn.WriteFrame(frame.Session, payload); err != nil {
 		return err
 	}
 	response, err := conn.ReadFrame()
@@ -399,8 +407,11 @@ func (c *Conn) establishLocked(conn execstream.Conn) error {
 	if response.Type != frame.SessionOK {
 		return fmt.Errorf("%w: session response type %d, want %d", ErrProtocol, response.Type, frame.SessionOK)
 	}
-	position, err := decodePosition(response.Payload)
+	position, host, err := decodeSessionOK(response.Payload)
 	if err != nil {
+		return err
+	}
+	if err := c.adoptInstance(host, position); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -464,6 +475,34 @@ func (c *Conn) establishLocked(conn execstream.Conn) error {
 	}
 	c.notifyLocked()
 	c.mu.Unlock()
+	return nil
+}
+
+// adoptInstance binds the session to the host that answered its handshake.
+//
+// A different host than the one last established with is a replaced process —
+// a terminal revived in place under the same exec id. The process the retained
+// actions addressed is gone, and delivering them to its replacement would type
+// input meant for a screen that no longer exists, so they are abandoned: they
+// settle without ever being applied and without acknowledgement events. The
+// replacement host started the session at the newest accepted position, which
+// keeps positions monotonic for Delivery.
+func (c *Conn) adoptInstance(host instance, position uint64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if host == c.instance {
+		return nil
+	}
+	if c.instance != (instance{}) {
+		if position != c.nextPosition {
+			return fmt.Errorf("%w: replacement host started at position %d, want %d", ErrProtocol, position, c.nextPosition)
+		}
+		c.lastAck = position
+		c.pending = nil
+		c.pendingBytes = 0
+		c.notifyLocked()
+	}
+	c.instance = host
 	return nil
 }
 

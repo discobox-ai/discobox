@@ -1,6 +1,7 @@
 package resume
 
 import (
+	"crypto/rand"
 	"fmt"
 	"sync"
 
@@ -8,8 +9,11 @@ import (
 )
 
 // Server retains the applied input position of every logical session for one
-// hosted process. Its lifetime must therefore match that process's stream.
+// hosted process. Its lifetime must therefore match that process's stream: its
+// instance is what tells a reconnecting client whether it reached the process
+// its positions describe.
 type Server struct {
+	instance instance
 	mu       sync.Mutex
 	sessions map[string]*serverSession
 	clock    uint64
@@ -35,29 +39,38 @@ type Receiver struct {
 }
 
 func NewServer() *Server {
-	return &Server{sessions: map[string]*serverSession{}}
+	s := &Server{sessions: map[string]*serverSession{}}
+	_, _ = rand.Read(s.instance[:])
+	return s
 }
 
-// Accept opens or resumes a logical session. position is the highest action
-// already applied and must be returned to the client in a SessionOK frame.
-func (s *Server) Accept(payload []byte) (*Receiver, uint64, error) {
+// Accept opens or resumes a logical session. It returns the SessionOK payload
+// to send the client: the highest action already applied and this host's
+// instance.
+//
+// A client whose last session was with another instance is starting over on a
+// replaced process, not resuming this one. Nothing it retained was applied
+// here, so its session begins at the client's newest accepted position and the
+// client abandons what it retained.
+func (s *Server) Accept(payload []byte) (*Receiver, []byte, error) {
 	request, err := decodeSession(payload)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
+	replaced := request.instance != (instance{}) && request.instance != s.instance
 
 	key := string(request.token)
 	s.mu.Lock()
 	session := s.sessions[key]
 	if session == nil {
-		if request.firstAvailable != 1 {
+		if !replaced && request.firstAvailable != 1 {
 			s.mu.Unlock()
-			return nil, 0, fmt.Errorf("%w: host has no session state before position %d", ErrRejected, request.firstAvailable)
+			return nil, nil, fmt.Errorf("%w: host has no session state before position %d", ErrRejected, request.firstAvailable)
 		}
 		if len(s.sessions) >= MaxSessions {
 			if !s.evictInactiveLocked() {
 				s.mu.Unlock()
-				return nil, 0, fmt.Errorf("%w: host already serves %d active logical sessions", ErrRejected, MaxSessions)
+				return nil, nil, fmt.Errorf("%w: host already serves %d active logical sessions", ErrRejected, MaxSessions)
 			}
 		}
 		session = &serverSession{}
@@ -70,11 +83,17 @@ func (s *Server) Accept(payload []byte) (*Receiver, uint64, error) {
 	receiver := &Receiver{server: s, session: session}
 	session.mu.Lock()
 	defer session.mu.Unlock()
+	if replaced {
+		// The session may already exist from a handshake to this instance that
+		// failed before the client adopted it. The client has sent this host no
+		// actions since, and may have accepted more while disconnected.
+		session.position = max(session.position, request.accepted)
+	}
 	if session.position+1 < request.firstAvailable {
 		receiver.Close()
-		return nil, 0, fmt.Errorf("%w: host position %d precedes client's first available position %d", ErrRejected, session.position, request.firstAvailable)
+		return nil, nil, fmt.Errorf("%w: host position %d precedes client's first available position %d", ErrRejected, session.position, request.firstAvailable)
 	}
-	return receiver, session.position, nil
+	return receiver, encodeSessionOK(session.position, s.instance), nil
 }
 
 // Apply applies one positioned action at most once and returns the cumulative

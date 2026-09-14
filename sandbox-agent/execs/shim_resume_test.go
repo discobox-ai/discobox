@@ -199,6 +199,163 @@ func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
 	}
 }
 
+// A terminal revived in place is a new shim on the same socket, with none of
+// the old one's resume state. The attach must start over on it rather than be
+// rejected for resuming positions the new process never saw, and the input the
+// old process never applied must not be typed into the new one.
+func TestRunShimReplacementStartsResumableAttachOver(t *testing.T) {
+	dir := shimDir(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(dir, "shim.sock")
+	runShim := func(ctx context.Context) <-chan error {
+		shimErr := make(chan error, 1)
+		go func() {
+			shimErr <- RunShim(ctx, ShimConfig{
+				ExecID: "exec_revived",
+				Command: []string{
+					"sh",
+					"-c",
+					`while IFS= read -r line; do printf '<%s>\n' "$line"; [ "$line" = quit ] && exit 0; done`,
+				},
+				Workdir:     dir,
+				SocketPath:  socketPath,
+				RuntimePath: filepath.Join(dir, "runtime.json"),
+				Logs:        newFakeLogSink(),
+				Rows:        24,
+				Cols:        80,
+				TTY:         true,
+			})
+		}()
+		return shimErr
+	}
+	firstCtx, stopFirst := context.WithCancel(ctx)
+	defer stopFirst()
+	firstErr := runShim(firstCtx)
+
+	allowReplacement := make(chan struct{})
+	physical := make(chan *resumableShimConn, 2)
+	var dialCount atomic.Int32
+	dial := func(ctx context.Context) (execstream.Conn, error) {
+		if dialCount.Add(1) > 1 {
+			select {
+			case <-allowReplacement:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		conn, err := dialResumableShim(ctx, socketPath)
+		if err != nil {
+			return nil, err
+		}
+		physical <- conn
+		return conn, nil
+	}
+	initial, err := dial(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan resume.Event, 4)
+	resumed, err := resume.New(ctx, initial, resume.Options{
+		Dial:  dial,
+		Event: func(event resume.Event) { events <- event },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resumed.Close()
+
+	resize, err := frame.EncodeResize(80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resumed.WriteFrame(frame.Resize, resize); err != nil {
+		t.Fatal(err)
+	}
+	if err := resumed.WriteFrame(frame.Ready, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
+		t.Fatalf("start first shim: %v", err)
+	}
+	if err := resumed.WriteFrame(frame.Input, []byte("before\n")); err != nil {
+		t.Fatal(err)
+	}
+	readResumedOutputUntil(t, resumed, []byte("<before>"))
+	waitForAcknowledged(ctx, t, resumed)
+
+	// The sandbox goes away underneath the attach: the connection drops, input
+	// typed meanwhile is retained, and the shim is gone before anything
+	// reconnects.
+	if err := (<-physical).Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := resumed.WriteFrame(frame.Input, []byte("during\n")); err != nil {
+		t.Fatalf("write during disconnect: %v", err)
+	}
+	select {
+	case event := <-events:
+		if event.State != resume.ConnectionReconnecting {
+			t.Fatalf("first event = %q, want reconnecting", event.State)
+		}
+	case <-ctx.Done():
+		t.Fatal("resume client did not detect the closed shim connection")
+	}
+	stopFirst()
+	if err := <-firstErr; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run first shim: %v", err)
+	}
+
+	secondErr := runShim(ctx)
+	close(allowReplacement)
+	select {
+	case event := <-events:
+		if event.State != resume.ConnectionReconnected {
+			t.Fatalf("second event = %q, want reconnected", event.State)
+		}
+	case <-ctx.Done():
+		t.Fatal("resume client did not reconnect to the replacement shim")
+	}
+	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
+		t.Fatalf("start replacement shim: %v", err)
+	}
+
+	if err := resumed.WriteFrame(frame.Input, []byte("after\n")); err != nil {
+		t.Fatal(err)
+	}
+	after := readResumedOutputUntil(t, resumed, []byte("<after>"))
+	if bytes.Contains(after, []byte("<during>")) {
+		t.Fatalf("replacement process received input its predecessor never applied: %q", after)
+	}
+	if err := resumed.WriteFrame(frame.Input, []byte("quit\n")); err != nil {
+		t.Fatal(err)
+	}
+	readResumedExit(t, resumed)
+	_ = resumed.Close()
+	cancel()
+	if err := <-secondErr; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run replacement shim: %v", err)
+	}
+}
+
+// waitForAcknowledged waits until the host has applied everything the client
+// has written, so a later disconnect cannot leave it to be retransmitted.
+func waitForAcknowledged(ctx context.Context, t *testing.T, delivery execstream.Delivery) {
+	t.Helper()
+	for {
+		accepted, acknowledged := delivery.Positions()
+		if acknowledged >= accepted {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("host acknowledged %d of %d actions", acknowledged, accepted)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func readResumedOutputUntil(t *testing.T, conn execstream.Conn, needle []byte) []byte {
 	t.Helper()
 	var output []byte

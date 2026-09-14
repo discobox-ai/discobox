@@ -72,7 +72,15 @@ func newTCPConnPair(t *testing.T) (*pipeConn, *pipeConn) {
 	return &pipeConn{conn: client}, &pipeConn{conn: server}
 }
 
+// testHost is the host instance acceptSession answers as.
+var testHost = instance{0x7e}
+
 func acceptSession(t *testing.T, conn execstream.Conn, position uint64) sessionRequest {
+	t.Helper()
+	return acceptSessionAs(t, conn, testHost, position)
+}
+
+func acceptSessionAs(t *testing.T, conn execstream.Conn, host instance, position uint64) sessionRequest {
 	t.Helper()
 	next, err := conn.ReadFrame()
 	if err != nil {
@@ -88,7 +96,7 @@ func acceptSession(t *testing.T, conn execstream.Conn, position uint64) sessionR
 		t.Errorf("decode session: %v", err)
 		return sessionRequest{}
 	}
-	if err := conn.WriteFrame(frame.SessionOK, encodePosition(position)); err != nil {
+	if err := conn.WriteFrame(frame.SessionOK, encodeSessionOK(position, host)); err != nil {
 		t.Errorf("write SessionOK: %v", err)
 	}
 	return request
@@ -173,6 +181,101 @@ func TestClientQueuesDisconnectedInputAndReplaysIt(t *testing.T) {
 	got := <-applied
 	if got.frame.Type != frame.Input || string(got.frame.Payload) != "preserved" {
 		t.Fatalf("replayed action = %#v", got)
+	}
+}
+
+func TestClientStartsOverWhenHostProcessWasReplaced(t *testing.T) {
+	// TCP buffers the Ack, which the client reads only after both writes.
+	firstClient, firstServer := newTCPConnPair(t)
+	secondClient, secondServer := newConnPair(t)
+	go func() {
+		acceptSession(t, firstServer, 0)
+		for position := uint64(1); position <= 2; position++ {
+			next, err := firstServer.ReadFrame()
+			if err != nil {
+				t.Errorf("read action %d: %v", position, err)
+				return
+			}
+			action, err := decodeAction(next.Payload)
+			if err != nil {
+				t.Errorf("decode action %d: %v", position, err)
+				return
+			}
+			// The first action is applied; the process is replaced before the
+			// second one is.
+			if action.position == 1 {
+				_ = firstServer.WriteFrame(frame.Ack, encodePosition(1))
+			}
+		}
+		_ = firstServer.Close()
+	}()
+
+	events := make(chan Event, 4)
+	client, err := New(t.Context(), firstClient, Options{
+		Dial: func(context.Context) (execstream.Conn, error) {
+			return secondClient, nil
+		},
+		Event: func(event Event) { events <- event },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.backoff = func(int) time.Duration { return 0 }
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.WriteFrame(frame.Input, []byte("applied")); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.WriteFrame(frame.Input, []byte("abandoned")); err != nil {
+		t.Fatal(err)
+	}
+
+	replacement := instance{0x5a}
+	resent := make(chan []byte, 1)
+	go func() {
+		request := acceptSessionAs(t, secondServer, replacement, 2)
+		if request.instance != testHost {
+			t.Errorf("request instance = %x, want the previous host %x", request.instance, testHost)
+		}
+		if request.accepted != 2 {
+			t.Errorf("request accepted = %d, want 2", request.accepted)
+		}
+		_ = secondServer.WriteFrame(frame.Stdout, []byte("repainted"))
+		next, err := secondServer.ReadFrame()
+		if err != nil {
+			t.Errorf("read action on replacement: %v", err)
+			resent <- nil
+			return
+		}
+		action, err := decodeAction(next.Payload)
+		if err != nil {
+			t.Errorf("decode action on replacement: %v", err)
+		}
+		if action.position != 3 {
+			t.Errorf("first action on replacement position = %d, want 3", action.position)
+		}
+		resent <- action.frame.Payload
+	}()
+
+	next, err := client.ReadFrame()
+	if err != nil {
+		t.Fatalf("read after host replacement: %v", err)
+	}
+	if next.Type != frame.Stdout || string(next.Payload) != "repainted" {
+		t.Fatalf("output = %#v, want repainted stdout", next)
+	}
+	if accepted, acknowledged := client.Positions(); accepted != 2 || acknowledged != 2 {
+		t.Fatalf("positions = (%d, %d), want the abandoned action settled at (2, 2)", accepted, acknowledged)
+	}
+	if err := client.WriteFrame(frame.Input, []byte("fresh")); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-resent; string(got) != "fresh" {
+		t.Fatalf("first input on replacement = %q, want fresh input, not the abandoned action", got)
+	}
+	for _, want := range []ConnectionState{ConnectionReconnecting, ConnectionReconnected} {
+		if event := <-events; event.State != want {
+			t.Fatalf("event = %v, want %v", event.State, want)
+		}
 	}
 }
 

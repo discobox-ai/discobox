@@ -11,11 +11,11 @@ import (
 func TestServerAppliesRetransmittedActionExactlyOnce(t *testing.T) {
 	server := NewServer()
 	token := bytes.Repeat([]byte{0x42}, tokenSize)
-	request, err := encodeSession(token, 1)
+	request, err := encodeSession(sessionRequest{token: token, firstAvailable: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	receiver, position, err := server.Accept(request)
+	receiver, position, err := accept(server, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestServerAppliesRetransmittedActionExactlyOnce(t *testing.T) {
 		t.Fatalf("applied input = %q, want exactly one copy", applied)
 	}
 
-	resumed, position, err := server.Accept(request)
+	resumed, position, err := accept(server, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,19 +61,19 @@ func TestServerRejectsUnrecoverableOrOutOfOrderSession(t *testing.T) {
 	server := NewServer()
 	token := bytes.Repeat([]byte{0x24}, tokenSize)
 
-	missingHistory, err := encodeSession(token, 2)
+	missingHistory, err := encodeSession(sessionRequest{token: token, firstAvailable: 2, accepted: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := server.Accept(missingHistory); !errors.Is(err, ErrRejected) {
+	if _, _, err := accept(server, missingHistory); !errors.Is(err, ErrRejected) {
 		t.Fatalf("unknown resumed session error = %v, want ErrRejected", err)
 	}
 
-	initial, err := encodeSession(token, 1)
+	initial, err := encodeSession(sessionRequest{token: token, firstAvailable: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	receiver, _, err := server.Accept(initial)
+	receiver, _, err := accept(server, initial)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,11 +89,11 @@ func TestServerRejectsUnrecoverableOrOutOfOrderSession(t *testing.T) {
 func TestServerDoesNotAcknowledgeFailedApplication(t *testing.T) {
 	server := NewServer()
 	token := bytes.Repeat([]byte{0x18}, tokenSize)
-	request, err := encodeSession(token, 1)
+	request, err := encodeSession(sessionRequest{token: token, firstAvailable: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	receiver, _, err := server.Accept(request)
+	receiver, _, err := accept(server, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestServerDoesNotAcknowledgeFailedApplication(t *testing.T) {
 		t.Fatalf("failed action position = %d, want 0", position)
 	}
 
-	_, position, err = server.Accept(request)
+	_, position, err = accept(server, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +124,11 @@ func TestServerEvictsOnlyInactiveSessionsAtCapacity(t *testing.T) {
 	receivers := make([]*Receiver, 0, MaxSessions)
 	for i := range MaxSessions {
 		token := bytes.Repeat([]byte{byte(i + 1)}, tokenSize)
-		request, err := encodeSession(token, 1)
+		request, err := encodeSession(sessionRequest{token: token, firstAvailable: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
-		receiver, _, err := server.Accept(request)
+		receiver, _, err := accept(server, request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,26 +136,97 @@ func TestServerEvictsOnlyInactiveSessionsAtCapacity(t *testing.T) {
 	}
 
 	newToken := bytes.Repeat([]byte{0xff}, tokenSize)
-	newRequest, err := encodeSession(newToken, 1)
+	newRequest, err := encodeSession(sessionRequest{token: newToken, firstAvailable: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := server.Accept(newRequest); !errors.Is(err, ErrRejected) {
+	if _, _, err := accept(server, newRequest); !errors.Is(err, ErrRejected) {
 		t.Fatalf("session beyond active capacity error = %v, want ErrRejected", err)
 	}
 
 	receivers[0].Close()
-	replacement, _, err := server.Accept(newRequest)
+	replacement, _, err := accept(server, newRequest)
 	if err != nil {
 		t.Fatalf("accept after inactive session: %v", err)
 	}
 	replacement.Close()
 
-	oldRequest, err := encodeSession(bytes.Repeat([]byte{1}, tokenSize), 2)
+	oldRequest, err := encodeSession(sessionRequest{token: bytes.Repeat([]byte{1}, tokenSize), firstAvailable: 2, accepted: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := server.Accept(oldRequest); !errors.Is(err, ErrRejected) {
+	if _, _, err := accept(server, oldRequest); !errors.Is(err, ErrRejected) {
 		t.Fatalf("evicted session error = %v, want ErrRejected", err)
+	}
+}
+
+// accept is Server.Accept with the SessionOK payload decoded to its position.
+func accept(server *Server, payload []byte) (*Receiver, uint64, error) {
+	receiver, established, err := server.Accept(payload)
+	if err != nil {
+		return nil, 0, err
+	}
+	position, host, err := decodeSessionOK(established)
+	if err != nil {
+		return nil, 0, err
+	}
+	if host != server.instance {
+		return nil, 0, errors.New("SessionOK names another host instance")
+	}
+	return receiver, position, nil
+}
+
+func TestServerStartsClientOfReplacedHostAtItsAcceptedPosition(t *testing.T) {
+	previous := NewServer()
+	server := NewServer()
+	if previous.instance == server.instance {
+		t.Fatal("two host streams share an instance")
+	}
+	token := bytes.Repeat([]byte{0x33}, tokenSize)
+
+	// The client had actions 1-3 acknowledged and 4-5 outstanding on the
+	// previous process. None of them reached this one.
+	request, err := encodeSession(sessionRequest{token: token, firstAvailable: 4, accepted: 5, instance: previous.instance})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver, position, err := accept(server, request)
+	if err != nil {
+		t.Fatalf("accept client of replaced host: %v", err)
+	}
+	if position != 5 {
+		t.Fatalf("session position = %d, want the client's accepted position 5", position)
+	}
+
+	var applied []byte
+	apply := func(next frame.Frame) error {
+		applied = append(applied, next.Payload...)
+		return nil
+	}
+	stale, err := encodeAction(5, frame.Input, []byte("stale"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receiver.Apply(stale, apply); err != nil {
+		t.Fatal(err)
+	}
+	next, err := encodeAction(6, frame.Input, []byte("fresh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if position, err := receiver.Apply(next, apply); err != nil || position != 6 {
+		t.Fatalf("apply after restart = (%d, %v), want (6, nil)", position, err)
+	}
+	if string(applied) != "fresh" {
+		t.Fatalf("applied input = %q, want only the action accepted after the restart", applied)
+	}
+
+	// Unknown to this host and claiming to be its client is still unrecoverable.
+	own, err := encodeSession(sessionRequest{token: bytes.Repeat([]byte{0x34}, tokenSize), firstAvailable: 2, accepted: 1, instance: server.instance})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := accept(server, own); !errors.Is(err, ErrRejected) {
+		t.Fatalf("unknown session of this host error = %v, want ErrRejected", err)
 	}
 }

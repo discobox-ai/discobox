@@ -1140,7 +1140,9 @@ session, `execstream/client`.
   and ends the attach with its exit code; `failed` never started, so retrying is
   pointless. `lost` is an ungraceful disappearance (unit gone, no exit recorded):
   reconnect, because the redial's attach relaunches — but only for the virtual
-  primary id, since nothing can ever revive a concrete one.
+  primary id, since nothing can ever revive a concrete one. The relaunched
+  terminal is a new process, so the attach starts its resumable session over
+  there instead of resuming (see the resumable-actions bullet below).
 - Nothing in a reconnect loop starts a server. The redial and the reconnect
   decision both ask `App` for a client, and autolaunch happens at most once per
   invocation (see the auto-start section above), so a server that goes away
@@ -1181,7 +1183,11 @@ session, `execstream/client`.
 - Resumable actions (input, signals, and close-input) carry monotonically
   increasing positions. The client retains a bounded window until the shim
   acknowledges applying them; reconnect resends the unacknowledged suffix and
-  the shim deduplicates it by logical-session token. A full window backpressures
+  the shim deduplicates it by logical-session token. When the reconnect lands
+  on a replaced process — a terminal relaunched under the same exec id — the
+  unacknowledged suffix, including input typed while disconnected, is
+  abandoned rather than typed into the new process, and the replay repaints
+  its screen. A full window backpressures
   stdin instead of silently dropping accepted input. Resize is idempotent state,
   so only its latest value is retained and restored.
 - A plain exec attach (`attachSandboxExec`, `internal/cli/sandbox_execs.go`) —

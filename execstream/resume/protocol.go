@@ -9,6 +9,12 @@
 // actions: the latest resize is coalesced and Ready is restored per connection.
 // Repaint is neither: it goes out on the current connection only and is not
 // retained, because a reconnect repaints on its own.
+//
+// Positions are only meaningful to the process that applied them. Every host
+// stream has a random instance identity that SessionOK carries, so a client
+// reconnecting to the same exec id after its process was replaced — a terminal
+// revived in place — starts over on the new process instead of resuming
+// positions it never saw.
 package resume
 
 import (
@@ -23,7 +29,14 @@ const (
 	positionSize    = 8
 	actionHeaderLen = positionSize + 1
 	tokenSize       = 32
+	instanceSize    = 16
+	sessionSize     = 2*positionSize + tokenSize + instanceSize
+	sessionOKSize   = positionSize + instanceSize
 )
+
+// instance identifies one host stream, and so one process. The zero value is a
+// client that has not yet established a session with any host.
+type instance [instanceSize]byte
 
 var (
 	// ErrRejected means the peer no longer has enough logical-session state to
@@ -34,8 +47,15 @@ var (
 )
 
 type sessionRequest struct {
-	token          []byte
+	token []byte
+	// firstAvailable is the oldest action position the client can still
+	// retransmit: one past its last acknowledgement.
 	firstAvailable uint64
+	// accepted is the newest action position the client has assigned. A host
+	// replacing the process the client last spoke to starts the session here.
+	accepted uint64
+	// instance is the host the client last established with, or zero.
+	instance instance
 }
 
 type action struct {
@@ -43,36 +63,76 @@ type action struct {
 	frame    frame.Frame
 }
 
-func encodeSession(token []byte, firstAvailable uint64) ([]byte, error) {
-	if len(token) != tokenSize {
-		return nil, fmt.Errorf("%w: session token is %d bytes, want %d", ErrProtocol, len(token), tokenSize)
+func encodeSession(request sessionRequest) ([]byte, error) {
+	if len(request.token) != tokenSize {
+		return nil, fmt.Errorf("%w: session token is %d bytes, want %d", ErrProtocol, len(request.token), tokenSize)
 	}
-	if firstAvailable == 0 {
-		return nil, fmt.Errorf("%w: first available position is zero", ErrProtocol)
+	if err := validateSession(request); err != nil {
+		return nil, err
 	}
-	payload := make([]byte, positionSize+len(token))
-	binary.BigEndian.PutUint64(payload[:positionSize], firstAvailable)
-	copy(payload[positionSize:], token)
+	payload := make([]byte, sessionSize)
+	binary.BigEndian.PutUint64(payload[:positionSize], request.firstAvailable)
+	binary.BigEndian.PutUint64(payload[positionSize:2*positionSize], request.accepted)
+	copy(payload[2*positionSize:2*positionSize+tokenSize], request.token)
+	copy(payload[2*positionSize+tokenSize:], request.instance[:])
 	return payload, nil
 }
 
-// EncodeSession encodes the handshake for a logical session.
-func EncodeSession(token []byte, firstAvailable uint64) ([]byte, error) {
-	return encodeSession(token, firstAvailable)
+// EncodeNewSession encodes the handshake of a client that has never
+// established a session: no host instance and no actions yet.
+func EncodeNewSession(token []byte) ([]byte, error) {
+	return encodeSession(sessionRequest{token: token, firstAvailable: 1})
 }
 
 func decodeSession(payload []byte) (sessionRequest, error) {
-	if len(payload) != positionSize+tokenSize {
-		return sessionRequest{}, fmt.Errorf("%w: session payload is %d bytes, want %d", ErrProtocol, len(payload), positionSize+tokenSize)
+	if len(payload) != sessionSize {
+		return sessionRequest{}, fmt.Errorf("%w: session payload is %d bytes, want %d", ErrProtocol, len(payload), sessionSize)
 	}
-	firstAvailable := binary.BigEndian.Uint64(payload[:positionSize])
-	if firstAvailable == 0 {
-		return sessionRequest{}, fmt.Errorf("%w: first available position is zero", ErrProtocol)
+	request := sessionRequest{
+		firstAvailable: binary.BigEndian.Uint64(payload[:positionSize]),
+		accepted:       binary.BigEndian.Uint64(payload[positionSize : 2*positionSize]),
+		token:          append([]byte(nil), payload[2*positionSize:2*positionSize+tokenSize]...),
 	}
-	return sessionRequest{
-		token:          append([]byte(nil), payload[positionSize:]...),
-		firstAvailable: firstAvailable,
-	}, nil
+	copy(request.instance[:], payload[2*positionSize+tokenSize:])
+	if err := validateSession(request); err != nil {
+		return sessionRequest{}, err
+	}
+	return request, nil
+}
+
+func validateSession(request sessionRequest) error {
+	if request.firstAvailable == 0 {
+		return fmt.Errorf("%w: first available position is zero", ErrProtocol)
+	}
+	if request.accepted < request.firstAvailable-1 {
+		return fmt.Errorf("%w: accepted position %d precedes acknowledged position %d", ErrProtocol, request.accepted, request.firstAvailable-1)
+	}
+	return nil
+}
+
+func encodeSessionOK(position uint64, host instance) []byte {
+	payload := make([]byte, sessionOKSize)
+	binary.BigEndian.PutUint64(payload[:positionSize], position)
+	copy(payload[positionSize:], host[:])
+	return payload
+}
+
+func decodeSessionOK(payload []byte) (uint64, instance, error) {
+	if len(payload) != sessionOKSize {
+		return 0, instance{}, fmt.Errorf("%w: session acknowledgement payload is %d bytes, want %d", ErrProtocol, len(payload), sessionOKSize)
+	}
+	var host instance
+	copy(host[:], payload[positionSize:])
+	if host == (instance{}) {
+		return 0, instance{}, fmt.Errorf("%w: host instance is zero", ErrProtocol)
+	}
+	return binary.BigEndian.Uint64(payload[:positionSize]), host, nil
+}
+
+// DecodeSessionOK decodes the host position a SessionOK frame reports.
+func DecodeSessionOK(payload []byte) (uint64, error) {
+	position, _, err := decodeSessionOK(payload)
+	return position, err
 }
 
 func encodePosition(position uint64) []byte {
@@ -81,7 +141,7 @@ func encodePosition(position uint64) []byte {
 	return payload
 }
 
-// EncodePosition encodes a cumulative SessionOK or Ack position.
+// EncodePosition encodes a cumulative Ack position.
 func EncodePosition(position uint64) []byte { return encodePosition(position) }
 
 func decodePosition(payload []byte) (uint64, error) {
@@ -91,7 +151,7 @@ func decodePosition(payload []byte) (uint64, error) {
 	return binary.BigEndian.Uint64(payload), nil
 }
 
-// DecodePosition decodes a cumulative SessionOK or Ack position.
+// DecodePosition decodes a cumulative Ack position.
 func DecodePosition(payload []byte) (uint64, error) { return decodePosition(payload) }
 
 func encodeAction(position uint64, typ byte, payload []byte) ([]byte, error) {
