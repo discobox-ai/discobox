@@ -475,7 +475,7 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
 		// Nothing was opened, so the screen is the workspace it already was —
-		// which is where the report has to be legible. See statusLine.
+		// which is where the report has to be legible. See statusMessage.
 		return m.report(true, "%s: %v", msg.action, msg.err)
 	}
 	m.nextPaneID++
@@ -1443,13 +1443,16 @@ func wheelLines(wheel tea.MouseWheelMsg) int {
 	}
 }
 
-// paneRows is the height every pane gets: the banner, the border's own two
-// edges, and the status line at the bottom.
 // paneRows is the body rows the workspace has for its boxes: the window less
-// the header, the status line, and the box's own two edges — less what the
-// credential band costs when there is one, which is two rows taken from the
-// panes rather than added to the frame.
-func (m *Model) paneRows() int { return m.height - 4 - m.bannerCost() }
+// the header, the box's own two edges, and the message and keys rows under
+// them — less what the credential band costs when there is one, which is two
+// rows taken from the panes rather than added to the frame.
+//
+// Every row it counts is either above the boxes, where bannerTop moves them
+// down, or below them, where it only makes them shorter. A row added below
+// belongs here and nowhere else: paneOrigin measures from the top, and
+// counting it there too puts every mouse event and the cursor a row off.
+func (m *Model) paneRows() int { return m.height - 5 - m.bannerCost() }
 
 // paneCells is the terminal size a pane of the given box width implies: the
 // box, less its border and a cell of air inside it on each side.
@@ -1615,13 +1618,16 @@ func (m *Model) viewPaneWindow() string {
 	if report != "" {
 		keysRoom = max(room-lipgloss.Width(report)-2, 1)
 	}
+	// The message row is always drawn, empty or not: a row that came and went
+	// with a message would resize every terminal on screen each time.
+	rows = append(rows, " "+pad+padANSI(m.statusMessage(room), room)+pad+" ")
 	m.zones.push(1+boxPad, len(rows))
-	status := m.statusLine(keysRoom)
+	keys := m.statusKeys(keysRoom)
 	m.zones.pop()
 	if report != "" {
-		status = spreadPin(status, report, room)
+		keys = spreadPin(keys, report, room)
 	}
-	rows = append(rows, " "+pad+padANSI(status, room)+pad+" ")
+	rows = append(rows, " "+pad+padANSI(keys, room)+pad+" ")
 	return strings.Join(rows, "\n")
 }
 

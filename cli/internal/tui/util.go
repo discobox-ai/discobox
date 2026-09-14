@@ -450,7 +450,7 @@ func centerRoom(left, right string, w int) int {
 // sep, dropping them whole from the right rather than cutting one mid-word: a
 // narrow window should lose a field, not show half of one. It answers with the
 // fields rather than the joined row, for the caller that has to know where each
-// of them landed as well as what the row says — see Model.statusLine, which
+// of them landed as well as what the row says — see Model.statusKeys, which
 // marks every offer it draws.
 //
 // The first field always survives. It is the one the rest qualify, so a row

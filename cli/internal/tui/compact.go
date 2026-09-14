@@ -117,8 +117,8 @@ func (m *Model) compactPromptWidth() int {
 }
 
 // compactChrome is what the opening frame costs before its body: the box's two
-// edges, the header and the blank under it, and the blank and the status line
-// under that.
+// edges, the header and the blank under it, and under the body the message row
+// (blank until there is a message) and the keys row.
 const compactChrome = 6
 
 // composerChrome is what the composer costs around the field: its label, the
@@ -193,7 +193,9 @@ func (m *Model) viewCompact() string {
 
 	rows := []string{m.viewHeader(m.inner()), ""}
 	rows = append(rows, body...)
-	rows = append(rows, "", m.viewStatus())
+	// The message row is the air between the body and the keys: blank until
+	// there is something to say, so the frame is the same height either way.
+	rows = append(rows, strings.Split(m.viewStatus(), "\n")...)
 
 	// Nothing on this frame suggests there is anything behind it, so it says
 	// so — in the very top line, which is the one place a centered word cannot

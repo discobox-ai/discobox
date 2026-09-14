@@ -337,6 +337,13 @@ func statusRow(m *Model) string {
 	return ansi.Strip(lines[len(lines)-2])
 }
 
+// messageRow is the row above the keys as plain text: what just happened, or
+// nothing.
+func messageRow(m *Model) string {
+	lines := frame(m)
+	return ansi.Strip(lines[len(lines)-3])
+}
+
 // The status line names the discobox under the cursor the two ways its row
 // cannot: the id, which is on no row at all, and the configured name, which a
 // row showing a terminal title is not showing.
@@ -1005,11 +1012,60 @@ func TestALongErrorKeepsItsCause(t *testing.T) {
 		`pool-agent request failed: pull image "ghcr.io/discobox-ai/discobox-harness-claude-code:v0.8.0": ` +
 		`failed to register layer: write /usr/lib/tmpfiles.d/tmux.conf: no space left on device`})
 
-	status := statusRow(m)
-	if !strings.Contains(status, "✗ cannot create") || !strings.Contains(status, "no space left on device") {
-		t.Fatalf("status = %q, want what failed and why", status)
+	message := messageRow(m)
+	if !strings.Contains(message, "✗ cannot create") || !strings.Contains(message, "no space left on device") {
+		t.Fatalf("message row = %q, want what failed and why", message)
 	}
-	if !strings.Contains(status, "…") {
-		t.Fatalf("status = %q, want the middle cut out", status)
+	if !strings.Contains(message, "…") {
+		t.Fatalf("message row = %q, want the middle cut out", message)
+	}
+}
+
+// A message has a row of its own above the keys, on every screen that fills the
+// window, and the frame is the terminal exactly either way: the keys stay up
+// under an error that stays until something is done, and the row is kept
+// while there is no message so one arriving moves nothing.
+func TestAMessageSitsAboveTheKeys(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		open []string
+		keys string
+	}{
+		{"launcher", nil, "Shift-Tab harness"},
+		{"list", []string{"tab"}, "a attach"},
+		{"harnesses", []string{"f3"}, "Esc"},
+		{"secrets", []string{"f4"}, "esc back"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			press(t, m, tc.open...)
+			before := frame(m)
+			if len(before) != m.height {
+				t.Fatalf("frame = %d rows, want the window's %d", len(before), m.height)
+			}
+			if strings.Trim(messageRow(m), " │") != "" {
+				t.Fatalf("message row = %q, want it blank with nothing to say", messageRow(m))
+			}
+
+			send(t, m, statusMsg{text: "cannot archive: no space left on device", err: true})
+			after := frame(m)
+			if len(after) != m.height {
+				t.Fatalf("frame = %d rows with a message up, want the window's %d", len(after), m.height)
+			}
+			if got := messageRow(m); !strings.Contains(got, "✗ cannot archive: no space left on device") {
+				t.Fatalf("message row = %q, want the error on it", got)
+			}
+			if got := statusRow(m); !strings.Contains(got, tc.keys) {
+				t.Fatalf("keys row = %q, want the keys still there under the error", got)
+			}
+			// Nothing above the foot moved to make room for it.
+			for i := 0; i < len(before)-3; i++ {
+				if before[i] != after[i] {
+					t.Fatalf("row %d changed when the message arrived:\nbefore %q\nafter  %q", i, before[i], after[i])
+				}
+			}
+		})
 	}
 }

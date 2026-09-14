@@ -827,8 +827,8 @@ func harnessFileLines(file HarnessFile) []string {
 
 // harnessesChrome is what the screen costs in rows before a single harness is
 // drawn: the box's two edges, the header and the blank under it, the title bar,
-// the blank below the rows, and the status line.
-const harnessesChrome = 7
+// the blank below the rows, and the message and keys rows.
+const harnessesChrome = 8
 
 func (m *Model) viewHarnesses() string {
 	m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
@@ -844,7 +844,7 @@ func (m *Model) viewHarnesses() string {
 	rows = append(rows, strings.Split(body, "\n")...)
 
 	m.zones.push(bodyLeft, headerTop+len(rows))
-	rows = append(rows, m.viewStatus())
+	rows = append(rows, strings.Split(m.viewStatus(), "\n")...)
 	m.zones.pop()
 	return m.box("", rows)
 }

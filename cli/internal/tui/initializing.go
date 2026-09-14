@@ -15,13 +15,13 @@ import (
 // the launcher lists, the composer takes input, and only actually running a
 // discobox wants those images.
 //
-// So the window opens at once and this reports on the row every screen already
-// keeps for saying what is going on. It is pinned to the right end of that row
-// rather than taking the line the way a message does: the left of the row
-// belongs to whatever the user just did — the busy line, a result, the keys —
-// and this belongs to something they did not do and cannot act on, so the two
-// have to be able to say their piece at the same time. See Model.viewStatus and
-// viewPaneWindow, which pin it, and statusLine, which draws the left.
+// So the window opens at once and this reports at the foot every screen already
+// keeps. It is pinned to the right end of the keys row rather than put on the
+// message row: that row belongs to whatever the user just did — the busy line, a
+// result — and this belongs to something they did not do and cannot act on, so
+// the two have to be able to say their piece at the same time. See
+// Model.viewStatus and viewPaneWindow, which pin it, and statusKeys, which draws
+// the left.
 //
 // It is not a row of its own under the border. That would cost a row the
 // window then has to be told about — every screen that fills the terminal, the

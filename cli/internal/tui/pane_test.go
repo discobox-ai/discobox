@@ -109,7 +109,7 @@ func TestPaneOpensAtTheSizeItWillBeDrawnAt(t *testing.T) {
 	}
 	// The grid is the whole window bar its chrome, so it grows with it: the
 	// border and a cell of air inside it on each side.
-	if rows != m.height-4 || cols != m.width-2-2*boxPad {
+	if rows != m.height-5 || cols != m.width-2-2*boxPad {
 		t.Fatalf("pane is %dx%d in a %d-row window", cols, rows, m.height)
 	}
 	if got := len(m.primary().term.View()); got != rows {
@@ -2478,5 +2478,90 @@ func TestRepaintDoesNotFireOnTheLeaderChord(t *testing.T) {
 
 	if asked, _ := term.asked(); asked != 0 {
 		t.Fatalf("asked the box for %d repaints, want none for a chord", asked)
+	}
+}
+
+// whereDrawn is where text is on the frame, in screen cells. It reads the
+// frame rather than asking paneOrigin, so a test pressing there checks the
+// drawing and the hit test against each other rather than the hit test
+// against itself — which is how an off-by-one gets past every test.
+func whereDrawn(t *testing.T, m *Model, text string) (x, y int) {
+	t.Helper()
+	for row, line := range strings.Split(plainFrame(m), "\n") {
+		if i := strings.Index(line, text); i >= 0 {
+			return len([]rune(line[:i])), row
+		}
+	}
+	t.Fatalf("%q is not on screen:\n%s", text, plainFrame(m))
+	return 0, 0
+}
+
+// A drag selects exactly what is drawn under the pointer, on the grid's first
+// row and on its last, with every row under the boxes in play: the message row
+// with an error standing on it, the keys, and the credential band. Rows below
+// the boxes cost them height and must not move where they start; each past
+// off-by-one here was one place counting a row another did not.
+func TestDragSelectsWhatIsDrawnUnderThePointer(t *testing.T) {
+	t.Parallel()
+	for _, band := range []bool{false, true} {
+		t.Run(fmt.Sprintf("band=%v", band), func(t *testing.T) {
+			t.Parallel()
+			ds := newFakeSource(testSandboxes()...)
+			d, m, term := openWorkspace(t, ds, "enter")
+			if band {
+				ds.mu.Lock()
+				ds.requests = []CredentialRequest{waitingRequest()}
+				ds.mu.Unlock()
+				d.dispatch(tickMsg{})
+				d.wait("the band", func() bool { return m.bannerTop() == 1 })
+			}
+			d.dispatch(statusMsg{text: "cannot create the discobox: no space left on device", err: true})
+
+			cols, rows := m.paneCells(m.paneWidthOf(m.primary()))
+			d.wait("the pane at its size", func() bool { return term.size() == [2]int{cols, rows} })
+			term.send("first" + strings.Repeat("\r\n", rows-1) + "final")
+			d.wait("output", func() bool {
+				s := plainFrame(m)
+				return strings.Contains(s, "first") && strings.Contains(s, "final")
+			})
+
+			lines := strings.Split(plainFrame(m), "\n")
+			if len(lines) != m.height {
+				t.Fatalf("frame = %d rows, want the window's %d", len(lines), m.height)
+			}
+			// The foot, from the bottom up: the keys, the message, the lower
+			// band when there is one, and then the box's bottom edge directly
+			// under the grid's last row.
+			if !strings.Contains(lines[len(lines)-1], m.detachHint()) {
+				t.Fatalf("last row = %q, want the keys", lines[len(lines)-1])
+			}
+			if !strings.Contains(lines[len(lines)-2], "no space left on device") {
+				t.Fatalf("row above the keys = %q, want the message", lines[len(lines)-2])
+			}
+			_, firstY := whereDrawn(t, m, "first")
+			_, finalY := whereDrawn(t, m, "final")
+			if finalY-firstY != rows-1 {
+				t.Fatalf("grid drawn over rows %d..%d, want %d rows", firstY, finalY, rows)
+			}
+			if edge := len(lines) - 3 - m.bannerTop(); finalY+1 != edge || !strings.Contains(lines[edge], "╰") {
+				t.Fatalf("the grid's last row is %d and the bottom edge is %q on %d, want the edge right under it",
+					finalY, lines[finalY+1], finalY+1)
+			}
+			// The message and keys rows are not the pane's to take a press on.
+			for _, y := range []int{len(lines) - 2, len(lines) - 1} {
+				if p := m.paneBoxAt(5, y); p != nil {
+					t.Fatalf("a press on row %d landed in a pane", y)
+				}
+			}
+
+			for _, word := range []string{"first", "final"} {
+				x, y := whereDrawn(t, m, word)
+				end := x + len(word) - 1
+				d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+				d.dispatch(tea.MouseMotionMsg{X: end, Y: y, Button: tea.MouseLeft})
+				d.dispatch(tea.MouseReleaseMsg{X: end, Y: y, Button: tea.MouseLeft})
+				d.wait("the selection of "+word, func() bool { return m.focusedPane().term.SelectionText() == word })
+			}
+		})
 	}
 }

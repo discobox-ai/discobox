@@ -715,13 +715,18 @@ no second half: the server names it by its id, which has already been said.
 It is drawn only while the list has focus, because only then is a cursor drawn
 on a row, and it is pinned there (`spreadPin`): a row too narrow for both gives
 up key hints rather than the one thing on the line that is written down nowhere
-else — F1 spells every key out. `statusLine` takes the room it has and drops
+else — F1 spells every key out. `statusKeys` takes the room it has and drops
 whole offers from the tail to fit it (`fitFields`), on the workspace's copy of
-the line as well: half a key hint is not one. A message is the exception — it
-is one thing with nothing to drop — and it displaces the keys, never the right
-end: what is true is not what was said. One too long for its room is cut out of
-the middle (`truncateMiddle`), because an error's start says what failed and
-its end says why.
+the line as well: half a key hint is not one.
+
+**Messages have a row of their own, above the keys** (`statusMessage`). Every
+screen's foot is two rows: what just happened (a result, an error, the busy
+line) and under it the keys. A message never displaces the keys, so an error
+that stays until something is done does not also hide what there is to do. The
+row is drawn blank when there is nothing to say, so a message coming and going
+moves nothing. A message has nothing to drop, so one too long for its room is
+cut out of the middle (`truncateMiddle`), because an error's start says what
+failed and its end says why.
 
 **A message clears on the next key or click; an error does not time out.** A
 message that is not an error also goes after `statusHolds`. An error stays
@@ -1052,9 +1057,13 @@ asked `overlay != nil` asks it instead.
   cleared when the card opens — it belongs to the press that earned it.
 
 **The hints row is one row and drops rather than wraps** (`fitHints`).
-`paneRows` budgets exactly one status line, so a second one would have to come
-out of the panes — and a hints line that grew by a fragment would resize every
-attached terminal, then resize it back when it shrank. So the parts arrive
+`paneRows` budgets exactly one keys row and one message row under the boxes,
+so another would have to come out of the panes — and a row that came and went,
+a hints line that grew by a fragment or a message row drawn only while there is
+a message, would resize every attached terminal, then resize it back. The
+message row is drawn empty for the same reason. Both rows are below the boxes,
+so they cost the panes height and never move where they start: `paneOrigin`
+counts only what is above them. So the parts arrive
 most-worth-keeping first and the tail goes instead, the way the banner gives up
 its edges (`paneHeaderFields`, `fitFields`). What survives at any width is the
 way out.
@@ -1802,15 +1811,14 @@ one thing the renderer cannot redraw its way out of.
 (`initializing.go`). Staging the images a discobox runs takes minutes on a cold
 pull, and the window deliberately does not wait for it: the launcher lists and
 the composer takes input regardless, and only actually running a discobox wants
-those images. So the report is pinned to the right end of the row every screen
-already draws — `viewStatus` for the launcher, harnesses, secrets and the
+those images. So the report is pinned to the right end of the keys row every
+screen already draws — `viewStatus` for the launcher, harnesses, secrets and the
 opening prompt, `viewPaneWindow` for the workspace.
 
-Pinned rather than put *in* that row, because `statusLine` is one slot with a
-strict precedence and whatever holds it displaces the keys. The left of the row
-belongs to what the user just did — the busy line, a result, the keys — and this
-belongs to something they did not do and cannot act on, so the two have to be
-able to speak at once. `spreadPin` cuts the keys back to make room, never the
+Pinned there rather than put on the message row, because `statusMessage` is one
+slot with a strict precedence. That row belongs to what the user just did — the
+busy line, a result — and this belongs to something they did not do and cannot
+act on, so the two have to be able to speak at once. `spreadPin` cuts the keys back to make room, never the
 report: it is the only account on screen of a wait nothing else explains, while
 F1 spells the keys out anyway. `withReport` makes the same trade against the
 pinned identity when both cannot fit.

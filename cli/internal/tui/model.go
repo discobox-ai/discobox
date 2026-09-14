@@ -2597,7 +2597,7 @@ func (m *Model) logoColumn() int {
 
 // windowChrome is what the window costs in rows before any sandbox is in it.
 // See layout, which is the only place it is used and where it is counted out.
-const windowChrome = 11
+const windowChrome = 12
 
 // promptMaxRows is how far the composer grows before it scrolls instead. Three
 // rows is enough to see the sentence you are still writing, and little enough
@@ -2663,8 +2663,8 @@ func (m *Model) layout() {
 	promptH := m.prompt.Height()
 	// What the window costs before a single sandbox is drawn: the box's two
 	// edges, the header and the blank under it, the list title and the blank
-	// below the rows, the composer's label, its own two rules, the mode line
-	// and the status line. The floor is no rows at all rather than one: on a
+	// below the rows, the composer's label, its own two rules, the mode line,
+	// and the message and keys rows under it. The floor is no rows at all rather than one: on a
 	// terminal this short the composer is the whole point.
 	room := max(m.height-promptH-windowChrome, 0)
 
@@ -3141,15 +3141,17 @@ func (m *Model) viewLabel(width int) string {
 	return padANSI("  "+m.st.chip.Render(label), width)
 }
 
-// viewStatus is the bottom line: the keys, or what just happened. A message
-// displaces the keys until the next one is pressed.
+// viewStatus is the foot of a screen, two rows: what just happened, and under
+// it the keys. The message row is kept whether or not there is anything on
+// it, so a message coming and going moves nothing else on the screen.
 //
-// The right end is what is true rather than what was said — which discobox the
-// cursor is on, and how many are selected — so a message displacing the keys
-// leaves it standing. It is pinned there (`spreadPin`): the keys are a list
-// with a tail worth losing and F1 spells all of them out anyway, while the
-// identity is the one thing on the row that is written down nowhere else.
+// The keys row's right end is what is true rather than what was said — which
+// discobox the cursor is on, and how many are selected. It is pinned there
+// (`spreadPin`): the keys are a list with a tail worth losing and F1 spells all
+// of them out anyway, while the identity is the one thing on the row that is
+// written down nowhere else.
 func (m *Model) viewStatus() string {
+	message := padANSI("  "+m.statusMessage(max(m.inner()-2, 1)), m.inner())
 	var fields []string
 	if id := m.statusIdentity(); id != "" {
 		fields = append(fields, id)
@@ -3162,12 +3164,12 @@ func (m *Model) viewStatus() string {
 	if len(fields) > 0 {
 		right = strings.Join(fields, "   ") + "  "
 	}
-	// The two spaces the line opens with are the origin its offers are marked
-	// against.
-	m.zones.push(2, 0)
-	keys := m.statusLine(max(m.inner()-lipgloss.Width(right)-2, 1))
+	// The two spaces the line opens with, one row under the message, are the
+	// origin its offers are marked against.
+	m.zones.push(2, 1)
+	keys := m.statusKeys(max(m.inner()-lipgloss.Width(right)-2, 1))
 	m.zones.pop()
-	return spreadPin("  "+keys, right, m.inner())
+	return message + "\n" + spreadPin("  "+keys, right, m.inner())
 }
 
 // withReport puts the initialization report at the end of a status row's pinned
@@ -3225,33 +3227,41 @@ func (m *Model) statusIdentity() string {
 	return out
 }
 
-// statusLine is what the bottom line of any screen says, in the room it has:
-// the keys, or what just happened over them.
+// statusMessage is what the message row of any screen says, in the room it
+// has: what just happened, or what is under way, or nothing.
 //
 // Every screen draws it, the workspace included. A command that failed there —
 // an apply that could not start, a key that could not do what it was pressed
 // for — has nowhere else to say so, and a report the screen it was made on
 // cannot show is a key that looks like it did nothing at all.
 //
-// The keys give up whole offers to fit, from the tail, where the least of them
-// is (`fitFields`): half a key hint is not one. A message has nothing to drop,
-// so one too long for the row is cut out of the middle (`truncateMiddle`),
-// keeping what failed and why. Left to the caller's truncation it would lose
-// its end, which is where an error's cause is.
-//
-// Each offer that survives is marked where it landed, because a hint that
-// names a key is a button for that key: the press is handled as the key press
-// itself, so the pointer and the keyboard cannot come to mean two different
-// things. See ADR 0088 §5.
-func (m *Model) statusLine(room int) string {
+// It has a row of its own rather than taking the keys' row while it is up, so
+// an error that stays until something is done does not also hide what there
+// is to do. A message has nothing to drop, so one too long for the row is cut
+// out of the middle (`truncateMiddle`), keeping what failed and why: cut from
+// the end it would lose the cause, which is where an error keeps it.
+func (m *Model) statusMessage(room int) string {
 	switch {
 	case m.statusE:
 		return m.st.statusER.Render(truncateMiddle("✗ "+m.status, room))
 	case m.status != "":
 		return m.st.statusOK.Render(truncateMiddle(m.status, room))
 	case m.busy != "":
-		return m.st.statusWA.Render(m.busy)
+		return m.st.statusWA.Render(truncateMiddle(m.busy, room))
 	}
+	return ""
+}
+
+// statusKeys is the keys row of any screen, in the room it has.
+//
+// The keys give up whole offers to fit, from the tail, where the least of them
+// is (`fitFields`): half a key hint is not one.
+//
+// Each offer that survives is marked where it landed, because a hint that
+// names a key is a button for that key: the press is handled as the key press
+// itself, so the pointer and the keyboard cannot come to mean two different
+// things. See ADR 0088 §5.
+func (m *Model) statusKeys(room int) string {
 	return viewHints(m.st, &m.zones, fitHints(m.hints(), hintSep, room), 0, hintSep)
 }
 

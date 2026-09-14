@@ -618,7 +618,7 @@ func TestTheWorkspaceHintsOfferTheToolsPicker(t *testing.T) {
 
 // That row is one row and stays one row: it drops whole hints from the end
 // rather than wrapping onto a second, which would come out of the panes. The
-// dropping itself is statusLine's (fitFields); what is asserted here is that the
+// dropping itself is statusKeys' (fitFields); what is asserted here is that the
 // workspace's own line survives it — no hint cut mid-word, and the way out never
 // among the casualties.
 func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {
@@ -638,7 +638,7 @@ func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {
 		m.layout()
 		// The room the workspace actually gives the row; see viewPaneWindow.
 		room := max(max(w-2, 1)-2*boxPad, 1)
-		line := m.statusLine(room)
+		line := m.statusKeys(room)
 		if lipgloss.Width(line) > room {
 			t.Fatalf("at w=%d the line is %d cells wide, over the %d it has:\n%s",
 				w, lipgloss.Width(line), room, line)

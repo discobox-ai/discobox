@@ -835,8 +835,8 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	if len(span.rows) != 2 || span.rows[0] != 1 {
 		t.Fatalf("banner rows = %v, want one under the header and one above the keys", span.rows)
 	}
-	if span.rows[1] != len(frame(m))-2 {
-		t.Fatalf("the lower band is on row %d of a %d-row frame, want it just above the status line",
+	if span.rows[1] != len(frame(m))-3 {
+		t.Fatalf("the lower band is on row %d of a %d-row frame, want it just above the message and keys rows",
 			span.rows[1], len(frame(m)))
 	}
 

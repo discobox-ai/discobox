@@ -1287,7 +1287,12 @@ func (m *Model) viewSecrets() string {
 	// below the lower table rather than between the two: the window keeps its
 	// full height, and the tables stay next to each other where they are read
 	// together.
-	body = fillRows(body, max(m.height-secretsChrome, 0))
+	//
+	// Filled to what the frame leaves the body — the box's two edges, the
+	// header and the blank under it, and the message and keys rows — rather
+	// than to secretsChrome, which also counts the tables' own title rows
+	// and so left the window two rows short of the terminal.
+	body = fillRows(body, max(m.height-6, 0))
 	if m.showLogo() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
 	}
@@ -1297,15 +1302,15 @@ func (m *Model) viewSecrets() string {
 	rows = append(rows, strings.Split(body, "\n")...)
 
 	m.zones.push(bodyLeft, headerTop+len(rows))
-	rows = append(rows, m.viewStatus())
+	rows = append(rows, strings.Split(m.viewStatus(), "\n")...)
 	m.zones.pop()
 	return m.box("", rows)
 }
 
 // secretsChrome is what this screen costs in rows before a single secret is
 // drawn: the box's edges, the header and the blank under it, the list title,
-// the blank after the rows, and the status line.
-const secretsChrome = 7
+// the blank after the rows, and the message and keys rows.
+const secretsChrome = 8
 
 // requestsChrome is what the lower table costs beside its rows: its title, and
 // the two blank rows between the tables.
