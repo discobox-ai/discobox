@@ -735,6 +735,61 @@ func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
 	}
 }
 
+func TestSettingUpANamedHarnessDefaultsOnlyWhenMissing(t *testing.T) {
+	for _, scenario := range []struct {
+		name       string
+		hasDefault bool
+		fails      bool
+	}{
+		{name: "no default"},
+		{name: "existing default", hasDefault: true},
+		{name: "failed setup", fails: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			ds := noDefaultSource(t)
+			if scenario.hasDefault {
+				ds = newFakeSource()
+			}
+			if scenario.fails {
+				ds.configureErr = errors.New("setup failed")
+			}
+			m := newTestModel(t, ds)
+			harness := m.opts.opts[optHarness]
+			for i, choice := range harness.choices {
+				if choice == "custom" {
+					harness.idx = i
+				}
+			}
+			send(t, m, typeString("fix the reaper")...)
+			send(t, m, keyPress("enter"))
+			if m.dialog == nil || m.dialog.kind != dlgConfirm {
+				t.Fatal("expected setup offer")
+			}
+			if got := strings.Contains(m.dialog.body, "become the project default"); got == scenario.hasDefault {
+				t.Fatalf("incorrect default promise: %s", m.dialog.body)
+			}
+			send(t, m, keyPress("y"))
+			if len(ds.didHarness) != 0 || len(ds.runs) != 0 {
+				t.Fatal("default or run before successful setup")
+			}
+			if scenario.fails {
+				return
+			}
+			finishConfigure(t, m)
+			if scenario.hasDefault {
+				if len(ds.didHarness) != 0 {
+					t.Fatalf("replaced existing default: %v", ds.didHarness)
+				}
+			} else if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_custom" {
+				t.Fatalf("missing default after setup: %v", ds.didHarness)
+			}
+			if len(ds.runs) != 1 || promptText(ds.runs[0]) != "fix the reaper" {
+				t.Fatalf("run did not resume once: %v", ds.runs)
+			}
+		})
+	}
+}
+
 // A setup that fails leaves the run unsubmitted: the harness still cannot carry
 // it, and running anyway would fail at create for the reason just reported.
 func TestAFailedSetupDoesNotResumeTheRun(t *testing.T) {

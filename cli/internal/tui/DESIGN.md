@@ -1901,6 +1901,9 @@ Choosing a harness that has never been through its setup stops the run and
 offers the setup instead (`askToSetUpHarness`). The server refuses that sandbox
 at create, so the alternative is the same refusal a few seconds later with
 nothing to do about it; yes runs the same flow `e` runs on the harnesses screen.
+When the project has no default, the offer also says that successful setup will
+make this harness the default. Setup and setting the default finish before the
+interrupted run resumes; an existing project default is preserved.
 A harness that declares no setup is told apart from one that is merely missing
 it — there is nothing to offer, so the window says so rather than asking a
 question whose yes does nothing.

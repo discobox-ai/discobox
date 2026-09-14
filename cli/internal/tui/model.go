@@ -2199,10 +2199,14 @@ func (m *Model) askToSetUpHarness(req RunRequest) (tea.Cmd, bool) {
 		// is missing. Saying so beats a confirm whose yes does nothing.
 		return m.report(true, "%s cannot be run and has no setup to run", name), true
 	}
-	m.dialog = confirmDialog("Set up "+name+"?",
-		name+" has not been set up, so a discobox cannot be created on it. Run its setup now? It takes the terminal and asks its own questions.",
+	andDefault := m.harnesses.loaded && m.projectDefaultHarness() == nil
+	body := name + " has not been set up, so a discobox cannot be created on it. Run its setup now? It takes the terminal and asks its own questions."
+	if andDefault {
+		body += " Once setup succeeds, it will become the project default."
+	}
+	m.dialog = confirmDialog("Set up "+name+"?", body,
 		func(string) tea.Cmd {
-			return func() tea.Msg { return harnessSetupMsg{harness: harness, resume: &req} }
+			return func() tea.Msg { return harnessSetupMsg{harness: harness, andDefault: andDefault, resume: &req} }
 		})
 	return nil, true
 }
