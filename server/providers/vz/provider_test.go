@@ -109,6 +109,22 @@ func TestKernelCmdlineMountsTheRootReadOnly(t *testing.T) {
 	}
 }
 
+// A kernel that halts on panic leaves the VM running with nothing inside, which
+// the driver reports as a healthy guest. panic= must reset it, and so stop it.
+func TestKernelCmdlineResetsOnPanic(t *testing.T) {
+	for _, field := range strings.Fields(kernelCmdline) {
+		value, ok := strings.CutPrefix(field, "panic=")
+		if !ok {
+			continue
+		}
+		if value == "0" {
+			t.Fatalf("kernel command line %q halts on panic", kernelCmdline)
+		}
+		return
+	}
+	t.Fatalf("kernel command line %q does not reset the guest on panic", kernelCmdline)
+}
+
 // Every VSOCK port is distinct, and matches the guest image's units. Two
 // services sharing a port fails at guest boot with a bind error and no hint
 // about which one lost.

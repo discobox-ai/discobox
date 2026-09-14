@@ -32,7 +32,13 @@ const (
 
 	// kernelCmdline mounts the shared read-only root; everything writable is on
 	// the per-pool data and cache disks the guest mounts itself.
-	kernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4"
+	//
+	// panic= turns a kernel panic into a reset, which Virtualization.framework
+	// answers by stopping the VM. Without it Debian's kernel halts in place and
+	// the VM stays running with nothing inside, which the driver cannot tell from
+	// a healthy guest. The delay is for the panic's own trace, the one thing that
+	// explains it, to reach console.log before the machine goes.
+	kernelCmdline = "console=hvc0 root=/dev/vda ro rootfstype=ext4 panic=5"
 
 	gracefulStopTimeout = 30 * time.Second
 	forcedStopTimeout   = 15 * time.Second

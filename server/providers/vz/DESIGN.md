@@ -168,6 +168,13 @@ virtio built in still boots), and a read-only raw ext4 root (`root.ext4`).
 Disks are attached in a fixed order the guest depends on — root, data, cache
 become `/dev/vda`, `/dev/vdb`, `/dev/vdc`.
 
+The kernel command line carries `panic=`, so a panicked guest resets, and the
+framework stops a VM whose guest resets. That is what makes `Running` mean
+something: without it the kernel halts in place and the VM reports running with
+nothing inside. libkrun needs no equivalent — its default command line already
+carries `panic=-1`. A guest that is running but broken without panicking is the
+engine's to catch, by its Docker daemon not answering a repair.
+
 Sizing comes from the host, not from constants: every vCPU, half the memory
 (`vzvm.DefaultHostResources`, clamped to the range Virtualization.framework
 reports), a 100 GiB data disk, and a 32 GiB cache disk. None of it is a
