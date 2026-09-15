@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/types/jsonstream"
+
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/imagecache/imagecachetest"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
@@ -129,6 +131,27 @@ func (d *fakeLoadDaemon) load(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	w.Header().Set("Content-Type", "application/json")
+	if !d.containerd {
+		// The classic store reports each layer it extracts, and nothing for
+		// one it already holds: this daemon holds the first.
+		var config struct {
+			RootFS struct {
+				DiffIDs []string `json:"diff_ids"`
+			} `json:"rootfs"`
+		}
+		_ = json.Unmarshal(files[docker[0].Config], &config)
+		for i, diffID := range config.RootFS.DiffIDs {
+			if i == 0 {
+				continue
+			}
+			size := len(files[docker[0].Layers[i]])
+			for _, current := range []int{size / 2, size, size} {
+				_, _ = fmt.Fprintf(w, `{"status":"Loading layer","progressDetail":{"current":%d,"total":%d},"id":%q}`+"\n",
+					current, size, strings.TrimPrefix(diffID, "sha256:")[:12])
+			}
+		}
+	}
 	reference := index.Manifests[0].Annotations[imagecache.AnnotationImageName]
 	image := fakeImage{id: "sha256:" + strings.TrimPrefix(docker[0].Config, "blobs/sha256/")}
 	if d.containerd {
@@ -137,7 +160,6 @@ func (d *fakeLoadDaemon) load(w http.ResponseWriter, request *http.Request) {
 	}
 	d.images[reference] = image
 	d.loads = append(d.loads, reference)
-	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"stream":"Loaded image: ` + reference + `\n"}` + "\n"))
 }
 
@@ -273,6 +295,81 @@ func TestALoadIntoAClassicDaemonRecordsTheRegistryDigest(t *testing.T) {
 	}
 	if !slices.Contains(daemon.images[image.Reference].repoDigests, digestReference) {
 		t.Fatalf("repo digests = %v, want %s", daemon.images[image.Reference].repoDigests, digestReference)
+	}
+}
+
+// A classic daemon reads the whole archive before it extracts a layer, so the
+// bytes written reach their total long before the load is over. What it
+// extracts after that is reported too, counting the layer it already held.
+func TestAClassicLoadReportsTheLayersItExtracts(t *testing.T) {
+	cache, image := stagedCache(t)
+	daemon := newFakeLoadDaemon(false)
+	engine, log, _ := loadEngine(t, daemon, cache, testPoolImage)
+
+	if err := preloadTestImages(t, engine, []string{image.Reference}); err != nil {
+		t.Fatal(err)
+	}
+	log.mu.Lock()
+	defer log.mu.Unlock()
+	var extracting, final *sandbox.PoolPullProgress
+	for _, report := range log.reports {
+		if pull := report.Pull; pull != nil && report.Phase == sandbox.PoolPhasePreloadingImages {
+			if extracting == nil && pull.LayersExtracted > 0 && !pull.Done {
+				extracting = pull
+			}
+			final = pull
+		}
+	}
+	if extracting == nil {
+		t.Fatalf("reports = %+v, want extraction reported before the load finished", log.reports)
+	}
+	if extracting.Current != extracting.Total {
+		t.Fatalf("extraction reported at %d of %d bytes written, want the archive written first", extracting.Current, extracting.Total)
+	}
+	if final == nil || !final.Done || final.LayersExtracted != final.Layers {
+		t.Fatalf("final report = %+v, want every layer extracted", final)
+	}
+}
+
+// Layers are placed by the image's own order: a layer the store already held
+// counts once a later one is reported, a finished layer's restatement is not
+// a later layer with the same ID, and a repeated layer is.
+func TestLayerExtractionFollowsTheImagesLayerOrder(t *testing.T) {
+	layers := []imagecache.Descriptor{{Size: 10}, {Size: 100}, {Size: 1000}, {Size: 5}}
+	diffIDs := []string{"sha256:aaaaaaaaaaaaaaaa", "sha256:bbbbbbbbbbbbbbbb", "sha256:cccccccccccccccc", "sha256:aaaaaaaaaaaaaaaa"}
+	extraction := newLayerExtraction(layers, diffIDs)
+	message := func(id string, current int64) jsonstream.Message {
+		return jsonstream.Message{Status: loadingLayerStatus, ID: id, Progress: &jsonstream.Progress{Current: current}}
+	}
+	for _, step := range []struct {
+		message jsonstream.Message
+		moved   bool
+		layers  int
+		bytes   int64
+	}{
+		{jsonstream.Message{Stream: "Loaded image: x\n"}, false, 0, 0},
+		{message("bbbbbbbbbbbb", 50), true, 1, 60},
+		{message("bbbbbbbbbbbb", 100), true, 2, 110},
+		{message("bbbbbbbbbbbb", 100), false, 2, 110},
+		{message("dddddddddddd", 1), false, 2, 110},
+		{message("cccccccccccc", 500), true, 2, 610},
+		{message("cccccccccccc", 1000), true, 3, 1110},
+		{message("aaaaaaaaaaaa", 5), true, 4, 1115},
+	} {
+		if moved := extraction.apply(step.message); moved != step.moved || extraction.layers != step.layers || extraction.bytes != step.bytes {
+			t.Fatalf("after %+v: moved=%v layers=%d bytes=%d, want %v %d %d",
+				step.message, moved, extraction.layers, extraction.bytes, step.moved, step.layers, step.bytes)
+		}
+	}
+
+	// A config without diff IDs places nothing, and the load's end counts all.
+	blind := newLayerExtraction(layers, nil)
+	if blind.apply(message("aaaaaaaaaaaa", 10)) {
+		t.Fatal("an extraction with no diff IDs placed a message")
+	}
+	blind.finish()
+	if blind.layers != 4 || blind.bytes != 1115 {
+		t.Fatalf("finished at %d layers and %d bytes, want 4 and 1115", blind.layers, blind.bytes)
 	}
 }
 

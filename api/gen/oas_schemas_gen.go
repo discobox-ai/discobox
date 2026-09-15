@@ -14238,12 +14238,18 @@ type SandboxPullProgress struct {
 	Current OptInt64 `json:"current"`
 	// True on the final report for a pull that finished.
 	Done OptBool `json:"done"`
+	// For an image loaded from the image cache, bytes of its layers the daemon has extracted into its
+	// store after reading them, counting layers it already held.
+	Extracted OptInt64 `json:"extracted"`
 	// Image reference being pulled.
 	Image string `json:"image"`
 	// Layers heard about so far, which grows as the manifest is walked.
 	Layers OptInt `json:"layers"`
 	// Layers fully pulled, including layers already present on the host.
 	LayersComplete OptInt `json:"layersComplete"`
+	// For an image loaded from the image cache, layers the daemon has extracted into its store, counting
+	// layers it already held.
+	LayersExtracted OptInt `json:"layersExtracted"`
 	// Total bytes of the layers whose size has been reported.
 	Total OptInt64 `json:"total"`
 }
@@ -14256,6 +14262,11 @@ func (s *SandboxPullProgress) GetCurrent() OptInt64 {
 // GetDone returns the value of Done.
 func (s *SandboxPullProgress) GetDone() OptBool {
 	return s.Done
+}
+
+// GetExtracted returns the value of Extracted.
+func (s *SandboxPullProgress) GetExtracted() OptInt64 {
+	return s.Extracted
 }
 
 // GetImage returns the value of Image.
@@ -14273,6 +14284,11 @@ func (s *SandboxPullProgress) GetLayersComplete() OptInt {
 	return s.LayersComplete
 }
 
+// GetLayersExtracted returns the value of LayersExtracted.
+func (s *SandboxPullProgress) GetLayersExtracted() OptInt {
+	return s.LayersExtracted
+}
+
 // GetTotal returns the value of Total.
 func (s *SandboxPullProgress) GetTotal() OptInt64 {
 	return s.Total
@@ -14288,6 +14304,11 @@ func (s *SandboxPullProgress) SetDone(val OptBool) {
 	s.Done = val
 }
 
+// SetExtracted sets the value of Extracted.
+func (s *SandboxPullProgress) SetExtracted(val OptInt64) {
+	s.Extracted = val
+}
+
 // SetImage sets the value of Image.
 func (s *SandboxPullProgress) SetImage(val string) {
 	s.Image = val
@@ -14301,6 +14322,11 @@ func (s *SandboxPullProgress) SetLayers(val OptInt) {
 // SetLayersComplete sets the value of LayersComplete.
 func (s *SandboxPullProgress) SetLayersComplete(val OptInt) {
 	s.LayersComplete = val
+}
+
+// SetLayersExtracted sets the value of LayersExtracted.
+func (s *SandboxPullProgress) SetLayersExtracted(val OptInt) {
+	s.LayersExtracted = val
 }
 
 // SetTotal sets the value of Total.

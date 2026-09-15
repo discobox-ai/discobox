@@ -379,6 +379,25 @@ func (i *Image) Size() int64 {
 	return total
 }
 
+// DiffIDs are the digests of the image's uncompressed layers, in its layers'
+// order, as its config states them. A daemon names a layer by these while it
+// extracts one, not by the digest of the compressed blob it read.
+func (i *Image) DiffIDs() ([]string, error) {
+	data, err := i.layout.readBlob(i.Config, maxConfigBytes)
+	if err != nil {
+		return nil, err
+	}
+	var config struct {
+		RootFS struct {
+			DiffIDs []string `json:"diff_ids"`
+		} `json:"rootfs"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("read image config: %w", err)
+	}
+	return config.RootFS.DiffIDs, nil
+}
+
 // Lookup returns reference as staged for platform, or an error wrapping
 // ErrNotStaged when the layout does not hold all of it.
 func (l *Layout) Lookup(reference string, platform Platform) (*Image, error) {

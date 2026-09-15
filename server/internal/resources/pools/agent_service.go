@@ -377,11 +377,17 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 			Phase: serverapi.SandboxProvisionPhase(entry.Phase),
 		}
 		if pull, ok := entry.Pull.Get(); ok {
-			// A conversion rather than a field-by-field copy: the two shapes are
-			// identical today, and if the agent-facing and client-facing schemas
-			// ever diverge this stops compiling, which is where that divergence
-			// should be noticed.
-			observed.Pull = serverapi.NewOptSandboxPullProgress(serverapi.SandboxPullProgress(pull))
+			// Field by field because the client-facing shape is the larger one:
+			// extracted and layersExtracted describe a load from the server's
+			// image cache, which a pool agent's pull never is.
+			observed.Pull = serverapi.NewOptSandboxPullProgress(serverapi.SandboxPullProgress{
+				Image:          pull.Image,
+				Current:        pull.Current,
+				Total:          pull.Total,
+				Layers:         pull.Layers,
+				LayersComplete: pull.LayersComplete,
+				Done:           pull.Done,
+			})
 		}
 		// ogen's own encoder, not encoding/json. An unset ogen optional
 		// marshals to zero bytes, which encoding/json rejects out of a

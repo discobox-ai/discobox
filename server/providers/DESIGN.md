@@ -326,6 +326,16 @@ Both routes run through `ensureImageRef`, and each is reported as what it is:
 the pool-agent image as `loading_pool_image` rather than `pulling_pool_image`,
 a staged image with the `preloading_images` provisioning phase.
 
+A load reports two stretches under that phase. The first is the archive written
+into the daemon; the second is the extraction, which the classic store only
+starts once it has read the whole archive and which is most of a load's time.
+The engine asks for the classic store's per-layer `Loading layer` messages and
+places them by the image config's diff IDs, so a layer the daemon already holds
+and skips without a word still counts as extracted
+(`extracted`/`layersExtracted` on the pull progress). The containerd store
+reports no layers during a load, so there the extraction counts only arrive
+with the load's end.
+
 ## Pool Runtime Lifecycle
 
 Pool runtime lifecycle is not the same as pool row deletion. The engine

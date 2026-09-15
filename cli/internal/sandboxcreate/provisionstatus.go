@@ -134,17 +134,27 @@ func recordedPhase(runtime apimodel.SandboxRuntime) Step {
 // Neither ratio is progress toward a fixed target — both totals grow while the
 // manifest is walked — so this reports them as the pair of counts they are and
 // never as a percentage, which would visibly go backwards.
+//
+// An image loaded from the image cache is read into the daemon whole before
+// any of it is extracted, so once extraction is reported the line counts that
+// instead: the bytes read are already all of them, and the minutes left are in
+// the layers.
 func pullLine(pull apimodel.SandboxPullProgress) Step {
 	line := "pulling " + imageLabel(pull.Image)
-	current, total := pull.Current.Or(0), pull.Total.Or(0)
+	current, total, layersComplete := pull.Current.Or(0), pull.Total.Or(0), pull.LayersComplete.Or(0)
+	var extracting string
+	if pull.Extracted.IsSet() || pull.LayersExtracted.IsSet() {
+		extracting = "extracting "
+		current, layersComplete = pull.Extracted.Or(0), pull.LayersExtracted.Or(0)
+	}
 	switch {
 	case total > 0:
-		line += fmt.Sprintf(" — %s of %s", humanBytes(current), humanBytes(total))
+		line += fmt.Sprintf(" — %s%s of %s", extracting, humanBytes(current), humanBytes(total))
 	case current > 0:
-		line += fmt.Sprintf(" — %s", humanBytes(current))
+		line += fmt.Sprintf(" — %s%s", extracting, humanBytes(current))
 	}
 	if layers := pull.Layers.Or(0); layers > 0 {
-		line += fmt.Sprintf(", %d/%d layers", pull.LayersComplete.Or(0), layers)
+		line += fmt.Sprintf(", %d/%d layers", layersComplete, layers)
 	}
 	return Step(line)
 }

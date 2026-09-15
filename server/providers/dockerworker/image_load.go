@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
+	"github.com/moby/moby/client/pkg/stringid"
 
 	"github.com/discobox-ai/discobox/imagecache"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -130,8 +133,14 @@ func usesContainerdStore(info system.Info) bool {
 }
 
 // loadCached streams the image's archive into the daemon, reporting the bytes
-// written as a pull reports the bytes downloaded.
+// written as a pull reports the bytes downloaded, and then the layers the
+// daemon extracts from it.
 func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID string, cached *imagecache.Image, phase sandbox.PoolProvisionPhase) error {
+	diffIDs, err := cached.DiffIDs()
+	if err != nil {
+		return err
+	}
+	extraction := newLayerExtraction(cached.Layers, diffIDs)
 	var progressMu sync.Mutex
 	progress := sandbox.PoolPullProgress{Image: cached.Reference.Name(), Total: cached.Size(), Layers: len(cached.Layers)}
 	report := func() {
@@ -143,8 +152,8 @@ func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID stri
 	// Once before the first byte, so the phase is on the row from the start.
 	report()
 
-	// Docker may spend minutes extracting after it has read the archive.
-	// Keep the latest byte counts visible until its response finishes.
+	// Docker may spend minutes on one layer, and says nothing in between.
+	// Keep the latest counts fresh until its response finishes.
 	stopHeartbeat, heartbeatDone := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(heartbeatDone)
@@ -180,12 +189,24 @@ func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID stri
 		_ = writer.CloseWithError(err)
 		written <- err
 	}()
-	load, err := cli.ImageLoad(ctx, reader, client.ImageLoadWithQuiet(true))
+	// Not quiet: the classic store reports each layer it extracts, and that is
+	// most of a load, since it reads the whole archive before extracting any.
+	load, err := cli.ImageLoad(ctx, reader, client.ImageLoadWithQuiet(false))
 	if err != nil {
 		_ = reader.CloseWithError(err)
 		return errors.Join(err, <-written)
 	}
-	loadErr := readLoadResponse(load)
+	var lastExtractionReport time.Time
+	loadErr := readLoadResponse(load, func(message jsonstream.Message) {
+		progressMu.Lock()
+		moved := extraction.apply(message)
+		progress.Extracted, progress.LayersExtracted = extraction.bytes, extraction.layers
+		progressMu.Unlock()
+		if moved && time.Since(lastExtractionReport) >= poolPullReportInterval {
+			lastExtractionReport = time.Now()
+			report()
+		}
+	})
 	_ = load.Close()
 	// Closed before waiting, so an archive the daemon stopped reading ends
 	// rather than blocking on a pipe nothing drains.
@@ -194,22 +215,24 @@ func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID stri
 		return err
 	}
 	progressMu.Lock()
+	// Whatever the daemon said along the way, every layer is in its store now.
+	extraction.finish()
+	progress.Extracted, progress.LayersExtracted = extraction.bytes, extraction.layers
 	progress.Done = true
 	progressMu.Unlock()
 	report()
 	return nil
 }
 
-// readLoadResponse drains a load's response, which reports failure inside the
-// stream rather than in its status code.
-func readLoadResponse(body io.Reader) error {
+// readLoadResponse drains a load's response, handing each message to progress.
+// A load reports failure inside the stream rather than in its status code.
+func readLoadResponse(body io.Reader, progress func(jsonstream.Message)) error {
 	decoder := json.NewDecoder(body)
 	for {
 		var message struct {
-			Error       string `json:"error"`
-			ErrorDetail *struct {
-				Message string `json:"message"`
-			} `json:"errorDetail"`
+			jsonstream.Message
+			// Older daemons state an error only here.
+			ErrorText string `json:"error"`
 		}
 		if err := decoder.Decode(&message); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -217,13 +240,88 @@ func readLoadResponse(body io.Reader) error {
 			}
 			return fmt.Errorf("read load response: %w", err)
 		}
-		if message.ErrorDetail != nil && message.ErrorDetail.Message != "" {
-			return errors.New(message.ErrorDetail.Message)
+		if message.Error != nil && message.Error.Message != "" {
+			return errors.New(message.Error.Message)
 		}
-		if message.Error != "" {
-			return errors.New(message.Error)
+		if message.ErrorText != "" {
+			return errors.New(message.ErrorText)
+		}
+		progress(message.Message)
+	}
+}
+
+// loadingLayerStatus is the status the classic image store gives each layer
+// it extracts during a load, with the bytes of that layer's blob it has read.
+// The containerd store reports nothing until the load is over.
+const loadingLayerStatus = "Loading layer"
+
+// layerExtraction follows a classic daemon through the layers of a load.
+//
+// The daemon extracts the image's layers in order and skips, silently, each
+// one its store already holds, so a message about a layer says that every
+// layer before it is in the store too. Counting from the image's own order is
+// what lets those skipped layers count: an image built on a base the pool
+// already has would otherwise never reach its own layer count.
+type layerExtraction struct {
+	// ids are the layers' diff IDs as a message abbreviates them, and offsets
+	// the bytes of every layer's blob before each one, plus the whole.
+	ids     []string
+	offsets []int64
+	// layers is how many are in the store — every one before the layer being
+	// extracted — and bytes those and what has been read of that one.
+	layers int
+	bytes  int64
+}
+
+func newLayerExtraction(layers []imagecache.Descriptor, diffIDs []string) *layerExtraction {
+	extraction := &layerExtraction{offsets: make([]int64, len(layers)+1)}
+	for i, layer := range layers {
+		extraction.offsets[i+1] = extraction.offsets[i] + layer.Size
+	}
+	// A config that does not name a diff ID per layer gives no way to place a
+	// message, so only the end of the load is counted.
+	if len(diffIDs) == len(layers) {
+		for _, diffID := range diffIDs {
+			extraction.ids = append(extraction.ids, stringid.TruncateID(diffID))
 		}
 	}
+	return extraction
+}
+
+// apply folds in one message and reports whether the counts moved.
+func (x *layerExtraction) apply(message jsonstream.Message) bool {
+	if message.Status != loadingLayerStatus || message.Progress == nil || x.ids == nil {
+		return false
+	}
+	// The daemon restates a layer as it finishes it, which is not the start of
+	// a later layer with the same ID.
+	if last := x.layers - 1; last >= 0 && x.ids[last] == message.ID && message.Progress.Current >= x.size(last) {
+		return false
+	}
+	i := slices.Index(x.ids[x.layers:], message.ID)
+	if i < 0 {
+		return false
+	}
+	at := x.layers + i
+	layers, current := at, min(message.Progress.Current, x.size(at))
+	if current == x.size(at) {
+		layers, current = at+1, 0
+	}
+	bytes := x.offsets[layers] + current
+	moved := layers != x.layers || bytes != x.bytes
+	x.layers, x.bytes = layers, bytes
+	return moved
+}
+
+func (x *layerExtraction) size(layer int) int64 {
+	return x.offsets[layer+1] - x.offsets[layer]
+}
+
+// finish counts every layer as in the store, which a load that succeeded
+// means whether or not the daemon said so.
+func (x *layerExtraction) finish() {
+	x.layers = len(x.offsets) - 1
+	x.bytes = x.offsets[x.layers]
 }
 
 // recordRegistryDigest gives an image a classic daemon has just loaded the

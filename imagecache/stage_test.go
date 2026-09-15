@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -159,6 +160,13 @@ func TestWriteArchive(t *testing.T) {
 	image, err := layout.Lookup(ref, amd64)
 	if err != nil {
 		t.Fatal(err)
+	}
+	diffIDs, err := image.DiffIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(diffIDs, agent.Layers["amd64"]) {
+		t.Fatalf("diff IDs = %v, want the config's %v", diffIDs, agent.Layers["amd64"])
 	}
 	var archive bytes.Buffer
 	var last int64

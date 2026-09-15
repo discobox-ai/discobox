@@ -125,3 +125,26 @@ func TestPoolPreloadStatusReportsBytesWithoutClaimingAPull(t *testing.T) {
 		t.Fatalf("local preload claims a download: %s", got)
 	}
 }
+
+// A load reads the whole archive before it extracts a layer, so a line still
+// counting bytes read sits at its total for all of the extraction. Once the
+// server reports extraction, that is what the line counts.
+func TestPoolPreloadStatusReportsExtractionOnceItStarts(t *testing.T) {
+	pool := poolWith(apimodel.PoolProvisionProgress{
+		Phase: apiclientgen.PoolProvisionPhasePreloadingImages,
+		Pull: apiclientgen.NewOptSandboxPullProgress(apimodel.SandboxPullProgress{
+			Image:           "ghcr.io/discobox-ai/discobox-harness-claude-code:v1",
+			Current:         apiclientgen.NewOptInt64(4 << 20),
+			Total:           apiclientgen.NewOptInt64(4 << 20),
+			Layers:          apiclientgen.NewOptInt(84),
+			LayersComplete:  apiclientgen.NewOptInt(84),
+			Extracted:       apiclientgen.NewOptInt64(1 << 20),
+			LayersExtracted: apiclientgen.NewOptInt(37),
+		}),
+	}, time.Now())
+	got := string(PoolProvisionStatus(pool))
+	want := "preloading images (one-time setup per image version): discobox-harness-claude-code:v1 — extracting 1.0 MiB of 4.0 MiB, 37/84 layers"
+	if got != want {
+		t.Fatalf("status = %q, want %q", got, want)
+	}
+}

@@ -93,13 +93,19 @@ type PoolProvisionProgress struct {
 // Both totals grow while the manifest is walked, so current against total is a
 // ratio at a moment rather than progress toward a fixed target: a client must
 // not render it as a bar that can only move forward.
+//
+// Extracted and LayersExtracted follow a load from the image cache past its
+// last byte: Current and LayersComplete count the archive written into the
+// daemon, and these count the layers it has since extracted into its store.
 type PoolPullProgress struct {
-	Image          string `json:"image,omitempty"`
-	Current        int64  `json:"current,omitempty"`
-	Total          int64  `json:"total,omitempty"`
-	Layers         int    `json:"layers,omitempty"`
-	LayersComplete int    `json:"layersComplete,omitempty"`
-	Done           bool   `json:"done,omitempty"`
+	Image           string `json:"image,omitempty"`
+	Current         int64  `json:"current,omitempty"`
+	Total           int64  `json:"total,omitempty"`
+	Layers          int    `json:"layers,omitempty"`
+	LayersComplete  int    `json:"layersComplete,omitempty"`
+	Extracted       int64  `json:"extracted,omitempty"`
+	LayersExtracted int    `json:"layersExtracted,omitempty"`
+	Done            bool   `json:"done,omitempty"`
 }
 
 // PoolProgressReporter is how a driver reports its progress without holding the

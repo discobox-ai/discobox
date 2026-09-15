@@ -4069,6 +4069,10 @@ components:
                 done:
                     description: True on the final report for a pull that finished
                     type: boolean
+                extracted:
+                    description: For an image loaded from the image cache, bytes of its layers the daemon has extracted into its store after reading them, counting layers it already held
+                    format: int64
+                    type: integer
                 image:
                     description: Image reference being pulled
                     type: string
@@ -4077,6 +4081,9 @@ components:
                     type: integer
                 layersComplete:
                     description: Layers fully pulled, including layers already present on the host
+                    type: integer
+                layersExtracted:
+                    description: For an image loaded from the image cache, layers the daemon has extracted into its store, counting layers it already held
                     type: integer
                 total:
                     description: Total bytes of the layers whose size has been reported

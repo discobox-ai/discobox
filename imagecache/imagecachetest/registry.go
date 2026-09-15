@@ -143,8 +143,10 @@ func (r *Registry) Publish(repository, tag string, shared []byte) Image {
 	sharedLayer := r.add(shared, mediaTypeLayer)
 	var entries []descriptor
 	for _, arch := range []string{"amd64", "arm64"} {
-		config := r.add(fmt.Appendf(nil, `{"os":"linux","architecture":%q,"rootfs":{"type":"layers"},"image":%q}`, arch, repository), mediaTypeConfig)
 		own := r.add(bytes.Repeat([]byte(repository+arch), 1000), mediaTypeLayer)
+		// No layer is compressed, so each one's diff ID is its own digest.
+		config := r.add(fmt.Appendf(nil, `{"os":"linux","architecture":%q,"rootfs":{"type":"layers","diff_ids":[%q,%q]},"image":%q}`,
+			arch, sharedLayer.Digest, own.Digest, repository), mediaTypeConfig)
 		entry := r.add(encode(manifest{
 			SchemaVersion: 2, MediaType: mediaTypeManifest,
 			Config: config, Layers: []descriptor{sharedLayer, own},

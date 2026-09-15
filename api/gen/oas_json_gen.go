@@ -25332,6 +25332,12 @@ func (s *SandboxPullProgress) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Extracted.Set {
+			e.FieldStart("extracted")
+			s.Extracted.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("image")
 		e.Str(s.Image)
 	}
@@ -25348,6 +25354,12 @@ func (s *SandboxPullProgress) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.LayersExtracted.Set {
+			e.FieldStart("layersExtracted")
+			s.LayersExtracted.Encode(e)
+		}
+	}
+	{
 		if s.Total.Set {
 			e.FieldStart("total")
 			s.Total.Encode(e)
@@ -25355,13 +25367,15 @@ func (s *SandboxPullProgress) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxPullProgress = [6]string{
+var jsonFieldsNameOfSandboxPullProgress = [8]string{
 	0: "current",
 	1: "done",
-	2: "image",
-	3: "layers",
-	4: "layersComplete",
-	5: "total",
+	2: "extracted",
+	3: "image",
+	4: "layers",
+	5: "layersComplete",
+	6: "layersExtracted",
+	7: "total",
 }
 
 // Decode decodes SandboxPullProgress from json.
@@ -25393,8 +25407,18 @@ func (s *SandboxPullProgress) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"done\"")
 			}
+		case "extracted":
+			if err := func() error {
+				s.Extracted.Reset()
+				if err := s.Extracted.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"extracted\"")
+			}
 		case "image":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Image = string(v)
@@ -25425,6 +25449,16 @@ func (s *SandboxPullProgress) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"layersComplete\"")
 			}
+		case "layersExtracted":
+			if err := func() error {
+				s.LayersExtracted.Reset()
+				if err := s.LayersExtracted.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"layersExtracted\"")
+			}
 		case "total":
 			if err := func() error {
 				s.Total.Reset()
@@ -25445,7 +25479,7 @@ func (s *SandboxPullProgress) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000100,
+		0b00001000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
