@@ -44,7 +44,7 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 		image = "alpine:3.20"
 	}
 
-	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, projectID, poolID)
+	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, projectID, poolID, server.ScopeSandboxRead, server.ScopeSandboxWrite)
 	runtime, err := sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
 		ProjectID:             projectID,
 		PoolID:                poolID,

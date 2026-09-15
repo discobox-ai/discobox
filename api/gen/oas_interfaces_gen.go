@@ -21,6 +21,10 @@ type AttachSandboxExecRes interface {
 	attachSandboxExecRes()
 }
 
+type ClearPoolCacheRes interface {
+	clearPoolCacheRes()
+}
+
 type CommitHarnessConfigConfigureRes interface {
 	commitHarnessConfigConfigureRes()
 }

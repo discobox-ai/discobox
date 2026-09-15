@@ -25,6 +25,15 @@ func (UnimplementedHandler) PoolArchiveSandbox(ctx context.Context, params PoolA
 	return ht.ErrNotImplemented
 }
 
+// PoolClearCache implements pool-clear-cache operation.
+//
+// Stop every sandbox on the pool and empty its caches.
+//
+// POST /api/project/{projectId}/pool/{poolId}/cache/clear
+func (UnimplementedHandler) PoolClearCache(ctx context.Context, params PoolClearCacheParams) (r *PoolClearCacheResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolCreateSandbox implements pool-create-sandbox operation.
 //
 // Create pool sandbox.

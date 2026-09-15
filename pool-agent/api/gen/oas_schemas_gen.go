@@ -2204,6 +2204,38 @@ func (s *PoolBearerAuth) SetRoles(val []string) {
 	s.Roles = val
 }
 
+// The outcome of clearing the pool's caches. The agent answers only
+// once they are empty, so this is a confirmation rather than an
+// acceptance.
+// Ref: #/components/schemas/PoolClearCacheResponse
+type PoolClearCacheResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandboxes that were running and were stopped so the caches could be cleared. Nothing is started
+	// again afterwards.
+	StoppedSandboxIds []string `json:"stoppedSandboxIds"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolClearCacheResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetStoppedSandboxIds returns the value of StoppedSandboxIds.
+func (s *PoolClearCacheResponse) GetStoppedSandboxIds() []string {
+	return s.StoppedSandboxIds
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolClearCacheResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetStoppedSandboxIds sets the value of StoppedSandboxIds.
+func (s *PoolClearCacheResponse) SetStoppedSandboxIds(val []string) {
+	s.StoppedSandboxIds = val
+}
+
 // PoolDeleteSandboxNoContent is response for PoolDeleteSandbox operation.
 type PoolDeleteSandboxNoContent struct{}
 

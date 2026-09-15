@@ -37,6 +37,12 @@ var (
 	// reason for when the wait runs out.
 	ErrPoolNotReachable = errors.New("pool agent is not reachable")
 
+	// ErrPoolAgentUnsupported indicates the pool's agent does not have the
+	// operation asked of it: it answered with a route-level 404 rather than one
+	// of its own errors, which is what an agent that predates the operation
+	// does. The pool is moved onto the current agent when it is reconciled.
+	ErrPoolAgentUnsupported = errors.New("the pool agent does not support this operation")
+
 	// ErrNoSandboxCapacity indicates no provider capacity is available for sandbox placement.
 	ErrNoSandboxCapacity = errors.New("no sandbox capacity")
 

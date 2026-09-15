@@ -17,6 +17,12 @@ type Handler interface {
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/archive
 	PoolArchiveSandbox(ctx context.Context, params PoolArchiveSandboxParams) error
+	// PoolClearCache implements pool-clear-cache operation.
+	//
+	// Stop every sandbox on the pool and empty its caches.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/cache/clear
+	PoolClearCache(ctx context.Context, params PoolClearCacheParams) (*PoolClearCacheResponse, error)
 	// PoolCreateSandbox implements pool-create-sandbox operation.
 	//
 	// Create pool sandbox.

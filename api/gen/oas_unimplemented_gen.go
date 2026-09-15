@@ -72,6 +72,15 @@ func (UnimplementedHandler) AttachSandboxExecOnce(ctx context.Context, req Attac
 	return r, ht.ErrNotImplemented
 }
 
+// ClearPoolCache implements clear-pool-cache operation.
+//
+// Stop every sandbox on a pool and empty its caches.
+//
+// POST /projects/{projectId}/pools/{poolId}/clear-cache
+func (UnimplementedHandler) ClearPoolCache(ctx context.Context, params ClearPoolCacheParams) (r ClearPoolCacheRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CommitHarnessConfigConfigure implements commit-harness-config-configure operation.
 //
 // Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the

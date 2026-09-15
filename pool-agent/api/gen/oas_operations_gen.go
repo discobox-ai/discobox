@@ -7,6 +7,7 @@ type OperationName = string
 
 const (
 	PoolArchiveSandboxOperation OperationName = "PoolArchiveSandbox"
+	PoolClearCacheOperation     OperationName = "PoolClearCache"
 	PoolCreateSandboxOperation  OperationName = "PoolCreateSandbox"
 	PoolDeleteSandboxOperation  OperationName = "PoolDeleteSandbox"
 	PoolGetSandboxOperation     OperationName = "PoolGetSandbox"

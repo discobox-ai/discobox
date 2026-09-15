@@ -103,6 +103,17 @@ func (h *Handler) ReconcilePool(ctx context.Context, params serverapi.ReconcileP
 	return &body, nil
 }
 
+func (h *Handler) ClearPoolCache(ctx context.Context, params serverapi.ClearPoolCacheParams) (serverapi.ClearPoolCacheRes, error) {
+	stopped, err := h.services.Pools.ClearPoolCache(ctx, params.ProjectId, params.PoolId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	if stopped == nil {
+		stopped = []string{}
+	}
+	return &apimodel.ClearPoolCacheBody{StoppedSandboxIds: stopped}, nil
+}
+
 func (h *Handler) RegisterPool(ctx context.Context, req *apimodel.RegisterPoolBody) (serverapi.RegisterPoolRes, error) {
 	resp, err := h.services.Pools.RegisterPool(ctx, *req)
 	if err != nil {

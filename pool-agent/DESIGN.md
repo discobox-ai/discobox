@@ -259,7 +259,8 @@ and a route added at the ends but not the middle 404s with nothing to say why.
 Adding one means adding it in all three.
 
 Power operations (`start`, `stop`, `restart`) answer with acceptance only, and
-serialise per sandbox on one mutex. That is also what makes on-demand start safe:
+serialise per sandbox on one mutex (the ones that can start a container also
+pass the pool's start gate first; see [Clearing the Pool's Caches](#clearing-the-pools-caches)). That is also what makes on-demand start safe:
 sandbox-directed routes — the HTTP proxy, the sandbox-agent proxy, the Git
 proxy, and the SSH ingress's TCP tunnel route (ADR 0024 §7) — start a stopped
 sandbox before proxying (`server/autostart.go`), and ten concurrent requests
@@ -355,6 +356,52 @@ host-global one) puts other projects' live pools in reach. Keeping the two in
 step is also what makes the reaper's "no data subtree means this proxy material
 is a regenerable leftover, delete it now" shortcut sound — that inference only
 holds while both trees cover the same set of pools.
+
+## Clearing the Pool's Caches
+
+`cache/clear` (scope `pool:cache-clear`, `sandboxruntime/clearcache.go`) is the
+agent's own operation from end to end: stop every running sandbox, empty every
+cache the pool holds, answer with the sandboxes it stopped. The control plane
+forwards the request and waits; it records no state and orchestrates nothing.
+
+- **Stop first.** The pool cache is bound whole into every sandbox, and the
+  other caches serve what sandboxes ask of them. Stops run in parallel, each
+  under the sandbox's power lock and re-checked there, and nothing is cleared
+  if any of them fails.
+- **Nothing starts during a clear.** Every operation that can start a
+  container — create, start, restart, on-demand start — enters the pool's
+  start gate, before the sandbox's power lock, for its whole duration. A clear
+  closes the gate and waits for what is already inside, so the sandbox list it
+  then reads is final. Arrivals wait for the gate to reopen rather than fail:
+  a start that lands during a clear is late, not wrong.
+- **Only on-demand starts wait.** `EnsureSandboxRunning` returns before the
+  gate for a sandbox that is already running, so traffic to running sandboxes
+  does not stall behind a clear that is still draining.
+- **Nothing starts after.** A stopped sandbox comes back on its next use
+  (ADR 0017 §12); the agent does not remember what was running.
+- **The work outlives the request once it has begun.** Concurrent requests
+  share one clear. While it is still draining the gate it has done nothing, so
+  if every waiting request gives up it reopens the gate and ends — the drain
+  can be as long as a create's image pull. Once drained it commits and
+  finishes regardless, rather than leaving a pool with its sandboxes stopped
+  and half its caches gone.
+
+Each cache is cleared the way its owner survives while it keeps serving, and
+one failing does not stop the others. The steps that wait on another process
+(the prune, the image pass) are bounded, because the start gate stays closed
+until they return:
+
+| Cache | How |
+| --- | --- |
+| `layout.PoolCache` | Contents removed, root kept: it is the bind source every sandbox container was created with, and only a create makes it. |
+| BuildKit state | `buildkitagent.PruneBuildCache`: a prune-all through buildkitd, which holds its store open. |
+| Proxy response cache | Contents removed under the running proxy, which reads an entry whose file is gone as a miss and forgets its size ([proxy/DESIGN.md](../proxy/DESIGN.md#response-cache)). |
+| Pool registry | Contents removed under the running registry, which is configured with no blob descriptor cache that could go on vouching for a deleted blob. |
+| Unused images | `imagereap` with a one-hour retention (`clearImageFloor`) instead of a day's. Stopped sandboxes still use theirs, and the newest image of each repository stays. The floor protects a create between its pull and its container, which the start gate covers for this pool but not for another pool on the shared local Docker daemon. |
+
+An agent that predates the route answers with its router's plain-text 404,
+which the control plane reports as an agent too old for the operation rather
+than as something not found (`server/providers/DESIGN.md`).
 
 ## Worker-Local HTTP Server
 

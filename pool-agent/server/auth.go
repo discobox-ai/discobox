@@ -36,6 +36,9 @@ const (
 	// ScopePoolSync authorizes host-wide pool reconciliation (reaping pools not
 	// in the known set). Only the control-plane provider driver carries it.
 	ScopePoolSync = "pool:sync"
+	// ScopePoolCacheClear authorizes stopping every sandbox on the pool and
+	// emptying its cache.
+	ScopePoolCacheClear = "pool:cache-clear"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -271,6 +274,8 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 		return ScopeSandboxWrite
 	case workerapi.PoolSyncOperation:
 		return ScopePoolSync
+	case workerapi.PoolClearCacheOperation:
+		return ScopePoolCacheClear
 	default:
 		return ""
 	}

@@ -744,6 +744,13 @@ func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID 
 	return s.GetPool(context.Background(), projectID, poolID)
 }
 
+func (s *routerTestServices) ClearPoolCache(_ context.Context, projectID, poolID string) ([]string, error) {
+	if _, err := s.GetPool(context.Background(), projectID, poolID); err != nil {
+		return nil, err
+	}
+	return []string{}, nil
+}
+
 // OpenPoolConsole hands out the stub console the test installed, so the console
 // route can be exercised without a provider or a Docker daemon.
 func (s *routerTestServices) OpenPoolConsole(_ context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {

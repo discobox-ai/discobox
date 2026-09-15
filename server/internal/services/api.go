@@ -184,6 +184,10 @@ type PoolService interface {
 	SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error)
 	UnsetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error)
 	ReconcilePool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
+	// ClearPoolCache has the pool agent stop every running sandbox on the pool
+	// and empty the pool's caches, and returns the sandboxes it stopped once the
+	// cache is empty.
+	ClearPoolCache(ctx context.Context, projectID, poolID string) ([]string, error)
 	// OpenPoolConsole attaches to the pool host's administrative console: a
 	// privileged root shell on the machine running the pool's runtime, for
 	// debugging the backend itself.

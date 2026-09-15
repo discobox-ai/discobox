@@ -52,6 +52,12 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error)
+	// ClearPoolCache implements clear-pool-cache operation.
+	//
+	// Stop every sandbox on a pool and empty its caches.
+	//
+	// POST /projects/{projectId}/pools/{poolId}/clear-cache
+	ClearPoolCache(ctx context.Context, params ClearPoolCacheParams) (ClearPoolCacheRes, error)
 	// CommitHarnessConfigConfigure implements commit-harness-config-configure operation.
 	//
 	// Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the

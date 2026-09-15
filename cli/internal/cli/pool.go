@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -26,6 +27,7 @@ func (a *App) newPoolCommand() *cobra.Command {
 	cmd.AddCommand(a.newPoolSetDefaultCommand())
 	cmd.AddCommand(a.newPoolUnsetDefaultCommand())
 	cmd.AddCommand(a.newPoolDeleteCommand())
+	cmd.AddCommand(a.newPoolClearCacheCommand())
 	cmd.AddCommand(a.newPoolResourcesCommand())
 	cmd.AddCommand(a.newPoolConsoleCommand())
 	cmd.AddCommand(a.newPoolLogsCommand())
@@ -284,5 +286,55 @@ func (a *App) newPoolDeleteCommand() *cobra.Command {
 			}
 			return poolID, nil
 		})
+	}}
+}
+
+func (a *App) newPoolClearCacheCommand() *cobra.Command {
+	return &cobra.Command{Use: "clear-cache POOL_ID", Short: "Stop a pool's discoboxes and empty its caches", Long: `Stop a pool's discoboxes and empty its caches.
+
+Every running discobox on the pool is stopped, because the caches serve all of
+them, and then the pool empties:
+
+  - the cache its discoboxes share (package manager and tool caches)
+  - its docker build cache
+  - its registry of images discoboxes pushed to build from
+  - its proxy's cache of downloaded packages and image layers
+  - discobox images no discobox uses, other than the newest of each and any
+    that arrived in the last hour
+
+The command returns once they are empty. Nothing is started again afterwards: a
+stopped discobox starts the next time it is used. Images a discobox pushed to
+the registry are gone until it pushes them again.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		poolID, err := a.resolvePoolID(cmd.Context(), client, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		res, err := client.ClearPoolCache(cmd.Context(), apiclientgen.ClearPoolCacheParams{ProjectId: projectID, PoolId: poolID})
+		if err != nil {
+			return err
+		}
+		body, err := expectResponse[apimodel.ClearPoolCacheBody](res)
+		if err != nil {
+			return err
+		}
+		if a.output == "json" {
+			return writeJSON(cmd.OutOrStdout(), body)
+		}
+		out := cmd.OutOrStdout()
+		for _, sandboxID := range body.StoppedSandboxIds {
+			if _, err := fmt.Fprintf(out, "%s stopped\n", sandboxID); err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintf(out, "caches cleared for pool %s\n", poolID)
+		return err
 	}}
 }

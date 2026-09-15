@@ -17,8 +17,11 @@ storage:
     rootdirectory: /var/lib/discobox/registry
   delete:
     enabled: true
-  cache:
-    blobdescriptor: inmemory
+  # No blob descriptor cache. The pool agent empties this storage while the
+  # registry runs when it clears the pool's caches, and a cached descriptor
+  # would go on answering that a deleted blob exists: a push then skips
+  # uploading the layer and publishes a manifest naming content that is gone.
+  # Every stat goes to the filesystem instead, which on local disk is cheap.
 http:
   addr: 0.0.0.0:5000
   headers:

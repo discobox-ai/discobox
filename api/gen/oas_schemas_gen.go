@@ -389,6 +389,39 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
+// The outcome of clearing a pool's caches (its sandbox cache, build cache, registry, proxy response
+// cache, and unused images). The pool agent answers only once they are empty.
+// Ref: #/components/schemas/ClearPoolCacheBody
+type ClearPoolCacheBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandboxes that were running and were stopped so the caches could be cleared. Nothing is started
+	// again afterwards; a stopped sandbox starts on its next use.
+	StoppedSandboxIds []string `json:"stoppedSandboxIds"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ClearPoolCacheBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetStoppedSandboxIds returns the value of StoppedSandboxIds.
+func (s *ClearPoolCacheBody) GetStoppedSandboxIds() []string {
+	return s.StoppedSandboxIds
+}
+
+// SetSchema sets the value of Schema.
+func (s *ClearPoolCacheBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetStoppedSandboxIds sets the value of StoppedSandboxIds.
+func (s *ClearPoolCacheBody) SetStoppedSandboxIds(val []string) {
+	s.StoppedSandboxIds = val
+}
+
+func (*ClearPoolCacheBody) clearPoolCacheRes() {}
+
 // Ref: #/components/schemas/CompleteSandboxApplyBody
 type CompleteSandboxApplyBody struct {
 	// A URL to the JSON Schema for this object.
@@ -1823,6 +1856,7 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 func (*ErrorModelStatusCode) approveSecretRequestRes()             {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()      {}
 func (*ErrorModelStatusCode) attachHarnessConfigConfigureRes()     {}
+func (*ErrorModelStatusCode) clearPoolCacheRes()                   {}
 func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()     {}
 func (*ErrorModelStatusCode) completeSandboxApplyRes()             {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()        {}

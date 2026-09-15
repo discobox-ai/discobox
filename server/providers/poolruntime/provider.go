@@ -260,6 +260,20 @@ func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, projec
 	return p.runtimeProvider.RemovePool(ctx, project, provider, pool)
 }
 
+// ClearCache has the pool agent stop every running sandbox on the pool and empty
+// the pool's caches, and waits for it to finish. The agent owns the whole
+// operation; this only reaches it.
+func (p *Provider) ClearCache(ctx context.Context, pool *model.Pool) ([]string, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	client, err := p.agentClientForPool(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	return client.ClearCache(ctx, pool.ProjectID)
+}
+
 // The registration timeout is armed by the pool reconciler, which owns the
 // deadline (pools.armRegistrationTimeout). Arming it from here meant a provider
 // call made on the pool's own reconcile path marking that same pool dirty,

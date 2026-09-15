@@ -11,7 +11,7 @@ import (
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
 )
 
-func newPoolAgentTestAuth(t *testing.T, projectID, poolID string) (string, string) {
+func newPoolAgentTestAuth(t *testing.T, projectID, poolID string, scopes ...string) (string, string) {
 	t.Helper()
 	publicKey, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -29,7 +29,7 @@ func newPoolAgentTestAuth(t *testing.T, projectID, poolID string) (string, strin
 	token.SetExpiration(now.Add(time.Hour))
 	token.SetString("project_id", projectID)
 	token.SetString("pool_id", poolID)
-	if err := token.Set("scopes", []string{poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite}); err != nil {
+	if err := token.Set("scopes", scopes); err != nil {
 		t.Fatalf("set pool-agent test scopes: %v", err)
 	}
 	return base64.StdEncoding.EncodeToString(publicKey), token.V4Sign(secretKey, nil)

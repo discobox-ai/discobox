@@ -193,6 +193,12 @@ type Runtime interface {
 	// reclaims whole orphaned pools; the caller is the control plane, which owns
 	// the authoritative pool set.
 	SyncKnownPools(ctx context.Context, knownPoolIDs []string) error
+	// ClearCache stops every running sandbox on this pool, empties the pool's
+	// caches — the sandbox cache, the build cache, the registry, the proxy's
+	// response cache and unused images — and returns the sandboxes it stopped.
+	// It answers once they are empty and starts nothing again afterwards (see
+	// clearcache.go).
+	ClearCache(ctx context.Context) ([]string, error)
 	// Power operations instruct and report acceptance only; the resulting state
 	// is published by the state reporter (ADR 0017 §§9-10, see power.go).
 	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
@@ -220,6 +226,12 @@ type DockerSandboxRuntime struct {
 	hostState layout.HostMapping
 	// powerLocks serializes power operations per sandbox (see power.go).
 	powerLocks sync.Map
+	// starts holds every operation that can start a container, so a cache
+	// clear can keep sandboxes down while it empties the caches; clearRun is
+	// the clear under way, which concurrent requests share (see clearcache.go).
+	starts   startGate
+	clearMu  sync.Mutex
+	clearRun *cacheClear
 	// statePublisher is the state channel's sink while a watcher is running
 	// (see statereport.go). Power operations use it to announce a transition
 	// they are about to make.
@@ -327,6 +339,13 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err := validateCreateRequest(sandboxID, req); err != nil {
 		return nil, err
 	}
+	// A create can start a container, so it waits out a cache clear and holds
+	// one off until it is done (see clearcache.go).
+	leave, err := r.starts.enter(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer leave()
 	// Replacing a container is a power operation on this sandbox as much as a
 	// start or a stop is, and it reads the power state it is preserving
 	// (ADR 0021 §3). Taking the same per-sandbox lock is what stops an auto-start
@@ -398,7 +417,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	normalizeSandboxConfig(&req.Config)
 	config := req.Config
 	imageName := strings.TrimSpace(optString(config.Image))
-	imageName, err := r.resolveSandboxImage(ctx, sandboxID, imageName, strings.TrimSpace(optString(config.ImageDigest)))
+	imageName, err = r.resolveSandboxImage(ctx, sandboxID, imageName, strings.TrimSpace(optString(config.ImageDigest)))
 	if err != nil {
 		return nil, err
 	}
@@ -2290,6 +2309,24 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 
 func (r *MemorySandboxRuntime) SyncKnownPools(context.Context, []string) error {
 	return nil
+}
+
+// ClearCache stops every running sandbox. There is no cache on disk to empty.
+func (r *MemorySandboxRuntime) ClearCache(context.Context) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var stopped []string
+	now := time.Now().UTC()
+	for sandboxID, sb := range r.sandboxes {
+		if sb.Status != StatusRunning {
+			continue
+		}
+		sb.Status = StatusStopped
+		sb.StoppedAt = &now
+		stopped = append(stopped, sandboxID)
+	}
+	sort.Strings(stopped)
+	return stopped, nil
 }
 
 func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {

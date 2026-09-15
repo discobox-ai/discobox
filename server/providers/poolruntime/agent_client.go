@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -75,6 +77,22 @@ func (p *poolAgentClient) SyncKnownPools(ctx context.Context, projectID string, 
 		return mapPoolClientError(err)
 	}
 	return nil
+}
+
+// ClearCache asks the pool agent to stop every running sandbox on the pool and
+// empty the pool's caches. The agent does all of it and answers once they are
+// empty, with the sandboxes it stopped.
+func (p *poolAgentClient) ClearCache(ctx context.Context, projectID string) ([]string, error) {
+	client, release, err := p.poolClient(sandbox.SandboxRef{ProjectID: projectID}, poolagentauth.ScopePoolCacheClear)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	res, err := client.PoolClearCache(ctx, poolclient.PoolClearCacheParams{ProjectId: projectID, PoolId: p.poolID})
+	if err != nil {
+		return nil, mapPoolClientError(err)
+	}
+	return res.StoppedSandboxIds, nil
 }
 
 func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
@@ -272,7 +290,51 @@ func newWorkerAgentClient(lease *transport.HTTPClientLease) (*poolclient.Client,
 	if strings.TrimSpace(lease.BaseURL) != "" {
 		baseURL = lease.BaseURL
 	}
-	return poolclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{lease: lease}, poolclient.WithClient(httpClient))
+	return poolclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{lease: lease}, poolclient.WithClient(contractClient{client: httpClient}))
+}
+
+// contractClient turns a pool-agent response the API contract cannot describe
+// into an error that says what it was.
+//
+// Every error the pool agent's own handlers return is application/problem+json.
+// Anything else in an error status came from outside them — above all the
+// router's plain-text 404 for a route the agent does not have, which is how an
+// agent older than the control plane answers an operation added since. The
+// generated client can only report that as a body it failed to decode, which
+// hides the status that says what happened.
+type contractClient struct {
+	client *http.Client
+}
+
+// maxUnexpectedBody bounds how much of a response outside the contract is kept
+// for the error: enough for a router's message, not a page of HTML.
+const maxUnexpectedBody = 512
+
+func (c contractClient) Do(req *http.Request) (*http.Response, error) {
+	resp, err := c.client.Do(req)
+	if err != nil || resp.StatusCode < http.StatusBadRequest {
+		return resp, err
+	}
+	if mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); mediaType == "application/problem+json" {
+		return resp, nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxUnexpectedBody))
+	return nil, &unexpectedPoolAgentResponse{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
+}
+
+// unexpectedPoolAgentResponse is an error status from the pool agent that none
+// of its handlers produced.
+type unexpectedPoolAgentResponse struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *unexpectedPoolAgentResponse) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("status %d", e.StatusCode)
+	}
+	return fmt.Sprintf("status %d: %s", e.StatusCode, e.Body)
 }
 
 // poolHarnessConfigSecrets forwards the harness's declared credentials. Only
@@ -609,6 +671,13 @@ func mapPoolClientError(err error) error {
 	var statusErr *poolclient.ErrorModelStatusCode
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
 		return sandbox.ErrNotFound
+	}
+	var unexpected *unexpectedPoolAgentResponse
+	if errors.As(err, &unexpected) {
+		if unexpected.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %w", sandbox.ErrPoolAgentUnsupported, unexpected)
+		}
+		return fmt.Errorf("pool-agent request failed: %w", unexpected)
 	}
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
 		// Two different conditions share this status, and only the type tells

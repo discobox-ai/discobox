@@ -71,6 +71,12 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, request AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error)
+	// ClearPoolCache invokes clear-pool-cache operation.
+	//
+	// Stop every sandbox on a pool and empty its caches.
+	//
+	// POST /projects/{projectId}/pools/{poolId}/clear-cache
+	ClearPoolCache(ctx context.Context, params ClearPoolCacheParams) (ClearPoolCacheRes, error)
 	// CommitHarnessConfigConfigure invokes commit-harness-config-configure operation.
 	//
 	// Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
@@ -1379,6 +1385,118 @@ func (c *Client) sendAttachSandboxExecOnce(ctx context.Context, request AttachSa
 
 	stage = "DecodeResponse"
 	result, err := decodeAttachSandboxExecOnceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ClearPoolCache invokes clear-pool-cache operation.
+//
+// Stop every sandbox on a pool and empty its caches.
+//
+// POST /projects/{projectId}/pools/{poolId}/clear-cache
+func (c *Client) ClearPoolCache(ctx context.Context, params ClearPoolCacheParams) (ClearPoolCacheRes, error) {
+	res, err := c.sendClearPoolCache(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendClearPoolCache(ctx context.Context, params ClearPoolCacheParams) (res ClearPoolCacheRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("clear-pool-cache"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/pools/{poolId}/clear-cache"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ClearPoolCacheOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/clear-cache"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeClearPoolCacheResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

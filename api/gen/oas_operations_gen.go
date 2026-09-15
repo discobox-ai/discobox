@@ -11,6 +11,7 @@ const (
 	AttachHarnessConfigConfigureOperation     OperationName = "AttachHarnessConfigConfigure"
 	AttachSandboxExecOperation                OperationName = "AttachSandboxExec"
 	AttachSandboxExecOnceOperation            OperationName = "AttachSandboxExecOnce"
+	ClearPoolCacheOperation                   OperationName = "ClearPoolCache"
 	CommitHarnessConfigConfigureOperation     OperationName = "CommitHarnessConfigConfigure"
 	CompleteSandboxApplyOperation             OperationName = "CompleteSandboxApply"
 	CompleteSandboxSourcePushOperation        OperationName = "CompleteSandboxSourcePush"

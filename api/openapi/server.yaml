@@ -2190,6 +2190,24 @@ components:
                     format: int64
                     type: integer
             type: object
+        ClearPoolCacheBody:
+            additionalProperties: false
+            description: The outcome of clearing a pool's caches (its sandbox cache, build cache, registry, proxy response cache, and unused images). The pool agent answers only once they are empty.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ClearPoolCacheBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                stoppedSandboxIds:
+                    description: Sandboxes that were running and were stopped so the caches could be cleared. Nothing is started again afterwards; a stopped sandbox starts on its next use.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - stoppedSandboxIds
+            type: object
         ListPoolsBody:
             additionalProperties: false
             properties:
@@ -6092,6 +6110,41 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Clear the project default pool
+            tags:
+                - Pools
+    /projects/{projectId}/pools/{poolId}/clear-cache:
+        post:
+            operationId: clear-pool-cache
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ClearPoolCacheBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Stop every sandbox on a pool and empty its caches
             tags:
                 - Pools
     /projects/{projectId}/pools/{poolId}/reconcile:

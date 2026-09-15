@@ -154,7 +154,7 @@ func activePool(id string) *model.Pool {
 func newTestRuntimeProvider(t *testing.T, projectID, poolID string) *testRuntimeProvider {
 	t.Helper()
 	runtime := sandboxruntime.NewMemorySandboxRuntime()
-	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, projectID, poolID)
+	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, projectID, poolID, poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite)
 	router, _ := poolagentserver.NewRouter(poolagentserver.Config{
 		Identity:              poolagentserver.Identity{ProjectID: projectID, PoolID: poolID},
 		Runtime:               runtime,

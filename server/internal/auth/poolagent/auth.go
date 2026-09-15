@@ -39,6 +39,9 @@ const (
 	// ScopeTCPConnect for datagrams (ADR 0109 §4).
 	ScopeUDPConnect = "udp:connect"
 	ScopePoolSync   = "pool:sync"
+	// ScopePoolCacheClear authorizes stopping every sandbox on a pool and
+	// emptying its cache.
+	ScopePoolCacheClear = "pool:cache-clear"
 	// ScopeStatusRead authorizes only the sandbox-agent status endpoint. It is
 	// the sole scope MintSandboxAgentStatusTokens ever mints, hardcoded there
 	// rather than accepted from the caller, so a pool agent can never obtain a

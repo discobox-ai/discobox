@@ -211,6 +211,11 @@ type PoolRuntime interface {
 	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, images []string, begin func(context.Context) error) error
 	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, images []string, begin func(context.Context) error) error
 	RemovePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
+	// ClearCache stops every running sandbox on the pool and empties the pool's
+	// caches, returning the sandboxes it stopped. The pool agent does the work
+	// and this answers once it is done; nothing is started again afterwards.
+	// An agent too old to have the operation is ErrPoolAgentUnsupported.
+	ClearCache(ctx context.Context, pool *model.Pool) ([]string, error)
 	// OpenConsole attaches to the pool host's administrative console: a root
 	// shell in the host's own namespaces, for operators debugging the backend
 	// itself. It deliberately does not go through the pool agent, because the

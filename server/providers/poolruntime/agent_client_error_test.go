@@ -1,8 +1,10 @@
 package poolruntime
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -55,5 +57,28 @@ func TestMapPoolClientErrorSeparatesTheTwoConflicts(t *testing.T) {
 func TestArchivedIsNotAlreadyExists(t *testing.T) {
 	if errors.Is(sandbox.ErrArchived, sandbox.ErrAlreadyExists) {
 		t.Fatal("ErrArchived matches ErrAlreadyExists; the create path would swallow a refused create")
+	}
+}
+
+// A pool agent older than the control plane answers an operation added since
+// with its router's plain-text 404. That is a statement about the agent, and
+// it must not read as the sandbox or pool not being found.
+func TestPoolAgentWithoutTheRouteIsUnsupported(t *testing.T) {
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(old.Close)
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	runtimeProvider.baseURL = old.URL
+	runtimeProvider.client = old.Client()
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	_, err := provider.ClearCache(context.Background(), activePool("pool-1"))
+	if !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		t.Fatalf("clear cache against an agent without the route = %v, want ErrPoolAgentUnsupported", err)
+	}
+	if errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatal("an agent without the route read as a missing sandbox")
 	}
 }

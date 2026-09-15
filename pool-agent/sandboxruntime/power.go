@@ -21,6 +21,11 @@ import (
 // sandbox produce one start, and an explicit stop cannot interleave with an
 // auto-start half way through. The lock is per sandbox, never global, so
 // unrelated sandboxes do not queue behind each other.
+//
+// Every operation that can start a container also enters the pool's start gate
+// before taking that lock, which is how a cache clear keeps the pool's
+// sandboxes down while it works (see clearcache.go). startLocked must only be
+// reached from inside the gate.
 
 // sandboxLock returns the mutex guarding power operations for one sandbox.
 func (r *DockerSandboxRuntime) sandboxLock(sandboxID string) *sync.Mutex {
@@ -30,6 +35,11 @@ func (r *DockerSandboxRuntime) sandboxLock(sandboxID string) *sync.Mutex {
 }
 
 func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
+	leave, err := r.starts.enter(ctx)
+	if err != nil {
+		return err
+	}
+	defer leave()
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -44,6 +54,11 @@ func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string
 }
 
 func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
+	leave, err := r.starts.enter(ctx)
+	if err != nil {
+		return err
+	}
+	defer leave()
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -71,9 +86,22 @@ func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 	//
 	// The wait is outside the lock: the create it is waiting for takes the same
 	// lock, so holding it here would wait for something it was blocking.
-	if err := r.waitForSandboxContainer(ctx, sandboxID); err != nil {
+	current, err := r.waitForSandboxContainer(ctx, sandboxID)
+	if err != nil {
 		return err
 	}
+	// A sandbox that is already up needs no start, so its traffic does not
+	// wait on the start gate while a cache clear holds it. A clear stopping it
+	// a moment after this look is the same as any stop landing just after a
+	// request, which the proxy already has to answer.
+	if current != nil && current.Status == StatusRunning {
+		return nil
+	}
+	leave, err := r.starts.enter(ctx)
+	if err != nil {
+		return err
+	}
+	defer leave()
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -110,24 +138,30 @@ const (
 // autoStart wraps. An archived sandbox is not waited on either — its container
 // is gone by intent (ADR 0022 §5) — and is left to the archive answer its
 // caller gives.
-func (r *DockerSandboxRuntime) waitForSandboxContainer(ctx context.Context, sandboxID string) error {
+//
+// It returns the sandbox as last read, or nil when it stopped waiting without
+// one.
+func (r *DockerSandboxRuntime) waitForSandboxContainer(ctx context.Context, sandboxID string) (*Sandbox, error) {
 	deadline := time.Now().Add(sandboxContainerWaitTimeout)
 	for {
-		_, err := r.GetSandbox(ctx, sandboxID)
-		if err == nil || !errors.Is(err, ErrNotFound) {
-			return err
+		sb, err := r.GetSandbox(ctx, sandboxID)
+		if err == nil {
+			return sb, nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
 		}
 		if r.SandboxIsArchived(sandboxID) || !r.hostsSandbox(sandboxID) {
-			return nil
+			return nil, nil
 		}
 		if !time.Now().Before(deadline) {
 			// The caller reports the container that never came back; there is
 			// nothing more specific this tier can say about it.
-			return err
+			return nil, err
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(sandboxContainerPollInterval):
 		}
 	}

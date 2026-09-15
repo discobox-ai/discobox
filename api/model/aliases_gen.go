@@ -9,6 +9,7 @@ type AgentCredentialVerdict = apigen.AgentCredentialVerdict
 type AppliedSourceCommit = apigen.AppliedSourceCommit
 type ApproveSecretRequestBody = apigen.ApproveSecretRequestBody
 type AssignSandboxHarnessSecretsBody = apigen.AssignSandboxHarnessSecretsBody
+type ClearPoolCacheBody = apigen.ClearPoolCacheBody
 type CompleteSandboxApplyBody = apigen.CompleteSandboxApplyBody
 type CompleteSandboxSourcePushBody = apigen.CompleteSandboxSourcePushBody
 type CreateHarnessConfigBody = apigen.CreateHarnessConfigBody

@@ -16,7 +16,7 @@ flowchart LR
     provsvc[providers.Service] -- SchedulePoolReconciliation --> cp
     svc --> store[(store)]
     svc -- "SubmitPoolDelete / SchedulePoolReconciliation /<br/>CreateSandboxAgentToken" --> cp
-    svc -- "OpenConsole / OpenLogs / BuildGuestImage" --> drivers
+    svc -- "OpenConsole / OpenLogs / BuildGuestImage / ClearCache" --> drivers
     cp --> store
     cp --> engine[(reconcile engine)]
     engine -- pool --> rec[PoolReconciler]
@@ -47,6 +47,13 @@ flowchart LR
   (`server/providers/DESIGN.md`). A backend with no pool runtime, no host log
   (`ErrPoolLogsUnsupported`), or no guest image
   (`ErrGuestImageBuildUnsupported`) answers 501.
+  `ClearPoolCache` resolves the pool's runtime the same way and calls
+  `PoolRuntime.ClearCache`, which reaches the pool agent and waits for it to
+  stop the pool's running sandboxes and empty the pool's caches. The agent owns
+  the whole operation (`pool-agent/DESIGN.md`); nothing here persists or
+  tracks it, and no pool status field records it. An agent too old to have the
+  operation (`sandbox.ErrPoolAgentUnsupported`) answers 409 saying so, rather
+  than the 404 that reads as a missing pool.
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
   (`RegisterPool`, authenticated by the token itself), heartbeats
   (`UpdatePoolStatus`), sandbox-state and sandbox provisioning-progress

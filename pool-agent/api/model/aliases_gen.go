@@ -14,6 +14,7 @@ type GitSourceWorkspace = poolagentapi.GitSourceWorkspace
 type HarnessConfigFile = poolagentapi.HarnessConfigFile
 type HarnessSecret = poolagentapi.HarnessSecret
 type HarnessVolume = poolagentapi.HarnessVolume
+type PoolClearCacheResponse = poolagentapi.PoolClearCacheResponse
 type PoolSandboxCreateRequest = poolagentapi.PoolSandboxCreateRequest
 type PoolSandboxInstance = poolagentapi.PoolSandboxInstance
 type PoolSandboxListResponse = poolagentapi.PoolSandboxListResponse

@@ -125,6 +125,23 @@ func (s *sandboxService) PoolSync(ctx context.Context, req *workerapimodel.PoolS
 	return nil
 }
 
+// PoolClearCache answers only once the caches are empty, like archive and
+// delete: the caller is waiting to be told the pool's caches are gone, and
+// acceptance would leave it nothing to wait on.
+func (s *sandboxService) PoolClearCache(ctx context.Context, params workerapi.PoolClearCacheParams) (*workerapimodel.PoolClearCacheResponse, error) {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return nil, err
+	}
+	stopped, err := s.runtime.ClearCache(ctx)
+	if err != nil {
+		return nil, mapRuntimeError(err)
+	}
+	if stopped == nil {
+		stopped = []string{}
+	}
+	return &workerapimodel.PoolClearCacheResponse{StoppedSandboxIds: stopped}, nil
+}
+
 // PoolStartSandbox, PoolStopSandbox, and PoolRestartSandbox accept an
 // instruction and answer with acceptance alone. The resulting state — starting,
 // then running or stopped — is published on the agent's own state-reporting

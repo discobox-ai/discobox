@@ -520,9 +520,20 @@ plane.
 The pool-agent HTTP server owns sandbox runtime operations inside one pool.
 The control plane still owns persistence, authorization, events, and desired
 state; calling the pool API must be done from reconciliation or provider
-operations after intent has already been accepted and stored. The canonical
+operations after intent has already been accepted and stored. The exception is
+operator maintenance the pool agent owns end to end and answers synchronously,
+which has no intent to store: `cache/clear` is forwarded straight from the
+API request and the caller waits for the agent's answer. The canonical
 contract is `pool-agent/api/openapi/pool.yaml`; operation endpoints are
 synchronous from the pool's perspective.
+
+Every error the agent's handlers return is `application/problem+json`, and
+`mapPoolClientError` classifies it by status and RFC 7807 type (`archived`).
+An error status in any other form came from outside the handlers — above all
+the router's plain-text 404 for a route an older agent does not have — and `contractClient` reports it with its status instead of
+leaving the generated client to fail decoding it. A 404 of that kind is
+`sandbox.ErrPoolAgentUnsupported`, never `ErrNotFound`: the agent is behind,
+not the resource missing.
 
 ## Control Plane Reachability
 

@@ -200,6 +200,45 @@ func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) erro
 	return nil
 }
 
+// ClearPoolCache has the pool's agent stop every running sandbox on the pool and
+// empty the pool's caches, and returns the sandboxes it stopped.
+//
+// The agent owns the operation: it knows which sandboxes use the caches and
+// where they are, it keeps sandboxes from starting while it works, and it
+// answers only once they are empty. Nothing here tracks or persists the
+// clear, and nothing is started again afterwards — a stopped sandbox starts on
+// its next use.
+func (s *Service) ClearPoolCache(ctx context.Context, projectID, poolID string) ([]string, error) {
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "pool not found")
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "pool provider instance not found")
+	}
+	if s.providers == nil {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
+	}
+	instance, err := s.providers.ResolveInstance(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	runtime, ok := instance.(sandbox.PoolRuntime)
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotImplemented, fmt.Sprintf("provider %q hosts no pool runtime with a cache to clear", provider.Type))
+	}
+	stopped, err := runtime.ClearCache(ctx, pool)
+	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		// A pool whose agent predates the operation. The route-level 404 it
+		// answers with reads as "not found" otherwise, about a pool that is
+		// plainly there.
+		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+			"pool %s is running a pool agent older than this server, which cannot clear its caches; the pool moves onto the current agent when it is next reconciled, after which this will work", pool.ID))
+	}
+	return stopped, err
+}
+
 // OpenPoolConsole attaches to the pool host's administrative console.
 //
 // It resolves the pool's provider and asks it for the console directly. It
