@@ -1865,9 +1865,8 @@ see the launcher's design doc.
 A first run reports server downloads and startup on this row. Launch-lock waits,
 server preparation, image checks (including running the new binary to list its
 images), replacement shutdown, and process launch report before blocking.
-Image downloads are labeled one-time setup per image version; pool preload is
-labeled one-time setup per pool and image version, since a new pool needs its
-own imports. Once a sandbox
+Image downloads and pool preload are labeled one-time setup per image version.
+Once a sandbox
 is requested, its normal pool wait reports `preloading images` from pool
 provisioning progress, including image bytes. The launcher uses the same wait
 status. There is no separate first-run staging wait or initialization feed.

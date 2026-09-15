@@ -23,7 +23,7 @@ func TestPoolProvisionStatusNamesTheDriversWork(t *testing.T) {
 		phase apiclientgen.PoolProvisionPhase
 		want  Step
 	}{
-		{apiclientgen.PoolProvisionPhasePreloadingImages, "preloading images (one-time setup per pool and image version)"},
+		{apiclientgen.PoolProvisionPhasePreloadingImages, "preloading images (one-time setup per image version)"},
 		{apiclientgen.PoolProvisionPhaseFetchingVMImage, "fetching the VM image"},
 		{apiclientgen.PoolProvisionPhaseStartingVM, "starting the VM"},
 		{apiclientgen.PoolProvisionPhaseWaitingForDocker, "waiting for Docker in the VM"},
@@ -116,7 +116,7 @@ func TestPoolPreloadStatusReportsBytesWithoutClaimingAPull(t *testing.T) {
 		}),
 	}, time.Now())
 	got := string(PoolProvisionStatus(pool))
-	for _, want := range []string{"preloading images (one-time setup per pool and image version)", "discobox-harness-shell:v1", "1.0 MiB", "2.0 MiB"} {
+	for _, want := range []string{"preloading images (one-time setup per image version)", "discobox-harness-shell:v1", "1.0 MiB", "2.0 MiB"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status %q lacks %q", got, want)
 		}
