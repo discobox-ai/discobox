@@ -145,7 +145,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md) | The judge is handed facts and given no tools | Accepted |
 | [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md) | A credential is not issued without a verdict on record | Accepted |
 | [0092](0092-the-cli-has-no-unjudged-way-to-take-a-value.md) | The CLI has no unjudged way to take a value | Accepted |
-| [0093](0093-a-local-sources-origin-is-its-git-directory.md) | A local source's origin is its git directory, not its working tree | Proposed (supersedes [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) §1's bind source) |
+| [0093](0093-a-local-sources-origin-is-its-git-directory.md) | A local source's origin is its git directory, not its working tree | Accepted (supersedes [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) §1's bind source) |
 | [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md) | The pool cache is partitioned by the sandbox user's uid | Accepted (amends [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) §1's cache backing) |
 | [0095](0095-an-enrolled-iroh-id-is-a-managed-resource.md) | An enrolled iroh ID is a managed resource, and the file is the way back in | Accepted (supersedes [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §5's file-only enrollment; §2's spelling and the resource's name amended by [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md)) |
 | [0096](0096-the-server-reads-one-schema-checked-configuration-file.md) | The server reads one schema-checked configuration file, and the environment still wins | Accepted |

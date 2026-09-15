@@ -1,6 +1,6 @@
 # 0093 — A local source's origin is its git directory, not its working tree
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-03
 
 ## Context
@@ -57,11 +57,24 @@ source (`gitSourceCloneURL`/`hostMountedLocalDirectory`) and the sandbox mount
 (`sourceOriginHostPath`/`originMounts`) address the same directory, as they do
 today.
 
-This buys an invariant worth stating on its own, because it is what makes the
-bind reviewable rather than merely narrower: **the origin exposes nothing the
-sandbox does not already have in its own clone.** More history and more
-branches, all of it committed. A file that was never committed is not reachable
-from a sandbox by any path.
+What this buys is worth stating exactly, because a bind is reviewable only if
+the claim made about it is true: **the working tree is no longer bound, so a
+file the developer only ever ignored is unreachable from a sandbox.** That is
+the `.env` this ADR opens with, and removing it is the whole of the decision.
+
+What stays reachable is the Git directory itself, which is more than the
+sandbox's own clone holds. Every object in it, reachable from a ref or not —
+including the blob of a file `git add`ed once and then reset, which survives
+until a `gc` that may never run — plus `index`, `refs/stash` and the reflogs,
+which hold uncommitted work by construction, and `config`, `hooks/` and
+`info/exclude`, which hold none of the developer's files but whose remote URLs
+routinely carry a token. So: a secret that was only ever ignored is out of
+reach; one that was ever staged, stashed, or written into `.git/config` is not.
+
+That residue is not narrowed further here. A bind carries a subtree, and every
+one of those paths is inside the directory git needs, so the only thing that
+removes them is dropping the bind entirely — the last alternative below, which
+this ADR deliberately leaves open rather than pre-empting.
 
 ### 2. A repository whose `.git` is not a directory is delivered by push
 
@@ -121,14 +134,18 @@ happens to be able to.
 **Drop the bind and deliver every local source by push.** Rejected here, not
 dismissed. It is the strictly safer answer and it remains available; what it
 costs is ADR 0026's live origin, which is the reason the bind exists at all.
-Bounding the bind's exposure to committed content is the smaller change and
-leaves that decision open rather than pre-empting it.
+Taking the working tree out of the bind is the smaller change, and it leaves
+that decision open rather than pre-empting it: what §1 leaves reachable is the
+argument for making it.
 
 ## Consequences
 
-A sandbox can no longer read a developer's uncommitted files through its origin.
-That is the point, and it is a behavior change for anyone relying on it —
-knowingly or not.
+A sandbox can no longer read a developer's working tree through its origin, and
+with it the ignored files that are the reason this ADR exists. That is the
+point, and it is a behavior change for anyone relying on it — knowingly or not.
+It is not the same as "no uncommitted content": §1 says what the Git directory
+still carries, and the in-sandbox skill has to describe the bind that way rather
+than as history alone.
 
 Linked worktrees and submodule checkouts become push-delivered: slower on first
 create, and without a live origin to fetch from afterwards.
