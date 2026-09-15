@@ -8,6 +8,7 @@ SVGs here, not hand-edited.
 | File | What it is |
 | --- | --- |
 | `logo-purple.svg` | the mark alone, `#9e4aa7`. The one the terminal captures are rendered from. |
+| `logo-purple.png` | a 993×1024 transparent rasterization of `logo-purple.svg` |
 | `logo-black.svg`, `logo-white.svg` | the same mark, single-color, for light and dark grounds |
 | `wordmark-gradient.svg` | mark plus wordmark: the mark in `#9e4aa7`, the letters in a gradient |
 | `wordmark-black.svg`, `wordmark-white.svg` | mark plus wordmark: the mark in `#9e4aa7`, the letters black or white |
