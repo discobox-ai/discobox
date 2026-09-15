@@ -178,7 +178,7 @@ engine's to catch, by its Docker daemon not answering a repair.
 Sizing comes from the host, not from constants: every vCPU, half the memory
 (`vmsize.Host`, the rule every local VM provider shares, clamped by
 `vzvm.Clamp` to the range Virtualization.framework reports), a 100 GiB data
-disk, and a 32 GiB cache disk. A pool's own size or the provider's
+disk, and a 50 GiB cache disk. A pool's own size or the provider's
 `vcpus`/`memoryMiB` narrows the vCPUs and memory, and a running VM whose size
 no longer matches is replaced (`server/providers/DESIGN.md`, Local VM Sizing).
 None of it is a reservation — vCPUs are shared with macOS by the scheduler, the

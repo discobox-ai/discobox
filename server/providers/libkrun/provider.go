@@ -39,7 +39,7 @@ const (
 	// pool restart — images, layers, volumes, containers — so it is sized for a
 	// real workload rather than for the first sandbox.
 	defaultDataDiskGiB  = 100
-	defaultCacheDiskGiB = 32
+	defaultCacheDiskGiB = 50
 
 	storageNamespace = "libkrun"
 	// Preserve the original default directory namespace so writable disks

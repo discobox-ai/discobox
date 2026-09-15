@@ -126,7 +126,7 @@ Disks are attached in a fixed order the guest depends on — root, data, cache
 become `/dev/vda`, `/dev/vdb`, `/dev/vdc` — and all three are raw.
 
 Sizing comes from the host: every vCPU and half the memory
-(`krunvm.DefaultHostResources`), a 100 GiB data disk, a 32 GiB cache disk. None
+(`krunvm.DefaultHostResources`), a 100 GiB data disk, a 50 GiB cache disk. None
 of it is a reservation — the disks are sparse and the guest has a balloon. Disk
 sizes are ceilings a pool can be given more of: `ensureSparseImage` grows an
 existing image when the configured size is raised and never shrinks one, the
