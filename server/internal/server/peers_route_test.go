@@ -22,10 +22,7 @@ func TestPeerRoutesEnrollListAndRevoke(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
-	router, _, _, _, err := NewApp(ctx, db.Write, db.Read)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
+	router := newTestApp(ctx, t, db)
 
 	var key [32]byte
 	key[0] = 0xaa

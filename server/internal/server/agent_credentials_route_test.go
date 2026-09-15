@@ -33,10 +33,7 @@ func TestAgentCredentialRoutesRequireTheBrokerScope(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
-	router, _, _, _, err := NewApp(ctx, db.Write, db.Read)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
+	router := newTestApp(ctx, t, db)
 	projectID, privateKey := seedCredentialRoutePool(ctx, t, db.Write, router)
 
 	broker := signPoolAssertion(t, projectID, routeTestPoolID, privateKey, poolauth.ScopeCredentialBroker)
@@ -80,10 +77,7 @@ func TestAgentCredentialRoutesRefuseASandboxOnAnotherPool(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
-	router, _, _, _, err := NewApp(ctx, db.Write, db.Read)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
+	router := newTestApp(ctx, t, db)
 	projectID, _ := seedCredentialRoutePool(ctx, t, db.Write, router)
 
 	// A second pool, with its own sandbox, in the same project.
@@ -110,10 +104,7 @@ func TestAgentCredentialRequestAndPollOverHTTP(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
-	router, _, _, _, err := NewApp(ctx, db.Write, db.Read)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
+	router := newTestApp(ctx, t, db)
 	projectID, privateKey := seedCredentialRoutePool(ctx, t, db.Write, router)
 	token := signPoolAssertion(t, projectID, routeTestPoolID, privateKey, poolauth.ScopeCredentialBroker)
 

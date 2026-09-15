@@ -29,6 +29,9 @@ type LocalDriver struct {
 
 	watcherMu     sync.Mutex
 	watcherCancel context.CancelFunc
+	// watchers tracks the loops startBackgroundWatchers launched, so Close
+	// returns only once they are off the daemon client and off the database.
+	watchers sync.WaitGroup
 }
 
 // NewLocalDriver creates a local Docker driver and verifies API connectivity.
@@ -71,6 +74,10 @@ func (d *LocalDriver) Close() error {
 	if cancel != nil {
 		cancel()
 	}
+	// The watchers query the store and the daemon on every pass, so closing
+	// the client or letting the caller tear down its database while one is
+	// mid-pass would race it.
+	d.watchers.Wait()
 	if d.client == nil {
 		return nil
 	}

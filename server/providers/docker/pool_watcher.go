@@ -27,7 +27,8 @@ import (
 //
 // Everything runs in the background so provider initialization never blocks on,
 // or fails because of, Docker connectivity, and everything shares one cancel so
-// closing the local driver stops all of it.
+// closing the local driver stops all of it — and, because both loops are
+// tracked, Close returns only once they have stopped.
 func startBackgroundWatchers(driver *LocalDriver, engine *dockerworker.Engine, manager poolruntime.PoolManager, provider *model.SandboxProviderInstance) error {
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
@@ -48,8 +49,15 @@ func startBackgroundWatchers(driver *LocalDriver, engine *dockerworker.Engine, m
 	}
 	driver.watcherCancel = cancel
 	driver.watcherMu.Unlock()
-	go watcher.run(watchCtx)
-	go reclaimImages(watchCtx, driver.client, engine, provider.ID)
+	driver.watchers.Add(2)
+	go func() {
+		defer driver.watchers.Done()
+		watcher.run(watchCtx)
+	}()
+	go func() {
+		defer driver.watchers.Done()
+		reclaimImages(watchCtx, driver.client, engine, provider.ID)
+	}()
 	return nil
 }
 

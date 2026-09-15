@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -55,6 +56,27 @@ func newAppTestDB(ctx context.Context, t *testing.T) *database.DB {
 		t.Fatalf("migrate database: %v", err)
 	}
 	return db
+}
+
+// newTestApp starts a real app on db and stops it when the test ends. NewApp
+// starts background services — the reconcile engine, the provider manager's
+// Docker watchers — and they outlive the test unless stopped, which leaves them
+// querying a closed database and recreating the SQLite file inside the TempDir
+// Go is deleting.
+func newTestApp(ctx context.Context, t *testing.T, db *database.DB) *chi.Mux {
+	t.Helper()
+	router, _, _, stop, err := NewApp(ctx, db.Write, db.Read)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := stop(stopCtx); err != nil {
+			t.Errorf("stop services: %v", err)
+		}
+	})
+	return router
 }
 
 func TestNewOpenAPIRouterServesOpenAPIAndScalarDocs(t *testing.T) {
@@ -713,10 +735,7 @@ func TestNewAppStartsWithDefaults(t *testing.T) {
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 
-	router, _, _, _, err := NewApp(ctx, db.Write, db.Read)
-	if err != nil {
-		t.Fatalf("new database router: %v", err)
-	}
+	router := newTestApp(ctx, t, db)
 
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects", nil))
@@ -743,10 +762,7 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 
-	router, _, _, _, err := NewApp(ctx, db.Write, db.Read)
-	if err != nil {
-		t.Fatalf("new database router: %v", err)
-	}
+	router := newTestApp(ctx, t, db)
 
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects/default", nil))
