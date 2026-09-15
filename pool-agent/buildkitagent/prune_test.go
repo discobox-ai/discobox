@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -25,6 +26,11 @@ func (p *pruneRecorder) Prune(req *controlapi.PruneRequest, stream grpc.ServerSt
 // the operator wants the build cache gone, and a partial prune leaves exactly
 // the records they were trying to be rid of.
 func TestPruneBuildCacheAsksBuildkitdForEverything(t *testing.T) {
+	// PruneBuildCache dials a Linux guest path as a unix:// target; a Windows
+	// temp directory's drive letter reads as a port there and never parses.
+	if runtime.GOOS == "windows" {
+		t.Skip("buildkitd's socket is a guest path; the pool agent runs in the Linux guest")
+	}
 	root, err := os.MkdirTemp("", "bk")
 	if err != nil {
 		t.Fatal(err)
