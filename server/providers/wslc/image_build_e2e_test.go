@@ -78,7 +78,7 @@ func TestDevelopmentImageBuildE2E(t *testing.T) {
 	}
 
 	started := time.Now()
-	if err := sync.Ensure(ctx, lease.Client); err != nil {
+	if err := sync.Ensure(ctx, lease.Client, nil, poolID); err != nil {
 		t.Fatalf("Ensure (build-mode): %v", err)
 	}
 	t.Logf("built %s in the guest in %s", reference, time.Since(started))
@@ -94,7 +94,7 @@ func TestDevelopmentImageBuildE2E(t *testing.T) {
 	// A second Ensure must be a no-op: the reference already exists, so nothing
 	// rebuilds and — critically — no source Docker daemon is ever opened.
 	secondPass := time.Now()
-	if err := sync.Ensure(ctx, lease.Client); err != nil {
+	if err := sync.Ensure(ctx, lease.Client, nil, poolID); err != nil {
 		t.Fatalf("second Ensure should be a no-op: %v", err)
 	}
 	if elapsed := time.Since(secondPass); elapsed > time.Minute {
