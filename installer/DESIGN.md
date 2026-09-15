@@ -66,6 +66,15 @@ flowchart TD
   with — would make `install.ps1` unreadable to half its Windows users.
   `install.sh` is POSIX sh with BSD-compatible `sed` and `awk`, since macOS runs
   it; `install.ps1` runs under 5.1 and 7.
+- `discobox admin uninstall` removes what a script leaves behind that it can
+  recognize by name (`installerLeftovers` and `tempDirLeftovers` in
+  `cli/internal/cli/uninstall.go`): install.ps1's replaced `discobox.exe.old`
+  and `discobox.exe.<guid>.old`, either script's staged copy, and install.ps1's
+  `discobox-install-<guid>` directory. It looks beside the running command, in
+  `DISCOBOX_INSTALL_DIR`, and in the default install directories. A
+  `--dir`/`-InstallDir` it is not running from is not found, and install.sh's
+  `mktemp -d` directory has no name to find it by. A script that leaves
+  something new under a recognizable name adds it there.
 - A handed-over installer that is not stamped for the tag it was asked for
   stops (`DISCOBOX_INSTALL_DELEGATED`) rather than handing over again.
 - The API is parsed without jq, relying on each release carrying one

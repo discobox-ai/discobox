@@ -222,9 +222,6 @@ func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath)
 	if edits.none() {
 		return includeEdits{}, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
-		return includeEdits{}, fmt.Errorf("create SSH directory: %w", err)
-	}
 	body := cleaned
 	if edits.added {
 		body = "Include " + sshConfigPath(managed.client) + "\n"
@@ -232,11 +229,23 @@ func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath)
 			body += "\n" + cleaned
 		}
 	}
+	if err := t.writeUserConfig(ctx, body); err != nil {
+		return includeEdits{}, err
+	}
+	return edits, nil
+}
+
+// writeUserConfig replaces the target ssh's config with body.
+func (t sshTarget) writeUserConfig(ctx context.Context, body string) error {
+	userConfig := t.userConfig.local
+	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
+		return fmt.Errorf("create SSH directory: %w", err)
+	}
 	// Written through a temp file in the same directory so an interrupted run
 	// cannot leave the user with a truncated ssh_config.
 	tmp, err := os.CreateTemp(filepath.Dir(userConfig), ".discobox-ssh-config-*")
 	if err != nil {
-		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
+		return fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	defer os.Remove(tmp.Name())
 	// Chmod is the whole story on Unix and none of it on Windows, where the
@@ -248,23 +257,23 @@ func (t sshTarget) ensureUserConfigInclude(ctx context.Context, managed sshPath)
 	// lands in the user's ssh_config is already a file ssh will read.
 	if err := tmp.Chmod(0o600); err != nil && !t.acrossWSL() {
 		_ = tmp.Close()
-		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
+		return fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := t.restrict(ctx, t.join(t.dir(t.userConfig), filepath.Base(tmp.Name()))); err != nil {
 		_ = tmp.Close()
-		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
+		return fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if _, err := tmp.WriteString(body); err != nil {
 		_ = tmp.Close()
-		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
+		return fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
+		return fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := os.Rename(tmp.Name(), userConfig); err != nil {
-		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
+		return fmt.Errorf("write %s: %w", userConfig, err)
 	}
-	return edits, nil
+	return nil
 }
 
 // normalizeManagedIncludes brings the Include lines this CLI owns into the

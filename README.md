@@ -147,6 +147,12 @@ security boundary against a compromised agent.
 See [discobox.ai](https://discobox.ai) for the full overview and
 [architecture](https://discobox.ai/architecture).
 
+## Uninstalling
+
+To remove Discobox's data, downloaded servers and images, and configuration,
+run `discobox admin uninstall`. It lists what it will delete and asks first, and
+leaves the `discobox` command for your package manager to remove.
+
 ## License
 
 See [LICENSE](LICENSE).

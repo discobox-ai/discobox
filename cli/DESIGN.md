@@ -309,6 +309,49 @@ unwritable or corrupt file costs the convenience and never the command.
   under it, and a prompt past the cap is cut on a rune boundary — a state file
   is not where a pasted log belongs.
 
+## Uninstall (`discobox admin uninstall`)
+
+`internal/cli/uninstall.go` removes what Discobox keeps on this machine except
+the discobox command: `<discobox state>` (CLI state, staged servers, images),
+the server's data, config, cache and state directories (from their defaults and
+the `DISCOBOX_*_DIR` variables), the VM providers' `<XDG data>/discobox`,
+`<XDG config>/discobox` (where `server.yaml`, `servers.json` and `host-id` are
+whatever `DISCOBOX_CONFIG_DIR` says), the tool configuration directory, the
+runtime directory holding the socket, the managed `Include` lines in this
+machine's `~/.ssh/config`, what `install.sh` and `install.ps1` leave beside the
+command (`installerLeftovers`: a replaced `discobox.exe.old`, an interrupted
+run's staged copy), and this user's Discobox files in the temporary directory
+(`tempDirLeftovers`).
+
+- **Plan, then ask, then act.** `planUninstall` changes nothing; what it lists
+  is exactly what is removed. The answer is a `y`/`yes` line on stdin, with no
+  flag to skip it; no answer is an error.
+- **Locations fold.** Overlapping locations (on Linux the CLI's state root is
+  the server's state directory) collapse into the outermost one that exists.
+- **Some locations are kept, never trimmed.** One that holds this executable,
+  or that is or holds home, a platform base directory, the temp or runtime
+  directory, or the working directory. A directory an environment variable
+  names is kept unless its own name contains `discobox`: a variable can point
+  anywhere, `DISCOBOX_STATE_DIR=.` in a project's `.envrc` included.
+- **A running local server stops first.** The default endpoint, and `--server`
+  when it is local, are probed, and each one that answers is asked to shut
+  down. Not answering is not stopped: a server closes its listeners, then
+  drains providers and closes its database, and releases `<data>/server.lock`
+  last. That lock is waited for before anything is deleted, and a lock still
+  held at the deadline ends the uninstall with nothing deleted.
+- **A server can come back.** An editor's ProxyCommand or an open launcher can
+  autolaunch one mid-run, and nothing prevents that. The endpoints are probed
+  again afterwards, and a server that answers fails the command.
+- **Not seen, not deleted:** directories a `server.yaml` or
+  `.discobox-server.env` relocates, provider-configured disk directories, the
+  file `DISCOBOX_CONFIG_FILE` names (the user's own, anywhere), and Docker's
+  containers, volumes and images. The help says so.
+- **Only this machine's ssh.** On WSL the Windows side's managed files sit
+  beside a Windows install's state, so they are left alone. An Include is
+  removed only when the file it names is being removed or is already gone.
+- The root's pre-run hook is skipped, as `version` skips it: a configuration
+  that no longer parses must not block removing it.
+
 ## Many Servers (ADR 0116)
 
 A client has one **primary** server — `--server`, `DISCOBOX_SERVER`, or the
@@ -620,8 +663,8 @@ so where a server's output lives does not depend on whether this machine had
 Advanced configuration and low-level resource commands are grouped beneath the
 visible `discobox admin` command (`internal/cli/admin.go`): `project`, `box`,
 `terminal`, `exec`, `services`, `provider`, `pool`, `job`, `harnesses`,
-`hooks`, `server`, `remote`, `peer`, `ssh-key`, `ssh-config` and `ssh-proxy` are
-not root commands.
+`hooks`, `server`, `remote`, `peer`, `ssh-key`, `ssh-config`, `ssh-proxy` and
+`uninstall` are not root commands.
 
 `admin server` runs the API server process; `admin remote` is the registry of
 servers this client lists discoboxes from (ADR 0116 §3, spelled by ADR 0119).

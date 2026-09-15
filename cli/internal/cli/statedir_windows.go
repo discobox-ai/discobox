@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,17 @@ func stateHome() string {
 	}
 	return ""
 }
+
+// discoboxRuntimeDir is empty: a Windows server listens on a named pipe, so
+// there is no socket directory. Its launch lock is in the temporary directory,
+// which tempDirLeftovers looks through; wslc falls back to the temporary
+// directory too, but only when LOCALAPPDATA is unset, which it never is for a
+// Windows user.
+func discoboxRuntimeDir() string { return "" }
+
+// ownedByThisUser is true: the temporary directory is in the user's own
+// profile on Windows.
+func ownedByThisUser(fs.FileInfo) bool { return true }
 
 // restrictToUser replaces everything path inherited with an explicit list: this
 // user, SYSTEM, and Administrators. Nobody else, and nothing from the parent.

@@ -24,5 +24,6 @@ func (a *App) newAdminCommand() *cobra.Command {
 	cmd.AddCommand(a.newSSHProxyCommand())
 	cmd.AddCommand(a.newPeerCommand())
 	cmd.AddCommand(a.newIrohAliasCommands()...)
+	cmd.AddCommand(a.newUninstallCommand())
 	return cmd
 }
