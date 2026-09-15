@@ -153,6 +153,11 @@ To remove Discobox's data, downloaded servers and images, and configuration,
 run `discobox admin uninstall`. It lists what it will delete and asks first, and
 leaves the `discobox` command for your package manager to remove.
 
+## Community
+
+Ask questions, share what you are building, and follow development on
+[Discord](https://discord.gg/BSFr7Fa7f2).
+
 ## License
 
 See [LICENSE](LICENSE).
