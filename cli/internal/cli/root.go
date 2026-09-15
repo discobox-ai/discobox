@@ -660,6 +660,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		// whose server is already running, or a development build with no
 		// server to download, must not pay for that to find out.
 		Command: func(ctx context.Context) (endpoint.Command, error) {
+			progress.set("Preparing the local server")
 			path, err := a.resolveServer(ctx, func(report serverstage.Progress) {
 				progress.set(serverStageText(report))
 			})
@@ -703,6 +704,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 // of this, and a registry that is briefly down must not stop a server from
 // starting. So it is said, once, on a line that stays, and the launch goes on.
 func (a *App) stageServerImages(ctx context.Context, progress *statusLine, server string) {
+	progress.set("Checking images for the local server")
 	resolver := a.serverResolver(nil)
 	resolver.onImageProgress = func(report imagecache.Progress) {
 		progress.set(imagesStageText(report))

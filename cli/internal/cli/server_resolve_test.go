@@ -267,9 +267,9 @@ func TestImagesStageText(t *testing.T) {
 		want   string
 	}{
 		{imagecache.Progress{Image: "ghcr.io/discobox-ai/discobox-harness-codex:v1", Index: 2, Images: 5, Total: 1024, Current: 512},
-			"Downloading images (2 of 5): discobox-harness-codex:v1 — 512 B of 1.0 KiB"},
+			"Downloading images (one-time setup per image version) (2 of 5): discobox-harness-codex:v1 — 512 B of 1.0 KiB"},
 		// Before its manifests are read, an image has no total to count toward.
-		{imagecache.Progress{Image: "ghcr.io/x/a:v1", Index: 1, Images: 1}, "Downloading images (1 of 1): a:v1"},
+		{imagecache.Progress{Image: "ghcr.io/x/a:v1", Index: 1, Images: 1}, "Downloading images (one-time setup per image version) (1 of 1): a:v1"},
 		{imagecache.Progress{Images: 5, Done: true}, "Images downloaded"},
 	}
 	for _, test := range tests {

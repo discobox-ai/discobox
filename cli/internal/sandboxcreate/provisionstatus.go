@@ -232,7 +232,7 @@ func PoolProvisionStatus(pool *apimodel.Pool) Step {
 		}
 	}
 	if progress.Phase == apiclientgen.PoolProvisionPhasePreloadingImages {
-		line := Step("preloading images")
+		line := Step("preloading images (one-time setup per pool and image version)")
 		if pull, ok := progress.Pull.Get(); ok {
 			line += Step(": " + strings.TrimPrefix(string(pullLine(pull)), "pulling "))
 		}

@@ -269,6 +269,8 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 	defer cleanup()
 
 	var shutdownAsked atomic.Bool
+	var shutdownReported atomic.Bool
+	var launchReported bool
 	var oldServer *http.Server
 	oldServer = &http.Server{
 		ReadHeaderTimeout: 5 * time.Second,
@@ -278,6 +280,9 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				writeStatus(t, w, health.Status{Status: health.StatusStarting, Phase: "stuck", Version: "v0.5.0"})
 			case "/shutdown":
+				if !shutdownReported.Load() {
+					t.Error("shutdown began before progress was reported")
+				}
 				shutdownAsked.Store(true)
 				w.WriteHeader(http.StatusAccepted)
 				go func() { _ = oldServer.Close() }()
@@ -306,6 +311,14 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 			"DISCOBOX_TEST_SERVER_DELAY=150ms",
 		},
 		ExpectedVersion: "v0.5.1",
+		OnProgress: func(status health.Status) {
+			switch status.Phase {
+			case "stopping the older server":
+				shutdownReported.Store(true)
+			case "launching the server":
+				launchReported = true
+			}
+		},
 		// The replacement can wait behind the old server's data-directory lock
 		// after its listener is gone. Prove that transition gets ReadyTimeout,
 		// not this ordinary never-bound-child deadline.
@@ -320,6 +333,9 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 	}
 	if !started {
 		t.Fatal("EnsureRunning did not replace the older server")
+	}
+	if !launchReported {
+		t.Error("replacement launch was silent")
 	}
 
 	baseURL, client, err := HTTPClient(mustParse(t, endpointURL), nil)

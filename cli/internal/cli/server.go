@@ -300,7 +300,7 @@ func imagesStageText(report imagecache.Progress) string {
 	if report.Done {
 		return "Images downloaded"
 	}
-	line := "Downloading images"
+	line := "Downloading images (one-time setup per image version)"
 	if report.Images > 0 {
 		line += fmt.Sprintf(" (%d of %d)", report.Index, report.Images)
 	}

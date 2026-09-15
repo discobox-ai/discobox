@@ -59,9 +59,9 @@ type LaunchOptions struct {
 	// before returning.
 	ExpectedVersion string
 
-	// OnProgress is called with each status a starting server reports, so a
-	// caller can show what it is waiting for. Called only when the status
-	// changes, and never once the server is ready.
+	// OnProgress reports launch steps and each status a starting server reports,
+	// so a caller can show what it is waiting for. Never called for a server
+	// that is already ready and needs no upgrade.
 	OnProgress func(health.Status)
 }
 
@@ -90,6 +90,7 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	} else if !isProbeConnectionError(err) {
 		return false, err
 	}
+	opts.progress(health.Status{Status: health.StatusStarting, Phase: "waiting for the startup lock"})
 	unlock, err := acquireLaunchLock(opts.lockPath())
 	if err != nil {
 		return false, err
@@ -122,11 +123,13 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		return false, err
 	}
 	if replaceOlder {
+		opts.progress(health.Status{Status: health.StatusStarting, Phase: "stopping the older server"})
 		if err := replaceOlderServer(ctx, opts); err != nil {
 			return false, err
 		}
 		replacedOlder = true
 	}
+	opts.progress(health.Status{Status: health.StatusStarting, Phase: "launching the server"})
 	child, err := startDetached(ctx, opts, command)
 	if err != nil {
 		return false, err
