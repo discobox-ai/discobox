@@ -435,10 +435,17 @@ type GitSource struct {
 	// (ADR 0083). It is deliberately not NoLocalRepository, which additionally
 	// means the commits are gone forever with the repository built for that one
 	// run; these are in the user's own repository and stay there.
-	NoLocalCommits bool                  `json:"noLocalCommits,omitempty" doc:"Whether the repository at localDirectory has no commits, so a clone of it yields nothing and the base commit this source was resolved against exists only as objects the client holds. The client can only deliver it by push, and can still deliver it later."`
-	Checkout       *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
-	Workspace      *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
-	Destination    *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
+	NoLocalCommits bool `json:"noLocalCommits,omitempty" doc:"Whether the repository at localDirectory has no commits, so a clone of it yields nothing and the base commit this source was resolved against exists only as objects the client holds. The client can only deliver it by push, and can still deliver it later."`
+	// NoLocalGitDirectory is the third fact of the kind: the repository has no
+	// Git directory in place at localDirectory/.git. A linked worktree or a
+	// submodule checkout puts a file there naming one elsewhere, and a
+	// clone-delivered source's origin is exactly that directory (ADR 0093), so
+	// there is nothing a sandbox can be bound to. Its commits stay in the user's
+	// repository, as NoLocalCommits' do.
+	NoLocalGitDirectory bool                  `json:"noLocalGitDirectory,omitempty" doc:"Whether localDirectory has no Git directory of its own at localDirectory/.git — a linked worktree or submodule checkout, whose .git is a file naming a Git directory elsewhere — so there is nothing at that path a sandbox's origin can be bound to. The client can only deliver it by push, and can still deliver it later."`
+	Checkout            *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
+	Workspace           *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
+	Destination         *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
 }
 
 // Root returns the normalized identity of the source repository, independent of

@@ -2164,6 +2164,24 @@ touched, so HEAD stays unborn and their first commit stays theirs.
 
 See [ADR 0083](../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
 
+## A Repository Whose `.git` Is Not Its Git Directory
+
+A bound source's origin is the repository's `.git` directory and never its
+working tree, whose ignored files — `.env` first — are exactly what a developer
+keeps out of git. A linked worktree or a submodule checkout has a *file* at
+`.git` naming a Git directory elsewhere, so there is nothing at that path to
+bind, and following the pointer would widen a worktree into the main checkout
+it was cut from.
+
+- The source records `noLocalGitDirectory` whenever `<repo root>/.git` is not a
+  real directory (a file, a symlink, or absent), and that is what makes the
+  server choose `push`. It sits beside `noLocalCommits` and can be set with it:
+  an orphan worktree is both.
+- The commits are in the user's repository and stay there, so a later
+  `discobox push` delivers the source as it would any other.
+
+See [ADR 0093](../docs/adr/0093-a-local-sources-origin-is-its-git-directory.md).
+
 ## No Source At All
 
 `discobox run --no-source` (`PromptOptions.NoSource`) creates a discobox with

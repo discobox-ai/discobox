@@ -35,6 +35,37 @@ func TestResolveRunSourceCleanLocalBranch(t *testing.T) {
 	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
 		t.Fatalf("workspace = %#v, want clean without snapshot", source.Workspace)
 	}
+	if source.NoLocalGitDirectory {
+		t.Fatalf("source = %#v, want a repository with its Git directory in place", source)
+	}
+}
+
+// A linked worktree's .git is a file naming the main checkout's Git directory.
+// The only thing a clone-delivered source may bind as a sandbox's origin is the
+// repository's own .git directory (ADR 0093), so the client reports that this
+// one has none, and the create request carries the fact to the server.
+func TestResolveRunSourceLinkedWorktreeReportsNoLocalGitDirectory(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	worktree := filepath.Join(filepath.Dir(repo), "linked")
+	runSourceTestGit(t, repo)("worktree", "add", "-b", "linked", worktree)
+
+	source, err := resolveRunSource(context.Background(), worktree, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	if source.LocalDirectory != worktree || source.RepoRoot != worktree {
+		t.Fatalf("source identity = %#v, want the worktree at %s itself", source, worktree)
+	}
+	if !source.NoLocalGitDirectory || source.NoLocalRepository || source.NoLocalCommits {
+		t.Fatalf("source = %#v, want only a repository reported as having no Git directory in place", source)
+	}
+	apiSource, err := source.apiGitSource()
+	if err != nil {
+		t.Fatalf("apiGitSource: %v", err)
+	}
+	if !apiSource.NoLocalGitDirectory.Or(false) {
+		t.Fatalf("api source = %#v, want noLocalGitDirectory", apiSource)
+	}
 }
 
 func TestResolveRunSourceDirtyLocalCreatesHiddenSnapshotRef(t *testing.T) {

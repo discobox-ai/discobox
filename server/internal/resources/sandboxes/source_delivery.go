@@ -211,11 +211,14 @@ func sourceNeedsPush(definition sandbox.ProviderDefinition, serverHostID string,
 		// the sandbox clones it directly and no client is involved.
 		return false
 	}
-	if source.NoLocalRepository || source.NoLocalCommits {
-		// There is nothing at that path to clone even from this machine: the
-		// directory is in no repository at all, or it is one `git init` left
-		// with no commits, whose base commit the client synthesized and only
-		// the client holds (ADR 0083). Either way only a push can deliver it.
+	if source.NoLocalRepository || source.NoLocalCommits || source.NoLocalGitDirectory {
+		// There is nothing at that path to clone or bind even from this
+		// machine: the directory is in no repository at all, or it is one `git
+		// init` left with no commits, whose base commit the client synthesized
+		// and only the client holds (ADR 0083), or its .git is not the Git
+		// directory — a linked worktree or submodule checkout — and that
+		// directory is the only thing a sandbox's origin may be bound to (ADR
+		// 0093). Each way only a push can deliver it.
 		// This is not the client asking for a push: it reported what its
 		// filesystem holds, which the server cannot see, and the conclusion is
 		// drawn here.

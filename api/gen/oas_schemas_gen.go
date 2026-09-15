@@ -2024,6 +2024,11 @@ type GitSource struct {
 	// base commit this source was resolved against exists only as objects the client holds. The client
 	// can only deliver it by push, and can still deliver it later.
 	NoLocalCommits OptBool `json:"noLocalCommits"`
+	// Whether localDirectory has no Git directory of its own at localDirectory/.git — a linked
+	// worktree or submodule checkout, whose .git is a file naming a Git directory elsewhere — so there
+	// is nothing at that path a sandbox's origin can be bound to. The client can only deliver it by push,
+	//  and can still deliver it later.
+	NoLocalGitDirectory OptBool `json:"noLocalGitDirectory"`
 	// Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however
 	// reachable it is. The client resolved this source from a repository of its own and can only deliver
 	// it by push. localDirectory still records the directory the source came from.
@@ -2064,6 +2069,11 @@ func (s *GitSource) GetLocalDirectory() OptString {
 // GetNoLocalCommits returns the value of NoLocalCommits.
 func (s *GitSource) GetNoLocalCommits() OptBool {
 	return s.NoLocalCommits
+}
+
+// GetNoLocalGitDirectory returns the value of NoLocalGitDirectory.
+func (s *GitSource) GetNoLocalGitDirectory() OptBool {
+	return s.NoLocalGitDirectory
 }
 
 // GetNoLocalRepository returns the value of NoLocalRepository.
@@ -2114,6 +2124,11 @@ func (s *GitSource) SetLocalDirectory(val OptString) {
 // SetNoLocalCommits sets the value of NoLocalCommits.
 func (s *GitSource) SetNoLocalCommits(val OptBool) {
 	s.NoLocalCommits = val
+}
+
+// SetNoLocalGitDirectory sets the value of NoLocalGitDirectory.
+func (s *GitSource) SetNoLocalGitDirectory(val OptBool) {
+	s.NoLocalGitDirectory = val
 }
 
 // SetNoLocalRepository sets the value of NoLocalRepository.

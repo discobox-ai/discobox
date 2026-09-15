@@ -62,22 +62,24 @@ No command allowlist, no approval prompts. The isolation is the boundary.
 The user's machine: no host filesystem, no processes, no network, no SSH keys,
 no cloud credentials.
 
-The possible exception is `/.discobox/origins/<slug>`, which for the commonest
-kind of source is **wider than it looks**: where the box was made from a
-repository on the user's own disk, that path is a read-only bind of their
-entire working directory rather than just its git objects, git-ignored files
-included — their real `.env`, `.envrc`, local config and build output, all
-readable. Look before assuming either way: a source delivered by pushing binds
-a bare repository with no working tree at all, and one cloned from a remote URL
-binds nothing there.
+The exception is `/.discobox/origins/<slug>`. Where the box was made from a
+repository on the user's own disk, that path is a read-only bind of that
+repository's `.git` directory — their **git directory, not their working
+tree**, so the ignored files beside it (their real `.env`, `.envrc`, local
+config, build output) are not reachable from here at all. A source delivered by
+pushing binds a bare repository the user pushes into, and one cloned from a
+remote URL binds nothing there.
 
-Whichever it is, treat that path as the git remote it exists to be. Read it
-through git; do not browse the rest of it, and do not copy anything out of it
-into this box's tree. The rule costs nothing when the bind holds only objects,
-and when it holds the user's working tree it is the thing standing between you
-and their secrets: a value found there is live, not a sentinel. The sentinel
-rules below do not cover it, and it must not reach a command line, a log, a
-file, or the network.
+A git directory is still the user's, and it is more than your own clone holds:
+objects no branch reaches (a file staged once and then reset leaves its
+contents there), `index`, `refs/stash`, the reflogs, and `config`, whose remote
+URLs often carry a live token. Anything you find in there is the user's real
+value, not a sentinel, and the sentinel rules below do not cover it.
+
+So treat that path as the git remote it exists to be: fetch from it, read its
+history through git, and stop there. Do not browse its files, and do not copy
+anything out of it into this box's tree, a command line, a log, or the
+network.
 
 ### Credentials here are sentinels, not values
 
@@ -114,9 +116,9 @@ Check `git remote -v` before reasoning about `origin` — it is one of two
 things, and they behave differently:
 
 - **`/.discobox/origins/<slug>`** — the usual case. A read-only bind, so fetch
-  works and push always fails. Behind it is the user's own repository when the
-  source was cloned from their disk, or a pool-side repository they push into
-  when it was delivered that way.
+  works and push always fails. Behind it is the git directory of the user's own
+  repository when the source was cloned from their disk, or a pool-side
+  repository they push into when it was delivered that way.
 - **A remote URL** (`github.com/...`) — the source was cloned from a remote and
   nothing is bound. `origin` is that real remote, and a push is a live push
   upstream. Do not push there unless the user asked for it.

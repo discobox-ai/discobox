@@ -216,7 +216,8 @@ PID, because PIDs are reused and the pool agent differences per process.
   plain read-only bind the pool host already made directly onto that final path
   before the container started — unlike `sources`, `boot` does not rebind it from
   anywhere; it is simply present by the time `boot` runs. Behind it is the
-  developer's live directory for a clone-delivered source (ADR 0026) or the
+  developer's live `.git` directory, never their working tree, for a
+  clone-delivered source (ADR 0026, ADR 0093) or the
   repository the client pushes into for a push-delivered one (ADR 0058); either
   way it is the repository `origin` names. See ADR 0026.
 - Render templated harness files locally at installation time against the public

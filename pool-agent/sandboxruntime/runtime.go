@@ -83,8 +83,9 @@ const (
 	sandboxSecretsMount = "/.discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
 
 	// sandboxOriginsMount is where a source's origin is bound, read-only, at
-	// /.discobox/origins/<slug>: the real host directory for a clone-delivered
-	// local source (ADR 0026), and the pool-side bare repository the client
+	// /.discobox/origins/<slug>: the host repository's Git directory — never its
+	// working tree — for a clone-delivered local source (ADR 0026, ADR 0093),
+	// and the pool-side bare repository the client
 	// pushes into for a push-delivered one (ADR 0058). Unlike the primary roots
 	// above, this is not one pool-provisioned volume: each eligible source gets
 	// its own independent bind, built in prepareSandboxVolumes.
@@ -949,6 +950,12 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 				return nil, nil, fmt.Errorf("prepare source origin %q: %w", source.slug, err)
 			}
 		}
+		// Checked on every create, not only the one that clones: the bind below
+		// is made on every create, and a materialized source never reaches the
+		// clone that would otherwise fail on a .git that is not a directory.
+		if err := r.checkLocalGitDirectory(source.git); err != nil {
+			return nil, nil, fmt.Errorf("source %q: %w", source.slug, err)
+		}
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, originPoolPath, user); err != nil {
 			return nil, nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
@@ -1030,8 +1037,9 @@ func validSourceDataKey(key string) bool {
 }
 
 // originMounts builds one read-only bind per source that has an origin the
-// sandbox can reach: the real host directory of a clone-delivered local source,
-// which is neither a copy nor a sub-path of any pool-owned volume (ADR 0026), or
+// sandbox can reach: the host Git directory of a clone-delivered local source,
+// which is neither a copy nor a sub-path of any pool-owned volume (ADR 0026,
+// ADR 0093), or
 // the pool-side bare repository a push-delivered source is pushed into (ADR
 // 0058). A source with no local directory at all is a remote URL, whose origin
 // is that remote, so it is skipped. Pure and side-effect free, unlike the rest
@@ -3206,7 +3214,11 @@ func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo str
 
 func gitSourceCloneURL(source workerapimodel.GitSource, hostMountPrefix string) (string, error) {
 	if local := strings.TrimSpace(optString(source.LocalDirectory)); local != "" {
-		return hostMountedLocalDirectory(local, hostMountPrefix), nil
+		gitDir, err := localGitDirectory(local)
+		if err != nil {
+			return "", err
+		}
+		return hostMountedLocalDirectory(gitDir, hostMountPrefix), nil
 	}
 	if sourceURL, ok := source.URL.Get(); ok {
 		return sourceURL.String(), nil
@@ -3223,8 +3235,12 @@ func gitSourceCloneURL(source workerapimodel.GitSource, hostMountPrefix string) 
 // it has no route to — so that field says nothing about a pushed source's origin
 // and must not be tested for one.
 //
-// A clone-delivered source's origin is the directory it was cloned from, when it
-// has one. A source with neither is a remote URL, whose origin is that remote.
+// A clone-delivered source's origin is the Git directory it was cloned from,
+// when it has one — and only that: the working tree around it holds exactly the
+// files a developer keeps out of git, `.env` first among them, and a sandbox
+// must not reach any of them (ADR 0093). A LocalDirectory that names no absolute
+// path has no Git directory to bind, and no origin. A source with neither is a
+// remote URL, whose origin is that remote.
 func sourceOriginHostPath(source workerapimodel.GitSource, slug string, originPath func(slug string) string) string {
 	if gitSourceAwaitsPush(source) {
 		if slug == "" {
@@ -3232,7 +3248,58 @@ func sourceOriginHostPath(source workerapimodel.GitSource, slug string, originPa
 		}
 		return originPath(slug)
 	}
-	return strings.TrimSpace(optString(source.LocalDirectory))
+	local := strings.TrimSpace(optString(source.LocalDirectory))
+	if local == "" {
+		return ""
+	}
+	gitDir, err := localGitDirectory(local)
+	if err != nil {
+		return ""
+	}
+	return gitDir
+}
+
+// localGitDirectory is the Git directory of the repository at local, which is
+// what a clone-delivered source is cloned from and what is bound as its origin.
+// Only an absolute path names one: anything else would be resolved against
+// whatever directory the process or the daemon happens to be in.
+func localGitDirectory(local string) (string, error) {
+	if !filepath.IsAbs(local) {
+		return "", fmt.Errorf("source localDirectory %q is not an absolute path", local)
+	}
+	return filepath.Join(filepath.Clean(local), ".git"), nil
+}
+
+// checkLocalGitDirectory refuses a clone-delivered source whose .git is not a
+// real directory, before anything is cloned from it or bound into a sandbox.
+//
+// A linked worktree or a submodule checkout has a file there naming a Git
+// directory elsewhere, and a symlink would hand the daemon a bind that resolves
+// wherever it points — the repository root itself included. Either way the bind
+// would no longer be the repository's own Git directory, which is the whole of
+// what ADR 0093 permits a sandbox to see. A current client reports such a
+// repository and the server delivers it by push, so reaching this is an older
+// client, and the failure names the path.
+func (r *DockerSandboxRuntime) checkLocalGitDirectory(source workerapimodel.GitSource) error {
+	if gitSourceAwaitsPush(source) {
+		return nil
+	}
+	local := strings.TrimSpace(optString(source.LocalDirectory))
+	if local == "" {
+		return nil
+	}
+	gitDir, err := localGitDirectory(local)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(hostMountedLocalDirectory(gitDir, r.hostMountPrefix))
+	if err != nil {
+		return fmt.Errorf("stat source Git directory %s: %w", gitDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("source Git directory %s is not a directory (a linked worktree or submodule checkout is delivered by push)", gitDir)
+	}
+	return nil
 }
 
 // gitSourceAwaitsPush reports whether the client delivers this source by
@@ -3396,11 +3463,9 @@ func gitSafeDirectories(cloneURL, hostMountPrefix string) []string {
 	if hostMountPrefix != "" && (cloneURL == hostMountPrefix || strings.HasPrefix(cloneURL, hostMountPrefix+string(filepath.Separator))) {
 		return []string{hostMountPrefix, filepath.Join(hostMountPrefix, "*")}
 	}
-	dirs := []string{cloneURL}
-	if filepath.Base(cloneURL) != ".git" {
-		dirs = append(dirs, filepath.Join(cloneURL, ".git"))
-	}
-	return dirs
+	// A clone-delivered source is cloned from its Git directory itself
+	// (gitSourceCloneURL), which is the path git checks ownership of.
+	return []string{cloneURL}
 }
 
 func checkoutGitSource(ctx context.Context, repo string, source workerapimodel.GitSource, uid, gid int) error {

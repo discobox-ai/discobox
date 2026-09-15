@@ -129,6 +129,11 @@ sandbox create requests.
   ([ADR 0084](../../../docs/adr/0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md)).
   See the CLI design doc's "A Repository With No Commits" and
   [ADR 0083](../../../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
+- A source repository whose `.git` is not a real directory — a linked worktree
+  or submodule checkout — records `noLocalGitDirectory`, so it is pushed rather
+  than bound: a bound origin is only ever the repository's own Git directory.
+  See the CLI design doc's "A Repository Whose `.git` Is Not Its Git Directory"
+  and [ADR 0093](../../../docs/adr/0093-a-local-sources-origin-is-its-git-directory.md).
 - Do not depend on `internal/cli` or `internal/tui`. Both frontends consume this
   package through their adapters.
 - Keep terminal waiting, attach, and rendering in the frontend packages; those

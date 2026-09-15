@@ -147,9 +147,14 @@ type resolvedRunSource struct {
 	// NoLocalRepository the commits are still here afterwards: they were
 	// written into the user's own repository (ADR 0083).
 	NoLocalCommits bool
-	Checkout       resolvedRunSourceCheckout
-	Workspace      resolvedRunSourceWorkspace
-	Destination    resolvedRunSourceDestination
+	// NoLocalGitDirectory states that the repository at LocalDirectory has no
+	// Git directory in place at its .git — a linked worktree or submodule
+	// checkout — so there is nothing there a sandbox's origin may be bound to
+	// (ADR 0093). Its commits stay here, as NoLocalCommits' do.
+	NoLocalGitDirectory bool
+	Checkout            resolvedRunSourceCheckout
+	Workspace           resolvedRunSourceWorkspace
+	Destination         resolvedRunSourceDestination
 	// cleanup releases the throwaway repository, and is nil for a source that
 	// did not need one.
 	cleanup func()
@@ -325,6 +330,9 @@ func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 	if s.NoLocalCommits {
 		source.SetNoLocalCommits(apiclientgen.NewOptBool(true))
 	}
+	if s.NoLocalGitDirectory {
+		source.SetNoLocalGitDirectory(apiclientgen.NewOptBool(true))
+	}
 	checkout := apimodel.GitSourceCheckout{}
 	checkout.SetCommit(optionalString(s.Checkout.Commit))
 	checkout.SetRefName(optionalString(s.Checkout.RefName))
@@ -366,14 +374,24 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
+	noGitDirectory, err := noLocalGitDirectory(repoRoot)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
 	if gitunborn.HeadIsUnborn(ctx, repoRoot) {
-		return resolveUnbornRunSource(ctx, repoRoot, absSource, ref, explicitRef, opts)
+		resolved, err := resolveUnbornRunSource(ctx, repoRoot, absSource, ref, explicitRef, opts)
+		if err != nil {
+			return resolvedRunSource{}, err
+		}
+		resolved.NoLocalGitDirectory = noGitDirectory
+		return resolved, nil
 	}
 	destination := localRunDestination(repoRoot, absSource)
 	resolved := resolvedRunSource{
-		Kind:           runSourceKindGit,
-		LocalDirectory: repoRoot,
-		RepoRoot:       repoRoot,
+		Kind:                runSourceKindGit,
+		LocalDirectory:      repoRoot,
+		RepoRoot:            repoRoot,
+		NoLocalGitDirectory: noGitDirectory,
 		Workspace: resolvedRunSourceWorkspace{
 			Mode: runWorkspaceModeClean,
 		},
@@ -421,6 +439,28 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	}
 	resolved.Workspace = workspace
 	return resolved, nil
+}
+
+// noLocalGitDirectory reports whether repoRoot's .git is anything other than
+// the repository's Git directory itself: a file naming one elsewhere, as a
+// linked worktree and a submodule checkout have, a symlink, or nothing at all
+// when git found the repository some other way.
+//
+// A clone-delivered source's origin is bound into the sandbox at exactly
+// repoRoot/.git, and never at repoRoot, whose ignored files are the ones a
+// developer keeps out of git on purpose (ADR 0093). Following the pointer is not
+// the answer: for a worktree it is the main checkout's Git directory, a
+// repository the source never named. So this is reported, and the server
+// delivers the source by push.
+func noLocalGitDirectory(repoRoot string) (bool, error) {
+	info, err := os.Lstat(filepath.Join(repoRoot, ".git"))
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat %s: %w", filepath.Join(repoRoot, ".git"), err)
+	}
+	return !info.IsDir(), nil
 }
 
 // snapshotWorkspace records a dirty working tree as a commit on top of the

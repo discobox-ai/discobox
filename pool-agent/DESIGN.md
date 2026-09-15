@@ -517,10 +517,17 @@ flowchart LR
   `origin` remote at that in-sandbox path, so `git fetch origin` and `git rebase
   origin/<branch>` are ordinary git inside the sandbox whichever way the source
   was delivered. What differs is only what sits behind the bind:
-  - **Clone-delivered**: the developer's own host directory, live. Not a
+  - **Clone-delivered**: the developer's own repository's `.git` directory,
+    live — never the working tree, whose ignored files (`.env` and the like)
+    must not reach a sandbox. What is bound is the whole Git directory, so it is
+    still more than the sandbox's clone holds (objects no ref reaches, `index`,
+    `refs/stash`, reflogs, `config`); what it is not is the developer's files.
+    The clone reads the same `.git`. `checkLocalGitDirectory` refuses a `.git`
+    that is not a real directory (a linked worktree's file, a symlink) before
+    either happens; a current client has such a source pushed instead. Not a
     pool-owned volume — an independent bind of an external directory the pool
-    host neither owns nor provisions, so there is nothing to rebind or reap. See
-    ADR 0026.
+    host neither owns nor provisions, so there is nothing to rebind or reap.
+    See ADR 0026 and ADR 0093.
   - **Push-delivered**: a bare repository at
     `.../sandboxes/{sandbox}/origins/{slug}.git`, created by `initGitOrigin` at
     provisioning time and owned by the sandbox user, which the client pushes into

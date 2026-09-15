@@ -242,8 +242,8 @@ func TestGitSourceCloneURLPrefixesAbsoluteLocalDirectoryWithHostMountPrefix(t *t
 	if err != nil {
 		t.Fatalf("git source clone URL: %v", err)
 	}
-	if cloneURL != "/host/home/darren/project" {
-		t.Fatalf("clone URL = %q, want host-mounted path", cloneURL)
+	if cloneURL != "/host/home/darren/project/.git" {
+		t.Fatalf("clone URL = %q, want host-mounted Git directory", cloneURL)
 	}
 }
 
@@ -256,8 +256,8 @@ func TestGitSourceCloneURLDoesNotDoublePrefixHostMountedLocalDirectory(t *testin
 	if err != nil {
 		t.Fatalf("git source clone URL: %v", err)
 	}
-	if cloneURL != "/host/home/darren/project" {
-		t.Fatalf("clone URL = %q, want original host-mounted path", cloneURL)
+	if cloneURL != "/host/home/darren/project/.git" {
+		t.Fatalf("clone URL = %q, want original host-mounted Git directory", cloneURL)
 	}
 }
 
@@ -270,14 +270,79 @@ func TestGitSourceCloneURLPreservesLocalDirectoryWithoutHostMountPrefix(t *testi
 	if err != nil {
 		t.Fatalf("git source clone URL: %v", err)
 	}
-	if cloneURL != "/home/darren/project" {
-		t.Fatalf("clone URL = %q, want original local directory", cloneURL)
+	if cloneURL != "/home/darren/project/.git" {
+		t.Fatalf("clone URL = %q, want original local Git directory", cloneURL)
+	}
+}
+
+// A clone-delivered source is cloned from, and bound as, its Git directory, and
+// only an absolute localDirectory names one (ADR 0093).
+func TestGitSourceCloneURLRefusesARelativeLocalDirectory(t *testing.T) {
+	requirePOSIXHost(t)
+	source := workerapimodel.GitSource{
+		Kind:           workerclient.GitSourceKindGit,
+		LocalDirectory: workerclient.NewOptString("project"),
+	}
+	if cloneURL, err := gitSourceCloneURL(source, "/host"); err == nil {
+		t.Fatalf("clone URL = %q, want a relative localDirectory refused", cloneURL)
+	}
+	if host := sourceOriginHostPath(source, "primary", func(string) string { return "/pool/origin" }); host != "" {
+		t.Fatalf("origin host path = %q, want none for a relative localDirectory", host)
+	}
+}
+
+// The origin a sandbox is bound to is the repository's own Git directory and
+// nothing else: a .git that is a file (a linked worktree or submodule checkout)
+// or a symlink would make the bind something other than that, and a symlink
+// can point at the working tree whose ignored files ADR 0093 exists to keep out.
+func TestCheckLocalGitDirectoryRefusesAnythingButARealDirectory(t *testing.T) {
+	requirePOSIXHost(t)
+	runtime := &DockerSandboxRuntime{}
+	source := func(dir string) workerapimodel.GitSource {
+		return workerapimodel.GitSource{
+			Kind:           workerclient.GitSourceKindGit,
+			LocalDirectory: workerclient.NewOptString(dir),
+		}
+	}
+
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.checkLocalGitDirectory(source(repo)); err != nil {
+		t.Fatalf("check a repository's own Git directory: %v", err)
+	}
+
+	worktree := t.TempDir()
+	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: "+filepath.Join(repo, ".git", "worktrees", "w")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.checkLocalGitDirectory(source(worktree)); err == nil {
+		t.Fatal("a .git file was accepted as a Git directory to bind")
+	}
+
+	linked := t.TempDir()
+	if err := os.Symlink(linked, filepath.Join(linked, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.checkLocalGitDirectory(source(linked)); err == nil {
+		t.Fatal("a .git symlink to the working tree was accepted as a Git directory to bind")
+	}
+
+	if err := runtime.checkLocalGitDirectory(source(t.TempDir())); err == nil {
+		t.Fatal("a directory with no .git was accepted as a Git directory to bind")
+	}
+
+	pushed := source(worktree)
+	pushed.Delivery = workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush)
+	if err := runtime.checkLocalGitDirectory(pushed); err != nil {
+		t.Fatalf("check a push-delivered source, whose origin is pool-side: %v", err)
 	}
 }
 
 func TestGitSafeDirectoriesTrustsHostMountPrefixAndChildren(t *testing.T) {
 	requirePOSIXHost(t)
-	dirs := gitSafeDirectories("/host/home/darren/src/disco2", "/host")
+	dirs := gitSafeDirectories("/host/home/darren/src/disco2/.git", "/host")
 	want := []string{
 		"/host",
 		"/host/*",
@@ -287,11 +352,10 @@ func TestGitSafeDirectoriesTrustsHostMountPrefixAndChildren(t *testing.T) {
 	}
 }
 
-func TestGitSafeDirectoriesTrustsWorktreeAndDotGitWithoutHostMountPrefix(t *testing.T) {
+func TestGitSafeDirectoriesTrustsTheGitDirectoryWithoutHostMountPrefix(t *testing.T) {
 	requirePOSIXHost(t)
-	dirs := gitSafeDirectories("/home/darren/src/disco2", "")
+	dirs := gitSafeDirectories("/home/darren/src/disco2/.git", "")
 	want := []string{
-		"/home/darren/src/disco2",
 		"/home/darren/src/disco2/.git",
 	}
 	if strings.Join(dirs, "\n") != strings.Join(want, "\n") {
@@ -977,7 +1041,8 @@ func TestEnsureOriginRemoteSkipsASourceThatIsNotThereYet(t *testing.T) {
 }
 
 // originMounts must add one read-only bind per source with an origin the sandbox
-// can reach: the real host directory for a clone-delivered local source, the
+// can reach: the host Git directory — never the working tree around it — for a
+// clone-delivered local source (ADR 0093), the
 // pool-side pushed repository for a push-delivered one, and nothing for a
 // remote-URL source, whose origin is that remote (ADR 0026, ADR 0058 §2). This
 // is the pure piece of prepareSandboxVolumes' origin-mount logic; it needs no
@@ -1021,11 +1086,11 @@ func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 		t.Fatalf("origin mounts = %#v, want exactly 3 (primary, ref and pushed)", byTarget)
 	}
 	primary, ok := byTarget[sandboxOriginsMount+"/primary"]
-	if !ok || primary.Source != "/host/primary" || !primary.ReadOnly || primary.Type != mount.TypeBind {
+	if !ok || primary.Source != "/host/primary/.git" || !primary.ReadOnly || primary.Type != mount.TypeBind {
 		t.Fatalf("primary origin mount = %#v, origins = %#v", primary, byTarget)
 	}
 	ref, ok := byTarget[sandboxOriginsMount+"/ref"]
-	if !ok || ref.Source != "/host/ref" || !ref.ReadOnly || ref.Type != mount.TypeBind {
+	if !ok || ref.Source != "/host/ref/.git" || !ref.ReadOnly || ref.Type != mount.TypeBind {
 		t.Fatalf("ref origin mount = %#v, origins = %#v", ref, byTarget)
 	}
 	// A push-delivered source's origin is the pool-side repository. The client

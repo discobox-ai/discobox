@@ -350,21 +350,27 @@ sandbox cannot reach is exactly as undeliverable. A sandbox can therefore bind
 its primary source and still wait for a push of a reference, or the other way
 round.
 
-`GitSource.NoLocalRepository` and `GitSource.NoLocalCommits` each force `push`
-ahead of both checks. The first says the directory the source came from is in no
-Git repository at all; the second says it is a repository `git init` left with no
-commits, whose empty base commit the client synthesized. Either way there is
-nothing at that path to clone however reachable it is, and only the client holds
-the source. Both are facts about the client's filesystem, which the server cannot
-see and the client cannot get wrong; the decision they feed is still made here,
-which is why a client still may not ask for `push` outright.
+`GitSource.NoLocalRepository`, `GitSource.NoLocalCommits` and
+`GitSource.NoLocalGitDirectory` each force `push` ahead of both checks. The first
+says the directory the source came from is in no Git repository at all; the
+second says it is a repository `git init` left with no commits, whose empty base
+commit the client synthesized. Either way there is nothing at that path to clone
+however reachable it is, and only the client holds the source. The third says the
+repository's `.git` is not its Git directory — a linked worktree or submodule
+checkout — and a bound origin is only ever that directory, never the working tree
+around it, whose ignored files are the ones a developer keeps out of git. All
+three are facts about the client's filesystem, which the server cannot see and
+the client cannot get wrong; the decision they feed is still made here, which is
+why a client still may not ask for `push` outright.
 
-They stay two fields because only `NoLocalRepository` also means the commits are
-gone once that create is over — its repository was built for the run and deleted
-with it. A source resolved from a repository with no commits keeps its objects in
-the user's own repository, so the client can still deliver it later. See
-[ADR 0045](../../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md)
-and [ADR 0083](../../../../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
+They stay separate fields because only `NoLocalRepository` also means the commits
+are gone once that create is over — its repository was built for the run and
+deleted with it. A source resolved from a repository with no commits, or from a
+worktree, keeps its objects in the user's own repository, so the client can still
+deliver it later. See
+[ADR 0045](../../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md),
+[ADR 0083](../../../../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md)
+and [ADR 0093](../../../../docs/adr/0093-a-local-sources-origin-is-its-git-directory.md).
 
 ```mermaid
 sequenceDiagram
