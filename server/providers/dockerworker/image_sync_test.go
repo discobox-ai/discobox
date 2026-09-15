@@ -11,9 +11,11 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/moby/moby/client"
 )
 
@@ -107,11 +109,25 @@ func TestDevelopmentImageSynchronizerTransfersMissingImagesOnce(t *testing.T) {
 	}
 	defer destination.Close()
 
-	if err := synchronizer.Ensure(context.Background(), destination); err != nil {
+	var reports atomic.Int32
+	reporter := sandbox.PoolProgressReporter(func(_ context.Context, poolID string, progress sandbox.PoolProvisionProgress) {
+		if poolID != "pool" || progress.Phase != sandbox.PoolPhaseSyncingDevelopmentImages {
+			t.Errorf("unexpected progress: pool=%q phase=%q", poolID, progress.Phase)
+		}
+		reports.Add(1)
+	})
+	if err := synchronizer.Ensure(context.Background(), destination, reporter, "pool"); err != nil {
 		t.Fatal(err)
 	}
-	if err := synchronizer.Ensure(context.Background(), destination); err != nil {
+	if reports.Load() == 0 {
+		t.Fatal("missing images did not report preparation")
+	}
+	reports.Store(0)
+	if err := synchronizer.Ensure(context.Background(), destination, reporter, "pool"); err != nil {
 		t.Fatal(err)
+	}
+	if reports.Load() != 0 {
+		t.Fatal("current images reported preparation")
 	}
 
 	destinationDaemon.mu.Lock()
@@ -153,7 +169,7 @@ func TestDevelopmentImageSynchronizerRejectsSourceDrift(t *testing.T) {
 	}
 	defer destination.Close()
 
-	if err := synchronizer.Ensure(context.Background(), destination); err == nil || !strings.Contains(err.Error(), "manifest requires") {
+	if err := synchronizer.Ensure(context.Background(), destination, nil, ""); err == nil || !strings.Contains(err.Error(), "manifest requires") {
 		t.Fatalf("Ensure() error = %v, want source drift error", err)
 	}
 }
@@ -191,7 +207,7 @@ func TestDevelopmentImageSynchronizerIntegration(t *testing.T) {
 	}
 	defer destination.Close()
 
-	if err := synchronizer.Ensure(context.Background(), destination); err != nil {
+	if err := synchronizer.Ensure(context.Background(), destination, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := destination.ImageInspect(context.Background(), reference)
@@ -230,5 +246,15 @@ func writeDockerJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		panic(err)
+	}
+}
+
+func TestDisabledDevelopmentImageSyncDoesNotReport(t *testing.T) {
+	var synchronizer *DevelopmentImageSynchronizer
+	reporter := sandbox.PoolProgressReporter(func(context.Context, string, sandbox.PoolProvisionProgress) {
+		t.Error("disabled development image sync reported progress")
+	})
+	if err := synchronizer.Ensure(context.Background(), nil, reporter, "pool"); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -225,7 +225,9 @@ environment flag is enabled, server composition gives one shared
 `dockerworker.DevelopmentImageSynchronizer` to every engine.
 
 After `EnsureVM` and Docker readiness, both `EnsurePool` and `RepairPool`
-converge that manifest before reconciling the pool-agent container. The
+converge that manifest before reconciling the pool-agent container. The development
+image progress phase is held only when destination inspection finds images to
+build, transfer, or retag; disabled sync and already-current images emit no phase. The
 synchronizer inspects the destination daemon by reference and image ID, retags
 an already-present ID without transferring it, and otherwise streams one
 compressed multi-image archive from the developer's Docker daemon into the

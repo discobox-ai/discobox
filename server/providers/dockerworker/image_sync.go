@@ -15,6 +15,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/singleflight"
 )
@@ -90,7 +91,7 @@ func (s *DevelopmentImageSynchronizer) KeepReferences() []string {
 // Ensure converges the configured development images onto destination. Calls
 // for the same Docker daemon and manifest coalesce so concurrent pool
 // reconciles do not upload the same archive more than once.
-func (s *DevelopmentImageSynchronizer) Ensure(ctx context.Context, destination *client.Client) error {
+func (s *DevelopmentImageSynchronizer) Ensure(ctx context.Context, destination *client.Client, reporter sandbox.PoolProgressReporter, poolID string) error {
 	if s == nil {
 		return nil
 	}
@@ -106,12 +107,13 @@ func (s *DevelopmentImageSynchronizer) Ensure(ctx context.Context, destination *
 		return errors.New("destination Docker daemon reported no ID")
 	}
 	_, err, _ = s.group.Do(daemonID+":"+s.fingerprint, func() (any, error) {
-		return nil, s.ensure(ctx, daemonID, destination)
+		return nil, s.ensure(ctx, daemonID, destination, reporter, poolID)
 	})
 	return err
 }
 
-func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID string, destination *client.Client) error {
+func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID string, destination *client.Client, reporter sandbox.PoolProgressReporter, poolID string) error {
+	retags := make([]devimage.Image, 0, len(s.images))
 	missing := make([]devimage.Image, 0, len(s.images))
 	missingBuilds := make([]devimage.Image, 0, len(s.images))
 	for _, image := range s.images {
@@ -141,13 +143,24 @@ func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID stri
 		inspectByID, err := destination.ImageInspect(ctx, image.ID)
 		switch {
 		case err == nil && inspectByID.ID == image.ID:
-			if _, err := destination.ImageTag(ctx, client.ImageTagOptions{Source: image.ID, Target: image.Reference}); err != nil {
-				return fmt.Errorf("tag development image %s on Docker daemon %s: %w", image.Reference, daemonID, err)
-			}
+			retags = append(retags, image)
 		case err != nil && !cerrdefs.IsNotFound(err):
 			return fmt.Errorf("inspect development image ID %s on Docker daemon %s: %w", image.ID, daemonID, err)
 		default:
 			missing = append(missing, image)
+		}
+	}
+
+	if len(retags)+len(missingBuilds)+len(missing) == 0 {
+		return nil
+	}
+	// Report only after inspection proves there is work. Hold the phase through
+	// builds and transfers, which may otherwise go silent for minutes.
+	release := reporter.Hold(ctx, poolID, sandbox.PoolPhaseSyncingDevelopmentImages)
+	defer release()
+	for _, image := range retags {
+		if _, err := destination.ImageTag(ctx, client.ImageTagOptions{Source: image.ID, Target: image.Reference}); err != nil {
+			return fmt.Errorf("tag development image %s on Docker daemon %s: %w", image.Reference, daemonID, err)
 		}
 	}
 

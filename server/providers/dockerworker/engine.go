@@ -283,13 +283,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	defer lease.Release()
-	// Held, because a build reports nothing upward. Without it a cold VM start
-	// goes silent here for minutes — the machine is up, so the phases that
-	// described getting it up have ended, and the next report is the pool agent
-	// starting on images that do not exist yet.
-	releaseImages := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseSyncingDevelopmentImages)
-	err = e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client)
-	releaseImages()
+	err = e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client, e.cfg.ProgressReporter, pool.ID)
 	if err != nil {
 		return err
 	}
@@ -356,13 +350,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	defer lease.Release()
-	// Held, because a build reports nothing upward. Without it a cold VM start
-	// goes silent here for minutes — the machine is up, so the phases that
-	// described getting it up have ended, and the next report is the pool agent
-	// starting on images that do not exist yet.
-	releaseImages := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseSyncingDevelopmentImages)
-	err = e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client)
-	releaseImages()
+	err = e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client, e.cfg.ProgressReporter, pool.ID)
 	if err != nil {
 		return err
 	}
