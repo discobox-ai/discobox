@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -29,6 +30,28 @@ func TestArchivedErrorCarriesItsType(t *testing.T) {
 	}
 	if detail, ok := response.Response.Detail.Get(); !ok || detail != sandboxruntime.ErrArchived.Error() {
 		t.Fatalf("detail = %q, want the archived message", detail)
+	}
+}
+
+// An image the pool cannot obtain is an answer about the sandbox's pin, and the
+// control plane records it as the reason the sandbox failed so a client can
+// offer the upgrade that fixes it. It is not a 409: an older control plane reads
+// every untyped-to-it 409 as "already exists" and would settle the sandbox as
+// healthy with no container.
+func TestImageUnavailableErrorCarriesItsType(t *testing.T) {
+	service := &sandboxService{}
+	cause := fmt.Errorf("%w: \"harness:local\" is not on this pool", sandboxruntime.ErrImageUnavailable)
+	response := service.NewError(context.Background(), mapRuntimeError(cause))
+
+	if response.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusUnprocessableEntity)
+	}
+	errorType, ok := response.Response.Type.Get()
+	if !ok || errorType.String() != workerapimodel.ErrorTypeSandboxImageUnavailable {
+		t.Fatalf("type = %v, want %q", errorType, workerapimodel.ErrorTypeSandboxImageUnavailable)
+	}
+	if detail, ok := response.Response.Detail.Get(); !ok || detail != cause.Error() {
+		t.Fatalf("detail = %q, want the runtime's message", detail)
 	}
 }
 

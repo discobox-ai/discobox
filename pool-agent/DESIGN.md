@@ -845,6 +845,14 @@ container work, so a malformed request costs nothing.
   only when it has decided to upgrade, so this rule needs no policy flag.
 - `imageMatchesPin` is the single comparison behind both, so they cannot
   disagree about what the pinned image is. An empty pin matches anything.
+- An image the pool cannot obtain is `ErrImageUnavailable`: the pin is absent
+  and its reference names another image, or the daemon refuses the pull as
+  not found before any progress. An unauthorized or forbidden pull is not:
+  that is the pool's credentials, which an upgrade would meet again. It is an answer
+  about the pin rather than a failed attempt, so it travels as a 422 typed
+  `ErrorTypeSandboxImageUnavailable` and the control plane records it as the
+  reason the sandbox failed. A client offers the upgrade that re-pins it. Any
+  other pull failure stays an ordinary error.
 
 A replacement preserves the power state it found (ADR 0021 §3). `CreateSandbox`
 takes the sandbox's power lock, records whether the container it is about to

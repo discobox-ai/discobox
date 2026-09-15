@@ -235,7 +235,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// the pool that needed it, and a recovered pool reported its old failure
 	// forever. Nothing else writes a pool's ErrorMessage, and a competing
 	// intent is already caught by the generation guard above.
-	current.ErrorMessage = nil
+	current.ClearFailure()
 	// `offline` is a liveness observation, not a convergence verdict (ADR
 	// 0017 §4): the host stopped answering and is expected back. It is derived
 	// here, after the success derivation, so a runtime that converged but
@@ -243,7 +243,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// with it — freshly, every pass, so it is never a latch.
 	if state == model.PoolStateActive && heartbeatStale(current) {
 		current.RecordFailure(model.PoolStateOffline,
-			fmt.Sprintf("pool agent has not reported since %s", current.LastSeenAt.UTC().Format(time.RFC3339)))
+			fmt.Sprintf("pool agent has not reported since %s", current.LastSeenAt.UTC().Format(time.RFC3339)), "")
 	}
 	if err := r.update(ctx, current, generation); err != nil {
 		return reconcile.Result{}, err
@@ -290,7 +290,7 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	if assigned > 0 {
 		message := fmt.Sprintf("pool has %d assigned sandbox(es)", assigned)
 		pool.ObservedGeneration = generation
-		pool.RecordFailure(model.PoolStateFailed, message)
+		pool.RecordFailure(model.PoolStateFailed, message, "")
 		if updateErr := r.update(ctx, pool, generation); updateErr != nil {
 			return updateErr
 		}
@@ -303,7 +303,7 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	if runtimeProvider != nil && provider != nil {
 		if err := runtimeProvider.RemovePool(ctx, r.pools, project, provider, pool); err != nil {
 			pool.ObservedGeneration = generation
-			pool.RecordFailure(model.PoolStateFailed, err.Error())
+			pool.RecordFailure(model.PoolStateFailed, err.Error(), "")
 			if updateErr := r.update(ctx, pool, generation); updateErr != nil {
 				return updateErr
 			}
@@ -316,7 +316,7 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	pool.RuntimeState = nil
 	pool.ObservedGeneration = generation
 	pool.SetState(model.PoolStateDeleted)
-	pool.ErrorMessage = nil
+	pool.ClearFailure()
 	if err := r.update(ctx, pool, generation); err != nil {
 		return err
 	}
@@ -348,11 +348,11 @@ func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, messa
 	pool.ReconciledAt = &settledAt
 	pool.ObservedGeneration = generation
 	if !pool.EverCreated() {
-		pool.RecordFailure(model.PoolStateFailed, message)
+		pool.RecordFailure(model.PoolStateFailed, message, "")
 		return
 	}
 	if heartbeatStale(pool) {
-		pool.RecordFailure(model.PoolStateOffline, message)
+		pool.RecordFailure(model.PoolStateOffline, message, "")
 		return
 	}
 	pool.ErrorMessage = &message

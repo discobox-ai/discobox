@@ -11551,6 +11551,39 @@ func (s *OptSandboxRuntimeDisplayState) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxRuntimeErrorReason as json.
+func (o OptSandboxRuntimeErrorReason) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SandboxRuntimeErrorReason from json.
+func (o *OptSandboxRuntimeErrorReason) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxRuntimeErrorReason to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxRuntimeErrorReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxRuntimeErrorReason) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxRuntimeRuntimeState as json.
 func (o OptSandboxRuntimeRuntimeState) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -25829,6 +25862,12 @@ func (s *SandboxRuntime) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ErrorReason.Set {
+			e.FieldStart("errorReason")
+			s.ErrorReason.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("generation")
 		e.Int64(s.Generation)
 	}
@@ -25878,7 +25917,7 @@ func (s *SandboxRuntime) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxRuntime = [19]string{
+var jsonFieldsNameOfSandboxRuntime = [20]string{
 	0:  "agentStatus",
 	1:  "agentStatusObservedAt",
 	2:  "resources",
@@ -25889,15 +25928,16 @@ var jsonFieldsNameOfSandboxRuntime = [19]string{
 	7:  "desiredState",
 	8:  "displayState",
 	9:  "errorMessage",
-	10: "generation",
-	11: "lastActiveAt",
-	12: "observedGeneration",
-	13: "runtimeState",
-	14: "runtimeStateChangedAt",
-	15: "state",
-	16: "stateChangedAt",
-	17: "stateReportedAt",
-	18: "upgrade",
+	10: "errorReason",
+	11: "generation",
+	12: "lastActiveAt",
+	13: "observedGeneration",
+	14: "runtimeState",
+	15: "runtimeStateChangedAt",
+	16: "state",
+	17: "stateChangedAt",
+	18: "stateReportedAt",
+	19: "upgrade",
 }
 
 // Decode decodes SandboxRuntime from json.
@@ -26009,8 +26049,18 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"errorMessage\"")
 			}
+		case "errorReason":
+			if err := func() error {
+				s.ErrorReason.Reset()
+				if err := s.ErrorReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"errorReason\"")
+			}
 		case "generation":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -26032,7 +26082,7 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastActiveAt\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -26064,7 +26114,7 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"runtimeStateChangedAt\"")
 			}
 		case "state":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -26114,8 +26164,8 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b10000000,
-		0b10010100,
-		0b00000000,
+		0b00101000,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -26311,6 +26361,44 @@ func (s SandboxRuntimeDisplayState) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxRuntimeDisplayState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxRuntimeErrorReason as json.
+func (s SandboxRuntimeErrorReason) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxRuntimeErrorReason from json.
+func (s *SandboxRuntimeErrorReason) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeErrorReason to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxRuntimeErrorReason(v) {
+	case SandboxRuntimeErrorReasonImageUnavailable:
+		*s = SandboxRuntimeErrorReasonImageUnavailable
+	default:
+		*s = SandboxRuntimeErrorReason(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxRuntimeErrorReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeErrorReason) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

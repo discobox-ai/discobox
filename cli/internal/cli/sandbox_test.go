@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
@@ -168,5 +172,32 @@ func TestSandboxUserDistinguishesUnsetFromExplicitZero(t *testing.T) {
 	})
 	if !ok || !explicit.UID.Set || explicit.UID.Value != 0 {
 		t.Fatalf("explicit --user-uid 0 must be sent: set=%v value=%d", explicit.UID.Set, explicit.UID.Value)
+	}
+}
+
+// A discobox whose image its pool cannot obtain will fail the same way however
+// often it is retried, so the failure says what to do: upgrade when its harness
+// has a newer image, and that there is none when it has not.
+func TestSandboxFailureReasonSaysWhatToDoAboutAnUnavailableImage(t *testing.T) {
+	failed := func(reason apiclientgen.OptSandboxRuntimeErrorReason, upgrade bool) *apimodel.Sandbox {
+		sb := &apimodel.Sandbox{ID: "sbx_1"}
+		sb.Runtime.State = apiclientgen.SandboxRuntimeStateFailed
+		sb.Runtime.ErrorMessage = apiclientgen.NewOptString(`"harness:local" is not on this pool`)
+		sb.Runtime.ErrorReason = reason
+		if upgrade {
+			sb.Runtime.Upgrade = apiclientgen.NewOptSandboxUpgrade(apimodel.SandboxUpgrade{Available: true})
+		}
+		return sb
+	}
+	unavailable := apiclientgen.NewOptSandboxRuntimeErrorReason(apiclientgen.SandboxRuntimeErrorReasonImageUnavailable)
+
+	if got := sandboxFailureReason(failed(unavailable, true)); !strings.Contains(got, "discobox admin box upgrade sbx_1") {
+		t.Fatalf("reason = %q, want the upgrade command", got)
+	}
+	if got := sandboxFailureReason(failed(unavailable, false)); !strings.Contains(got, "no newer image") || strings.Contains(got, "upgrade sbx_1") {
+		t.Fatalf("reason = %q, want it to say there is nothing to upgrade to", got)
+	}
+	if got := sandboxFailureReason(failed(apiclientgen.OptSandboxRuntimeErrorReason{}, true)); got != `"harness:local" is not on this pool` {
+		t.Fatalf("an unclassified failure = %q, want the message alone", got)
 	}
 }

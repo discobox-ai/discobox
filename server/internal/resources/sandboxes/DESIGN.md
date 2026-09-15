@@ -242,7 +242,7 @@ other's field:
 | --- | --- | --- |
 | `State` | `pending`, `awaiting_source`, `ready`, `failed`, `archived`, `deleted` | `SandboxReconciler`, and nothing else |
 | `RuntimeState` | `starting`, `running`, `stopping`, `stopped`, empty | `Store.ApplySandboxStateReports`, and nothing else |
-| `ErrorMessage`, `ObservedGeneration` | — | `SandboxReconciler` |
+| `ErrorMessage`, `ErrorReason`, `ObservedGeneration` | — | `SandboxReconciler` |
 
 `ready` means the container has been converged against the spec. It says
 nothing about power; empty `RuntimeState` means no agent has reported yet,
@@ -264,6 +264,14 @@ Two consequences worth stating:
 - **`displayState` is the composition** and the only thing clients should read
   (`services.SandboxDisplayState`). Existence answers first; the runtime axis
   fills in what the container is doing once existence is settled at `ready`.
+
+`ErrorReason` classifies `ErrorMessage` for a client that acts on the failure
+rather than only showing it, and is set and cleared with it (`RecordFailure`,
+`ClearFailure`, `RecordIntent`). The one reason today is `image_unavailable`
+(`failureReason`): the pool cannot obtain the image the sandbox is pinned to
+(`sandbox.ErrImageUnavailable`). A retry cannot get past that and an upgrade
+can, so the API reports it beside `upgrade.available` and a client offers the
+upgrade. The reconciler still does not re-pin on its own (see above).
 
 `ensure` creates the container and does not start it. The exception is a
 sandbox that has never run — `pending`, or `awaiting_source` resuming after its

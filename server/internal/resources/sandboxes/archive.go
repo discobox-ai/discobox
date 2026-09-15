@@ -75,7 +75,7 @@ func (r *SandboxReconciler) archive(ctx context.Context, sandbox *model.Sandbox,
 
 	if err := r.archiveSandbox(ctx, sandbox); err != nil {
 		sandbox.ObservedGeneration = generation
-		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
+		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 			return reconcile.Result{}, updateErr
 		}
@@ -84,7 +84,7 @@ func (r *SandboxReconciler) archive(ctx context.Context, sandbox *model.Sandbox,
 
 	sandbox.ObservedGeneration = generation
 	sandbox.SetState(model.SandboxStateArchived)
-	sandbox.ErrorMessage = nil
+	sandbox.ClearFailure()
 	if err := r.update(ctx, sandbox, generation); err != nil {
 		return reconcile.Result{}, err
 	}

@@ -37,6 +37,13 @@ var (
 	// reason for when the wait runs out.
 	ErrPoolNotReachable = errors.New("pool agent is not reachable")
 
+	// ErrImageUnavailable indicates the pool cannot obtain the image a sandbox
+	// is pinned to: the pinned image is not on the pool and its reference no
+	// longer names it, or no registry will hand the pool that reference. It is
+	// an answer about the pin, not a failed attempt, so retrying does not help
+	// and an upgrade that re-pins the sandbox does. See ImageUnavailableError.
+	ErrImageUnavailable = errors.New("sandbox image is not available")
+
 	// ErrPoolAgentUnsupported indicates the pool's agent does not have the
 	// operation asked of it: it answered with a route-level 404 rather than one
 	// of its own errors, which is what an agent that predates the operation
@@ -90,3 +97,19 @@ func (e *PoolFailure) Error() string {
 }
 
 func (e *PoolFailure) Unwrap() error { return ErrNoSandboxCapacity }
+
+// ImageUnavailableError is ErrImageUnavailable with the pool agent's account of
+// which image and why, which is what a person reading the failure needs. It
+// matches ErrImageUnavailable, so callers classify it without the message.
+type ImageUnavailableError struct {
+	Message string
+}
+
+func (e *ImageUnavailableError) Error() string {
+	if e.Message == "" {
+		return ErrImageUnavailable.Error()
+	}
+	return e.Message
+}
+
+func (e *ImageUnavailableError) Is(target error) bool { return target == ErrImageUnavailable }

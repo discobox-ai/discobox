@@ -683,6 +683,20 @@ the list offers. Repair rebuilds on the current image (ADR 0064), which is
 why its detail says so and why it is not merely a heavier upgrade: upgrade needs
 a newer image to exist, repair needs the discobox to be broken.
 
+**A box whose image is gone is offered the upgrade** (`imageoffer.go`). The
+server classifies a failure on an image the pool cannot obtain
+(`errorReason: image_unavailable`, `Sandbox.ImageUnavailable`), and no attach
+gets past it. So attach, shell and VS Code on such a row ask whether to upgrade
+it — re-pinned to the harness's current image, work kept — when `Upgrade` says
+there is one, and say there is nothing to move to when not. It is checked ahead
+of the attach guard, whose answer for a box with no container is repair: that
+also rebuilds on the current image, but it is the heavier of the two, and
+upgrade is the one the failure names. An attach that fails before the row says
+why reads a listing of its own (`checkImageOffer`) and offers from that. It is
+not left to the next listing, which may be the poll's, requested before the
+failure was recorded. The dialog answers the attach the user just made, so it
+is not the unprompted interruption the list otherwise refuses to raise.
+
 **Rename is a third kind, and only in the list** (`renameKey`, `askRename`). It
 is not a `Verb` — a verb is a word the window already has, and this one needs a
 name typed first — so `e` opens the input dialog on the name the discobox

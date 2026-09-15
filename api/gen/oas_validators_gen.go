@@ -4218,6 +4218,24 @@ func (s *SandboxRuntime) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.ErrorReason.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "errorReason",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.RuntimeState.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -4302,6 +4320,15 @@ func (s SandboxRuntimeDisplayState) Validate() error {
 	case "deleted":
 		return nil
 	case "error":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SandboxRuntimeErrorReason) Validate() error {
+	switch s {
+	case "image_unavailable":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

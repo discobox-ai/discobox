@@ -645,6 +645,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	if upgrade, ok := sb.Runtime.Upgrade.Get(); ok {
 		row.Upgrade = upgrade.Available
 	}
+	row.ImageUnavailable = sb.Runtime.ErrorReason.Or("") == apiclientgen.SandboxRuntimeErrorReasonImageUnavailable
 	row.Usage = toTUIUsage(sb)
 	if source, ok := sb.Config.Source.Get(); ok {
 		// What the run options offer to cut a new discobox from, spelled the

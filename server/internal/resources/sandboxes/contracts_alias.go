@@ -22,10 +22,12 @@ type StateEvent = contract.StateEvent
 type HTTPClientLease = transport.HTTPClientLease
 type PoolRuntime = contract.PoolRuntime
 type PoolManager = contract.PoolManager
+type ImageUnavailableError = contract.ImageUnavailableError
 
 var ErrNotFound = contract.ErrNotFound
 var ErrAlreadyExists = contract.ErrAlreadyExists
 var ErrArchived = contract.ErrArchived
+var ErrImageUnavailable = contract.ErrImageUnavailable
 var ErrNotRunning = contract.ErrNotRunning
 var ErrAlreadyRunning = contract.ErrAlreadyRunning
 var StatusCreated = contract.StatusCreated

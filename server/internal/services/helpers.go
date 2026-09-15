@@ -240,6 +240,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	}
 	if sandbox.ErrorMessage != nil {
 		runtime["errorMessage"] = *sandbox.ErrorMessage
+		if sandbox.ErrorReason != "" {
+			runtime["errorReason"] = sandbox.ErrorReason
+		}
 	}
 	if sandbox.LastActiveAt != nil {
 		runtime["lastActiveAt"] = *sandbox.LastActiveAt

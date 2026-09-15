@@ -14,10 +14,12 @@ schema types.
 - Keep transport clients, servers, handlers, and validators in `../gen`.
 - Hold the hand-written wire constants that are contract but not schema, so
   both sides import one definition. `errors.go` holds the RFC 7807 `type`
-  values (`ErrorTypeSandboxArchived`): a status the API reuses for two
-  conditions (409 is both "already exists" and "archived") needs something
-  machine-readable to tell them apart, and the human-readable detail is not
-  that. The pool agent's handlers set it; `poolruntime` matches on it.
+  values (`ErrorTypeSandboxArchived`, `ErrorTypeSandboxImageUnavailable`): a
+  status the API reuses for two conditions (409 is both "already exists" and
+  "archived") needs something machine-readable to tell them apart, and a
+  failure the control plane records as a reason (an image the pool cannot
+  obtain) needs something a client can act on; the human-readable detail is
+  neither. The pool agent's handlers set it; `poolruntime` matches on it.
 
 ## Generation
 

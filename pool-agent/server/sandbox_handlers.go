@@ -317,6 +317,9 @@ func mapRuntimeError(err error) error {
 	if errors.Is(err, sandboxruntime.ErrArchived) {
 		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxArchived)
 	}
+	if errors.Is(err, sandboxruntime.ErrImageUnavailable) {
+		return newTypedStatusError(http.StatusUnprocessableEntity, err.Error(), workerapimodel.ErrorTypeSandboxImageUnavailable)
+	}
 	return newStatusError(http.StatusInternalServerError, err.Error())
 }
 

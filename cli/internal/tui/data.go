@@ -282,6 +282,13 @@ type Sandbox struct {
 	Created time.Time // when the sandbox was created
 	Upgrade bool      // running an image older than its harness config resolves to
 	Message string    // error detail, shown when the row is under the cursor
+
+	// ImageUnavailable is a box that failed because its pool cannot obtain the
+	// image it is pinned to, as the server classified the failure. Attaching
+	// cannot get past that however often it is tried, so the window offers the
+	// upgrade that re-pins it instead, when Upgrade says there is an image to
+	// move it to (imageoffer.go).
+	ImageUnavailable bool
 }
 
 // Session is what the window knows about where it is running: the project and

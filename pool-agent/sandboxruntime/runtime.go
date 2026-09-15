@@ -110,6 +110,11 @@ var (
 	// that this slug names no source on it.
 	ErrRepositoryNotFound = errors.New("sandbox git repository not found")
 	ErrAlreadyExists      = errors.New("sandbox already exists")
+	// ErrImageUnavailable is the pool being unable to obtain the image a
+	// sandbox is pinned to. It is not transient: the pin names an image this
+	// pool does not have and cannot get, so the way forward is an upgrade that
+	// re-pins the sandbox, not another attempt.
+	ErrImageUnavailable = errors.New("sandbox image is not available")
 )
 
 // Sandbox is the pool-local runtime view of a sandbox instance.
@@ -568,8 +573,8 @@ func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, sandboxI
 	}
 	if !imageMatchesPinDigests(inspected.ID, inspected.RepoDigests, pinnedDigest) {
 		return "", fmt.Errorf(
-			"sandbox is pinned to image %s but %q now resolves to %s, and the pinned image is not available on this pool; upgrade the sandbox to move it to the current image",
-			pinnedDigest, imageName, inspected.ID)
+			"%w: the sandbox is pinned to image %s but %q now resolves to %s, and the pinned image is not on this pool; upgrade the sandbox to move it to the current image",
+			ErrImageUnavailable, pinnedDigest, imageName, inspected.ID)
 	}
 	return inspected.ID, nil
 }
@@ -691,6 +696,19 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 	}
 	pull, err := r.client.ImagePull(ctx, imageName, client.ImagePullOptions{})
 	if err != nil {
+		// The daemon answers a reference no registry has -- no such repository
+		// or tag, which is also what it reports for "pull access denied ...
+		// repository does not exist" -- as not found, before any progress. That
+		// is an answer about the image, not a failed attempt, and it is the one
+		// a locally built image nobody pushed always gets.
+		//
+		// Unauthorized and forbidden are not: they are this pool's credentials
+		// for an image that may well exist, and fixing the credentials is what
+		// helps. An upgrade would not, since the harness's current image sits
+		// behind the same ones.
+		if cerrdefs.IsNotFound(err) {
+			return fmt.Errorf("%w: %q is not on this pool and its registry does not have it: %w", ErrImageUnavailable, imageName, err)
+		}
 		return fmt.Errorf("pull image %q: %w", imageName, err)
 	}
 	defer pull.Close()

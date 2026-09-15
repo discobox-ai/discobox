@@ -75,7 +75,7 @@ func TestUpdatePoolStatusLeavesReconcilerVerdictAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get pool: %v", err)
 	}
-	pool.RecordFailure(model.PoolStateOffline, "runtime did not converge")
+	pool.RecordFailure(model.PoolStateOffline, "runtime did not converge", "")
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
 		t.Fatalf("record failure: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestSchedulablePoolForSandboxUsesFreshHealthRatherThanLifecycle(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported")
+	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported", "")
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
 		t.Fatal(err)
 	}

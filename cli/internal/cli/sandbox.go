@@ -720,11 +720,23 @@ func (a *App) waitForSandboxCtx(ctx context.Context, client *apiclientgen.Client
 // sandboxFailureReason reports why a sandbox failed, preferring the message the
 // server recorded on it. The state alone is tautological ("it failed because it
 // failed"), so it is only the fallback when no message is set.
+//
+// A failure the server classified as an image the pool cannot obtain also says
+// what to do about it, because the message alone reads like something a retry
+// might get past and it is not.
 func sandboxFailureReason(sandbox *apimodel.Sandbox) string {
-	if message, ok := sandbox.Runtime.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
-		return strings.TrimSpace(message)
+	message, ok := sandbox.Runtime.ErrorMessage.Get()
+	if !ok || strings.TrimSpace(message) == "" {
+		return fmt.Sprintf("state=%s", sandbox.Runtime.State)
 	}
-	return fmt.Sprintf("state=%s", sandbox.Runtime.State)
+	message = strings.TrimSpace(message)
+	if sandbox.Runtime.ErrorReason.Or("") != apiclientgen.SandboxRuntimeErrorReasonImageUnavailable {
+		return message
+	}
+	if upgrade, ok := sandbox.Runtime.Upgrade.Get(); ok && upgrade.Available {
+		return fmt.Sprintf("%s\nIts harness has a newer image: run `discobox admin box upgrade %s` to move it there, keeping its work.", message, sandbox.ID)
+	}
+	return message + "\nIts harness has no newer image to upgrade it to."
 }
 
 func sourceCodeReferences(value string) (apiclientgen.SandboxCreateConfigSourceCodeReferences, error) {

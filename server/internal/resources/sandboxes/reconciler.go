@@ -249,7 +249,7 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	if sandbox.RepairGeneration == generation && !sandbox.Converged() && !firstCreate {
 		if err := r.archiveSandbox(ctx, sandbox); err != nil {
 			sandbox.ObservedGeneration = generation
-			sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
+			sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 				return reconcile.Result{}, updateErr
 			}
@@ -258,7 +258,7 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	}
 	if err := r.createSandbox(ctx, sandbox, firstCreate); err != nil {
 		sandbox.ObservedGeneration = generation
-		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
+		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 			return reconcile.Result{}, updateErr
 		}
@@ -292,11 +292,21 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	// complete sync.
 	sandbox.SetState(model.SandboxStateReady)
 	sandbox.ObservedGeneration = generation
-	sandbox.ErrorMessage = nil
+	sandbox.ClearFailure()
 	if err := r.update(ctx, sandbox, generation); err != nil {
 		return reconcile.Result{}, err
 	}
 	return reconcile.Result{}, nil
+}
+
+// failureReason classifies a failed reconcile for the client that has to act on
+// it. Only a failure a client can do something specific about gets a reason; the
+// rest are recorded with the message alone.
+func failureReason(err error) string {
+	if errors.Is(err, ErrImageUnavailable) {
+		return model.FailureReasonImageUnavailable
+	}
+	return ""
 }
 
 // The image pin moves in exactly one place: UpgradeSandbox. There is
@@ -312,7 +322,7 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 
 	if err := r.deleteSandbox(ctx, sandbox); err != nil {
 		sandbox.ObservedGeneration = generation
-		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
+		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 			return updateErr
 		}
@@ -320,7 +330,7 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 	}
 	sandbox.ObservedGeneration = generation
 	sandbox.SetState(model.SandboxStateDeleted)
-	sandbox.ErrorMessage = nil
+	sandbox.ClearFailure()
 	if err := r.update(ctx, sandbox, generation); err != nil {
 		return err
 	}

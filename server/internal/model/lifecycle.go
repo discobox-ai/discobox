@@ -54,7 +54,15 @@ type ResourceLifecycle struct {
 	ObservedGeneration int64     `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation the reconciler has finished acting on"`
 	StateChangedAt     time.Time `gorm:"column:state_changed_at" json:"stateChangedAt,omitempty" doc:"When State last changed to its current value. Anchors how long a resource has been in a state, for timeouts that must not be reset by unrelated reconciles." format:"date-time"`
 	ErrorMessage       *string   `gorm:"column:error_message;type:text" json:"errorMessage,omitempty" doc:"Error from the generation currently recorded in ObservedGeneration. Cleared by every accepted intent."`
+	// ErrorReason classifies ErrorMessage for a client that has to act on the
+	// failure rather than only show it. It is set with the message and cleared
+	// with it, and is empty for a failure nothing classifies.
+	ErrorReason string `gorm:"column:error_reason;not null;type:text;default:''" json:"errorReason,omitempty" doc:"Machine-readable reason for ErrorMessage, empty when the failure is unclassified. Set and cleared with ErrorMessage." enum:"image_unavailable"`
 }
+
+// FailureReasonImageUnavailable is a sandbox whose pool cannot obtain the image
+// it is pinned to. Retrying does not help; an upgrade that re-pins it does.
+const FailureReasonImageUnavailable = "image_unavailable"
 
 // SetState moves the resource to state, stamping StateChangedAt only on an
 // actual change.
@@ -80,7 +88,13 @@ func (l *ResourceLifecycle) SetState(state string) {
 // what is, and nothing about accepting intent makes an observation stale.
 func (l *ResourceLifecycle) RecordIntent(desiredState string) {
 	l.DesiredState = desiredState
+	l.ClearFailure()
+}
+
+// ClearFailure drops the recorded failure, message and reason together.
+func (l *ResourceLifecycle) ClearFailure() {
 	l.ErrorMessage = nil
+	l.ErrorReason = ""
 }
 
 func (l *ResourceLifecycle) IncrementGeneration() {
@@ -101,9 +115,13 @@ func (l *ResourceLifecycle) Converged() bool {
 // sandbox that could not be built is `failed`; a pool whose host stopped
 // answering is `offline` and expected back. The single terminal phase this
 // replaces is what made those two indistinguishable.
-func (l *ResourceLifecycle) RecordFailure(state, message string) {
+//
+// reason classifies the failure for a client that acts on it (the
+// FailureReason constants), and is empty when nothing does.
+func (l *ResourceLifecycle) RecordFailure(state, message, reason string) {
 	l.SetState(state)
 	l.ErrorMessage = &message
+	l.ErrorReason = reason
 }
 
 func (l *ResourceLifecycle) SetDefaults(desiredState, state string) {

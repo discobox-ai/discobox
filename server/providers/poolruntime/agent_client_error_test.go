@@ -60,6 +60,27 @@ func TestArchivedIsNotAlreadyExists(t *testing.T) {
 	}
 }
 
+// An image the pool cannot obtain reaches the reconciler as its own error,
+// carrying the agent's account of which image, so the failure it records says
+// why and names the reason a client offers the upgrade on.
+func TestMapPoolClientErrorKeepsImageUnavailable(t *testing.T) {
+	statusErr := poolStatusError(http.StatusUnprocessableEntity, poolapimodel.ErrorTypeSandboxImageUnavailable)
+	var typed *poolclient.ErrorModelStatusCode
+	if errors.As(statusErr, &typed) {
+		typed.Response.Detail = poolclient.NewOptString(`sandbox image is not available: "harness:local" is not on this pool`)
+	}
+	got := mapPoolClientError(statusErr)
+	if !errors.Is(got, sandbox.ErrImageUnavailable) {
+		t.Fatalf("mapped = %v, want ErrImageUnavailable", got)
+	}
+	if got.Error() != `sandbox image is not available: "harness:local" is not on this pool` {
+		t.Fatalf("message = %q, want the agent's detail", got.Error())
+	}
+	if errors.Is(mapPoolClientError(poolStatusError(http.StatusUnprocessableEntity, "")), sandbox.ErrImageUnavailable) {
+		t.Fatal("an untyped 422 was read as an unavailable image")
+	}
+}
+
 // A pool agent older than the control plane answers an operation added since
 // with its router's plain-text 404. That is a statement about the agent, and
 // it must not read as the sandbox or pool not being found.

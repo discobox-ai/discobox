@@ -822,6 +822,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case runVerbMsg:
 		return m.runVerb(msg.verb, msg.ids)
 
+	case imageOfferListedMsg:
+		m.imageOfferListed(msg)
+		return nil
+
 	case verbDoneMsg:
 		return m.verbDone(msg)
 
@@ -1769,6 +1773,12 @@ func attachWhy(one bool, targets []Sandbox) string {
 		return "takes exactly one box"
 	}
 	box := targets[0]
+	if box.ImageUnavailable {
+		if box.Upgrade {
+			return "its image is no longer available on its pool — upgrade moves it to its harness's current image"
+		}
+		return "its image is no longer available on its pool, and its harness has no newer image"
+	}
 	if box.attachable() {
 		return ""
 	}
@@ -1818,6 +1828,13 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		}
 	}
 	if chosen == nil {
+		return nil
+	}
+	// Checked ahead of the guard: a box whose image is gone has no container to
+	// attach to, and the guard's answer — repair — is the heavier of the two
+	// ways out when an upgrade will do.
+	if len(targets) == 1 && targets[0].ImageUnavailable && opensBox(key) {
+		m.offerImageUpgrade(targets[0])
 		return nil
 	}
 	if !chosen.enabled {

@@ -7295,6 +7295,52 @@ func (o OptSandboxRuntimeDisplayState) Or(d SandboxRuntimeDisplayState) SandboxR
 	return d
 }
 
+// NewOptSandboxRuntimeErrorReason returns new OptSandboxRuntimeErrorReason with value set to v.
+func NewOptSandboxRuntimeErrorReason(v SandboxRuntimeErrorReason) OptSandboxRuntimeErrorReason {
+	return OptSandboxRuntimeErrorReason{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeErrorReason is optional SandboxRuntimeErrorReason.
+type OptSandboxRuntimeErrorReason struct {
+	Value SandboxRuntimeErrorReason
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeErrorReason was set.
+func (o OptSandboxRuntimeErrorReason) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeErrorReason) Reset() {
+	var v SandboxRuntimeErrorReason
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeErrorReason) SetTo(v SandboxRuntimeErrorReason) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeErrorReason) Get() (v SandboxRuntimeErrorReason, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeErrorReason) Or(d SandboxRuntimeErrorReason) SandboxRuntimeErrorReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeRuntimeState returns new OptSandboxRuntimeRuntimeState with value set to v.
 func NewOptSandboxRuntimeRuntimeState(v SandboxRuntimeRuntimeState) OptSandboxRuntimeRuntimeState {
 	return OptSandboxRuntimeRuntimeState{
@@ -14419,6 +14465,11 @@ type SandboxRuntime struct {
 	// Error from the generation currently recorded in observedGeneration. Cleared by every accepted
 	// intent.
 	ErrorMessage OptString `json:"errorMessage"`
+	// Machine-readable reason for errorMessage, absent when the failure is unclassified. Set and
+	// cleared with errorMessage. image_unavailable is a sandbox whose pool cannot obtain the image
+	// it is pinned to: retrying does not help, and an upgrade to the harness's current image does
+	// when upgrade.available says there is one.
+	ErrorReason OptSandboxRuntimeErrorReason `json:"errorReason"`
 	// Latest spec generation.
 	Generation int64 `json:"generation"`
 	// Last observed activity timestamp.
@@ -14491,6 +14542,11 @@ func (s *SandboxRuntime) GetDisplayState() OptSandboxRuntimeDisplayState {
 // GetErrorMessage returns the value of ErrorMessage.
 func (s *SandboxRuntime) GetErrorMessage() OptString {
 	return s.ErrorMessage
+}
+
+// GetErrorReason returns the value of ErrorReason.
+func (s *SandboxRuntime) GetErrorReason() OptSandboxRuntimeErrorReason {
+	return s.ErrorReason
 }
 
 // GetGeneration returns the value of Generation.
@@ -14586,6 +14642,11 @@ func (s *SandboxRuntime) SetDisplayState(val OptSandboxRuntimeDisplayState) {
 // SetErrorMessage sets the value of ErrorMessage.
 func (s *SandboxRuntime) SetErrorMessage(val OptString) {
 	s.ErrorMessage = val
+}
+
+// SetErrorReason sets the value of ErrorReason.
+func (s *SandboxRuntime) SetErrorReason(val OptSandboxRuntimeErrorReason) {
+	s.ErrorReason = val
 }
 
 // SetGeneration sets the value of Generation.
@@ -14785,6 +14846,44 @@ func (s *SandboxRuntimeDisplayState) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxRuntimeDisplayStateError:
 		*s = SandboxRuntimeDisplayStateError
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Machine-readable reason for errorMessage, absent when the failure is unclassified. Set and
+// cleared with errorMessage. image_unavailable is a sandbox whose pool cannot obtain the image
+// it is pinned to: retrying does not help, and an upgrade to the harness's current image does
+// when upgrade.available says there is one.
+type SandboxRuntimeErrorReason string
+
+const (
+	SandboxRuntimeErrorReasonImageUnavailable SandboxRuntimeErrorReason = "image_unavailable"
+)
+
+// AllValues returns all SandboxRuntimeErrorReason values.
+func (SandboxRuntimeErrorReason) AllValues() []SandboxRuntimeErrorReason {
+	return []SandboxRuntimeErrorReason{
+		SandboxRuntimeErrorReasonImageUnavailable,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeErrorReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeErrorReasonImageUnavailable:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeErrorReason) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeErrorReason(data) {
+	case SandboxRuntimeErrorReasonImageUnavailable:
+		*s = SandboxRuntimeErrorReasonImageUnavailable
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

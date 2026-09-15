@@ -672,6 +672,10 @@ func mapPoolClientError(err error) error {
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
 		return sandbox.ErrNotFound
 	}
+	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusUnprocessableEntity &&
+		poolErrorType(statusErr) == poolapimodel.ErrorTypeSandboxImageUnavailable {
+		return &sandbox.ImageUnavailableError{Message: poolClientErrorMessage(statusErr)}
+	}
 	var unexpected *unexpectedPoolAgentResponse
 	if errors.As(err, &unexpected) {
 		if unexpected.StatusCode == http.StatusNotFound {

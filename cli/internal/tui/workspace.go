@@ -600,6 +600,7 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 
 	if msg.err != nil {
 		if primary {
+			box := m.paneBox
 			m.closeWorkspace()
 			if m.attach != nil {
 				// The window was opened to be this attach and the attach never
@@ -607,6 +608,11 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 				// failure, and nothing on screen behind it.
 				return m.exit(fmt.Errorf("%s: %w", action, msg.err))
 			}
+			// The attach error is the transport's account and cannot say the
+			// box failed on an image its pool cannot get. A listing read after
+			// the failure can, so the offer asks for one of its own.
+			m.layout()
+			return tea.Batch(m.refresh(), m.checkImageOffer(box.ID), m.report(true, "%s: %v", action, msg.err))
 		}
 		// Re-fit what did open: a primary sized for a split whose tabs never
 		// arrived should take the width back.

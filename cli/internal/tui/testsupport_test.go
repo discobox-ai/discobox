@@ -120,11 +120,14 @@ type fakeSource struct {
 	// execs is what the workspace's poll is told is running; execsErr fails
 	// the listing, openExecErr every attach, openExecErrFor one exec's
 	// attach, newShellErr the shell create.
-	execs          []Exec
-	execsErr       error
-	openExecErr    error
-	openExecErrFor map[string]error
-	newShellErr    error
+	execs       []Exec
+	execsErr    error
+	openExecErr error
+	// failedExecSandboxes, when set, replaces the listing as an attach fails:
+	// the server recording why a sandbox failed at the moment its attach does.
+	failedExecSandboxes []Sandbox
+	openExecErrFor      map[string]error
+	newShellErr         error
 	// newTerminalErr fails the terminal create.
 	newTerminalErr error
 	// newShellID names the next exec NewShell creates, and newTerminalID the
@@ -561,6 +564,9 @@ func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows i
 	defer f.mu.Unlock()
 	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, execID, cols, rows))
 	if f.openExecErr != nil {
+		if f.failedExecSandboxes != nil {
+			f.sandboxes = f.failedExecSandboxes
+		}
 		return nil, f.openExecErr
 	}
 	if err := f.openExecErrFor[execID]; err != nil {

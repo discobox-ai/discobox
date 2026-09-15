@@ -46,7 +46,7 @@ func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 	// The state an earlier failure left behind: offline with the reason
 	// recorded against its generation (the shape a stale-heartbeat verdict
 	// writes, and what pre-liveness-semantics failures wrote).
-	pool.RecordFailure(model.PoolStateOffline, "runtime did not converge")
+	pool.RecordFailure(model.PoolStateOffline, "runtime did not converge", "")
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestStartupReconcileDoesNotRenewPreviousOfflineFailure(t *testing.T) {
 		RegisteredAt: &old, LastSeenAt: &old, StatusReportedAt: &old, ReconciledAt: &old,
 		PoolManifest:      model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
 		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent}}
-	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported")
+	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported", "")
 	if err := st.CreatePool(ctx, pool); err != nil {
 		t.Fatal(err)
 	}

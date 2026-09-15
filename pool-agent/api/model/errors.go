@@ -10,3 +10,15 @@ package model
 // them apart, and the human-readable detail is not a contract, so the type is
 // what the control plane matches on (ADR 0022 §5).
 const ErrorTypeSandboxArchived = "https://discobox.ai/errors/sandbox-archived"
+
+// ErrorTypeSandboxImageUnavailable is the RFC 7807 `type` a pool agent sets on
+// the 422 it returns when it cannot obtain the image a sandbox is pinned to: the
+// pinned image is not on the pool and its reference no longer names it, or the
+// registry has no image by that reference.
+//
+// The control plane records it as the reason a sandbox failed, which is what
+// lets a client say so plainly and offer the upgrade that re-pins the sandbox to
+// its harness's current image. Retrying does not help; new intent does. It is
+// deliberately not a 409, which an older control plane reads as "already
+// exists" and settles as a healthy sandbox.
+const ErrorTypeSandboxImageUnavailable = "https://discobox.ai/errors/sandbox-image-unavailable"

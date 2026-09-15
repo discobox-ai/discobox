@@ -203,6 +203,42 @@ func (p *missingRuntimeProvider) Restart(context.Context, sandboxes.SandboxRef, 
 	return nil, nil
 }
 
+// A pool that cannot obtain a sandbox's pinned image has answered for the pin,
+// not failed an attempt. The reconciler records that as the failure's reason, so
+// a client can say what is wrong and offer the upgrade that re-pins it; any
+// other failure is recorded with no reason at all.
+func TestReconcileRecordsAnUnavailableImageAsTheFailureReason(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		createErr error
+		reason    string
+	}{
+		"image unavailable": {&sandboxes.ImageUnavailableError{Message: `"harness:local" is not on this pool`}, model.FailureReasonImageUnavailable},
+		"anything else":     {errors.New("pool agent returned 500"), ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			appStore := newExecutorTestStore(t)
+			sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
+				DesiredState: model.DesiredStatePresent,
+				State:        model.SandboxStatePending,
+				Generation:   1,
+			})
+			executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{createErr: tc.createErr}))
+			if _, err := executor.ReconcileSandbox(ctx, sb); err == nil {
+				t.Fatal("reconcile succeeded against a failing create")
+			}
+			assertSandboxFailed(t, appStore, sb.ProjectID, sb.ID, tc.createErr.Error())
+			updated, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if updated.ErrorReason != tc.reason {
+				t.Fatalf("error reason = %q, want %q", updated.ErrorReason, tc.reason)
+			}
+		})
+	}
+}
+
 func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 	ctx := context.Background()
 	appStore := newExecutorTestStore(t)

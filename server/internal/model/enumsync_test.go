@@ -49,6 +49,9 @@ var yamlEnumAliases = map[string]string{
 	// ResourceLifecycle, because only a sandbox has one (ADR 0034). The API
 	// carries it inside the runtime object, so the two names differ.
 	"SandboxRuntime.runtimeState": "Sandbox.runtimeState",
+	// The failure reason sits on the embedded ResourceLifecycle beside the
+	// message it classifies, and the API carries it inside the runtime object.
+	"SandboxRuntime.errorReason": "ResourceLifecycle.errorReason",
 }
 
 // yamlOwnedEnums lists contract enums with no authoritative Go model tag, with

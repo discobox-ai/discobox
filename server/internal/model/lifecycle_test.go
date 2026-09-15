@@ -44,7 +44,7 @@ func TestRecordFailureKeepsTheCallersState(t *testing.T) {
 	before := sandbox.StateChangedAt
 	time.Sleep(time.Millisecond)
 
-	sandbox.RecordFailure(model.SandboxStateFailed, "boom")
+	sandbox.RecordFailure(model.SandboxStateFailed, "boom", "")
 	if sandbox.State != model.SandboxStateFailed {
 		t.Fatalf("state = %q, want failed", sandbox.State)
 	}
@@ -56,7 +56,7 @@ func TestRecordFailureKeepsTheCallersState(t *testing.T) {
 	}
 
 	var pool model.ResourceLifecycle
-	pool.RecordFailure(model.PoolStateOffline, "host unreachable")
+	pool.RecordFailure(model.PoolStateOffline, "host unreachable", "")
 	if pool.State != model.PoolStateOffline {
 		t.Fatalf("state = %q, want offline: a failure must not force a terminal state", pool.State)
 	}
@@ -67,7 +67,7 @@ func TestRecordFailureKeepsTheCallersState(t *testing.T) {
 func TestRecordIntentLeavesStateAlone(t *testing.T) {
 	var lifecycle model.ResourceLifecycle
 	lifecycle.SetState(model.SandboxStateReady)
-	lifecycle.RecordFailure(model.SandboxStateFailed, "transient")
+	lifecycle.RecordFailure(model.SandboxStateFailed, "transient", "")
 
 	lifecycle.RecordIntent(model.DesiredStateDeleted)
 
@@ -95,5 +95,27 @@ func TestConvergedComparesGenerations(t *testing.T) {
 	lifecycle.ObservedGeneration = lifecycle.Generation
 	if !lifecycle.Converged() {
 		t.Fatal("a reconciler that finished should leave the resource converged")
+	}
+}
+
+// A reason means something only beside its message. It is recorded with the
+// failure and goes with it, whichever way the failure is cleared, so a client
+// never acts on a reason for a failure that is no longer there.
+func TestFailureReasonTravelsWithTheMessage(t *testing.T) {
+	var sandbox model.ResourceLifecycle
+	sandbox.RecordFailure(model.SandboxStateFailed, "image gone", model.FailureReasonImageUnavailable)
+	if sandbox.ErrorReason != model.FailureReasonImageUnavailable {
+		t.Fatalf("reason = %q, want %q", sandbox.ErrorReason, model.FailureReasonImageUnavailable)
+	}
+
+	sandbox.RecordIntent(model.DesiredStatePresent)
+	if sandbox.ErrorMessage != nil || sandbox.ErrorReason != "" {
+		t.Fatalf("intent left message %v and reason %q behind", sandbox.ErrorMessage, sandbox.ErrorReason)
+	}
+
+	sandbox.RecordFailure(model.SandboxStateFailed, "image gone", model.FailureReasonImageUnavailable)
+	sandbox.ClearFailure()
+	if sandbox.ErrorMessage != nil || sandbox.ErrorReason != "" {
+		t.Fatalf("ClearFailure left message %v and reason %q behind", sandbox.ErrorMessage, sandbox.ErrorReason)
 	}
 }

@@ -2996,6 +2996,15 @@ components:
                 errorMessage:
                     description: Error from the generation currently recorded in observedGeneration. Cleared by every accepted intent.
                     type: string
+                errorReason:
+                    description: |-
+                        Machine-readable reason for errorMessage, absent when the failure is unclassified. Set and
+                        cleared with errorMessage. image_unavailable is a sandbox whose pool cannot obtain the image
+                        it is pinned to: retrying does not help, and an upgrade to the harness's current image does
+                        when upgrade.available says there is one.
+                    enum:
+                        - image_unavailable
+                    type: string
                 generation:
                     description: Latest spec generation
                     format: int64
