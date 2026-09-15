@@ -237,9 +237,8 @@ func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptio
 		return resolvedRunSource{}, fmt.Errorf("source directory or Git repository is required")
 	}
 	if IsRemoteGitSource(source) {
-		if opts.IncludeDirty == IncludeDirtyAlways {
-			return resolvedRunSource{}, fmt.Errorf("--include-dirty=true needs a local source: a remote repository has no working tree")
-		}
+		// A remote repository has no working tree, so it has no uncommitted
+		// work for --include-dirty to decide about, whatever its value.
 		return resolveRemoteRunSource(ctx, source, ref, explicitRef)
 	}
 	return resolveLocalRunSource(ctx, source, ref, explicitRef, opts)

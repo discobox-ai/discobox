@@ -1946,8 +1946,11 @@ happens:
   source, which is the one it can see a working tree for; the answer stands for
   every source that create cuts from, and an extra `-i` source whose tree is
   dirty when the primary's is clean is carried in under the nil-func default.
-- `true` is rejected for a remote URL or an explicit `@REF`, because a snapshot
-  only ever sits on top of HEAD of a local working tree.
+- `true` is rejected for a local source with an explicit `@REF`, because a
+  snapshot only ever sits on top of HEAD of a local working tree. A remote URL —
+  primary, `-i`, or declared — ignores the flag: it has no working tree, so it
+  has no uncommitted work to decide about, and one remote source does not stop
+  `true` from applying to the local ones.
 - The same flag settles the same question for a source directory in no
   repository, where the uncommitted work is the whole directory; that question
   is `sandboxcreate.ConfirmCopyDirectoryFunc`. See "A Directory That Is Not a

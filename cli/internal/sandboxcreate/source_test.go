@@ -153,15 +153,24 @@ func TestResolveRunSourceIncludeDirtyAutoDoesNotAskWhenWorkspaceIsClean(t *testi
 	}
 }
 
-func TestResolveRunSourceIncludeDirtyAlwaysRejectsSourcesWithoutAWorkingTree(t *testing.T) {
+func TestResolveRunSourceIncludeDirtyAlwaysRejectsAnExplicitRef(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
 	if _, err := resolveRunSource(context.Background(), repo+"@feature-foo", runSourceOptions{IncludeDirty: IncludeDirtyAlways}); err == nil {
 		t.Fatal("explicit ref with --include-dirty=true: want error, got none")
 	}
+}
+
+func TestResolveRunSourceIncludeDirtyAlwaysIgnoresARemoteSource(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
 	remoteURL := "file://" + filepath.ToSlash(repo)
-	if _, err := resolveRunSource(context.Background(), remoteURL, runSourceOptions{IncludeDirty: IncludeDirtyAlways}); err == nil {
-		t.Fatal("remote source with --include-dirty=true: want error, got none")
+
+	source, err := resolveRunSource(context.Background(), remoteURL, runSourceOptions{IncludeDirty: IncludeDirtyAlways})
+	if err != nil {
+		t.Fatalf("remote source with --include-dirty=true: %v", err)
+	}
+	if source.Workspace.Mode != runWorkspaceModeClean {
+		t.Fatalf("workspace = %#v, want clean", source.Workspace)
 	}
 }
 
