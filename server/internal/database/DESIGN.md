@@ -45,7 +45,8 @@ by what it is looking for and is idempotent:
    a column rather than let `AutoMigrate` add a new one beside it.
 2. `AutoMigrate(model.AllModels()...)`.
 3. Post-`AutoMigrate` data migrations, which need the new columns/constraints:
-   index widening, value rewrites (secret types and hosts, provider types),
+   index widening, value rewrites (secret types and hosts, provider types, the trust stanza in
+   a codex harness's captured `config.toml`),
    dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows), the
    sandbox state split (ADR 0034), and re-keying every sandbox origin to where

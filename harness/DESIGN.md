@@ -538,8 +538,13 @@ image's `unavailable` message.
     shadows the image's fixed template — in the very run that would refresh it.
     Whatever the script writes is stripped back out by `write_output`, so the
     returned file is the fixed one either way.
-  - A captured `config.toml` **keeps whatever stanza it was captured with until
-    the harness is reconfigured**: `ConfiguredFiles` overlay the image's `Files`
-    by path and nothing migrates them. A stanza that names a fixed path trusts
-    only that path, so a source-less sandbox on such a config trusts nothing
-    until a reconfigure rewrites the file.
+  - `ConfiguredFiles` overlay the image's `Files` by path, so fixing the image
+    fixes nothing for a config already captured. The stanza this script used to
+    write — trusting the primary source's target, so a source-less sandbox
+    trusted nothing — is rewritten onto `.workingDir` in stored configs at
+    server start (`server/internal/database` → `retrustConfiguredCodexWorkingDir`),
+    keeping the old stanza as the fallback where `.workingDir` is unset: a
+    stored config can name an image whose agent predates the key, and must not
+    lose the trust it had. Changing the stanza again needs the same: a
+    migration for each stanza it replaces, including that one, or every config
+    captured before keeps it.
