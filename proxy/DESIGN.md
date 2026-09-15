@@ -309,6 +309,11 @@ so an incomplete entry is known to be abandoned rather than pending. Startup
 also evicts down to the ceiling, so a ceiling lowered between runs is honored
 without waiting for a store that may never come.
 
+The directory can also be emptied underneath a running proxy: the pool agent
+does it when it clears a pool's caches. An indexed entry whose file is gone is
+a miss, and `Get` forgets it together with the bytes it was counted for, so the
+ceiling does not go on evicting live entries to make room for deleted ones.
+
 ## Runtime Policy
 
 Header rewrite rules are deterministic, and at most one applies per request:

@@ -143,8 +143,17 @@ func (c *Cache) Get(key string) (*Entry, error) {
 	}
 	entry, err := c.readEntry(key)
 	if err != nil {
-		c.stats.Errors++
-		c.index.remove(key)
+		// The index forgets the entry along with the bytes it was counting for
+		// it. An entry whose file is gone takes nothing on disk, and the pool
+		// agent empties this directory underneath a running proxy when it
+		// clears the pool's caches, so leaving its size behind would have the
+		// ceiling evicting live entries to make room for ones already deleted.
+		if errors.Is(err, ErrMiss) {
+			c.stats.Misses++
+		} else {
+			c.stats.Errors++
+		}
+		c.stats.CurrentSize -= c.index.remove(key)
 		return nil, err
 	}
 	c.index.access(key)
@@ -432,11 +441,16 @@ func (i *lruIndex) exists(key string) bool {
 	return ok
 }
 
-func (i *lruIndex) remove(key string) {
-	if item, ok := i.items[key]; ok {
-		i.list.Remove(item.element)
-		delete(i.items, key)
+// remove drops key and returns the size it was recorded with, zero when it was
+// not there.
+func (i *lruIndex) remove(key string) int64 {
+	item, ok := i.items[key]
+	if !ok {
+		return 0
 	}
+	i.list.Remove(item.element)
+	delete(i.items, key)
+	return item.size
 }
 
 func (i *lruIndex) evict() (string, int64) {

@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -150,5 +151,42 @@ func TestStartupEvictsDownToALoweredCeiling(t *testing.T) {
 	}
 	if size := reopened.Stats().CurrentSize; size > 600 {
 		t.Fatalf("CurrentSize = %d, want the lowered ceiling of 600 honored at startup", size)
+	}
+}
+
+// The pool agent empties the cache directory underneath a running proxy when it
+// clears a pool's caches. An entry whose file went that way is a miss, and the
+// bytes it was counted for go with it: otherwise the ceiling would go on
+// evicting live entries to make room for deleted ones.
+func TestEntryDeletedUnderneathIsAMissAndReleasesItsSize(t *testing.T) {
+	dir := t.TempDir()
+	c, err := New(Config{Enabled: true, Dir: dir, MaxSizeBytes: 4096, ContentAware: true})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	key := c.Matcher().GenerateKey(cacheableRequest(t, "b"))
+	storeEntry(t, c, key, "layer-bytes")
+	if c.Stats().CurrentSize == 0 {
+		t.Fatal("stored entry was not counted")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := c.Get(key); !errors.Is(err, ErrMiss) {
+		t.Fatalf("Get() after the entry was deleted = %v, want ErrMiss", err)
+	}
+	stats := c.Stats()
+	if stats.CurrentSize != 0 {
+		t.Fatalf("CurrentSize = %d after the only entry was deleted, want 0", stats.CurrentSize)
+	}
+	if stats.Errors != 0 {
+		t.Fatalf("Errors = %d, want a deleted entry counted as a miss", stats.Errors)
 	}
 }
