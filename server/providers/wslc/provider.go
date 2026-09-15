@@ -33,7 +33,7 @@ const (
 	ProviderType = "wslc"
 
 	defaultAgentPort  = 3002
-	defaultMaxStgMiB  = 65536 // 64 GiB, dynamically expanding
+	defaultMaxStgMiB  = 102400 // 100 GiB, dynamically expanding
 	labelProviderType = "discobox.provider_type"
 )
 

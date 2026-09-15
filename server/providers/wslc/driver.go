@@ -44,8 +44,12 @@ type DriverConfig struct {
 	// CPUCount and MemoryMiB size every pool VM this driver starts, and zero
 	// leaves each to the host (see vmsize). A pool's own size overrides
 	// either for that pool.
-	CPUCount      int
-	MemoryMiB     int
+	CPUCount  int
+	MemoryMiB int
+	// MaxStorageMiB sizes each pool's /var/lib/docker disk. Raising it grows
+	// an existing pool on a VM start whose disk no VM still holds - in
+	// practice the next server start after a clean shutdown (see growDisk);
+	// lowering it never shrinks.
 	MaxStorageMiB int64
 	AgentPort     int
 	// ControlPlaneStreams receives control-plane connections opened by guests.
@@ -178,6 +182,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		MemoryMB:        uint32(want.MemoryMiB),
 		BootTimeout:     bootTimeout,
 	}
+	var growth *storageGrowth
 	if d.storageDir != "" {
 		storagePath := filepath.Join(d.storageDir, poolID)
 		if err := os.MkdirAll(storagePath, 0o700); err != nil {
@@ -185,6 +190,8 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		}
 		opts.StoragePath = storagePath
 		opts.MaxStorageSizeMB = uint64(d.maxStorageMiB)
+		growth = newStorageGrowth(poolID, storagePath, d.maxStorageMiB)
+		growth.growDisk(ctx)
 	}
 
 	session, err := newSessionAfterStale(ctx, wslcsession.NewSession, opts, staleSessionGrace, staleSessionPoll)
@@ -194,6 +201,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	if session.ReplacedExisting() {
 		slog.InfoContext(ctx, "ended a wslc VM an earlier server left running under this pool's name",
 			"pool_id", poolID)
+	}
+	if growth != nil {
+		growth.growFilesystem(ctx, session)
 	}
 
 	// The relay carries every control-plane byte, in both directions, so a VM

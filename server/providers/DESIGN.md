@@ -803,6 +803,37 @@ console's shape on every backend. The mount is checked first, and failing it is
 logged rather than fatal: only the console needs it, and a pool with no console
 beats no pool.
 
+### Storage grows to the configured maximum, and never shrinks
+
+With `StorageDir` set, a pool's `/var/lib/docker` is `storage.vhdx` under
+`<StorageDir>/<poolID>`, dynamically expanding up to `maxStorageMiB` (default
+100 GiB). wslc reads that maximum only when it creates the disk and never grows
+the filesystem on it, so on its own a raised setting would reach new pools
+only. Each `EnsureVM` therefore does both halves itself (`storageGrowth`):
+before boot it raises the VHDX's virtual size through `virtdisk.dll`
+(`growStorageDisk`), and after boot it runs `resize2fs` on the guest's
+`/var/lib/docker` device, a quick no-op on a filesystem that already fills it.
+A lower maximum than the disk's size is ignored rather than shrunk, since
+shrinking would risk the pool's images and volumes.
+
+Neither half is fatal: both log and carry on, because a pool on a smaller disk
+than configured still works, while one that will not start over a resize does
+not.
+
+The host half cannot grow a disk a VM still has attached, and the host half
+runs at two moments when one can. A VM a killed server left holding the disk is
+ended only by creating the new session (`ReplaceExisting`), after the resize —
+in development, every restart. And `Session.Close` returns before wslc has
+finished tearing a VM down, so a replacement, a repair, or a provider update
+that retires the driver can reach the resize while the closed VM still holds
+the disk. Either way the resize fails, the pool keeps its size, and in practice
+a raised maximum lands on the next server start after a clean shutdown. This is
+accepted rather than reordered or waited out: WSL's own distro resize likewise
+refuses an attached disk, and a raised maximum is rare enough to wait for one
+clean start. `TestStorageGrowsWhenMaximumIsRaisedE2E` covers the held-disk boot
+still starting, the raise once the stopped VM has released the disk, and the
+lowered maximum.
+
 Nothing is shared into the VM from Windows: the guest's only program arrives
 over stdin, and the session makes exactly one private COM call
 (`CreateRootNamespaceProcess`) (docs/adr/0120).
