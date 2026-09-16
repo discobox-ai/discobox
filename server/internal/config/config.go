@@ -71,10 +71,12 @@ func LoadEnvFile() {
 // The struct tags are the source of truth for the configuration file and its
 // JSON Schema (ADR 0096 §2, configuration file): `yaml` is the key, `env` the variable that
 // overrides it, `default` the literal default rendered into the schema, and
-// `doc` the description an operator reads in their editor. A field tagged
+// `doc` the description an operator reads in their editor, and `example` a
+// sample value in YAML, shown beside it ("-" for a setting that deliberately
+// has none). A field tagged
 // `yaml:"-"` is derived rather than configured, and appears in neither.
 type Config struct {
-	ReleaseManifest string                    `yaml:"releaseManifest" env:"DISCOBOX_RELEASE_MANIFEST" doc:"Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization."`
+	ReleaseManifest string                    `yaml:"releaseManifest" env:"DISCOBOX_RELEASE_MANIFEST" doc:"Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization." example:"/opt/discobox/release.json"`
 	Release         *releasemanifest.Manifest `yaml:"-"`
 	HarnessImages   map[string]string         `yaml:"-"`
 
@@ -87,19 +89,19 @@ type Config struct {
 
 	// Server settings.
 	Port   int      `yaml:"port" env:"PORT" default:"18080" doc:"TCP port for an http:// listen endpoint that does not name one."`
-	Listen []string `yaml:"listen" env:"DISCOBOX_SERVER_LISTEN" doc:"Endpoints to listen on. Local IPC is added when none is named, so the CLI can always reach the server."`
+	Listen []string `yaml:"listen" env:"DISCOBOX_SERVER_LISTEN" doc:"Endpoints to listen on, from unix:// (npipe:// on Windows), http://<host>:<port> and iroh://. Bare unix://, npipe:// and iroh:// mean this machine's default socket, pipe and iroh identity; an iroh listener logs the discobox:// address clients use. Local IPC is added when none is named, so the CLI can always reach the server. The environment variable takes a comma-separated list." example:"[unix://, iroh://, http://127.0.0.1:18080]"`
 	// Name is what this server calls itself, and what a client offers as the
 	// name to register it under (ADR 0116 §2). It identifies nothing: two
 	// servers may share one, and nothing but a client's default choice reads it.
-	Name string `yaml:"name" env:"DISCOBOX_SERVER_NAME" doc:"What this server calls itself: the name a client registering it is offered. Defaults to this machine's hostname."`
+	Name string `yaml:"name" env:"DISCOBOX_SERVER_NAME" doc:"What this server calls itself: the name a client registering it is offered. Defaults to this machine's hostname." example:"build-server"`
 
 	// XDG-backed application directories. Their defaults are derived from the
 	// platform's base directories rather than being literals, so they are
 	// described here and computed in Load.
-	DataDir   string `yaml:"dataDir" env:"DISCOBOX_DATA_DIR" doc:"Durable server state: the database, the SSH host key, the iroh endpoint key, authorized_keys and authorized_ids. Defaults to <XDG data home>/discobox."`
-	ConfigDir string `yaml:"configDir" env:"DISCOBOX_CONFIG_DIR" doc:"Operator-edited configuration. Defaults to <XDG config home>/discobox. It cannot relocate the configuration file itself, which is found from the environment (ADR 0096 §1)."`
-	CacheDir  string `yaml:"cacheDir" env:"DISCOBOX_CACHE_DIR" doc:"Reproducible data that may be deleted. Defaults to <XDG cache home>/discobox."`
-	StateDir  string `yaml:"stateDir" env:"DISCOBOX_STATE_DIR" doc:"State that should survive a restart but is not precious. Defaults to <XDG state home>/discobox."`
+	DataDir   string `yaml:"dataDir" env:"DISCOBOX_DATA_DIR" doc:"Durable server state: the database, the SSH host key, the iroh endpoint key, authorized_keys and authorized_ids. Defaults to <XDG data home>/discobox." example:"/var/lib/discobox"`
+	ConfigDir string `yaml:"configDir" env:"DISCOBOX_CONFIG_DIR" doc:"Operator-edited configuration. Defaults to <XDG config home>/discobox. It cannot relocate the configuration file itself, which is found from the environment (ADR 0096 §1)." example:"/etc/discobox"`
+	CacheDir  string `yaml:"cacheDir" env:"DISCOBOX_CACHE_DIR" doc:"Reproducible data that may be deleted. Defaults to <XDG cache home>/discobox." example:"/var/cache/discobox"`
+	StateDir  string `yaml:"stateDir" env:"DISCOBOX_STATE_DIR" doc:"State that should survive a restart but is not precious. Defaults to <XDG state home>/discobox." example:"/var/lib/discobox/state"`
 
 	// HostID identifies the machine this server runs on, resolved the same way
 	// a CLI on this machine resolves it. A create request whose origin reports
@@ -111,32 +113,32 @@ type Config struct {
 	HostID string `yaml:"-"`
 
 	// Database settings.
-	DatabaseDSN     string        `yaml:"databaseDsn" env:"DATABASE_DSN" doc:"Database DSN. Defaults to a SQLite file under dataDir."`
-	DatabaseReadDSN string        `yaml:"databaseReadDsn" env:"DATABASE_READ_DSN" doc:"Optional separate DSN for reads, for a deployment with a read replica."`
-	DatabaseDriver  gormdb.Driver `yaml:"databaseDriver" env:"DATABASE_DRIVER" enum:"sqlite,postgres" doc:"Database driver. Detected from databaseDsn when unset."`
+	DatabaseDSN     string        `yaml:"databaseDsn" env:"DATABASE_DSN" doc:"Database DSN: postgres:// or postgresql:// for PostgreSQL, sqlite3:///<path> for SQLite. Defaults to a SQLite file under dataDir." example:"postgres://discobox:password@db.internal:5432/discobox?sslmode=require"`
+	DatabaseReadDSN string        `yaml:"databaseReadDsn" env:"DATABASE_READ_DSN" doc:"Optional separate DSN for reads, for a deployment with a read replica. Same forms as databaseDsn." example:"postgres://discobox:password@db-replica.internal:5432/discobox?sslmode=require"`
+	DatabaseDriver  gormdb.Driver `yaml:"databaseDriver" env:"DATABASE_DRIVER" enum:"sqlite,postgres" doc:"Database driver. Detected from databaseDsn when unset." example:"postgres"`
 
 	// Secret encryption settings.
-	EncryptionKey string `yaml:"encryptionKey" env:"DISCOBOX_ENCRYPTION_KEY" doc:"Base64 AES key that seals stored secrets. Secrets are stored unsealed when empty."`
+	EncryptionKey string `yaml:"encryptionKey" env:"DISCOBOX_ENCRYPTION_KEY" doc:"Base64 of the 32-byte AES key that seals stored secrets; generate one with: openssl rand -base64 32. Secrets are stored unsealed when empty. Keep it: secrets sealed with a key cannot be read without it." example:"-"`
 
 	// Reconcile engine settings.
 	DispatcherPollInterval         time.Duration `yaml:"dispatcherPollInterval" env:"DISPATCHER_POLL_INTERVAL" default:"1s" doc:"How often the job dispatcher polls for work."`
 	SandboxReconcileJobConcurrency int           `yaml:"sandboxReconcileJobConcurrency" env:"SANDBOX_RECONCILE_JOB_CONCURRENCY" default:"4" doc:"How many sandbox reconcile jobs run at once."`
 
 	// Sandbox settings.
-	DefaultSandboxImage string `yaml:"defaultSandboxImage" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE" doc:"Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image."`
+	DefaultSandboxImage string `yaml:"defaultSandboxImage" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE" doc:"Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image." example:"ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"`
 	// DefaultSandboxImageDigest is the identity behind DefaultSandboxImage.
 	// Sandboxes with no harness config run the default image, and the tag alone
 	// cannot say which build that is — dev workflows rebuild tags in place — so
 	// the digest is what lets such a sandbox report and take an upgrade
 	// (ADR 0016 §1's "a digest and not just a tag"). Empty when unknown, which
 	// simply means those sandboxes report no upgrade.
-	DefaultSandboxImageDigest string `yaml:"defaultSandboxImageDigest" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST" doc:"Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown."`
+	DefaultSandboxImageDigest string `yaml:"defaultSandboxImageDigest" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST" doc:"Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown." example:"sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"`
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own retention. Zero means
 	// nothing configured it and sandboxes.DefaultArchiveRetention applies; a
 	// project's own setting always wins over both.
-	ArchiveRetention time.Duration `yaml:"archiveRetention" env:"DISCOBOX_ARCHIVE_RETENTION" doc:"How long an archived sandbox is kept before purging, for projects with no retention of their own."`
+	ArchiveRetention time.Duration `yaml:"archiveRetention" env:"DISCOBOX_ARCHIVE_RETENTION" doc:"How long an archived sandbox is kept before purging, for projects with no retention of their own, as a Go duration. Defaults to 24h." example:"168h"`
 
 	// ImageRetention is how long an unused Discobox image is kept on the host
 	// daemon. Zero means nothing configured it, and that distinction is
@@ -145,28 +147,28 @@ type Config struct {
 	// every pool's revision and recreate it for no reason. This field is where
 	// that distinction lives now; imagereap keeps its own unexported copy for
 	// the pool agent's side of the same wire.
-	ImageRetention time.Duration `yaml:"imageRetention" env:"DISCOBOX_IMAGE_RETENTION" doc:"How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both."`
+	ImageRetention time.Duration `yaml:"imageRetention" env:"DISCOBOX_IMAGE_RETENTION" doc:"How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both. A Go duration; defaults to 24h." example:"72h"`
 
 	// DockerPoolImage overrides the pool agent image the Docker provider runs.
-	DockerPoolImage string `yaml:"dockerPoolImage" env:"DISCOBOX_DOCKER_POOL_IMAGE" doc:"Pool agent image the Docker provider runs. Defaults to the released image for this build."`
+	DockerPoolImage string `yaml:"dockerPoolImage" env:"DISCOBOX_DOCKER_POOL_IMAGE" doc:"Pool agent image the Docker provider runs. Defaults to the released image for this build." example:"ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0"`
 
 	// ImageCacheDir is the image store (ADR 0113): an OCI layout a CLI stages a
 	// release's images into before it starts this server, which a provider
 	// fetches a VM guest through and a pool on this machine loads a container
 	// image from before pulling one. The CLI names its own on every server it
 	// launches; a server started otherwise keeps one under its cache.
-	ImageCacheDir string `yaml:"imageCacheDir" env:"DISCOBOX_IMAGE_CACHE_DIR" doc:"OCI image layout that VM guest images are fetched through, and that a pool on this machine loads images from before pulling them. The CLI names the one it stages a release's images into. Defaults to <cacheDir>/images."`
+	ImageCacheDir string `yaml:"imageCacheDir" env:"DISCOBOX_IMAGE_CACHE_DIR" doc:"OCI image layout that VM guest images are fetched through, and that a pool on this machine loads images from before pulling them. The CLI names the one it stages a release's images into. Defaults to <cacheDir>/images." example:"/var/cache/discobox/images"`
 
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for at startup, for a host that keeps it somewhere this check
 	// would not look. It accepts a full path.
-	WSLCCommand string `yaml:"wslcCommand" env:"DISCOBOX_WSLC_COMMAND" doc:"The WSL Containers program to look for on a Windows host, as a name on PATH or a full path. Empty looks for the component's own name, wslc. Windows only."`
+	WSLCCommand string `yaml:"wslcCommand" env:"DISCOBOX_WSLC_COMMAND" doc:"The WSL Containers program to look for on a Windows host, as a name on PATH or a full path. Empty looks for the component's own name, wslc. Windows only." example:"'C:\\tools\\wslc.exe'"`
 
 	// DevImageSync converges the watcher-built images onto each Docker daemon
 	// before it hosts a development pool, and DevImageManifest names the file
 	// listing them.
 	DevImageSync     bool   `yaml:"devImageSync" env:"DISCOBOX_DEV_DOCKER_IMAGE_SYNC" doc:"Converge locally built images onto each Docker daemon before it hosts a development pool."`
-	DevImageManifest string `yaml:"devImageManifest" env:"DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST" doc:"Path to the manifest listing the images devImageSync converges. Required when devImageSync is set."`
+	DevImageManifest string `yaml:"devImageManifest" env:"DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST" doc:"Path to the manifest listing the images devImageSync converges. Required when devImageSync is set." example:"/tmp/discobox-dev-images.json"`
 
 	// DevelopmentImages is the image set read from DevImageManifest. Derived,
 	// because it is the contents of a file rather than a setting.
@@ -180,7 +182,7 @@ type Config struct {
 	// exporter rather than carrying a boolean, and that name is fixed by the
 	// OpenTelemetry environment specification rather than by us. Load applies
 	// it by hand; the file spells the same choice as a boolean.
-	OTelMetricsEnabled bool `yaml:"otelMetricsEnabled" doc:"Export OpenTelemetry metrics over OTLP. The OTEL_METRICS_EXPORTER=otlp environment variable sets this too."`
+	OTelMetricsEnabled bool `yaml:"otelMetricsEnabled" doc:"Export OpenTelemetry metrics over OTLP/HTTP, to the collector the standard OTEL_EXPORTER_OTLP_ENDPOINT environment variable names, such as http://otel-collector:4318. The OTEL_METRICS_EXPORTER=otlp environment variable sets this too."`
 	// OTelMetricExportInterval has no env tag for the same reason
 	// OTelMetricsEnabled has none: the OpenTelemetry specification defines
 	// OTEL_METRIC_EXPORT_INTERVAL as a number of milliseconds, not a Go
@@ -198,14 +200,14 @@ type IrohSettings struct {
 	// Clients need the same list. An address carries a peer ID and nothing
 	// else, so a server that moves off n0's relays does not move its clients
 	// with it.
-	RelayURLs []string `yaml:"relayUrls" env:"DISCOBOX_IROH_RELAY_URLS" doc:"Relay servers to use instead of n0's public ones, which are free and need no configuration but rate-limit traffic, are shared with every other iroh deployment, and carry no uptime guarantee. Running your own means running iroh-relay and listing it here. Clients need the same list (discobox --iroh-relay): an address does not carry the server's relay, so a half-configured pair fails when it tries to connect. Address discovery is separate, still uses n0's public service, and is not configurable yet."`
+	RelayURLs []string `yaml:"relayUrls" env:"DISCOBOX_IROH_RELAY_URLS" doc:"Relay servers to use instead of n0's public ones, which are free and need no configuration but rate-limit traffic, are shared with every other iroh deployment, and carry no uptime guarantee. Running your own means running iroh-relay and listing it here. Clients need the same list (discobox --iroh-relay): an address does not carry the server's relay, so a half-configured pair fails when it tries to connect. Address discovery is separate, still uses n0's public service, and is not configurable yet." example:"[https://relay.example.com]"`
 
 	// LogLevel turns on the transport's own account of itself. An iroh
 	// connection fails in layers — the socket, the relay, the handshake, the
 	// admission check — and the error a client is handed names only the top
 	// one, so a server that cannot say what it did at each layer can only be
 	// diagnosed from the client side.
-	LogLevel string `yaml:"logLevel" env:"DISCOBOX_IROH_LOG" doc:"Log the iroh transport as it binds, accepts and refuses: off (the default), error, warn, info, debug, or trace. It also sets the verbosity of iroh's own tracing, which is written to this server's log. The matching client-side setting is discobox --iroh-log."`
+	LogLevel string `yaml:"logLevel" env:"DISCOBOX_IROH_LOG" doc:"Log the iroh transport as it binds, accepts and refuses: off (the default), error, warn, info, debug, or trace. It also sets the verbosity of iroh's own tracing, which is written to this server's log. The matching client-side setting is discobox --iroh-log." example:"debug"`
 }
 
 // ConfigFileVar names the configuration file, and DefaultConfigFileName is

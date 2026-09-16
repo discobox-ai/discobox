@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // SchemaID is where the generated schema is published, and what a
@@ -87,6 +89,15 @@ func valueSchema(field reflect.StructField) (map[string]any, error) {
 	}
 	if description != "" {
 		out["description"] = description
+	}
+	// An editor offers these as completions, which is where an operator who
+	// does not know a setting's shape is already looking.
+	if example := exampleTag(field); example != "" {
+		var value any
+		if err := yaml.Unmarshal([]byte(example), &value); err != nil {
+			return nil, fmt.Errorf("example %q is not YAML: %w", example, err)
+		}
+		out["examples"] = []any{value}
 	}
 	// The reference file renders some settings as a bare key, which is YAML
 	// null and which the loader reads as saying nothing. The schema has to

@@ -5,8 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 // The generated schema and the loader describe the same surface. If they can
@@ -243,4 +249,49 @@ func TestSchemaAcceptsWhatTheReferenceWrites(t *testing.T) {
 		}
 	}
 	walk(schema)
+}
+
+// A setting whose value is not a literal default shows what one looks like,
+// because its type alone — a string — says nothing about whether it wants a
+// path, a URL or a DSN. A boolean needs none, and a setting with a default
+// shows that instead. "-" is the deliberate exception, for a value no example
+// should be copied into.
+func TestSettingsWithoutADefaultHaveAnExample(t *testing.T) {
+	for _, s := range settings(reflect.TypeOf(Config{})) {
+		if s.Default != "" || s.Field.Type.Kind() == reflect.Bool {
+			continue
+		}
+		if strings.TrimSpace(s.Field.Tag.Get("example")) == "" {
+			t.Errorf("%s has neither a default nor an example; add example:\"...\", or example:\"-\" with a doc saying why", s.Path)
+		}
+	}
+}
+
+// An example is copied, so it has to be a value the server accepts: YAML of
+// the setting's own type, inside its enum, and for listen, endpoints that parse.
+func TestExamplesAreValidValues(t *testing.T) {
+	for _, s := range settings(reflect.TypeOf(Config{})) {
+		example := exampleTag(s.Field)
+		if example == "" {
+			continue
+		}
+		value := reflect.New(s.Field.Type)
+		if err := yaml.Unmarshal([]byte(example), value.Interface()); err != nil {
+			t.Errorf("%s: example %q is not a %s: %v", s.Path, example, s.Field.Type, err)
+			continue
+		}
+		if len(s.Enum) > 0 && !slices.Contains(s.Enum, value.Elem().String()) {
+			t.Errorf("%s: example %q is not one of %v", s.Path, example, s.Enum)
+		}
+		if s.Path == "listen" {
+			for _, raw := range value.Elem().Interface().([]string) {
+				if runtime.GOOS == "windows" && strings.HasPrefix(raw, "unix://") {
+					continue
+				}
+				if _, err := endpoint.Parse(raw); err != nil {
+					t.Errorf("listen: example endpoint %q: %v", raw, err)
+				}
+			}
+		}
+	}
 }

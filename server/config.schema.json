@@ -5,7 +5,10 @@
   "description": "Configuration for discobox-server. Every setting may also be set by the environment variable named in its description, which takes precedence over this file (ADR 0096).",
   "properties": {
     "archiveRetention": {
-      "description": "How long an archived sandbox is kept before purging, for projects with no retention of their own. Environment: DISCOBOX_ARCHIVE_RETENTION (takes precedence over this file).",
+      "description": "How long an archived sandbox is kept before purging, for projects with no retention of their own, as a Go duration. Defaults to 24h. Environment: DISCOBOX_ARCHIVE_RETENTION (takes precedence over this file).",
+      "examples": [
+        "168h"
+      ],
       "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",
       "type": [
         "string",
@@ -14,6 +17,9 @@
     },
     "cacheDir": {
       "description": "Reproducible data that may be deleted. Defaults to \u003cXDG cache home\u003e/discobox. Environment: DISCOBOX_CACHE_DIR (takes precedence over this file).",
+      "examples": [
+        "/var/cache/discobox"
+      ],
       "type": [
         "string",
         "null"
@@ -21,6 +27,9 @@
     },
     "configDir": {
       "description": "Operator-edited configuration. Defaults to \u003cXDG config home\u003e/discobox. It cannot relocate the configuration file itself, which is found from the environment (ADR 0096 §1). Environment: DISCOBOX_CONFIG_DIR (takes precedence over this file).",
+      "examples": [
+        "/etc/discobox"
+      ],
       "type": [
         "string",
         "null"
@@ -28,6 +37,9 @@
     },
     "dataDir": {
       "description": "Durable server state: the database, the SSH host key, the iroh endpoint key, authorized_keys and authorized_ids. Defaults to \u003cXDG data home\u003e/discobox. Environment: DISCOBOX_DATA_DIR (takes precedence over this file).",
+      "examples": [
+        "/var/lib/discobox"
+      ],
       "type": [
         "string",
         "null"
@@ -40,20 +52,29 @@
         "postgres",
         null
       ],
+      "examples": [
+        "postgres"
+      ],
       "type": [
         "string",
         "null"
       ]
     },
     "databaseDsn": {
-      "description": "Database DSN. Defaults to a SQLite file under dataDir. Environment: DATABASE_DSN (takes precedence over this file).",
+      "description": "Database DSN: postgres:// or postgresql:// for PostgreSQL, sqlite3:///\u003cpath\u003e for SQLite. Defaults to a SQLite file under dataDir. Environment: DATABASE_DSN (takes precedence over this file).",
+      "examples": [
+        "postgres://discobox:password@db.internal:5432/discobox?sslmode=require"
+      ],
       "type": [
         "string",
         "null"
       ]
     },
     "databaseReadDsn": {
-      "description": "Optional separate DSN for reads, for a deployment with a read replica. Environment: DATABASE_READ_DSN (takes precedence over this file).",
+      "description": "Optional separate DSN for reads, for a deployment with a read replica. Same forms as databaseDsn. Environment: DATABASE_READ_DSN (takes precedence over this file).",
+      "examples": [
+        "postgres://discobox:password@db-replica.internal:5432/discobox?sslmode=require"
+      ],
       "type": [
         "string",
         "null"
@@ -61,6 +82,9 @@
     },
     "defaultSandboxImage": {
       "description": "Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image. Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE (takes precedence over this file).",
+      "examples": [
+        "ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"
+      ],
       "type": [
         "string",
         "null"
@@ -68,6 +92,9 @@
     },
     "defaultSandboxImageDigest": {
       "description": "Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown. Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST (takes precedence over this file).",
+      "examples": [
+        "sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"
+      ],
       "type": [
         "string",
         "null"
@@ -75,6 +102,9 @@
     },
     "devImageManifest": {
       "description": "Path to the manifest listing the images devImageSync converges. Required when devImageSync is set. Environment: DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST (takes precedence over this file).",
+      "examples": [
+        "/tmp/discobox-dev-images.json"
+      ],
       "type": [
         "string",
         "null"
@@ -92,13 +122,16 @@
     },
     "dockerPoolImage": {
       "description": "Pool agent image the Docker provider runs. Defaults to the released image for this build. Environment: DISCOBOX_DOCKER_POOL_IMAGE (takes precedence over this file).",
+      "examples": [
+        "ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0"
+      ],
       "type": [
         "string",
         "null"
       ]
     },
     "encryptionKey": {
-      "description": "Base64 AES key that seals stored secrets. Secrets are stored unsealed when empty. Environment: DISCOBOX_ENCRYPTION_KEY (takes precedence over this file).",
+      "description": "Base64 of the 32-byte AES key that seals stored secrets; generate one with: openssl rand -base64 32. Secrets are stored unsealed when empty. Keep it: secrets sealed with a key cannot be read without it. Environment: DISCOBOX_ENCRYPTION_KEY (takes precedence over this file).",
       "type": [
         "string",
         "null"
@@ -106,13 +139,19 @@
     },
     "imageCacheDir": {
       "description": "OCI image layout that VM guest images are fetched through, and that a pool on this machine loads images from before pulling them. The CLI names the one it stages a release's images into. Defaults to \u003ccacheDir\u003e/images. Environment: DISCOBOX_IMAGE_CACHE_DIR (takes precedence over this file).",
+      "examples": [
+        "/var/cache/discobox/images"
+      ],
       "type": [
         "string",
         "null"
       ]
     },
     "imageRetention": {
-      "description": "How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both. Environment: DISCOBOX_IMAGE_RETENTION (takes precedence over this file).",
+      "description": "How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both. A Go duration; defaults to 24h. Environment: DISCOBOX_IMAGE_RETENTION (takes precedence over this file).",
+      "examples": [
+        "72h"
+      ],
       "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",
       "type": [
         "string",
@@ -125,6 +164,9 @@
       "properties": {
         "logLevel": {
           "description": "Log the iroh transport as it binds, accepts and refuses: off (the default), error, warn, info, debug, or trace. It also sets the verbosity of iroh's own tracing, which is written to this server's log. The matching client-side setting is discobox --iroh-log. Environment: DISCOBOX_IROH_LOG (takes precedence over this file).",
+          "examples": [
+            "debug"
+          ],
           "type": [
             "string",
             "null"
@@ -132,6 +174,11 @@
         },
         "relayUrls": {
           "description": "Relay servers to use instead of n0's public ones, which are free and need no configuration but rate-limit traffic, are shared with every other iroh deployment, and carry no uptime guarantee. Running your own means running iroh-relay and listing it here. Clients need the same list (discobox --iroh-relay): an address does not carry the server's relay, so a half-configured pair fails when it tries to connect. Address discovery is separate, still uses n0's public service, and is not configurable yet. Environment: DISCOBOX_IROH_RELAY_URLS (takes precedence over this file).",
+          "examples": [
+            [
+              "https://relay.example.com"
+            ]
+          ],
           "items": {
             "type": "string"
           },
@@ -147,7 +194,14 @@
       ]
     },
     "listen": {
-      "description": "Endpoints to listen on. Local IPC is added when none is named, so the CLI can always reach the server. Environment: DISCOBOX_SERVER_LISTEN (takes precedence over this file).",
+      "description": "Endpoints to listen on, from unix:// (npipe:// on Windows), http://\u003chost\u003e:\u003cport\u003e and iroh://. Bare unix://, npipe:// and iroh:// mean this machine's default socket, pipe and iroh identity; an iroh listener logs the discobox:// address clients use. Local IPC is added when none is named, so the CLI can always reach the server. The environment variable takes a comma-separated list. Environment: DISCOBOX_SERVER_LISTEN (takes precedence over this file).",
+      "examples": [
+        [
+          "unix://",
+          "iroh://",
+          "http://127.0.0.1:18080"
+        ]
+      ],
       "items": {
         "type": "string"
       },
@@ -158,6 +212,9 @@
     },
     "name": {
       "description": "What this server calls itself: the name a client registering it is offered. Defaults to this machine's hostname. Environment: DISCOBOX_SERVER_NAME (takes precedence over this file).",
+      "examples": [
+        "build-server"
+      ],
       "type": [
         "string",
         "null"
@@ -170,7 +227,7 @@
       "type": "string"
     },
     "otelMetricsEnabled": {
-      "description": "Export OpenTelemetry metrics over OTLP. The OTEL_METRICS_EXPORTER=otlp environment variable sets this too.",
+      "description": "Export OpenTelemetry metrics over OTLP/HTTP, to the collector the standard OTEL_EXPORTER_OTLP_ENDPOINT environment variable names, such as http://otel-collector:4318. The OTEL_METRICS_EXPORTER=otlp environment variable sets this too.",
       "type": "boolean"
     },
     "port": {
@@ -180,6 +237,9 @@
     },
     "releaseManifest": {
       "description": "Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization. Environment: DISCOBOX_RELEASE_MANIFEST (takes precedence over this file).",
+      "examples": [
+        "/opt/discobox/release.json"
+      ],
       "type": [
         "string",
         "null"
@@ -192,6 +252,9 @@
     },
     "stateDir": {
       "description": "State that should survive a restart but is not precious. Defaults to \u003cXDG state home\u003e/discobox. Environment: DISCOBOX_STATE_DIR (takes precedence over this file).",
+      "examples": [
+        "/var/lib/discobox/state"
+      ],
       "type": [
         "string",
         "null"
@@ -199,6 +262,9 @@
     },
     "wslcCommand": {
       "description": "The WSL Containers program to look for on a Windows host, as a name on PATH or a full path. Empty looks for the component's own name, wslc. Windows only. Environment: DISCOBOX_WSLC_COMMAND (takes precedence over this file).",
+      "examples": [
+        "C:\\tools\\wslc.exe"
+      ],
       "type": [
         "string",
         "null"

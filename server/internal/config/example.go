@@ -129,6 +129,11 @@ func writeExampleFields(out *bytes.Buffer, t reflect.Type, yamlIndent string) er
 		if doc := strings.TrimSpace(field.Tag.Get("doc")); doc != "" {
 			writeComment(out, yamlIndent, doc)
 		}
+		// Unwrapped, unlike the prose around it, so the line can be copied
+		// whole: a wrapped value is a value that no longer parses.
+		if example := exampleTag(field); example != "" {
+			fmt.Fprintf(out, "%s# Example: %s: %s\n", yamlIndent, name, example)
+		}
 		if env := field.Tag.Get("env"); env != "" {
 			writeComment(out, yamlIndent, "Environment: "+env)
 		}
@@ -146,6 +151,19 @@ func writeExampleFields(out *bytes.Buffer, t reflect.Type, yamlIndent string) er
 		fmt.Fprintf(out, "%s#%s:%s\n", yamlIndent, name, value)
 	}
 	return nil
+}
+
+// exampleTag is a setting's example value, written as the YAML an operator
+// would put after its key, or empty for a setting that has none. "-" says a
+// setting has none on purpose — a value that must be unique to each
+// deployment, such as a key, is one an example would get copied verbatim — and
+// its doc says how to make one instead.
+func exampleTag(field reflect.StructField) string {
+	example := strings.TrimSpace(field.Tag.Get("example"))
+	if example == "-" {
+		return ""
+	}
+	return example
 }
 
 // writeComment wraps text into comment lines that stay inside a narrow

@@ -297,8 +297,11 @@ Nothing is written beside a file that exists, and a reference that cannot be
 written is logged, not fatal.
 
 `config.Config`'s struct tags are the source of truth. `yaml` is the key, `env`
-the overriding variable, `default` the literal default and `doc` the
-description; a field tagged `yaml:"-"` is derived rather than configured.
+the overriding variable, `default` the literal default, `doc` the
+description and `example` a sample value (YAML, `-` for deliberately none); a
+field tagged `yaml:"-"` is derived rather than configured. A setting with no
+literal default and no boolean type must carry an example, and every example
+must decode as its setting's type.
 `internal/config/genschema` emits two artifacts from the same walk the loader
 binds, so a setting cannot be loadable and undocumented: `server/config.schema.json`
 for an editor, and `server/server.example.yaml`, the commented reference listing
