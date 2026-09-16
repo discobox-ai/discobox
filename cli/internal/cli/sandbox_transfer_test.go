@@ -130,6 +130,11 @@ func TestExportWritesTheArchiveToAFile(t *testing.T) {
 	if !bytes.Equal(got, archive) {
 		t.Fatalf("file = %q, want the archive verbatim", got)
 	}
+	// Named before the copy starts, so whoever redirected stdout sees where
+	// the bytes are going instead of an empty file and a silent wait.
+	if !strings.Contains(stderr.String(), "Exporting to "+destination) {
+		t.Fatalf("stderr = %q, want it to name the destination", stderr.String())
+	}
 
 	// A second run of the obvious command must not silently overwrite the first
 	// one's archive.

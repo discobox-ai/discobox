@@ -328,6 +328,10 @@ func (a *App) exportSandboxTo(ctx context.Context, projectID, sandboxID, destina
 		}
 		defer file.Close()
 		writer = file
+		// Said before the copy, not after: an export is gigabytes, and a
+		// redirect of stdout gets nothing without -o -, so the file this is
+		// filling is otherwise invisible until it finishes.
+		fmt.Fprintf(stderr, "Exporting to %s…\n", destination)
 	}
 	written, err := io.Copy(writer, resp.Body)
 	if err != nil {
