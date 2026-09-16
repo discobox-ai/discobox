@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
@@ -229,6 +230,20 @@ type Manager struct {
 	units          UnitManager
 	audit          AuditRecorder
 	logs           LogSink
+
+	// records serializes this process's writes to each exec's runtime file.
+	// Every in-process writer takes it for the write, and a refresh holds it
+	// across re-read, compare and write, which is what makes the refresh a
+	// compare-and-swap rather than a check followed by a clobber. It is never
+	// held across a systemd or shim call. The shim writes the same file from
+	// its own process — as it starts, once its command runs, if that command
+	// fails to start, and at its exit — and no in-process lock can cover
+	// those writes. What this lock settles is the manager against itself;
+	// the stop-path CAS holds against the shim only because the shim's last
+	// write, the exit, lands before the unit it runs in can be reported
+	// stopped.
+	recordsMu sync.Mutex
+	records   map[string]*sync.Mutex
 }
 
 type ManagerConfig struct {
@@ -282,6 +297,7 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		units:          units,
 		audit:          cfg.Audit,
 		logs:           cfg.Logs,
+		records:        map[string]*sync.Mutex{},
 	}, nil
 }
 
@@ -428,7 +444,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		SocketPath:     socketPath,
 		RuntimePath:    runtimePath,
 	}
-	if err := writeRuntime(runtimePath, exec); err != nil {
+	if err := m.writeRecord(exec); err != nil {
 		return Exec{}, err
 	}
 	// Persist the immutable identity/metadata durably before the shim starts, so
@@ -463,7 +479,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		current.Error = err.Error()
 		exitedAt := time.Now().UTC()
 		current.ExitedAt = &exitedAt
-		_ = writeRuntime(runtimePath, current)
+		_ = m.writeRecord(current)
 		_ = m.observe(ctx, current)
 		_ = m.recordEvent(ctx, id, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
 		return current, err
@@ -471,7 +487,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if result.Unit != "" {
 		current.Unit = result.Unit
 	}
-	_ = writeRuntime(runtimePath, current)
+	_ = m.writeRecord(current)
 	_ = m.observe(ctx, current)
 	_ = m.recordEvent(ctx, id, "exec.prepared", "exec prepared", map[string]any{"unit": current.Unit})
 	return current, nil
@@ -660,7 +676,9 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	_ = m.recordEvent(ctx, id, "exec.stop.requested", "exec stop requested", map[string]any{"unit": exec.Unit})
+	unlock := m.lockRecord(id)
 	_ = os.Remove(exec.RuntimePath)
+	unlock()
 	_ = os.Remove(exec.SocketPath)
 	if m.logs != nil {
 		_ = m.logs.DeleteExecLog(ctx, id)
@@ -702,7 +720,7 @@ func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 	current.AttacherCount = 0
 	current.TitleChangedAt = nil
 	current.LastAccessedAt = nil
-	if err := writeRuntime(current.RuntimePath, current); err != nil {
+	if err := m.writeRecord(current); err != nil {
 		return Exec{}, err
 	}
 	_ = m.observe(ctx, current)
@@ -724,13 +742,13 @@ func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {
 		exec.Error = err.Error()
 		exitedAt := time.Now().UTC()
 		exec.ExitedAt = &exitedAt
-		_ = writeRuntime(exec.RuntimePath, exec)
+		_ = m.writeRecord(exec)
 		_ = m.observe(ctx, exec)
 		_ = m.recordEvent(ctx, id, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
 		return cloneExec(exec), err
 	}
 	current := mergeExecStatus(exec, started)
-	_ = writeRuntime(current.RuntimePath, current)
+	_ = m.writeRecord(current)
 	_ = m.observe(ctx, current)
 	_ = m.recordEvent(ctx, id, "exec.started", "exec started", map[string]any{"unit": current.Unit, "pid": current.PID})
 	return cloneExec(current), nil
@@ -797,7 +815,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	current.Title = ""
 	current.TitleChangedAt = nil
 	current.LastAccessedAt = nil
-	if err := writeRuntime(current.RuntimePath, current); err != nil {
+	if err := m.writeRecord(current); err != nil {
 		return Exec{}, err
 	}
 	_ = m.observe(ctx, current)
@@ -826,7 +844,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 		current.Error = err.Error()
 		exitedAt := time.Now().UTC()
 		current.ExitedAt = &exitedAt
-		_ = writeRuntime(current.RuntimePath, current)
+		_ = m.writeRecord(current)
 		_ = m.observe(ctx, current)
 		_ = m.recordEvent(ctx, current.ID, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
 		return current, err
@@ -834,7 +852,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	if result.Unit != "" {
 		current.Unit = result.Unit
 	}
-	_ = writeRuntime(current.RuntimePath, current)
+	_ = m.writeRecord(current)
 	_ = m.observe(ctx, current)
 	_ = m.recordEvent(ctx, current.ID, "exec.prepared", "exec prepared", map[string]any{"unit": current.Unit})
 	return cloneExec(current), nil
@@ -1167,10 +1185,14 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent boo
 // from the one call that lists every exec unit — so a listing or a sweep does
 // not query systemd a second time per exec. A nil unit means ask.
 func (m *Manager) refreshExecWithUnit(ctx context.Context, exec Exec, runtimePresent bool, unit *UnitStatus) Exec {
-	if exec.Status == StatusExited || exec.Status == StatusFailed {
+	if settled(exec) {
 		_ = m.observe(ctx, exec)
 		return exec
 	}
+	// The record this observation is about, kept because the checks below
+	// rewrite exec in place and the question "has the record moved on" has to
+	// be asked against what was actually observed.
+	observed := exec
 	// A created-but-not-yet-started exec (e.g. a terminal whose harness install
 	// command is still running before Start) legitimately has no live unit yet, so
 	// keep it starting rather than declaring it lost while it waits to launch.
@@ -1227,12 +1249,87 @@ func (m *Manager) refreshExecWithUnit(ctx context.Context, exec Exec, runtimePre
 			}
 		}
 	}
+	// An observation is a read-modify-write over a record other callers write
+	// too, and the question it answers — what became of the unit — costs a
+	// D-Bus round trip. So the write is a compare-and-swap: under the record
+	// lock, re-read, and drop the conclusion if the record moved on while the
+	// question was in flight, because it is then a statement about a run that
+	// is already over.
+	//
+	// Stop, Relaunch and Delete are what this guards, and not by coincidence:
+	// each stops a unit, which is itself what makes systemd report the change
+	// this observation came from, so the answer ("no longer loaded") routinely
+	// lands after the record already says stopped, starting a new generation,
+	// or is gone. Writing it anyway pins the exec at lost — a stopped service
+	// reading `failed` for the life of the sandbox — or resurrects a deleted
+	// exec as a lost one.
+	unlock := m.lockRecord(exec.ID)
+	current, ok := m.readRuntime(exec.ID)
+	switch {
+	case !ok && runtimePresent:
+		// Deleted underneath the observation. Only a caller that found a
+		// runtime file says so; a durable-only record has none by definition.
+		unlock()
+		return exec
+	case ok && supersedes(current, observed):
+		unlock()
+		_ = m.observe(ctx, current)
+		return current
+	}
 	// Written only when it actually changed. The runtime directory is watched
 	// for the shim's writes (ADR 0115 §1), and rewriting an unchanged file here
 	// would wake that watcher with this process's own echo.
 	_ = writeRuntimeIfChanged(exec.RuntimePath, exec)
+	unlock()
 	_ = m.observe(ctx, exec)
 	return exec
+}
+
+// settled reports whether a record already says the run is over. Nothing
+// systemd reports brings one back — only a relaunch starts another — so a
+// settled record is the last word on that run, and an observation neither
+// refreshes it nor overwrites it.
+func settled(exec Exec) bool {
+	return exec.Status == StatusExited || exec.Status == StatusFailed
+}
+
+// lockRecord takes the per-exec lock over the exec's runtime file and returns
+// its release. Locks are kept for the life of the process rather than removed
+// on Delete: removing one another goroutine holds would hand the next caller a
+// different lock for the same record, and an exec costs one mutex.
+func (m *Manager) lockRecord(id string) func() {
+	m.recordsMu.Lock()
+	mu, ok := m.records[id]
+	if !ok {
+		mu = &sync.Mutex{}
+		m.records[id] = mu
+	}
+	m.recordsMu.Unlock()
+	mu.Lock()
+	return mu.Unlock
+}
+
+// writeRecord is how a lifecycle operation — Create, Start, Stop, Relaunch —
+// records the state it just brought about. It is authoritative, so it writes
+// unconditionally; taking the record lock is what keeps a concurrent refresh
+// from landing between that refresh's re-read and its own write.
+func (m *Manager) writeRecord(exec Exec) error {
+	unlock := m.lockRecord(exec.ID)
+	defer unlock()
+	return writeRuntime(exec.RuntimePath, exec)
+}
+
+// supersedes reports whether the record now on disk replaces the one an
+// observation was drawn from, rather than being the same record to update.
+func supersedes(current, observed Exec) bool {
+	// A relaunch ran while the observation was in flight, so the unit it asked
+	// about belongs to the generation before this one (ADR 0038 §2).
+	if current.Unit != observed.Unit {
+		return true
+	}
+	// The run ended — stopped, or its exit read from the shim — after the
+	// observation read it as live.
+	return settled(current) && !settled(observed)
 }
 
 func applyUnitStatus(exec Exec, unit UnitStatus) Exec {

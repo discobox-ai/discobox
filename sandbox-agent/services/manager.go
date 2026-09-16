@@ -89,7 +89,8 @@ type Manager struct {
 
 	// lifecycle serializes start/stop/restart per service id. Deciding whether
 	// to create an exec or relaunch the existing one is a check-then-act over
-	// records nothing else serializes (execs.Manager keeps no in-process lock),
+	// records nothing else serializes (execs.Manager locks single record writes,
+	// not a decision spanning a read and a launch),
 	// and boot's autostart overlaps a client's first `services start` by
 	// construction. Two unserialized starts give one service two execs, only
 	// one of which any later stop can find.

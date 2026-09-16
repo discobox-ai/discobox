@@ -584,7 +584,8 @@ const primaryLaunchKey = PrimaryExecID
 //
 // Bringing a terminal up is a check-then-act — read the record, decide it needs
 // launching, then create or relaunch it — and nothing underneath serializes it:
-// execs.Manager keeps no in-process lock, and List re-reads from disk. Two
+// execs.Manager locks only each single write to a record, never a
+// decision spanning a read and a launch, and List re-reads from disk. Two
 // callers therefore both decide to act. For a first launch that means two
 // primary terminals and a prompt that runs twice; for a revive it is worse than
 // duplicated work, because both compute the next unit generation from the same

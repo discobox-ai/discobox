@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 )
 
 // Stop is not Delete. Delete tears the record down; Stop ends the run and keeps
@@ -129,5 +130,95 @@ func TestStopUnknownExec(t *testing.T) {
 	}
 	if _, err := manager.Stop(context.Background(), "ex_nope"); err == nil {
 		t.Fatal("stop succeeded, want ErrNotFound")
+	}
+}
+
+// A stop must survive the observation the stop itself provokes. Stopping the
+// unit makes systemd report a change, so the watcher reads the exec's record —
+// still running — and then spends a D-Bus round trip asking what became of the
+// unit. By the time that answer comes back Stop has already recorded the stop,
+// and writing the conclusion drawn from the pre-stop record puts the exec back
+// to `lost` with "exec unit is no longer loaded": a service left reading
+// `failed`, permanently, because nothing reconciles it again.
+func TestStopSurvivesAnInFlightUnitObservation(t *testing.T) {
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Units:       &fakeUnitManager{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{Command: []string{"sleep", "600"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// The run the stop interrupts: a service that has been up for a while.
+	running := created
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	running.Status = StatusRunning
+	running.StartedAt = &startedAt
+	running.PID = 4321
+	if err := writeRuntime(running.RuntimePath, running); err != nil {
+		t.Fatalf("write runtime: %v", err)
+	}
+	// What the watcher read before the stop, and is still holding.
+	observed := running
+
+	if _, err := manager.Stop(context.Background(), created.ID); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	// The round trip lands now, against a record that has already moved on.
+	manager.refreshExec(context.Background(), observed, true)
+
+	current, ok := manager.Get(created.ID)
+	if !ok {
+		t.Fatal("exec not found after the observation")
+	}
+	if current.Status != StatusExited || !current.Stopped {
+		t.Fatalf("status = %q stopped = %t error = %q, want exited and stopped", current.Status, current.Stopped, current.Error)
+	}
+	if current.Error != "" {
+		t.Errorf("error = %q, want none: being stopped is not a failure", current.Error)
+	}
+}
+
+// Delete stops the unit too, and so provokes the same observation. Its answer
+// lands after the runtime file is gone, and writing it recreates the file: a
+// deleted exec back in the listing as a lost one, its transcript already
+// discarded, and a primary terminal the terminal layer may try to revive.
+func TestDeleteSurvivesAnInFlightUnitObservation(t *testing.T) {
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Units:       &fakeUnitManager{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{Command: []string{"sleep", "600"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	running := created
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	running.Status = StatusRunning
+	running.StartedAt = &startedAt
+	running.PID = 4321
+	if err := writeRuntime(running.RuntimePath, running); err != nil {
+		t.Fatalf("write runtime: %v", err)
+	}
+	observed := running
+
+	if err := manager.Delete(context.Background(), created.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	manager.refreshExec(context.Background(), observed, true)
+
+	if _, err := os.Stat(created.RuntimePath); !os.IsNotExist(err) {
+		t.Fatalf("runtime file recreated after delete: %v", err)
+	}
+	if _, ok := manager.Get(created.ID); ok {
+		t.Fatal("a deleted exec is back in the listing")
 	}
 }

@@ -256,6 +256,18 @@ PID, because PIDs are reused and the pool agent differences per process.
   error — is what demotes a vanished exec to `lost`. For a terminal, `exited`/
   `failed`/`lost` means "not running, revivable" rather than gone: its exec id
   is a durable identity, and attach/start relaunches it in place (ADR 0038).
+  An observation is a read-modify-write, and asking systemd what became of a
+  unit costs a D-Bus round trip, so its write is a compare-and-swap: under a
+  per-exec record lock it re-reads the runtime file and drops its conclusion
+  when the record moved on — a newer unit generation, a run that settled, or a
+  file that is gone. Every in-process write to that file takes the same lock,
+  which is never held across a systemd or shim call. Stop, Relaunch and Delete
+  are what it guards: each stops a unit, which is itself what makes systemd
+  report the change the observation came from, so "no longer loaded" routinely
+  arrives after the record says stopped, starting, or nothing. Writing it
+  anyway pins the exec at `lost` — a service reading `failed` for the life of
+  the sandbox, since a settled record is never reconciled again — or brings a
+  deleted exec back.
 - Resolve an exec's workdir after its run user and env, never before: an empty
   request takes the sandbox's configured default (the primary source
   directory), a relative path joins the working root, and a leading `~`/`~/`

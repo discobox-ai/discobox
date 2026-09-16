@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 )
 
 // stopRecordingUnitManager records stops so a test can assert the previous
@@ -137,5 +138,55 @@ func TestNextUnitGeneration(t *testing.T) {
 		if got := nextUnitGeneration(c.id, c.current); got != c.want {
 			t.Fatalf("nextUnitGeneration(%q, %q) = %q, want %q", c.id, c.current, got, c.want)
 		}
+	}
+}
+
+// The same in-flight observation, one generation later. Relaunch fences the
+// previous run by stopping its unit, which makes systemd report the change a
+// watcher is already reading the record for — and the answer that comes back,
+// "no longer loaded", is true of the generation that was fenced and says
+// nothing about the one now starting. Writing it declares the fresh run lost
+// before it has launched, which for a primary terminal means EnsurePrimary
+// skips the relaunch and every attach dials a socket that will never exist.
+func TestRelaunchSurvivesAnInFlightUnitObservation(t *testing.T) {
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Units:       &stopRecordingUnitManager{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{Command: []string{"sleep", "600"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// The run being replaced, and what a watcher read of it before the fence.
+	running := created
+	startedAt := time.Now().UTC().Add(-time.Minute)
+	running.Status = StatusRunning
+	running.StartedAt = &startedAt
+	running.PID = 4321
+	if err := writeRuntime(running.RuntimePath, running); err != nil {
+		t.Fatalf("write runtime: %v", err)
+	}
+	observed := running
+
+	revived, err := manager.Relaunch(context.Background(), RelaunchRequest{ID: created.ID})
+	if err != nil {
+		t.Fatalf("relaunch: %v", err)
+	}
+	if revived.Unit == observed.Unit {
+		t.Fatalf("unit = %q, want a fresh generation", revived.Unit)
+	}
+	manager.refreshExec(context.Background(), observed, true)
+
+	current, ok := manager.Get(created.ID)
+	if !ok {
+		t.Fatal("exec not found after the observation")
+	}
+	if current.Status != StatusStarting || current.Unit != revived.Unit {
+		t.Fatalf("status = %q unit = %q error = %q, want the new generation still starting",
+			current.Status, current.Unit, current.Error)
 	}
 }
