@@ -19,10 +19,10 @@ import (
 // in for the native one the terminal stopped doing the moment the mouse was
 // reported. See ADR 0088.
 //
-// The opening prompt is the exception, and mouseMode is where it is made:
-// it is drawn inline, in the shell's own scrollback, where a mouse coordinate
-// is the terminal's rather than the frame's and the terminal's own selection
-// is still the right one.
+// The opening prompt is the exception, and `View`'s AltScreen branch is where
+// it is made: it is drawn inline, in the shell's own scrollback, where a mouse
+// coordinate is the terminal's rather than the frame's and the terminal's own
+// selection is still the right one.
 
 // clickRun is how close together two presses on the same cell must be to read
 // as one gesture growing — the conventional desktop double-click window, and
@@ -47,7 +47,7 @@ func (m *Model) updateMouse(msg tea.MouseMsg) tea.Cmd {
 
 // hover records where the pointer is resting, so the next frame can draw
 // whatever is under it as the control it is. The window asks the terminal for
-// every move (mouseMode) and answers most of them here: a sandbox is sent the
+// every move (`View`) and answers most of them here: a sandbox is sent the
 // move only when it asked for motion itself, so one that subscribed to buttons
 // alone receives no more than it did before the window wanted hover.
 func (m *Model) hover(ev tea.MouseMotionMsg) tea.Cmd {

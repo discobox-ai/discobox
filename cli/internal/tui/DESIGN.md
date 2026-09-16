@@ -1514,12 +1514,24 @@ Ctrl-A stays the composer's start of line; a leader followed by any other key
 is as though it had not been pressed.
 
 **The window answers the mouse on every screen it draws over the terminal**
-(`mouseMode`, `mouse.go`, ADR 0088). Native selection is traded for the
+(`View`, `mouse.go`, ADR 0088). Native selection is traded for the
 window's own, which is every multiplexer's bargain — struck once, for the whole
 window, so the pointer never means one thing on one screen and another on the
 next. The opening prompt is the exception and the line is `takesScreen`: it is
 printed inline in the shell's scrollback, where a coordinate is the terminal's
 screen rather than this frame.
+
+**The attributes that are the terminal's, not the frame's, are stamped in one
+place** (`View`, keyed on `AltScreen`). `MouseMode` and `WindowTitle` follow
+from whether a frame owns the screen, so `View` sets both on the way out
+instead of each builder setting them for itself. This is a correction: the
+builders used to, and `altView` — which is every modal, the dialogs, the
+options panel and the introduction — set `AltScreen` alone. `MouseMode`'s zero
+value is `MouseModeNone`, so each of those frames told the terminal to stop
+reporting the mouse, and every modal was unclickable while its own key handling
+went on working. Nothing in the hit map or the press handling was wrong, which
+is why it survived: `hitDialogItem` and `pressDialogItem` are correct and were
+never reached. A builder cannot forget an attribute it does not set.
 
 **What a press means is a lookup in the hit map the last frame left behind**
 (`zones.go`). There is no widget tree here — every screen is strings joined to
@@ -1605,7 +1617,7 @@ mean different things.
 window's one accent, bold so a terminal with no color shows it too; not
 underlined, which lipgloss renders one escape per character on a hint redrawn
 at every mouse move). The
-window asks for all-motion (`mouseMode`) and answers a bare move itself
+window asks for all-motion (`View`) and answers a bare move itself
 (`Model.hover`): a sandbox is sent the move only when it asked for motion, so
 one subscribed to buttons alone gets no more than before. The renderer asks
 `zones.hovering` with the numbers it is about to mark with. A menu's rows and a card's shade too, in the label

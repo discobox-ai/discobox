@@ -2156,30 +2156,6 @@ func (m *Model) paneCursor() *tea.Cursor {
 	return p.term.Cursor(x, y)
 }
 
-// mouseMode is what the window asks the real terminal to report. Every frame
-// the window draws on the alternate screen reports the mouse: clicks, drags
-// and the wheel are how the window is worked with a pointer, and they are
-// needed even when nothing in a box asked for a mouse — which is the bargain
-// every multiplexer strikes, native selection traded for the window's own.
-//
-// The opening prompt is the exception. It is drawn inline, in the shell's own
-// scrollback, where a mouse coordinate is the terminal's screen rather than
-// this frame and the terminal's own selection is still the one that belongs.
-// See ADR 0088 §1.
-//
-// All-motion, because a control the pointer is resting on is drawn as live
-// before it is pressed, and a pointer that has not moved yet reports nothing.
-// A bare move — no button down — is the window's own: it is answered here and
-// forwarded to a sandbox only when that sandbox asked for motion, so an
-// application that subscribed to buttons alone is sent no more than it was
-// before. See Model.hover.
-func (m *Model) mouseMode() tea.MouseMode {
-	if !m.takesScreen() {
-		return tea.MouseModeNone
-	}
-	return tea.MouseModeAllMotion
-}
-
 // translateMouse moves an event from the screen into a pane's grid, pulling a
 // press or a wheel tick that landed on the cell of air the box draws beside
 // the grid (paneAt) onto the column of grid next to it: the first column of

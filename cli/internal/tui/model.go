@@ -2692,6 +2692,33 @@ func (m *Model) layout() {
 func (m *Model) View() tea.View {
 	view := m.view()
 	m.printed = !view.AltScreen && view.Content != ""
+	// The attributes that are the terminal's rather than the frame's are
+	// stamped here, at the one place every frame leaves by, rather than by each
+	// builder that makes one. A frame that owns the screen reports the mouse
+	// and names the window; an inline one does neither, because a mouse
+	// coordinate there is the shell's screen and not this frame (ADR 0088 §1).
+	//
+	// Stamped once because the alternative was tried and drifted: altView set
+	// AltScreen and nothing else, so every modal — the dialogs, the options
+	// panel, the introduction — asked the terminal for MouseModeNone, the zero
+	// value, and went unclickable while its own key handling carried on
+	// working. A builder cannot forget what it does not set.
+	//
+	// All-motion outright rather than through a second question of our own:
+	// owning the screen *is* the condition, and a frame that asked it again
+	// against some other piece of state could answer it differently and put
+	// the dead modal back. All-motion because a control the pointer rests on
+	// is drawn live before it is pressed, and a pointer that has not moved
+	// reports nothing; a bare move is answered here and forwarded to a sandbox
+	// only when that sandbox asked for motion (Model.hover).
+	//
+	// A new full-screen layer still owes `takesScreen` an entry — that is what
+	// `clearPrinted` reads, and tui/REVIEW.md asks for it — but forgetting it
+	// no longer costs the layer its mouse.
+	if view.AltScreen {
+		view.MouseMode = tea.MouseModeAllMotion
+		view.WindowTitle = m.windowTitle()
+	}
 	return view
 }
 
@@ -2740,7 +2767,8 @@ func (m *Model) view() tea.View {
 		// the command that started the window, where a coordinate belongs to
 		// the terminal's screen and not to these rows. Whatever its renderers
 		// marked on the way past is dropped rather than left to be read
-		// against the wrong ones. See mouseMode.
+		// against the wrong ones. It is the frame View leaves AltScreen off,
+		// and so the one it asks no mouse for.
 		marked := m.zones.count()
 		content = m.viewCompact()
 		m.zones.drop(marked)
@@ -2785,8 +2813,6 @@ func (m *Model) view() tea.View {
 	// The whole terminal, once the window has opened out — but not before: the
 	// opening prompt is inline, sitting under the command that started it.
 	view.AltScreen = m.takesScreen()
-	view.MouseMode = m.mouseMode()
-	view.WindowTitle = m.windowTitle()
 	// The cursor belongs to whatever is drawing one. A pane places it where the
 	// sandbox put it; everywhere else the composer's own virtual cursor does
 	// the job and there is nothing to place.
@@ -2857,8 +2883,6 @@ func titledEdge(st *styles, edge lipgloss.Style, title, control string, width in
 		edge.Render(strings.Repeat("─", width-left-labelW)) + tail
 }
 
-// altView is a frame on the alternate screen, for the layers that stand in
-// place of the window rather than inside it.
 // center puts a modal surface in the middle of the terminal. A dialog is the
 // only thing on screen while it is up, so the window it is drawn over is empty
 // space, and hanging it off the top-left corner leaves all of that space on two
@@ -2911,6 +2935,12 @@ func (m *Model) takesScreen() bool {
 	return m.expanded || m.inPanes() || m.dialog != nil || m.optionsOpen || m.welcoming
 }
 
+// altView is a frame on the alternate screen, for the layers that stand in
+// place of the window rather than inside it.
+//
+// The screen is the whole of what it decides. Whether such a frame reports the
+// mouse and what it calls the window follow from that, and View stamps both, so
+// there is nothing here for a new layer to leave out.
 func (m *Model) altView(content string) tea.View {
 	view := tea.NewView(content)
 	view.AltScreen = true

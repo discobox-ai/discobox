@@ -358,12 +358,17 @@ func TestTheOpeningPromptLeavesTheMouseToTheTerminal(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	m.expanded = false
+	send(t, m, sizeMsg(120, 40))
 
-	if got := m.mouseMode(); got != tea.MouseModeNone {
+	view := m.View()
+	if view.AltScreen {
+		t.Fatal("the opening prompt is drawn inline")
+	}
+	if got := view.MouseMode; got != tea.MouseModeNone {
 		t.Fatalf("the inline prompt asks for %v, want the mouse left to the terminal", got)
 	}
 	m.expand()
-	if got := m.mouseMode(); got == tea.MouseModeNone {
+	if got := m.View().MouseMode; got == tea.MouseModeNone {
 		t.Fatalf("the full window should report the mouse")
 	}
 }
@@ -643,10 +648,14 @@ func TestAHintShadesUnderThePointer(t *testing.T) {
 
 // The window asks for every move so it can do that, and answers them itself: a
 // sandbox that subscribed to buttons alone is sent no more than it was.
+//
+// Asked of the frame rather than of a helper, because the frame is what the
+// terminal is told: a window that worked out the right mode and then handed
+// out a different one is the failure this is here to see.
 func TestABareMoveIsTheWindowsOwn(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	if got := m.mouseMode(); got != tea.MouseModeAllMotion {
+	if got := m.View().MouseMode; got != tea.MouseModeAllMotion {
 		t.Fatalf("the window asks for %v, want every move so a control can shade under the pointer", got)
 	}
 }
@@ -828,5 +837,52 @@ func TestPressingTheOptionsKeyLineLeaves(t *testing.T) {
 
 	if m.optionsOpen {
 		t.Fatalf("pressing the panel's own Esc offer should close it")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// the mouse a modal asks for
+
+// A modal is drawn by altView, which decides the screen and nothing else. The
+// mouse it asks for is therefore View's to stamp, and this is the assertion
+// that it does: every layer that stands in place of the window reports the
+// mouse, because every one of them has rows a pointer is meant to press.
+//
+// It is written against View rather than against a synthesized press on
+// purpose. Feeding tea.MouseClickMsg to Update tests the handler and skips the
+// question this answers — whether the terminal was ever asked to send one. The
+// handlers were right and every modal was still dead, because altView left
+// MouseMode at its zero value, MouseModeNone.
+func TestEveryModalAsksTheTerminalForTheMouse(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		open func(t *testing.T, m *Model)
+	}{
+		{"a dialog", func(t *testing.T, m *Model) {
+			send(t, m, keyPress("tab"))
+			drain(t, m, m.openTools(), 0)
+		}},
+		{"the action menu", func(t *testing.T, m *Model) {
+			send(t, m, keyPress("tab"), keyPress("."))
+		}},
+		{"the options panel", func(t *testing.T, m *Model) {
+			send(t, m, keyPress("ctrl+o"))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			tc.open(t, m)
+			view := m.View()
+			if !view.AltScreen {
+				t.Fatalf("%s should take the screen", tc.name)
+			}
+			if view.MouseMode != tea.MouseModeAllMotion {
+				t.Fatalf("%s asks the terminal for MouseMode %v, want MouseModeAllMotion — "+
+					"its rows are drawn as presses and the pointer cannot reach them",
+					tc.name, view.MouseMode)
+			}
+		})
 	}
 }
