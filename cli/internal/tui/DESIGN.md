@@ -1924,6 +1924,17 @@ Ctrl-J all keep the prompt open and split the line. Enhanced terminals report
 the Enter chords distinctly; Ctrl-J also covers terminals that encode
 Ctrl-Enter as the traditional line-feed control byte.
 
+**Enter's prompt is spent when the server takes the create, and not before**
+(`submitting`, `promptSpentMsg`, `DataSource.Run`'s `accepted`). From Enter
+until the server answers, the composer is read-only and a second Enter does
+nothing: its text is what is being sent. It is blurred for that stretch, so it
+draws as not taking input — no cursor, dimmed text, muted rules and chips. Accepted, the composer is emptied —
+before the source is delivered and the discobox comes up, which is most of the
+wait — and only if it still holds the prompt that was sent, since a draft can
+land in an empty one. Turned down, the prompt is handed back as it was. A run
+that fails after the server took it says the discobox was created, because a
+report that it was not sends somebody to retype a spent prompt.
+
 **The panes carry this window's keymap** (`paneKeymap`, `pane.go`). A pane's
 encoder answers only what the program inside it negotiated, and nothing
 negotiates a modified Enter — Claude Code disables both keyboard protocols on

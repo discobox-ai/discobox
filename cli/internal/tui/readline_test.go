@@ -181,7 +181,7 @@ func TestUndoDoesNotReachBehindARun(t *testing.T) {
 	m := promptWith(t, "")
 
 	send(t, m, typeString("reap the pool")...)
-	send(t, m, createdMsg{req: RunRequest{Detach: true}, sandbox: testSandboxes()[0]})
+	send(t, m, promptSpentMsg{req: RunRequest{Prompt: []string{"reap the pool"}}})
 	if got := m.prompt.Value(); got != "" {
 		t.Fatalf("prompt = %q, want it cleared by the run", got)
 	}

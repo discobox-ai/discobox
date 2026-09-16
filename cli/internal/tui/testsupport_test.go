@@ -49,6 +49,12 @@ type fakeSource struct {
 	// that returns at once, which is what every test that is not about the
 	// wait wants.
 	runGate chan struct{}
+	// deliverGate holds a create open after the server has taken it, which is
+	// where a real one delivers the source and syncs SSH config.
+	deliverGate chan struct{}
+	// deliverErr fails a create after the server has taken it, the way a
+	// source push or an SSH config sync does.
+	deliverErr error
 
 	// measured records the directories the window asked to be measured, and
 	// total is what the walk it gets back reports.
@@ -341,7 +347,7 @@ func (f *fakeSource) runRequests() []RunRequest {
 	return append([]RunRequest(nil), f.runs...)
 }
 
-func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string)) (Sandbox, error) {
+func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string), accepted func()) (Sandbox, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, req)
 	gate := f.runGate
@@ -352,14 +358,24 @@ func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string))
 		<-gate
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	for _, step := range f.runSteps {
 		report(step)
 	}
-	if f.runErr != nil {
-		return Sandbox{}, f.runErr
+	if err := f.runErr; err != nil {
+		f.mu.Unlock()
+		return Sandbox{}, err
 	}
-	return Sandbox{ID: f.createdID, Name: promptText(req), State: StateStarting}, nil
+	accepted()
+	deliver, deliverErr := f.deliverGate, f.deliverErr
+	created := Sandbox{ID: f.createdID, Name: promptText(req), State: StateStarting}
+	f.mu.Unlock()
+	if deliver != nil {
+		<-deliver
+	}
+	if deliverErr != nil {
+		return Sandbox{}, deliverErr
+	}
+	return created, nil
 }
 
 // WatchProvisioning reports whatever the test staged and returns. The real one

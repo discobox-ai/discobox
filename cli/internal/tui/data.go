@@ -1363,7 +1363,13 @@ type DataSource interface {
 	// It reports each step it passes through — the steps are this client's own
 	// work, so nothing else can say which one is underway — and the window puts
 	// them where it says what it is busy with.
-	Run(ctx context.Context, req RunRequest, report func(string)) (Sandbox, error)
+	//
+	// accepted is called once, the moment the server has taken the create and
+	// before the source is delivered: from then on the discobox exists whatever
+	// the rest of the run does, so the prompt it was given can no longer be
+	// lost and the window lets go of it. A create the server refused never
+	// calls it.
+	Run(ctx context.Context, req RunRequest, report func(string), accepted func()) (Sandbox, error)
 
 	// WatchProvisioning reports what a sandbox that is not usable yet is being
 	// made to do, until ctx ends. It blocks, and is meant to run beside a wait

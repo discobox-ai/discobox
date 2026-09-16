@@ -132,7 +132,7 @@ func TestRunningThePromptDropsTheDraft(t *testing.T) {
 	send(t, m, typeString("build it")...)
 	send(t, m, tickMsg{})
 
-	send(t, m, createdMsg{sandbox: Sandbox{ID: "sbx_created"}, req: RunRequest{Detach: true}})
+	send(t, m, promptSpentMsg{req: RunRequest{Prompt: []string{"build it"}}})
 	send(t, m, tickMsg{})
 
 	if got := ds.drafts[len(ds.drafts)-1]; got != "/src/disco2 " {

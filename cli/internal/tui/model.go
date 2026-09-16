@@ -334,6 +334,13 @@ type Model struct {
 	// it goes; see narration.go.
 	busy string
 
+	// submitting is a create sent and not yet answered: from Enter until the
+	// server has taken it or turned it down. The composer is read-only for
+	// that stretch — its text is what is being sent, and it is either about to
+	// be spent or about to be handed back, so neither answer should land on an
+	// edit made in between.
+	submitting bool
+
 	// busyGen numbers the operations that narrate themselves onto the busy
 	// line, so a report from one the window has moved on from is dropped rather
 	// than overwriting what replaced it.
@@ -703,7 +710,10 @@ type directorySizeMsg struct{}
 type createdMsg struct {
 	sandbox Sandbox
 	req     RunRequest
-	err     error
+	// accepted is whether the server took the create before err: a run that
+	// fails after that has still made a discobox.
+	accepted bool
+	err      error
 }
 
 // verbDoneMsg reports a lifecycle verb that ran against the API and returned.
@@ -937,6 +947,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case createdMsg:
 		return m.created(msg)
+
+	case promptSpentMsg:
+		m.setSubmitting(false)
+		m.promptSpent(msg.req)
+		return nil
 
 	case provisioningDoneMsg:
 		// The attach can finish, so the report on it goes and what is
@@ -1192,7 +1207,7 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	// drawn over it and owns every key, paste included. See updateKey.
 	case m.inPanes():
 		return m.updatePane(msg)
-	case m.harnessesOpen, m.secretsOpen:
+	case m.harnessesOpen, m.secretsOpen, m.submitting:
 		return nil
 	}
 	before := m.promptState()
@@ -1492,6 +1507,14 @@ func (m *Model) promptEdited(msg editorDoneMsg) {
 // Enter launches, modified Enter inserts a newline, Tab moves to the list, and
 // Shift-Tab cycles the harness.
 func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
+	// While the prompt is being sent the only keys that reach it are the ones
+	// that leave it.
+	if m.submitting {
+		if keyName(msg) == "tab" {
+			m.leavePrompt(landFirst)
+		}
+		return nil
+	}
 	switch keyName(msg) {
 	case "up":
 		// Up is a line motion first, and only walks out of the field from the
@@ -1701,7 +1724,22 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 
 func (m *Model) backToPrompt() {
 	m.focus = focusPrompt
-	m.prompt.Focus()
+	if !m.submitting {
+		m.prompt.Focus()
+	}
+}
+
+// setSubmitting marks a create sent or answered. The composer is blurred for
+// the stretch, which is what shows it read-only — no cursor, its text dimmed —
+// and focused again after if focus is still on it.
+func (m *Model) setSubmitting(on bool) {
+	m.submitting = on
+	switch {
+	case on:
+		m.prompt.Blur()
+	case m.focus == focusPrompt:
+		m.prompt.Focus()
+	}
 }
 
 // leavePrompt moves focus up out of the composer: to the sandboxes, or to the
@@ -2244,6 +2282,9 @@ func (m *Model) renameDone(msg renameDoneMsg) tea.Cmd {
 // An empty prompt is not an error. It means the other thing you come here for:
 // a sandbox of your own to work in, with no harness given anything to do.
 func (m *Model) run() tea.Cmd {
+	if m.submitting {
+		return nil
+	}
 	if m.askWhereToCutFrom() {
 		return nil
 	}
@@ -2370,6 +2411,7 @@ func (m *Model) startRun(req RunRequest) tea.Cmd {
 	}
 	// --include-dirty=auto means ask, and there is only something to ask about
 	// when the working tree has something in it.
+	m.setSubmitting(true)
 	m.waiting("checking the working tree")
 	return func() tea.Msg {
 		workspace, err := m.ds.Workspace(m.ctx, req.Source)
@@ -2508,6 +2550,9 @@ func (m *Model) harnessNamed(name string) (Harness, bool) {
 
 func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	m.busy = ""
+	// Not sent yet: a question may come first, and a question is modal. The
+	// create sets it again when it goes.
+	m.setSubmitting(false)
 	if msg.err != nil {
 		return m.report(true, "cannot read the working tree: %v", msg.err)
 	}
@@ -2684,23 +2729,71 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 		// the list they were started from and report on the busy line there.
 		m.dialog = m.waitDialog(creatingTitle, "")
 	}
+	m.setSubmitting(true)
 	m.waiting("creating the discobox")
 	// Create resolves a source, may snapshot a dirty tree, and may push the
 	// whole thing to a server that cannot reach this directory. Which of those
 	// is underway is knowable only here, so the shared creation path reports it
 	// and the busy line follows along (ADR 0060).
 	feed, next := m.narrate()
+	// The prompt is let go of as soon as the server has the create, not when
+	// the whole run is over: delivering the source and bringing the discobox
+	// up take a while, and a composer still holding a prompt that is already
+	// running reads as one that was not sent. Not before, either — a create
+	// the server refuses leaves the prompt where it was, to be sent again.
+	accepted := make(chan struct{}, 1)
 	create := func() tea.Msg {
 		defer feed.close()
-		sandbox, err := m.ds.Run(m.ctx, req, feed.report)
-		return createdMsg{sandbox: sandbox, req: req, err: err}
+		defer close(accepted)
+		// Run calls accepted on this goroutine, so the flag needs no lock.
+		var taken bool
+		sandbox, err := m.ds.Run(m.ctx, req, feed.report, func() {
+			taken = true
+			select {
+			case accepted <- struct{}{}:
+			default:
+			}
+		})
+		return createdMsg{sandbox: sandbox, req: req, accepted: taken, err: err}
 	}
-	return tea.Batch(create, next)
+	spent := func() tea.Msg {
+		if _, ok := <-accepted; ok {
+			return promptSpentMsg{req: req}
+		}
+		return nil
+	}
+	return tea.Batch(create, next, spent)
+}
+
+// promptSpentMsg says the server has taken a create, so the prompt it carried
+// is running and no longer the composer's.
+type promptSpentMsg struct{ req RunRequest }
+
+// promptSpent empties the composer. Clearing it is what makes the window
+// usable twice in a row without reaching for a delete key, and resetting the
+// history is what keeps undo from reaching behind a prompt already sent.
+//
+// Only while the composer still holds the prompt that was sent. It is
+// read-only until the answer (submitting), but a draft can still land in it:
+// Enter on an empty composer creates a discobox with no prompt, and the draft
+// the session brings is not what was sent.
+func (m *Model) promptSpent(req RunRequest) {
+	if strings.TrimSpace(m.prompt.Value()) != strings.Join(req.Prompt, " ") {
+		return
+	}
+	m.prompt.SetValue("")
+	m.edits.reset()
+	m.layout()
 }
 
 func (m *Model) created(msg createdMsg) tea.Cmd {
 	m.endNarration()
 	m.busy = ""
+	// An accepted create gave the composer back on promptSpentMsg, and by now
+	// may be a later create's to hold; one turned down gives it back here.
+	if !msg.accepted {
+		m.setSubmitting(false)
+	}
 	if msg.err != nil {
 		// The wait is over and there is nothing to wait for, so it goes: the
 		// report belongs on a screen somebody can read it on. Only this
@@ -2708,13 +2801,15 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 		if m.dialog != nil && m.dialog.kind == dlgStatus {
 			m.dialog = nil
 		}
+		if msg.accepted {
+			// The server has the discobox, and the prompt is already gone from
+			// the composer. Saying it could not be created would send somebody
+			// to type it again and make a second one; it is on the list, as
+			// far as it got.
+			return tea.Batch(m.refresh(), m.report(true, "created the discobox, but could not finish setting it up: %v", msg.err))
+		}
 		return m.report(true, "cannot create the discobox: %v", msg.err)
 	}
-	// The prompt has been spent. Clearing it is what makes the window usable
-	// twice in a row without reaching for a delete key.
-	m.prompt.SetValue("")
-	m.edits.reset()
-	m.layout()
 	if msg.req.Detach {
 		return tea.Batch(m.refresh(), m.report(false, "created %s", msg.sandbox.ID))
 	}
@@ -3312,8 +3407,11 @@ func (m *Model) viewPrompt() string {
 // width: the label above, a rule either side of the text, and the chip strip
 // saying what Enter will do.
 func (m *Model) viewComposer(width int) string {
+	// A composer that is not taking input — focus elsewhere, or a prompt
+	// being sent — draws its rules and chips muted.
+	live := m.focus == focusPrompt && !m.submitting
 	ruleStyle := m.st.ruleOn
-	if m.focus != focusPrompt {
+	if !live {
 		ruleStyle = m.st.rule
 	}
 	// The composer's own rules stop short of its edges on both sides: run into
@@ -3321,7 +3419,7 @@ func (m *Model) viewComposer(width int) string {
 	// separator inside it.
 	rule := "  " + ruleStyle.Render(strings.Repeat("─", max(width-4, 1)))
 	chips := m.opts.chips(m.st)
-	if m.focus != focusPrompt {
+	if !live {
 		chips = m.opts.mutedChips(m.st)
 	}
 	mode := padANSI("  "+chips, width)

@@ -946,12 +946,12 @@ func sourceDirectory(source string) string {
 // Run creates the sandbox Enter asked for and delivers its source, which is
 // exactly what `discobox run` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
-func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string)) (tui.Sandbox, error) {
+func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string), accepted func()) (tui.Sandbox, error) {
 	if d.servers == nil {
 		if req.Server != "" {
 			return tui.Sandbox{}, fmt.Errorf("there is no server %s to create on; there is only the primary", req.Server)
 		}
-		return d.create(ctx, req, report)
+		return d.create(ctx, req, report, accepted)
 	}
 	// Empty is the primary, which is `--server` unset (ADR 0116 §5).
 	target := d.servers[0]
@@ -975,7 +975,7 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	box, err := source.create(ctx, req, report)
+	box, err := source.create(ctx, req, report, accepted)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
@@ -987,7 +987,7 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 }
 
 // create is Run on this data source's own server.
-func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report func(string)) (tui.Sandbox, error) {
+func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report func(string), accepted func()) (tui.Sandbox, error) {
 	opts := sandboxcreate.PromptOptions{
 		Source:   strings.TrimSpace(req.Source),
 		NoSource: req.NoSource,
@@ -1037,6 +1037,9 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, opts, step)
 	if err != nil {
 		return tui.Sandbox{}, err
+	}
+	if accepted != nil {
+		accepted()
 	}
 	// The local source is done as soon as it has been delivered, which for a
 	// directory that is not a repository means deleting the repository built

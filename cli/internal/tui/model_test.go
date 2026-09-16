@@ -71,6 +71,140 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	}
 }
 
+// The prompt is spent the moment the server takes the create, not when the
+// discobox is finally up: a composer still holding it through the source push
+// reads as a prompt that was never sent.
+func TestThePromptIsSpentOnceTheServerTakesTheCreate(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.deliverGate = make(chan struct{})
+	m := New(t.Context(), ds)
+	m.logo = logo{}
+	d := newDriver(t, m)
+	d.start()
+	for _, key := range typeString("fix the reaper") {
+		d.dispatch(key)
+	}
+	d.key("enter")
+	d.wait("the prompt to be spent", func() bool { return m.prompt.Value() == "" })
+	if len(ds.execOpened()) != 0 {
+		t.Fatal("the create was still underway, and nothing should have attached yet")
+	}
+	close(ds.deliverGate)
+	d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
+}
+
+// A create the server refused has nothing running the prompt, so it stays in
+// the composer to be sent again.
+func TestARefusedCreateKeepsThePrompt(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.runErr = errors.New("no pool is accepting discoboxes")
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"))
+
+	if len(ds.runs) != 1 {
+		t.Fatalf("runs = %d, want 1", len(ds.runs))
+	}
+	if got := m.prompt.Value(); got != "fix the reaper" {
+		t.Fatalf("prompt = %q, want it kept after a refused create", got)
+	}
+	// And handed back: the composer takes typing again.
+	if !m.prompt.Focused() {
+		t.Fatal("the composer should be focused again after a refused create")
+	}
+	send(t, m, typeString("!")...)
+	if got := m.prompt.Value(); got != "fix the reaper!" {
+		t.Fatalf("prompt = %q, want the composer editable after a refused create", got)
+	}
+}
+
+// The composer is read-only between Enter and the server's answer: what is in
+// it is what is being sent, and the answer — spent or handed back — should not
+// land on an edit made in between. A second Enter is not a second create.
+func TestThePromptIsReadOnlyWhileTheCreateIsBeingSent(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.runGate = make(chan struct{})
+	m := New(t.Context(), ds)
+	m.logo = logo{}
+	d := newDriver(t, m)
+	d.start()
+	for _, key := range typeString("fix the reaper") {
+		d.dispatch(key)
+	}
+	d.key("enter")
+	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
+
+	for _, key := range typeString(", then the pool") {
+		d.dispatch(key)
+	}
+	d.dispatch(keyPress("backspace"))
+	d.dispatch(keyPress("ctrl+u"))
+	d.dispatch(tea.PasteMsg{Content: "pasted"})
+	d.key("enter")
+	if got := m.prompt.Value(); got != "fix the reaper" {
+		t.Fatalf("prompt = %q, want it untouched while the create is being sent", got)
+	}
+	if n := len(ds.runRequests()); n != 1 {
+		t.Fatalf("runs = %d, want Enter ignored while the create is being sent", n)
+	}
+	if m.prompt.Focused() {
+		t.Fatal("the composer should be blurred, which is what draws it read-only")
+	}
+
+	close(ds.runGate)
+	d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
+	if got := m.prompt.Value(); got != "" {
+		t.Fatalf("prompt = %q, want it spent once the server took the create", got)
+	}
+}
+
+// A create that never got as far as the server — the working tree could not be
+// read — hands the composer back.
+func TestAFailedWorkingTreeCheckHandsThePromptBack(t *testing.T) {
+	t.Parallel()
+	m := promptWith(t, "fix the reaper")
+	m.setSubmitting(true)
+	send(t, m, workspaceCheckedMsg{err: errors.New("not a git repository")})
+	send(t, m, typeString("!")...)
+	if got := m.prompt.Value(); got != "fix the reaper!" {
+		t.Fatalf("prompt = %q, want the composer editable after the check failed", got)
+	}
+}
+
+// Answering for a prompt that is not the one in the composer leaves the
+// composer alone. Enter on an empty composer sends no prompt at all, and the
+// draft the session brings can land in the field before the server answers.
+func TestTheServerTakingACreateLeavesADifferentPromptAlone(t *testing.T) {
+	t.Parallel()
+	m := promptWith(t, "the draft that came back")
+	send(t, m, promptSpentMsg{req: RunRequest{}})
+	if got := m.prompt.Value(); got != "the draft that came back" {
+		t.Fatalf("prompt = %q, want what was not sent kept", got)
+	}
+}
+
+// A create that fails after the server took it has still made a discobox, so
+// the window says that rather than that nothing was created — which would send
+// somebody to type the spent prompt again and make a second one.
+func TestACreateThatFailsAfterTheServerTookItSaysItWasCreated(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.deliverErr = errors.New("push the source: connection reset")
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"))
+
+	if got := m.prompt.Value(); got != "" {
+		t.Fatalf("prompt = %q, want it spent once the server took the create", got)
+	}
+	if !m.statusE || !strings.Contains(m.status, "created the discobox, but could not finish setting it up") {
+		t.Fatalf("status = %q (err %v), want it to say the discobox was created", m.status, m.statusE)
+	}
+}
+
 // A modified Enter belongs to the prompt instead of submitting it. Enhanced
 // terminals can report Shift-Enter and Ctrl-Enter distinctly; byte-oriented
 // terminals commonly report the latter as Ctrl-J.

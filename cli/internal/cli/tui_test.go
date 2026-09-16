@@ -127,12 +127,15 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		client:    client,
 		projectID: "project-1",
 	}
+	// accepted is marked among the steps, so where the server taking the
+	// create falls between them is checked with the rest of the order.
+	const accepted = "<accepted>"
 	var steps []string
 	sandbox, err := ds.Run(t.Context(), tui.RunRequest{
 		Harness: "codex",
 		Source:  repo + "@HEAD",
 		Prompt:  []string{"fix the failing tests"},
-	}, func(step string) { steps = append(steps, step) })
+	}, func(step string) { steps = append(steps, step) }, func() { steps = append(steps, accepted) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -143,6 +146,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	phases := []string{
 		string(sandboxcreate.StepPreparingSource),
 		string(sandboxcreate.StepCreating),
+		accepted,
 		"syncing SSH config",
 	}
 	if len(steps) < len(phases) || !slices.Equal(steps[:len(phases)], phases) {
