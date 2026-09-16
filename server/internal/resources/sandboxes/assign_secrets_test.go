@@ -3,6 +3,7 @@ package sandboxes
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -60,6 +61,14 @@ func (p *recordingProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*s
 }
 func (p *recordingProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte, []string) (*transport.HTTPClientLease, error) {
 	return nil, nil
+}
+
+func (*recordingProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []byte) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (*recordingProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ io.Reader) (string, error) {
+	return poolID, nil
 }
 
 func newAssignFixture(t *testing.T) (*Service, *recordingProvider) {

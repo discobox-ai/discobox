@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -760,4 +761,12 @@ func clearSeededHarnessConfigs(ctx context.Context, t *testing.T, st *store.Stor
 			t.Fatalf("delete harness config %s: %v", config.ID, err)
 		}
 	}
+}
+
+func (*recordingSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, []byte) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (*recordingSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ io.Reader) (string, error) {
+	return poolID, nil
 }

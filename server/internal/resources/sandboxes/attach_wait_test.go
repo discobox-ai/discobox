@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -482,4 +483,12 @@ func TestAwaitSandboxHTTPClientEndsWithItsCaller(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("await outlived its caller")
 	}
+}
+
+func (*provisioningProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []byte) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (*provisioningProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ io.Reader) (string, error) {
+	return poolID, nil
 }

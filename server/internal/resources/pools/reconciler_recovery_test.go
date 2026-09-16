@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -448,6 +449,14 @@ func (stubPoolProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*sandb
 
 func (stubPoolProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte, []string) (*transport.HTTPClientLease, error) {
 	return nil, nil
+}
+
+func (stubPoolProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []byte) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (stubPoolProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ io.Reader) (string, error) {
+	return poolID, nil
 }
 
 type startingPoolProvider struct {

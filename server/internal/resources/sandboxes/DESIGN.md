@@ -282,6 +282,77 @@ pool agent starts it on demand when that happens.
 See [ADR 0017](../../../../docs/adr/0017-resource-state-is-desired-and-observed-with-no-operations.md)
 §§9–13.
 
+## A discobox is portable
+
+`transfer.go` moves a discobox between servers (ADR 0123). Export and import are
+the two halves, and between them they have one rule everything else follows
+from: **what travels is what a container rebuild already preserves**, so an
+import is the ordinary create against a restored tree — the unarchive path — and
+not a second way to bring a sandbox into being.
+
+| | Route | Shape |
+| --- | --- | --- |
+| `ExportSandbox` | `GET .../sandboxes/{id}/export` | streams `manifest.json` + `tree/` as one tar |
+| `ImportSandbox` | `POST .../sandboxes/import` | consumes one, answers with the sandbox and its warnings |
+
+Both are hand-wired in `internal/server/sandbox_transfer.go` rather than
+declared in the OpenAPI contract, for the reason the git proxy is: the body is
+an unbounded opaque stream. The archive format is
+[`internal/sandboxexport`](../../sandboxexport), read and written by the server
+alone, so the CLI only ever moves bytes.
+
+- **The manifest carries `model.SandboxManifest` whole**, not a chosen subset.
+  That struct is already the complete answer to "does this describe the
+  container?", so a spec field added there travels from the day it is added.
+  Two of its fields are not taken as they arrive: `HarnessConfigID` is cleared
+  on export and resolved by slug on import, because an ID names a row on one
+  server and nothing on another; and `Image`/`ImageDigest` are re-pinned to the
+  destination harness config's, exactly as a create takes them from there. The
+  image cannot come from the archive — `buildCreateOptions` reads
+  `RunCommand`, `Files`, `Volumes` and `Env` off the harness config row, so an
+  image from one harness and a command from another is a container that starts
+  and a harness that does not.
+- **`Origin` travels beside the manifest.** It is a fact about the client, not
+  the server, and a move does not change which machine's checkout the discobox
+  belongs to. Two things need it: `OriginKey` is re-derived from it, which is
+  what makes `discobox ls` in that repository list the moved discobox; and
+  `buildCreateOptions` gates the per-source data key on it, so an import
+  without it comes up with `/.discobox/data-per-source/<slug>` absent rather
+  than empty.
+- **No secret value ever enters an archive.** Bindings travel as
+  `{env, secret name}`; anonymous secrets (minted from an inline value,
+  referenced only by ID) and agent-requested bindings do not travel at all. On
+  import, each binding resolves against this project's secret of that name, and
+  what cannot be matched is a `Warnings` entry rather than a refusal.
+- **Export refuses a running sandbox** here and again in the pool agent. The
+  agent is the authority — it can see the container, while this can only see
+  what was last reported — and the row-level refusal exists for the message,
+  since the control plane knows the discobox's name and "stop it first" is
+  worth saying before two network hops rather than after them. The `--stop` the
+  CLI offers is the caller's, not something taken on their behalf. An archived
+  sandbox exports fine: it is a tree with no container, which is exactly the
+  shape an export reads.
+- **Import restores the tree before the row exists**, and refuses before it
+  restores. The row is what wakes the reconciler, so the order is: resolve pool,
+  harness and every secret binding — which is everything that can say no — then
+  `Provider.ImportTree`, then `createSandboxIntent`. Nothing between the upload
+  and the write reaches the store except the name index, which closes a race
+  two concurrent imports could otherwise win together. Refusing after the
+  upload would charge the user a whole workspace for a 400, and in a transfer
+  the source is already stopped. There is no new lifecycle state and no
+  completion call — see ADR 0123 §3 for why parking was rejected, and for what
+  an import that dies in the middle leaves behind.
+- **An imported source keeps its exported delivery** and is stamped
+  `SourceDeliveredAt`. `resolveSourceDelivery` is deliberately not run: delivery
+  is already written into the bytes that were restored, and re-deciding it would
+  either contradict the tree or park the sandbox waiting for a push nobody will
+  make (ADR 0123 §4).
+
+`transfer` is a client-side pipe between two servers' routes, not a
+server-to-server copy; the CLI holds both credentials and the reachability
+(ADR 0123 §6). A completed move archives the source (ADR 0022 §2), so it is
+recoverable and collected by the project's ordinary retention.
+
 ## Display name
 
 `Sandbox.displayName` is what a listing calls a sandbox, computed on the server

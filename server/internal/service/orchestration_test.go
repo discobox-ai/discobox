@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -859,4 +860,12 @@ func waitForSandboxConverged(ctx context.Context, t *testing.T, svc *service.Ser
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func (noopSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, []byte) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (noopSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ io.Reader) (string, error) {
+	return poolID, nil
 }

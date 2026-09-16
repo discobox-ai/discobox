@@ -3,6 +3,7 @@ package sandbox_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -219,4 +220,12 @@ func (p *fakeProvider) Status() sandbox.ProviderStatus {
 }
 func (p *fakeProvider) Definition() sandbox.ProviderDefinition {
 	return p.definition
+}
+
+func (*fakeProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []byte) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (*fakeProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ io.Reader) (string, error) {
+	return poolID, nil
 }

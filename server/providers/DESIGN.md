@@ -548,6 +548,29 @@ leaving the generated client to fail decoding it. A 404 of that kind is
 `sandbox.ErrPoolAgentUnsupported`, never `ErrNotFound`: the agent is behind,
 not the resource missing.
 
+### The Durable Tree
+
+`Provider.ExportTree` and `Provider.ImportTree` (`poolruntime/tree.go`) reach
+the pool agent's `GET`/`PUT .../sandboxes/{id}/tree` outside the generated
+client: the body has no schema, it is unbounded, and both ends stream it. They
+are required methods on the core interface rather than an optional capability —
+every backend stores a sandbox's durable state the same way, through the pool
+agent, so there is no runtime variation for optionality to express.
+
+Both name their pool instead of reading it out of runtime state, and for the
+same reason: runtime state is only written once a create has returned a runtime
+sandbox. `ImportTree` has none because the row does not exist yet (ADR 0123 §3);
+it resolves and waits for a schedulable pool the way a create does, and returns
+the pool the tree landed on so the row created afterwards names where the data
+actually is. `ExportTree` prefers runtime state when there is any and falls back
+to the pool named on the row, because a sandbox whose create failed before its
+agent reported has no state and is exactly the one somebody wants to export —
+broken where it is, with a tree on the pool the row still names.
+
+The agent's refusals survive the hop as statuses — "it is running", "this pool
+already holds that sandbox" — because both are answers a person acts on, not
+facts about a pool the caller never asked about.
+
 ## Control Plane Reachability
 
 A pool agent dials the control plane; the control plane does not dial it. The

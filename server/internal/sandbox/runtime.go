@@ -52,6 +52,31 @@ type Provider interface {
 	Remove(ctx context.Context, ref SandboxRef, state []byte) ([]byte, error)
 	Get(ctx context.Context, ref SandboxRef, state []byte) (*Sandbox, error)
 	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte, scopes []string) (*transport.HTTPClientLease, error)
+
+	// ExportTree streams the sandbox's durable tree -- the data, workspace, and
+	// push-delivered origin repositories that survive a container rebuild -- as
+	// a tar archive (ADR 0123 §1). It refuses a running sandbox, because a tar
+	// of a live tree is not a consistent one.
+	//
+	// Like ImportTree it is told the pool rather than reading one out of runtime
+	// state. A sandbox whose create never got as far as a runtime has no state
+	// to read and still has a tree on the pool its row names -- and is exactly
+	// the sandbox somebody wants to export, because it is broken where it is.
+	//
+	// The stream is the caller's to close, and the walk behind it runs while
+	// they read, so a failure part way through arrives as a read error rather
+	// than as this call's.
+	ExportTree(ctx context.Context, ref SandboxRef, poolID string, state []byte) (io.ReadCloser, error)
+	// ImportTree restores a durable tree onto a pool for a sandbox that has no
+	// runtime and, at this point, no row either (ADR 0123 §3). The pool is named
+	// rather than read from runtime state for exactly that reason: there is no
+	// state yet to read it from. It returns the pool the tree landed on, which
+	// is what the caller records on the sandbox it then creates.
+	//
+	// It writes the tree and nothing else. What it leaves behind is the shape
+	// an archived sandbox has, so the ordinary create that follows adopts it
+	// the way an unarchive does.
+	ImportTree(ctx context.Context, ref SandboxRef, poolID string, tree io.Reader) (string, error)
 }
 
 // SandboxRef identifies the sandbox and its project ownership context.

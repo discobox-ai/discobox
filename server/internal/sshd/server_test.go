@@ -3,6 +3,7 @@ package sshd
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -368,4 +369,12 @@ func waitForCalls(t *testing.T, svc *fakeSandboxService, n int) []acquireCall {
 
 func (f *fakeSandboxService) UnarchiveSandbox(context.Context, string, string) error {
 	panic("not implemented")
+}
+
+func (*fakeSandboxService) ExportSandbox(context.Context, string, string) (io.ReadCloser, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (*fakeSandboxService) ImportSandbox(context.Context, string, io.Reader, services.SandboxImportOptions) (*services.SandboxImportResult, error) {
+	return nil, errors.New("not implemented")
 }

@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"io"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -161,6 +162,41 @@ type SandboxService interface {
 	// AcquireSandboxHTTPClient.
 	AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
 	AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error)
+	// ExportSandbox streams the discobox as a `.dbox` archive: its spec, then
+	// its durable tree (ADR 0123 §1). It refuses a running discobox, because a
+	// tar of a live tree is not a consistent one. The stream is the caller's to
+	// close.
+	ExportSandbox(ctx context.Context, projectID, sandboxID string) (io.ReadCloser, error)
+	// ImportSandbox creates a discobox from such an archive, restoring the tree
+	// onto its pool before the row that wakes the reconciler exists
+	// (ADR 0123 §3).
+	ImportSandbox(ctx context.Context, projectID string, archive io.Reader, opts SandboxImportOptions) (*SandboxImportResult, error)
+}
+
+// SandboxImportOptions are the caller's overrides for one import. Everything
+// else comes from the archive.
+type SandboxImportOptions struct {
+	// Name renames the imported discobox. Empty keeps the exported name, which
+	// is refused when the project already has one.
+	Name string
+	// PoolID places it. Empty takes the project's default pool, as a create
+	// does.
+	PoolID string
+	// HarnessSlug overrides the harness the archive names, for a destination
+	// that calls the same harness something else.
+	HarnessSlug string
+}
+
+// SandboxImportResult is one completed import: the discobox, and what could not
+// be carried over with it.
+type SandboxImportResult struct {
+	Sandbox *model.Sandbox
+	// Warnings are things the caller should know about a discobox that was
+	// created nonetheless -- a secret binding with no secret of that name here,
+	// above all. Refusing the whole import over a credential the user can add
+	// afterwards would throw away a transferred workspace to save them one
+	// command.
+	Warnings []string
 }
 
 type SandboxProviderInstanceService interface {

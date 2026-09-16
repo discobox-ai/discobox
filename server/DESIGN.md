@@ -157,6 +157,27 @@ the build starts; a failure arrives as the `X-Discobox-Guest-Image-Error`
 trailer, because the status was written long before the build ends. The client
 disconnecting closes the build.
 
+### Discobox Export and Import
+
+`GET /api/projects/{projectId}/sandboxes/{sandboxId}/export` and
+`POST /api/projects/{projectId}/sandboxes/import` move a discobox between
+servers (ADR 0123). They are hand-wired for the reason the git proxy is: each
+body is an opaque stream of unbounded length, which the contract cannot describe
+and the generated scaffold would buffer — and what is in it is a whole workspace.
+
+Unlike the proxies above, neither is a reverse proxy. The server composes the
+archive (`internal/sandboxexport`) around the tree it gets from the pool agent,
+and takes it apart again on the way in, so one implementation decides what a
+`.dbox` is and a client only ever moves bytes.
+
+- Export refuses a running discobox before the first byte, because after it the
+  refusal could only be a corrupt tar. The client disconnecting closes the
+  stream, which is what stops the pool-side walk behind it.
+- Import answers with `{sandbox, warnings}` rather than a bare sandbox: a secret
+  this project has no equivalent of does not fail the import, and a client that
+  only saw the sandbox would learn it is missing from inside the harness.
+  `?name=`, `?pool=` and `?harness=` are the caller's overrides.
+
 ### Proxy Scopes and Authorization
 
 Proxy handlers must request the narrow pool-agent token scopes
@@ -800,6 +821,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/apperrors` | Server-owned sentinel and HTTP status errors used by handlers, services, store, and provider adapters. |
 | `internal/model` | Server-owned persistence models and migration model list. |
 | `internal/sandbox` | Go-level sandbox provider interfaces, provider manager, and shared provider contract types. |
+| `internal/sandboxexport` | What a `.dbox` is: the export manifest, and composing and splitting the archive around a pool agent's durable tree (ADR 0123). Server-owned, because the server is the only thing that reads or writes the format. |
 | `internal/sshd` | SSH control-plane ingress (ADR 0024, ADR 0057): the `GET /ssh/connect` route, session-channel↔exec mapping, direct-tcpip tunnel, host key and authorized-keys handling. |
 | `internal/sandboxagentclient` | Pool-agent target-URL builder and lease auth transport shared by the hand-wired HTTP proxies and `internal/sshd`. |
 | `providers` | Docker, VM, cloud, and pool-backed sandbox provider implementations. |

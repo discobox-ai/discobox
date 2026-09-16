@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -36,6 +38,7 @@ type routerTestServices struct {
 	console        *stubPoolConsole
 	consoleErr     error
 	poolLog        *stubPoolLog
+	importResult   *services.SandboxImportResult
 	poolLogErr     error
 
 	guestImageBuild    *sandbox.GuestImageBuild
@@ -946,4 +949,15 @@ func (s *routerTestServices) sortedSandboxes() []model.Sandbox {
 		return 0
 	})
 	return sandboxes
+}
+
+func (*routerTestServices) ExportSandbox(context.Context, string, string) (io.ReadCloser, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *routerTestServices) ImportSandbox(context.Context, string, io.Reader, services.SandboxImportOptions) (*services.SandboxImportResult, error) {
+	if s.importResult == nil {
+		return nil, errors.New("not implemented")
+	}
+	return s.importResult, nil
 }
