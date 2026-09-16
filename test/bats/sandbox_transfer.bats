@@ -325,7 +325,7 @@ sandbox_home() {
 }
 
 @test "a discobox's workspace survives an export and an import" {
-  local pool_id source_id restored_id home archive first_member
+  local pool_id source_id restored_id home archive first_member extracted truncated
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
 
@@ -369,6 +369,28 @@ sandbox_home() {
 
   # No secret value is in the file, whatever else is.
   ! tar xOf "$archive" manifest.json | grep -qi '"token"\|BEGIN .*PRIVATE KEY'
+
+  # It ends with a SHA256SUMS that stock tools check: extracted, `sha256sum -c`
+  # verifies every file in it with nothing of ours installed.
+  [ "$(tar tf "$archive" | tail -1)" = "SHA256SUMS" ]
+  extracted="$DISCOBOX_BATS_TMP/transfer-source.extracted"
+  rm -rf "$extracted"
+  mkdir -p "$extracted"
+  tar xf "$archive" -C "$extracted" --no-same-owner
+  # The home holds files only their owner may read, and the owner is now us.
+  chmod -R u+rwX "$extracted"
+  (cd "$extracted" && sha256sum --quiet --strict -c SHA256SUMS)
+  rm -rf "$extracted"
+
+  # Without its SHA256SUMS -- what a stream cut between two files leaves, and a
+  # plain tar reader accepts -- the archive is refused rather than restored as a
+  # smaller workspace.
+  truncated="$DISCOBOX_BATS_TMP/transfer-truncated.dbox"
+  cp "$archive" "$truncated"
+  tar --delete -f "$truncated" SHA256SUMS
+  run cli admin box import "$truncated" --name "transfer-truncated"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"SHA256SUMS"* ]]
 
   run cli admin box import "$archive" --name "transfer-restored"
   if [ "$status" -ne 0 ]; then
