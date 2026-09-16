@@ -607,9 +607,9 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	for n := 0; n <= 9; n++ {
 		opts = append(opts, termpane.WithPrefixBinding(strconv.Itoa(n), jumpPaneMsg{n: n}))
 	}
-	// The tools picker, which is where vscode lives rather than on a key of its
-	// own here: a second way to open one of three tools is one key to remember
-	// for no more reach. See tools.go.
+	// The tools picker, which is where the editors live rather than on keys of
+	// their own here: a second way to open one of the picker's tools is one
+	// more key to remember for no more reach. See tools.go.
 	opts = append(opts, termpane.WithPrefixBinding(toolsKey, openToolsMsg{}))
 	// The services have the same alphabet one keystroke further in: S1 through
 	// S9 are their own tabs, and S0 is the menu that reaches the ones with no

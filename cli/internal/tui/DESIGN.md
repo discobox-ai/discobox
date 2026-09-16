@@ -686,7 +686,7 @@ a newer image to exist, repair needs the discobox to be broken.
 **A box whose image is gone is offered the upgrade** (`imageoffer.go`). The
 server classifies a failure on an image the pool cannot obtain
 (`errorReason: image_unavailable`, `Sandbox.ImageUnavailable`), and no attach
-gets past it. So attach, shell and VS Code on such a row ask whether to upgrade
+gets past it. So attach, shell and either editor on such a row ask whether to upgrade
 it — re-pinned to the harness's current image, work kept — when `Upgrade` says
 there is one, and say there is nothing to move to when not. It is checked ahead
 of the attach guard, whose answer for a box with no container is repair: that
@@ -748,16 +748,35 @@ until something is done, and typing into the prompt is not that
 (`typingIntoPrompt`): a create fails a minute after its Enter, often while the
 next prompt is being written, and would otherwise be gone before anyone read it.
 
-**vscode is a fourth kind** (`vscodeKey`,
+**An editor is a fourth kind** (`vscodeKey`, `zedKey`, `editorForKey`,
 `openEditor`, `DataSource.OpenEditor`). It is neither a `Verb` — it changes
 nothing about the discobox — nor an `Interaction` — it takes no terminal: `v`
-runs `discobox tools vscode`, which hands the sandbox to the editor and returns.
+runs `discobox tools vscode` and `z` runs `discobox tools zed`, which hand the
+sandbox to the editor and return.
 The editor is another program in another window, so the window carries on
 exactly where it was: the terminal on screen and the editor beside it are two
 views of one discobox, open at once. Because it is in neither `verbs` nor
 `interactions`, both the list's key map and `actOn` name it explicitly, the way
-`renameKey` is named. On the workspace it is not a key of its own — it is a row
-in the tools picker, below. The
+`renameKey` is named. On the workspace neither is a key of its own — each is a
+row in the tools picker, below.
+
+**Two editor keys, not one key that asks which** (`Editor`, `editorForKey`).
+The editor is a `DataSource.OpenEditor` argument rather than two methods,
+because everything either one does through this window is identical and only
+which `tools` command runs differs — so `apiDataSource.OpenEditor` is one
+`switch` and `editorForKey` is the one table behind both of the things the
+list does with an editor key — running it and knowing it needs the box's
+container — while the picker reaches the same editors by its rows' own
+`tool.editor`. A dialog between the key and the launch would be a step
+someone with one editor installed never needed, and someone with both already
+knows which they want. Both rows are listed whether or not either editor is on
+PATH: which builds exist is a question only the launch can answer, and it
+answers it with an error naming what it looked for (`editorFamily.resolve` in
+`internal/cli`), where a hidden row would leave someone hunting for the editor
+they just installed. That error leads with the names for this reason and not
+for readability — the status line cuts from the middle (`truncateMiddle`), and
+the names at the back of a sentence that long were the part it cut, which left
+exactly the hunt this paragraph says the row prevents. The
 command writes an `ssh_config` and prints what it wrote, so `apiDataSource`
 gives it `io.Discard` for both streams — a stray line of stderr would draw over
 a full-screen window — and lets the error carry what went wrong to the status
@@ -989,9 +1008,11 @@ asked `overlay != nil` asks it instead.
 - The catalog is this package's (`tools`): `diff` runs `discobox-review`,
   `fresh` runs the `fresh` editor — both carried by the sandbox image, so
   everyone looking at one discobox is looking at the same versions — and
-  `vscode` has no command at all and is run rather than opened. The picker is
-  on the leader's `o`, because `t` is stop and `x` is archive in the key map
-  the two screens share.
+  `vscode` and `zed` have no command at all and are run rather than opened —
+  `tool.editor`, set on exactly the commandless rows, is what `runTool`
+  dispatches on, so the picker needs no second table mapping a row to an
+  editor. The picker is on the leader's `o`, because `t` is stop and `x` is
+  archive in the key map the two screens share.
 - A tool session is a plain TTY exec labeled `metadata.tool` = the tool's id,
   created with no workdir so it lands in the discobox's primary source
   directory. `Exec.Tool` carries it back off the listing; `toolExec` is asked

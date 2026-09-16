@@ -2322,8 +2322,8 @@ func TestTheToolsPickerOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 	d.key("v")
 	d.wait("the editor", func() bool { return len(ds.openedEditors()) == 1 })
 
-	if got := ds.openedEditors(); got[0] != "sbx_one" {
-		t.Fatalf("editors = %v, want the box on screen", got)
+	if got := ds.openedEditors(); got[0] != (editorOpen{id: "sbx_one", editor: EditorVSCode}) {
+		t.Fatalf("editors = %v, want the box on screen in VS Code", got)
 	}
 	if !m.inPanes() {
 		t.Fatal("opening an editor should leave the workspace up")
@@ -2331,6 +2331,27 @@ func TestTheToolsPickerOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 	// The leader consumed the key; the sandbox never saw it.
 	if got := term.typed("o"); strings.Contains(got, "o") {
 		t.Fatalf("typed %q, want the leader to take the key", got)
+	}
+}
+
+// ctrl+a o z is the same row for the other editor: the picker is where the
+// workspace reaches both, since neither is a key of its own there.
+func TestTheToolsPickerOpensTheWorkspaceBoxInZed(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("o")
+	d.wait("the picker", func() bool { return m.dialog != nil })
+	d.key("z")
+	d.wait("the editor", func() bool { return len(ds.openedEditors()) == 1 })
+
+	if got := ds.openedEditors(); got[0] != (editorOpen{id: "sbx_one", editor: EditorZed}) {
+		t.Fatalf("editors = %v, want the box on screen in Zed", got)
+	}
+	if !m.inPanes() {
+		t.Fatal("opening an editor should leave the workspace up")
 	}
 }
 

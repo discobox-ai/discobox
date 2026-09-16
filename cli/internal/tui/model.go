@@ -1740,6 +1740,8 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: applyWhy},
 		{key: vscodeKey, press: vscodeKey, label: "vscode", detail: "open the box in VS Code, in a window of its own", enabled: attachable,
 			why: attachWhy(one, targets)},
+		{key: zedKey, press: zedKey, label: "zed", detail: "open the box in Zed, in a window of its own", enabled: attachable,
+			why: attachWhy(one, targets)},
 		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
 			why: renameWhy},
 		{key: "u", press: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
@@ -1850,8 +1852,8 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	if key == renameKey {
 		return m.askRename(targets[0])
 	}
-	if key == vscodeKey {
-		return m.openEditor(targets[0])
+	if editor, ok := editorForKey(key); ok {
+		return m.openEditor(targets[0], editor)
 	}
 
 	if action, ok := interactions[key]; ok {
@@ -1981,40 +1983,68 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 }
 
 // ---------------------------------------------------------------------------
-// vscode
+// editors
 
-// vscodeKey is the letter VS Code answers to, in the list and behind the leader
-// alike. It is bound on the workspace screen too, where it is the same sandbox
-// opened a second way: the terminal stays where it is and the editor arrives
-// beside it.
-const vscodeKey = "v"
+// vscodeKey and zedKey are the letters the two editors answer to on the list,
+// where either is the same sandbox opened a second way: the terminal stays
+// where it is and the editor arrives beside it.
+//
+// Neither is a leader key on the workspace, and z there is `paneZoomKey`. An
+// editor is in neither `interactions` nor `verbs`, which is what the leader
+// binds, so the workspace reaches both the way it reaches the tools that are
+// not keys either — as rows in the picker on `leader o`.
+//
+// Two keys rather than one that asks which: a dialog between the key and the
+// window is a step someone who has only one editor installed never needed, and
+// someone who has both already knows which they want before they reach for a
+// key.
+const (
+	vscodeKey = "v"
+	zedKey    = "z"
+)
+
+// editorForKey is the editor a key opens, and whether the key is an editor's at
+// all. It is the list's, and the one table behind both of the things the list
+// does with an editor key: run it (`actOn`) and decide that it needs the box's
+// container (`opensBox`). The picker reaches the same editors by its rows'
+// `tool.editor` instead, because a row there is not a key.
+func editorForKey(key string) (Editor, bool) {
+	switch key {
+	case vscodeKey:
+		return EditorVSCode, true
+	case zedKey:
+		return EditorZed, true
+	}
+	return "", false
+}
 
 // editorOpenedMsg is what came of handing a sandbox to the editor.
 type editorOpenedMsg struct {
-	name string
-	err  error
+	name   string
+	editor Editor
+	err    error
 }
 
-// openEditor hands one sandbox to VS Code and reports on the status line.
+// openEditor hands one sandbox to an editor and reports on the status line.
 //
 // Nothing is suspended for it. The editor is another program in another window,
 // and the CLI's part is over as soon as it has been told which host to connect
 // to — so this is a request that returns, like a verb, rather than something
 // that owns the screen.
-func (m *Model) openEditor(box Sandbox) tea.Cmd {
-	m.busy = "vscode…"
+func (m *Model) openEditor(box Sandbox, editor Editor) tea.Cmd {
+	m.busy = string(editor) + "…"
 	ctx, ds, id, name := m.ctx, m.ds, box.ID, box.Name
 	return func() tea.Msg {
-		return editorOpenedMsg{name: name, err: ds.OpenEditor(ctx, id)}
+		return editorOpenedMsg{name: name, editor: editor, err: ds.OpenEditor(ctx, id, editor)}
 	}
 }
 
 func (m *Model) editorOpened(msg editorOpenedMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
-		return m.report(true, "vscode: %v", msg.err)
+		return m.report(true, "%s: %v", msg.editor, msg.err)
 	}
-	return m.report(false, "opened %s in VS Code", msg.name)
+	return m.report(false, "opened %s in %s", msg.name, msg.editor.Label())
 }
 
 // ---------------------------------------------------------------------------
@@ -3674,6 +3704,7 @@ func (m *Model) helpText() string {
 		"",
 		"    Enter  attach          s  shell",
 		"    v      open it in VS Code, in its own window",
+		"    z      open it in Zed, in its own window",
 		"    y      apply back to this directory",
 		"    u      upgrade to the current image",
 		"    R      repair — rebuild a broken discobox in place on the",
@@ -3692,8 +3723,8 @@ func (m *Model) helpText() string {
 		"",
 		"  attach, shell and apply open a screen over the window and act on",
 		"  one discobox. apply stays up when it finishes so its report can be",
-		"  read; q closes it. vscode is different: it edits the box over",
-		"  Remote-SSH in a separate window, and this one keeps running.",
+		"  read; q closes it. vscode and zed are different: they edit the box",
+		"  over SSH in a separate window, and this one keeps running.",
 		"",
 		"  rename opens the current name for editing. Enter accepts, Esc",
 		"  cancels. A box whose harness has titled its terminal shows that",
@@ -3840,6 +3871,7 @@ func (m *Model) helpText() string {
 		"    d              diff — what has changed, in discobox-review",
 		"    f              fresh — the fresh editor, in the box",
 		"    " + vscodeKey + "              vscode — the box in VS Code, in its own window",
+		"    " + zedKey + "              zed — the box in Zed, in its own window",
 		"    " + toolFileKey + "              the highlighted tool's config, in $EDITOR",
 		"    " + addressSSHKey + "              copy the ssh command for this discobox",
 		"    " + addressGitKey + "              copy its git url",
@@ -3851,8 +3883,8 @@ func (m *Model) helpText() string {
 		"                   same",
 		"",
 		"  diff and fresh run inside the discobox, on the copies its image",
-		"  carries, so there is nothing to install locally. vscode is the",
-		"  other way round: it edits the box over Remote-SSH.",
+		"  carries, so there is nothing to install locally. vscode and zed are",
+		"  the other way round: they run here and edit the box over SSH.",
 		"",
 		"  Tool sessions live in the discobox, not in this window. Quit the",
 		"  launcher with a diff open and the next attach picks it back up,",

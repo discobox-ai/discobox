@@ -1115,22 +1115,38 @@ func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Ad
 	return tui.Addresses{SSH: "ssh " + remote.host, Git: remote.gitURL()}, nil
 }
 
-// OpenEditor opens one sandbox in VS Code, by running `discobox tools vscode`.
+// OpenEditor opens one sandbox in an editor, by running that editor's own
+// `discobox tools` command.
 //
 // It runs the command rather than reimplementing it for the same reason an
 // overlay pane runs `discobox apply`: what the window opens is the command, with
 // its own editor discovery and its own ssh_config handling, not a second
-// version of them.
+// version of them. That is also why the window's two editors cost it one
+// dispatch and nothing else — everything that differs between them already
+// lives in the command that means it.
 //
 // Nothing it writes reaches the screen. The window is a full-screen program
 // that a stray line of stderr would draw over, and the command's progress
 // reporting — which key it enrolled, which config it wrote — is not what
 // someone pressing a key in a list is waiting to read. What went wrong still
 // comes back as the error, which the status line reports.
-func (d *apiDataSource) OpenEditor(ctx context.Context, sandboxID string) error {
+func (d *apiDataSource) OpenEditor(ctx context.Context, sandboxID string, editor tui.Editor) error {
 	d = d.at(sandboxID)
 	sandboxFlag := ""
-	cmd := d.app.newToolsVSCodeCommand(&sandboxFlag)
+	// Both named, and an editor this does not know is an error rather than a
+	// default. A default here opens the wrong editor and reports it as the one
+	// that was asked for: the window would say "opened mybox in VS Code" to
+	// someone who pressed z, and a commandless tool row that left `editor`
+	// unset would launch an editor nobody chose.
+	var cmd *cobra.Command
+	switch editor {
+	case tui.EditorVSCode:
+		cmd = d.app.newToolsVSCodeCommand(&sandboxFlag)
+	case tui.EditorZed:
+		cmd = d.app.newToolsZedCommand(&sandboxFlag)
+	default:
+		return fmt.Errorf("no command opens a discobox in %q", string(editor))
+	}
 	cmd.SetContext(ctx)
 	cmd.SetArgs([]string{sandboxID})
 	cmd.SetIn(strings.NewReader(""))

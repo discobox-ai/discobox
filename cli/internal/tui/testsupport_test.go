@@ -182,11 +182,11 @@ type fakeSource struct {
 	// Calls, in order.
 	drafts    []string // "folder prompt"
 	runs      []RunRequest
-	did       []string // "verb id"
-	renames   []string // "id name"
-	editors   []string // sandbox ids handed to VS Code
-	opens     []string // "action id colsxrows"
-	execOpens []string // "id execID colsxrows"
+	did       []string     // "verb id"
+	renames   []string     // "id name"
+	editors   []editorOpen // the sandboxes handed to an editor, and which one
+	opens     []string     // "action id colsxrows"
+	execOpens []string     // "id execID colsxrows"
 	terminals []*fakeTerminal
 	// execTerminals is the terminal serving each exec attach, by exec id.
 	execTerminals map[string]*fakeTerminal
@@ -459,12 +459,19 @@ func (f *fakeSource) Rename(_ context.Context, id, name string) error {
 	return nil
 }
 
-// openedEditors is the sandboxes handed to VS Code, read under the lock so a
+// editorOpen is one OpenEditor call: which sandbox, and which editor it was
+// handed to.
+type editorOpen struct {
+	id     string
+	editor Editor
+}
+
+// openedEditors is the sandboxes handed to an editor, read under the lock so a
 // test driving the model on its own goroutines can look at it safely.
-func (f *fakeSource) openedEditors() []string {
+func (f *fakeSource) openedEditors() []editorOpen {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]string(nil), f.editors...)
+	return append([]editorOpen(nil), f.editors...)
 }
 
 // toolRunsSeen is the tool sessions asked for, and endedExecs the sessions
@@ -512,10 +519,10 @@ func (f *fakeSource) pushedCalls() []string {
 	return append([]string(nil), f.pushCalls...)
 }
 
-func (f *fakeSource) OpenEditor(_ context.Context, id string) error {
+func (f *fakeSource) OpenEditor(_ context.Context, id string, editor Editor) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.editors = append(f.editors, id)
+	f.editors = append(f.editors, editorOpen{id: id, editor: editor})
 	return f.editorErr
 }
 

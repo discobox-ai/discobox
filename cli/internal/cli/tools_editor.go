@@ -59,9 +59,15 @@ func (f editorFamily) resolve(named string) (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("no %s command found on PATH (looked for %s); "+
+	// The builds it looked for lead the sentence. This error is the whole of
+	// what the launcher says when neither editor row can run, and the status
+	// line truncates from the middle (truncateMiddle), so a clause at the back
+	// of a message this long is a clause nobody reads — and the names are the
+	// part worth reading, because a packager renaming the binary is the
+	// ordinary reason for getting here.
+	return "", fmt.Errorf("looked for %s on PATH and found no %s command; "+
 		"install %s's shell command, or name yours with --editor or $%s",
-		f.label, strings.Join(f.candidates, ", "), f.label, f.env)
+		strings.Join(f.candidates, ", "), f.label, f.label, f.env)
 }
 
 // sshTargets is every ssh installation on this machine the refreshed config has

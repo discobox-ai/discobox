@@ -969,6 +969,38 @@ const (
 	InteractService Interaction = "service"
 )
 
+// Editor is a program on this machine that opens a discobox over SSH and then
+// runs on its own. Which one is a choice the window offers rather than a
+// setting, because someone with both installed uses both.
+type Editor string
+
+const (
+	EditorVSCode Editor = "vscode"
+	EditorZed    Editor = "zed"
+)
+
+// Label is the editor's name as prose names it, for the line that reports a
+// window opened.
+//
+// The value itself is the name of the `discobox tools` subcommand that opens
+// it, and that is what the busy line and a failure carry — "zed…", then
+// "zed: looked for zeditor, zedit, zed on PATH…" — because what failed is that
+// command, and naming it is how someone runs it again by hand to read the
+// whole error the status line had to cut. Only the sentence about a window
+// that did open reads as prose, and only that one takes this.
+//
+// An Editor this does not know labels as itself rather than as one of the two,
+// so a name that reaches the screen is never the wrong editor's.
+func (e Editor) Label() string {
+	switch e {
+	case EditorVSCode:
+		return "VS Code"
+	case EditorZed:
+		return "Zed"
+	}
+	return string(e)
+}
+
 // TerminalConnectionState is what the transport underneath a pane is doing. A
 // reconnect is invisible in the output — the stream simply carries on — so it is
 // reported separately for the pane to say so.
@@ -1362,14 +1394,14 @@ type DataSource interface {
 	// the window already has, and this one needs the name typed first.
 	Rename(ctx context.Context, sandboxID, name string) error
 
-	// OpenEditor opens one sandbox in VS Code, in a window of its own.
+	// OpenEditor opens one sandbox in the named editor, in a window of its own.
 	//
 	// It is neither a Verb nor an Interaction: it changes nothing about the
 	// sandbox, and it takes no terminal — the editor is a separate program in a
 	// separate window, and this returns as soon as it has been handed the
 	// sandbox. The window stays exactly where it was, which is the point: the
 	// terminal and the editor are two views of one sandbox, open at once.
-	OpenEditor(ctx context.Context, sandboxID string) error
+	OpenEditor(ctx context.Context, sandboxID string, editor Editor) error
 
 	// PushSources sends this machine's new commits into the origin repositories
 	// the discobox's push-delivered sources fetch from — the transport

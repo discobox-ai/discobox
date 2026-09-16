@@ -70,9 +70,14 @@ type tool struct {
 
 	// command is what a tool session runs inside the discobox, in its primary
 	// source directory. A tool with no command is not a session at all — vscode
-	// is a program on this machine, handed the discobox and left to it — and is
-	// run rather than opened.
+	// and zed are programs on this machine, handed the discobox and left to
+	// them — and is run rather than opened.
 	command []string
+
+	// editor is the editor this tool hands the discobox to, set on exactly the
+	// tools that have no command. It is what runTool dispatches on, so the
+	// picker needs no second table mapping a row to an editor.
+	editor Editor
 
 	// files are the configuration this tool carries into a discobox, kept on
 	// this machine and copied in the first time the tool runs in a box that has
@@ -94,9 +99,15 @@ func (t tool) spec() ToolSpec {
 // The two that run in the discobox come from its image: discobox-review and
 // fresh are installed there, not here, so they are the same version for
 // everyone looking at the same discobox and there is nothing to have on your
-// machine. vscode is the opposite and is listed anyway: it is the same
-// question — "open this discobox in X" — and a picker that answered it for two
-// of the three would leave the third on a key you had to remember separately.
+// machine. vscode and zed are the opposite and are listed anyway: it is the
+// same question — "open this discobox in X" — and a picker that answered it
+// for the ones in the image only would leave the rest on keys you had to
+// remember separately.
+//
+// Both editors are listed whether or not either is installed. Which builds are
+// on PATH is a question only the launch can answer, and it answers it with an
+// error naming what it looked for; a picker that hid a row would instead leave
+// someone wondering where the editor they just installed went.
 var tools = []tool{
 	{
 		id: "diff", key: "d", label: "diff",
@@ -123,6 +134,12 @@ var tools = []tool{
 	{
 		id: "vscode", key: vscodeKey, label: "vscode",
 		detail: "open the box in VS Code, in a window of its own",
+		editor: EditorVSCode,
+	},
+	{
+		id: "zed", key: zedKey, label: "zed",
+		detail: "open the box in Zed, in a window of its own",
+		editor: EditorZed,
 	},
 }
 
@@ -599,7 +616,7 @@ func (m *Model) toolFileEdited(msg toolFileDoneMsg) tea.Cmd {
 
 // runTool is what choosing a row does.
 //
-// A tool that is not a session is simply run — vscode is a request that
+// A tool that is not a session is simply run — an editor is a request that
 // returns. A tool already on screen is shown again, wherever it was left; one
 // that is not is created, which is the only path that talks to the server.
 func (m *Model) runTool(id string) tea.Cmd {
@@ -608,7 +625,7 @@ func (m *Model) runTool(id string) tea.Cmd {
 		return status("no such tool: %s", id)
 	}
 	if !t.session() {
-		return m.openEditor(m.currentBox())
+		return m.openEditor(m.currentBox(), t.editor)
 	}
 	if !m.inPanes() {
 		// A tool is a window over the workspace, and there is no workspace to
