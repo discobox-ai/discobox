@@ -3,6 +3,7 @@
 - **Status**: Accepted
 - **Supersedes**: [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md) §1's "the address is exact concatenation" — an address may also name a server by host, and a discobox on it. §1's peer-ID format, and §§3-7, stand.
 - **§3's `discobox servers` spelling superseded by**: [0119](0119-registered-servers-are-admin-remote.md) — the registry is `discobox admin remote`. The rest of §3 stands.
+- **§4's "the primary not answering fails the command" superseded for the launcher by**: [0122](0122-a-window-that-polls-lists-the-servers-that-answer.md) — a window that polls lists the servers that answered, the primary included. It stands for `discobox ls` and the picker, and the rest of §4 stands everywhere.
 - **Date**: 2026-09-11
 
 ## Context
