@@ -177,3 +177,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0120](0120-wslc-guest-programs-are-streamed-in-not-mounted.md) | wslc guest programs are streamed in over stdin, not mounted | Accepted |
 | [0121](0121-a-stopped-sandbox-that-failed-tracks-its-harness-image-too.md) | A stopped sandbox that failed tracks its harness image too | Accepted (supersedes [0082](0082-a-stopped-sandbox-tracks-its-harness-image.md) §2's `ready`-only eligibility) |
 | [0122](0122-a-window-that-polls-lists-the-servers-that-answer.md) | A window that polls lists the servers that answer, the primary included | Accepted (supersedes [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md) §4's "the primary not answering fails the command" for the launcher) |
+| [0123](0123-a-discobox-is-exported-as-its-spec-and-its-durable-tree.md) | A discobox is exported as its spec and its durable tree, and a transfer is two of those | Accepted |
