@@ -33,6 +33,7 @@ import (
 type stubResolver struct {
 	value string
 	host  string
+	useID string
 }
 
 func TestMergeResponseBodyErrorRecordsUnexpectedEOF(t *testing.T) {
@@ -51,7 +52,7 @@ func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (se
 	if r.host != "" && req.Host != r.host {
 		return secrets.ResolveResult{}, secrets.ErrDenied
 	}
-	return secrets.ResolveResult{Value: r.value, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	return secrets.ResolveResult{Value: r.value, UseID: r.useID, ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 
 func TestHTTPProxyMTLSIdentityHeaderRewriteAndAudit(t *testing.T) {
@@ -252,7 +253,7 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 				Sentinels: []string{sentinel},
 			}},
 		},
-	}, prepared.Bundle, stubResolver{value: realValue, host: originHost})
+	}, prepared.Bundle, stubResolver{value: realValue, host: originHost, useID: "use_abc"})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -315,6 +316,14 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 	}
 	if values := headers["Authorization"]; len(values) != 1 || values[0] != "[REDACTED]" {
 		t.Fatalf("Authorization audit values = %#v, want [REDACTED]", values)
+	}
+	// The join to the control plane's verdict trail (ADR 0130 §3): the row
+	// names the approved use the request spent, and never the sentinel.
+	if exchange.SwappedUseIDs != "use_abc" {
+		t.Fatalf("SwappedUseIDs = %q, want use_abc", exchange.SwappedUseIDs)
+	}
+	if strings.Contains(exchange.SwappedUseIDs, sentinel) {
+		t.Fatalf("audit recorded a sentinel in the use ID column: %s", exchange.SwappedUseIDs)
 	}
 }
 
@@ -473,6 +482,23 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 		}
 		if rec.Body.String() != tc.want {
 			t.Fatalf("control %s body = %q", tc.path, rec.Body.String())
+		}
+	}
+
+	// The other half of the narrowing chain: the middleware pins client_id to
+	// the token's sandbox, and this is what that pinning buys — a client_id
+	// naming another sandbox does not reach the spooled body, it 404s. Without
+	// it, narrowing would be pinning a parameter nothing enforced.
+	for _, artifact := range []string{"request-body", "response-body"} {
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet,
+			"/audit/http/"+strconv.FormatUint(uint64(exchange.ID), 10)+"/"+artifact+"?client_id=sandbox-2", nil)
+		rec := httptest.NewRecorder()
+		server.ControlHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s for another sandbox: status = %d body=%q, want 404", artifact, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), requestBody) || strings.Contains(rec.Body.String(), responseBody) {
+			t.Fatalf("%s for another sandbox leaked a spooled body: %q", artifact, rec.Body.String())
 		}
 	}
 }
@@ -683,6 +709,20 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	}
 	if !bytes.Equal(rec.Body.Bytes(), streamBytes) {
 		t.Fatal("control stream response did not match spool file")
+	}
+
+	// Same row, another sandbox: a 404 here is scoping, not a missing spool.
+	// The fetch above proves the stream is there and readable, so this is the
+	// stream half of the narrowing chain — the body routes are pinned the same
+	// way in TestHTTPProxyCapturesFullBodies.
+	scoped := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+strconv.FormatUint(uint64(exchange.ID), 10)+"/stream?client_id=sandbox-2", nil)
+	scopedRec := httptest.NewRecorder()
+	server.ControlHandler().ServeHTTP(scopedRec, scoped)
+	if scopedRec.Code != http.StatusNotFound {
+		t.Fatalf("stream for another sandbox: status = %d body=%q, want 404", scopedRec.Code, scopedRec.Body.String())
+	}
+	if bytes.Contains(scopedRec.Body.Bytes(), streamBytes) {
+		t.Fatalf("stream for another sandbox leaked the spool: %q", scopedRec.Body.String())
 	}
 }
 

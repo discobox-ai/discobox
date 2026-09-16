@@ -34,6 +34,15 @@ type ResolveRequest struct {
 type ResolveResult struct {
 	Value     string
 	ExpiresAt time.Time
+	// UseID names the approved use this value was taken under, when the
+	// sentinel was one minted by the agent credentials protocol (ADR 0130 §3).
+	// It is the join between a request that spent a credential and the verdict
+	// that authorized it. A resolver with no use to name leaves it empty, which
+	// is the ordinary injected-sentinel case rather than a failure.
+	//
+	// It is an identifier, never a sentinel: it authorizes nothing, so it is
+	// safe in a trail kept to be read later.
+	UseID string
 }
 
 // Resolver resolves a sentinel to its real credential value. Implementations
@@ -101,11 +110,17 @@ type Swapper struct {
 
 type previousValue struct {
 	value string
+	useID string
 	until time.Time
 }
 
 type cacheEntry struct {
-	value  string
+	value string
+	// useID rides the cached value because the audit row needs it on every
+	// request, not only the one that resolved. The cache key includes the
+	// sentinel, and an ephemeral sentinel belongs to exactly one activation, so
+	// an entry can never be shared by two uses.
+	useID  string
 	denied bool
 	// expiresAt is the hard bound: past it the entry is unusable and a request
 	// resolves synchronously.
@@ -163,6 +178,11 @@ type Result struct {
 	// Encoded reports that at least one substitution happened inside a
 	// base64-encoded token rather than in a value's own text.
 	Encoded bool
+	// UseIDs are the approved uses the substituted values were taken under.
+	// It is plural because one request can carry more than one sentinel: Git
+	// sends a username and a password in a single Authorization: Basic token,
+	// and each half resolves on its own.
+	UseIDs []string
 }
 
 // Swapped reports whether any value in the request was substituted.
@@ -214,6 +234,7 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 
 	dedupe(&res.Headers)
 	dedupe(&res.QueryParams)
+	dedupe(&res.UseIDs)
 	return res
 }
 
@@ -286,6 +307,7 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel, host string, 
 		if !entry.refreshAt.IsZero() && !now.Before(entry.refreshAt) {
 			s.triggerRefresh(clientID, sentinel, host, key)
 		}
+		noteUseID(res, entry.useID)
 		return entry.value, true
 	}
 	s.mu.Unlock()
@@ -304,7 +326,17 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel, host string, 
 	if cacheable {
 		s.store(key, entry)
 	}
+	noteUseID(res, result.UseID)
 	return result.Value, true
+}
+
+// noteUseID records one approved use on a swap result, ignoring the empty ID a
+// sentinel outside the agent credentials protocol resolves with.
+func noteUseID(res *Result, useID string) {
+	if useID == "" {
+		return
+	}
+	res.UseIDs = append(res.UseIDs, useID)
 }
 
 // entryFor turns a resolver result into a cache entry, applying the positive TTL
@@ -326,7 +358,7 @@ func (s *Swapper) entryFor(result ResolveResult, now time.Time) (cacheEntry, boo
 		// refresh, it will resolve synchronously once expired.
 		refreshAt = time.Time{}
 	}
-	return cacheEntry{value: result.Value, expiresAt: expiresAt, refreshAt: refreshAt}, true
+	return cacheEntry{value: result.Value, useID: result.UseID, expiresAt: expiresAt, refreshAt: refreshAt}, true
 }
 
 // triggerRefresh refreshes a soft-expired entry in the background, deduplicated
@@ -376,7 +408,7 @@ func (s *Swapper) triggerRefresh(clientID, sentinel, host, key string) {
 func (s *Swapper) store(key string, entry cacheEntry) {
 	s.mu.Lock()
 	if old, ok := s.cache[key]; ok && !old.denied && old.value != "" && old.value != entry.value {
-		s.previous[key] = previousValue{value: old.value, until: s.now().Add(previousValueGrace)}
+		s.previous[key] = previousValue{value: old.value, useID: old.useID, until: s.now().Add(previousValueGrace)}
 	}
 	s.cache[key] = entry
 	s.mu.Unlock()
@@ -415,7 +447,11 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 	for name, values := range req.Header {
 		for i, value := range values {
 			out := swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
-				return s.previousFor(clientID, sentinel, host, now)
+				value, useID, ok := s.previousFor(clientID, sentinel, host, now)
+				// The retry spends the same approved use the rejected attempt
+				// did, so its audit row names it too.
+				noteUseID(&res, useID)
+				return value, ok
 			})
 			if out.swapped {
 				req.Header[name][i] = out.value
@@ -424,22 +460,23 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 		}
 	}
 	dedupe(&res.Headers)
+	dedupe(&res.UseIDs)
 	return res
 }
 
-func (s *Swapper) previousFor(clientID, sentinel, host string, now time.Time) (string, bool) {
+func (s *Swapper) previousFor(clientID, sentinel, host string, now time.Time) (string, string, bool) {
 	key := clientID + "\x00" + sentinel + "\x00" + host
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prev, ok := s.previous[key]
 	if !ok {
-		return "", false
+		return "", "", false
 	}
 	if !now.Before(prev.until) {
 		delete(s.previous, key)
-		return "", false
+		return "", "", false
 	}
-	return prev.value, true
+	return prev.value, prev.useID, true
 }
 
 // Invalidate drops whatever this client's sentinels resolved to for host, so

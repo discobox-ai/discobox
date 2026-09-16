@@ -129,7 +129,7 @@ func (a *controlAuthenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), controlClaimsContextKey{}, claims)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, scopeToToken(r.WithContext(ctx), claims))
 	})
 }
 
@@ -174,6 +174,34 @@ func (a *controlAuthenticator) authorize(r *http.Request, claims ControlTokenCla
 		}
 	}
 	return nil
+}
+
+// scopeToToken pins client_id to the token's sandbox before any handler runs.
+//
+// It is here, and not in the handlers, because this is the only place every
+// read route passes through. Narrowing at each call site works exactly until
+// someone adds a route and does not know they had to: the hole this closes was
+// an authorize() check that compared client_id when the caller sent one and
+// did nothing when they did not, so a sandbox-scoped token that simply omitted
+// the parameter read every sandbox's rows — and, on the artifact routes, their
+// spooled request and response bodies. Rewriting the query means a handler
+// cannot express the unnarrowed read at all.
+//
+// A token with no sandbox_id is the pool-wide reader and is left alone. A
+// contradictory client_id never reaches here: authorize rejects it, so asking
+// for another sandbox is a 403 rather than a silent substitution of your own.
+func scopeToToken(r *http.Request, claims ControlTokenClaims) *http.Request {
+	if claims.SandboxID == "" {
+		return r
+	}
+	// Copy the URL: r.WithContext is a shallow clone and still shares it with
+	// the caller's request.
+	scoped := *r.URL
+	query := scoped.Query()
+	query.Set("client_id", claims.SandboxID)
+	scoped.RawQuery = query.Encode()
+	r.URL = &scoped
+	return r
 }
 
 func bearerToken(header string) (string, bool) {

@@ -56,6 +56,36 @@ func TestResolverTranslatesEphemeralToStableSentinel(t *testing.T) {
 	if result.ExpiresAt.After(record.ExpiresAt) {
 		t.Fatalf("cache expiry %s outlives the activation window %s", result.ExpiresAt, record.ExpiresAt)
 	}
+	// The approved use rides back to the proxy so the audit row can name it,
+	// which is what joins the request to its verdict (ADR 0130 §3).
+	if result.UseID != "use-1" {
+		t.Fatalf("UseID = %q, want use-1", result.UseID)
+	}
+}
+
+// An ordinary injected sentinel has no approved use behind it, so there is
+// nothing for the audit row to name and the resolver must not invent one.
+func TestResolverReportsNoUseForAnOrdinarySentinel(t *testing.T) {
+	withTestRoot(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		expiry := time.Now().Add(time.Hour)
+		_ = json.NewEncoder(w).Encode(resolveResponseBody{Status: "approved", Value: "real-token", ExpiresAt: &expiry})
+	}))
+	defer server.Close()
+	if err := WriteResolveContext(testProjectID, testPoolID, server.URL, "tok"); err != nil {
+		t.Fatalf("write resolve context: %v", err)
+	}
+
+	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
+	result, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{
+		ClientID: "sb-1", Sentinel: "PLAIN-SENTINEL", Host: "api.github.com",
+	})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if result.UseID != "" {
+		t.Fatalf("UseID = %q, want empty for a sentinel with no activation", result.UseID)
+	}
 }
 
 func TestResolverRefusesEphemeralSentinelForAnotherHost(t *testing.T) {

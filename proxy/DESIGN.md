@@ -84,7 +84,8 @@ its drop counter instead of stalling network traffic.
 
 Normal HTTP request and response bodies are streamed to disk spool files. SQLite
 stores only relative spool paths, byte counts, format names, metadata, redacted
-headers, cache state, policy decisions, and authenticated client identity. Large
+headers, cache state, policy decisions, authenticated client identity, and the
+approved credential uses the request spent. Large
 response assets remain in the disk cache, not SQLite.
 
 ## Retention
@@ -340,17 +341,38 @@ Header audit redaction covers both credential-like header names and every header
 name touched by a rewrite rule. This prevents injected secret values from being
 persisted even when a configured header name does not look sensitive.
 
+A swapped request records which approved uses it spent. `secrets.ResolveResult`
+carries a `UseID` that the resolver fills from the activation behind an
+ephemeral sentinel, the `Swapper` carries it through its cache onto `Result`,
+and `HTTPExchange.SwappedUseIDs` holds the comma-joined set. That ID is the join
+to the control plane's `credential_verdicts` rows, so one identifier reaches
+both the verdict that authorized a command and every request that spent the
+credential. Reads filter on it with `use_id`, matching a whole element of the
+list rather than a substring.
+
+The column holds the use ID and never a sentinel. An ephemeral sentinel is a
+live bearer token for the length of its activation window, and this trail is
+retained to be read afterwards; a use ID authorizes nothing and only names. A
+swap with no agent-credentials activation behind it leaves the column empty,
+which is the ordinary injected-sentinel case rather than a gap.
+
 The control API (`ControlHandler`, served by `ListenAndServeControl` only when
 `Control.ListenAddress` is set) is read-only. It lists HTTP and SOCKS audit rows
-(`GET /audit/http`, `/audit/socks`, filtered by `client_id` and `host`, `limit`
-up to 1000), reports the dropped-event counter (`/audit/dropped`), and serves
+(`GET /audit/http`, `/audit/socks`, filtered by `client_id`, `host` and `limit`
+up to 1000; HTTP also takes `use_id`, which the SOCKS route rejects rather than
+ignores, because a tunnel the proxy never reads can have spent no credential),
+reports the dropped-event counter (`/audit/dropped`), and serves
 body and upgraded-stream spool files only through the owning HTTP audit row
 (`/audit/http/{id}/{request-body|response-body|stream}`), never by path; every
 read is narrowed to `client_id` when one is given. When `Control.TrustPublicKey` is configured, every control
 request must use a PASETO v4.public bearer token for audience
 `discobox-proxy-control` with `audit:read` scope, matching `Control.ProjectID`
-and `WorkerID` when set; a token carrying `sandbox_id` is refused for any other
-`client_id`. The proxy stores only the public verification key;
+and `WorkerID` when set. A token carrying `sandbox_id` *narrows* every read to
+that sandbox rather than being compared against a `client_id` the caller was
+trusted to send — a comparison only rejects a mismatch, so a request that simply
+omitted the parameter would read every sandbox's rows and spooled bodies. A
+contradictory `client_id` is still refused, so asking for another sandbox is a
+403 rather than a silent read of your own. The proxy stores only the public verification key;
 `CreateControlToken` signs with the private key its caller holds.
 `pool-agent/proxyagent` sets no `Control` config, so a Discobox pool proxy serves
 no control API.

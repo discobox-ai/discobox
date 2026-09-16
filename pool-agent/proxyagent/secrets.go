@@ -169,9 +169,16 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 	// it always did (ADR 0031 §3).
 	sentinel := req.Sentinel
 	var activationExpiry time.Time
+	var useID string
 	if record, ok := r.activation(req); ok {
 		sentinel = record.Stable
 		activationExpiry = record.ExpiresAt
+		// The approved use this value is being taken under. The proxy records
+		// it on the audit row, which is what joins a request that spent a
+		// credential to the verdict that authorized it (ADR 0130 §3). Only the
+		// agent credentials path has one; an ordinary injected sentinel leaves
+		// it empty.
+		useID = record.UseID
 	} else if r.isEphemeralCandidate(req) {
 		// The proxy matched a string this process handed out, but the activation
 		// behind it is gone or was never for this destination. Fail closed:
@@ -212,7 +219,7 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 	if out.Status != "approved" || out.Value == "" {
 		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
 	}
-	result := proxy.SecretResolveResult{Value: out.Value}
+	result := proxy.SecretResolveResult{Value: out.Value, UseID: useID}
 	if out.ExpiresAt != nil {
 		result.ExpiresAt = *out.ExpiresAt
 	}

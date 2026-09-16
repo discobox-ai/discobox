@@ -55,7 +55,17 @@ type requestMeta struct {
 	requestBodyCloseOnce sync.Once
 	requestBodyBytes     int64
 	swappedHeaders       []string
-	auditURL             string
+	// swappedUseIDs names the approved credential uses this request spent, for
+	// the audit row's join to the control plane's verdict trail (ADR 0130 §3).
+	//
+	// The unauthorized retry (ADR 0059) does not add to it. The retry re-swaps
+	// the same sentinels for the same client and host, which is the same
+	// activation and so the same uses, and the 401 and the retry are audited as
+	// two rows off this one meta — so writing the retry's result here would
+	// backdate it onto the 401's row, which is written after the retry is
+	// chosen.
+	swappedUseIDs []string
+	auditURL      string
 	// preSwapHeader is the request's headers as the sandbox sent them, with the
 	// sentinels still in place. It is what a retry re-swaps from; re-swapping
 	// the outbound headers would look for a sentinel that is no longer there.
@@ -409,6 +419,7 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		AppliedRuleID:        meta.appliedRuleID,
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
+		SwappedUseIDs:        meta.swappedUseIDs,
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
 		ResponseHeaders:      headers,
@@ -441,6 +452,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		return
 	}
 	meta.swappedHeaders = result.Headers
+	meta.swappedUseIDs = result.UseIDs
 	// A query swap rewrote the URL, so the retry path — which rebuilds a
 	// request from the pre-swap headers — cannot reproduce this request.
 	meta.retryable = len(result.QueryParams) == 0
@@ -714,6 +726,7 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 		AppliedRuleID:        s.meta.appliedRuleID,
 		AppliedPattern:       s.meta.appliedPattern,
 		AppliedHeaders:       s.meta.appliedHeaders,
+		SwappedUseIDs:        s.meta.swappedUseIDs,
 		RedactRequestHeaders: s.meta.redactRequestHeaders(),
 		RequestHeaders:       s.req.Header,
 		ResponseHeaders:      s.headers,
@@ -813,6 +826,7 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			AppliedRuleID:        s.meta.appliedRuleID,
 			AppliedPattern:       s.meta.appliedPattern,
 			AppliedHeaders:       s.meta.appliedHeaders,
+			SwappedUseIDs:        s.meta.swappedUseIDs,
 			RedactRequestHeaders: s.meta.redactRequestHeaders(),
 			RequestHeaders:       s.req.Header,
 			ResponseHeaders:      s.headers,

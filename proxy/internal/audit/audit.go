@@ -44,6 +44,7 @@ type HTTPEvent struct {
 	AppliedRuleID        string
 	AppliedPattern       string
 	AppliedHeaders       []string
+	SwappedUseIDs        []string
 	RedactRequestHeaders []string
 	RequestHeaders       http.Header
 	ResponseHeaders      http.Header
@@ -83,28 +84,44 @@ type SOCKSEvent struct {
 
 // HTTPExchange is the GORM model for audited HTTP exchanges.
 type HTTPExchange struct {
-	ID                  uint `gorm:"primaryKey"`
-	CreatedAt           time.Time
-	EnqueuedAt          time.Time
-	WrittenAt           time.Time
-	ClientID            string `gorm:"index"`
-	ClientSubject       string
-	ClientSerial        string
-	Method              string
-	URL                 string
-	Host                string `gorm:"index"`
-	Status              int
-	DurationMillis      int64
-	DurationMicros      int64
-	Blocked             bool
-	BlockedReason       string
-	CacheHit            bool
-	CacheStored         bool
-	CacheKey            string
-	CacheError          string
-	AppliedRuleID       string
-	AppliedPattern      string
-	AppliedHeaders      string
+	ID             uint `gorm:"primaryKey"`
+	CreatedAt      time.Time
+	EnqueuedAt     time.Time
+	WrittenAt      time.Time
+	ClientID       string `gorm:"index"`
+	ClientSubject  string
+	ClientSerial   string
+	Method         string
+	URL            string
+	Host           string `gorm:"index"`
+	Status         int
+	DurationMillis int64
+	DurationMicros int64
+	Blocked        bool
+	BlockedReason  string
+	CacheHit       bool
+	CacheStored    bool
+	CacheKey       string
+	CacheError     string
+	AppliedRuleID  string
+	AppliedPattern string
+	AppliedHeaders string
+	// SwappedUseIDs names the approved credential uses this request spent, as
+	// a comma-joined list (ADR 0130 §3). It is the join to the control plane's
+	// credential_verdicts rows: one ID reaches both the verdict that authorized
+	// a command and every request that actually spent the credential.
+	//
+	// Empty means no use was named, which is either an ordinary injected
+	// sentinel or no swap at all. It never holds a sentinel — an ephemeral one
+	// is a live bearer token, and this trail is kept to be read later.
+	//
+	// Deliberately unindexed. The only query that reads it matches one element
+	// of the list, which is an expression with a leading wildcard and so cannot
+	// use a B-tree index on the column; an index here would be write cost on
+	// the highest-volume table in the schema and nothing else. The scan it
+	// implies is bounded in practice by client_id, which is indexed and which
+	// every real caller sends.
+	SwappedUseIDs       string
 	RequestHeaders      string
 	ResponseHeaders     string
 	ResponseBytes       int64
@@ -171,7 +188,11 @@ type Recorder struct {
 type QueryOptions struct {
 	ClientID string
 	Host     string
-	Limit    int
+	// UseID narrows to the requests that spent one approved credential use.
+	// It applies to HTTP reads only: a SOCKS connect tunnels bytes the proxy
+	// never inspects, so no sentinel is ever swapped in one.
+	UseID string
+	Limit int
 }
 
 // ConfigureStreamSpool sets the directory used for raw upgraded-stream spool files.
@@ -428,6 +449,7 @@ func (r *Recorder) run() {
 				AppliedRuleID:       e.AppliedRuleID,
 				AppliedPattern:      e.AppliedPattern,
 				AppliedHeaders:      strings.Join(e.AppliedHeaders, ","),
+				SwappedUseIDs:       strings.Join(e.SwappedUseIDs, ","),
 				RequestHeaders:      marshalHeaders(e.RequestHeaders, e.RedactRequestHeaders),
 				ResponseHeaders:     marshalHeaders(e.ResponseHeaders, nil),
 				ResponseBytes:       e.ResponseBytes,
@@ -534,7 +556,25 @@ func applyHTTPQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
 	if opts.Host != "" {
 		query = query.Where("host = ?", opts.Host)
 	}
+	if opts.UseID != "" {
+		// Match a whole element of the comma-joined list rather than a
+		// substring: padding both sides with the delimiter is what keeps one
+		// use ID from matching another that merely contains it.
+		// ESCAPE is named explicitly: SQLite has no default escape character,
+		// so without it the escaping below would match a literal backslash.
+		query = query.Where(`',' || swapped_use_ids || ',' LIKE ? ESCAPE '\'`, "%,"+escapeLike(opts.UseID)+",%")
+	}
 	return query.Limit(queryLimit(opts.Limit))
+}
+
+// escapeLike neutralizes the LIKE wildcards in a value matched literally.
+//
+// This is load-bearing rather than defensive: a use ID is id.New("use"), which
+// is "use_" plus random text, so every single one of them contains the
+// single-character wildcard. Unescaped, use_abc would also match usexabc.
+func escapeLike(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+	return replacer.Replace(value)
 }
 
 func applySOCKSQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {

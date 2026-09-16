@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -166,5 +167,98 @@ func TestRecorderListsAuditRows(t *testing.T) {
 	}
 	if len(socksRows) != 1 || socksRows[0].Destination != "api.example.com" {
 		t.Fatalf("SOCKS rows = %#v", socksRows)
+	}
+}
+
+// "Every request that spent this credential" is the question the use ID column
+// exists to answer (ADR 0130 §3).
+func TestListHTTPFiltersByUseID(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 8, true)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = recorder.Close() })
+
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://a.example.com", SwappedUseIDs: []string{"use_abc"}})
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://b.example.com", SwappedUseIDs: []string{"use_other", "use_abc"}})
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://c.example.com", SwappedUseIDs: []string{"use_other"}})
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://d.example.com"})
+	drainRecorder(t, recorder)
+
+	rows, err := recorder.ListHTTP(context.Background(), QueryOptions{UseID: "use_abc"})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	got := make([]string, 0, len(rows))
+	for _, row := range rows {
+		got = append(got, row.URL)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"https://a.example.com", "https://b.example.com"}) {
+		t.Fatalf("filtered URLs = %v, want the two rows naming use_abc", got)
+	}
+}
+
+// A use ID that is a prefix of another must not match it: the column is a
+// comma-joined list, and a bare LIKE would answer this question wrongly.
+func TestListHTTPUseIDMatchesWholeElement(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 8, true)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = recorder.Close() })
+
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://long.example.com", SwappedUseIDs: []string{"use_abcdef"}})
+	drainRecorder(t, recorder)
+
+	rows, err := recorder.ListHTTP(context.Background(), QueryOptions{UseID: "use_abc"})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("got %d rows for a prefix of a longer use ID, want 0", len(rows))
+	}
+}
+
+// Every use ID is id.New("use") — "use_" plus random text — so the underscore
+// is a LIKE wildcard sitting in every value this filter is ever given. A row
+// differing only where that wildcard is must not match.
+func TestListHTTPUseIDDoesNotTreatUnderscoreAsWildcard(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 8, true)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = recorder.Close() })
+
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://wild.example.com", SwappedUseIDs: []string{"usexabcdefgh012345"}})
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://real.example.com", SwappedUseIDs: []string{"use_abcdefgh012345"}})
+	drainRecorder(t, recorder)
+
+	rows, err := recorder.ListHTTP(context.Background(), QueryOptions{UseID: "use_abcdefgh012345"})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(rows) != 1 || rows[0].URL != "https://real.example.com" {
+		t.Fatalf("got %d rows (%+v), want only the row whose use ID matches literally", len(rows), rows)
+	}
+}
+
+// A caller-supplied wildcard must select nothing rather than everything.
+func TestListHTTPUseIDWildcardSelectsNothing(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 8, true)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = recorder.Close() })
+
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", URL: "https://a.example.com", SwappedUseIDs: []string{"use_abc"}})
+	drainRecorder(t, recorder)
+
+	rows, err := recorder.ListHTTP(context.Background(), QueryOptions{UseID: "%"})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("a literal %% matched %d rows, want 0", len(rows))
 	}
 }

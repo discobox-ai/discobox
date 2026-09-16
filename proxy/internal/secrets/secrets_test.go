@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -422,5 +423,92 @@ func TestInvalidateForcesReresolve(t *testing.T) {
 	swapAuth(t, sw, "sandbox-1", "SENTINEL")
 	if calls := resolver.calls.Load(); calls != 2 {
 		t.Fatalf("resolver called %d times after Invalidate, want a fresh resolve", calls)
+	}
+}
+
+// The use ID is the join to the control plane's verdict trail (ADR 0130 §3), so
+// it has to survive the swap that spends it.
+func TestSwapReportsUseID(t *testing.T) {
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: "REALKEY", UseID: "use_abc", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINELKEY"}}})
+
+	req := newRequest(t, http.MethodGet, "https://example.com/api")
+	req.Header.Set("Authorization", "Bearer SENTINELKEY")
+
+	res := sw.Apply(context.Background(), req, "sandbox-1")
+	if !res.Swapped() {
+		t.Fatal("expected swap")
+	}
+	if !slices.Equal(res.UseIDs, []string{"use_abc"}) {
+		t.Fatalf("UseIDs = %v, want [use_abc]", res.UseIDs)
+	}
+}
+
+// A cached value must still name its use: the audit row is written per request,
+// not per resolve, and only the first request of a grant resolves at all.
+func TestSwapReportsUseIDFromCache(t *testing.T) {
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: "REALKEY", UseID: "use_abc", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINELKEY"}}})
+
+	for i := range 2 {
+		req := newRequest(t, http.MethodGet, "https://example.com/api")
+		req.Header.Set("Authorization", "Bearer SENTINELKEY")
+		res := sw.Apply(context.Background(), req, "sandbox-1")
+		if !slices.Equal(res.UseIDs, []string{"use_abc"}) {
+			t.Fatalf("request %d: UseIDs = %v, want [use_abc]", i, res.UseIDs)
+		}
+	}
+	if calls := resolver.calls.Load(); calls != 1 {
+		t.Fatalf("resolver calls = %d, want 1 (second request should hit the cache)", calls)
+	}
+}
+
+// A sentinel outside the agent credentials protocol has no approved use, and
+// the empty ID must not reach the result as an element.
+func TestSwapWithoutUseIDReportsNone(t *testing.T) {
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: "REALKEY", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINELKEY"}}})
+
+	req := newRequest(t, http.MethodGet, "https://example.com/api")
+	req.Header.Set("Authorization", "Bearer SENTINELKEY")
+
+	res := sw.Apply(context.Background(), req, "sandbox-1")
+	if !res.Swapped() {
+		t.Fatal("expected swap")
+	}
+	if len(res.UseIDs) != 0 {
+		t.Fatalf("UseIDs = %v, want none", res.UseIDs)
+	}
+}
+
+// Git's basic auth puts two sentinels in one header, so one request can spend
+// two approved uses.
+func TestSwapReportsEveryUseID(t *testing.T) {
+	resolver := &fakeResolver{fn: func(req ResolveRequest) (ResolveResult, error) {
+		switch req.Sentinel {
+		case "SENTINELUSER":
+			return ResolveResult{Value: "real-user", UseID: "use_user", ExpiresAt: time.Now().Add(time.Hour)}, nil
+		case "SENTINELPASS":
+			return ResolveResult{Value: "real-pass", UseID: "use_pass", ExpiresAt: time.Now().Add(time.Hour)}, nil
+		}
+		return ResolveResult{}, ErrDenied
+	}}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINELUSER", "SENTINELPASS"}}})
+
+	req := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
+	req.Header.Set("Authorization", basicAuth("SENTINELUSER:SENTINELPASS"))
+
+	res := sw.Apply(context.Background(), req, "sandbox-1")
+	if !res.Swapped() {
+		t.Fatal("expected swap")
+	}
+	if !slices.Equal(res.UseIDs, []string{"use_pass", "use_user"}) {
+		t.Fatalf("UseIDs = %v, want [use_pass use_user]", res.UseIDs)
 	}
 }

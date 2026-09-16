@@ -62,6 +62,14 @@ func (s *Server) handleControlListHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleControlListSOCKS(w http.ResponseWriter, r *http.Request) {
+	// A SOCKS connect is a tunnel the proxy never reads, so no sentinel is ever
+	// swapped in one and there is nothing for use_id to select. Refusing beats
+	// answering 200 with every row, which reads as "this use touched all of
+	// these" to whoever asked.
+	if r.URL.Query().Has("use_id") {
+		http.Error(w, "use_id does not apply to SOCKS connects", http.StatusBadRequest)
+		return
+	}
 	rows, err := s.audit.ListSOCKS(r.Context(), controlQueryOptions(r))
 	writeControlJSON(w, rows, err)
 }
@@ -135,6 +143,7 @@ func controlQueryOptions(r *http.Request) audit.QueryOptions {
 	return audit.QueryOptions{
 		ClientID: r.URL.Query().Get("client_id"),
 		Host:     r.URL.Query().Get("host"),
+		UseID:    r.URL.Query().Get("use_id"),
 		Limit:    limit,
 	}
 }
