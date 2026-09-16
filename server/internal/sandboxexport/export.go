@@ -1,6 +1,12 @@
 // Package sandboxexport is the on-disk form of an exported discobox: what a
 // `.dbox` file is, and how one is composed and taken apart (ADR 0123).
 //
+// Both the `.dbox` and the tree inside it end with a SHA256SUMS member
+// (tarsums, ADR 0123 §8). Each hop verifies the archive it reads before it
+// writes the SHA256SUMS of the one it produces, so a checksum is never computed
+// over bytes that already arrived wrong, and an archive cut short anywhere
+// along the way reaches the end without one.
+//
 // It lives in the server module because the server is the only thing that reads
 // or writes the format. The CLI moves the bytes and never opens them, which is
 // what lets an older CLI keep working against a newer server, and the pool
@@ -18,6 +24,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/tarsums"
 )
 
 const (
@@ -30,6 +37,10 @@ const (
 	// ManifestName is the archive's first member, so a reader learns what it is
 	// holding before the gigabytes arrive.
 	ManifestName = "manifest.json"
+
+	// SumsName is the archive's last member: the SHA-256 of every file before
+	// it, which `sha256sum -c` checks after `tar xf`.
+	SumsName = tarsums.Name
 
 	// TreePrefix is where the sandbox's durable tree sits inside the archive.
 	// The prefix exists so the archive says what each half is when a person
@@ -165,17 +176,21 @@ type SecretBinding struct {
 }
 
 // Write composes an export: the manifest, then the tree the pool agent produced,
-// re-emitted under TreePrefix.
+// re-emitted under TreePrefix, then SHA256SUMS.
 //
 // The tree is re-emitted entry by entry rather than concatenated, even though
 // tar allows concatenation, because the prefix has to be applied to each name.
 // Nothing is buffered: each entry's body is copied straight through.
+//
+// The tree's own SHA256SUMS is verified as it is read, and the export's is
+// written only after that succeeds. A tree that arrived short or wrong returns
+// an error before the export is closed, leaving it without checksums too.
 func Write(w io.Writer, manifest *Manifest, tree io.Reader) error {
-	writer := tar.NewWriter(w)
+	writer := tarsums.NewWriter(w)
 	if err := writeManifest(writer, manifest); err != nil {
 		return err
 	}
-	reader := tar.NewReader(tree)
+	reader := tarsums.NewReader(tree)
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -220,7 +235,7 @@ func copyEntry(w io.Writer, r io.Reader, size int64) error {
 	return nil
 }
 
-func writeManifest(writer *tar.Writer, manifest *Manifest) error {
+func writeManifest(writer *tarsums.Writer, manifest *Manifest) error {
 	manifest.FormatVersion = FormatVersion
 	if manifest.ExportedAt.IsZero() {
 		manifest.ExportedAt = time.Now().UTC()
@@ -245,19 +260,25 @@ func writeManifest(writer *tar.Writer, manifest *Manifest) error {
 }
 
 // Read takes an export apart: the manifest, and the tree as the pool agent
-// wants it, with TreePrefix stripped.
+// wants it, with TreePrefix stripped and its own SHA256SUMS.
 //
 // It returns as soon as the manifest is read, so the caller can resolve a pool
 // and a harness — and refuse — before a byte of the tree has been transferred.
 // The tree is produced while it is read, so an import that is refused costs the
 // upload of a manifest rather than of a workspace.
 //
+// The tree is streamed before the export's SHA256SUMS has been checked, since
+// holding it back would mean holding it. What the check guards instead is the
+// tree's own SHA256SUMS: it is written only once the export's has matched, so a
+// pool agent restoring an export that was cut short or corrupted never sees
+// one, and removes what it wrote.
+//
 // The returned reader must be closed. Closing it before the end abandons the
 // rest of the archive, which is what a refused import wants.
 func Read(r io.Reader) (*Manifest, io.ReadCloser, error) {
-	reader := tar.NewReader(r)
+	reader := tarsums.NewReader(r)
 	header, err := reader.Next()
-	if errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, tarsums.ErrIncomplete) {
 		return nil, nil, fmt.Errorf("%w: the archive is empty", ErrNotAnExport)
 	}
 	if err != nil {
@@ -289,8 +310,8 @@ func Read(r io.Reader) (*Manifest, io.ReadCloser, error) {
 
 // copyTree re-emits the archive's remaining entries with TreePrefix stripped,
 // which is the tar the pool agent restores.
-func copyTree(reader *tar.Reader, w io.Writer) error {
-	writer := tar.NewWriter(w)
+func copyTree(reader *tarsums.Reader, w io.Writer) error {
+	writer := tarsums.NewWriter(w)
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -305,7 +326,8 @@ func copyTree(reader *tar.Reader, w io.Writer) error {
 			// have. Skipping rather than failing is what lets an export written
 			// by a later server, which added a member beside the two here, still
 			// restore on this one -- the manifest version is what guards the
-			// parts that matter.
+			// parts that matter. The reader still hashes the skipped body, so
+			// it is checked all the same.
 			continue
 		}
 		header.Name = name

@@ -69,9 +69,16 @@ func sandboxExportHandler(service services.SandboxService) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		// A failure part way through ends the response rather than appending to
 		// it. The body is a tar, and a sentence in the middle of one is not a
-		// diagnostic -- it is a corrupt archive. The client sees the truncation,
-		// which is what an incomplete tar is.
-		_, _ = io.Copy(w, stream)
+		// diagnostic -- it is a corrupt archive.
+		//
+		// Ending it means aborting the connection. Returning would have net/http
+		// finish the chunked body cleanly, and a client writing it to a file
+		// would report an export that failed as one that succeeded. The missing
+		// SHA256SUMS refuses such a file at import; the abort is what keeps it
+		// from being written as though it were whole.
+		if _, err := io.Copy(w, stream); err != nil {
+			panic(http.ErrAbortHandler)
+		}
 	})
 }
 

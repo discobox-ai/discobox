@@ -23,6 +23,7 @@ COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxuser ./sandboxuser
 COPY secretformat ./secretformat
+COPY tarsums ./tarsums
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pool-agent/cmd ./pool-agent/cmd
 COPY pool-agent ./pool-agent

@@ -172,7 +172,13 @@ and takes it apart again on the way in, so one implementation decides what a
 
 - Export refuses a running discobox before the first byte, because after it the
   refusal could only be a corrupt tar. The client disconnecting closes the
-  stream, which is what stops the pool-side walk behind it.
+  stream, which is what stops the pool-side walk behind it. A failure after the
+  first byte aborts the connection (`http.ErrAbortHandler`): returning would
+  have `net/http` end the chunked body cleanly, and the client would keep a short
+  archive as a whole one.
+- Both archives end with `SHA256SUMS` (`tarsums`, ADR 0123 §8), and each hop
+  writes its own only after verifying the one it read. Import answers a `.dbox`
+  whose sums are missing or wrong with 400.
 - Import answers with `{sandbox, warnings}` rather than a bare sandbox: a secret
   this project has no equivalent of does not fail the import, and a client that
   only saw the sandbox would learn it is missing from inside the harness.

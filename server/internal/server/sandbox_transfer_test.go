@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"testing"
 
@@ -65,5 +67,37 @@ func TestImportSandboxAnswersInTheAPIsShape(t *testing.T) {
 	// than a bare sandbox, so they have to survive the mapping.
 	if len(body.Warnings) != 1 {
 		t.Fatalf("warnings = %v, want the unmatched secret reported", body.Warnings)
+	}
+}
+
+// An export that fails once its body has begun has to reach the client as a
+// failed read. Returning from the handler instead lets net/http end the chunked
+// body cleanly, and `discobox admin box export` reports the short archive it
+// wrote as a finished one.
+func TestExportSandboxAbortsTheResponseWhenTheStreamFails(t *testing.T) {
+	stubs := newRouterTestServices()
+	reader, writer := io.Pipe()
+	go func() {
+		_, _ = writer.Write(make([]byte, 1024))
+		_ = writer.CloseWithError(errors.New("pool agent went away"))
+	}()
+	stubs.exportStream = reader
+	server := newPoolLogsTestServer(t, stubs)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		server.URL+"/api/projects/"+testDefaultProjectID+"/sandboxes/sbx_1/export", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200: the failure comes after the body has begun", resp.StatusCode)
+	}
+	if _, err := io.ReadAll(resp.Body); err == nil {
+		t.Fatal("the body ended cleanly; a failed export has to read as a failure")
 	}
 }

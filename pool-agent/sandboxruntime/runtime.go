@@ -1,7 +1,6 @@
 package sandboxruntime
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -28,6 +27,7 @@ import (
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/tarsums"
 	"github.com/discobox-ai/x/id"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -2383,10 +2383,11 @@ func (r *MemorySandboxRuntime) ImportTree(_ context.Context, sandboxID string, t
 	return nil
 }
 
-// emptyTarArchive is a valid tar with no members.
+// emptyTarArchive is a tree archive with no files: nothing but the SHA256SUMS
+// every reader of a tree requires.
 func emptyTarArchive() []byte {
 	var buf bytes.Buffer
-	_ = tar.NewWriter(&buf).Close()
+	_ = tarsums.NewWriter(&buf).Close()
 	return buf.Bytes()
 }
 

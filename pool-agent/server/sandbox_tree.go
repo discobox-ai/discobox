@@ -50,9 +50,16 @@ func (s *sandboxService) exportSandboxTreeHandler() http.Handler {
 		w.WriteHeader(http.StatusOK)
 		// A walk that fails part way ends the response rather than appending
 		// anything to it. The body is a tar; a sentence in the middle of one is
-		// not a diagnostic, it is a corrupt archive. The reader learns of the
-		// failure as an unexpected EOF, which is what an incomplete tar is.
-		_, _ = io.Copy(w, stream)
+		// not a diagnostic, it is a corrupt archive.
+		//
+		// Ending it means aborting the connection. A handler that just returned
+		// would have net/http finish the chunked body cleanly, and the reader
+		// would see a short archive end the way a whole one does. The archive's
+		// missing SHA256SUMS would still refuse it at the end; the abort is what
+		// makes the failure arrive when it happens.
+		if _, err := io.Copy(w, stream); err != nil {
+			panic(http.ErrAbortHandler)
+		}
 	})
 }
 

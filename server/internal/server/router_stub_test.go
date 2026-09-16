@@ -39,6 +39,7 @@ type routerTestServices struct {
 	consoleErr     error
 	poolLog        *stubPoolLog
 	importResult   *services.SandboxImportResult
+	exportStream   io.ReadCloser
 	poolLogErr     error
 
 	guestImageBuild    *sandbox.GuestImageBuild
@@ -951,8 +952,11 @@ func (s *routerTestServices) sortedSandboxes() []model.Sandbox {
 	return sandboxes
 }
 
-func (*routerTestServices) ExportSandbox(context.Context, string, string) (io.ReadCloser, error) {
-	return nil, errors.New("not implemented")
+func (s *routerTestServices) ExportSandbox(context.Context, string, string) (io.ReadCloser, error) {
+	if s.exportStream == nil {
+		return nil, errors.New("not implemented")
+	}
+	return s.exportStream, nil
 }
 
 func (s *routerTestServices) ImportSandbox(context.Context, string, io.Reader, services.SandboxImportOptions) (*services.SandboxImportResult, error) {

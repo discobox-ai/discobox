@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/discobox-ai/discobox/tarsums"
 )
 
 // A sandbox's durable tree is the half of it that outlives its container: the
@@ -19,7 +21,8 @@ import (
 //
 // The tree travels as a plain tar with relative names, because that is the
 // format two pool agents of different versions can agree on without a contract
-// between them.
+// between them. It ends with a SHA256SUMS member (tarsums, ADR 0123 §8), which
+// is how a restore tells a whole tree from one whose stream was cut short.
 
 // treeSubtrees is exactly what travels, and the list is the decision rather
 // than a convenience (ADR 0123 §1).
@@ -55,7 +58,8 @@ var ErrSandboxRunning = errors.New("sandbox is running; stop it before exporting
 // gigabytes of workspace and nothing here should hold it. A failure part way
 // through therefore cannot be a status: it reaches the caller as a read error
 // on a body that has already begun, which is the same bargain every streaming
-// route in this repository makes.
+// route in this repository makes. It also leaves the archive without its
+// SHA256SUMS, so a reader that never saw the error still refuses what it got.
 func (r *DockerSandboxRuntime) ExportTree(ctx context.Context, sandboxID string) (io.ReadCloser, error) {
 	root := r.sandboxRoot(sandboxID)
 	if _, err := os.Stat(root); err != nil {
@@ -124,8 +128,11 @@ func (r *DockerSandboxRuntime) ImportTree(ctx context.Context, sandboxID string,
 }
 
 // writeTree tars the subtrees under root that travel.
+//
+// SHA256SUMS is written by the Close at the end and nowhere else, so every
+// early return below leaves an archive no reader accepts.
 func writeTree(ctx context.Context, w io.Writer, root string) error {
-	writer := tar.NewWriter(w)
+	writer := tarsums.NewWriter(w)
 	links := newLinkIndex()
 	for _, subtree := range treeSubtrees {
 		source := filepath.Join(root, subtree)
@@ -146,7 +153,7 @@ func writeTree(ctx context.Context, w io.Writer, root string) error {
 	return writer.Close()
 }
 
-func writeSubtree(ctx context.Context, writer *tar.Writer, root, subtree string, links *linkIndex) error {
+func writeSubtree(ctx context.Context, writer *tarsums.Writer, root, subtree string, links *linkIndex) error {
 	source := filepath.Join(root, subtree)
 	return filepath.Walk(source, func(file string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -165,7 +172,7 @@ func writeSubtree(ctx context.Context, writer *tar.Writer, root, subtree string,
 
 // writeTreeEntry emits one file, and is where everything a sandbox's home can
 // hold that a tar cannot is dealt with.
-func writeTreeEntry(ctx context.Context, writer *tar.Writer, file, name string, info os.FileInfo, links *linkIndex) error {
+func writeTreeEntry(ctx context.Context, writer *tarsums.Writer, file, name string, info os.FileInfo, links *linkIndex) error {
 	mode := info.Mode()
 	switch {
 	case mode.IsDir(), mode.IsRegular(), mode&os.ModeSymlink != 0:
@@ -230,12 +237,12 @@ func writeTreeEntry(ctx context.Context, writer *tar.Writer, file, name string, 
 // unreadable, and one changed file would cost the whole export.
 //
 // Ending the archive is not the same as desynchronizing it, though. So a file
-// that shrank or grew ends it: the walk returns, the tar writer is never
-// closed, and the reader gets the unexpected EOF that any failure part way
-// through a walk produces. The user retries. The alternative is a git pack or a
-// sqlite file restored zero-padded onto the destination, discovered from inside
-// the sandbox, after a transfer has already archived the source -- which is
-// exactly the damage ADR 0123 §2 refuses a running sandbox to avoid.
+// that shrank or grew ends it: the walk returns, the archive never gets its
+// SHA256SUMS, and the reader refuses it as it refuses any walk that failed part
+// way. The user retries. The alternative is a git pack or a sqlite file
+// restored zero-padded onto the destination, discovered from inside the
+// sandbox, after a transfer has already archived the source -- which is exactly
+// the damage ADR 0123 §2 refuses a running sandbox to avoid.
 //
 // A file that *vanished* is the exception and is padded rather than fatal.
 // Cache files under a home directory come and go, and failing a whole export
@@ -283,6 +290,11 @@ func copyTreeFile(ctx context.Context, writer io.Writer, file string, size int64
 // The lexical check in treeEntryName stays, for the different job it does:
 // keeping an archive from carrying a `config/` or a `.discobox-archived` over
 // what the create is about to write.
+//
+// The archive's SHA256SUMS is verified at its end, after the files are written,
+// because holding a workspace back until it had been checked would mean holding
+// it. A tree that fails the check is an error like any other, and ImportTree
+// removes it.
 func readTree(ctx context.Context, r io.Reader, rootPath string) error {
 	root, err := os.OpenRoot(rootPath)
 	if err != nil {
@@ -290,7 +302,7 @@ func readTree(ctx context.Context, r io.Reader, rootPath string) error {
 	}
 	defer root.Close()
 
-	reader := tar.NewReader(r)
+	reader := tarsums.NewReader(r)
 	// Directory metadata is applied last: writing a file into a directory
 	// updates that directory's mtime, and restoring a read-only directory
 	// before its contents makes the contents unwritable.

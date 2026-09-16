@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"github.com/discobox-ai/discobox/tarsums"
 )
 
 func TestExportTreeSkipsSocketsAndFifos(t *testing.T) {
@@ -91,7 +93,7 @@ func TestImportTreeDoesNotFollowSymlinksItJustCreated(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			runtime, _ := treeFixture(t)
 			var buf bytes.Buffer
-			writer := tar.NewWriter(&buf)
+			writer := tarsums.NewWriter(&buf)
 			for _, header := range entries {
 				if err := writer.WriteHeader(header); err != nil {
 					t.Fatal(err)

@@ -10,14 +10,15 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/tarsums"
 )
 
 // tarOf builds an archive from name -> content, the shape a pool agent's tree
-// export has.
+// export has: SHA256SUMS included.
 func tarOf(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	writer := tar.NewWriter(&buf)
+	writer := tarsums.NewWriter(&buf)
 	for name, content := range files {
 		if err := writer.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))}); err != nil {
 			t.Fatal(err)
@@ -32,10 +33,12 @@ func tarOf(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
+// namesOf reads an archive through tarsums, so one without a matching
+// SHA256SUMS fails the test.
 func namesOf(t *testing.T, r io.Reader) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	reader := tar.NewReader(r)
+	reader := tarsums.NewReader(r)
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -189,7 +192,7 @@ func TestReadRefusesAFormatVersionItDoesNotKnow(t *testing.T) {
 		t.Fatal(err)
 	}
 	var future bytes.Buffer
-	writer := tar.NewWriter(&future)
+	writer := tarsums.NewWriter(&future)
 	if err := writer.WriteHeader(&tar.Header{Name: ManifestName, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(data))}); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +214,7 @@ func TestReadRefusesAFormatVersionItDoesNotKnow(t *testing.T) {
 
 func TestWriteAndReadKeepHardLinksPointingInsideTheTree(t *testing.T) {
 	var tree bytes.Buffer
-	writer := tar.NewWriter(&tree)
+	writer := tarsums.NewWriter(&tree)
 	if err := writer.WriteHeader(&tar.Header{Name: "data/one", Typeflag: tar.TypeReg, Mode: 0o644, Size: 2}); err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +257,7 @@ func TestWriteAndReadKeepHardLinksPointingInsideTheTree(t *testing.T) {
 	}
 	defer restored.Close()
 	linked := false
-	restoredReader := tar.NewReader(restored)
+	restoredReader := tarsums.NewReader(restored)
 	for {
 		header, err := restoredReader.Next()
 		if errors.Is(err, io.EOF) {
@@ -272,5 +275,114 @@ func TestWriteAndReadKeepHardLinksPointingInsideTheTree(t *testing.T) {
 	}
 	if !linked {
 		t.Error("the hard link did not survive the round trip")
+	}
+}
+
+// The export ends with a SHA256SUMS that covers the manifest and the tree under
+// their names in the export, so `tar xf` and `sha256sum -c` check a `.dbox`
+// with nothing of ours installed.
+func TestWriteEndsWithSumsOfTheExportItself(t *testing.T) {
+	tree := tarOf(t, map[string]string{"data/.bashrc": "x\n"})
+	var out bytes.Buffer
+	if err := Write(&out, sampleManifest(), bytes.NewReader(tree)); err != nil {
+		t.Fatal(err)
+	}
+	var last string
+	var sums string
+	reader := tar.NewReader(bytes.NewReader(out.Bytes()))
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last = header.Name
+		if header.Name == SumsName {
+			sums = string(body)
+		}
+	}
+	if last != SumsName {
+		t.Fatalf("last member = %q, want %q", last, SumsName)
+	}
+	for _, name := range []string{"  " + ManifestName + "\n", "  tree/data/.bashrc\n"} {
+		if !strings.Contains(sums, name) {
+			t.Errorf("SHA256SUMS does not list %q:\n%s", strings.TrimSpace(name), sums)
+		}
+	}
+	if strings.Count(sums, "\n") != 2 {
+		t.Errorf("SHA256SUMS lists more than the manifest and the one file; the pool agent's own sums are consumed, not carried:\n%s", sums)
+	}
+}
+
+// A pool agent's stream that ended between two files reads, to a plain tar
+// reader, as a smaller tree. Write must not bless it with checksums of its own.
+func TestWriteRefusesATreeThatEndedEarly(t *testing.T) {
+	var tree bytes.Buffer
+	writer := tarsums.NewWriter(&tree)
+	if err := writer.WriteHeader(&tar.Header{Name: "data/one", Typeflag: tar.TypeReg, Mode: 0o644, Size: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write([]byte("hi")); err != nil {
+		t.Fatal(err)
+	}
+	// Never closed: no SHA256SUMS, which is what a walk that failed leaves.
+	var out bytes.Buffer
+	err := Write(&out, sampleManifest(), bytes.NewReader(tree.Bytes()[:1024]))
+	if !errors.Is(err, tarsums.ErrIncomplete) {
+		t.Fatalf("err = %v, want ErrIncomplete", err)
+	}
+	if strings.Contains(out.String(), SumsName) {
+		t.Error("the export of a short tree was given a SHA256SUMS; every reader would have accepted it")
+	}
+}
+
+// An export cut short on its way in must not reach the pool agent as a tree
+// that looks whole: the tree Read produces gets its SHA256SUMS only once the
+// export's own has matched.
+func TestReadWithholdsTheTreesSumsFromADamagedExport(t *testing.T) {
+	tree := tarOf(t, map[string]string{"data/a": "alpha", "data/b": "beta"})
+	var out bytes.Buffer
+	if err := Write(&out, sampleManifest(), bytes.NewReader(tree)); err != nil {
+		t.Fatal(err)
+	}
+	whole := out.Bytes()
+	// Up to the end of the last tree member, before SHA256SUMS: a clean member
+	// boundary, which a plain tar reader treats as the end.
+	reader := tar.NewReader(bytes.NewReader(whole))
+	offset := 0
+	for {
+		header, err := reader.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if header.Name == SumsName {
+			break
+		}
+		offset += 512 + int((header.Size+511)/512*512)
+	}
+
+	_, restored, err := Read(bytes.NewReader(whole[:offset]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	treeReader := tarsums.NewReader(restored)
+	for {
+		_, err := treeReader.Next()
+		if errors.Is(err, io.EOF) {
+			t.Fatal("the tree read from a truncated export verified; the pool agent would have restored it")
+		}
+		if err != nil {
+			if !errors.Is(err, tarsums.ErrIncomplete) {
+				t.Fatalf("err = %v, want ErrIncomplete", err)
+			}
+			return
+		}
 	}
 }

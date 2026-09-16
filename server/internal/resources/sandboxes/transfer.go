@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/sandboxexport"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/tarsums"
 	"github.com/discobox-ai/discobox/version"
 	"github.com/discobox-ai/x/id"
 )
@@ -320,6 +321,15 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	ref := sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}
 	landedPool, err := provider.ImportTree(ctx, ref, pool.ID, tree)
 	if err != nil {
+		// The archive failing its own check surfaces here, through the pool
+		// agent's request body, and is the uploader's to fix: a 500 naming a
+		// pool would send them looking at the destination instead of the file.
+		for _, damaged := range []error{tarsums.ErrIncomplete, tarsums.ErrMismatch} {
+			if errors.Is(err, damaged) {
+				return nil, apperrors.NewStatusError(http.StatusBadRequest,
+					fmt.Sprintf("the archive is damaged or incomplete (%v); export it again", damaged))
+			}
+		}
 		return nil, err
 	}
 	sb.PoolID = landedPool

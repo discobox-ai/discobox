@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/moby/moby/client"
+
+	"github.com/discobox-ai/discobox/tarsums"
 )
 
 // treeRuntime is a runtime whose Docker daemon holds no containers, so a
@@ -65,11 +67,12 @@ func writeFile(t *testing.T, path, content string, mode os.FileMode) {
 
 // entries reads an archive into a name -> content map, with directories and
 // symlinks recorded by their type so a test can assert on shape as well as
-// bytes.
+// bytes. It reads through tarsums, so an archive without a matching SHA256SUMS
+// fails the test.
 func entries(t *testing.T, r io.Reader) map[string]string {
 	t.Helper()
 	out := map[string]string{}
-	reader := tar.NewReader(r)
+	reader := tarsums.NewReader(r)
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -285,7 +288,7 @@ func TestImportTreeRefusesEntriesOutsideTheSubtrees(t *testing.T) {
 		"config/sandbox.json",
 	} {
 		var buf bytes.Buffer
-		writer := tar.NewWriter(&buf)
+		writer := tarsums.NewWriter(&buf)
 		if err := writer.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o644, Size: 1}); err != nil {
 			t.Fatal(err)
 		}
@@ -302,25 +305,55 @@ func TestImportTreeRefusesEntriesOutsideTheSubtrees(t *testing.T) {
 }
 
 func TestImportTreeRemovesAPartialRestore(t *testing.T) {
-	runtime, _ := treeFixture(t)
+	// Owned by whoever runs the test, so the restore gets as far as the end of
+	// the archive rather than failing on a chown first.
 	var buf bytes.Buffer
-	writer := tar.NewWriter(&buf)
-	if err := writer.WriteHeader(&tar.Header{Name: "data/good", Typeflag: tar.TypeReg, Mode: 0o644, Size: 2}); err != nil {
+	writer := tarsums.NewWriter(&buf)
+	if err := writer.WriteHeader(&tar.Header{Name: "data/good", Typeflag: tar.TypeReg, Mode: 0o644, Size: 2, Uid: os.Getuid(), Gid: os.Getgid()}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := writer.Write([]byte("ok")); err != nil {
 		t.Fatal(err)
 	}
-	// Not closed: the archive ends mid-stream, which is what a transfer that
-	// lost its connection looks like from here.
-	truncated := buf.Bytes()[:buf.Len()-1]
-
-	if err := runtime.ImportTree(t.Context(), "sbx-partial", bytes.NewReader(truncated)); err == nil {
-		t.Fatal("a truncated archive was accepted")
+	if err := writer.WriteHeader(&tar.Header{Name: "data/second", Typeflag: tar.TypeReg, Mode: 0o644, Size: 3, Uid: os.Getuid(), Gid: os.Getgid()}); err != nil {
+		t.Fatal(err)
 	}
-	// Half a tree would be adopted by a create as readily as a whole one.
-	if _, err := os.Stat(runtime.sandboxRoot("sbx-partial")); !os.IsNotExist(err) {
-		t.Fatalf("the partial tree was left behind: %v", err)
+	if _, err := writer.Write([]byte("two")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	whole := buf.Bytes()
+
+	for name, tc := range map[string]struct {
+		archive []byte
+		want    error
+	}{
+		// The connection dropped inside a file's body.
+		"cut inside a file": {whole[:512+1], io.ErrUnexpectedEOF},
+		// The connection dropped between two files. A plain tar reader ends
+		// here cleanly, so without the SHA256SUMS this archive restored as a
+		// tree with one file missing and nothing to say so.
+		"cut between files": {whole[:1024], tarsums.ErrIncomplete},
+		// Every file arrived and only the checksums did not.
+		"cut before the checksums": {whole[:2048], tarsums.ErrIncomplete},
+		"a byte flipped": {func() []byte {
+			flipped := bytes.Clone(whole)
+			flipped[512] ^= 0xff
+			return flipped
+		}(), tarsums.ErrMismatch},
+	} {
+		t.Run(name, func(t *testing.T) {
+			runtime, _ := treeFixture(t)
+			if err := runtime.ImportTree(t.Context(), "sbx-partial", bytes.NewReader(tc.archive)); !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			// Half a tree would be adopted by a create as readily as a whole one.
+			if _, err := os.Stat(runtime.sandboxRoot("sbx-partial")); !os.IsNotExist(err) {
+				t.Fatalf("the partial tree was left behind: %v", err)
+			}
+		})
 	}
 }
 

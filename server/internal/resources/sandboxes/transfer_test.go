@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/sandboxexport"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/tarsums"
 )
 
 // treeProvider records what an import handed the pool, and when: the ordering
@@ -118,7 +121,7 @@ func configuredHarness(t *testing.T, st *store.Store, slug, name string) *model.
 func exportArchive(t *testing.T, mutate func(*sandboxexport.Manifest), files map[string]string) []byte {
 	t.Helper()
 	var tree bytes.Buffer
-	writer := tar.NewWriter(&tree)
+	writer := tarsums.NewWriter(&tree)
 	for name, content := range files {
 		if err := writer.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))}); err != nil {
 			t.Fatal(err)
@@ -333,6 +336,62 @@ func TestImportRefusesBeforeTheTreeIsUploaded(t *testing.T) {
 	}
 }
 
+// An archive that lost its tail reads, to a plain tar reader, as a smaller
+// workspace. The import refuses it as the uploader's mistake, and creates no
+// discobox around what did arrive.
+func TestImportRefusesAnArchiveWithoutItsChecksums(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	archive := exportArchive(t, nil, map[string]string{"data/a": "alpha", "data/b": "beta"})
+
+	// Every member but the last, rewritten as a well-formed tar: exactly what a
+	// stream cut at a member boundary looks like.
+	var stripped bytes.Buffer
+	writer := tar.NewWriter(&stripped)
+	reader := tar.NewReader(bytes.NewReader(archive))
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if header.Name == sandboxexport.SumsName {
+			continue
+		}
+		body, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.WriteHeader(header); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(stripped.Bytes()), services.SandboxImportOptions{})
+	var status interface{ StatusCode() int }
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
+		t.Fatalf("err = %v, want a 400: the archive is what is wrong, not the pool", err)
+	}
+	if !strings.Contains(err.Error(), "SHA256SUMS") {
+		t.Errorf("err = %q; it should say what was missing", err)
+	}
+	sandboxes, err := st.ListSandboxes(ctx, "project-1", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sandboxes) != 0 {
+		t.Errorf("%d discoboxes were created from an incomplete archive", len(sandboxes))
+	}
+}
+
 func TestImportRefusesANameThisProjectAlreadyUses(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
@@ -477,7 +536,7 @@ func TestExportManifestIsValidJSON(t *testing.T) {
 func emptyTar(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := tar.NewWriter(&buf).Close(); err != nil {
+	if err := tarsums.NewWriter(&buf).Close(); err != nil {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
@@ -486,10 +545,12 @@ func emptyTar(t *testing.T) []byte {
 func tarNames(t *testing.T, archive []byte) []string {
 	t.Helper()
 	var names []string
-	reader := tar.NewReader(bytes.NewReader(archive))
+	// Through tarsums, so the tree handed to the pool has to carry a SHA256SUMS
+	// that matches it, and the sums themselves are not listed as a file.
+	reader := tarsums.NewReader(bytes.NewReader(archive))
 	for {
 		header, err := reader.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

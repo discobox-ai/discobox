@@ -292,7 +292,7 @@ not a second way to bring a sandbox into being.
 
 | | Route | Shape |
 | --- | --- | --- |
-| `ExportSandbox` | `GET .../sandboxes/{id}/export` | streams `manifest.json` + `tree/` as one tar |
+| `ExportSandbox` | `GET .../sandboxes/{id}/export` | streams `manifest.json` + `tree/` + `SHA256SUMS` as one tar |
 | `ImportSandbox` | `POST .../sandboxes/import` | consumes one, answers with the sandbox and its warnings |
 
 Both are hand-wired in `internal/server/sandbox_transfer.go` rather than
@@ -300,6 +300,11 @@ declared in the OpenAPI contract, for the reason the git proxy is: the body is
 an unbounded opaque stream. The archive format is
 [`internal/sandboxexport`](../../sandboxexport), read and written by the server
 alone, so the CLI only ever moves bytes.
+
+A `.dbox` whose `SHA256SUMS` is missing or does not match surfaces from
+`Provider.ImportTree`, because the tree is streamed to the pool as it is read,
+and is answered as a 400 about the archive rather than an error about the pool
+(ADR 0123 §8). No row is created: the failure lands before `createSandboxIntent`.
 
 - **The manifest carries `model.SandboxManifest` whole**, not a chosen subset.
   That struct is already the complete answer to "does this describe the

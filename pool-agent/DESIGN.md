@@ -311,17 +311,22 @@ What travels is `data`, `sources`, and `origins`, and the list is the decision.
 what they hold is this pool's: sentinels minted here, a harness document naming
 this pool's proxy.
 
+- Both directions are `tarsums` archives: the tree ends with a `SHA256SUMS`
+  written only by a walk that finished, and a restore refuses a tree whose sums
+  are missing or wrong (ADR 0123 §8). That is what tells a whole tree from one
+  cut short between two files, which a plain tar reader cannot.
 - `export` refuses a running sandbox before a byte is written, so "it is running"
   is a status rather than a truncated archive. It walks while the caller reads,
-  so a failure part way through arrives as an unexpected EOF — which is what an
-  incomplete tar is. A file whose length changed between the walk that sized it
+  so a failure part way through cannot be a status: the handler aborts the
+  connection, and the archive never gets its `SHA256SUMS`. A file whose length changed between the walk that sized it
   and the read that sends it is one of those failures: the entry's header is
   written by then, so the body cannot change length, and ending the archive is
   better than shipping a git pack with a zero tail that is discovered from
   inside the destination sandbox. A file that *vanished* is padded instead —
   cache files come and go, and failing an export over one would be absurd.
 - `import` refuses a tree this pool already holds, and removes what it wrote if
-  the restore fails. Half a tree would be adopted by a create as readily as a
+  the restore fails — including a restore whose `SHA256SUMS`, checked at the
+  end, did not match. Half a tree would be adopted by a create as readily as a
   whole one, and the sandbox would come up missing files nobody can name.
 - Every write in a restore goes through an `os.Root` opened on the sandbox tree,
   which resolves each path component beneath it and refuses one that leaves.
