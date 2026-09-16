@@ -72,6 +72,9 @@ func (a *App) newSandboxCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxRepairCommand())
 	cmd.AddCommand(a.newSandboxUpgradeCommand())
 	cmd.AddCommand(a.newSandboxResourcesCommand())
+	cmd.AddCommand(a.newSandboxExportCommand())
+	cmd.AddCommand(a.newSandboxImportCommand())
+	cmd.AddCommand(a.newSandboxTransferCommand())
 	return cmd
 }
 
