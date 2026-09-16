@@ -1,6 +1,7 @@
 package sandboxruntime
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -193,6 +194,12 @@ type Runtime interface {
 	// only once the data is gone: the control plane's delete is confirmed
 	// rather than accepted (ADR 0022 §3).
 	DeleteSandbox(ctx context.Context, sandboxID string) error
+	// ExportTree streams the sandbox's durable tree as a tar archive, and
+	// ImportTree restores one for a sandbox this pool does not hold yet. They
+	// are the two halves of moving a discobox between servers (ADR 0123), and
+	// they deal only in the tree: neither touches a container.
+	ExportTree(ctx context.Context, sandboxID string) (io.ReadCloser, error)
+	ImportTree(ctx context.Context, sandboxID string, tree io.Reader) error
 	// SyncKnownPools reaps the agent-created footprint (sandbox containers and
 	// host data/proxy subtrees) of any pool on this shared host daemon whose ID
 	// is not in knownPoolIDs. It is how a shared-daemon (local docker) setup
@@ -2237,6 +2244,9 @@ type MemorySandboxRuntime struct {
 	archived        map[string]struct{}
 	gitRepositories map[string]map[string]string
 	gitOrigins      map[string]map[string]string
+	// trees stands in for the durable tree on disk: the tar bytes a sandbox was
+	// imported with, handed back by an export.
+	trees map[string][]byte
 }
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
@@ -2245,6 +2255,7 @@ func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 		archived:        map[string]struct{}{},
 		gitRepositories: map[string]map[string]string{},
 		gitOrigins:      map[string]map[string]string{},
+		trees:           map[string][]byte{},
 	}
 }
 
@@ -2330,7 +2341,53 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 	defer r.mu.Unlock()
 	delete(r.sandboxes, sandboxID)
 	delete(r.archived, sandboxID)
+	delete(r.trees, sandboxID)
 	return nil
+}
+
+// ExportTree hands back whatever tree this sandbox was imported with, and an
+// empty archive for one that was created here: there is no disk to walk, so
+// what an export means for this runtime is exactly what an import put in.
+func (r *MemorySandboxRuntime) ExportTree(_ context.Context, sandboxID string) (io.ReadCloser, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if sb, ok := r.sandboxes[sandboxID]; ok && sb.Status == StatusRunning {
+		return nil, ErrSandboxRunning
+	}
+	tree, ok := r.trees[sandboxID]
+	if !ok {
+		if _, known := r.sandboxes[sandboxID]; !known {
+			if _, archived := r.archived[sandboxID]; !archived {
+				return nil, ErrNotFound
+			}
+		}
+		tree = emptyTarArchive()
+	}
+	return io.NopCloser(bytes.NewReader(tree)), nil
+}
+
+func (r *MemorySandboxRuntime) ImportTree(_ context.Context, sandboxID string, tree io.Reader) error {
+	data, err := io.ReadAll(tree)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.trees[sandboxID]; ok {
+		return ErrTreeExists
+	}
+	if _, ok := r.sandboxes[sandboxID]; ok {
+		return ErrTreeExists
+	}
+	r.trees[sandboxID] = data
+	return nil
+}
+
+// emptyTarArchive is a valid tar with no members.
+func emptyTarArchive() []byte {
+	var buf bytes.Buffer
+	_ = tar.NewWriter(&buf).Close()
+	return buf.Bytes()
 }
 
 func (r *MemorySandboxRuntime) SyncKnownPools(context.Context, []string) error {

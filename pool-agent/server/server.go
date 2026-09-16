@@ -69,6 +69,7 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 	router.Group(func(protected chi.Router) {
 		protected.Use(authenticator.Middleware)
 		registerSandboxGitRoutes(protected, handler)
+		registerSandboxTreeRoutes(protected, handler)
 		registerSandboxProxyRoutes(protected, handler)
 		protected.Mount("/", generated)
 	})

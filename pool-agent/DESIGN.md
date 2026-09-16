@@ -28,7 +28,7 @@ from the in-sandbox `sandbox-agent` API.
 | `githttp` | `git http-backend` CGI bridge behind the `git-repositories`/`git-origins` routes, run as the repository's owner. |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
-| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
+| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server, including the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, and the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
@@ -297,6 +297,50 @@ the strength of the response (ADR 0022 §§3, 5-6).
 The marker is what makes retained data legible as retained. On disk an archived
 sandbox and one whose container was lost out of band are the same shape, and
 only the marker separates "held by intent" from "garbage awaiting the reaper".
+
+### The durable tree travels
+
+`GET`/`PUT .../sandboxes/{id}/tree` (`sandboxruntime/tree.go`) are the two halves
+of moving a discobox to another server (ADR 0123). They deal only in the tree:
+neither touches a container, and neither is wrapped in the `autoStart` latch the
+git routes use — everything about both assumes nothing is running.
+
+What travels is `data`, `sources`, and `origins`, and the list is the decision.
+`config` and `secrets` are written in full by the create that follows a restore
+(`writeSandboxHarnessConfig`, `refreshSourcesReady`, `writeSandboxSecrets`), and
+what they hold is this pool's: sentinels minted here, a harness document naming
+this pool's proxy.
+
+- `export` refuses a running sandbox before a byte is written, so "it is running"
+  is a status rather than a truncated archive. It walks while the caller reads,
+  so a failure part way through arrives as an unexpected EOF — which is what an
+  incomplete tar is. A file whose length changed between the walk that sized it
+  and the read that sends it is one of those failures: the entry's header is
+  written by then, so the body cannot change length, and ending the archive is
+  better than shipping a git pack with a zero tail that is discovered from
+  inside the destination sandbox. A file that *vanished* is padded instead —
+  cache files come and go, and failing an export over one would be absurd.
+- `import` refuses a tree this pool already holds, and removes what it wrote if
+  the restore fails. Half a tree would be adopted by a create as readily as a
+  whole one, and the sandbox would come up missing files nobody can name.
+- Every write in a restore goes through an `os.Root` opened on the sandbox tree,
+  which resolves each path component beneath it and refuses one that leaves.
+  That is the containment, and a check on the entry's name cannot be: the entry
+  that escapes is a symlink an earlier entry in the same archive created, so its
+  name is entirely inside the tree while the file it names is not. A symlink is
+  still written verbatim, target and all — it is resolved inside the sandbox,
+  where the tree is mounted elsewhere — and is safe to write because nothing
+  here follows it.
+- An entry naming anything outside those three subtrees is refused as well, for
+  a different job: keeping an archive from carrying a `config/sandbox.json` or a
+  `.discobox-archived` over what the create is about to write.
+- Sockets, fifos and device nodes are skipped: a sandbox's home routinely holds
+  the first two and none of them survive the process that made them. Hard links
+  are stored once and referenced afterwards, because a pnpm store linked into
+  several `node_modules` would otherwise multiply an export by its link factor.
+
+Restoring leaves exactly the shape an archived sandbox has, so the ordinary
+create adopts it the way an unarchive does.
 
 The runtime rebuilds any container whose recorded spec fingerprint no longer
 matches the one the control plane sent, which covers image upgrades and every
