@@ -307,38 +307,86 @@ func exportDefaultFileName(sandbox *apimodel.Sandbox) string {
 //
 // The body is written as it arrives rather than buffered: a workspace is
 // routinely larger than the machine running this would like to hold.
+//
+// A file is written as `<name>.partial` beside the destination and renamed
+// only once the whole body has arrived, so the name the user asked for never
+// holds half an archive. The server aborts the response when an export fails
+// part way, which is what makes "the whole body arrived" knowable here without
+// opening the archive; the archive's SHA256SUMS is what the server checks on
+// import (ADR 0123 §8).
 func (a *App) exportSandboxTo(ctx context.Context, projectID, sandboxID, destination string, stdout, stderr io.Writer) error {
+	if destination == "-" {
+		resp, err := a.openSandboxExport(ctx, projectID, sandboxID)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if _, err := io.Copy(stdout, resp.Body); err != nil {
+			return fmt.Errorf("export discobox: %w", err)
+		}
+		return nil
+	}
+
+	// Refused before the export starts, rather than after it has been
+	// downloaded: an export names its file after the discobox, so the obvious
+	// second run of the same command would otherwise overwrite the first one's
+	// archive.
+	if err := refuseExistingExport(destination); err != nil {
+		return err
+	}
 	resp, err := a.openSandboxExport(ctx, projectID, sandboxID)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	writer := stdout
-	if destination != "-" {
-		// O_EXCL: an export names its file after the discobox, so the obvious
-		// second run of the same command would otherwise overwrite the first
-		// one's archive without saying so.
-		file, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
-		if err != nil {
-			if errors.Is(err, os.ErrExist) {
-				return fmt.Errorf("%s already exists; name another file with -o", destination)
-			}
-			return err
-		}
-		defer file.Close()
-		writer = file
-		// Said before the copy, not after: an export is gigabytes, and a
-		// redirect of stdout gets nothing without -o -, so the file this is
-		// filling is otherwise invisible until it finishes.
-		fmt.Fprintf(stderr, "Exporting to %s…\n", destination)
-	}
-	written, err := io.Copy(writer, resp.Body)
+	partial := destination + ".partial"
+	// O_EXCL: two exports to one name would otherwise interleave in one file.
+	file, err := os.OpenFile(partial, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists, left by an export that is running or did not finish; remove it or name another file with -o", partial)
+		}
+		return err
+	}
+	// Said before the copy, not after: an export is gigabytes, and a
+	// redirect of stdout gets nothing without -o -, so the file this is
+	// filling is otherwise invisible until it finishes.
+	fmt.Fprintf(stderr, "Exporting to %s…\n", destination)
+	written, err := writeExportFile(file, resp.Body)
+	if err == nil {
+		err = refuseExistingExport(destination)
+	}
+	if err == nil {
+		err = os.Rename(partial, destination)
+	}
+	if err != nil {
+		_ = os.Remove(partial)
 		return fmt.Errorf("export discobox: %w", err)
 	}
-	if destination != "-" {
-		fmt.Fprintf(stderr, "Exported %s to %s\n", formatByteSize(written), destination)
+	fmt.Fprintf(stderr, "Exported %s to %s\n", formatByteSize(written), destination)
+	return nil
+}
+
+// writeExportFile copies the export into file and closes it, reporting a
+// failure of the copy, the flush, or the close alike: an archive that did not
+// reach the disk whole is not an export.
+func writeExportFile(file *os.File, body io.Reader) (int64, error) {
+	written, err := io.Copy(file, body)
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return written, err
+}
+
+func refuseExistingExport(destination string) error {
+	if _, err := os.Lstat(destination); err == nil {
+		return fmt.Errorf("%s already exists; name another file with -o", destination)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }

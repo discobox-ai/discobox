@@ -144,6 +144,40 @@ func TestExportWritesTheArchiveToAFile(t *testing.T) {
 	}
 }
 
+// A server that aborts the export part way leaves nothing under the name the
+// user asked for, and no leftover to block the retry.
+func TestExportThatFailsPartWayLeavesNoFile(t *testing.T) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/export") {
+			w.Header().Set("Content-Type", exportMediaType)
+			_, _ = w.Write(make([]byte, 4096))
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(transferSandboxJSON("sbx_1", "my-box", "stopped")))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	destination := filepath.Join(dir, "my-box.dbox")
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse, projectID: "project-1"}
+	var stderr bytes.Buffer
+	if err := app.exportSandboxTo(context.Background(), "project-1", "sbx_1", destination, io.Discard, &stderr); err == nil {
+		t.Fatal("an export the server aborted was reported as written")
+	}
+	if strings.Contains(stderr.String(), "Exported") {
+		t.Errorf("stderr = %q; a failed export must not say it succeeded", stderr.String())
+	}
+	left, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("files left behind: %v", left)
+	}
+}
+
 func TestExportDefaultFileNameUsesTheDiscoboxName(t *testing.T) {
 	sandbox := decodeSandbox(t, transferSandboxJSON("sbx_1", "my-box", ""))
 	if got := exportDefaultFileName(sandbox); got != "my-box.dbox" {
