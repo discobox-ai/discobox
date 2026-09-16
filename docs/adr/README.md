@@ -184,3 +184,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0127](0127-the-opencode-harness-runs-opencode-1.md) | The opencode harness runs opencode 1 | Accepted |
 | [0128](0128-a-private-remote-source-is-fetched-with-a-credential-the-client-lends.md) | A private remote source is fetched with a credential the client lends | Proposed |
 | [0129](0129-the-sandbox-agent-reads-the-tree-an-export-carries.md) | The sandbox agent reads the tree an export carries, and the image says what of it stays behind | Accepted |
+| [0130](0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md) | An audit record is read where it was written, and names its attestor | Proposed |

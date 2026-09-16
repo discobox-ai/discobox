@@ -1,0 +1,288 @@
+# 0130 — An audit record is read where it was written, and names its attestor
+
+- **Status**: Proposed
+- **Date**: 2026-09-16
+- **Relates to**: [ADR 0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md),
+  whose closing paragraph — "nothing in the sandbox is a place to keep a record
+  about the sandbox" — is the trust boundary this draws a line along, and whose
+  verdict trail this makes readable.
+  [ADR 0081](0081-project-events-are-not-persisted-and-the-wait-polls.md) dropped
+  the one table that looked like a general audit log; this does not bring it
+  back.
+  [ADR 0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) §3
+  owns the ephemeral sentinel that §3 here declines to store.
+
+## Context
+
+Four sandbox-scoped trails exist, in three databases, and one of them is
+reachable from the CLI.
+
+**The proxy trail** is the richest and the least reachable.
+`proxy/internal/audit` writes `http_exchanges` and `socks_connects` to a
+pool-local SQLite database at `layout.ProxyAuditDB(project, pool)`, keyed by the
+mTLS client ID, which is the sandbox ID. A row carries method, URL, host,
+status, duration, block decision and reason, cache state, the applied rewrite
+rule, redacted headers, byte counts, and the names of body and upgraded-stream
+spool files on the same disk. Retention is 48h and deliberately survives sandbox
+deletion. The read side is written and tested — `ControlHandler` serves
+`GET /audit/http`, `/audit/socks`, `/audit/dropped`, and
+`/audit/http/{id}/{request-body|response-body|stream}` behind a PASETO v4.public
+token for audience `discobox-proxy-control` with scope `audit:read`, refusing a
+token whose `sandbox_id` does not match the `client_id` being read. None of it
+runs: `pool-agent/proxyagent` sets no `Control` config, and
+`proxy.CreateControlToken` has no caller outside tests.
+
+**The verdict trail** is on trusted ground and unreadable.
+`credential_verdicts` (ADR 0091) lives in the control-plane database, outlives
+its sandbox, and holds the argv, the judge's reason, the full prompt, the role
+and the latency for every credential this control plane ever issued.
+`Store.ListCredentialVerdicts` exists and says of itself: "Nothing in this
+repository serves it over HTTP yet."
+
+**The harness hook trail** is reachable and is not evidence.
+`harness_hook_logs` in the sandbox-agent database collects `SessionStart`,
+`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`,
+`SubagentStop` and `Stop` with their raw provider payloads, which is a per-tool-call
+record of what the agent did. `discobox admin hooks logs` reads it through the
+control plane's reverse proxy, filtered by terminal and limit.
+
+**The exec trail** is half-reachable. `exec_events` (`exec.created`,
+`exec.started`, `exec.stop.requested`, `exec.start.failed`, `exec.attach.opened`
+and the rest) and `exec_log_chunks` (compressed transcripts, 14-day retention,
+ADR 0028) sit beside the hooks. `list-sandbox-exec-logs` has a CLI command;
+`list-sandbox-exec-events` has an API operation and no CLI command at all.
+
+Three facts shape what can be built on these.
+
+**Two of the four are editable by their own subject.** ADR 0091 established it
+and the reasoning has not changed: the sandbox-agent database is `root:root
+0644`, the agent has sudo, and the hook socket is `0666`, so any process in the
+sandbox can forge a hook row and root in the sandbox can rewrite any of them.
+Both trails also die with their sandbox. The proxy and verdict trails are
+written on the far side of a boundary the sandbox cannot cross, and both outlive
+it.
+
+**No single database can hold all four.** The proxy trail is pool-local by
+construction — the spool files it names are on the pool's disk, and the volume
+is every HTTP request every sandbox makes. The hook and exec trails are
+sandbox-local and already proxied on demand. Only the verdict trail is
+control-plane state, and it is small precisely because it is one row per
+credential use.
+
+**The two trusted trails do not meet.** The proxy knows a sentinel was swapped
+into a request — `swapSecrets` traces it as a span — and records nothing about
+it beyond adding the affected header names to the redaction set. So "every
+outbound request that spent grant X" is unanswerable, which is the question the
+verdict trail exists to make askable and the proxy trail holds the other half
+of.
+
+## Decision
+
+**Audit records are read from where they were written. The control plane fans
+out, merges, and labels; it copies nothing. Every row names the party that
+attested it, and a swapped request records the use it spent.**
+
+### 1. Each source stays where it is, and the server fans out
+
+`discobox audit` is one CLI surface over four readers, not one table. The
+control plane queries the proxy control API on the pool, the sandbox-agent
+through the reverse proxy it already runs, and its own database directly, then
+merges by timestamp.
+
+The merge is the control plane's because it is the only party that can see all
+four and the only one that knows which sandboxes a caller may read. Nothing is
+copied forward: a copy would need its own retention, its own migration and its
+own answer to what happens when the copy and the original disagree, and for the
+proxy trail it would mean replicating every HTTP request every sandbox makes
+into the control-plane database.
+
+Fan-out has a real cost and it is accepted: a pool that is down or a sandbox
+that is deleted makes part of the answer unavailable. The CLI reports the
+unreachable source by name rather than returning a short answer that looks
+complete. A trail that silently omits what it could not reach is worse than one
+that says so.
+
+### 2. Every row carries its attestor, and the CLI never mixes them silently
+
+Each record is labeled with who vouches for it:
+
+- `control-plane` — credential verdicts. Written on trusted ground on the call
+  that mints a value; the sandbox cannot reach the row.
+- `pool` — proxy HTTP and SOCKS rows. Written by the pool proxy from what
+  crossed the wire; the sandbox cannot reach the row.
+- `sandbox` — harness hooks and exec events. Written inside the sandbox, by a
+  process the sandbox controls, into a database the sandbox can rewrite.
+
+The distinction is a field on the record and a column in the default output, not
+a footnote in the documentation. A `sandbox`-attested row is a diagnostic: it
+says what a cooperating agent reported, which is useful and is not evidence. Put
+the three side by side with no marking and the interface launders the third into
+the other two.
+
+`--attestor` filters on it, and `--trusted` is the shorthand for excluding
+`sandbox`.
+
+### 3. A swapped request records the use it spent, by ID and never by sentinel
+
+`proxy/internal/secrets.ResolveResult` gains a `UseID`, the `Swapper` carries it
+from the resolver through its cache onto `Result`, and the audit row gains
+`SwappedUseIDs`. `pool-agent/proxyagent`'s resolver fills it from the activation
+it already looked up to translate the ephemeral sentinel — `secretResolver.activation`
+returns the record with `UseID` on it, and today the field is read for its
+`Stable` and `ExpiresAt` and discarded.
+
+This is the join. With it, one use ID reaches the verdict that authorized a
+command and every request that actually spent the credential, from two trails
+that no operator could previously line up by hand — the proxy row's timestamp
+and host are not enough to distinguish two uses of the same credential minutes
+apart.
+
+**The ID, never the sentinel.** An ephemeral sentinel is a bearer token for five
+minutes (ADR 0031 §3's use clock): anything holding it can take the real
+credential from the proxy until it lapses. Writing it into a database that keeps
+rows for 48h to be read later puts a live credential into the artifact whose
+whole purpose is to be read after the fact. The stable sentinel is worse — it
+does not expire, and ADR 0031 withholds it from the sandbox for exactly that
+reason. The use ID authorizes nothing; it only names.
+
+The field is plural because one request can swap more than one sentinel: Git
+sends a username and a password in one `Authorization: Basic` token, and
+`swapEncoded` resolves each half independently.
+
+A swap from an ordinary injected sentinel — the reactive path, with no agent
+credentials protocol behind it — has no use to name and leaves the field empty.
+The row still records that a swap happened, through the redaction it forces. The
+asymmetry is the truth: only a credential taken through the protocol has an
+approved use at all.
+
+### 4. The pool trail is read through the control API that already exists
+
+`pool-agent/proxyagent` sets `Control.ListenAddress` **and**
+`Control.TrustPublicKey`, and the control plane mints per-request tokens with
+`CreateControlToken`, scoped to the sandbox being read. No new protocol and no
+new listener design: the authorization model was built for this.
+
+Both settings, not either. `newControlAuthenticator` returns a nil
+authenticator for an empty trust key and `Middleware` then passes every request
+through, so an address configured without a key is an unauthenticated audit API
+rather than a closed one. Setting one without the other is a misconfiguration
+the pool must not be able to express.
+
+That model did not hold when this was written, and how it failed is worth
+recording. `controlAuthenticator.authorize` compared a token's `sandbox_id`
+against the request's `client_id` only when the request sent one, so a
+sandbox-scoped token that simply omitted `client_id` read every sandbox's rows —
+and, through `handleControlHTTPArtifact`, their spooled request and response
+bodies. It survived because nothing serves the control API, which is the same
+reason §3's `use_id` would have shipped on top of it.
+
+The fix is that a sandbox-scoped token **narrows** the read rather than being
+compared against it, and that it narrows in the middleware rather than in each
+handler. Per-handler narrowing would have been correct on the day and wrong on
+the day after: the hole was a check a route could decline to trigger, and
+repairing it with a call every future route must remember to make reproduces the
+shape of the bug. Rewriting `client_id` once, where every route already passes,
+leaves no request shape that can express the unnarrowed read.
+
+### 5. What the CLI surfaces
+
+`discobox audit` is promoted out of `admin`. Reading what an agent did with a
+credential is a user-facing security question, not an operator's debugging aid.
+
+```
+discobox audit list  [--since] [--source] [--attestor] [--trusted] [-f]
+discobox audit http  [--host] [--status] [--blocked] [--use-id] [--body ID]
+discobox audit creds [--denied] [--use-id] [--prompt]
+discobox audit hooks [--provider] [--event]
+```
+
+Two mechanical gaps close with it. `audit.QueryOptions` carries `ClientID`,
+`Host`, `UseID` and `Limit`, and grows a time bound and an `after_id` cursor,
+because a `--follow` that re-fetches the last hundred rows on every tick is not
+a tail. `list-harness-hooks` grows the same.
+
+### 6. Everything a sandbox wrote is display data
+
+The argv, the facts block, the judge's reason, and every hook payload are text
+composed inside a sandbox. ADR 0090 §3 and ADR 0091's consequences already say
+this for the verdict; it holds for the whole surface, and the audit CLI is where
+it is most likely to be forgotten, because its output is the thing most likely
+to be piped into another agent. Rendered as data, never as instruction, by the
+control plane and by anything reading the trail downstream.
+
+## Alternatives rejected
+
+**Copy all four trails into one control-plane audit table.** The obvious shape,
+and the one that makes `--follow` and the merge trivial. Rejected on the proxy
+trail alone: it is every HTTP request every sandbox makes, it names spool files
+that exist only on the pool's disk, and copying it would mean either shipping
+those files too or keeping rows whose artifacts cannot be fetched. The hook and
+exec trails add the second problem — a copy has to win a race against sandbox
+deletion for every sandbox forever, which is the same reasoning ADR 0091 used to
+reject pulling verdicts out of the sandbox.
+
+**Revive `project_events` as the audit log.** ADR 0081 dropped it, and its
+reasoning holds: a full JSON serialization of every mutated resource, written
+unconditionally, indexed six ways and read by nothing. Sandbox lifecycle history
+is worth having and is a different thing from this — it is an intent trail, not
+an observation trail, and it should be designed for the question it answers
+rather than resurrected because a table used to exist. Out of scope here.
+
+**Store the ephemeral sentinel on the audit row instead of the use ID.** It is
+what the proxy has in hand without touching the resolver contract, and it joins
+to the activation directly. Rejected: see §3. It is a live bearer token and the
+audit database is the wrong place for one.
+
+**Record the join on the control plane instead, by having the proxy report each
+swap.** Keeps the pool trail unchanged and puts the join where the verdict
+already is. Rejected: it is a second write path from the pool to the control
+plane on the hot request path, for information the proxy is already writing a
+row about. The row it is already writing is the right place.
+
+**Let the CLI talk to each source directly.** No fan-out in the server, no merge
+to maintain. Rejected: it would put the pool's address, the sandbox's address
+and a proxy control token in the client, which moves the authorization decision
+about which sandboxes a caller may read out of the control plane and into
+whatever the client chooses to send.
+
+**Present one merged stream with no attestor column.** Simpler output, and the
+records genuinely are about the same sandbox. Rejected: see §2. This is the
+whole reason the sandbox-side records are cheap to collect, and hiding it is how
+a forged hook row ends up quoted as evidence.
+
+**Fix the custody problem first, then build the CLI.** ADR 0091's closing note
+calls for sandbox-side records to move to append-only remote storage, which
+would collapse §2's three attestors into one. Rejected as a precondition: it is
+a larger piece of work than this, the two trusted trails are readable without
+it, and labeling the untrusted ones honestly is what makes shipping before it
+safe. It stays deferred, and §2's attestor field is what a later change would
+flip from `sandbox` to `pool` per source as custody moves.
+
+## Consequences
+
+- `proxy/internal/secrets.ResolveResult` grows a field, so every `Resolver`
+  implementation compiles unchanged and only `pool-agent/proxyagent` fills it. A
+  resolver that does not is not wrong; it is one with no uses to name.
+- `http_exchanges` gains a column, deliberately unindexed: the only query that
+  reads it matches one element of a comma-joined list, which is an expression
+  with a leading wildcard and cannot use a B-tree index, so an index would be
+  write cost on the schema's highest-volume table and nothing else. The scan is
+  bounded in practice by `client_id`, which is indexed and which every real
+  caller sends. AutoMigrate adds the column; rows written before it carry an
+  empty value, which reads as "no use recorded" rather than "no credential
+  spent" — for a row predating the column those are indistinguishable, and the
+  window is bounded by the 48h retention.
+- Pool proxies start serving a control API on a listener that did not exist
+  before. It is authenticated, read-only, and refuses cross-sandbox reads, but
+  it is new surface on the pool and should bind loopback or the pool-internal
+  interface only.
+- A `--follow` over four sources is four polls at four cadences. The proxy trail
+  is the high-volume one and the others are quiet; nothing here makes any of
+  them a push.
+- The verdict trail becomes readable by whoever can read the project, which is
+  the point and is also the first time a judge's full prompt leaves the
+  database. It contains the facts block and the argv, both composed inside the
+  sandbox, and neither contains a credential value — ADR 0091 §4 makes that
+  structural rather than a matter of filtering.
+- `discobox admin hooks logs` moves to `discobox audit hooks`. It is an admin
+  debug command with no compatibility promise.
