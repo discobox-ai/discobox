@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	dockerclient "github.com/moby/moby/client"
+
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
@@ -100,8 +102,10 @@ type Driver struct {
 	streams      StreamSink
 	progress     sandbox.PoolProgressReporter
 
-	mu  sync.Mutex
-	vms map[string]*guestVM
+	mu       sync.Mutex
+	vms      map[string]*guestVM
+	wake     *vzvm.WakeMonitor
+	wakeDone chan struct{}
 }
 
 // guestVM is one running VM plus the control-plane channel that makes it
@@ -133,7 +137,7 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	if cfg.VCPUs < 0 || cfg.MemoryMiB < 0 || cfg.DataDiskGiB < 0 || cfg.CacheDiskGiB < 0 {
 		return nil, errors.New("vz: sizing values must not be negative")
 	}
-	return &Driver{
+	d := &Driver{
 		guest:        cfg.Guest,
 		stateDir:     filepath.Clean(cfg.StateDir),
 		size:         vmsize.Size{VCPUs: cfg.VCPUs, MemoryMiB: cfg.MemoryMiB},
@@ -143,12 +147,27 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		streams:      cfg.ControlPlaneStreams,
 		progress:     cfg.ProgressReporter,
 		vms:          map[string]*guestVM{},
-	}, nil
+	}
+	wake, err := vzvm.NewWakeMonitor()
+	if err != nil {
+		// The guest timer remains the fallback. A registration failure is visible
+		// here rather than silently disabling the wake fast path.
+		slog.Warn("cannot observe macOS wake for vz clock sync", "error", err)
+	} else {
+		d.wake = wake
+		d.wakeDone = make(chan struct{})
+		go d.syncClocksOnWake()
+	}
+	return d, nil
 }
 
 // Close tears down every VM. Unlike libkrun's launcher there is nothing to
 // leave running for the next process to adopt: the VMs belong to this one.
 func (d *Driver) Close() error {
+	if d.wake != nil {
+		d.wake.Close()
+		<-d.wakeDone
+	}
 	d.mu.Lock()
 	running := d.vms
 	d.vms = map[string]*guestVM{}
@@ -157,6 +176,78 @@ func (d *Driver) Close() error {
 		guest.close()
 	}
 	return nil
+}
+
+// syncClocksOnWake uses the host's existing Docker-over-vsock connection.
+// That connection has no time-bounded control token, so it still works when
+// the guest is far enough behind to reject every pool-agent API request.
+func (d *Driver) syncClocksOnWake() {
+	defer close(d.wakeDone)
+	for range d.wake.Events() {
+		d.mu.Lock()
+		poolIDs := make([]string, 0, len(d.vms))
+		for poolID := range d.vms {
+			poolIDs = append(poolIDs, poolID)
+		}
+		d.mu.Unlock()
+
+		var wg sync.WaitGroup
+		for _, poolID := range poolIDs {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := d.syncGuestClock(ctx, poolID); err != nil {
+					slog.Warn("cannot sync vz guest clock after macOS wake", "pool_id", poolID, "error", err)
+				}
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+func (d *Driver) syncGuestClock(ctx context.Context, poolID string) error {
+	lease, err := d.AcquireDockerClient(ctx, poolID)
+	if err != nil {
+		return err
+	}
+	defer lease.Release()
+
+	// The pool agent is privileged and shares the guest kernel clock. Unlike a
+	// pool-agent HTTP request, Docker exec needs no PASETO token. Read the
+	// host-backed RTC inside the exec so Docker startup delays cannot make the
+	// timestamp stale before the guest steps its clock.
+	exec, err := lease.Client.ExecCreate(ctx, dockerworker.ContainerName(poolID), dockerclient.ExecCreateOptions{
+		User: "0", Privileged: true,
+		Cmd: []string{"/bin/sh", "-ec", `exec /bin/date -u -s "@$(cat /sys/class/rtc/rtc0/since_epoch)"`},
+	})
+	if err != nil {
+		return fmt.Errorf("create guest clock step: %w", err)
+	}
+	if _, err := lease.Client.ExecStart(ctx, exec.ID, dockerclient.ExecStartOptions{Detach: true}); err != nil {
+		return fmt.Errorf("start guest clock step: %w", err)
+	}
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		result, err := lease.Client.ExecInspect(ctx, exec.ID, dockerclient.ExecInspectOptions{})
+		if err != nil {
+			return fmt.Errorf("inspect guest clock step: %w", err)
+		}
+		if !result.Running {
+			if result.ExitCode != 0 {
+				return fmt.Errorf("guest clock step exited with code %d", result.ExitCode)
+			}
+			slog.Info("synced vz guest clock after macOS wake", "pool_id", poolID)
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
