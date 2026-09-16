@@ -75,7 +75,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # copied into an image, and all of which is a network fetch this build would
 # not be able to pin. The release's own statically linked musl tarball is the
 # thing that does: one binary, no runtime, the same on every base.
-ARG FRESH_VERSION=v0.4.10
+ARG FRESH_VERSION=v0.5.1
 RUN set -eux \
     && case "$TARGETARCH" in \
         amd64) fresh_target=x86_64-unknown-linux-musl ;; \
