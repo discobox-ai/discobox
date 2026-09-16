@@ -142,7 +142,12 @@ costs a source push rather than a pool.
 The guest steps its clock to the host's every 30s (`vm-image`'s
 `discobox-timesync.timer`), reading `/sys/class/rtc/rtc0/since_epoch` —
 Virtualization.framework's PL031 RTC is the host's clock, live, so this needs
-no NTP server and no network.
+no NTP server and no network. The VZ driver also observes macOS's system wake
+notification through IOKit and immediately steps each running VM's clock by
+executing `date` in its privileged pool-agent container over Docker's VSOCK
+connection. That connection has no time-bounded token, so it works even when
+the pool-agent API rejects control-plane tokens because of clock skew. The
+guest timer remains the fallback when wake notification or Docker exec fails.
 
 It is not optional bookkeeping. Linux reads the RTC once at boot, and nothing
 tells the guest that the Mac suspended, so a laptop that sleeps wakes a guest
