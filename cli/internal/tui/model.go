@@ -15,6 +15,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,9 +49,24 @@ const (
 
 // Model is the launcher window.
 type Model struct {
-	// unreachable is the registered servers the last listing was missing, as
-	// last reported; see reportUnreachable.
-	unreachable string
+	// unreachable is the servers the last listing was missing, as last
+	// reported, and unreachableIsPrimary whether that report was about the
+	// primary and so went out as an error. Both are what a repeat is measured
+	// against; see reportUnreachable.
+	unreachable          string
+	unreachableIsPrimary bool
+
+	// The three things the window re-reads on the beat, each one at a time:
+	// the listing, the machine readout, and the credential inbox. See poll.
+	//
+	// The listing and the inbox are asked for by actions as well as by the
+	// beat — an archive, an approval — so both send the follow-up a skipped
+	// read earns. The readout is the beat's alone: a skipped one is simply the
+	// next tick's, and re-reading a slow machine back to back would be churn
+	// nobody is waiting on.
+	listPoll    poll
+	readoutPoll poll
+	inboxPoll   poll
 
 	ctx context.Context
 	ds  DataSource
@@ -229,13 +245,17 @@ type Model struct {
 	// selection there has to be one typing replaces. See ADR 0088 §2.
 	promptCapture bool
 	// clicks counts a run of presses on one cell, so the second press on a row
-	// can mean "open it" where the first meant "point at it". now is the clock
-	// it is counted against, replaceable so a test can decide what is one
-	// gesture and what is two.
+	// can mean "open it" where the first meant "point at it".
 	clicks         int
 	clickX, clickY int
 	clickAt        time.Time
-	now            func() time.Time
+	// now is the clock the window counts elapsed time against: the
+	// double-click window above, and how long a read has been out (see poll),
+	// which is what decides whether the band says the listing is late. One
+	// clock rather than one per reader, so a test that replaces it moves both
+	// — a fake that jumps an hour a press, for two presses that mean two
+	// gestures, also means every read it takes is late.
+	now func() time.Time
 
 	// hoverX and hoverY are where the pointer is resting, so a control can be
 	// drawn as live before it is pressed. Off the window until it has moved
@@ -528,6 +548,67 @@ func (m *Model) exit(err error) tea.Cmd {
 // — so the window follows the server rather than waiting to be told.
 const refreshEvery = 5 * time.Second
 
+// listingSlowAfter is how long a refresh may be out before the window says it
+// is still listing: one refresh apart, so what is called late is a refresh
+// still out when the next one was due — the point at which the rows on screen
+// have stopped keeping up. Anything quicker than that is an ordinary poll and
+// is worth saying nothing about; a threshold shorter than a refresh would put
+// the band up and take it down again on every cycle against a server that is
+// merely not local, which is the always-on indicator this is written to avoid.
+//
+// A registered server slow enough to matter is named where its rows go
+// (Listing.Waiting) rather than here; this is the whole listing being late,
+// which is what a window with one server has instead.
+const listingSlowAfter = refreshEvery
+
+// poll is one thing the window re-reads on the beat: when the request still
+// out was sent, and whether another read was asked for while it was out.
+//
+// One at a time is the rule all three follow. A second request while the first
+// has not landed asks a server that is not answering to answer twice, and
+// against one that has stopped it is how a window open for an hour ends up
+// holding hundreds of them. The rule lives here rather than as a flag beside
+// each load because the three copies it replaced had already drifted apart:
+// one of them dropped the read an action asked for, and one called a refresh
+// late that had gone out a moment earlier.
+type poll struct {
+	// since is when the request still out was sent, zero when none is.
+	since time.Time
+	// again records a read asked for while one was out. The answer in flight
+	// was taken before the asking, so it does not answer it.
+	again bool
+}
+
+// start reports whether to send a request now, recording that another was
+// wanted when one is already out.
+func (p *poll) start(now time.Time) bool {
+	if !p.since.IsZero() {
+		p.again = true
+		return false
+	}
+	p.since, p.again = now, false
+	return true
+}
+
+// landed takes the answer, and reports whether a read asked for while it was
+// out is still owed. Whoever acts on that sends exactly one more, however many
+// were asked for.
+func (p *poll) landed() bool {
+	p.since = time.Time{}
+	owed := p.again
+	p.again = false
+	return owed
+}
+
+// late reports whether the request still out has been out longer than after.
+// It is elapsed time rather than a timer firing, because nothing ties a timer
+// to the request that armed it: one left over from a request that landed in
+// milliseconds would otherwise pass judgement on whatever is out when it goes
+// off, and every coalesced follow-up arms another.
+func (p *poll) late(now time.Time, after time.Duration) bool {
+	return !p.since.IsZero() && now.Sub(p.since) >= after
+}
+
 func (m *Model) tick() tea.Cmd {
 	return tea.Tick(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
 }
@@ -539,16 +620,33 @@ func (m *Model) loadSession() tea.Cmd {
 	}
 }
 
+// refresh re-reads the listing, unless one is already out — then it is asked
+// for again the moment that one lands (poll.landed). A second request while
+// the first has not landed asks a server that is not answering to answer
+// twice, and against one that has stopped it is how a window open for an hour
+// ends up holding hundreds of them; but dropping it outright would lose the
+// read an action asked for, since the answer already in flight was taken
+// before the action happened.
 func (m *Model) refresh() tea.Cmd {
-	return func() tea.Msg {
-		listing, err := m.ds.List(m.ctx)
-		return listLoadedMsg{listing: listing, err: err}
+	if !m.listPoll.start(m.now()) {
+		return nil
 	}
+	return tea.Batch(
+		func() tea.Msg {
+			listing, err := m.ds.List(m.ctx)
+			return listLoadedMsg{listing: listing, err: err}
+		},
+		tea.Tick(listingSlowAfter, func(time.Time) tea.Msg { return listingSlowMsg{} }),
+	)
 }
 
 // loadResources rides the same beat as refresh but is its own command, so a
-// machine readout that fails or is slow costs the listing nothing.
+// machine readout that fails or is slow costs the listing nothing. One at a
+// time, for the reason refresh is.
 func (m *Model) loadResources() tea.Cmd {
+	if !m.readoutPoll.start(m.now()) {
+		return nil
+	}
 	return func() tea.Msg {
 		resources, err := m.ds.Resources(m.ctx)
 		if err != nil {
@@ -579,6 +677,10 @@ type resourcesLoadedMsg struct {
 }
 
 type tickMsg struct{}
+
+// listingSlowMsg comes due listingSlowAfter after a refresh went out, and says
+// nothing on its own: whether the refresh is still out is what decides.
+type listingSlowMsg struct{}
 
 type statusMsg struct {
 	text string
@@ -698,18 +800,36 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return cmd
 
 	case resourcesLoadedMsg:
+		// The follow-up a skipped read earns is not taken here; see the fields.
+		m.readoutPoll.landed()
 		m.resources = msg.resources
 		m.list.resources = msg.resources
 		return nil
 
+	case listingSlowMsg:
+		// What decides is how long the refresh that is out has been out, not
+		// that this timer went off: the timer may belong to a refresh that
+		// landed long ago. See poll.late.
+		m.list.slow = m.listPoll.late(m.now(), listingSlowAfter)
+		return nil
+
 	case listLoadedMsg:
+		m.list.slow = false
+		// Whatever was asked for while this was out is asked for now, on an
+		// answer that is known to be older than the asking.
+		var again tea.Cmd
+		if m.listPoll.landed() {
+			again = m.refresh()
+		}
 		if msg.err != nil {
-			return m.report(true, "cannot list discoboxes: %v", msg.err)
+			return tea.Batch(again, m.report(true, "cannot list discoboxes: %v", msg.err))
 		}
 		m.list.setAll(msg.listing.Sandboxes)
 		// The servers that did not answer, so their sections say so rather
 		// than their rows simply being missing.
 		m.list.setUnreachable(msg.listing.Unreachable)
+		// And the ones it is still asking, which say so where their rows go.
+		m.list.setWaiting(msg.listing.Waiting)
 		// The rows are replaced wholesale, so the marks are stamped back onto
 		// them: the two reads land independently and either can be the later.
 		m.list.setPending(m.requests)
@@ -718,7 +838,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// are exactly the ones something is already sitting in.
 		m.opts.setSources(m.list.sources())
 		m.layout()
-		return m.reportUnreachable(msg.listing.Unreachable)
+		return tea.Batch(again, m.reportUnreachable(msg.listing.Unreachable))
 
 	case secretsLoadedListMsg:
 		return m.secretsLoaded(msg)
@@ -727,14 +847,21 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.secretActed(msg)
 
 	case credentialsLoadedMsg:
+		// An approval or a denial re-reads the inbox itself, to take the
+		// request it just answered out of it; if the beat's read was out at
+		// the time, that read goes now.
+		var again tea.Cmd
+		if m.inboxPoll.landed() {
+			again = m.loadCredentialRequests()
+		}
 		if msg.err != nil {
 			// Reported quietly: the inbox is polled, and a window that shouts
 			// every five seconds about a server it cannot reach is a window
 			// you stop reading.
-			return nil
+			return again
 		}
 		m.setCredentialRequests(msg.requests)
-		return nil
+		return again
 
 	case secretsLoadedMsg:
 		if msg.err != nil {
@@ -1085,23 +1212,39 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 // reaches for it without thinking.
 const repaintKey = "ctrl+l"
 
-// reportUnreachable says which registered servers the list is missing, once,
-// when that changes (ADR 0116 §4). The list is polled, and a window that
-// repeats the same complaint every refresh is a window you stop reading — but
-// rows that vanish with nothing said look like discoboxes that are gone.
+// reportUnreachable says which servers the list is missing, once, when that
+// changes (ADR 0116 §4). The list is polled, and a window that repeats the
+// same complaint every refresh is a window you stop reading — but rows that
+// vanish with nothing said look like discoboxes that are gone.
+//
+// The primary among them is an error rather than a note, and so stays on
+// screen: everything else the window does is its — creating a discobox, the
+// harnesses, the secrets, the credential inbox — and each of those fails on
+// its own while it is down. A line said once, quietly, underneath all of that
+// would read as the smaller problem, when it is the reason for the rest.
 func (m *Model) reportUnreachable(servers []string) tea.Cmd {
+	// The primary is the name the session lists first (ADR 0116 §4). A window
+	// with one server lists none, and reports that server's failure as the
+	// listing's own error rather than through here.
+	primaryDown := len(m.session.Servers) > 0 && slices.Contains(servers, m.session.Servers[0])
+	// Said again when the level changes as well as when the names do. The
+	// first listing can land before the session says which server is the
+	// primary — a refused connection comes back while the session is still
+	// asking git what branch this is — so the window's opening report about a
+	// primary that was never up would otherwise be a note, once, and the level
+	// never looked at again.
 	names := strings.Join(servers, ", ")
-	if names == m.unreachable {
+	if names == m.unreachable && primaryDown == m.unreachableIsPrimary {
 		return nil
 	}
-	m.unreachable = names
+	m.unreachable, m.unreachableIsPrimary = names, primaryDown
 	switch len(servers) {
 	case 0:
 		return nil
 	case 1:
-		return m.report(false, "%s is not answering, so its discoboxes are not listed", names)
+		return m.report(primaryDown, "%s is not answering, so its discoboxes are not listed", names)
 	default:
-		return m.report(false, "%s are not answering, so their discoboxes are not listed", names)
+		return m.report(primaryDown, "%s are not answering, so their discoboxes are not listed", names)
 	}
 }
 

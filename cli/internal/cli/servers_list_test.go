@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -417,6 +419,203 @@ func TestLauncherListsEveryServerAndRoutesToIt(t *testing.T) {
 	if len(listing.Sandboxes) != 1 || !reflect.DeepEqual(listing.Unreachable, []string{"beta"}) {
 		t.Fatalf("List() with beta down = %+v", listing)
 	}
+}
+
+// hangingServer is a server that takes the connection and then thinks about
+// it forever, counting what it was asked. Its requests are released before it
+// is closed, so a test never waits on one it is done with.
+func hangingServer(t *testing.T) (*httptest.Server, func() int) {
+	t.Helper()
+	gone := make(chan struct{})
+	var asked atomic.Int64
+	// The port probe is not a client; see ignoringPortProbe.
+	server := httptest.NewServer(ignoringPortProbe(func(_ http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		select {
+		case <-gone:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(gone) })
+	return server, func() int { return int(asked.Load()) }
+}
+
+// A server that hangs holds nothing up: the poll comes back with what the
+// other servers said, and the next one does not stack a second request onto
+// the server that has not finished the first.
+func TestLauncherDoesNotWaitOnAServerThatHangs(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	primary := fakeServer(t, "alpha", sandboxA)
+	hanging, asked := hangingServer(t)
+	registerForTest(t, registeredServer{Name: "beta", Address: hanging.URL})
+
+	ds := launcherDataSource(t, primary.URL)
+	started := time.Now()
+	listing, err := ds.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	// Its patience, and the slack a loaded test machine needs — nothing near
+	// the leash the request itself is on (pollTimeout).
+	if waited := time.Since(started); waited > listPatience+5*time.Second {
+		t.Fatalf("List() waited %s on a server that hangs, want no longer than its patience", waited.Round(time.Millisecond))
+	}
+	if len(listing.Sandboxes) != 1 || listing.Sandboxes[0].ID != sandboxA {
+		t.Fatalf("List() = %+v, want the server that answered", listing.Sandboxes)
+	}
+	// Not "not answering": it has not failed, it has not answered yet, and the
+	// window says those two differently.
+	if len(listing.Unreachable) != 0 {
+		t.Fatalf("List() reported %v unreachable while it was still being asked", listing.Unreachable)
+	}
+	if !reflect.DeepEqual(listing.Waiting, []string{"beta"}) {
+		t.Fatalf("List().Waiting = %v, want the server it is still asking", listing.Waiting)
+	}
+
+	for range 3 {
+		listing, err := ds.List(context.Background())
+		if err != nil {
+			t.Fatalf("List() error = %v", err)
+		}
+		if !reflect.DeepEqual(listing.Waiting, []string{"beta"}) {
+			t.Fatalf("List().Waiting = %v, want the request still in flight", listing.Waiting)
+		}
+	}
+	if got := asked(); got != 1 {
+		t.Fatalf("the hanging server was asked %d times, want the one request still in flight", got)
+	}
+}
+
+// slowServer answers, eventually: a server that takes longer than a poll waits
+// is not a server whose answer stops being wanted.
+func slowServer(t *testing.T, name string, answerIn time.Duration, sandboxIDs ...string) *httptest.Server {
+	t.Helper()
+	answers := fakeServerHandler(name, sandboxIDs...)
+	// The port probe is not a client; see ignoringPortProbe.
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(answerIn):
+		case <-r.Context().Done():
+			return
+		}
+		answers.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// A server slower than a poll's patience is listed when it answers, not cut
+// off at the patience and never listed at all: the poll gives up on it, the
+// request does not, and the poll after it draws what came back.
+func TestASlowServerIsListedWhenItAnswers(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	primary := fakeServer(t, "alpha", sandboxA)
+	slow := slowServer(t, "beta", listPatience*2, sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: slow.URL})
+
+	ds := launcherDataSource(t, primary.URL)
+	listing, err := ds.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(listing.Sandboxes) != 1 || !reflect.DeepEqual(listing.Waiting, []string{"beta"}) {
+		t.Fatalf("List() = %+v, want the primary's row and beta still being asked", listing)
+	}
+
+	deadline := time.Now().Add(30 * time.Second)
+	for !time.Now().After(deadline) {
+		listing, err := ds.List(context.Background())
+		if err != nil {
+			t.Fatalf("List() error = %v", err)
+		}
+		if len(listing.Sandboxes) == 2 {
+			return
+		}
+		if len(listing.Unreachable) > 0 {
+			t.Fatalf("a server that was answering was reported as %v", listing.Unreachable)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatal("a server that answered late was never listed")
+}
+
+// The same for the only server there is, which the window does wait for:
+// there is nothing to draw without it, so it is waited on however long it
+// takes rather than cut off with an error it did not earn.
+func TestTheOnlyServerIsWaitedForHoweverSlowItIs(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	slow := slowServer(t, "alpha", listPatience*2, sandboxA)
+
+	ds := launcherDataSource(t, slow.URL)
+	started := time.Now()
+	listing, err := ds.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(listing.Sandboxes) != 1 {
+		t.Fatalf("List() = %+v, want the discobox the server answered with", listing)
+	}
+	if waited := time.Since(started); waited < listPatience {
+		t.Fatalf("List() came back in %s without waiting for the answer", waited.Round(time.Millisecond))
+	}
+}
+
+// The primary is a server like the others here: one that is down is reported
+// as not answering, and the rest of the servers are the listing. A window that
+// blanked every server because one of them went away would be a window that
+// one bad server takes down.
+func TestLauncherKeepsListingWhenThePrimaryIsDown(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	down := deadServer(t)
+	other := fakeServer(t, "beta", sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+
+	ds := launcherDataSource(t, down)
+	listing, err := ds.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() with the primary down error = %v, want the other servers listed", err)
+	}
+	if len(listing.Sandboxes) != 1 || listing.Sandboxes[0].Server != "beta" {
+		t.Fatalf("List() = %+v, want beta's discobox", listing.Sandboxes)
+	}
+	if len(listing.Unreachable) != 1 || listing.Unreachable[0] == "beta" {
+		t.Fatalf("List().Unreachable = %v, want the primary named", listing.Unreachable)
+	}
+}
+
+// With one server there is no listing without it, so its failure is the
+// listing's failure — what a window with one server has always reported.
+func TestLauncherWithOneServerReportsItsFailure(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	ds := launcherDataSource(t, deadServer(t))
+	if ds.servers != nil {
+		t.Fatalf("one server was set up as %d", len(ds.servers))
+	}
+	if _, err := ds.List(context.Background()); err == nil {
+		t.Fatal("List() with the only server down reported no error")
+	}
+}
+
+// launcherDataSource is the window's data source aimed at a primary, the way
+// runTUI builds one.
+func launcherDataSource(t *testing.T, serverURL string) *apiDataSource {
+	t.Helper()
+	app := &App{serverURL: serverURL, projectID: "project-1", source: "."}
+	client, err := app.apiClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds, err := newAPIDataSource(context.Background(), app, client, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ds
 }
 
 // A registration records the peer ID the server gives, which is what

@@ -47,6 +47,24 @@ type sandboxList struct {
 	// says why rather than looking like discoboxes that are gone.
 	unreachable []string
 
+	// waiting are the servers the last listing was still asking, which get the
+	// same section saying so. A server slow enough to be named here has
+	// already kept the poll waiting; one that answers on time is never
+	// mentioned, which is what keeps this from being a spinner that is always
+	// on.
+	waiting []string
+
+	// slow is whether the refresh itself is late — still out when the next one
+	// was due (listingSlowAfter). It is what a window with one server has
+	// instead of the sections above: there is no other server's rows to draw
+	// and no name to put the note under, so the band says it.
+	slow bool
+
+	// loaded is whether a listing has ever landed here. Until one has, an
+	// empty list is a question rather than an answer, and the invitation to
+	// create the first discobox is an answer.
+	loaded bool
+
 	// Visual mode, lifted from discobox-review's diff: V anchors here, moving
 	// extends the range, and a command acts on the whole of it.
 	visual bool
@@ -87,6 +105,7 @@ func newSandboxList(session Session) *sandboxList {
 // while something starts up would otherwise move the cursor onto a different
 // sandbox between the key press and the action.
 func (l *sandboxList) setAll(all []Sandbox) {
+	l.loaded = true
 	var onID string
 	if s := l.current(); s != nil {
 		onID = s.ID
@@ -155,6 +174,11 @@ func (l *sandboxList) setUnreachable(servers []string) {
 	l.unreachable = append(l.unreachable[:0], servers...)
 }
 
+// setWaiting takes the servers the last listing was still asking.
+func (l *sandboxList) setWaiting(servers []string) {
+	l.waiting = append(l.waiting[:0], servers...)
+}
+
 // grouped reports whether the list is drawn as one section per server, which
 // it is once there is more than one server on screen to tell apart. With one —
 // because there is one, or because the header is filtered to one — naming it
@@ -168,12 +192,25 @@ func (l *sandboxList) grouped() bool {
 // only the one it is filtered to. A note about a server whose discoboxes are
 // not on screen anyway is a note about somewhere else.
 func (l *sandboxList) missing() []string {
-	if l.server == "" {
-		return l.unreachable
+	return onlyServer(l.unreachable, l.server)
+}
+
+// waitingOn is the servers still being asked, filtered the way missing is: a
+// server whose rows would not be on screen anyway is somewhere else.
+func (l *sandboxList) waitingOn() []string {
+	return onlyServer(l.waiting, l.server)
+}
+
+// onlyServer is names as a list filtered to one server has to say them: all of
+// them when it is showing every server, and otherwise only the one it is
+// filtered to.
+func onlyServer(names []string, server string) []string {
+	if server == "" {
+		return names
 	}
-	for i, name := range l.unreachable {
-		if name == l.server {
-			return l.unreachable[i : i+1]
+	for i, name := range names {
+		if name == server {
+			return names[i : i+1]
 		}
 	}
 	return nil
@@ -185,7 +222,7 @@ func (l *sandboxList) missing() []string {
 // schedules, so a server can be missing from a list the window does not yet
 // know is grouped, and it is still missing.
 func (l *sandboxList) sectioned() bool {
-	return l.grouped() || len(l.missing()) > 0
+	return l.grouped() || len(l.missing()) > 0 || len(l.waitingOn()) > 0
 }
 
 // section is where a server's rows go: the order the session lists its
@@ -456,6 +493,14 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	}
 	rows := l.rows()
 	right := plural(len(rows), "box", "boxes")
+	// A refresh out longer than the window waits before saying so takes the
+	// count's place: the count is exactly what is being refreshed, and this is
+	// the one place a window with one server has to say it. Nothing is drawn
+	// here on an ordinary refresh, which is the point — an indicator that is
+	// always on says nothing when it matters.
+	if l.slow {
+		right = "still listing"
+	}
 	// The marks are worth a press of their own: they are the one thing on the
 	// band that is a state you got into rather than a fact about the project,
 	// and c is how you get out of it.
@@ -505,16 +550,16 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		}
 	}
 
-	// A server that did not answer takes its line the same way the machine line
-	// and the column header take theirs: out of the budget, before the rows are
-	// drawn. Appended after them instead, it is drawn only while the rows leave
-	// room — so exactly the list the launcher is for, one longer than the
-	// window, would never say a server is missing, and nothing could scroll to
-	// it, because offset and cursor walk rows.
-	absent := l.missing()
-	missing := min(len(absent), max(rowBudget, 0))
-	rowBudget -= missing
-	bodyBudget := rowBudget + missing
+	// A server that did not answer, or has not answered yet, takes its line the
+	// same way the machine line and the column header take theirs: out of the
+	// budget, before the rows are drawn. Appended after them instead, it is
+	// drawn only while the rows leave room — so exactly the list the launcher
+	// is for, one longer than the window, would never say a server is missing,
+	// and nothing could scroll to it, because offset and cursor walk rows.
+	absent, awaited := l.missing(), l.waitingOn()
+	notes := min(len(absent)+len(awaited), max(rowBudget, 0))
+	rowBudget -= notes
+	bodyBudget := rowBudget + notes
 
 	// The cursor has to be inside the window, and what the rows above it cost
 	// is only known here: a section header is a line, and how many there are
@@ -527,7 +572,12 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	body := make([]string, 0, max(bodyBudget, 0))
 	// The invitation is for a list with nothing in it at all: rows, and the
 	// sections that say where the missing ones went, are both something drawn.
-	if len(rows) == 0 && len(absent) == 0 {
+	// It waits for the first listing rather than for a fast one — "no
+	// discoboxes here yet" is an answer about the project, and until something
+	// has landed nobody has one. After that it stays put whether or not a
+	// refresh is out: an invitation that blinked out every time a poll ran
+	// long would be the one screen a new user is reading flickering at them.
+	if l.loaded && len(rows) == 0 && len(absent) == 0 && len(awaited) == 0 {
 		body = append(body, st.dimText.Render(pad("  no discoboxes here yet — type a prompt below", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
@@ -569,6 +619,15 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 			break
 		}
 		body = append(body, l.sectionHeader(st, name, "not answering", 0))
+		l.drawn.rows = append(l.drawn.rows, -1)
+	}
+	// And the ones that have not answered yet, which is a different thing to
+	// say: their rows are on their way rather than missing.
+	for _, name := range awaited {
+		if len(body) >= bodyBudget {
+			break
+		}
+		body = append(body, l.sectionHeader(st, name, "still listing", 0))
 		l.drawn.rows = append(l.drawn.rows, -1)
 	}
 	for len(body) < bodyBudget {

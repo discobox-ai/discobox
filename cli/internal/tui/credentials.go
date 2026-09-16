@@ -79,6 +79,15 @@ type credentialAnsweredMsg struct {
 }
 
 func (m *Model) loadCredentialRequests() tea.Cmd {
+	// One at a time, like the listing and the machine readout it is polled
+	// beside: a server that is not answering collects one request rather than
+	// one every tick for as long as the window is open. An approval's own
+	// re-read is not lost to that — a read asked for while one is out goes as
+	// soon as that one lands (credentialsLoadedMsg) — because what it is for
+	// is taking the request just answered out of the inbox.
+	if !m.inboxPoll.start(m.now()) {
+		return nil
+	}
 	return func() tea.Msg {
 		requests, err := m.ds.CredentialRequests(m.ctx)
 		return credentialsLoadedMsg{requests: requests, err: err}

@@ -853,11 +853,18 @@ type Addresses struct {
 const ExecPrimary = "primary"
 
 // Listing is what one refresh of the list found: the discoboxes, and the
-// registered servers that were asked and did not answer, whose discoboxes are
-// missing from it rather than gone (ADR 0116 §4).
+// servers that were asked and did not answer, whose discoboxes are missing
+// from it rather than gone (ADR 0116 §4). The primary is one of those servers:
+// a window that polls keeps listing the servers that are up when one goes
+// down. A server that has been asked and has not answered yet is not one of
+// them — it is not known to be missing anything — it is in Waiting.
 type Listing struct {
 	Sandboxes   []Sandbox
 	Unreachable []string
+	// Waiting is the servers a poll asked and left in flight, with nothing of
+	// theirs to show meanwhile: they are slow rather than missing, which is a
+	// different thing to say and is said where their rows would be.
+	Waiting []string
 }
 
 // RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
@@ -1340,8 +1347,10 @@ type DataSource interface {
 	MarkWelcomed(ctx context.Context) error
 
 	// List is the project's sandboxes, newest-created first, across every
-	// server the window lists, with the registered servers that did not answer
-	// (ADR 0116 §4).
+	// server the window lists, with the servers that did not answer
+	// (ADR 0116 §4). It is polled, so it answers with what the servers have
+	// said rather than waiting on every one of them: the same rows may come
+	// back twice, and a server that is slow is listed when it answers.
 	List(ctx context.Context) (Listing, error)
 
 	// Resources is what Discobox has on this machine and what it is using of

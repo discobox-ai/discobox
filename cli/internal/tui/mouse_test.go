@@ -66,7 +66,12 @@ func doublePress(t *testing.T, m *Model, x, y int) *Model {
 }
 
 // slowClock makes every press its own gesture, for the tests that click twice
-// in different places and mean two single clicks.
+// in different places and mean two single clicks. It is the window's one clock
+// (Model.now), so an hour a call also makes every read the window has out late
+// the instant it goes: a test that installs this and then hands the model a
+// listingSlowMsg gets "still listing" on the band. drain will not hand it one
+// — its 20ms budget (runQuickly) drops the five-second timer that carries it —
+// so it takes delivering the message, the way servers_test.go does.
 func slowClock(m *Model) {
 	now := time.Now()
 	m.now = func() time.Time {

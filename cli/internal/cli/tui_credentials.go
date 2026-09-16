@@ -20,7 +20,14 @@ import (
 // exploiting.
 
 // CredentialRequests returns the project's pending requests, newest first.
+//
+// It is polled on the listing's beat, so it is on the same leash the listing
+// puts its requests on (pollTimeout): long enough that a slow server's answer
+// still arrives, short enough that a request which will never come back is not
+// left outstanding for the life of the window.
 func (d *apiDataSource) CredentialRequests(ctx context.Context) ([]tui.CredentialRequest, error) {
+	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
+	defer cancel()
 	res, err := d.client.ListSecretRequests(ctx, apiclientgen.ListSecretRequestsParams{
 		ProjectId: d.projectID,
 		Status:    apiclientgen.NewOptListSecretRequestsStatus(apiclientgen.ListSecretRequestsStatusPending),

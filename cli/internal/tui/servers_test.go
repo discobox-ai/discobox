@@ -40,6 +40,93 @@ func TestRunOptionsOfferAServerOnlyWhenThereIsAChoice(t *testing.T) {
 	}
 }
 
+// The window asks for one listing at a time — a tick that comes round while
+// the last one is still out asks for nothing — and a refresh asked for while
+// one was out is asked for again as soon as that one lands, so the read an
+// action wanted is not the one that gets dropped.
+func TestTheWindowAsksForOneListingAtATime(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	if m.refresh() == nil {
+		t.Fatal("the first refresh did not go out")
+	}
+	if m.refresh() != nil {
+		t.Fatal("a second refresh went out while the first was still out")
+	}
+
+	m.update(listLoadedMsg{})
+	if m.listPoll.since.IsZero() {
+		t.Fatal("the refresh asked for while one was out was dropped")
+	}
+
+	// And with nothing waiting behind it, a listing that lands leaves none out.
+	m.update(listLoadedMsg{})
+	if !m.listPoll.since.IsZero() {
+		t.Fatal("a listing landed with nothing waiting and left a refresh out")
+	}
+}
+
+// The inbox follows the same rule, and for the same reason: an approval
+// re-reads it to take the request it just answered out, and that read must not
+// be the one dropped because the beat's was in flight.
+func TestAnInboxReadAskedForWhileOneIsOutIsNotLost(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	if m.loadCredentialRequests() == nil {
+		t.Fatal("the first inbox read did not go out")
+	}
+	if m.loadCredentialRequests() != nil {
+		t.Fatal("a second inbox read went out while the first was still out")
+	}
+	if m.update(credentialsLoadedMsg{}) == nil {
+		t.Fatal("the inbox read asked for while one was out was dropped")
+	}
+}
+
+// A primary that is not answering is an error that stays on screen, not a note
+// said once: everything else the window does is the primary's, and each of
+// those failures is about to be reported on its own.
+func TestADeadPrimaryIsReportedAsAnError(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	m.session.Servers = []string{"alpha", "beta"}
+
+	m.update(m.reportUnreachable([]string{"beta"})())
+	if m.statusE {
+		t.Fatalf("a registered server that is down was reported as an error: %q", m.status)
+	}
+
+	m.update(m.reportUnreachable([]string{"alpha", "beta"})())
+	if !m.statusE {
+		t.Fatalf("a primary that is down was reported as a note: %q", m.status)
+	}
+}
+
+// A window opened against a primary that is already down hears about it before
+// the session has said which server the primary is — a refused connection
+// comes back while the session is still asking git what branch this is. The
+// level is revisited when that changes, or the one report that matters would
+// be the one made before anything knew.
+func TestADeadPrimaryBecomesAnErrorOnceTheSessionNamesIt(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	m.update(m.reportUnreachable([]string{"alpha"})())
+	if m.statusE {
+		t.Fatalf("a server was called the primary before the session named one: %q", m.status)
+	}
+
+	m.session.Servers = []string{"alpha", "beta"}
+	cmd := m.reportUnreachable([]string{"alpha"})
+	if cmd == nil {
+		t.Fatal("the same servers at a new level were not reported again")
+	}
+	m.update(cmd())
+	if !m.statusE {
+		t.Fatalf("a primary that was down all along stayed a note: %q", m.status)
+	}
+
+	// And still said once: nothing has changed now.
+	if m.reportUnreachable([]string{"alpha"}) != nil {
+		t.Fatal("the same report at the same level was made twice")
+	}
+}
+
 // A server that stops answering is said once, when it stops, and again only
 // once it has answered in between.
 func TestUnreachableServersAreReportedWhenThatChanges(t *testing.T) {
@@ -162,6 +249,102 @@ func TestUnreachableSectionsDrawBeforeTheSessionArrives(t *testing.T) {
 	}
 	if l.drawn.rows == nil {
 		t.Fatal("a body with sections in it was marked as one line per row")
+	}
+}
+
+// A server that has not answered yet is slow, not missing, and the list says
+// that where its rows would go — while every other server's rows are drawn.
+func TestAServerStillBeingAskedSaysSoWhereItsRowsGo(t *testing.T) {
+	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
+	})
+	l.setWaiting([]string{"beta"})
+
+	out := l.view(newStyles(false), &zones{}, true)
+	if !strings.Contains(out, "one") {
+		t.Fatalf("the server that answered is not listed:\n%s", out)
+	}
+	if !strings.Contains(out, "beta") || !strings.Contains(out, "still listing") {
+		t.Fatalf("view does not say beta is still being listed:\n%s", out)
+	}
+	if strings.Contains(out, "not answering") {
+		t.Fatalf("a server that is still being asked was called unreachable:\n%s", out)
+	}
+	if l.drawn.rows == nil {
+		t.Fatal("a body with sections in it was marked as one line per row")
+	}
+}
+
+// The band says a listing is slow only while one is: an indicator that is
+// always on is one nobody reads.
+func TestTheBandSaysAListingIsSlowOnlyWhileItIs(t *testing.T) {
+	l := listForTest(Session{}, []Sandbox{{ID: "sbx_a1", Name: "one", State: StateRunning}})
+	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "still listing") {
+		t.Fatalf("the band says a listing is slow when none is:\n%s", out)
+	}
+	l.slow = true
+	out := l.view(newStyles(false), &zones{}, true)
+	if !strings.Contains(out, "still listing") {
+		t.Fatalf("the band does not say the listing is slow:\n%s", out)
+	}
+
+	// A refresh being out is not what decides the invitation, though: a
+	// project that has answered "none" says so whether or not the next
+	// listing is late, or the one screen a new user reads would blink at them
+	// every time a poll ran long.
+	empty := listForTest(Session{}, nil)
+	empty.slow = true
+	if out := empty.view(newStyles(false), &zones{}, true); !strings.Contains(out, "no discoboxes here yet") {
+		t.Fatalf("a project known to be empty stopped saying so while a refresh was out:\n%s", out)
+	}
+}
+
+// Until a listing lands there is no answer about the project, so the list does
+// not offer to create the first discobox — that offer is an answer.
+func TestTheInvitationWaitsForTheFirstListing(t *testing.T) {
+	fresh := newSandboxList(Session{})
+	fresh.width, fresh.height = 100, 20
+	fresh.now = func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
+	if out := fresh.view(newStyles(false), &zones{}, true); strings.Contains(out, "no discoboxes here yet") {
+		t.Fatalf("a list with no listing yet was reported as an empty project:\n%s", out)
+	}
+
+	fresh.setAll(nil)
+	if out := fresh.view(newStyles(false), &zones{}, true); !strings.Contains(out, "no discoboxes here yet") {
+		t.Fatalf("a listing that came back empty does not offer the first discobox:\n%s", out)
+	}
+}
+
+// The window says a refresh is slow only once it has been out longer than the
+// wait, and stops the moment a listing lands. What decides is how long the
+// refresh that is out has been out: nothing ties a timer to the refresh that
+// armed it, so one left over from a refresh that landed in milliseconds must
+// not pass judgement on the one that is out when it goes off.
+func TestTheWindowSaysARefreshIsSlowAfterTheWait(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	m.update(listingSlowMsg{})
+	if m.list.slow {
+		t.Fatal("the window called a listing slow with no refresh out")
+	}
+
+	// A refresh that went out a moment ago, with a stale timer going off over
+	// it: the refresh key pressed just before the beat's timer comes due.
+	m.refresh()
+	m.update(listingSlowMsg{})
+	if m.list.slow {
+		t.Fatalf("a refresh out for no time was called late by a stale timer")
+	}
+
+	// And the same refresh, once it really has been out that long.
+	m.listPoll.since = m.now().Add(-listingSlowAfter)
+	m.update(listingSlowMsg{})
+	if !m.list.slow {
+		t.Fatal("a refresh still out after the wait was not reported")
+	}
+
+	m.update(listLoadedMsg{})
+	if m.list.slow || !m.listPoll.since.IsZero() {
+		t.Fatal("a listing that landed left the window saying it was still listing")
 	}
 }
 

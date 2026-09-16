@@ -501,8 +501,45 @@ What went is one status line; nothing to send says nothing at all.
 
 The window reads every server the CLI knows (ADR 0116 §4) and otherwise knows
 servers only by name. `List` returns a `Listing`: the rows, each with
-`Sandbox.Server` naming its server, and `Unreachable`, the registered servers
-that did not answer. Which of them is on screen is the header's to say.
+`Sandbox.Server` naming its server, and `Unreachable`, the servers that did not
+answer — the primary among them, since a window that polls goes on listing the
+servers that are up when one goes down ([ADR 0122](../../docs/adr/0122-a-window-that-polls-lists-the-servers-that-answer.md)).
+A dead primary is reported as an error rather than a note, because every other
+thing on the screen is its. A server still being asked is in
+neither, so a slow server draws no note the next poll takes back. Which of them
+is on screen is the header's to say.
+
+`List` comes back with what the servers have said, not with the answer to a
+question just asked: how that snapshot is kept, and why no one server can hold
+it up, is the data source's (`cli/DESIGN.md`, "Many Servers"). The window's part
+is that a poll is cheap and may return the same rows twice.
+
+**Slow is said, fast is silent.** There is no spinner on the listing: an
+indicator that runs on every refresh is one nobody reads, and every refresh
+against a local server is milliseconds. Two things say it instead, and they say
+different things:
+
+- `Listing.Waiting` names the servers a poll left in flight with nothing of
+  theirs to show, and each gets the section a server that did not answer gets,
+  saying `still listing` rather than `not answering` (`sandboxList.waiting`).
+  Their rows are on the way, not missing, and the two read differently.
+- `sandboxList.slow` puts `still listing` on the band where the count goes, for
+  the *whole listing* being late — still out when the next refresh was due
+  (`listingSlowAfter`, one `refreshEvery`). That is the window with one server,
+  which has no other server's rows to draw and no name to put a note under; a
+  multi-server poll comes back inside `listPatience`, so its slowness shows up
+  in the sections instead. `Model.listPoll` holds when the refresh still out
+  went — there is only ever one, see `cli/DESIGN.md` — and a `listingSlowMsg`
+  coming due asks it how long that has been (`poll.late`) rather than taking
+  its own arrival as the answer: a timer is never cancelled when a listing
+  lands early, so one left over from a refresh that landed in milliseconds
+  would otherwise judge whatever is out five seconds later.
+
+Neither of them touches the invitation to create the first discobox. That waits
+on `sandboxList.loaded`: until a listing has landed, "no discoboxes here yet" is
+an answer about the project that nobody has. Once one has, it stays put whether
+or not the next refresh is late — the one screen a new user reads must not blink
+at them every time a poll runs long.
 
 **The header can narrow the list to one server** (`server.go`,
 `sandboxList.server`). It is the folder filter's twin, drawn in front of it —

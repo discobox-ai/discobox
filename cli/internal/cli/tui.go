@@ -165,22 +165,59 @@ type apiDataSource struct {
 	located map[string]*tuiServer
 }
 
-// tuiServer is one server the window lists.
+// tuiServer is one server the window lists, and what the window knows about
+// it: what it last said, and whether it is being asked again.
 type tuiServer struct {
 	*server
 	// source is the data source aimed at this server: the window's own for the
 	// primary, and for a registered one made the first time it is asked for
 	// (sourceFor).
 	source *apiDataSource
-	// retryAt is when a registered server that did not answer is asked again.
-	// Until then its discoboxes are left out without waiting on it, so one
-	// server that is down does not slow every refresh to its timeout.
+	// asking is set while a request to this server is outstanding. A request
+	// outlives the poll that started it, so a server that is slow is asked
+	// once rather than once per tick, and its answer is drawn by whichever
+	// poll comes after it.
+	asking bool
+	// listed is what this server said the last time it answered, which is what
+	// the window goes on showing until it answers again, and answered is
+	// whether it ever has: a server with no discoboxes has answered, and is
+	// not one the window is still waiting on.
+	listed   []tui.Sandbox
+	answered bool
+	// failed is whether the last attempt ended in an error, which is what puts
+	// the server under "not answering" instead of leaving its rows on screen.
+	failed bool
+	// retryAt is when a server that did not answer is asked again. Until then
+	// it is left alone, so a server that is down is not dialed on every tick.
 	retryAt time.Time
 }
 
-// unreachableServerRetry is how long the window leaves a registered server
-// that did not answer before asking it again.
-const unreachableServerRetry = 30 * time.Second
+// unreachableServerRetry is how long the window leaves a server that did not
+// answer before asking it again. Short, because asking again costs a poll
+// nothing: a server that fails outright fails at once, and one that hangs is
+// left in flight rather than waited on (listPatience).
+const unreachableServerRetry = 10 * time.Second
+
+// pollTimeout bounds one request the window polls with, the primary's
+// included. It is a leash rather than a wait: nothing is sitting on the other
+// end of it, since a poll gives up on a slow server after listPatience and
+// draws its answer whenever it arrives. So it is long — a server that takes
+// half a minute to list is a server whose answer is still wanted when it
+// comes, and cutting it off at a listing's bound would mean it never landed at
+// all, however often it was asked. What it is for is the request that will
+// never end: without it a wedged connection would leave a server marked as
+// still being asked for the life of the window, and it would never be asked
+// again.
+//
+// A command that spans servers is the other way round — someone is waiting on
+// it — and keeps the much shorter registeredServerTimeout.
+const pollTimeout = 2 * time.Minute
+
+// listPatience is how long one poll waits for the servers it asked. A request
+// outlives the poll that started it and its answer is drawn by whichever poll
+// comes after, so waiting longer than this only keeps every other server's
+// rows off the screen while one server thinks about it.
+const listPatience = 2 * time.Second
 
 // newAPIDataSource is the window's data source: the primary's, and, when other
 // servers are registered, each of theirs beside it.
@@ -370,6 +407,12 @@ func (d *apiDataSource) SaveDraft(_ context.Context, folder, prompt string) erro
 // narrowed before it gets there.
 func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
 	if d.servers == nil {
+		// One server, so its failure is the listing's failure and there is
+		// nothing to draw without it: this is the one poll that does wait for
+		// its answer, however long the server takes. The leash is there for
+		// the request that would otherwise never end.
+		ctx, cancel := context.WithTimeout(ctx, pollTimeout)
+		defer cancel()
 		sandboxes, err := d.listHere(ctx)
 		return tui.Listing{Sandboxes: sandboxes}, err
 	}
@@ -377,58 +420,67 @@ func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
 }
 
 // listEveryServer is List across servers, asked concurrently (ADR 0116 §4).
-// The primary failing fails the listing, as it always did. A registered server
-// that fails is reported as not answering, and left alone until retryAt. A
-// discobox two servers both list is one server registered under two
+//
+// A poll is a snapshot of what every server last said, not a round trip to all
+// of them: it asks the ones that are not already being asked, waits
+// listPatience for the answers, and reports what it has. So no server — the
+// primary included — can hold the window's rows back, stack requests on itself
+// tick after tick, or take the listing down with it when it goes: one that
+// failed is reported as not answering, and the rest are the listing.
+//
+// A discobox two servers both list is one server registered under two
 // addresses, and is listed once.
 func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error) {
-	type result struct {
-		sandboxes []tui.Sandbox
-		err       error
-		skipped   bool
-	}
 	now := time.Now()
-	results := make([]result, len(d.servers))
-	var wg sync.WaitGroup
-	for i, s := range d.servers {
+	var asked sync.WaitGroup
+	for _, s := range d.servers {
 		d.mu.Lock()
-		skipped := !s.primary && now.Before(s.retryAt)
+		ask := !s.asking && !now.Before(s.retryAt)
+		if ask {
+			s.asking = true
+		}
 		d.mu.Unlock()
-		if skipped {
-			results[i].skipped = true
+		if !ask {
 			continue
 		}
-		wg.Add(1)
+		asked.Add(1)
 		go func() {
-			defer wg.Done()
-			ctx, cancel := s.bounded(ctx)
-			defer cancel()
-			source, err := d.sourceFor(ctx, s)
-			if err == nil {
-				results[i].sandboxes, err = source.listHere(ctx)
+			defer asked.Done()
+			sandboxes, err := d.listFrom(ctx, s)
+			d.mu.Lock()
+			defer d.mu.Unlock()
+			s.asking = false
+			if err != nil {
+				s.listed, s.answered, s.failed = nil, false, true
+				s.retryAt = time.Now().Add(unreachableServerRetry)
+				return
 			}
-			results[i].err = err
+			s.listed, s.answered, s.failed = sandboxes, true, false
 		}()
 	}
-	wg.Wait()
+	waitForAnswers(ctx, &asked)
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var listing tui.Listing
 	seen := map[string]bool{}
-	for i, s := range d.servers {
-		result := results[i]
-		if result.err != nil && s.primary {
-			return tui.Listing{}, result.err
-		}
-		if result.err != nil {
-			s.retryAt = now.Add(unreachableServerRetry)
-		}
-		if result.err != nil || result.skipped {
+	for _, s := range d.servers {
+		if s.failed {
 			listing.Unreachable = append(listing.Unreachable, s.name)
 			continue
 		}
-		for _, box := range result.sandboxes {
+		// A server still being asked with nothing to show is slow, not
+		// missing, and the window says so where its rows would be. It is only
+		// worth saying because a request that is still in flight here has been
+		// in flight for at least the patience this poll just spent: anything
+		// quicker than that had answered before the wait ended. A server that
+		// has rows says nothing — they are on screen, and the next poll
+		// replaces them.
+		if s.asking && !s.answered {
+			listing.Waiting = append(listing.Waiting, s.name)
+			continue
+		}
+		for _, box := range s.listed {
 			if seen[box.ID] {
 				continue
 			}
@@ -443,6 +495,36 @@ func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error
 		return listing.Sandboxes[i].Created.After(listing.Sandboxes[j].Created)
 	})
 	return listing, nil
+}
+
+// listFrom is one server's part of one poll, bounded so that it ends whether
+// or not the server answers.
+func (d *apiDataSource) listFrom(ctx context.Context, s *tuiServer) ([]tui.Sandbox, error) {
+	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
+	defer cancel()
+	source, err := d.sourceFor(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	return source.listHere(ctx)
+}
+
+// waitForAnswers waits for the requests one poll started, for listPatience.
+// What has not arrived by then arrives on its own and is drawn by the poll
+// after this one, which is why giving up here costs nothing.
+func waitForAnswers(ctx context.Context, asked *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		asked.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(listPatience)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
 }
 
 // listHere is this data source's own server's discoboxes.
@@ -477,7 +559,13 @@ func (d *apiDataSource) listHere(ctx context.Context) ([]tui.Sandbox, error) {
 // Capacity is what is dedicated to Discobox. The agent can only measure the
 // host, so the size an operator set on the pool is preferred here, where
 // both numbers are known; a size of zero means "sized by the host".
+//
+// It rides the listing's beat, so it is on the same leash the listing puts its
+// requests on (pollTimeout) rather than leaving one outstanding for the life
+// of the window against a server that has stopped answering.
 func (d *apiDataSource) Resources(ctx context.Context) (tui.Resources, error) {
+	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
+	defer cancel()
 	res, err := d.client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: d.projectID})
 	if err != nil {
 		return tui.Resources{}, err

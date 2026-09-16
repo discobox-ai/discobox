@@ -397,6 +397,54 @@ is an error rather than a lost convenience.
   under two addresses, and is listed once. `ls` gains a SERVER column, and
   each `-o json` object a `server` field, only when there is more than one
   server.
+- **The launcher's listing is a snapshot, not a round trip.** A command asks
+  once and exits; the window polls every five seconds for as long as it is
+  open, so `apiDataSource.listEveryServer` keeps what each server last said
+  (`tuiServer.listed`) and each poll asks only the servers that are not
+  already being asked (`tuiServer.asking`), waits `listPatience` for the
+  answers, and reports what it has. Five rules follow from that, and every one
+  of them is about a server that has gone quiet costing the window nothing but
+  its own rows:
+  - **Every request is on a leash, the primary included** (`pollTimeout`),
+    and the leash is long — minutes, not a listing's bound. Nothing waits on
+    it: a poll gives up after `listPatience` and draws the answer whenever it
+    lands, so a server that takes half a minute is listed half a minute later
+    rather than cut off at ten seconds and never listed at all. What the leash
+    is for is the request that will never end, which would otherwise leave a
+    server marked as still being asked for the life of the window and never
+    asked again. The polls that ride the same beat — `Resources`,
+    `CredentialRequests` — are on it too. A *command* that spans servers is
+    the other way round, someone is waiting on it, and keeps
+    `registeredServerTimeout`.
+  - **A poll never waits on a server twice.** A request outlives the poll that
+    started it and its answer is drawn by whichever poll comes after, so a
+    server that hangs costs one poll its patience and the rest nothing.
+  - **The window asks for one listing at a time**, which is where a window
+    with one server gets the same protection: `d.servers` is nil there, `List`
+    waits for the one answer there is, and it is the window that declines to
+    send a second while the first is out. All three of the window's polls —
+    the listing, the machine readout, the credential inbox — go through one
+    `poll` (`cli/internal/tui/model.go`), which holds when the request still
+    out was sent and whether another was asked for meanwhile. The listing and
+    the inbox send that follow-up when the answer lands, since an action asks
+    for both by itself — an archive, an approval — and the answer in flight was
+    taken before the action happened. The readout does not: only the beat asks
+    for it.
+  - **A server that has not answered yet is not a server that failed.** It is
+    reported in `Listing.Waiting` and the window says `still listing` where its
+    rows go, because a request still in flight at the end of a poll has
+    already outlasted that poll's patience. A server with rows already on
+    screen says nothing: they are there, and the next poll replaces them.
+  - **The primary is a server like the others here**
+    ([ADR 0122](../docs/adr/0122-a-window-that-polls-lists-the-servers-that-answer.md),
+    which supersedes ADR 0116 §4's "the primary not answering fails the
+    command" for the launcher and leaves it standing for `ls` and the picker).
+    One that fails is reported as not answering (`Listing.Unreachable`), the
+    other servers are still the listing, and the window reports *that* server
+    as an error rather than a note, since everything else it does is the
+    primary's. A window with one server keeps §4's rule: there is no listing
+    without it, so its failure is the listing's failure. A server that failed
+    is asked again after `unreachableServerRetry`.
 - **A discobox argument** goes through `selectSandbox`, which returns the App
   aimed at the discobox's server; its callers carry on with that App
   (`applySelected`, `pushSelected`, `runToolInSelected`). A
