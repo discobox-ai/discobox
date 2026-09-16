@@ -42,6 +42,7 @@ manifest.json      the spec, the image pin, the harness by name,
 tree/data/         the sandbox user's home
 tree/sources/      the workspace, git objects and all
 tree/origins/      the bare repositories of push-delivered sources
+SHA256SUMS         the SHA-256 of every file above it (§8)
 ```
 
 **The line is what survives a container rebuild.** Everything in the export is
@@ -231,6 +232,71 @@ and is undone with `discobox admin box unarchive`. Rejected too: leave the
 source running. Two boxes running the same work on two servers, both believing
 they own it, is the one outcome nobody asks for.
 
+### 8. An archive ends with its SHA256SUMS, and a reader refuses one that does not
+
+A tar cannot say it is finished. Go's tar reader ends cleanly on a stream cut
+between two members, whether or not the end-of-archive blocks are there, and an
+HTTP handler that returns after its copy failed has `net/http` end a chunked
+body cleanly too. Together they turned a walk that failed part way into a
+shorter archive: `export` reported it written, `import` restored it as a
+workspace with files missing, and a transfer then archived the source.
+
+So both archives — the `.dbox`, and the tree a pool agent sends and receives —
+end with a `SHA256SUMS` member listing every regular file before it, in the
+format GNU `sha256sum` writes. `tar xf box.dbox && sha256sum -c SHA256SUMS`
+checks an export with nothing of ours installed.
+
+**The member's own framing covers its truncation.** Its tar header states its
+length, so a stream cut inside it is an unexpected EOF, and a stream cut before
+it leaves it missing, which every reader refuses. Nothing may follow it: a
+member after the sums is one they do not cover. What the digests add on top is
+the bytes that did arrive and are wrong.
+
+**Each hop verifies before it writes its own.** The pool agent writes the
+tree's sums. The server verifies them while composing the `.dbox`, and writes
+the `.dbox`'s only once they matched; on import it verifies the `.dbox`'s and
+writes the tree's only once they matched; the pool agent verifies those and
+removes a tree that fails. No hop ever checksums bytes that already arrived
+wrong, so a failure anywhere reaches the end of the chain as a missing
+`SHA256SUMS`.
+
+**Verification happens at the end, after the files are written.** Holding a
+workspace back until it had been checked would mean holding a workspace; a
+restore that fails already removes what it wrote (§3's reasoning about half a
+tree).
+
+The streams also fail loudly rather than relying on the sums alone: a handler
+whose copy fails aborts the connection (`http.ErrAbortHandler`), and the CLI
+writes `<file>.partial` and renames it only when the whole body arrived. The
+sums are what a file someone kept is checked against; the abort is what keeps
+that file from being written as though it were whole.
+
+Rejected:
+
+- **Rely on tar's end-of-archive blocks.** Go's reader does not require them and
+  its API cannot tell their presence from a bare EOF, and they detect nothing
+  about corruption.
+- **A digest in an HTTP trailer.** It does not survive being saved, and a
+  `.dbox` is a file people keep and mail to each other.
+- **A digest in `manifest.json`.** The manifest is the first member so a reader
+  learns what it holds before the workspace arrives, and the digest is not
+  known until the workspace has been sent.
+- **One digest over the stream's raw bytes.** The server rewrites every
+  member's name on the way through (`tree/` is added on export and removed on
+  import), so it could not survive a hop, and no stock tool checks it.
+- **An end marker of our own** (a member carrying a count). It catches
+  truncation and not corruption, and it is a format nobody else can read; a
+  sums file does both in a form people already use.
+
+The costs: only regular files are listed, because they are all `sha256sum` can
+check, so a directory's or a symlink's metadata is protected against truncation
+by preceding the sums and not against alteration. A writer holds the listing in
+memory until the end — one line per file, bounded by the file count and never
+by file size. A reader holds nothing: it hashes the listing it expects from the
+members it has read and compares one digest, which also means it accepts only
+the listing a writer produces, in archive order, and refuses a hand-edited one
+rather than interpreting it.
+
 ## Consequences
 
 - **A restore is confined by `os.Root`, not by checking entry names.** An
@@ -267,6 +333,8 @@ they own it, is the one outcome nobody asks for.
   invalidating persisted state, which this repository does not do. Refusing a
   newer one is the point of the field — what an unknown addition means is the
   difference between a restored discobox and a subtly different one.
+- A root-module package, `tarsums`, is the one implementation of §8, because
+  both the pool agent and the server read and write it.
 - An export is a full copy of a workspace, including its git objects and
   anything cached in the sandbox user's home. It is not incremental and makes no
   attempt to be; the archive is uncompressed tar and compression is the user's
