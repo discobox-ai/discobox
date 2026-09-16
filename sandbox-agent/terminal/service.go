@@ -334,7 +334,12 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	s.markInstalling(created.ID)
 	defer s.unmarkInstalling(created.ID)
 	if err := s.installer.EnsureInstalled(ctx, harness, workdir, env); err != nil {
-		_ = s.execs.Delete(context.WithoutCancel(ctx), created.ID)
+		// A removal that failed leaves the record behind, and a later launch
+		// under the same id would keep its identity; say so rather than
+		// report only the install.
+		if deleteErr := s.execs.Delete(context.WithoutCancel(ctx), created.ID); deleteErr != nil {
+			return execs.Exec{}, errors.Join(err, fmt.Errorf("remove the terminal whose install failed: %w", deleteErr))
+		}
 		return execs.Exec{}, err
 	}
 	return created, nil

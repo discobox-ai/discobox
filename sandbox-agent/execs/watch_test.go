@@ -452,6 +452,13 @@ func (a *observingAudit) SaveExecRecord(_ context.Context, exec Exec) error {
 	return nil
 }
 
+func (a *observingAudit) DeleteExecRecord(_ context.Context, id string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.records, id)
+	return nil
+}
+
 func (a *observingAudit) LoadExecRecords(context.Context) ([]Exec, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

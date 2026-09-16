@@ -259,8 +259,8 @@ PID, because PIDs are reused and the pool agent differences per process.
   An observation is a read-modify-write, and asking systemd what became of a
   unit costs a D-Bus round trip, so its write is a compare-and-swap: under a
   per-exec record lock it re-reads the runtime file and drops its conclusion
-  when the record moved on — a newer unit generation, a run that settled, or a
-  file that is gone. Every in-process write to that file takes the same lock,
+  when the record moved on — a newer unit generation, a run that settled, or an
+  exec that was deleted. Every in-process write to that file takes the same lock,
   which is never held across a systemd or shim call. Stop, Relaunch and Delete
   are what it guards: each stops a unit, which is itself what makes systemd
   report the change the observation came from, so "no longer loaded" routinely
@@ -348,8 +348,18 @@ PID, because PIDs are reused and the pool agent differences per process.
   `discobox admin services logs`.
 - `execs.Manager.Stop` is not `Delete`. Stop ends the run, removes the shim's
   socket so an attach reports the session gone rather than dialing a dead one,
-  and marks the record `stopped`; Delete also discards the record and the
-  transcript. The `stopped` flag is written at the one place a stop is
+  and marks the record `stopped`; Delete also discards the record — runtime
+  file, durable `ExecRecord` and `ExecState` — and the transcript, keeping only
+  the events, which are history. A durable record left behind reads exactly
+  like an exec a reboot stranded, so it would be listed again as `lost`, and
+  since `SaveExecRecord` never overwrites, an id created again (the primary
+  terminal's is fixed) would keep the deleted exec's identity. The record goes
+  first, because it is the removal that can fail: a failed Delete leaves an
+  ended exec with its record whole, which a retry finishes. Deletion is
+  recorded on the per-exec record lock, under which the observed status row is
+  also written, so an observation or lifecycle write already in flight
+  recreates neither the file nor the row; only Create clears it. The
+  `stopped` flag is written at the one place a stop is
   requested because it cannot be inferred afterwards — a stopped process and one
   killed by a signal it did not choose leave the same record — and it is
   persisted (`ExecState.Stopped`) because the runtime file carrying it is on

@@ -350,19 +350,36 @@ func (m *fakeUnitManager) Stop(context.Context, string) error {
 // the SQLite store, for testing metadata durability/hydration.
 type recordingAudit struct {
 	records map[string]Exec
+	// observed counts status writes per exec, so a test can tell whether one
+	// landed after a deletion.
+	observed map[string]int
+	// deleteErr, when set, is what DeleteExecRecord fails with.
+	deleteErr error
 }
 
-func newRecordingAudit() *recordingAudit { return &recordingAudit{records: map[string]Exec{}} }
+func newRecordingAudit() *recordingAudit {
+	return &recordingAudit{records: map[string]Exec{}, observed: map[string]int{}}
+}
 
 func (a *recordingAudit) RecordExecEvent(context.Context, string, string, string, map[string]any) error {
 	return nil
 }
-func (a *recordingAudit) ObserveExec(context.Context, Exec) error { return nil }
+func (a *recordingAudit) ObserveExec(_ context.Context, exec Exec) error {
+	a.observed[exec.ID]++
+	return nil
+}
 func (a *recordingAudit) SaveExecRecord(_ context.Context, exec Exec) error {
 	if _, ok := a.records[exec.ID]; ok {
 		return nil // immutable
 	}
 	a.records[exec.ID] = cloneExec(exec)
+	return nil
+}
+func (a *recordingAudit) DeleteExecRecord(_ context.Context, id string) error {
+	if a.deleteErr != nil {
+		return a.deleteErr
+	}
+	delete(a.records, id)
 	return nil
 }
 func (a *recordingAudit) LoadExecRecords(context.Context) ([]Exec, error) {

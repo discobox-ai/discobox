@@ -621,3 +621,7 @@ func (sandboxAgentNoopAudit) SaveExecRecord(context.Context, execs.Exec) error {
 func (sandboxAgentNoopAudit) LoadExecRecords(context.Context) ([]execs.Exec, error) {
 	return nil, nil
 }
+
+func (sandboxAgentNoopAudit) DeleteExecRecord(context.Context, string) error {
+	return nil
+}

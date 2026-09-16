@@ -261,3 +261,137 @@ func TestExecLogChunksPruneBeyondRetention(t *testing.T) {
 		t.Fatalf("chunks = %#v, want only the fresh chunk retained", chunks)
 	}
 }
+
+// Deleting an exec's record removes its identity and observed status together,
+// so nothing reads it back, and leaves its events: those are history.
+func TestDeleteExecRecordKeepsEvents(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "harness.db"))
+	exec := execs.Exec{ID: "ex_1", Command: []string{"codex"}, Status: execs.StatusRunning, CreatedAt: time.Now().UTC()}
+	if err := st.SaveExecRecord(ctx, exec); err != nil {
+		t.Fatalf("save record: %v", err)
+	}
+	if err := st.ObserveExec(ctx, exec); err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	if err := st.DeleteExecRecord(ctx, "ex_1"); err != nil {
+		t.Fatalf("delete record: %v", err)
+	}
+	records, err := st.LoadExecRecords(ctx)
+	if err != nil {
+		t.Fatalf("load records: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("records = %#v, want none", records)
+	}
+	var states int64
+	if err := st.read.Model(&ExecState{}).Where("exec_id = ?", "ex_1").Count(&states).Error; err != nil {
+		t.Fatalf("count states: %v", err)
+	}
+	if states != 0 {
+		t.Fatalf("observed status survived the delete")
+	}
+	events, err := st.ListEvents(ctx, "ex_1", 10)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("deleting the record removed the exec's events")
+	}
+}
+
+// A store written before DeleteExecRecord existed still holds the records of
+// execs it deleted. Opening it purges those, and nothing that might be live: a
+// purge cannot be undone, so either sign of an id created again keeps it.
+func TestOpenPurgesRecordsOfDeletedExecs(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "harness.db")
+	st, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	event := func(id, typ string) {
+		if err := st.RecordExecEvent(ctx, id, typ, typ, nil); err != nil {
+			t.Fatalf("record event: %v", err)
+		}
+	}
+	// observe upserts the status row as an exec's run would, started at
+	// startedAt; a left-behind record is re-observed with its old run's start.
+	observe := func(id string, startedAt time.Time, status execs.Status) {
+		if err := st.ObserveExec(ctx, execs.Exec{ID: id, Status: status, CreatedAt: startedAt, StartedAt: &startedAt}); err != nil {
+			t.Fatalf("observe: %v", err)
+		}
+	}
+	create := func(id string) time.Time {
+		startedAt := time.Now().UTC()
+		if err := st.SaveExecRecord(ctx, execs.Exec{ID: id, Command: []string{"codex"}, CreatedAt: startedAt}); err != nil {
+			t.Fatalf("save record: %v", err)
+		}
+		event(id, "exec.created")
+		observe(id, startedAt, execs.StatusRunning)
+		return startedAt
+	}
+
+	// Deleted, then re-read from its left-behind record: neither the
+	// observation events that produced nor an attach ending is a sign of life.
+	ghostStarted := create("ex_deleted")
+	event("ex_deleted", "exec.deleted")
+	observe("ex_deleted", ghostStarted, execs.StatusLost)
+	event("ex_deleted", "exec.status.changed")
+	// Closed with a client attached: its attach ends after the deletion.
+	event("ex_deleted", "exec.attach.closed")
+	// Deleted and created again under the same id, with every event.
+	create("primary")
+	event("primary", "exec.deleted")
+	create("primary")
+	// Created again, but the exec.created write was lost: the status row,
+	// upserted from the new exec, still says so.
+	create("ex_created_quietly")
+	event("ex_created_quietly", "exec.deleted")
+	observe("ex_created_quietly", time.Now().UTC(), execs.StatusRunning)
+	// Created again, and it is the status row that never landed.
+	create("ex_observed_quietly")
+	event("ex_observed_quietly", "exec.deleted")
+	event("ex_observed_quietly", "exec.started")
+	// Never deleted.
+	create("ex_live")
+
+	// What an older agent's store looks like: the purge never ran.
+	if err := st.write.Where("key = ?", deletedExecRecordsPurgedKey).Delete(&AgentState{}).Error; err != nil {
+		t.Fatalf("clear marker: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	st = openStore(ctx, t, dbPath)
+	records, err := st.LoadExecRecords(ctx)
+	if err != nil {
+		t.Fatalf("load records: %v", err)
+	}
+	got := map[string]bool{}
+	for _, record := range records {
+		got[record.ID] = true
+	}
+	want := map[string]bool{"primary": true, "ex_created_quietly": true, "ex_observed_quietly": true, "ex_live": true}
+	if len(got) != len(want) {
+		t.Fatalf("records = %v, want %v", got, want)
+	}
+	for id := range want {
+		if !got[id] {
+			t.Fatalf("records = %v, want %v", got, want)
+		}
+	}
+	var states []ExecState
+	if err := st.read.Find(&states).Error; err != nil {
+		t.Fatalf("load states: %v", err)
+	}
+	for _, state := range states {
+		if state.ExecID == "ex_deleted" {
+			t.Fatal("the deleted exec's observed status survived the purge")
+		}
+	}
+	if len(states) != len(want) {
+		t.Fatalf("states = %d, want %d", len(states), len(want))
+	}
+}

@@ -195,6 +195,13 @@ type AuditRecorder interface {
 	// survive the loss of their tmpfs runtime files across a reboot.
 	SaveExecRecord(context.Context, Exec) error
 	LoadExecRecords(context.Context) ([]Exec, error)
+	// DeleteExecRecord removes an exec's durable record and its latest
+	// observed status, which is what Delete means by teardown. A record left
+	// behind is indistinguishable from an exec a reboot stranded, so it would
+	// be listed again as lost, and it would keep its identity for a later
+	// exec created under the same id: SaveExecRecord never overwrites. The
+	// exec's lifecycle events are history and stay.
+	DeleteExecRecord(context.Context, string) error
 }
 
 // LogChunk is one compressed batch of an exec's stdin/stdout/stderr
@@ -231,11 +238,15 @@ type Manager struct {
 	audit          AuditRecorder
 	logs           LogSink
 
-	// records serializes this process's writes to each exec's runtime file.
+	// records serializes this process's writes to each exec's runtime file,
+	// and carries whether the exec was deleted (recordLock).
 	// Every in-process writer takes it for the write, and a refresh holds it
 	// across re-read, compare and write, which is what makes the refresh a
-	// compare-and-swap rather than a check followed by a clobber. It is never
-	// held across a systemd or shim call. The shim writes the same file from
+	// compare-and-swap rather than a check followed by a clobber. The exec's
+	// observed status row is written under it too, so a deletion removes that
+	// row after every write already in flight and before any that follows. It
+	// is never held across a systemd or shim call; the store write it does
+	// cover is one row. The shim writes the same file from
 	// its own process — as it starts, once its command runs, if that command
 	// fails to start, and at its exit — and no in-process lock can cover
 	// those writes. What this lock settles is the manager against itself;
@@ -243,7 +254,19 @@ type Manager struct {
 	// write, the exit, lands before the unit it runs in can be reported
 	// stopped.
 	recordsMu sync.Mutex
-	records   map[string]*sync.Mutex
+	records   map[string]*recordLock
+}
+
+// recordLock is the lock over one exec's runtime file, and what it guards
+// besides the file.
+type recordLock struct {
+	sync.Mutex
+	// deleted marks an exec Delete tore down. An absent runtime file cannot
+	// say so — a durable record restored after a reboot has none either — and
+	// without it an observation or a lifecycle write already in flight
+	// recreates the file of an exec that no longer exists. Create clears it,
+	// because exec ids are reused: the primary terminal's is fixed.
+	deleted bool
 }
 
 type ManagerConfig struct {
@@ -297,7 +320,7 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		units:          units,
 		audit:          cfg.Audit,
 		logs:           cfg.Logs,
-		records:        map[string]*sync.Mutex{},
+		records:        map[string]*recordLock{},
 	}, nil
 }
 
@@ -444,7 +467,13 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		SocketPath:     socketPath,
 		RuntimePath:    runtimePath,
 	}
-	if err := m.writeRecord(exec); err != nil {
+	// The first write of a new exec is the one write a deletion does not
+	// refuse: the id may be one a deleted exec had, and this is a new exec.
+	record := m.lockRecord(id)
+	record.deleted = false
+	err = writeRuntime(runtimePath, exec)
+	record.Unlock()
+	if err != nil {
 		return Exec{}, err
 	}
 	// Persist the immutable identity/metadata durably before the shim starts, so
@@ -479,16 +508,14 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		current.Error = err.Error()
 		exitedAt := time.Now().UTC()
 		current.ExitedAt = &exitedAt
-		_ = m.writeRecord(current)
-		_ = m.observe(ctx, current)
+		_ = m.writeRecord(ctx, current)
 		_ = m.recordEvent(ctx, id, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
 		return current, err
 	}
 	if result.Unit != "" {
 		current.Unit = result.Unit
 	}
-	_ = m.writeRecord(current)
-	_ = m.observe(ctx, current)
+	_ = m.writeRecord(ctx, current)
 	_ = m.recordEvent(ctx, id, "exec.prepared", "exec prepared", map[string]any{"unit": current.Unit})
 	return current, nil
 }
@@ -664,9 +691,16 @@ func (m *Manager) Logs(ctx context.Context, id string) ([]LogEntry, error) {
 }
 
 // Delete stops the exec's unit, removes its runtime and socket files, and
-// deletes its durable transcript. It is used for long-lived execs (such as
-// harness terminals) that outlive a single command and must be explicitly
-// torn down.
+// deletes its durable record and transcript. It is used for long-lived execs
+// (such as harness terminals) that outlive a single command and must be
+// explicitly torn down. Its lifecycle events are kept: they are history.
+//
+// The durable record is the one removal that can fail and must be reported,
+// so it is removed before anything that would make the exec look gone: a
+// failure leaves an exec whose unit was stopped and whose record is whole,
+// which reads as ended, relaunches like any ended exec, and deletes on retry.
+// It is removed under the record lock, together with marking the deletion and
+// removing the runtime file, so no status write in flight lands after it.
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	exec, ok := m.Get(id)
 	if !ok {
@@ -676,9 +710,16 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	_ = m.recordEvent(ctx, id, "exec.stop.requested", "exec stop requested", map[string]any{"unit": exec.Unit})
-	unlock := m.lockRecord(id)
+	record := m.lockRecord(id)
+	if m.audit != nil {
+		if err := m.audit.DeleteExecRecord(ctx, id); err != nil {
+			record.Unlock()
+			return fmt.Errorf("delete exec %s record: %w", id, err)
+		}
+	}
+	record.deleted = true
 	_ = os.Remove(exec.RuntimePath)
-	unlock()
+	record.Unlock()
 	_ = os.Remove(exec.SocketPath)
 	if m.logs != nil {
 		_ = m.logs.DeleteExecLog(ctx, id)
@@ -720,10 +761,9 @@ func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 	current.AttacherCount = 0
 	current.TitleChangedAt = nil
 	current.LastAccessedAt = nil
-	if err := m.writeRecord(current); err != nil {
+	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
 	}
-	_ = m.observe(ctx, current)
 	_ = m.recordEvent(ctx, id, "exec.stopped", "exec stopped", map[string]any{"unit": current.Unit})
 	return cloneExec(current), nil
 }
@@ -742,14 +782,12 @@ func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {
 		exec.Error = err.Error()
 		exitedAt := time.Now().UTC()
 		exec.ExitedAt = &exitedAt
-		_ = m.writeRecord(exec)
-		_ = m.observe(ctx, exec)
+		_ = m.writeRecord(ctx, exec)
 		_ = m.recordEvent(ctx, id, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
 		return cloneExec(exec), err
 	}
 	current := mergeExecStatus(exec, started)
-	_ = m.writeRecord(current)
-	_ = m.observe(ctx, current)
+	_ = m.writeRecord(ctx, current)
 	_ = m.recordEvent(ctx, id, "exec.started", "exec started", map[string]any{"unit": current.Unit, "pid": current.PID})
 	return cloneExec(current), nil
 }
@@ -815,10 +853,9 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	current.Title = ""
 	current.TitleChangedAt = nil
 	current.LastAccessedAt = nil
-	if err := m.writeRecord(current); err != nil {
+	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
 	}
-	_ = m.observe(ctx, current)
 	_ = m.recordEvent(ctx, current.ID, "exec.relaunched", "exec relaunched", map[string]any{
 		"unit":    current.Unit,
 		"command": current.Command,
@@ -844,16 +881,14 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 		current.Error = err.Error()
 		exitedAt := time.Now().UTC()
 		current.ExitedAt = &exitedAt
-		_ = m.writeRecord(current)
-		_ = m.observe(ctx, current)
+		_ = m.writeRecord(ctx, current)
 		_ = m.recordEvent(ctx, current.ID, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
 		return current, err
 	}
 	if result.Unit != "" {
 		current.Unit = result.Unit
 	}
-	_ = m.writeRecord(current)
-	_ = m.observe(ctx, current)
+	_ = m.writeRecord(ctx, current)
 	_ = m.recordEvent(ctx, current.ID, "exec.prepared", "exec prepared", map[string]any{"unit": current.Unit})
 	return cloneExec(current), nil
 }
@@ -1186,7 +1221,11 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent boo
 // not query systemd a second time per exec. A nil unit means ask.
 func (m *Manager) refreshExecWithUnit(ctx context.Context, exec Exec, runtimePresent bool, unit *UnitStatus) Exec {
 	if settled(exec) {
-		_ = m.observe(ctx, exec)
+		record := m.lockRecord(exec.ID)
+		if !record.deleted {
+			_ = m.observe(ctx, exec)
+		}
+		record.Unlock()
 		return exec
 	}
 	// The record this observation is about, kept because the checks below
@@ -1263,25 +1302,24 @@ func (m *Manager) refreshExecWithUnit(ctx context.Context, exec Exec, runtimePre
 	// or is gone. Writing it anyway pins the exec at lost — a stopped service
 	// reading `failed` for the life of the sandbox — or resurrects a deleted
 	// exec as a lost one.
-	unlock := m.lockRecord(exec.ID)
-	current, ok := m.readRuntime(exec.ID)
-	switch {
-	case !ok && runtimePresent:
-		// Deleted underneath the observation. Only a caller that found a
-		// runtime file says so; a durable-only record has none by definition.
-		unlock()
+	record := m.lockRecord(exec.ID)
+	if record.deleted {
+		// Deleted underneath the observation. Neither the file nor the
+		// observed status is written back: both would resurrect it.
+		record.Unlock()
 		return exec
-	case ok && supersedes(current, observed):
-		unlock()
+	}
+	if current, ok := m.readRuntime(exec.ID); ok && supersedes(current, observed) {
 		_ = m.observe(ctx, current)
+		record.Unlock()
 		return current
 	}
 	// Written only when it actually changed. The runtime directory is watched
 	// for the shim's writes (ADR 0115 §1), and rewriting an unchanged file here
 	// would wake that watcher with this process's own echo.
 	_ = writeRuntimeIfChanged(exec.RuntimePath, exec)
-	unlock()
 	_ = m.observe(ctx, exec)
+	record.Unlock()
 	return exec
 }
 
@@ -1293,30 +1331,42 @@ func settled(exec Exec) bool {
 	return exec.Status == StatusExited || exec.Status == StatusFailed
 }
 
-// lockRecord takes the per-exec lock over the exec's runtime file and returns
-// its release. Locks are kept for the life of the process rather than removed
-// on Delete: removing one another goroutine holds would hand the next caller a
-// different lock for the same record, and an exec costs one mutex.
-func (m *Manager) lockRecord(id string) func() {
+// lockRecord takes the per-exec lock over the exec's runtime file, and returns
+// it held. Locks are kept for the life of the process rather than removed on
+// Delete: the lock is where the deletion is recorded, and removing one another
+// goroutine holds would hand the next caller a different lock for the same
+// record. An exec costs one mutex.
+func (m *Manager) lockRecord(id string) *recordLock {
 	m.recordsMu.Lock()
-	mu, ok := m.records[id]
+	record, ok := m.records[id]
 	if !ok {
-		mu = &sync.Mutex{}
-		m.records[id] = mu
+		record = &recordLock{}
+		m.records[id] = record
 	}
 	m.recordsMu.Unlock()
-	mu.Lock()
-	return mu.Unlock
+	record.Lock()
+	return record
 }
 
 // writeRecord is how a lifecycle operation — Create, Start, Stop, Relaunch —
-// records the state it just brought about. It is authoritative, so it writes
-// unconditionally; taking the record lock is what keeps a concurrent refresh
-// from landing between that refresh's re-read and its own write.
-func (m *Manager) writeRecord(exec Exec) error {
-	unlock := m.lockRecord(exec.ID)
-	defer unlock()
-	return writeRuntime(exec.RuntimePath, exec)
+// records the state it just brought about, in the runtime file and as the
+// exec's observed status. It is authoritative over a live exec, so it
+// overwrites whatever an observation left; taking the record lock is what
+// keeps a concurrent refresh from landing between that refresh's re-read and
+// its own write. It is not authoritative over a deleted one: a lifecycle
+// operation that began before the deletion finds the exec gone, and writes
+// neither the file nor the status row Delete removed.
+func (m *Manager) writeRecord(ctx context.Context, exec Exec) error {
+	record := m.lockRecord(exec.ID)
+	defer record.Unlock()
+	if record.deleted {
+		return ErrNotFound
+	}
+	if err := writeRuntime(exec.RuntimePath, exec); err != nil {
+		return err
+	}
+	_ = m.observe(ctx, exec)
+	return nil
 }
 
 // supersedes reports whether the record now on disk replaces the one an

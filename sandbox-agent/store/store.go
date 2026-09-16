@@ -67,7 +67,69 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &HarnessHookLog{}, &ExecState{}, &ExecEvent{}, &ExecRecord{}, &ExecLogChunk{}); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
+	if err := s.purgeDeletedExecRecords(ctx); err != nil {
+		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
+	}
 	return s, nil
+}
+
+const deletedExecRecordsPurgedKey = "deleted_exec_records_purged"
+
+// purgeDeletedExecRecords is the upgrade path for DeleteExecRecord. Before it
+// existed, deleting an exec left its durable record and observed status
+// behind, and every listing surfaced the deleted exec again as lost.
+//
+// A purge cannot be undone, so it takes a record only when nothing says the
+// id lived again after its last deletion, and it asks two writes that fail
+// independently. The event log: any event after the deletion counts, except
+// the three a store observation emits on its own, because those are exactly
+// what re-reading a left-behind record produced, and an attach closing,
+// because a terminal deleted with a client attached — how a tab is usually
+// closed — records its attach ending after the deletion. An attach opening
+// still counts. And the observed status row,
+// which is upserted from the live exec: a run started after the deletion is a
+// new exec under the same id. It is the start time that says so, not the
+// row's created_at, which the upsert never updates — and a left-behind record
+// re-read after its deletion carries its old run's start, or none.
+//
+// It does not repair the other half of the old behavior. An id created again
+// under the old code kept the deleted exec's identity — command, workdir and
+// metadata — because SaveExecRecord never overwrites. The event log has the
+// new command and workdir but not the metadata, and a record whose command
+// and harness disagree is worse than one that is consistently stale; such an
+// exec takes its new identity the next time it is deleted and created.
+//
+// It runs once, recorded in agent_state, in one transaction with that marker
+// so an interrupted run is simply run again.
+func (s *Store) purgeDeletedExecRecords(ctx context.Context) error {
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var done int64
+		if err := tx.Model(&AgentState{}).Where("key = ?", deletedExecRecordsPurgedKey).Count(&done).Error; err != nil {
+			return err
+		}
+		if done > 0 {
+			return nil
+		}
+		livedAgain := tx.Model(&ExecEvent{}).Select("1").
+			Table("exec_events AS later").
+			Where("later.exec_id = deleted.exec_id AND later.created_at > deleted.created_at").
+			Where("later.type NOT IN ?", []string{"exec.observed", "exec.status.changed", "exec.exited", "exec.attach.closed"})
+		recreated := tx.Model(&ExecState{}).Select("1").
+			Table("exec_states AS state").
+			Where("state.exec_id = deleted.exec_id AND state.started_at > deleted.created_at")
+		deleted := tx.Model(&ExecEvent{}).Select("deleted.exec_id").
+			Table("exec_events AS deleted").
+			Where("deleted.type = ?", "exec.deleted").
+			Where("NOT EXISTS (?)", livedAgain).
+			Where("NOT EXISTS (?)", recreated)
+		if err := tx.Where("exec_id IN (?)", deleted).Delete(&ExecRecord{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("exec_id IN (?)", deleted).Delete(&ExecState{}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&AgentState{Key: deletedExecRecordsPurgedKey, Value: "true", UpdatedAt: time.Now().UTC()}).Error
+	})
 }
 
 // Close releases the underlying database connections. The long-lived main
@@ -211,6 +273,25 @@ func (s *Store) SaveExecRecord(ctx context.Context, current execs.Exec) error {
 		CreatedAt: current.CreatedAt,
 	}
 	return s.write.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error
+}
+
+// DeleteExecRecord removes an exec's durable record and observed status
+// together. Its events stay: they are the exec's history, and the upgrade
+// path above reads them.
+func (s *Store) DeleteExecRecord(ctx context.Context, execID string) error {
+	if s == nil {
+		return nil
+	}
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return nil
+	}
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("exec_id = ?", execID).Delete(&ExecRecord{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("exec_id = ?", execID).Delete(&ExecState{}).Error
+	})
 }
 
 // LoadExecRecords returns the durable exec identity records joined with their
