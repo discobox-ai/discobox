@@ -10,6 +10,10 @@
 # needs its parent uncommented too, which is the one place a single deletion is
 # not enough. A server with no file at all behaves exactly as one always has.
 #
+# A server that starts and finds no configuration file rewrites this reference
+# beside where that file belongs, so it always matches the server that wrote
+# it. Copy it rather than editing it in place.
+#
 # Every setting can also be set by the environment variable named beside it,
 # and the environment wins over this file (ADR 0096).
 #

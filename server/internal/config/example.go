@@ -3,10 +3,16 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
 )
+
+// ExampleFileName is the reference a server writes beside the configuration
+// file it looked for and did not find.
+const ExampleFileName = "server.example.yaml"
 
 // exampleHeader introduces the generated reference file.
 const exampleHeader = `# yaml-language-server: $schema=` + SchemaID + `
@@ -20,6 +26,10 @@ const exampleHeader = `# yaml-language-server: $schema=` + SchemaID + `
 # setting's line leaves correctly indented YAML, at any depth. A nested setting
 # needs its parent uncommented too, which is the one place a single deletion is
 # not enough. A server with no file at all behaves exactly as one always has.
+#
+# A server that starts and finds no configuration file rewrites this reference
+# beside where that file belongs, so it always matches the server that wrote
+# it. Copy it rather than editing it in place.
 #
 # Every setting can also be set by the environment variable named beside it,
 # and the environment wins over this file (ADR 0096).
@@ -44,6 +54,51 @@ func ExampleYAML() ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// RefreshExample writes the reference file beside configFile, the path a
+// server looked for its configuration at and found nothing, and returns where it
+// wrote it.
+//
+// It is rewritten on every such start rather than written once, because a
+// reference left by an older server is missing whatever was added since — the
+// same drift ExampleYAML is generated to avoid. It is never written beside a
+// file that exists: an operator who has one reads their own. An unchanged
+// reference is left untouched, and a changed one is replaced by rename, so two
+// servers starting at once cannot leave half a file.
+func RefreshExample(configFile string) (string, error) {
+	body, err := ExampleYAML()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(configFile)
+	path := filepath.Join(dir, ExampleFileName)
+	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, body) {
+		return path, nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: the operator's own configuration directory, which holds nothing secret until they put it there.
+		return "", fmt.Errorf("create %s: %w", dir, err)
+	}
+	tmp, err := os.CreateTemp(dir, ExampleFileName+".*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	return path, nil
 }
 
 // writeExampleFields renders one struct level.

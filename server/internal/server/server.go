@@ -34,6 +34,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	reportConfigFile(cfg)
 	// The platform's own pool backend is the default on the host it belongs to,
 	// so a machine missing what it needs — WSL Containers on Windows — can run
 	// no pool at all, and every sandbox create would fail with whatever the
@@ -400,4 +401,27 @@ func serveAll(server *http.Server, listeners []serverListener) error {
 		return fmt.Errorf("server failed: %w", serveErr)
 	}
 	return nil
+}
+
+// reportConfigFile says which configuration file this server read, because a
+// file at a path nothing prints is a file nobody knows to write.
+//
+// When there is none it refreshes the reference beside where it belongs, so
+// what an operator finds there lists every setting this server has. A reference
+// that cannot be written is logged and not fatal: it is documentation, and a
+// read-only configuration directory is an ordinary way to run a server.
+func reportConfigFile(cfg *config.Config) {
+	switch {
+	case cfg.ConfigFile == "":
+		log.Printf("configuration: %s is set empty, so no configuration file is read", config.ConfigFileVar)
+	case cfg.ConfigFileRead:
+		log.Printf("configuration: read %s", cfg.ConfigFile)
+	default:
+		example, err := config.RefreshExample(cfg.ConfigFile)
+		if err != nil {
+			log.Printf("configuration: no file at %s, and its reference could not be written: %v", cfg.ConfigFile, err)
+			return
+		}
+		log.Printf("configuration: no file at %s; every setting is listed in %s", cfg.ConfigFile, example)
+	}
 }

@@ -78,6 +78,13 @@ type Config struct {
 	Release         *releasemanifest.Manifest `yaml:"-"`
 	HarnessImages   map[string]string         `yaml:"-"`
 
+	// ConfigFile is the configuration file Load looked for, and ConfigFileRead
+	// whether it found one there. Derived: the path comes from the environment
+	// alone (ADR 0096 §1), and an empty ConfigFile means ConfigFileVar was set
+	// empty and nothing was looked for.
+	ConfigFile     string `yaml:"-"`
+	ConfigFileRead bool   `yaml:"-"`
+
 	// Server settings.
 	Port   int      `yaml:"port" env:"PORT" default:"18080" doc:"TCP port for an http:// listen endpoint that does not name one."`
 	Listen []string `yaml:"listen" env:"DISCOBOX_SERVER_LISTEN" doc:"Endpoints to listen on. Local IPC is added when none is named, so the CLI can always reach the server."`
@@ -238,6 +245,7 @@ func Load() (*Config, error) {
 	path := ConfigFilePath()
 	_, named := os.LookupEnv(ConfigFileVar)
 	fromFile := map[string]bool{}
+	cfg.ConfigFile = path
 	if path != "" {
 		data, err := os.ReadFile(path)
 		switch {
@@ -245,6 +253,7 @@ func Load() (*Config, error) {
 			if fromFile, err = decodeFile(cfg, data, path); err != nil {
 				return nil, err
 			}
+			cfg.ConfigFileRead = true
 		case os.IsNotExist(err) && !named:
 			// Nothing at the default path, which is the ordinary case: the
 			// environment alone configures a server completely.

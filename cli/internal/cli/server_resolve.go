@@ -34,6 +34,11 @@ const (
 	// and a server's pools load them from (ADR 0113). It is the server's own
 	// setting, so naming it here names it for both.
 	ImageCacheEnv = "DISCOBOX_IMAGE_CACHE_DIR"
+	// ServerConfigFileEnv names the configuration file the server reads. It is
+	// the server's own setting, and the only way to give it one (ADR 0096 §1),
+	// so --config-file sets it rather than passing a flag the server does not
+	// take.
+	ServerConfigFileEnv = "DISCOBOX_CONFIG_FILE"
 )
 
 // serverSource is where the server binary is to come from: what the flags and

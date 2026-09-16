@@ -287,7 +287,14 @@ The file is `<XDG config home>/discobox/server.yaml`, or whatever
 the environment and cannot come from the file, because `configDir` is itself a
 setting. A missing file at the default path is not an error — the environment
 alone configures a server completely — but a file `DISCOBOX_CONFIG_FILE` names
-that does not exist is.
+that does not exist is. `discobox server --config-file` sets that variable for
+the server it runs; the server itself takes no flags.
+
+Startup logs which file was read. When there is none at the path looked in, the
+server rewrites `server.example.yaml` beside it (unchanged content is left
+alone), so the reference an operator finds always matches the server running.
+Nothing is written beside a file that exists, and a reference that cannot be
+written is logged, not fatal.
 
 `config.Config`'s struct tags are the source of truth. `yaml` is the key, `env`
 the overriding variable, `default` the literal default and `doc` the

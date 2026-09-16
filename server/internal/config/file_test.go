@@ -261,3 +261,75 @@ func useTempConfigHome(t *testing.T) {
 	xdg.Reload()
 	t.Cleanup(xdg.Reload)
 }
+
+// Load says which file it looked for and whether it read one, which is what
+// lets a server print where its configuration comes from.
+func TestLoadReportsTheConfigFile(t *testing.T) {
+	clearConfigEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConfigFile != "" || cfg.ConfigFileRead {
+		t.Fatalf("with %s empty, ConfigFile = %q read = %v, want nothing looked for", ConfigFileVar, cfg.ConfigFile, cfg.ConfigFileRead)
+	}
+
+	path := writeConfigFile(t, "port: 9999\n")
+	if cfg, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConfigFile != path || !cfg.ConfigFileRead {
+		t.Fatalf("ConfigFile = %q read = %v, want %q read", cfg.ConfigFile, cfg.ConfigFileRead, path)
+	}
+
+	clearConfigEnv(t)
+	useTempConfigHome(t)
+	if cfg, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConfigFile != ConfigFilePath() || cfg.ConfigFileRead {
+		t.Fatalf("ConfigFile = %q read = %v, want %q not read", cfg.ConfigFile, cfg.ConfigFileRead, ConfigFilePath())
+	}
+}
+
+// The reference beside a missing file is the current one, whatever an older
+// server left there, and it is written into a directory nothing has created
+// yet — which on a fresh machine is every time.
+func TestRefreshExampleReplacesAStaleReference(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "not-yet", "server.yaml")
+	want, err := ExampleYAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := RefreshExample(configFile)
+	if err != nil {
+		t.Fatalf("RefreshExample: %v", err)
+	}
+	if path != filepath.Join(filepath.Dir(configFile), ExampleFileName) {
+		t.Fatalf("wrote %s, want %s beside %s", path, ExampleFileName, configFile)
+	}
+	if err := os.WriteFile(path, []byte("# from an older server\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RefreshExample(configFile); err != nil {
+		t.Fatalf("RefreshExample over a stale reference: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatal("the reference was not replaced with the current one")
+	}
+	if _, err := os.Stat(configFile); !os.IsNotExist(err) {
+		t.Fatalf("RefreshExample created the configuration file itself: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(configFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("directory holds %d entries, want only the reference", len(entries))
+	}
+}

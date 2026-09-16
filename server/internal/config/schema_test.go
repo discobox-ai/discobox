@@ -162,6 +162,8 @@ func TestExampleParsesOnceUncommented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() with no file: %v", err)
 	}
+	// Which file was read is the one thing that should differ.
+	cfg.ConfigFile, cfg.ConfigFileRead = bare.ConfigFile, bare.ConfigFileRead
 	if !reflect.DeepEqual(cfg, bare) {
 		t.Fatalf("the uncommented reference configures a different server than no file:\n got %+v\nwant %+v", cfg, bare)
 	}

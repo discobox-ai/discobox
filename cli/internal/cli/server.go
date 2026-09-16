@@ -22,6 +22,7 @@ import (
 )
 
 func (a *App) newServerCommand() *cobra.Command {
+	var configFile string
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Run the Discobox API server",
@@ -33,7 +34,12 @@ already, then runs it, passing through its output and its exit status.
 
 A server binary sitting next to this one is used as it is, which is what a
 development build runs. "discobox admin server stage" does the download half on
-its own.`,
+its own.
+
+The server reads its configuration from <XDG config home>/discobox/server.yaml,
+or the file --config-file or ` + ServerConfigFileEnv + ` names, and logs which
+at startup. When there is no file it writes server.example.yaml beside where
+the file belongs, listing every setting.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			progress := a.serverStartupLine()
@@ -44,9 +50,27 @@ its own.`,
 			if err != nil {
 				return err
 			}
-			return runServerProcess(cmd, path)
+			// Told where the image cache is, as an autolaunched server is: its
+			// pools load whatever an autolaunch or a stage already put there
+			// (ADR 0113). This command stages none itself; whoever runs it is
+			// starting a server on purpose, and the rest are pulled.
+			env := []string{ImageCacheEnv + "=" + stagedImagesRoot()}
+			// Only when given, because the environment already carries
+			// ServerConfigFileEnv through; and when given, even empty, which
+			// is how the server is told to read no file at all.
+			if cmd.Flags().Changed("config-file") {
+				if configFile != "" {
+					if configFile, err = filepath.Abs(configFile); err != nil {
+						return fmt.Errorf("--config-file: %w", err)
+					}
+				}
+				env = append(env, ServerConfigFileEnv+"="+configFile)
+			}
+			return runServerProcess(cmd, path, env)
 		},
 	}
+	cmd.Flags().StringVar(&configFile, "config-file", "",
+		"Configuration file for the server to read; empty reads none (also "+ServerConfigFileEnv+")")
 	cmd.Flags().StringVar(&a.serverSource.binary, "binary", "",
 		"Run this server binary instead of resolving one (also "+ServerBinaryEnv+")")
 	cmd.Flags().StringVar(&a.serverSource.manifest, "manifest", "",
@@ -65,7 +89,7 @@ its own.`,
 const serverStopGrace = 30 * time.Second
 
 // runServerProcess runs the server in the foreground, as the thing this command
-// stands in for.
+// stands in for, with env added to this process's environment.
 //
 // No signal handling for the terminal's own interrupt: the child is in this
 // process's group, so Ctrl-C reaches it directly, and forwarding one would
@@ -79,7 +103,7 @@ const serverStopGrace = 30 * time.Second
 // the widened start window a replacement needs while the previous server is
 // still draining (endpoint/autolaunch.go). WaitDelay is the backstop for a
 // server that will not stop being asked.
-func runServerProcess(cmd *cobra.Command, path string) error {
+func runServerProcess(cmd *cobra.Command, path string, env []string) error {
 	//nolint:gosec // The path is the resolved server binary; see serverResolver.
 	server := exec.CommandContext(cmd.Context(), path)
 	server.Cancel = func() error { return stopServerProcess(server.Process) }
@@ -87,11 +111,7 @@ func runServerProcess(cmd *cobra.Command, path string) error {
 	server.Stdin = cmd.InOrStdin()
 	server.Stdout = cmd.OutOrStdout()
 	server.Stderr = cmd.ErrOrStderr()
-	// Told where the image cache is, as an autolaunched server is: its pools
-	// load whatever an autolaunch or a stage already put there (ADR 0113).
-	// This command stages none itself; whoever runs it is starting a server
-	// on purpose, and the rest are pulled.
-	server.Env = append(os.Environ(), ImageCacheEnv+"="+stagedImagesRoot())
+	server.Env = append(os.Environ(), env...)
 	if err := server.Run(); err != nil {
 		var exit *exec.ExitError
 		// The server's status is this command's status, silently: a server that
