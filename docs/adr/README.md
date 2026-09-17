@@ -180,3 +180,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0123](0123-a-discobox-is-exported-as-its-spec-and-its-durable-tree.md) | A discobox is exported as its spec and its durable tree, and a transfer is two of those | Accepted |
 | [0124](0124-a-terminal-is-active-while-what-it-shows-changes.md) | A terminal is active while what it shows changes | Accepted |
 | [0125](0125-tools-are-declared-in-files-the-way-services-are.md) | Tools are declared in files, the way services are | Accepted |
+| [0126](0126-remote-sandboxes-connect-out-to-their-pool.md) | Remote sandboxes connect out to their pool | Proposed |
