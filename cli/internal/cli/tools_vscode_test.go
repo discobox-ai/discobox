@@ -69,7 +69,7 @@ func runToolsCmd(t *testing.T, fake *sshConfigFakeServer, home, tool string, arg
 	t.Helper()
 	state = t.TempDir()
 	setHome(t, home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	setConfigHome(t, filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", state)
 
 	server := fake.start(t)

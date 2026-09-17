@@ -46,6 +46,14 @@ func setHome(t *testing.T, home string) {
 	t.Setenv("USERPROFILE", home)
 }
 
+// setConfigHome makes dir the user's config directory, which os.UserConfigDir
+// reads from XDG_CONFIG_HOME on Linux and from %AppData% on Windows.
+func setConfigHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("APPDATA", dir)
+}
+
 func managedPaths(state string) (config, knownHosts string) {
 	dir := filepath.Join(state, "discobox", "cli", "ssh", resolvedTestProjectID)
 	return filepath.Join(dir, "config"), filepath.Join(dir, "known_hosts")

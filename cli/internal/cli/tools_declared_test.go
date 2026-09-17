@@ -35,7 +35,7 @@ func TestToolsListShowsWhereEachToolCameFromAndWhatCannotRun(t *testing.T) {
 	declareUserTool(t, home, "lint.yaml", "description: lint the box\nprogram: golangci-lint\n")
 
 	setHome(t, home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	setConfigHome(t, filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	server := fake.start(t)
 	cmd := NewRootCommand()
@@ -124,7 +124,7 @@ func TestAServerWithoutTheToolsRouteStillRunsTheCLIsTools(t *testing.T) {
 
 	home := t.TempDir()
 	setHome(t, home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	setConfigHome(t, filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	cmd := NewRootCommand()
 	var out strings.Builder
@@ -225,7 +225,7 @@ func fstestScript(name, body string) fstest.MapFS {
 func TestAUserToolTakesOverTheDiffByItsID(t *testing.T) {
 	home := t.TempDir()
 	declareUserTool(t, home, "difft.yaml", "id: ai.discobox.diff\nname: difft\nprogram: difft\n")
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	setConfigHome(t, filepath.Join(home, ".config"))
 	user, err := userTools()
 	if err != nil {
 		t.Fatal(err)
@@ -261,7 +261,7 @@ func TestAPlainTextRefusalIsNotAMissingRoute(t *testing.T) {
 
 		home := t.TempDir()
 		setHome(t, home)
-		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		setConfigHome(t, filepath.Join(home, ".config"))
 		t.Setenv("XDG_STATE_HOME", t.TempDir())
 		cmd := NewRootCommand()
 		var out strings.Builder
