@@ -123,7 +123,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0068](0068-container-images-share-one-base-image.md) | Container images share one base image | Accepted |
 | [0069](0069-staging-pool-images-is-a-condition.md) | Staging a pool's images is a condition, not a state | Accepted |
 | [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) | Services are declared execs the sandbox starts for you | Accepted |
-| [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted |
+| [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted (§6, §7's Go-constant defaults and §11 superseded by [0125](0125-tools-are-declared-in-files-the-way-services-are.md)) |
 | [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md) | A repository ships skills that only exist inside a sandbox | Proposed |
 | [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) | A directory with no repository is copied only when asked | Accepted (§2 and §3's outcome superseded by [0077](0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md)) |
 | [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) | A CLI in WSL writes the ssh_config Windows reads | Accepted (§2 and §3 amended by [0078](0078-the-wsl-proxycommand-is-quoted-for-sh.md)) |
@@ -179,3 +179,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0122](0122-a-window-that-polls-lists-the-servers-that-answer.md) | A window that polls lists the servers that answer, the primary included | Accepted (supersedes [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md) §4's "the primary not answering fails the command" for the launcher) |
 | [0123](0123-a-discobox-is-exported-as-its-spec-and-its-durable-tree.md) | A discobox is exported as its spec and its durable tree, and a transfer is two of those | Accepted |
 | [0124](0124-a-terminal-is-active-while-what-it-shows-changes.md) | A terminal is active while what it shows changes | Accepted |
+| [0125](0125-tools-are-declared-in-files-the-way-services-are.md) | Tools are declared in files, the way services are | Accepted |
