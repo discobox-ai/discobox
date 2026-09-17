@@ -36,6 +36,9 @@ const (
 	// ScopePoolSync authorizes host-wide pool reconciliation (reaping pools not
 	// in the known set). Only the control-plane provider driver carries it.
 	ScopePoolSync = "pool:sync"
+	// ScopeAuditRead authorizes reading the pool proxy's audit trail (ADR 0130
+	// §4). A token that also names a sandbox reads only that sandbox's rows.
+	ScopeAuditRead = "audit:read"
 	// ScopePoolCacheClear authorizes stopping every sandbox on the pool and
 	// emptying its cache.
 	ScopePoolCacheClear = "pool:cache-clear"
@@ -276,6 +279,8 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 		return ScopePoolSync
 	case workerapi.PoolClearCacheOperation:
 		return ScopePoolCacheClear
+	case workerapi.PoolListHTTPAuditOperation:
+		return ScopeAuditRead
 	default:
 		return ""
 	}

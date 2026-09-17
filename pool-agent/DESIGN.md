@@ -471,6 +471,36 @@ An agent that predates the route answers with its router's plain-text 404,
 which the control plane reports as an agent too old for the operation rather
 than as something not found (`server/providers/DESIGN.md`).
 
+## Reading the Proxy's Audit
+
+`audit/http` (scope `audit:read`, `server/audit_handlers.go`) relays the pool
+proxy's HTTP audit to the control plane
+([ADR 0130](../docs/adr/0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md)
+§4). The control plane never reaches the proxy: this agent does, over the
+proxy's loopback control API, with a token it signs itself.
+
+- **The key stays on the pool.** `proxyagent.PrepareControlKey` creates the
+  control keypair beside the MITM CA key in `layout.ProxyCerts`, which is never
+  mounted into a sandbox. The agent calls it at startup, before systemd starts
+  the proxy unit, and is its only writer; the proxy unit and the relay call
+  `ReadControlKey`. A new key is synced before it is linked into place, and one
+  that is present but unusable (empty, not base64, the wrong length) is replaced
+  rather than refused: the key lives in the host tree, so a refusal would
+  survive recreating the container and leave the pool without its proxy.
+- **The audit read cannot cost the pool its egress.** A proxy unit that cannot
+  read the key runs with no control API (`proxyControlConfig`), a control
+  listener that fails is logged rather than stopping the proxy, and an agent
+  that cannot build its audit client answers the relay with 503 instead of
+  failing to start.
+- **Loopback, and both halves together.** The proxy serves the control API on
+  `proxyagent.ControlListenAddress` (`127.0.0.1:17084`), which a sandbox cannot
+  reach. `controlConfig` sets the listener and the trust key from one key, so a
+  listener serving unauthenticated cannot be configured.
+- **The token's sandbox wins.** A control-plane token naming a sandbox reads
+  only that sandbox: an omitted `sandboxId` is filled from it, and a different
+  one is refused with 403 rather than answered with the token's own. The
+  sandbox is then carried into the proxy token, where the proxy narrows again.
+
 ## Worker-Local HTTP Server
 
 After registration, the pool agent runs an HTTP server for provider runtime
@@ -522,6 +552,7 @@ flowchart LR
         sysd -->|"discobox-proxy.service"| wproxy["pool proxy :17080 (mTLS)"]
         agent -->|"reads/writes"| certs["/var/lib/discobox/proxy/certs"]
         wproxy -->|"reads"| certs
+        agent -->|"audit relay, loopback :17084"| wproxy
     end
     subgraph sandbox["sandbox container"]
         bridge["discobox-proxy-bridge.service"] -->|"HTTP/SOCKS"| tools["agent + user workloads"]

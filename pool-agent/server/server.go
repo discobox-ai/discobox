@@ -24,9 +24,11 @@ type Registration struct {
 }
 
 type Config struct {
-	Identity              Identity
-	Registration          *Registration
-	Runtime               sandboxruntime.Runtime
+	Identity     Identity
+	Registration *Registration
+	Runtime      sandboxruntime.Runtime
+	// Audit reads the pool proxy's audit trail over its control API.
+	Audit                 AuditReader
 	ControlPlanePublicKey string
 	Port                  int
 	// Listener, when set, is served instead of a TCP listener on Port. The
@@ -61,7 +63,7 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 	if err != nil {
 		return nil, err
 	}
-	handler := newSandboxService(cfg.Identity, cfg.Runtime)
+	handler := newSandboxService(cfg.Identity, cfg.Runtime, cfg.Audit)
 	generated, err := workerapi.NewServer(handler, handler)
 	if err != nil {
 		return nil, err

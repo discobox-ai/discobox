@@ -50,6 +50,12 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The proxy control key is created here for the same reason as the CA: the
+	// proxy unit trusts its public half and this process signs with it, so it
+	// must exist before systemd starts the unit that reads it.
+	if _, err := proxyagent.PrepareControlKey(bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+		return fmt.Errorf("prepare proxy control key: %w", err)
+	}
 	// Render the shared builder's and its registry's configuration for the same
 	// reason and at the same point: both run as systemd units with a clean
 	// environment, and every path they own is pool-scoped (ADR 0044).
@@ -351,6 +357,14 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 		return fmt.Errorf("listen on pool-agent endpoint %q: %w", bootstrap.AgentListenURL, err)
 	}
 	defer func() { _ = listener.Close() }()
+	// Audit stays a nil interface when the key cannot be read, so the relay
+	// answers 503 rather than the agent failing to serve anything at all.
+	var audit poolserver.AuditReader
+	if auditClient, err := proxyagent.NewAuditClient(bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+		logger.Warn("proxy audit relay disabled", "error", err)
+	} else {
+		audit = auditClient
+	}
 	return poolserver.Serve(ctx, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
@@ -358,6 +372,7 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 		},
 		Registration:          serverRegistration(registration),
 		Runtime:               runtime,
+		Audit:                 audit,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
 		Listener:              listener,
 	})

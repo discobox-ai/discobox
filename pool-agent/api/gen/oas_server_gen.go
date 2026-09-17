@@ -41,6 +41,15 @@ type Handler interface {
 	//
 	// GET /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}
 	PoolGetSandbox(ctx context.Context, params PoolGetSandboxParams) (*PoolSandboxInstance, error)
+	// PoolListHTTPAudit implements pool-list-http-audit operation.
+	//
+	// The pool proxy's audit of HTTP exchanges, newest first, relayed from its
+	// loopback control API with a token the agent signs (ADR 0130 §4). A
+	// request token that names a sandbox narrows the read to it, whatever
+	// sandboxId says.
+	//
+	// GET /api/project/{projectId}/pool/{poolId}/audit/http
+	PoolListHTTPAudit(ctx context.Context, params PoolListHTTPAuditParams) (*PoolHTTPAuditResponse, error)
 	// PoolListSandboxes implements pool-list-sandboxes operation.
 	//
 	// List pool sandboxes.

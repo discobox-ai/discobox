@@ -61,6 +61,18 @@ func (UnimplementedHandler) PoolGetSandbox(ctx context.Context, params PoolGetSa
 	return r, ht.ErrNotImplemented
 }
 
+// PoolListHTTPAudit implements pool-list-http-audit operation.
+//
+// The pool proxy's audit of HTTP exchanges, newest first, relayed from its
+// loopback control API with a token the agent signs (ADR 0130 §4). A
+// request token that names a sandbox narrows the read to it, whatever
+// sandboxId says.
+//
+// GET /api/project/{projectId}/pool/{poolId}/audit/http
+func (UnimplementedHandler) PoolListHTTPAudit(ctx context.Context, params PoolListHTTPAuditParams) (r *PoolHTTPAuditResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolListSandboxes implements pool-list-sandboxes operation.
 //
 // List pool sandboxes.

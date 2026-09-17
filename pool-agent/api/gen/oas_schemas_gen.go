@@ -856,6 +856,52 @@ func (o OptBool) Or(d bool) bool {
 	return d
 }
 
+// NewOptDateTime returns new OptDateTime with value set to v.
+func NewOptDateTime(v time.Time) OptDateTime {
+	return OptDateTime{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptDateTime is optional time.Time.
+type OptDateTime struct {
+	Value time.Time
+	Set   bool
+}
+
+// IsSet returns true if OptDateTime was set.
+func (o OptDateTime) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptDateTime) Reset() {
+	var v time.Time
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptDateTime) SetTo(v time.Time) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptDateTime) Get() (v time.Time, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptDateTime) Or(d time.Time) time.Time {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptGitSource returns new OptGitSource with value set to v.
 func NewOptGitSource(v GitSource) OptGitSource {
 	return OptGitSource{
@@ -1172,6 +1218,52 @@ func (o OptHarnessVolumeScope) Get() (v HarnessVolumeScope, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptHarnessVolumeScope) Or(d HarnessVolumeScope) HarnessVolumeScope {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptInt returns new OptInt with value set to v.
+func NewOptInt(v int) OptInt {
+	return OptInt{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptInt is optional int.
+type OptInt struct {
+	Value int
+	Set   bool
+}
+
+// IsSet returns true if OptInt was set.
+func (o OptInt) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptInt) Reset() {
+	var v int
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptInt) SetTo(v int) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptInt) Get() (v int, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptInt) Or(d int) int {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2250,6 +2342,244 @@ func (s *PoolClearCacheResponse) SetStoppedSandboxIds(val []string) {
 
 // PoolDeleteSandboxNoContent is response for PoolDeleteSandbox operation.
 type PoolDeleteSandboxNoContent struct{}
+
+// One HTTP exchange the pool proxy audited (ADR 0130). The URL, host and
+// method are what a sandbox sent; headers and bodies stay on the pool.
+// Ref: #/components/schemas/PoolHTTPAuditExchange
+type PoolHTTPAuditExchange struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// True when the proxy's destination policy refused the request.
+	Blocked bool `json:"blocked"`
+	// Why the request was refused.
+	BlockedReason OptString `json:"blockedReason"`
+	// True when the response came from the pool's response cache.
+	CacheHit OptBool `json:"cacheHit"`
+	// When the exchange was recorded.
+	CreatedAt time.Time `json:"createdAt"`
+	// How long the exchange took, in milliseconds.
+	DurationMillis OptInt64 `json:"durationMillis"`
+	// Destination host.
+	Host string `json:"host"`
+	// Audit row ID, unique within this pool.
+	ID int64 `json:"id"`
+	// HTTP method.
+	Method string `json:"method"`
+	// Size of the recorded request body.
+	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
+	// Size of the response body.
+	ResponseBytes OptInt64 `json:"responseBytes"`
+	// Sandbox whose client certificate made the request.
+	SandboxId string `json:"sandboxId"`
+	// Response status; zero when no response was received.
+	Status int `json:"status"`
+	// Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3).
+	SwappedUseIds []string `json:"swappedUseIds"`
+	// True for an upgraded (e.g. WebSocket) connection.
+	Upgrade OptBool `json:"upgrade"`
+	// The upgrade protocol.
+	UpgradeType OptString `json:"upgradeType"`
+	// Request URL, with any swapped query value left as its sentinel.
+	URL string `json:"url"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolHTTPAuditExchange) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *PoolHTTPAuditExchange) GetBlocked() bool {
+	return s.Blocked
+}
+
+// GetBlockedReason returns the value of BlockedReason.
+func (s *PoolHTTPAuditExchange) GetBlockedReason() OptString {
+	return s.BlockedReason
+}
+
+// GetCacheHit returns the value of CacheHit.
+func (s *PoolHTTPAuditExchange) GetCacheHit() OptBool {
+	return s.CacheHit
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *PoolHTTPAuditExchange) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDurationMillis returns the value of DurationMillis.
+func (s *PoolHTTPAuditExchange) GetDurationMillis() OptInt64 {
+	return s.DurationMillis
+}
+
+// GetHost returns the value of Host.
+func (s *PoolHTTPAuditExchange) GetHost() string {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *PoolHTTPAuditExchange) GetID() int64 {
+	return s.ID
+}
+
+// GetMethod returns the value of Method.
+func (s *PoolHTTPAuditExchange) GetMethod() string {
+	return s.Method
+}
+
+// GetRequestBodyBytes returns the value of RequestBodyBytes.
+func (s *PoolHTTPAuditExchange) GetRequestBodyBytes() OptInt64 {
+	return s.RequestBodyBytes
+}
+
+// GetResponseBytes returns the value of ResponseBytes.
+func (s *PoolHTTPAuditExchange) GetResponseBytes() OptInt64 {
+	return s.ResponseBytes
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolHTTPAuditExchange) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetStatus returns the value of Status.
+func (s *PoolHTTPAuditExchange) GetStatus() int {
+	return s.Status
+}
+
+// GetSwappedUseIds returns the value of SwappedUseIds.
+func (s *PoolHTTPAuditExchange) GetSwappedUseIds() []string {
+	return s.SwappedUseIds
+}
+
+// GetUpgrade returns the value of Upgrade.
+func (s *PoolHTTPAuditExchange) GetUpgrade() OptBool {
+	return s.Upgrade
+}
+
+// GetUpgradeType returns the value of UpgradeType.
+func (s *PoolHTTPAuditExchange) GetUpgradeType() OptString {
+	return s.UpgradeType
+}
+
+// GetURL returns the value of URL.
+func (s *PoolHTTPAuditExchange) GetURL() string {
+	return s.URL
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolHTTPAuditExchange) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetBlocked sets the value of Blocked.
+func (s *PoolHTTPAuditExchange) SetBlocked(val bool) {
+	s.Blocked = val
+}
+
+// SetBlockedReason sets the value of BlockedReason.
+func (s *PoolHTTPAuditExchange) SetBlockedReason(val OptString) {
+	s.BlockedReason = val
+}
+
+// SetCacheHit sets the value of CacheHit.
+func (s *PoolHTTPAuditExchange) SetCacheHit(val OptBool) {
+	s.CacheHit = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *PoolHTTPAuditExchange) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDurationMillis sets the value of DurationMillis.
+func (s *PoolHTTPAuditExchange) SetDurationMillis(val OptInt64) {
+	s.DurationMillis = val
+}
+
+// SetHost sets the value of Host.
+func (s *PoolHTTPAuditExchange) SetHost(val string) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *PoolHTTPAuditExchange) SetID(val int64) {
+	s.ID = val
+}
+
+// SetMethod sets the value of Method.
+func (s *PoolHTTPAuditExchange) SetMethod(val string) {
+	s.Method = val
+}
+
+// SetRequestBodyBytes sets the value of RequestBodyBytes.
+func (s *PoolHTTPAuditExchange) SetRequestBodyBytes(val OptInt64) {
+	s.RequestBodyBytes = val
+}
+
+// SetResponseBytes sets the value of ResponseBytes.
+func (s *PoolHTTPAuditExchange) SetResponseBytes(val OptInt64) {
+	s.ResponseBytes = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolHTTPAuditExchange) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *PoolHTTPAuditExchange) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetSwappedUseIds sets the value of SwappedUseIds.
+func (s *PoolHTTPAuditExchange) SetSwappedUseIds(val []string) {
+	s.SwappedUseIds = val
+}
+
+// SetUpgrade sets the value of Upgrade.
+func (s *PoolHTTPAuditExchange) SetUpgrade(val OptBool) {
+	s.Upgrade = val
+}
+
+// SetUpgradeType sets the value of UpgradeType.
+func (s *PoolHTTPAuditExchange) SetUpgradeType(val OptString) {
+	s.UpgradeType = val
+}
+
+// SetURL sets the value of URL.
+func (s *PoolHTTPAuditExchange) SetURL(val string) {
+	s.URL = val
+}
+
+// Ref: #/components/schemas/PoolHTTPAuditResponse
+type PoolHTTPAuditResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Matching exchanges, newest first.
+	Exchanges []PoolHTTPAuditExchange `json:"exchanges"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolHTTPAuditResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetExchanges returns the value of Exchanges.
+func (s *PoolHTTPAuditResponse) GetExchanges() []PoolHTTPAuditExchange {
+	return s.Exchanges
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolHTTPAuditResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetExchanges sets the value of Exchanges.
+func (s *PoolHTTPAuditResponse) SetExchanges(val []PoolHTTPAuditExchange) {
+	s.Exchanges = val
+}
 
 // Ref: #/components/schemas/PoolSandboxCreateRequest
 type PoolSandboxCreateRequest struct {

@@ -177,6 +177,15 @@ func ProxyCerts(projectID, poolID string) string {
 	return path.Join(ProxyPool(projectID, poolID), "certs")
 }
 
+// ProxyControlKey is the private key the pool agent signs proxy control API
+// tokens with; the proxy trusts its public half (ADR 0130 §4). It sits in
+// ProxyCerts because that directory already holds the MITM CA's private key,
+// which is the same custody: readable on the pool, never mounted into a
+// sandbox.
+func ProxyControlKey(projectID, poolID string) string {
+	return path.Join(ProxyCerts(projectID, poolID), "control-ed25519.key")
+}
+
 // ProxyProjectPools is the parent of every pool's proxy subtree in a project.
 func ProxyProjectPools(projectID string) string {
 	return path.Join(proxyTree, "projects", projectID, "pools")

@@ -400,6 +400,101 @@ components:
             - config
             - runtime
             type: object
+        PoolHTTPAuditExchange:
+            additionalProperties: false
+            description: |-
+                One HTTP exchange the pool proxy audited (ADR 0130). The URL, host and
+                method are what a sandbox sent; headers and bodies stay on the pool.
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PoolHTTPAuditExchange.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                blocked:
+                    description: True when the proxy's destination policy refused the request
+                    type: boolean
+                blockedReason:
+                    description: Why the request was refused
+                    type: string
+                cacheHit:
+                    description: True when the response came from the pool's response cache
+                    type: boolean
+                createdAt:
+                    description: When the exchange was recorded
+                    format: date-time
+                    type: string
+                durationMillis:
+                    description: How long the exchange took, in milliseconds
+                    format: int64
+                    type: integer
+                host:
+                    description: Destination host
+                    type: string
+                id:
+                    description: Audit row ID, unique within this pool
+                    format: int64
+                    type: integer
+                method:
+                    description: HTTP method
+                    type: string
+                requestBodyBytes:
+                    description: Size of the recorded request body
+                    format: int64
+                    type: integer
+                responseBytes:
+                    description: Size of the response body
+                    format: int64
+                    type: integer
+                sandboxId:
+                    description: Sandbox whose client certificate made the request
+                    type: string
+                status:
+                    description: Response status; zero when no response was received
+                    type: integer
+                swappedUseIds:
+                    description: Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3)
+                    items:
+                        type: string
+                    type: array
+                upgrade:
+                    description: True for an upgraded (e.g. WebSocket) connection
+                    type: boolean
+                upgradeType:
+                    description: The upgrade protocol
+                    type: string
+                url:
+                    description: Request URL, with any swapped query value left as its sentinel
+                    type: string
+            required:
+            - id
+            - createdAt
+            - sandboxId
+            - method
+            - url
+            - host
+            - status
+            - blocked
+            - swappedUseIds
+            type: object
+        PoolHTTPAuditResponse:
+            additionalProperties: false
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PoolHTTPAuditResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                exchanges:
+                    description: Matching exchanges, newest first
+                    items:
+                        "$ref": "#/components/schemas/PoolHTTPAuditExchange"
+                    type: array
+            required:
+            - exchanges
+            type: object
         PoolClearCacheResponse:
             additionalProperties: false
             description: |-
@@ -1022,6 +1117,80 @@ paths:
             security:
             -   poolBearerAuth: []
             summary: Stop every sandbox on the pool and empty its caches
+            tags:
+            - Pool Sandboxes
+    "/api/project/{projectId}/pool/{poolId}/audit/http":
+        get:
+            description: |-
+                The pool proxy's audit of HTTP exchanges, newest first, relayed from its
+                loopback control API with a token the agent signs (ADR 0130 §4). A
+                request token that names a sandbox narrows the read to it, whatever
+                sandboxId says.
+            operationId: pool-list-http-audit
+            parameters:
+            -   description: Project ID
+                in: path
+                name: projectId
+                required: true
+                schema:
+                    description: Project ID
+                    type: string
+            -   description: Pool ID
+                in: path
+                name: poolId
+                required: true
+                schema:
+                    description: Pool ID
+                    type: string
+            -   description: Only exchanges made by this sandbox, which need not still exist
+                in: query
+                name: sandboxId
+                schema:
+                    description: Only exchanges made by this sandbox, which need not still exist
+                    type: string
+            -   description: Only exchanges to this host
+                in: query
+                name: host
+                schema:
+                    description: Only exchanges to this host
+                    type: string
+            -   description: Only exchanges that spent this approved credential use
+                in: query
+                name: useId
+                schema:
+                    description: Only exchanges that spent this approved credential use
+                    type: string
+            -   description: Only exchanges recorded at or after this time
+                in: query
+                name: since
+                schema:
+                    description: Only exchanges recorded at or after this time
+                    format: date-time
+                    type: string
+            -   description: Maximum number of exchanges to return
+                in: query
+                name: limit
+                schema:
+                    default: 100
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            responses:
+                '200':
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/PoolHTTPAuditResponse"
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                "$ref": "#/components/schemas/ErrorModel"
+                    description: Error
+            security:
+            -   poolBearerAuth: []
+            summary: List the pool proxy's audited HTTP exchanges
             tags:
             - Pool Sandboxes
     "/api/project/{projectId}/pool/{poolId}/pool-sync":

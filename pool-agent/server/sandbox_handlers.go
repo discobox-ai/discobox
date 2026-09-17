@@ -22,13 +22,14 @@ type Identity struct {
 type sandboxService struct {
 	identity Identity
 	runtime  sandboxruntime.Runtime
+	audit    AuditReader
 }
 
 var _ workerapi.Handler = (*sandboxService)(nil)
 var _ workerapi.SecurityHandler = (*sandboxService)(nil)
 
-func newSandboxService(identity Identity, runtime sandboxruntime.Runtime) *sandboxService {
-	return &sandboxService{identity: identity, runtime: runtime}
+func newSandboxService(identity Identity, runtime sandboxruntime.Runtime, audit AuditReader) *sandboxService {
+	return &sandboxService{identity: identity, runtime: runtime, audit: audit}
 }
 
 func (s *sandboxService) HandlePoolBearerAuth(ctx context.Context, operation workerapi.OperationName, _ workerapi.PoolBearerAuth) (context.Context, error) {

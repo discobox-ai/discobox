@@ -22,6 +22,7 @@ func TestPathsMatchTheEstablishedLayout(t *testing.T) {
 		"pool cache":        {PoolCache("prj", "pool"), "/var/lib/discobox/cache/projects/prj/pools/pool/cache"},
 		"pool build":        {PoolBuild("prj", "pool"), "/var/lib/discobox/cache/projects/prj/pools/pool/build"},
 		"proxy certs":       {ProxyCerts("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool/certs"},
+		"proxy control key": {ProxyControlKey("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool/certs/control-ed25519.key"},
 		"proxy pool":        {ProxyPool("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool"},
 		"proxy pool sboxes": {ProxyPoolSandboxes("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool/sandboxes"},
 		"proxy audit db":    {ProxyAuditDB("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool/audit.db"},

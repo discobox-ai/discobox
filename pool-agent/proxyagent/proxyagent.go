@@ -300,6 +300,10 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	if retention > 0 {
 		cfg.Recording.Retention = retention
 	}
+	// The read-only control API the pool agent relays audit reads through
+	// (ADR 0130 §4). The agent prepared its key before systemd started this
+	// unit; this only reads it.
+	cfg.Control = proxyControlConfig(projectID, poolID, logger)
 
 	// Agent-credential activations live in this process, alongside the sentinel
 	// registry and the resolver they act on (ADR 0031 §3). The resolver
@@ -323,6 +327,17 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 		logger.Info("pool proxy serving", "addr", ListenAddress)
 		errCh <- server.ListenAndServe()
 	}()
+	if cfg.Control.ListenAddress != "" {
+		go func() {
+			logger.Info("pool proxy control API serving", "addr", cfg.Control.ListenAddress)
+			// Logged, not sent to errCh: the control API only serves audit
+			// reads, and its failing must not stop the proxy every sandbox's
+			// egress goes through.
+			if err := server.ListenAndServeControl(ctx); err != nil {
+				logger.Warn("pool proxy control API stopped", "error", err)
+			}
+		}()
+	}
 	go func() {
 		errCh <- serveCredentials(ctx, logger, bundle, projectID, poolID, live)
 	}()

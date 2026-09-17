@@ -1,6 +1,7 @@
 package poolagent
 
 import (
+	"net"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
@@ -19,15 +20,23 @@ func TestPoolListenAddressesAreDistinct(t *testing.T) {
 	}{
 		{"pool proxy", proxyagent.ListenAddress},
 		{"agent credentials endpoint", proxyagent.CredentialsListenAddress},
+		{"proxy control API", proxyagent.ControlListenAddress},
 		{"BuildKit mediator", buildkitagent.MediatorListen},
 		{"build registry", buildkitagent.RegistryListen},
 	}
+	// Keyed by port, not by address: the proxy control API binds loopback while
+	// the rest bind every interface, and 127.0.0.1:N and 0.0.0.0:N collide in
+	// one namespace even though the two strings differ.
 	seen := make(map[string]string, len(listeners))
 	for _, l := range listeners {
-		if other, ok := seen[l.addr]; ok {
-			t.Errorf("%s and %s both listen on %s", other, l.owner, l.addr)
+		_, port, err := net.SplitHostPort(l.addr)
+		if err != nil {
+			t.Fatalf("%s listen address %q: %v", l.owner, l.addr, err)
+		}
+		if other, ok := seen[port]; ok {
+			t.Errorf("%s and %s both listen on port %s", other, l.owner, port)
 			continue
 		}
-		seen[l.addr] = l.owner
+		seen[port] = l.owner
 	}
 }

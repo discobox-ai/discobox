@@ -11,6 +11,7 @@ const (
 	PoolCreateSandboxOperation  OperationName = "PoolCreateSandbox"
 	PoolDeleteSandboxOperation  OperationName = "PoolDeleteSandbox"
 	PoolGetSandboxOperation     OperationName = "PoolGetSandbox"
+	PoolListHTTPAuditOperation  OperationName = "PoolListHTTPAudit"
 	PoolListSandboxesOperation  OperationName = "PoolListSandboxes"
 	PoolRestartSandboxOperation OperationName = "PoolRestartSandbox"
 	PoolStartSandboxOperation   OperationName = "PoolStartSandbox"
