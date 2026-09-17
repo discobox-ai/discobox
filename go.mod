@@ -8,7 +8,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
 	github.com/discobox-ai/iroh-go v0.4.0
-	github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16
+	github.com/discobox-ai/x v0.0.0-20260917050848-32cef8aa6b78
 	github.com/elazarl/goproxy v1.9.0
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0

@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/discobox-ai/discobox v0.0.0
-	github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16
+	github.com/discobox-ai/x v0.0.0-20260917050848-32cef8aa6b78
 	github.com/go-faster/jx v1.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
