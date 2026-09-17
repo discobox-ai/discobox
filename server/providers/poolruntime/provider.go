@@ -274,6 +274,25 @@ func (p *Provider) ClearCache(ctx context.Context, pool *model.Pool) ([]string, 
 	return client.ClearCache(ctx, pool.ProjectID)
 }
 
+// ListHTTPAudit reads the pool proxy's HTTP audit through the pool agent, which
+// relays it from the proxy's loopback control API (ADR 0130 §4).
+func (p *Provider) ListHTTPAudit(ctx context.Context, pool *model.Pool, query sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	// Acquired without agentClientForPool's recovery: that path reconciles a
+	// pool it cannot reach and waits for it, which is right for an operation
+	// that needs the pool running (an attach, ADR 0039) and wrong for a read.
+	// An audit read must not restart pools, and a pool it cannot reach is an
+	// answer — the caller reports it as unavailable (ADR 0130 §1).
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	return client.ListHTTPAudit(ctx, pool.ProjectID, query)
+}
+
 // The registration timeout is armed by the pool reconciler, which owns the
 // deadline (pools.armRegistrationTimeout). Arming it from here meant a provider
 // call made on the pool's own reconcile path marking that same pool dirty,

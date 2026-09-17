@@ -209,6 +209,10 @@ type ListCredentialVerdictsRes interface {
 	listCredentialVerdictsRes()
 }
 
+type ListHTTPAuditRes interface {
+	listHTTPAuditRes()
+}
+
 type ListHarnessConfigSecretBindingsRes interface {
 	listHarnessConfigSecretBindingsRes()
 }

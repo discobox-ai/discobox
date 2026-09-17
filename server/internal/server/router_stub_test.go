@@ -748,6 +748,10 @@ func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID 
 	return s.GetPool(context.Background(), projectID, poolID)
 }
 
+func (s *routerTestServices) ListHTTPAudit(context.Context, string, services.HTTPAuditFilter) (*services.HTTPAuditResult, error) {
+	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
+}
+
 func (s *routerTestServices) ClearPoolCache(_ context.Context, projectID, poolID string) ([]string, error) {
 	if _, err := s.GetPool(context.Background(), projectID, poolID); err != nil {
 		return nil, err

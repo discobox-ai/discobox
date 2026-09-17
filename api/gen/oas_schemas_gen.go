@@ -2076,6 +2076,7 @@ func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) getServerInfoRes()                    {}
 func (*ErrorModelStatusCode) getServerPeerRes()                    {}
 func (*ErrorModelStatusCode) listCredentialVerdictsRes()           {}
+func (*ErrorModelStatusCode) listHTTPAuditRes()                    {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
@@ -2560,6 +2561,230 @@ func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// One HTTP exchange a pool proxy audited (ADR 0130). The method, URL and host are what a sandbox
+// sent; headers and bodies stay on the pool. Recorded by the pool proxy from what crossed the wire,
+// so the sandbox cannot alter the row.
+// Ref: #/components/schemas/HTTPAuditExchange
+type HTTPAuditExchange struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// True when the proxy's destination policy refused the request.
+	Blocked bool `json:"blocked"`
+	// Why the request was refused.
+	BlockedReason OptString `json:"blockedReason"`
+	// True when the response came from the pool's response cache.
+	CacheHit OptBool `json:"cacheHit"`
+	// When the exchange was recorded.
+	CreatedAt time.Time `json:"createdAt"`
+	// How long the exchange took, in milliseconds.
+	DurationMillis OptInt64 `json:"durationMillis"`
+	// Destination host.
+	Host string `json:"host"`
+	// Audit row ID, unique within its pool.
+	ID int64 `json:"id"`
+	// HTTP method.
+	Method string `json:"method"`
+	// Pool whose proxy recorded the exchange.
+	PoolId string `json:"poolId"`
+	// Size of the recorded request body.
+	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
+	// Size of the response body.
+	ResponseBytes OptInt64 `json:"responseBytes"`
+	// Sandbox whose client certificate made the request. It may no longer exist.
+	SandboxId string `json:"sandboxId"`
+	// Response status; zero when no response was received.
+	Status int `json:"status"`
+	// Approved credential uses whose sentinels were swapped into this request. Joins to credential
+	// verdicts by useId (ADR 0130 §3).
+	SwappedUseIds []string `json:"swappedUseIds"`
+	// True for an upgraded (e.g. WebSocket) connection.
+	Upgrade OptBool `json:"upgrade"`
+	// The upgrade protocol.
+	UpgradeType OptString `json:"upgradeType"`
+	// Request URL, with any swapped query value left as its sentinel.
+	URL string `json:"url"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *HTTPAuditExchange) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *HTTPAuditExchange) GetBlocked() bool {
+	return s.Blocked
+}
+
+// GetBlockedReason returns the value of BlockedReason.
+func (s *HTTPAuditExchange) GetBlockedReason() OptString {
+	return s.BlockedReason
+}
+
+// GetCacheHit returns the value of CacheHit.
+func (s *HTTPAuditExchange) GetCacheHit() OptBool {
+	return s.CacheHit
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HTTPAuditExchange) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDurationMillis returns the value of DurationMillis.
+func (s *HTTPAuditExchange) GetDurationMillis() OptInt64 {
+	return s.DurationMillis
+}
+
+// GetHost returns the value of Host.
+func (s *HTTPAuditExchange) GetHost() string {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *HTTPAuditExchange) GetID() int64 {
+	return s.ID
+}
+
+// GetMethod returns the value of Method.
+func (s *HTTPAuditExchange) GetMethod() string {
+	return s.Method
+}
+
+// GetPoolId returns the value of PoolId.
+func (s *HTTPAuditExchange) GetPoolId() string {
+	return s.PoolId
+}
+
+// GetRequestBodyBytes returns the value of RequestBodyBytes.
+func (s *HTTPAuditExchange) GetRequestBodyBytes() OptInt64 {
+	return s.RequestBodyBytes
+}
+
+// GetResponseBytes returns the value of ResponseBytes.
+func (s *HTTPAuditExchange) GetResponseBytes() OptInt64 {
+	return s.ResponseBytes
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *HTTPAuditExchange) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetStatus returns the value of Status.
+func (s *HTTPAuditExchange) GetStatus() int {
+	return s.Status
+}
+
+// GetSwappedUseIds returns the value of SwappedUseIds.
+func (s *HTTPAuditExchange) GetSwappedUseIds() []string {
+	return s.SwappedUseIds
+}
+
+// GetUpgrade returns the value of Upgrade.
+func (s *HTTPAuditExchange) GetUpgrade() OptBool {
+	return s.Upgrade
+}
+
+// GetUpgradeType returns the value of UpgradeType.
+func (s *HTTPAuditExchange) GetUpgradeType() OptString {
+	return s.UpgradeType
+}
+
+// GetURL returns the value of URL.
+func (s *HTTPAuditExchange) GetURL() string {
+	return s.URL
+}
+
+// SetSchema sets the value of Schema.
+func (s *HTTPAuditExchange) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetBlocked sets the value of Blocked.
+func (s *HTTPAuditExchange) SetBlocked(val bool) {
+	s.Blocked = val
+}
+
+// SetBlockedReason sets the value of BlockedReason.
+func (s *HTTPAuditExchange) SetBlockedReason(val OptString) {
+	s.BlockedReason = val
+}
+
+// SetCacheHit sets the value of CacheHit.
+func (s *HTTPAuditExchange) SetCacheHit(val OptBool) {
+	s.CacheHit = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HTTPAuditExchange) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDurationMillis sets the value of DurationMillis.
+func (s *HTTPAuditExchange) SetDurationMillis(val OptInt64) {
+	s.DurationMillis = val
+}
+
+// SetHost sets the value of Host.
+func (s *HTTPAuditExchange) SetHost(val string) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *HTTPAuditExchange) SetID(val int64) {
+	s.ID = val
+}
+
+// SetMethod sets the value of Method.
+func (s *HTTPAuditExchange) SetMethod(val string) {
+	s.Method = val
+}
+
+// SetPoolId sets the value of PoolId.
+func (s *HTTPAuditExchange) SetPoolId(val string) {
+	s.PoolId = val
+}
+
+// SetRequestBodyBytes sets the value of RequestBodyBytes.
+func (s *HTTPAuditExchange) SetRequestBodyBytes(val OptInt64) {
+	s.RequestBodyBytes = val
+}
+
+// SetResponseBytes sets the value of ResponseBytes.
+func (s *HTTPAuditExchange) SetResponseBytes(val OptInt64) {
+	s.ResponseBytes = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *HTTPAuditExchange) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *HTTPAuditExchange) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetSwappedUseIds sets the value of SwappedUseIds.
+func (s *HTTPAuditExchange) SetSwappedUseIds(val []string) {
+	s.SwappedUseIds = val
+}
+
+// SetUpgrade sets the value of Upgrade.
+func (s *HTTPAuditExchange) SetUpgrade(val OptBool) {
+	s.Upgrade = val
+}
+
+// SetUpgradeType sets the value of UpgradeType.
+func (s *HTTPAuditExchange) SetUpgradeType(val OptString) {
+	s.UpgradeType = val
+}
+
+// SetURL sets the value of URL.
+func (s *HTTPAuditExchange) SetURL(val string) {
+	s.URL = val
 }
 
 // Ref: #/components/schemas/HarnessConfig
@@ -3806,6 +4031,48 @@ func (s *ListCredentialVerdictsBody) SetCredentialVerdicts(val []CredentialVerdi
 }
 
 func (*ListCredentialVerdictsBody) listCredentialVerdictsRes() {}
+
+// Ref: #/components/schemas/ListHTTPAuditBody
+type ListHTTPAuditBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Matching exchanges from every pool that answered, newest first.
+	Exchanges []HTTPAuditExchange `json:"exchanges"`
+	// Pools that were asked and did not answer. Non-empty means exchanges may be missing.
+	UnavailablePools []UnavailableAuditPool `json:"unavailablePools"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListHTTPAuditBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetExchanges returns the value of Exchanges.
+func (s *ListHTTPAuditBody) GetExchanges() []HTTPAuditExchange {
+	return s.Exchanges
+}
+
+// GetUnavailablePools returns the value of UnavailablePools.
+func (s *ListHTTPAuditBody) GetUnavailablePools() []UnavailableAuditPool {
+	return s.UnavailablePools
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListHTTPAuditBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetExchanges sets the value of Exchanges.
+func (s *ListHTTPAuditBody) SetExchanges(val []HTTPAuditExchange) {
+	s.Exchanges = val
+}
+
+// SetUnavailablePools sets the value of UnavailablePools.
+func (s *ListHTTPAuditBody) SetUnavailablePools(val []UnavailableAuditPool) {
+	s.UnavailablePools = val
+}
+
+func (*ListHTTPAuditBody) listHTTPAuditRes() {}
 
 // Ref: #/components/schemas/ListHarnessConfigSecretBindingsBody
 type ListHarnessConfigSecretBindingsBody struct {
@@ -17473,6 +17740,48 @@ func (*StreamSandboxExecResourcesOK) streamSandboxExecResourcesRes() {}
 type UnarchiveSandboxAccepted struct{}
 
 func (*UnarchiveSandboxAccepted) unarchiveSandboxRes() {}
+
+// A pool the read asked and could not hear from. Its exchanges are missing from the answer, and
+// saying so is what keeps a partial trail from reading as a complete one (ADR 0130 §1).
+// Ref: #/components/schemas/UnavailableAuditPool
+type UnavailableAuditPool struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The pool that did not answer.
+	PoolId string `json:"poolId"`
+	// Why it did not.
+	Reason string `json:"reason"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UnavailableAuditPool) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetPoolId returns the value of PoolId.
+func (s *UnavailableAuditPool) GetPoolId() string {
+	return s.PoolId
+}
+
+// GetReason returns the value of Reason.
+func (s *UnavailableAuditPool) GetReason() string {
+	return s.Reason
+}
+
+// SetSchema sets the value of Schema.
+func (s *UnavailableAuditPool) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetPoolId sets the value of PoolId.
+func (s *UnavailableAuditPool) SetPoolId(val string) {
+	s.PoolId = val
+}
+
+// SetReason sets the value of Reason.
+func (s *UnavailableAuditPool) SetReason(val string) {
+	s.Reason = val
+}
 
 // Ref: #/components/schemas/UpdateHarnessConfigBody
 type UpdateHarnessConfigBody struct {

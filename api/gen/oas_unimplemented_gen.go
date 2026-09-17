@@ -516,6 +516,18 @@ func (UnimplementedHandler) ListCredentialVerdicts(ctx context.Context, params L
 	return r, ht.ErrNotImplemented
 }
 
+// ListHTTPAudit implements list-http-audit operation.
+//
+// The HTTP exchanges the project's pool proxies audited, newest first, read from each pool through
+// its agent and merged (ADR 0130 §§1, 4). Project-scoped because a purged sandbox's exchanges stay
+// on its pool for the audit retention window after the record of which pool that was is gone. A pool
+// that does not answer is listed in unavailablePools rather than dropped.
+//
+// GET /projects/{projectId}/audit/http
+func (UnimplementedHandler) ListHTTPAudit(ctx context.Context, params ListHTTPAuditParams) (r ListHTTPAuditRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 //
 // List harness config secret bindings.

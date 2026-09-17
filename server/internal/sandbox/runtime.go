@@ -229,6 +229,36 @@ type ResolvedHarnessConfig struct {
 	AdditionalGroups []string
 }
 
+// HTTPAuditQuery narrows a read of one pool proxy's HTTP audit.
+type HTTPAuditQuery struct {
+	SandboxID string
+	Host      string
+	UseID     string
+	Since     time.Time
+	Limit     int
+}
+
+// HTTPAuditExchange is one HTTP exchange a pool proxy audited. Headers and
+// bodies stay on the pool.
+type HTTPAuditExchange struct {
+	ID               int64     `json:"id"`
+	CreatedAt        time.Time `json:"createdAt"`
+	SandboxID        string    `json:"sandboxId"`
+	Method           string    `json:"method"`
+	URL              string    `json:"url"`
+	Host             string    `json:"host"`
+	Status           int       `json:"status"`
+	DurationMillis   int64     `json:"durationMillis"`
+	Blocked          bool      `json:"blocked"`
+	BlockedReason    string    `json:"blockedReason,omitempty"`
+	CacheHit         bool      `json:"cacheHit"`
+	SwappedUseIDs    []string  `json:"swappedUseIds"`
+	RequestBodyBytes int64     `json:"requestBodyBytes"`
+	ResponseBytes    int64     `json:"responseBytes"`
+	Upgrade          bool      `json:"upgrade"`
+	UpgradeType      string    `json:"upgradeType,omitempty"`
+}
+
 // PoolRuntime is the provider surface for a pool's own runtime host: the pool
 // is its own runtime host, so these converge and operate one container/VM/pod.
 // The caller owns pool lifecycle persistence and job semantics. RepairPool is
@@ -245,6 +275,11 @@ type PoolRuntime interface {
 	// and this answers once it is done; nothing is started again afterwards.
 	// An agent too old to have the operation is ErrPoolAgentUnsupported.
 	ClearCache(ctx context.Context, pool *model.Pool) ([]string, error)
+	// ListHTTPAudit reads the HTTP exchanges the pool's proxy audited, newest
+	// first, through the pool agent (ADR 0130 §4). A query naming a sandbox is
+	// narrowed to it by the pool agent's token, not only by the filter. An agent
+	// too old to have the operation is ErrPoolAgentUnsupported.
+	ListHTTPAudit(ctx context.Context, pool *model.Pool, query HTTPAuditQuery) ([]HTTPAuditExchange, error)
 	// OpenConsole attaches to the pool host's administrative console: a root
 	// shell in the host's own namespaces, for operators debugging the backend
 	// itself. It deliberately does not go through the pool agent, because the

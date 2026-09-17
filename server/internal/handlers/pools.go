@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"time"
+
 	"context"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -97,6 +99,25 @@ func (h *Handler) ReconcilePool(ctx context.Context, params serverapi.ReconcileP
 		return apiError(err), nil
 	}
 	body, err := services.PoolToAPI(pool)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) ListHTTPAudit(ctx context.Context, params serverapi.ListHTTPAuditParams) (serverapi.ListHTTPAuditRes, error) {
+	result, err := h.services.Pools.ListHTTPAudit(ctx, params.ProjectId, services.HTTPAuditFilter{
+		SandboxID: params.SandboxId.Or(""),
+		PoolID:    params.PoolId.Or(""),
+		Host:      params.Host.Or(""),
+		UseID:     params.UseId.Or(""),
+		Since:     params.Since.Or(time.Time{}),
+		Limit:     params.Limit.Or(100),
+	})
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.ListHTTPAuditBody](result)
 	if err != nil {
 		return nil, err
 	}

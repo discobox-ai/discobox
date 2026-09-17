@@ -5,11 +5,15 @@
 package pools
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -237,6 +241,156 @@ func (s *Service) ClearPoolCache(ctx context.Context, projectID, poolID string) 
 			"pool %s is running a pool agent older than this server, which cannot clear its caches; the pool moves onto the current agent when it is next reconciled, after which this will work", pool.ID))
 	}
 	return stopped, err
+}
+
+// auditPoolReadTimeout bounds one pool's part of an audit read. The whole read
+// waits for its slowest pool, so without it one unreachable host holds every
+// answer for as long as the network takes to give up on it. A variable so a
+// test can shorten it.
+var auditPoolReadTimeout = 20 * time.Second
+
+// ListHTTPAudit reads the project's pool proxies' HTTP audit and merges it
+// newest first (ADR 0130 §§1, 4).
+//
+// Which pools are asked: the one PoolID names; otherwise, when the sandbox the
+// filter names still exists, the pool it runs on; otherwise every pool in the
+// project. The last case is not a fallback so much as the reason the read is
+// project-scoped at all — a purged sandbox's exchanges stay on its pool for
+// the retention window, and nothing left records which pool that was.
+//
+// Every pool is asked for the whole limit, because the newest N across pools
+// can all come from one of them, and each is given auditPoolReadTimeout to
+// answer. A pool that cannot be read is reported by name with why; a trail that
+// silently omits a pool reads as a complete one. A pool being deleted, or whose
+// agent never registered, is reported without being asked: there is no agent to
+// answer, and asking would only spend the deadline finding that out.
+func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter services.HTTPAuditFilter) (*services.HTTPAuditResult, error) {
+	pools, err := s.auditPools(ctx, projectID, filter)
+	if err != nil {
+		return nil, err
+	}
+	query := sandbox.HTTPAuditQuery{
+		SandboxID: filter.SandboxID,
+		Host:      filter.Host,
+		UseID:     filter.UseID,
+		Since:     filter.Since,
+		Limit:     filter.Limit,
+	}
+	type poolRead struct {
+		poolID    string
+		exchanges []sandbox.HTTPAuditExchange
+		err       error
+	}
+	reads := make([]poolRead, len(pools))
+	var wg sync.WaitGroup
+	for i := range pools {
+		if reason := unaskableAuditPool(&pools[i]); reason != "" {
+			reads[i] = poolRead{poolID: pools[i].ID, err: errors.New(reason)}
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			poolCtx, cancel := context.WithTimeout(ctx, auditPoolReadTimeout)
+			defer cancel()
+			exchanges, err := s.readPoolHTTPAudit(poolCtx, &pools[i], query)
+			if err != nil && errors.Is(poolCtx.Err(), context.DeadlineExceeded) {
+				err = fmt.Errorf("it did not answer within %s", auditPoolReadTimeout)
+			}
+			reads[i] = poolRead{poolID: pools[i].ID, exchanges: exchanges, err: err}
+		}()
+	}
+	wg.Wait()
+
+	result := &services.HTTPAuditResult{
+		Exchanges:        []services.PoolHTTPAuditExchange{},
+		UnavailablePools: []services.UnavailableAuditPool{},
+	}
+	for _, read := range reads {
+		if read.err != nil {
+			result.UnavailablePools = append(result.UnavailablePools, services.UnavailableAuditPool{PoolID: read.poolID, Reason: read.err.Error()})
+			continue
+		}
+		for _, exchange := range read.exchanges {
+			result.Exchanges = append(result.Exchanges, services.PoolHTTPAuditExchange{PoolID: read.poolID, HTTPAuditExchange: exchange})
+		}
+	}
+	slices.SortStableFunc(result.Exchanges, func(a, b services.PoolHTTPAuditExchange) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.PoolID, b.PoolID); c != 0 {
+			return c
+		}
+		return cmp.Compare(b.ID, a.ID)
+	})
+	if filter.Limit > 0 && len(result.Exchanges) > filter.Limit {
+		result.Exchanges = result.Exchanges[:filter.Limit]
+	}
+	return result, nil
+}
+
+// unaskableAuditPool says why a pool has no agent to ask, or "" when it does.
+func unaskableAuditPool(pool *model.Pool) string {
+	switch {
+	case pool.DesiredState != model.DesiredStatePresent:
+		return "it is being deleted"
+	case pool.RegisteredAt == nil:
+		return "its pool agent has not registered"
+	default:
+		return ""
+	}
+}
+
+// auditPools resolves which pools an audit read asks. See ListHTTPAudit.
+func (s *Service) auditPools(ctx context.Context, projectID string, filter services.HTTPAuditFilter) ([]model.Pool, error) {
+	if filter.PoolID != "" {
+		pool, err := s.store.GetPool(ctx, projectID, filter.PoolID)
+		if err != nil {
+			return nil, apperrors.NotFound(err, "pool not found")
+		}
+		return []model.Pool{*pool}, nil
+	}
+	if filter.SandboxID != "" {
+		sb, err := s.store.GetSandbox(ctx, projectID, filter.SandboxID)
+		switch {
+		case err == nil && sb.PoolID != "":
+			pool, err := s.store.GetPool(ctx, projectID, sb.PoolID)
+			if err == nil {
+				return []model.Pool{*pool}, nil
+			}
+			if !errors.Is(err, store.ErrNotFound) {
+				return nil, err
+			}
+		case err != nil && !errors.Is(err, store.ErrNotFound):
+			return nil, err
+		}
+	}
+	return s.store.ListPools(ctx, projectID)
+}
+
+// readPoolHTTPAudit reads one pool's audit through its provider's runtime.
+func (s *Service) readPoolHTTPAudit(ctx context.Context, pool *model.Pool, query sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
+	provider, err := s.store.GetSandboxProviderInstance(ctx, pool.ProjectID, pool.ProviderInstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("its provider instance could not be loaded: %w", err)
+	}
+	if s.providers == nil {
+		return nil, errors.New("no sandbox provider manager is configured")
+	}
+	instance, err := s.providers.ResolveInstance(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	runtime, ok := instance.(sandbox.PoolRuntime)
+	if !ok {
+		return nil, fmt.Errorf("provider %q runs no pool proxy", provider.Type)
+	}
+	exchanges, err := runtime.ListHTTPAudit(ctx, pool, query)
+	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		return nil, errors.New("its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled")
+	}
+	return exchanges, err
 }
 
 // OpenPoolConsole attaches to the pool host's administrative console.

@@ -387,6 +387,10 @@ func (stubPoolProvider) RemovePool(context.Context, sandbox.PoolManager, *model.
 	return nil
 }
 
+func (stubPoolProvider) ListHTTPAudit(context.Context, *model.Pool, sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
+	return nil, nil
+}
+
 func (stubPoolProvider) ClearCache(context.Context, *model.Pool) ([]string, error) {
 	return nil, nil
 }

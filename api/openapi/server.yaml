@@ -3047,6 +3047,129 @@ components:
             required:
                 - credentialVerdicts
             type: object
+        HTTPAuditExchange:
+            additionalProperties: false
+            description: One HTTP exchange a pool proxy audited (ADR 0130). The method, URL and host are what a sandbox sent; headers and bodies stay on the pool. Recorded by the pool proxy from what crossed the wire, so the sandbox cannot alter the row.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/HTTPAuditExchange.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                blocked:
+                    description: True when the proxy's destination policy refused the request
+                    type: boolean
+                blockedReason:
+                    description: Why the request was refused
+                    type: string
+                cacheHit:
+                    description: True when the response came from the pool's response cache
+                    type: boolean
+                createdAt:
+                    description: When the exchange was recorded
+                    format: date-time
+                    type: string
+                durationMillis:
+                    description: How long the exchange took, in milliseconds
+                    format: int64
+                    type: integer
+                host:
+                    description: Destination host
+                    type: string
+                id:
+                    description: Audit row ID, unique within its pool
+                    format: int64
+                    type: integer
+                method:
+                    description: HTTP method
+                    type: string
+                poolId:
+                    description: Pool whose proxy recorded the exchange
+                    type: string
+                requestBodyBytes:
+                    description: Size of the recorded request body
+                    format: int64
+                    type: integer
+                responseBytes:
+                    description: Size of the response body
+                    format: int64
+                    type: integer
+                sandboxId:
+                    description: Sandbox whose client certificate made the request. It may no longer exist.
+                    type: string
+                status:
+                    description: Response status; zero when no response was received
+                    type: integer
+                swappedUseIds:
+                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId (ADR 0130 §3).
+                    items:
+                        type: string
+                    type: array
+                upgrade:
+                    description: True for an upgraded (e.g. WebSocket) connection
+                    type: boolean
+                upgradeType:
+                    description: The upgrade protocol
+                    type: string
+                url:
+                    description: Request URL, with any swapped query value left as its sentinel
+                    type: string
+            required:
+                - poolId
+                - id
+                - createdAt
+                - sandboxId
+                - method
+                - url
+                - host
+                - status
+                - blocked
+                - swappedUseIds
+            type: object
+        UnavailableAuditPool:
+            additionalProperties: false
+            description: A pool the read asked and could not hear from. Its exchanges are missing from the answer, and saying so is what keeps a partial trail from reading as a complete one (ADR 0130 §1).
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/UnavailableAuditPool.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                poolId:
+                    description: The pool that did not answer
+                    type: string
+                reason:
+                    description: Why it did not
+                    type: string
+            required:
+                - poolId
+                - reason
+            type: object
+        ListHTTPAuditBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListHTTPAuditBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                exchanges:
+                    description: Matching exchanges from every pool that answered, newest first
+                    items:
+                        $ref: '#/components/schemas/HTTPAuditExchange'
+                    type: array
+                unavailablePools:
+                    description: Pools that were asked and did not answer. Non-empty means exchanges may be missing.
+                    items:
+                        $ref: '#/components/schemas/UnavailableAuditPool'
+                    type: array
+            required:
+                - exchanges
+                - unavailablePools
+            type: object
         ResolveSandboxSecretResponse:
             additionalProperties: false
             description: Result of resolving a sentinel. The value is present only when status is approved.
@@ -8277,6 +8400,74 @@ paths:
             summary: Revoke a secret grant
             tags:
                 - Secrets
+    /projects/{projectId}/audit/http:
+        get:
+            description: The HTTP exchanges the project's pool proxies audited, newest first, read from each pool through its agent and merged (ADR 0130 §§1, 4). Project-scoped because a purged sandbox's exchanges stay on its pool for the audit retention window after the record of which pool that was is gone. A pool that does not answer is listed in unavailablePools rather than dropped.
+            operationId: list-http-audit
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Only exchanges made by this sandbox, which need not still exist
+                  in: query
+                  name: sandboxId
+                  schema:
+                    description: Only exchanges made by this sandbox, which need not still exist
+                    type: string
+                - description: Only exchanges recorded by this pool
+                  in: query
+                  name: poolId
+                  schema:
+                    description: Only exchanges recorded by this pool
+                    type: string
+                - description: Only exchanges to this host
+                  in: query
+                  name: host
+                  schema:
+                    description: Only exchanges to this host
+                    type: string
+                - description: Only exchanges that spent this approved credential use
+                  in: query
+                  name: useId
+                  schema:
+                    description: Only exchanges that spent this approved credential use
+                    type: string
+                - description: Only exchanges recorded at or after this time
+                  in: query
+                  name: since
+                  schema:
+                    description: Only exchanges recorded at or after this time
+                    format: date-time
+                    type: string
+                - description: Maximum number of exchanges to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: 100
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListHTTPAuditBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List audited HTTP exchanges
+            tags:
+                - Pools
     /projects/{projectId}/credential-verdicts:
         get:
             description: The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091). Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId instead.

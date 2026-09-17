@@ -16,7 +16,7 @@ flowchart LR
     provsvc[providers.Service] -- SchedulePoolReconciliation --> cp
     svc --> store[(store)]
     svc -- "SubmitPoolDelete / SchedulePoolReconciliation /<br/>CreateSandboxAgentToken" --> cp
-    svc -- "OpenConsole / OpenLogs / BuildGuestImage / ClearCache" --> drivers
+    svc -- "OpenConsole / OpenLogs / BuildGuestImage / ClearCache / ListHTTPAudit" --> drivers
     cp --> store
     cp --> engine[(reconcile engine)]
     engine -- pool --> rec[PoolReconciler]
@@ -54,6 +54,18 @@ flowchart LR
   tracks it, and no pool status field records it. An agent too old to have the
   operation (`sandbox.ErrPoolAgentUnsupported`) answers 409 saying so, rather
   than the 404 that reads as a missing pool.
+  `ListHTTPAudit` reads the pool proxies' HTTP audit for the whole project and
+  merges it newest first (ADR 0130 §§1, 4). It asks the pool `poolId` names;
+  otherwise the pool a still-existing sandbox runs on; otherwise every pool in
+  the project, because a purged sandbox's requests stay on its pool with no row
+  left saying which. Pools are asked in parallel, each for the whole limit,
+  since the newest N can all come from one pool, and each under
+  `auditPoolReadTimeout`, so one unreachable host cannot hold the answer. A pool
+  being deleted, or whose agent never registered, is reported without being
+  asked. The provider reaches the agent without `agentClientForPool`'s
+  reconcile-and-wait recovery: a read must not restart the pools it reads. A pool that cannot be read is
+  not an error: it is returned in `UnavailablePools` with why, beside what the
+  others answered, because a trail silently short a pool reads as complete.
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
   (`RegisterPool`, authenticated by the token itself), heartbeats
   (`UpdatePoolStatus`), sandbox-state and sandbox provisioning-progress

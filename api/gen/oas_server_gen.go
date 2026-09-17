@@ -355,6 +355,15 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/credential-verdicts
 	ListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (ListCredentialVerdictsRes, error)
+	// ListHTTPAudit implements list-http-audit operation.
+	//
+	// The HTTP exchanges the project's pool proxies audited, newest first, read from each pool through
+	// its agent and merged (ADR 0130 §§1, 4). Project-scoped because a purged sandbox's exchanges stay
+	// on its pool for the audit retention window after the record of which pool that was is gone. A pool
+	// that does not answer is listed in unavailablePools rather than dropped.
+	//
+	// GET /projects/{projectId}/audit/http
+	ListHTTPAudit(ctx context.Context, params ListHTTPAuditParams) (ListHTTPAuditRes, error)
 	// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 	//
 	// List harness config secret bindings.

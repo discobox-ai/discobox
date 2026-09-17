@@ -199,6 +199,39 @@ type SandboxImportResult struct {
 	Warnings []string
 }
 
+// HTTPAuditFilter narrows ListHTTPAudit. A zero field matches everything.
+type HTTPAuditFilter struct {
+	// SandboxID is matched against the recorded client ID and never requires
+	// the sandbox to exist: its exchanges outlive it on its pool.
+	SandboxID string
+	PoolID    string
+	Host      string
+	UseID     string
+	Since     time.Time
+	Limit     int
+}
+
+// HTTPAuditResult is a merged read of every pool that was asked.
+type HTTPAuditResult struct {
+	Exchanges []PoolHTTPAuditExchange `json:"exchanges"`
+	// UnavailablePools are the pools asked that did not answer. A non-empty
+	// list means exchanges may be missing, and the caller must be told.
+	UnavailablePools []UnavailableAuditPool `json:"unavailablePools"`
+}
+
+// PoolHTTPAuditExchange is an audited exchange and the pool that recorded it.
+// Row IDs are only unique within a pool.
+type PoolHTTPAuditExchange struct {
+	PoolID string `json:"poolId"`
+	sandbox.HTTPAuditExchange
+}
+
+// UnavailableAuditPool is a pool whose part of the trail could not be read.
+type UnavailableAuditPool struct {
+	PoolID string `json:"poolId"`
+	Reason string `json:"reason"`
+}
+
 type SandboxProviderInstanceService interface {
 	ListSandboxProviderCatalogItems(ctx context.Context) ([]SandboxProviderCatalogItem, error)
 	ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error)
@@ -224,6 +257,10 @@ type PoolService interface {
 	// and empty the pool's caches, and returns the sandboxes it stopped once the
 	// cache is empty.
 	ClearPoolCache(ctx context.Context, projectID, poolID string) ([]string, error)
+	// ListHTTPAudit reads the HTTP exchanges the project's pool proxies
+	// audited, from every pool the filter allows, merged newest first (ADR 0130
+	// §§1, 4). A pool that does not answer is reported, not dropped.
+	ListHTTPAudit(ctx context.Context, projectID string, filter HTTPAuditFilter) (*HTTPAuditResult, error)
 	// OpenPoolConsole attaches to the pool host's administrative console: a
 	// privileged root shell on the machine running the pool's runtime, for
 	// debugging the backend itself.

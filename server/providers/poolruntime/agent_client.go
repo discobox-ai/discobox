@@ -95,6 +95,59 @@ func (p *poolAgentClient) ClearCache(ctx context.Context, projectID string) ([]s
 	return res.StoppedSandboxIds, nil
 }
 
+// ListHTTPAudit asks the pool agent for its proxy's HTTP audit. The sandbox a
+// query names goes into the token as well as the filter: the agent narrows to
+// the token's sandbox, so a scoped read cannot come back wider than it asked.
+func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, query sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
+	client, release, err := p.poolClient(sandbox.SandboxRef{ProjectID: projectID, SandboxID: query.SandboxID}, poolagentauth.ScopeAuditRead)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	params := poolclient.PoolListHTTPAuditParams{ProjectId: projectID, PoolId: p.poolID}
+	if query.SandboxID != "" {
+		params.SandboxId = poolclient.NewOptString(query.SandboxID)
+	}
+	if query.Host != "" {
+		params.Host = poolclient.NewOptString(query.Host)
+	}
+	if query.UseID != "" {
+		params.UseId = poolclient.NewOptString(query.UseID)
+	}
+	if !query.Since.IsZero() {
+		params.Since = poolclient.NewOptDateTime(query.Since)
+	}
+	if query.Limit > 0 {
+		params.Limit = poolclient.NewOptInt(query.Limit)
+	}
+	res, err := client.PoolListHTTPAudit(ctx, params)
+	if err != nil {
+		return nil, mapPoolClientError(err)
+	}
+	out := make([]sandbox.HTTPAuditExchange, 0, len(res.Exchanges))
+	for _, e := range res.Exchanges {
+		out = append(out, sandbox.HTTPAuditExchange{
+			ID:               e.ID,
+			CreatedAt:        e.CreatedAt,
+			SandboxID:        e.SandboxId,
+			Method:           e.Method,
+			URL:              e.URL,
+			Host:             e.Host,
+			Status:           e.Status,
+			DurationMillis:   e.DurationMillis.Or(0),
+			Blocked:          e.Blocked,
+			BlockedReason:    e.BlockedReason.Or(""),
+			CacheHit:         e.CacheHit.Or(false),
+			SwappedUseIDs:    append([]string{}, e.SwappedUseIds...),
+			RequestBodyBytes: e.RequestBodyBytes.Or(0),
+			ResponseBytes:    e.ResponseBytes.Or(0),
+			Upgrade:          e.Upgrade.Or(false),
+			UpgradeType:      e.UpgradeType.Or(""),
+		})
+	}
+	return out, nil
+}
+
 func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
 	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
 	if err != nil {

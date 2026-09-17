@@ -39,6 +39,9 @@ const (
 	// ScopeTCPConnect for datagrams (ADR 0109 §4).
 	ScopeUDPConnect = "udp:connect"
 	ScopePoolSync   = "pool:sync"
+	// ScopeAuditRead authorizes reading a pool proxy's audit trail (ADR 0130
+	// §4). A token that also names a sandbox reads only that sandbox's rows.
+	ScopeAuditRead = "audit:read"
 	// ScopePoolCacheClear authorizes stopping every sandbox on a pool and
 	// emptying its cache.
 	ScopePoolCacheClear = "pool:cache-clear"
