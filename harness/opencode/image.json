@@ -1,0 +1,33 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "harness": {
+    "id": "opencode",
+    "name": "OpenCode",
+    "description": "OpenCode coding harness, with any provider it includes.",
+    "files": [
+      {
+        "path": ".config/discobox/opencode-harness.json",
+        "content": "{\n  \"about\": \"Discobox's settings for the opencode harness. Edit with: discobox admin harnesses edit opencode .config/discobox/opencode-harness.json\",\n  \"judgeModel\": \"\",\n  \"webSearch\": null\n}\n"
+      }
+    ],
+    "config": {
+      "reminder": "Connect providers with /connect, pick a model with /models, then finish configuration with /exit.",
+      "ports": [
+        {
+          "port": 1455,
+          "unavailable": "Port 1455 is taken on your machine, so ChatGPT's browser sign-in cannot complete here. In /connect choose ChatGPT's headless sign-in instead, or free the port and configure again."
+        },
+        {
+          "port": 1456,
+          "unavailable": "Port 1456 is taken on your machine, so DigitalOcean's browser sign-in cannot complete here. Connect DigitalOcean with an API key instead, or free the port and configure again."
+        }
+      ],
+      "command": [
+        "/usr/local/libexec/discobox/configure-opencode"
+      ]
+    }
+  }
+}

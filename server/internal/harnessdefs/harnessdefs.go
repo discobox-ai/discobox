@@ -2,7 +2,7 @@
 //
 // There is no user-facing "definition" concept: a harness config is the single
 // harness thing. This package only supplies what the server needs to seed the
-// three built-in harness configs, and the env-override mapping dev builds use to
+// built-in harness configs, and the env-override mapping dev builds use to
 // point those configs at freshly tagged images.
 package harnessdefs
 

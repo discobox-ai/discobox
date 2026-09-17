@@ -145,15 +145,16 @@ launchers, and configure scripts.
   with no `agent.conf` (the `shell` harness) is unaffected. Because the store is
   the version source, each image also turns its agent's own updater off:
   `DISABLE_AUTOUPDATER` in claude-code's env layer, `check_for_update_on_startup`
-  in codex's system config. `discobox-harness-upgrade` is the by-hand "newest,
-  now".
+  in codex's system config, `OPENCODE_DISABLE_AUTOUPDATE` in opencode's env
+  layer. `discobox-harness-upgrade` is the by-hand "newest, now".
 - Every harness image provides **`/usr/local/bin/discobox-prompt`**, a one-shot
   prompting interface in-sandbox tools ask for a model through
   ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
   `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]`,
   answering on stdout and exiting 0 only when the model answered. `--model`
-  names a *role* (`judge`, which pins a named model, or `fast`), never a model
-  id — the caller does not know
+  names a *role* (`judge`, which pins a named model — except in the opencode
+  image, whose providers are the user's choice; see [OpenCode](#opencode) — or
+  `fast`), never a model id — the caller does not know
   what the image installed, so mapping the role is the wrapper's job, and it is
   version-coupled to a CLI the image pins the way the hook and launch wrappers
   are. `--no-tools` means the model answers from its prompt and executes
@@ -195,24 +196,26 @@ launchers, and configure scripts.
   holds no behavior a harness image cannot declare for itself — that is what
   keeps a third-party harness a pure image-registration story.
 - A `Definition` names its image through `harness.ImageRef`, never as a
-  literal. One `ImageRegistry`/`ImageTag` pair backs all three, unset and
+  literal. One `ImageRegistry`/`ImageTag` pair backs every one, unset and
   `local` by default and overwritten at link time by a release
   (`Taskfile.yml`'s `release:binary`), so the built-in harnesses a binary seeds
   are the images that shipped with it. One pair rather than a reference per
-  harness: a release publishes them together, and three independent references
+  harness: a release publishes them together, and independent references
   could disagree about which release a sandbox is running.
 - Whether a harness has an interactive configure flow is the image's
   declaration (`config.command`), snapshotted as the config's config command;
-  a `Definition`'s `Configure` field (set by `claude-code` and `codex-cli`, nil
+  a `Definition`'s `Configure` field (set by `claude-code`, `codex-cli`, and `opencode`, nil
   for `shell`) is read by nothing. The configure process writes files and
   collected secret values to `ConfigureOutputPath`. Configure files use the
   same home-relative contract as all harness files; configure commands run from
   the sandbox workdir and must use `$HOME` when invoking one of those files.
-  Both included coding harnesses support config mode — see
+  Every included coding harness supports config mode — see
   [Configure flows](#configure-flows).
 - Provider-specific implementations live in one folder per harness:
   - `claude-code`
   - `codex-cli`
+  - `opencode` — opencode 1 (`opencode-ai`), the release its installer and docs
+    install; opencode 2 (`@opencode/cli`) is a different program.
   - `shell` — the login shell, and the end of the resolution chain. Its
     Dockerfile installs nothing (the base image already ships the shell) and it
     has no `image.json` at all: no identity to declare beyond its reserved slug,
@@ -246,12 +249,19 @@ Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
 the sandbox agent's generic publisher; no Go code in this package writes or
 merges a harness's settings.
 
+opencode publishes no hooks. Its lifecycle events reach JavaScript plugins
+rather than commands, and hooks are recorded and read by nothing that derives
+state from them (`sandbox-agent/agentstatus`), so the harness loses a log rather
+than a behavior. Its policy baseline is a launch flag rather than a system layer
+(see [OpenCode](#opencode)).
+
 ## Source-scoped memory
 
 The runtime exposes opaque durable data for the primary source at
 `/.discobox/data-per-source/primary`; only harness images interpret anything
-beneath it. Both included coding harnesses launch through small image-owned
-wrappers and keep their memory in separate namespaces:
+beneath it. Claude Code and Codex launch through small image-owned wrappers and
+keep their memory in separate namespaces; opencode has no memory feature to
+point at it:
 
 - Claude Code passes its supported `autoMemoryDirectory` launch setting as
   `.../harnesses/claude-code/memories`. Supplying it at launch keeps this
@@ -548,3 +558,102 @@ image's `unavailable` message.
     lose the trust it had. Changing the stanza again needs the same: a
     migration for each stanza it replaces, including that one, or every config
     captured before keeps it.
+
+### OpenCode
+
+`opencode/configure.sh` follows the codex shape — a bare interactive
+`opencode`, then an inspection of the credentials file it wrote — for a harness
+whose credentials are not one of two fixed kinds. opencode reaches every
+models.dev provider, and a user connects as many as they like with `/connect`,
+so the image declares no secrets at all: their names are only known once
+something is connected, and the built-in seeds `Configured`, like any image
+that declares none. See
+[ADR 0127](../docs/adr/0127-the-opencode-harness-runs-opencode-1.md).
+
+- **Credentials are one file**, `~/.local/share/opencode/auth.json`, keyed by
+  provider: `{type: api, key}`, `{type: oauth, access, refresh, expires, …}`,
+  or `{type: wellknown, key, token}`. opencode reads it on every use.
+- **One secret per provider**, `OPENCODE_<PROVIDER>_CREDENTIAL`. The name is
+  stable per provider, so a reconfigure that replaces a credential updates its
+  secret in place.
+- **The secret's type follows how the credential renews.** A key is a `token`.
+  An OAuth sign-in whose `refresh_token` grant the control plane can perform —
+  OpenAI (ChatGPT, the client and endpoint the codex image refreshes), xAI
+  (whose endpoint takes the request form-encoded, recorded as
+  `tokenRequestEncoding: form`) — is an `oauth` secret. Any other OAuth sign-in
+  (GitHub Copilot, which never expires; DigitalOcean and Snowflake, which cannot
+  be renewed from here) is a `token` holding its access token, and the script
+  says when it expires.
+- **Delivery is auth.json as a templated harness file**, as the codex image
+  delivers its own: each entry with the sentinel in place of its key or access
+  token, `refresh` a placeholder that can never be spent (or the sentinel, for
+  Copilot, which authenticates with that field), and `expires` far future where
+  the control plane renews the token, so opencode never attempts a refresh the
+  sandbox could not complete. The image declares no baseline auth.json: an empty
+  one would authenticate nothing while reading as configured.
+- **The default model is checked, and a failure only warns.** `opencode run`
+  with no `--model` runs on the model a sandbox starts on — the `model` setting,
+  else the last `/models` pick, else opencode's own choice. Only that model is
+  checked: whether a request succeeds depends on the model as much as the
+  credential (a plan that excludes it, a region that needs opting in to), which
+  opencode's model list does not show, so checking each provider on a model
+  picked for it reports working keys as broken. A failure offers to start
+  opencode again; declining saves everything as it is. Connecting nothing is
+  allowed after a warning — opencode runs without a provider, on its free
+  models or a local server.
+- **Reconfigure seeds auth.json** from the previous one with each `PREV_`
+  sentinel substituted, so the session opens connected. An entry whose key or
+  access token is still that sentinel was not replaced, and comes back as
+  `usePrevious` with its previous entry verbatim. Whatever is not seeded is
+  removed, as codex removes an auth.json rendered against secrets the configure
+  sandbox does not have.
+- It also returns opencode's settings as the user left them — the global
+  `opencode.json`, `opencode.jsonc`, `config.json`, and `tui.json` (theme,
+  keybinds) — and `.local/state/opencode/model.json`, the `/models` choice, as
+  `createOnly`: it seeds a sandbox's first launch and belongs to the sandbox
+  after that.
+- **The policy baseline is `--auto`** on the launch, approving every tool use a
+  rule does not deny, and a launch prompt goes to `--prompt`, which the TUI
+  submits. opencode's system layer, `/etc/opencode`, is its *managed*
+  configuration, which outranks a project's own rules, and the user's global
+  config is replaced by the captured settings — so neither is the place for it.
+- **Discobox's own settings for the harness** live in
+  `.config/discobox/opencode-harness.json`, a plain harness file the image
+  declares and configure returns: `judgeModel` and `webSearch`. It is edited
+  with `discobox admin harnesses edit opencode .config/discobox/opencode-harness.json`,
+  and a reconfigure keeps whatever was edited into it.
+- **Web search is asked during configure.** opencode searches with keyless Exa
+  and Parallel, but only for models from its own providers (OpenCode Zen and Go)
+  unless `OPENCODE_ENABLE_EXA`/`OPENCODE_ENABLE_PARALLEL` turn it on for every
+  provider. The launcher reads `webSearch`: `true` sets both, `false` denies the
+  `websearch` permission (the only way to turn it off for opencode's own
+  providers; fetching a known URL is a separate permission and stays), and
+  `null` — the image's baseline, before anyone configured — leaves opencode's
+  default.
+- `discobox-prompt` runs `opencode run`. **Tools-off is isolation**, not a
+  permission rule layered over whatever is there: the caller may be the agent
+  being judged, running as the same user in the same directory, so every source
+  opencode would read is one it could have written — a config file's permission
+  rules (merged before any override, and the last matching rule wins), a plugin
+  (code in the process, whatever the permissions say), an `AGENTS.md` found
+  from the working directory, a cached model catalog, any `OPENCODE_*`
+  variable. With `--no-tools` the wrapper runs opencode from an empty directory
+  with empty config, state and cache directories, project configuration and
+  Claude Code files off, `--pure`, no inherited `OPENCODE_*` variable, one rule
+  denying every permission, and a data directory of its own holding only the
+  `api` and `oauth` entries of `auth.json` — a `wellknown` entry is a URL
+  opencode fetches configuration from, past both switches. claude-code's wrapper
+  reaches the same place with `--restricted`. As there, this keeps the judge out
+  of configuration the agent wrote; it is not a boundary against an agent that
+  sets out to defeat it, which has sudo (ADR 0090).
+- **`judge` is not pinned.** It is `judgeModel` from the settings file, else the
+  last `/models` pick (read before isolation and passed with `--model`), else
+  opencode's own pick among the connected providers. The user chooses the
+  providers here, so no fixed model is one the harness can be sure to reach, and
+  a judge that cannot answer refuses every command. Both named sources are files
+  the judged agent can write, and so is `auth.json`, so an agent that set out to
+  could move the judge to another model, or to a provider it added a key for.
+  That trade is recorded in ADR 0127 §4.
+- The configure image declares config ports 1455 (ChatGPT's browser sign-in)
+  and 1456 (DigitalOcean's). A browser sign-in on a random port cannot be
+  forwarded; those providers connect with a key.

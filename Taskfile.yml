@@ -379,10 +379,12 @@ tasks:
       - task: build:harness-image
         vars: { HARNESS: claude-code }
       - task: build:harness-image
+        vars: { HARNESS: opencode }
+      - task: build:harness-image
         vars: { HARNESS: shell }
 
   build:harness-image:
-    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code, SANDBOX_AGENT_IMAGE defaults to the local base)
+    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode, SANDBOX_AGENT_IMAGE defaults to the local base)
     requires:
       vars: [HARNESS]
     vars:
@@ -757,6 +759,7 @@ tasks:
           vm-image/kernel/Dockerfile:. \
           harness/claude-code/Dockerfile:harness/claude-code \
           harness/codex-cli/Dockerfile:harness/codex-cli \
+          harness/opencode/Dockerfile:harness/opencode \
           harness/shell/Dockerfile:harness/shell; do
           dockerfile="${entry%:*}"
           context="${entry##*:}"
@@ -978,8 +981,8 @@ tasks:
       # on darwin. Everywhere else a static binary is the better artifact.
       CGO: '{{if eq .TARGET_OS "darwin"}}1{{else}}0{{end}}'
       # Every image this release publishes is pinned to the release's own tag:
-      # the two agent images, and the registry and tag the three built-in
-      # harness images resolve through. They reach the server's link and not the
+      # the two agent images, and the registry and tag the built-in harness
+      # images resolve through. They reach the server's link and not the
       # CLI's, because an image is what the server runs and the CLI does not
       # contain one.
       #
@@ -1680,17 +1683,19 @@ tasks:
       # Harness images ship with the release for the same reason the two agent
       # images do. The built-in harness configs a server seeds name these, and
       # their development default is a local tag that resolves to nothing on a
-      # user's machine — a released binary that did not publish them seeds three
+      # user's machine — a released binary that did not publish them seeds
       # harnesses it cannot run.
       - task: release:harness-image
         vars: { HARNESS: claude-code }
       - task: release:harness-image
         vars: { HARNESS: codex }
       - task: release:harness-image
+        vars: { HARNESS: opencode }
+      - task: release:harness-image
         vars: { HARNESS: shell }
 
   release:harness-image:
-    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|shell)
+    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|opencode|shell)
     requires:
       vars: [HARNESS]
     vars:

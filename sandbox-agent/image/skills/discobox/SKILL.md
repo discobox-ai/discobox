@@ -350,7 +350,7 @@ Installed in every discobox, whatever it was made from:
 | --- | --- |
 | Discobox | one disposable environment with the source in it, running one agent |
 | Pool | the host boxes are scheduled onto, and what they share: a cache volume, CPU and memory, a kernel |
-| Harness | the agent a box runs — Claude Code, Codex, a shell, or any terminal agent in an image |
+| Harness | the agent a box runs — Claude Code, Codex, OpenCode, a shell, or any terminal agent in an image |
 
 Commands are on the user's side. You do not have the `discobox` CLI in here,
 unless the box is working on discobox's own source, where it is a build
