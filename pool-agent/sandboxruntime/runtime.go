@@ -241,6 +241,9 @@ type DockerSandboxRuntime struct {
 	poolID                string
 	controlPlanePublicKey string
 	hostMountPrefix       string
+	// sharedMemoryBytes sizes each sandbox container's /dev/shm; zero is
+	// Docker's 64 MiB default.
+	sharedMemoryBytes int64
 	// hostState translates a container path into the daemon's view of it. It is
 	// applied only where a path is handed to the daemon.
 	hostState layout.HostMapping
@@ -277,6 +280,9 @@ type DockerSandboxRuntimeConfig struct {
 	// SandboxIdleTimeout is how long a sandbox runs idle before it powers
 	// itself off (ADR 0108). Zero leaves the sandbox-agent's default.
 	SandboxIdleTimeout time.Duration
+	// SharedMemoryBytes is the size of every sandbox container's /dev/shm.
+	// Zero leaves Docker's default of 64 MiB.
+	SharedMemoryBytes int64
 }
 
 func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
@@ -290,6 +296,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		poolID:                cfg.PoolID,
 		controlPlanePublicKey: cfg.ControlPlanePublicKey,
 		sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
+		sharedMemoryBytes:     cfg.SharedMemoryBytes,
 		hostMountPrefix:       cleanAbsPath(cfg.HostMountPrefix),
 		hostState:             layout.NewHostMapping(cfg.HostStateRoot),
 	}, nil
@@ -492,6 +499,11 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	hostCfg := &container.HostConfig{
 		Mounts:     mounts,
 		Privileged: true,
+		// Docker's 64 MiB /dev/shm is too small for what a sandbox runs:
+		// Chromium and Electron put their shared pixel buffers there, and on
+		// the desktop's 3840x2432 display one frame is ~37 MiB, so VS Code's
+		// renderer dies on start. The size is a tmpfs cap, not a reservation.
+		ShmSize: r.sharedMemoryBytes,
 	}
 	// No CPU/memory limit is set here: a sandbox container shares its pool
 	// container's cgroup rather than reserving a nested slice of it

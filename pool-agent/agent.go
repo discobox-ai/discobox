@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -251,6 +252,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 		HostMountPrefix:       bootstrap.HostMountPrefix,
 		HostStateRoot:         bootstrap.HostStateRoot,
 		SandboxIdleTimeout:    idleTimeout,
+		SharedMemoryBytes:     sandboxSharedMemoryBytes(poolCgroupRoot),
 	})
 	if err != nil {
 		return err
@@ -389,6 +391,24 @@ func poolFreeStorageBytes(path string) int64 {
 // remainder.
 func totalMemoryBytes() int64 {
 	return meminfoBytes("MemTotal:")
+}
+
+// sandboxSharedMemoryBytes is the /dev/shm every sandbox gets: half the memory
+// the pool can use, which is what the kernel sizes a tmpfs at by default and so
+// what /dev/shm is on an ordinary Linux machine. What the pool can use is its
+// container's cgroup limit when it has one, and the host's memory otherwise. The
+// size is a cap on the tmpfs, not memory set aside, so every sandbox gets the
+// same half rather than a share of it. Zero when neither is known, which leaves
+// Docker's default.
+func sandboxSharedMemoryBytes(cgroupRoot string) int64 {
+	memory := totalMemoryBytes()
+	if limit, ok := readCgroupInt(filepath.Join(cgroupRoot, "memory.max")); ok && limit > 0 && (memory <= 0 || limit < memory) {
+		memory = limit
+	}
+	if memory <= 0 {
+		return 0
+	}
+	return memory / 2
 }
 
 func availableMemoryBytes() int64 {

@@ -180,6 +180,15 @@ disk; an archived one has no container at all — archiving keeps the tree by
 intent (ADR 0022 §6) — and is exactly the sandbox whose disk somebody deciding
 whether to purge it needs to see.
 
+**A sandbox's /dev/shm is half what the pool can use**
+(`sandboxSharedMemoryBytes` → `DockerSandboxRuntimeConfig.SharedMemoryBytes` →
+`HostConfig.ShmSize`): the pool container's cgroup `memory.max` when set, the
+host's `MemTotal` otherwise. That is the kernel's default tmpfs size, so
+`/dev/shm` in a sandbox is what it is on an ordinary Linux machine rather than
+Docker's 64 MiB, which kills Chromium and Electron renderers on the desktop's
+display. It is a cap, not a reservation, so every sandbox gets the same size. A
+container created before this keeps 64 MiB until it is recreated.
+
 **Pool services are measured, not derived.** The pool container's own cgroup
 covers this agent, buildkitd, the registry, the proxy and the mediator — and
 *not* the sandboxes, which run under a nested container runtime whose cgroups
