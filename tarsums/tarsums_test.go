@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -302,6 +303,12 @@ func TestWriterRefusesAMemberNamedLikeTheSums(t *testing.T) {
 // The point of the format is that it is not ours: extract the archive and
 // `sha256sum -c` checks it, awkward names included.
 func TestSumsAreCheckedBySha256sum(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The names below hold a backslash, a newline and a carriage return,
+		// which no Windows file can be named, so there is nothing to extract
+		// them to for sha256sum to check.
+		t.Skip("windows file names cannot hold these characters")
+	}
 	sha256sum, err := exec.LookPath("sha256sum")
 	if err != nil {
 		t.Skip("sha256sum is not installed")
