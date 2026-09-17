@@ -62,17 +62,17 @@ func TestEvaluateCountsFromAgentStart(t *testing.T) {
 	}
 }
 
-func TestEvaluateReadsTitleChangesAndClients(t *testing.T) {
+func TestEvaluateReadsScreenChangesAndClients(t *testing.T) {
 	c := &clock{now: epoch}
 	execList := []execs.Exec{
-		{ID: "claude", TitleChangedAt: at(10 * time.Minute)},
+		{ID: "claude", ScreenChangedAt: at(10 * time.Minute)},
 		{ID: "shell", LastAccessedAt: at(5 * time.Minute)},
 		{ID: "ended"},
 	}
 	p := newPolicy(t, c, func() []execs.Exec { return execList })
 	state := p.Evaluate(epoch.Add(20 * time.Minute))
-	if !state.LastActivityAt.Equal(*at(10 * time.Minute)) || state.LastActivity != "title change on exec claude" {
-		t.Fatalf("last activity = %v %q, want the title change", state.LastActivityAt, state.LastActivity)
+	if !state.LastActivityAt.Equal(*at(10 * time.Minute)) || state.LastActivity != "screen change on exec claude" {
+		t.Fatalf("last activity = %v %q, want the screen change", state.LastActivityAt, state.LastActivity)
 	}
 
 	// An attached client is activity now, however long ago it last typed.

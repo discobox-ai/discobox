@@ -232,15 +232,16 @@ session. What was running is gone.
 
 Something happening is any of:
 
-- **a terminal's title changing.** Harnesses animate theirs while they work,
-  so while you are working on a task the box stays up on its own;
+- **what a terminal shows changing** — its text or its title. Output, a
+  spinner, a streamed response: while you are working on a task the box stays
+  up on its own;
 - **someone connected** — attached to a terminal or shell, in an SSH session,
   or holding a tunnel into the box;
 - **a keepalive lease.**
 
 Nothing else counts. A dev server nobody is attached to, a declared service,
 a build left running in the background — the box stops under all of them once
-the titles go still, however busy the processes are.
+the terminals go still, however busy the processes are.
 
 ### Hold the box up with a lease
 

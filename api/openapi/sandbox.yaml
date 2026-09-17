@@ -148,10 +148,10 @@ components:
                     format: int64
                     type: integer
                 lastActivity:
-                    description: What lastActivityAt was, for example "title change on exec <id>" or "lease /run/discobox/keepalive/build". Text for a person reading it, not a value to branch on.
+                    description: What lastActivityAt was, for example "screen change on exec <id>" or "lease /run/discobox/keepalive/build". Text for a person reading it, not a value to branch on.
                     type: string
                 lastActivityAt:
-                    description: Latest activity of any kind - a terminal title changing, a client connected or leaving, a keepalive lease, or the sandbox agent starting. A connected client makes it the observation time, and a lease dated in the future makes it that date.
+                    description: Latest activity of any kind - what a terminal shows changing (its text or title), a client connected or leaving, a keepalive lease, or the sandbox agent starting. A connected client makes it the observation time, and a lease dated in the future makes it that date.
                     format: date-time
                     type: string
                 leaseUntil:

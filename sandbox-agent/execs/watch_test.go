@@ -377,7 +377,7 @@ func TestRuntimeFileIgnoresLiveShimFields(t *testing.T) {
 	live.AttacherCount = 2
 	live.Title = "claude ✳ working"
 	moved := time.Now().UTC()
-	live.TitleChangedAt = &moved
+	live.ScreenChangedAt = &moved
 	live.LastAccessedAt = &moved
 	if err := writeRuntimeIfChanged(path, live); err != nil {
 		t.Fatalf("write runtime: %v", err)
@@ -395,7 +395,7 @@ func TestRuntimeFileIgnoresLiveShimFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	for _, field := range []string{"attacherCount", "title", "titleChangedAt", "lastAccessedAt"} {
+	for _, field := range []string{"attacherCount", "title", "screenChangedAt", "lastAccessedAt"} {
 		if strings.Contains(string(data), field) {
 			t.Errorf("runtime file persists the live field %q", field)
 		}

@@ -83,17 +83,20 @@ func (r *Runtime) Title() string {
 	return r.screen.title
 }
 
-// TitleChangedAt is when the program last changed its title to a new value:
-// zero for one that never set a title, and always zero for pipe execs. A
-// harness animates its title while it works, so this is what the sandbox's
-// idle stop reads as the program saying it is busy (ADR 0108 §2).
-func (r *Runtime) TitleChangedAt() time.Time {
+// ScreenChangedAt is when what the program shows last changed — the text on
+// its screen or its title: zero for one that has shown nothing, and always
+// zero for pipe execs. A program at work shows it, whether by printing,
+// animating a spinner, or animating its title, so this is what the sandbox's
+// idle stop reads as the program being busy (ADR 0124).
+func (r *Runtime) ScreenChangedAt() time.Time {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.screen == nil {
 		return time.Time{}
 	}
-	return r.screen.titleChangedAt
+	var at time.Time
+	r.runScreenLocked(func(screen *screenBuffer) { at = screen.screenChangedAt() })
+	return at
 }
 
 // Observe feeds the screen emulator, implementing host.Replayer. It runs under

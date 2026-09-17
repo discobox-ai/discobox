@@ -201,8 +201,8 @@ func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	// title is the same shape of fact — the emulator holds the current one.
 	status.AttacherCount = len(r.stream.Attachers())
 	status.Title = r.stream.Title()
-	if changed := r.stream.TitleChangedAt(); !changed.IsZero() {
-		status.TitleChangedAt = &changed
+	if changed := r.stream.ScreenChangedAt(); !changed.IsZero() {
+		status.ScreenChangedAt = &changed
 	}
 	// A client that is attached right now is accessing the exec right now,
 	// even if it has not typed; otherwise access is the last time one

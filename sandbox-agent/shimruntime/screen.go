@@ -14,6 +14,19 @@ import (
 // attacher gets the current screen plus this many lines of prior output.
 const DefaultScrollbackLines = 1000
 
+const (
+	// screenBurstGap is how long output has to pause before the screen is
+	// compared. A frame reaches the emulator in as many pieces as the PTY was
+	// read in, and a frame that erases before it draws is, part-way through, a
+	// screen the program never meant to show; comparing it there would count a
+	// redraw of the same frame as two changes. Pieces of one frame arrive back
+	// to back, so a pause this long is the end of one.
+	screenBurstGap = 50 * time.Millisecond
+	// screenBurstMax bounds how long output that never pauses goes uncompared,
+	// so a program streaming without a break is still seen to be busy.
+	screenBurstMax = time.Second
+)
+
 // screenBuffer maintains an in-memory terminal emulator fed from the live PTY
 // output so a client that attaches after a program has been running can be
 // repainted with the current screen, recent scrollback, and the terminal modes
@@ -42,11 +55,22 @@ type screenBuffer struct {
 	// sequences split across writes for free.
 	title    string
 	iconName string
-	// titleChangedAt is when title last changed to a different value, zero
-	// for never. A title set to the one it already holds is not a change:
-	// shells and harnesses re-emit theirs on redraw, and only a new value is
-	// the program saying it is doing something (ADR 0108 §2).
-	titleChangedAt time.Time
+
+	// changedAt is when what the program shows last changed — the text on its
+	// screen or its title — and zero for never. It is what the idle stop reads
+	// as the program doing something (ADR 0124). Only a change counts, not
+	// output: a TUI redrawing the screen it already has, a program blinking a
+	// cursor it draws itself by toggling a cell's style, and a shell re-sending
+	// its title on redraw all write bytes and change nothing a person would
+	// see.
+	changedAt time.Time
+	// textSum is a hash of the screen's text as of the last compare.
+	textSum uint64
+	// burstAt and pendingAt are the first and latest writes since the last
+	// compare, both zero when there have been none: the burst of output not yet
+	// compared.
+	burstAt   time.Time
+	pendingAt time.Time
 }
 
 func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
@@ -60,6 +84,7 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 	emu := vt.NewEmulator(w, h)
 	emu.SetScrollbackSize(scrollbackLines)
 	s := &screenBuffer{emu: emu}
+	s.textSum = s.sumText()
 	// The callbacks fire from inside emu.Write, which is only ever reached
 	// through screenBuffer.write under the Runtime's lock, so they touch these
 	// fields on the same goroutine that reads them in snapshot.
@@ -67,7 +92,7 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 		Title: func(title string) {
 			if title != s.title {
 				s.title = title
-				s.titleChangedAt = time.Now().UTC()
+				s.markChanged(time.Now().UTC())
 			}
 		},
 		IconName: func(name string) { s.iconName = name },
@@ -76,8 +101,83 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 }
 
 func (s *screenBuffer) write(p []byte) {
+	now := time.Now().UTC()
+	// The burst before this write ended if output paused since it: compare it
+	// now, before this write lands, so a change it made is dated to its last
+	// write rather than to this one, however much later this one came.
+	s.settle(now)
 	_, _ = s.emu.Write(p)
 	s.modes.scan(p)
+	if s.burstAt.IsZero() {
+		s.burstAt = now
+	}
+	s.pendingAt = now
+	if now.Sub(s.burstAt) >= screenBurstMax {
+		s.compare(now)
+	}
+}
+
+// screenChangedAt is when what the program shows last changed, with a burst
+// of output that has since paused compared first. One still arriving is left
+// for its end, and is dated then.
+func (s *screenBuffer) screenChangedAt() time.Time {
+	s.settle(time.Now().UTC())
+	return s.changedAt
+}
+
+// settle compares the burst of output not yet compared, if output has paused
+// since its last write, dating any change it made to that write.
+func (s *screenBuffer) settle(now time.Time) {
+	if !s.pendingAt.IsZero() && now.Sub(s.pendingAt) >= screenBurstGap {
+		s.compare(s.pendingAt)
+	}
+}
+
+// compare reads the screen's text and records a change at at if it differs
+// from the last compare.
+func (s *screenBuffer) compare(at time.Time) {
+	s.burstAt, s.pendingAt = time.Time{}, time.Time{}
+	if sum := s.sumText(); sum != s.textSum {
+		s.textSum = sum
+		s.markChanged(at)
+	}
+}
+
+func (s *screenBuffer) markChanged(at time.Time) {
+	if at.After(s.changedAt) {
+		s.changedAt = at
+	}
+}
+
+// sumText hashes the text of the screen the program is on: cell content only,
+// which is what keeps a self-drawn blinking cursor from counting.
+//
+// The scrollback is left out. The emulator copies the screen into it on every
+// full-screen erase, so a program that clears and redraws the same frame would
+// grow it each time; the cost is that identical lines scrolling past, with
+// nothing else on screen changing, are not seen.
+func (s *screenBuffer) sumText() uint64 {
+	// FNV-1a, inline rather than through hash/fnv: this runs over every cell
+	// several times a second while a program prints, and handing each cell's
+	// string to an io.Writer copies it.
+	const offset, prime = 14695981039346656037, 1099511628211
+	sum := uint64(offset)
+	add := func(b byte) { sum = (sum ^ uint64(b)) * prime }
+	w, rows := s.emu.Width(), s.emu.Height()
+	for y := 0; y < rows; y++ {
+		for x := 0; x < w; x++ {
+			if cell := s.emu.CellAt(x, y); cell != nil {
+				for i := 0; i < len(cell.Content); i++ {
+					add(cell.Content[i])
+				}
+			}
+		}
+		add('\n')
+	}
+	if s.emu.IsAltScreen() {
+		add(1)
+	}
+	return sum
 }
 
 // resize lays the screen out at a new size. A resize to the size it already is
@@ -96,7 +196,14 @@ func (s *screenBuffer) resize(rows, cols uint16) {
 	if s.emu.Width() == int(cols) && s.emu.Height() == int(rows) {
 		return
 	}
+	// Laying the same text out at a new size is not the program showing
+	// anything new: compare what came before, and take the new layout as the
+	// text to compare against without counting it.
+	if !s.pendingAt.IsZero() {
+		s.compare(s.pendingAt)
+	}
 	s.emu.Resize(int(cols), int(rows))
+	s.textSum = s.sumText()
 }
 
 // snapshot renders a self-contained escape sequence that repaints the current

@@ -29,8 +29,9 @@ type PoolPolicy struct {
 	// answer, and it is most often asked after the sandbox is gone.
 	ProxyAuditRetention Duration `json:"proxyAuditRetention,omitempty"`
 	// SandboxIdleTimeout is how long a sandbox on this provider's pools runs
-	// with nothing happening in it — no terminal title changing, no client
-	// connected, no keepalive lease — before it powers itself off (ADR 0108).
+	// with nothing happening in it — nothing on a terminal changing, no client
+	// connected, no keepalive lease — before it powers itself off (ADR 0108,
+	// ADR 0124).
 	// The next use starts it again. Empty leaves every sandbox on the
 	// sandbox-agent's default.
 	SandboxIdleTimeout Duration `json:"sandboxIdleTimeout,omitempty"`
@@ -68,7 +69,7 @@ func PoolPolicyConfigFields() []sandbox.ProviderConfigField {
 			Key:         "sandboxIdleTimeout",
 			Label:       "Sandbox Idle Timeout",
 			Type:        "string",
-			Description: "How long a sandbox runs with nothing happening in it — no terminal title changing, no client connected, no keepalive lease — before it stops itself, as a Go duration. The next use starts it again.",
+			Description: "How long a sandbox runs with nothing happening in it — nothing on a terminal changing, no client connected, no keepalive lease — before it stops itself, as a Go duration. The next use starts it again.",
 			Placeholder: defaultIdleTimeoutHint,
 			Advanced:    true,
 		},

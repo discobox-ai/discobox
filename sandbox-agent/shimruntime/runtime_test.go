@@ -224,34 +224,35 @@ func TestTitleReadsTheEmulatorTitle(t *testing.T) {
 	}
 }
 
-// The title's change time moves when the program sets a new title and not when
-// it re-emits the one it has: the idle stop reads it as the program being busy
-// (ADR 0108 §2), and shells re-send their title on every redraw.
-func TestTitleChangedAtMovesOnlyOnANewTitle(t *testing.T) {
+// What the program shows is dated when it changes — its title as well as its
+// screen — and not when it re-emits what it has: the idle stop reads it as the
+// program being busy (ADR 0124), and shells re-send their title on every
+// redraw.
+func TestScreenChangedAtMovesOnlyOnANewTitle(t *testing.T) {
 	done := make(chan struct{})
 	defer close(done)
 	r := New("test", done, nil)
-	if got := r.TitleChangedAt(); !got.IsZero() {
-		t.Fatalf("title changed at = %v before EnableScreen, want zero", got)
+	if got := r.ScreenChangedAt(); !got.IsZero() {
+		t.Fatalf("screen changed at = %v before EnableScreen, want zero", got)
 	}
 	_, tty := screenPipe(t)
 	r.EnableScreen(24, 80, DefaultScrollbackLines, tty)
-	if got := r.TitleChangedAt(); !got.IsZero() {
-		t.Fatalf("title changed at = %v before any title, want zero", got)
+	if got := r.ScreenChangedAt(); !got.IsZero() {
+		t.Fatalf("screen changed at = %v before any output, want zero", got)
 	}
 
 	r.Broadcast(frame.Stdout, []byte("\x1b]0;⠋ fixing the reaper\x07"))
-	first := r.TitleChangedAt()
+	first := r.ScreenChangedAt()
 	if first.IsZero() {
-		t.Fatal("title changed at is zero after the first title")
+		t.Fatal("screen changed at is zero after the first title")
 	}
 	time.Sleep(2 * time.Millisecond)
 	r.Broadcast(frame.Stdout, []byte("\x1b]2;⠋ fixing the reaper\x07"))
-	if got := r.TitleChangedAt(); !got.Equal(first) {
-		t.Fatalf("title changed at = %v after re-sending the same title, want %v", got, first)
+	if got := r.ScreenChangedAt(); !got.Equal(first) {
+		t.Fatalf("screen changed at = %v after re-sending the same title, want %v", got, first)
 	}
 	r.Broadcast(frame.Stdout, []byte("\x1b]0;⠙ fixing the reaper\x07"))
-	if got := r.TitleChangedAt(); !got.After(first) {
-		t.Fatalf("title changed at = %v after a new title, want later than %v", got, first)
+	if got := r.ScreenChangedAt(); !got.After(first) {
+		t.Fatalf("screen changed at = %v after a new title, want later than %v", got, first)
 	}
 }

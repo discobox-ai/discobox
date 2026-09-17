@@ -1,10 +1,10 @@
 // Package autostop powers the sandbox off once nothing has used it for the
-// idle timeout (ADR 0108).
+// idle timeout (ADR 0108, ADR 0124).
 //
 // The decision is made here, inside the sandbox, because every fact it needs
-// is first-hand here and second-hand everywhere else: the shims hold each
-// exec's title and its clients, this process serves its own TCP tunnels, and a
-// keepalive lease is a file only a process in the sandbox can write. Stopping
+// is first-hand here and second-hand everywhere else: the shims hold what each
+// exec's terminal shows and who its clients are, this process serves its own
+// TCP tunnels, and a keepalive lease is a file only a process in the sandbox can write. Stopping
 // is starting systemd's poweroff.target (see systemctlPowerOff for why not
 // `systemctl poweroff`). The container exits, the pool agent reports it
 // `stopped` like any container that exited, and the next sandbox-directed
@@ -44,8 +44,8 @@ const (
 // Config wires a Policy to the sandbox it watches.
 type Config struct {
 	// Execs lists every exec the sandbox has. Its shim-reported fields — when
-	// the title last changed, who is attached, when a client last acted — are
-	// the activity the policy reads.
+	// what it shows last changed, who is attached, when a client last acted —
+	// are the activity the policy reads.
 	Execs func() []execs.Exec
 	// LeaseDir defaults to DefaultLeaseDir.
 	LeaseDir string
@@ -208,8 +208,8 @@ func (p *Policy) Evaluate(now time.Time) State {
 		if e.LastAccessedAt != nil {
 			observed.consider(*e.LastAccessedAt, "client on exec "+e.ID)
 		}
-		if e.TitleChangedAt != nil {
-			observed.consider(*e.TitleChangedAt, "title change on exec "+e.ID)
+		if e.ScreenChangedAt != nil {
+			observed.consider(*e.ScreenChangedAt, "screen change on exec "+e.ID)
 		}
 	}
 	p.mu.Lock()

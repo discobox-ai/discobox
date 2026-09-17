@@ -217,8 +217,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		slog.Default().Warn("sandbox agent listening port watcher disabled", "error", err)
 		portsWatch = nil
 	}
-	// The idle stop reads every exec's shim-reported activity — title
-	// changes, attachers, last access — fresh on each evaluation (ADR 0108).
+	// The idle stop reads every exec's shim-reported activity — screen
+	// changes, attachers, last access — fresh on each evaluation (ADR 0108,
+	// ADR 0124).
 	idleStop := autostop.New(autostop.Config{Execs: execManager.List, IdleTimeout: cfg.IdleTimeout})
 	handler := &handler{
 		identity:          cfg.Identity,

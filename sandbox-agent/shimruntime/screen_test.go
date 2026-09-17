@@ -3,6 +3,7 @@ package shimruntime
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestScreenSnapshotRepaintsContentAndModes(t *testing.T) {
@@ -186,5 +187,119 @@ func TestScreenResizeToTheSameSizeKeepsTheScrollRegion(t *testing.T) {
 	snapshot := string(screen.snapshot())
 	if !strings.HasSuffix(snapshot, "\x1b[3;1H") {
 		t.Fatalf("snapshot leaves the cursor at %q, want row 3 — the bottom of the scroll region it scrolled inside", snapshot[max(0, len(snapshot)-12):])
+	}
+}
+
+// pause ages the burst of output not yet compared as though output had
+// stopped a while ago, so the next read or write compares it.
+func (s *screenBuffer) pause(d time.Duration) {
+	if !s.pendingAt.IsZero() {
+		s.burstAt = s.burstAt.Add(-d)
+		s.pendingAt = s.pendingAt.Add(-d)
+	}
+}
+
+// Output that changes the screen's text is a change; output that only restyles
+// it, repositions the cursor, or redraws what is already there is not. A TUI
+// blinking a cursor it draws itself toggles one cell's reverse video forever,
+// and counting that would hold an idle sandbox up for good (ADR 0124).
+func TestScreenChangedAtCountsTextNotRedraws(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	write := func(p string) {
+		t.Helper()
+		s.write([]byte(p))
+		s.pause(time.Minute)
+	}
+	write("\x1b[?25l\x1b[5;1H")
+	if got := s.screenChangedAt(); !got.IsZero() {
+		t.Fatalf("screen changed at = %v after only modes and cursor motion, want zero", got)
+	}
+
+	write("\x1b[H> fix the reaper")
+	first := s.screenChangedAt()
+	if first.IsZero() {
+		t.Fatal("screen changed at is zero after text was drawn")
+	}
+
+	for _, redraw := range []string{
+		"\x1b[1;18H\x1b[7m \x1b[m",      // a self-drawn cursor, on
+		"\x1b[1;18H \x1b[1;18H",         // and off
+		"\x1b[H\x1b[2K> fix the reaper", // a full redraw of the same line
+		"\x1b[H\x1b[2J> fix the reaper", // a full-screen clear and redraw
+		"\x1b[?25h\x1b[?25l",            // cursor visibility
+	} {
+		write(redraw)
+		if got := s.screenChangedAt(); !got.Equal(first) {
+			t.Fatalf("screen changed at = %v after redraw %q, want %v", got, redraw, first)
+		}
+	}
+
+	write("\x1b[H\x1b[2K> fix the reaper ⠙")
+	if got := s.screenChangedAt(); !got.After(first) {
+		t.Fatalf("screen changed at = %v after a spinner frame, want later than %v", got, first)
+	}
+}
+
+// A frame arrives in as many pieces as the PTY was read in. One that erases
+// before it draws is blank part-way through; comparing it there would count a
+// redraw of the same frame as a change.
+func TestScreenChangedAtComparesWholeFrames(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	frame := "\x1b[H\x1b[2J" + strings.Repeat("the same frame\r\n", 20)
+	s.write([]byte(frame))
+	s.pause(time.Minute)
+	first := s.screenChangedAt()
+	if first.IsZero() {
+		t.Fatal("screen changed at is zero after the first frame")
+	}
+
+	for i := 0; i < 3; i++ {
+		s.write([]byte(frame[:len(frame)/3]))
+		if got := s.screenChangedAt(); !got.Equal(first) {
+			t.Fatalf("screen changed at = %v read part-way through a redraw, want %v", got, first)
+		}
+		s.write([]byte(frame[len(frame)/3:]))
+		s.pause(time.Minute)
+		if got := s.screenChangedAt(); !got.Equal(first) {
+			t.Fatalf("screen changed at = %v after a redraw of the same frame, want %v", got, first)
+		}
+	}
+}
+
+// A client resizing its terminal lays the same text out again; that is not the
+// program showing anything.
+func TestScreenChangedAtIgnoresResize(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	s.write([]byte(strings.Repeat("wrapped text ", 20)))
+	s.pause(time.Minute)
+	first := s.screenChangedAt()
+	s.resize(10, 40)
+	s.write([]byte("\x1b[?25h"))
+	s.pause(time.Minute)
+	if got := s.screenChangedAt(); !got.Equal(first) {
+		t.Fatalf("screen changed at = %v after a resize, want %v", got, first)
+	}
+}
+
+// A burst is dated to its last write when it is compared — not to the write
+// or read that happened to come along after it — and output that never pauses
+// is still compared.
+func TestScreenChangedAtDatesBursts(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	s.write([]byte("working"))
+	s.pause(time.Hour)
+	last := s.pendingAt
+	s.write([]byte("\x1b[?25h")) // an hour later, changing nothing itself
+	if got := s.changedAt; !got.Equal(last) {
+		t.Fatalf("screen changed at = %v, want the burst's last write %v", got, last)
+	}
+
+	s.pause(time.Minute)
+	s.screenChangedAt()
+	s.write([]byte(" still"))
+	s.burstAt = s.burstAt.Add(-screenBurstMax)
+	s.write([]byte(" going"))
+	if s.changedAt.Equal(last) {
+		t.Fatal("output that never paused was not compared after screenBurstMax")
 	}
 }

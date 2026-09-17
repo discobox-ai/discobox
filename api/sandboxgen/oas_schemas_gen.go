@@ -1069,12 +1069,12 @@ func (s *ResourceSnapshot) SetTerminalId(val string) {
 type SandboxAgentAutostopStatus struct {
 	// How long the sandbox runs with nothing happening in it before it powers itself off.
 	IdleTimeoutSeconds int64 `json:"idleTimeoutSeconds"`
-	// What lastActivityAt was, for example "title change on exec <id>" or "lease
+	// What lastActivityAt was, for example "screen change on exec <id>" or "lease
 	// /run/discobox/keepalive/build". Text for a person reading it, not a value to branch on.
 	LastActivity string `json:"lastActivity"`
-	// Latest activity of any kind - a terminal title changing, a client connected or leaving, a
-	// keepalive lease, or the sandbox agent starting. A connected client makes it the observation time,
-	// and a lease dated in the future makes it that date.
+	// Latest activity of any kind - what a terminal shows changing (its text or title), a client
+	// connected or leaving, a keepalive lease, or the sandbox agent starting. A connected client makes
+	// it the observation time, and a lease dated in the future makes it that date.
 	LastActivityAt time.Time `json:"lastActivityAt"`
 	// The latest keepalive lease's time, when one is in the future.
 	LeaseUntil OptDateTime `json:"leaseUntil"`

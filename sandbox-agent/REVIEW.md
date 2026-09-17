@@ -120,3 +120,10 @@ user waits on every single start.
   unchanged: none of them may move the idle clock. The pool agent polls every
   sandbox's status every 15 seconds, so anything a read counts as activity
   keeps every sandbox up forever.
+- **Output is not activity; a changed screen is.** `screenBuffer.sumText`
+  hashes cell content only. Adding styles, the cursor, the scrollback (filled
+  on every `CSI 2J`), or raw byte counts to it makes a self-drawn blinking
+  cursor or an idle TUI's redraw hold the sandbox up forever. So does
+  comparing on a write rather than when a burst ends: a frame split across PTY
+  reads is a different screen part-way through. A burst settled by a
+  `/status` read is dated to its last write, never to the read (ADR 0124).

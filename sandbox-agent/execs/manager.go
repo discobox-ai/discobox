@@ -81,12 +81,12 @@ type Exec struct {
 	// Empty for a program that never set one and for pipe execs, which have
 	// no emulator.
 	Title string `json:"title,omitempty"`
-	// TitleChangedAt is when that program last changed its title to a new
-	// value, reported live by the shim like Title. A harness animates its
-	// title while it works, so the sandbox's idle stop reads this as the
-	// program saying it is busy (ADR 0108 §2). Absent for a program that never
-	// set a title, for pipe execs, and once the shim is gone.
-	TitleChangedAt *time.Time `json:"titleChangedAt,omitempty"`
+	// ScreenChangedAt is when what that program shows last changed — the text
+	// on its screen or its title — reported live by the shim like Title. A
+	// program at work shows it, so the sandbox's idle stop reads this as the
+	// program being busy (ADR 0124). Absent for a program that has shown
+	// nothing, for pipe execs, and once the shim is gone.
+	ScreenChangedAt *time.Time `json:"screenChangedAt,omitempty"`
 	// LastAccessedAt is the last time a client acted on this exec — attached,
 	// typed, or is attached right now — reported live by the shim like
 	// AttacherCount. Absent when no client ever has, or once the shim is gone.
@@ -759,7 +759,7 @@ func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 		current.ExitedAt = &exitedAt
 	}
 	current.AttacherCount = 0
-	current.TitleChangedAt = nil
+	current.ScreenChangedAt = nil
 	current.LastAccessedAt = nil
 	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
@@ -851,7 +851,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	current.ExitedAt = nil
 	current.AttacherCount = 0
 	current.Title = ""
-	current.TitleChangedAt = nil
+	current.ScreenChangedAt = nil
 	current.LastAccessedAt = nil
 	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
@@ -1437,7 +1437,7 @@ func mergeExecStatus(base, status Exec) Exec {
 	}
 	base.AttacherCount = status.AttacherCount
 	base.Title = status.Title
-	base.TitleChangedAt = status.TitleChangedAt
+	base.ScreenChangedAt = status.ScreenChangedAt
 	base.LastAccessedAt = status.LastAccessedAt
 	return base
 }
@@ -1517,7 +1517,7 @@ func writeRuntime(path string, exec Exec) error {
 //
 // Those fields change by construction — LastAccessedAt is time.Now() for as
 // long as any client is attached (shimRuntime.handleStatus), and a harness
-// animating its title moves TitleChangedAt — so persisting them would make the
+// at work moves ScreenChangedAt — so persisting them would make the
 // runtime file differ on every single refresh. The directory is watched for the
 // shim's writes, so a file that always differs is a feedback loop: write,
 // inotify, refresh, write, forever, for as long as a terminal is open. They are
@@ -1526,7 +1526,7 @@ func writeRuntime(path string, exec Exec) error {
 func runtimeFileState(exec Exec) Exec {
 	exec.AttacherCount = 0
 	exec.Title = ""
-	exec.TitleChangedAt = nil
+	exec.ScreenChangedAt = nil
 	exec.LastAccessedAt = nil
 	return exec
 }
