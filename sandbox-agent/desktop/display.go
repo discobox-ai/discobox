@@ -53,6 +53,9 @@ type Display struct {
 	// EnvDir is where the toolkit environment file is written. Empty writes
 	// none, which is what the tests run with.
 	EnvDir string
+	// VSCodeArgv is VS Code's argv.json, which carries the scale to VS Code
+	// the way EnvDir carries it to toolkits (see vscode.go). Empty writes none.
+	VSCodeArgv string
 	// Log receives what goes wrong in the parts of a scale change that must not
 	// fail the change. Optional.
 	Log *slog.Logger
@@ -290,6 +293,7 @@ func (d *Display) SetScale(ctx context.Context, scale int, auto bool) (Geometry,
 			return Geometry{}, false, err
 		}
 	}
+	d.writeVSCodeScale(scale)
 	d.scale = scale
 	if err := d.applyServerScale(ctx, scale); err != nil {
 		return Geometry{}, false, err
@@ -366,11 +370,24 @@ func (d *Display) AdoptScale(scale int) error {
 	defer d.mu.Unlock()
 	d.scale = scale
 	d.applied = true
+	d.writeVSCodeScale(scale)
 	if d.EnvDir == "" {
 		return nil
 	}
 	_, err := WriteScaleEnv(d.EnvDir, scale)
 	return err
+}
+
+// writeVSCodeScale carries the scale into VS Code's argv.json. It must not fail
+// the scale change: a VS Code whose own file is unreadable draws at the wrong
+// size, and a desktop that refused to scale over it would be wrong everywhere.
+func (d *Display) writeVSCodeScale(scale int) {
+	if d.VSCodeArgv == "" {
+		return
+	}
+	if err := writeVSCodeScale(d.VSCodeArgv, scale); err != nil {
+		d.log("carry the scale to VS Code", err)
+	}
 }
 
 // Scale reports the standing scale.

@@ -124,6 +124,16 @@ HiDPI-ness. It drives four things that must agree:
 | `Xft/DPI` = 96 × scale | `xrandr --dpi`, xfconf → xfsettingsd | Xft text, Chromium, Qt |
 | `GDK_SCALE` / `GDK_DPI_SCALE` / `QT_AUTO_SCREEN_SCALE_FACTOR` / `XCURSOR_SIZE` / `DISCOBOX_DESKTOP_SCALE` | `scale.env` | GTK, Qt, the cursor, Chromium's flags — at process start |
 | xfwm4 theme `Discobox` / `Discobox-Nx` | xfconf | window decorations, live |
+| `force-device-scale-factor` = scale | `~/.vscode/argv.json` (`vscode.go`) | VS Code — at launch |
+
+**VS Code is told the scale in its own file**, because Electron double-counts
+like Chromium — `Xft/DPI` × `GDK_SCALE`, devicePixelRatio 4 at 2× — and has no
+launcher hook like `/etc/chromium.d`. It reads `force-device-scale-factor` from
+`argv.json`, so `SetScale`, `AdoptScale` and `PrepareSession` set that one key
+wherever `scale.env` is written (the session's `ExecStartPre` covers a desktop
+started with no viewer). The file is VS Code's and the user's JSONC, so it is
+patched with `hujson` — comments and other keys kept — and one that does not
+parse is left alone and logged; it never fails a scale change.
 
 Integer only. A fractional scale is a fractional downscale in the browser —
 soft, which is the opposite of the point — and `GDK_SCALE` takes integers

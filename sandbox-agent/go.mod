@@ -18,6 +18,7 @@ require (
 	github.com/go-faster/jx v1.2.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/klauspost/compress v1.18.5
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	golang.org/x/sys v0.47.0
 	gorm.io/gorm v1.31.2
 )

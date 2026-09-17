@@ -69,6 +69,9 @@ type Config struct {
 	// ScaleEnvDir holds the toolkit environment file that carries the desktop
 	// scale to programs launched afterwards. See scale.go.
 	ScaleEnvDir string
+	// VSCodeArgv is VS Code's argv.json, which carries the scale to VS Code.
+	// See vscode.go.
+	VSCodeArgv string
 	// WebsockifyURL is the VNC websocket proxy this service fronts, so the
 	// page has one origin for its markup and its pixels.
 	WebsockifyURL string
@@ -89,6 +92,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.ScaleEnvDir == "" {
 		c.ScaleEnvDir = DefaultScaleEnvDir
+	}
+	if c.VSCodeArgv == "" {
+		c.VSCodeArgv = DefaultVSCodeArgv
 	}
 	if c.WebsockifyURL == "" {
 		c.WebsockifyURL = DefaultWebsockify
@@ -129,9 +135,18 @@ func PrepareSession(ctx context.Context, cfg Config) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	vscodeArgv, err := expandHome(cfg.VSCodeArgv)
+	if err != nil {
+		return 0, err
+	}
 	display := NewDisplay(cfg.Display)
 	display.EnvDir = envDir
-	return display.prepareSession(ctx)
+	display.VSCodeArgv = vscodeArgv
+	scale, err := display.prepareSession(ctx)
+	// A session started by a program talking to :0, with no viewer to have
+	// adopted a scale, still has to open VS Code at the scale it is drawn at.
+	display.writeVSCodeScale(scale)
+	return scale, err
 }
 
 // New builds the server. It does not bind anything.
@@ -165,8 +180,13 @@ func New(log *slog.Logger, cfg Config) (*Server, error) {
 		log.Warn("desktop websocket proxy failed", "error", err)
 		http.Error(w, "the VNC proxy is not reachable", http.StatusBadGateway)
 	}
+	vscodeArgv, err := expandHome(cfg.VSCodeArgv)
+	if err != nil {
+		return nil, err
+	}
 	display := NewDisplay(cfg.Display)
 	display.EnvDir = envDir
+	display.VSCodeArgv = vscodeArgv
 	display.Log = log
 	s := &Server{
 		log:     log,

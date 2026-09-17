@@ -35,8 +35,10 @@ import (
 //	                over a hard QT_SCALE_FACTOR so Qt keeps its own rounding.
 //	XCURSOR_SIZE    Held at the base size, deliberately, and see below.
 //
-// Chromium, Electron and Firefox need no variable: they read Xft.dpi, which
-// display.go sets on the server. Nothing is set for Java — `_JAVA_OPTIONS` is
+// Chromium and Electron read Xft.dpi, which display.go sets on the server, and
+// multiply GDK_SCALE into it as well, so they come out at scale² unless told
+// the scale outright: the image's Chromium is, through /etc/chromium.d, and VS
+// Code is, through its argv.json (vscode.go). Firefox reads Xft.dpi alone. Nothing is set for Java — `_JAVA_OPTIONS` is
 // the only lever and it prints a banner to stderr that breaks scripts parsing
 // a JVM's output.
 const (
