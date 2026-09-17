@@ -202,3 +202,107 @@ func TestParseSince(t *testing.T) {
 		}
 	}
 }
+
+// runAuditHTTP runs `admin audit http` against a server answering with body,
+// and returns the query it sent and what it wrote to each stream.
+func runAuditHTTP(t *testing.T, body string, args ...string) (url.Values, string, string, error) {
+	t.Helper()
+	var query url.Values
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/project-1/audit/http" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		query = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	stdout, stderr := new(strings.Builder), new(strings.Builder)
+	cmd := NewRootCommand()
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "admin", "audit", "http"}, args...))
+	err := cmd.Execute()
+	return query, stdout.String(), stderr.String(), err
+}
+
+func TestAuditHTTPSendsItsFilters(t *testing.T) {
+	sandboxID, err := idpkg.New("sbx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	poolID, err := idpkg.New("pool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	query, _, _, err := runAuditHTTP(t, `{"exchanges":[],"unavailablePools":[]}`,
+		"--discobox-id", sandboxID, "--pool", poolID, "--host", "api.github.com", "--use-id", "use_1", "--since", "30m", "--limit", "7")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if query.Get("sandboxId") != sandboxID || query.Get("poolId") != poolID || query.Get("host") != "api.github.com" ||
+		query.Get("useId") != "use_1" || query.Get("limit") != "7" || query.Get("since") == "" {
+		t.Fatalf("query = %v, want every filter", query)
+	}
+}
+
+const httpAuditBody = `{"exchanges":[
+	{"poolId":"pool-a","id":2,"createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"POST",
+	 "url":"https://api.github.com/repos/o/r/pulls\u001b[1A\u202e","host":"api.github.com","status":201,"blocked":false,"swappedUseIds":["use_x","use_y"]},
+	{"poolId":"pool-a","id":1,"createdAt":"2026-09-17T10:00:00Z","sandboxId":"sbx_1","method":"GET",
+	 "url":"https://evil.example/","host":"evil.example","status":0,"blocked":true,"blockedReason":"host denied","swappedUseIds":[]}
+],"unavailablePools":[{"poolId":"pool-c","reason":"its pool agent predates the audit read"}]}`
+
+func TestAuditHTTPShowsWhatHappenedAndWhatIsMissing(t *testing.T) {
+	_, stdout, stderr, err := runAuditHTTP(t, httpAuditBody)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	for _, want := range []string{"201", "use_x,use_y", "blocked"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("table missing %q:\n%s", want, stdout)
+		}
+	}
+	// A policy refusal never reached an upstream; a bare 0 would read as a
+	// failure it was not.
+	if strings.Contains(stdout, " 0 ") {
+		t.Fatalf("blocked request shown with status 0:\n%s", stdout)
+	}
+	for _, raw := range []string{"\x1b", "\u202e"} {
+		if strings.Contains(stdout, raw) {
+			t.Fatalf("table carries raw %q:\n%s", raw, stdout)
+		}
+	}
+	// The answer is short a pool, and saying so is not part of the answer.
+	if !strings.Contains(stderr, "pool-c") || !strings.Contains(stderr, "missing") {
+		t.Fatalf("stderr = %q, want pool-c named as missing", stderr)
+	}
+	if strings.Contains(stdout, "pool-c") {
+		t.Fatalf("the unavailable pool was written into the table:\n%s", stdout)
+	}
+}
+
+func TestAuditHTTPJSONCarriesTheMissingPools(t *testing.T) {
+	_, stdout, _, err := runAuditHTTP(t, httpAuditBody, "-o", "json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var got struct {
+		Exchanges        []struct{ URL string } `json:"exchanges"`
+		UnavailablePools []struct {
+			PoolID string `json:"poolId"`
+		} `json:"unavailablePools"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, stdout)
+	}
+	if len(got.UnavailablePools) != 1 || got.UnavailablePools[0].PoolID != "pool-c" {
+		t.Fatalf("unavailablePools = %+v", got.UnavailablePools)
+	}
+	if strings.Contains(stdout, "\u202e") || got.Exchanges[0].URL != "https://api.github.com/repos/o/r/pulls\x1b[1A\u202e" {
+		t.Fatalf("json is not terminal-safe or not exact:\n%s", stdout)
+	}
+}

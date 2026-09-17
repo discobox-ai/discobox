@@ -1464,7 +1464,10 @@ tool rather than only as a screenful:
 
 The audit commands read what a discobox left behind (ADR 0130), under `admin`
 per ADR 0112. `creds` lists the judge's recorded verdicts on agent credential
-uses from `list-credential-verdicts`.
+uses from `list-credential-verdicts`. `http` lists the requests discoboxes made
+through their pool's proxy from `list-http-audit`; its `USES` column is the
+join to `creds`, by `--use-id` on either. A pool that could not be read is named
+on stderr, never folded into the table, since the answer is short by it.
 
 Two rules shape the output, and both are about who wrote what is on screen:
 

@@ -27,7 +27,140 @@ func (a *App) newAuditCommand() *cobra.Command {
 		Short: "Read the records discoboxes leave behind",
 	}
 	cmd.AddCommand(a.newAuditCredsCommand())
+	cmd.AddCommand(a.newAuditHTTPCommand())
 	return cmd
+}
+
+func (a *App) newAuditHTTPCommand() *cobra.Command {
+	var sandboxID, poolID, host, useID, since string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "http",
+		Short: "List the HTTP requests discoboxes made through their pool's proxy",
+		Long: `List the HTTP requests discoboxes made through their pool's proxy, newest
+first, from every pool in the project.
+
+The proxy records these from what crossed the wire, so a discobox cannot alter
+them. USES names the approved credential uses whose values the proxy swapped
+into a request: pass one to --use-id here and to "audit creds" to see the
+verdict that authorized a credential beside every request that spent it.
+
+A request lives on the pool that proxied it for the audit retention window,
+after the discobox is gone. A pool that cannot be read is named on stderr
+(and under unavailablePools with -o json), and its requests are missing from
+the list.
+
+The method, URL and host are what the discobox sent, and are shown as data,
+with non-printing characters escaped.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			projectID, err := a.projectIDValue()
+			if err != nil {
+				return err
+			}
+			client, err := a.apiClient()
+			if err != nil {
+				return err
+			}
+			params := apiclientgen.ListHTTPAuditParams{ProjectId: projectID}
+			if strings.TrimSpace(sandboxID) != "" {
+				resolved, err := a.resolveSandboxID(cmd.Context(), client, projectID, sandboxID)
+				if err != nil {
+					return err
+				}
+				params.SandboxId = apiclientgen.NewOptString(resolved)
+			}
+			if strings.TrimSpace(poolID) != "" {
+				resolved, err := a.resolvePoolID(cmd.Context(), client, projectID, poolID)
+				if err != nil {
+					return err
+				}
+				params.PoolId = apiclientgen.NewOptString(resolved)
+			}
+			if host != "" {
+				params.Host = apiclientgen.NewOptString(host)
+			}
+			if useID != "" {
+				params.UseId = apiclientgen.NewOptString(useID)
+			}
+			if since != "" {
+				at, err := parseSince(since, time.Now())
+				if err != nil {
+					return err
+				}
+				params.Since = apiclientgen.NewOptDateTime(at)
+			}
+			if limit > 0 {
+				params.Limit = apiclientgen.NewOptInt(limit)
+			}
+			res, err := client.ListHTTPAudit(cmd.Context(), params)
+			if err != nil {
+				return err
+			}
+			body, err := expectResponse[apimodel.ListHTTPAuditBody](res)
+			if err != nil {
+				return err
+			}
+			if a.output == "json" {
+				return writeTerminalSafeJSON(cmd.OutOrStdout(), body)
+			}
+			if err := writeHTTPAuditExchanges(cmd.OutOrStdout(), body.GetExchanges()); err != nil {
+				return err
+			}
+			writeUnavailableAuditPools(cmd.ErrOrStderr(), body.GetUnavailablePools())
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Only this discobox's requests; a deleted one needs its full ID")
+	cmd.Flags().StringVar(&poolID, "pool", "", "Only requests proxied by this pool")
+	cmd.Flags().StringVar(&host, "host", "", "Only requests to this host")
+	cmd.Flags().StringVar(&useID, "use-id", "", "Only requests that spent this approved credential use")
+	cmd.Flags().StringVar(&since, "since", "", "Only requests from this long ago (e.g. 1h) or since this RFC 3339 time")
+	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of requests to return")
+	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
+	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
+	return cmd
+}
+
+func writeHTTPAuditExchanges(out io.Writer, exchanges []apimodel.HTTPAuditExchange) error {
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "TIME\tPOOL\tDISCOBOX\tMETHOD\tSTATUS\tUSES\tURL")
+	for _, e := range exchanges {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			formatTime(e.CreatedAt),
+			terminalSafe(e.PoolId),
+			terminalSafe(e.SandboxId),
+			terminalSafe(e.Method),
+			httpAuditStatus(e),
+			terminalSafe(strings.Join(e.SwappedUseIds, ",")),
+			truncateTableValue(terminalSafe(e.URL), 100),
+		)
+	}
+	return tw.Flush()
+}
+
+// httpAuditStatus is the response status, or why there was none: a request the
+// proxy's policy refused never reached an upstream, and a zero status would
+// read as a failure it was not.
+func httpAuditStatus(e apimodel.HTTPAuditExchange) string {
+	switch {
+	case e.Blocked:
+		return "blocked"
+	case e.Status == 0:
+		return "-"
+	default:
+		return strconv.Itoa(e.Status)
+	}
+}
+
+// writeUnavailableAuditPools says which pools' requests are missing. It goes to
+// stderr because it is about the answer rather than part of it, and it is never
+// skipped: a list silently short a pool reads as a complete one (ADR 0130 §1).
+func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAuditPool) {
+	for _, pool := range pools {
+		_, _ = fmt.Fprintf(errOut, "pool %s could not be read, so its requests are missing: %s\n",
+			terminalSafe(pool.PoolId), terminalSafe(pool.Reason))
+	}
 }
 
 func (a *App) newAuditCredsCommand() *cobra.Command {
