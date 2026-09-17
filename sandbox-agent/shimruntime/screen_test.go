@@ -234,6 +234,10 @@ func TestScreenChangedAtCountsTextNotRedraws(t *testing.T) {
 		}
 	}
 
+	// Windows' clock can date this write the same as the first one.
+	for !time.Now().UTC().Add(-time.Minute).After(first) {
+		time.Sleep(100 * time.Microsecond)
+	}
 	write("\x1b[H\x1b[2K> fix the reaper ⠙")
 	if got := s.screenChangedAt(); !got.After(first) {
 		t.Fatalf("screen changed at = %v after a spinner frame, want later than %v", got, first)

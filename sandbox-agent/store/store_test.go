@@ -310,19 +310,33 @@ func TestOpenPurgesRecordsOfDeletedExecs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+	// Every step waits for the clock to pass the one before: the purge orders
+	// events by time, and Windows' clock can date two quick steps the same.
+	var last time.Time
+	tick := func() {
+		for !time.Now().UTC().After(last) {
+			time.Sleep(100 * time.Microsecond)
+		}
+	}
+	done := func() { last = time.Now().UTC() }
 	event := func(id, typ string) {
+		tick()
 		if err := st.RecordExecEvent(ctx, id, typ, typ, nil); err != nil {
 			t.Fatalf("record event: %v", err)
 		}
+		done()
 	}
 	// observe upserts the status row as an exec's run would, started at
 	// startedAt; a left-behind record is re-observed with its old run's start.
 	observe := func(id string, startedAt time.Time, status execs.Status) {
+		tick()
 		if err := st.ObserveExec(ctx, execs.Exec{ID: id, Status: status, CreatedAt: startedAt, StartedAt: &startedAt}); err != nil {
 			t.Fatalf("observe: %v", err)
 		}
+		done()
 	}
 	create := func(id string) time.Time {
+		tick()
 		startedAt := time.Now().UTC()
 		if err := st.SaveExecRecord(ctx, execs.Exec{ID: id, Command: []string{"codex"}, CreatedAt: startedAt}); err != nil {
 			t.Fatalf("save record: %v", err)
@@ -348,6 +362,7 @@ func TestOpenPurgesRecordsOfDeletedExecs(t *testing.T) {
 	// upserted from the new exec, still says so.
 	create("ex_created_quietly")
 	event("ex_created_quietly", "exec.deleted")
+	tick()
 	observe("ex_created_quietly", time.Now().UTC(), execs.StatusRunning)
 	// Created again, and it is the status row that never landed.
 	create("ex_observed_quietly")
