@@ -91,7 +91,7 @@ esac
 # read-only command execution are the residual this leaves (ADR 0090 §1); a
 # judge here is not tool-free, only unable to write.
 if [ -n "$no_tools" ]; then
-	set -- "$@" --sandbox read-only --ask-for-approval never
+	set -- "$@" --sandbox read-only --config approval_policy=never
 fi
 
 exec "$@" "$composed"

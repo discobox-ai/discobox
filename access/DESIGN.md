@@ -111,7 +111,7 @@ the same thing — claude-code adds `--tools "" --restricted
 --disable-slash-commands`, which also stops the judge session reading the
 sandbox's own `~/.claude` settings and skills, both of which the agent it is
 judging can write; codex-cli, which has no tools-off switch, adds `--sandbox
-read-only --ask-for-approval never` and leaves read access as the residual.
+read-only --config approval_policy=never` and leaves read access as the residual.
 
 `judgePrompt` (`judge.go`) lays out the approved use, the credential's name,
 variable and host, and the argv one element per line, plus a small, bounded
