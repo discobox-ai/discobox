@@ -172,10 +172,48 @@ approved use at all.
 
 ### 4. The pool trail is read through the control API that already exists
 
-`pool-agent/proxyagent` sets `Control.ListenAddress` **and**
-`Control.TrustPublicKey`, and the control plane mints per-request tokens with
-`CreateControlToken`, scoped to the sandbox being read. No new protocol and no
-new listener design: the authorization model was built for this.
+The control plane never talks to the proxy. It asks the pool agent, over the
+pool-agent API it already signs requests to, and the pool agent relays to the
+proxy's control API with a token it mints itself. No new protocol and no new
+listener design: the authorization model was built for this, and the pool-agent
+route is the pattern every other pool-local read already uses.
+
+- **The proxy key never leaves the pool.** `pool-agent/proxyagent` generates the
+  control keypair with the rest of the pool's proxy material, beside the MITM
+  CA key under `layout.ProxyCerts`, which already has exactly that custody. The
+  proxy unit is configured with its public half as `Control.TrustPublicKey`;
+  only the pool agent reads the private half, per request, to sign a
+  `CreateControlToken` that lives five minutes. The agent prepares the key at
+  startup, before systemd starts the proxy, and is the only writer: a key that is
+  present but unusable is replaced there, the way an unloadable CA is. A proxy
+  that cannot read the key serves sandbox traffic with no control API, rather
+  than not at all — an audit read must not be able to cost the pool its egress.
+- **The listener is loopback.** `Control.ListenAddress` binds `127.0.0.1` in
+  the pool, never `0.0.0.0` as the proxy's own port does. The pool agent shares
+  the pool's network namespace with the proxy unit. A sandbox does not: sandboxes
+  are sibling containers on the pool's internal network, each in its own network
+  namespace, reaching the pool container by a network alias, so the pool's
+  loopback is not an address any of them has.
+- **Scope carries through.** The control plane's pool-agent token is scoped
+  `audit:read` and names the sandbox when the read does; the pool agent copies
+  that sandbox into the proxy token's `sandbox_id`, so the narrowing below
+  applies to it. A read that names no sandbox is the pool-wide read, and the
+  control plane only asks for one on behalf of a project member.
+- **The control plane reads the project, and fans out over its pools** (§1).
+  `/projects/{projectId}/audit/http` asks the pool `poolId` names; otherwise,
+  when `sandboxId` names a sandbox that still exists, the pool that sandbox runs
+  on, since a sandbox's pool is fixed for its life; otherwise every pool in the
+  project. It merges newest first. It is not a route under the sandbox: a
+  purged sandbox's rows stay on its pool for the retention window, and the row
+  that said which pool that was is gone with the sandbox.
+- **A pool that cannot answer is reported, and does not hold the answer.** Each
+  pool is read under its own deadline, and a pool being deleted or whose agent
+  never registered is reported without being asked. Reaching an agent is only
+  attempted, never recovered: the path that reconciles an unreachable pool and
+  waits for it exists for operations that need the pool running (ADR 0039), and
+  a read must not restart pools. Whatever the reason — no agent, a timeout, an
+  agent that predates the operation — the pool is named in the response beside
+  the rows that did arrive, never dropped from it.
 
 Both settings, not either. `newControlAuthenticator` returns a nil
 authenticator for an empty trust key and `Middleware` then passes every request
@@ -209,10 +247,14 @@ second kind.
 
 ```
 discobox admin audit list  [--since] [--source] [--attestor] [--trusted] [-f]
-discobox admin audit http  [--host] [--status] [--blocked] [--use-id] [--body ID]
+discobox admin audit http  [--discobox-id] [--pool] [--host] [--use-id] [--since] [--limit]
 discobox admin audit creds [--discobox-id] [--use-id] [--grant-id] [--denied|--allowed] [--since] [--prompt]
 discobox admin audit hooks [--provider] [--event]
 ```
+
+`http` does not yet take `--status`, `--blocked`, `--body ID` (a recorded
+request or response body, or an upgraded stream) or `--follow`; `list` and
+`hooks` are not built. Those are what remains of this section.
 
 `creds` reads the project, not a sandbox: `list-credential-verdicts` is
 `/projects/{projectId}/credential-verdicts` with the sandbox as a filter, because
@@ -269,6 +311,15 @@ already is. Rejected: it is a second write path from the pool to the control
 plane on the hot request path, for information the proxy is already writing a
 row about. The row it is already writing is the right place.
 
+**Have the control plane mint proxy control tokens.** What the first draft of
+§4 said, and it matches the proxy's existing design, where
+`CreateControlToken`'s caller holds the private key. Rejected: it gives the
+control plane a second long-lived key whose only use is a request it already has
+an authenticated channel to the pool for, and it needs the control listener
+reachable from off the pool — the one listener this ADR wants on loopback. The
+pool agent is already the proxy's trusted neighbor: it prepares its
+certificates and holds its CA key.
+
 **Let the CLI talk to each source directly.** No fan-out in the server, no merge
 to maintain. Rejected: it would put the pool's address, the sandbox's address
 and a proxy control token in the client, which moves the authorization decision
@@ -310,9 +361,12 @@ lacks is a witness.
   spent" — for a row predating the column those are indistinguishable, and the
   window is bounded by the 48h retention.
 - Pool proxies start serving a control API on a listener that did not exist
-  before. It is authenticated, read-only, and refuses cross-sandbox reads, but
-  it is new surface on the pool and should bind loopback or the pool-internal
-  interface only.
+  before. It is authenticated, read-only, narrows every sandbox-scoped read, and
+  binds loopback, so it is new surface only to what already runs inside the
+  pool.
+- An agent that predates the audit operation answers the relay with its router's
+  404. The control plane reports that pool as unavailable, by name, rather than
+  as an empty trail.
 - A `--follow` over four sources is four polls at four cadences. The proxy trail
   is the high-volume one and the others are quiet; nothing here makes any of
   them a push.
