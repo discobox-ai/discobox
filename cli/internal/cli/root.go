@@ -832,7 +832,20 @@ func (t textPlainErrorTransport) RoundTrip(req *http.Request) (*http.Response, e
 	if closeErr != nil {
 		return resp, closeErr
 	}
-	return nil, fmt.Errorf("request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	return nil, &plainStatusError{status: resp.Status, code: resp.StatusCode, body: strings.TrimSpace(string(body))}
+}
+
+// plainStatusError is a failed response whose body was plain text rather than
+// the API's JSON: most often a route the server has never heard of, which a
+// caller asking something newer than the server may treat as "not here".
+type plainStatusError struct {
+	status string
+	code   int
+	body   string
+}
+
+func (e *plainStatusError) Error() string {
+	return fmt.Sprintf("request failed: %s: %s", e.status, e.body)
 }
 
 type debugTransport struct {

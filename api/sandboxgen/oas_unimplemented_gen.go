@@ -161,6 +161,16 @@ func (UnimplementedHandler) ListSandboxServices(ctx context.Context, params List
 	return r, ht.ErrNotImplemented
 }
 
+// ListSandboxTools implements list-sandbox-tools operation.
+//
+// Lists the tools the sandbox's image and primary source declare, in filename order within each.
+// Declarations are re-read on every request.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
+func (UnimplementedHandler) ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (r *SandboxToolsResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // RestartSandboxService implements restart-sandbox-service operation.
 //
 // Stops the service if it is running and starts it again under the same exec ID. A service that is

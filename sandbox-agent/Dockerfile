@@ -16,6 +16,7 @@ COPY go.mod go.sum ./
 COPY agentcreds ./agentcreds
 COPY access ./access
 COPY api ./api
+COPY declared ./declared
 COPY execstream ./execstream
 COPY harness ./harness
 COPY proxy ./proxy
@@ -23,6 +24,7 @@ COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxservices ./sandboxservices
 COPY sandboxuser ./sandboxuser
+COPY tools ./tools
 COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -440,6 +442,10 @@ COPY sandbox-agent/image/desktop/launchers /usr/local/share/discobox/desktop/lau
 # a socket-activated service is what would start it (ADR 0094, image-declared
 # services).
 COPY sandbox-agent/image/services /usr/local/share/discobox/services
+# The tools the image ships — discobox-review as diff, and fresh — declared in
+# the same format, with the defaults for what they carry in beside them. The
+# CLI lists them in `discobox tools` and the launcher's picker (ADR 0125).
+COPY sandbox-agent/image/tools /usr/local/share/discobox/tools
 # Chromium is this image's browser, so it is what a link opens. See the file.
 COPY sandbox-agent/image/desktop/mimeapps.list /etc/xdg/mimeapps.list
 # And Xfce's own preferred-applications list, which is what the panel, Thunar

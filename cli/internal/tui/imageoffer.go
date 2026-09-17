@@ -17,9 +17,6 @@ import (
 // opensBox reports whether an action needs the box's container: the ones an
 // unavailable image stops.
 func opensBox(key string) bool {
-	if _, ok := editorForKey(key); ok {
-		return true
-	}
 	action, ok := interactions[key]
 	return ok && (action == InteractAttach || action == InteractShell)
 }

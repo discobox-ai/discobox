@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/tools"
 )
 
 // fakeEditor puts a `code` on PATH that records the arguments it was run with,
@@ -30,7 +32,7 @@ func fakeVSCode(t *testing.T) string {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// A DISCOBOX_VSCODE left over in the developer's environment would name a
 	// different binary and quietly bypass the one just written.
-	t.Setenv(vscodeEditorEnv, "")
+	t.Setenv("DISCOBOX_VSCODE", "")
 	return record
 }
 
@@ -57,8 +59,17 @@ func editorArgs(t *testing.T, record string) []string {
 // XDG_STATE_HOME redirected, so nothing here touches the real ~/.ssh.
 func runToolsVSCodeCmd(t *testing.T, fake *sshConfigFakeServer, args ...string) (home, state, stderr string, err error) {
 	t.Helper()
-	home, state = t.TempDir(), t.TempDir()
+	return runToolsCmd(t, fake, t.TempDir(), "vscode", args...)
+}
+
+// runToolsCmd runs `tools <tool>` against fake with home as HOME, the user's
+// config directory under it — so the tools a test declares there are the only
+// user tools there are — and a fresh XDG_STATE_HOME.
+func runToolsCmd(t *testing.T, fake *sshConfigFakeServer, home, tool string, args ...string) (_, state, stderr string, err error) {
+	t.Helper()
+	state = t.TempDir()
 	setHome(t, home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("XDG_STATE_HOME", state)
 
 	server := fake.start(t)
@@ -66,9 +77,21 @@ func runToolsVSCodeCmd(t *testing.T, fake *sshConfigFakeServer, args ...string) 
 	var out, errOut strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "tools", "vscode"}, args...))
+	cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "tools", tool}, args...))
 	err = cmd.Execute()
 	return home, state, errOut.String(), err
+}
+
+// declareUserTool writes a tool declaration into home's user tools directory.
+func declareUserTool(t *testing.T, home, name, body string) {
+	t.Helper()
+	dir := filepath.Join(home, ".config", "discobox", "tools")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func vscodeFakeServer() *sshConfigFakeServer {
@@ -120,16 +143,21 @@ func TestToolsVSCodeSilencesTheWSLInstallPrompt(t *testing.T) {
 	}
 }
 
-// The window opens beside whatever you were already editing, not over it.
-func TestToolsVSCodeReusesTheWindowOnlyWhenAsked(t *testing.T) {
+// A window that reuses the one you are in is a setting, and settings are the
+// user's layer: a vscode.yaml of their own replaces the CLI's (ADR 0125).
+func TestToolsVSCodeIsReplacedByTheUsersOwnDeclaration(t *testing.T) {
 	record := fakeVSCode(t)
-	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--reuse-window"); err != nil {
+	home := t.TempDir()
+	declareUserTool(t, home, "vscode.yaml", `runs: host
+program: code
+args: [--reuse-window, --folder-uri, "vscode-remote://ssh-remote+{ssh.host}{workdir.urlpath}"]
+`)
+	if _, _, _, err := runToolsCmd(t, vscodeFakeServer(), home, "vscode", "--discobox-id", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
-	args := editorArgs(t, record)
-	if !contains(args, "--reuse-window") || contains(args, "--new-window") {
-		t.Fatalf("editor args = %v, want --reuse-window alone", args)
+	want := []string{"--reuse-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/home/agent/repo"}
+	if got := editorArgs(t, record); !equalStrings(got, want) {
+		t.Fatalf("editor args = %v, want %v", got, want)
 	}
 }
 
@@ -146,9 +174,9 @@ func TestToolsVSCodePassesEditorArgumentsThrough(t *testing.T) {
 	}
 }
 
-// A sandbox that never said where its source landed still opens: the editor
-// connects to the host with nothing open, which beats refusing.
-func TestToolsVSCodeOpensTheHostWhenNoWorkTreeIsKnown(t *testing.T) {
+// A sandbox that never said where its source landed still opens, on the
+// discobox's root: a connected window whose tree is the box.
+func TestToolsVSCodeOpensTheRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	record := fakeVSCode(t)
 	fake := &sshConfigFakeServer{
 		ingress:   sshConfigEnabledIngress,
@@ -157,7 +185,7 @@ func TestToolsVSCodeOpensTheHostWhenNoWorkTreeIsKnown(t *testing.T) {
 	if _, _, _, err := runToolsVSCodeCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
-	want := []string{"--new-window", "--remote", "ssh-remote+devbox"}
+	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -167,12 +195,12 @@ func TestToolsVSCodeOpensTheHostWhenNoWorkTreeIsKnown(t *testing.T) {
 // the one failure the user cannot fix after the fact, so it is found first.
 func TestToolsVSCodeFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv(vscodeEditorEnv, "")
+	t.Setenv("DISCOBOX_VSCODE", "")
 	_, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
 	if err == nil {
 		t.Fatal("expected tools vscode to fail with no editor installed")
 	}
-	if !strings.Contains(err.Error(), "--editor") {
+	if !strings.Contains(err.Error(), "--program") {
 		t.Fatalf("error should say how to name an editor, got: %v", err)
 	}
 	configPath, _ := managedPaths(state)
@@ -181,13 +209,13 @@ func TestToolsVSCodeFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 	}
 }
 
-// --editor names a build that is not one of the ones looked for.
+// --program names a build that is not one of the ones looked for.
 func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	record := fakeVSCode(t)
 	// The fake is installed as `code`; asking for it by name has to find it
 	// rather than fall through to the search.
 	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--editor", "code"); err != nil {
+		"--discobox-id", "sbx_devbox00000001", "--program", "code"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	if args := editorArgs(t, record); len(args) == 0 {
@@ -195,9 +223,19 @@ func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	}
 
 	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--editor", "not-an-editor"); err == nil {
+		"--discobox-id", "sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
 	}
+}
+
+// builtinTool is the CLI's own declaration of a tool.
+func builtinTool(t *testing.T, id string) tools.Definition {
+	t.Helper()
+	def, ok := tools.Find(builtinTools(), id)
+	if !ok || def.Problem != "" {
+		t.Fatalf("the CLI declares no runnable %s: %+v", id, def)
+	}
+	return def
 }
 
 func equalStrings(a, b []string) bool {

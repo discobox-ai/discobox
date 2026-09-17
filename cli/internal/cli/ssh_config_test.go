@@ -18,9 +18,16 @@ type sshConfigFakeServer struct {
 	ingress   string
 	sandboxes []sshConfigFakeSandbox
 
-	mu       sync.Mutex
-	keys     []map[string]any
-	enrolled []string // public key lines POSTed during the test
+	// tools is the body of GET .../tools, the image's and source's tool
+	// declarations; empty is a sandbox that declares none.
+	tools string
+	// toolsError, when set, is the plain-text refusal GET .../tools answers
+	// with instead, with toolsCode as its status.
+	toolsError string
+	toolsCode  int
+	mu         sync.Mutex
+	keys       []map[string]any
+	enrolled   []string // public key lines POSTed during the test
 }
 
 type sshConfigFakeSandbox struct {
@@ -74,6 +81,16 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 				"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.URL.Path == "/projects/project-1/sandboxes":
 			_, _ = w.Write([]byte(f.sandboxesJSON()))
+		case strings.HasPrefix(r.URL.Path, "/api/projects/project-1/sandboxes/") && strings.HasSuffix(r.URL.Path, "/tools"):
+			if f.toolsError != "" {
+				http.Error(w, f.toolsError, f.toolsCode)
+				return
+			}
+			body := f.tools
+			if body == "" {
+				body = `{"tools":[]}`
+			}
+			_, _ = w.Write([]byte(body))
 		case strings.HasPrefix(r.URL.Path, "/projects/project-1/sandboxes/") && r.Method == http.MethodGet:
 			id := strings.TrimPrefix(r.URL.Path, "/projects/project-1/sandboxes/")
 			body, ok := f.sandboxJSON(id)

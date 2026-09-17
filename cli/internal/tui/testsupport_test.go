@@ -16,6 +16,8 @@ import (
 
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/termpane"
+
+	"github.com/discobox-ai/discobox/tools"
 )
 
 // The whole package renders colorless, so a frame is plain text a test can read
@@ -115,7 +117,11 @@ type fakeSource struct {
 
 	openErr   error
 	renameErr error
-	editorErr error
+	// hostToolErr fails RunHostTool, and toolsErr the catalog lookup.
+	hostToolErr error
+	toolsErr    error
+	// catalog is every discobox's tools; nil is testTools.
+	catalog []Tool
 
 	// addressed records which discoboxes were looked up; addressErr fails the
 	// lookup, and addresses is what a successful one reports.
@@ -186,14 +192,15 @@ type fakeSource struct {
 	pushCalls []string
 
 	// Calls, in order.
-	drafts    []string // "folder prompt"
-	runs      []RunRequest
-	did       []string     // "verb id"
-	renames   []string     // "id name"
-	editors   []editorOpen // the sandboxes handed to an editor, and which one
-	opens     []string     // "action id colsxrows"
-	execOpens []string     // "id execID colsxrows"
-	terminals []*fakeTerminal
+	drafts      []string // "folder prompt"
+	runs        []RunRequest
+	did         []string     // "verb id"
+	renames     []string     // "id name"
+	editors     []editorOpen // the sandboxes handed to a host tool, and which one
+	toolLookups []string     // the sandboxes whose tools were asked for
+	opens       []string     // "action id colsxrows"
+	execOpens   []string     // "id execID colsxrows"
+	terminals   []*fakeTerminal
 	// execTerminals is the terminal serving each exec attach, by exec id.
 	execTerminals map[string]*fakeTerminal
 	toolRuns      []string // "tool argv"
@@ -475,19 +482,50 @@ func (f *fakeSource) Rename(_ context.Context, id, name string) error {
 	return nil
 }
 
-// editorOpen is one OpenEditor call: which sandbox, and which editor it was
+// editorOpen is one RunHostTool call: which sandbox, and which tool it was
 // handed to.
 type editorOpen struct {
-	id     string
-	editor Editor
+	id   string
+	tool string
 }
 
-// openedEditors is the sandboxes handed to an editor, read under the lock so a
-// test driving the model on its own goroutines can look at it safely.
+// openedEditors is the sandboxes handed to a host tool, read under the lock so
+// a test driving the model on its own goroutines can look at it safely.
 func (f *fakeSource) openedEditors() []editorOpen {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]editorOpen(nil), f.editors...)
+}
+
+// testTools is the catalog a discobox offers in these tests: the image's two
+// and the CLI's two, the way the real declarations have them.
+func testTools() []Tool {
+	return []Tool{
+		{ID: tools.DiffID, Key: "d", Label: "diff", Detail: "what has changed, in discobox-review"},
+		{ID: "fresh", Key: "f", Label: "fresh", Detail: "the fresh editor, in the box", Files: []ToolFile{
+			{Tool: "fresh", Name: "config.jsonc", Home: ".config/fresh/config.json", Default: "// vim: set ft=jsonc :\n{}\n"},
+			{Tool: "fresh", Name: "live_diff.json", Home: ".local/share/fresh/orchestrator/state/live_diff.json", Default: "{}\n"},
+		}},
+		{ID: "vscode", Key: "v", Label: "vscode", Detail: "open the box in VS Code, in a window of its own", Host: true},
+		{ID: "zed", Key: "z", Label: "zed", Detail: "open the box in Zed, in a window of its own", Host: true},
+	}
+}
+
+func (f *fakeSource) tools() []Tool {
+	if f.catalog == nil {
+		return testTools()
+	}
+	return f.catalog
+}
+
+func (f *fakeSource) Tools(_ context.Context, id string) ([]Tool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.toolLookups = append(f.toolLookups, id)
+	if f.toolsErr != nil {
+		return nil, f.toolsErr
+	}
+	return f.tools(), nil
 }
 
 // toolRunsSeen is the tool sessions asked for, and endedExecs the sessions
@@ -535,11 +573,11 @@ func (f *fakeSource) pushedCalls() []string {
 	return append([]string(nil), f.pushCalls...)
 }
 
-func (f *fakeSource) OpenEditor(_ context.Context, id string, editor Editor) error {
+func (f *fakeSource) RunHostTool(_ context.Context, id, toolID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.editors = append(f.editors, editorOpen{id: id, editor: editor})
-	return f.editorErr
+	f.editors = append(f.editors, editorOpen{id: id, tool: toolID})
+	return f.hostToolErr
 }
 
 func (f *fakeSource) Addresses(_ context.Context, id string) (Addresses, error) {
@@ -760,22 +798,27 @@ func (f *fakeSource) DoService(_ context.Context, verb ServiceVerb, sandboxID, s
 	return nil
 }
 
-func (f *fakeSource) NewTool(_ context.Context, id string, spec ToolSpec, cols, rows int) (Exec, Terminal, error) {
+func (f *fakeSource) NewTool(_ context.Context, id, toolID string, cols, rows int) (Exec, Terminal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.toolRuns = append(f.toolRuns, spec.ID+" "+strings.Join(spec.Command, " "))
+	f.toolRuns = append(f.toolRuns, toolID)
 	if f.newToolErr != nil {
 		return Exec{}, nil, f.newToolErr
 	}
 	// The files go in before the session, the way the real adapter does it.
-	for _, file := range spec.Files {
-		f.installed = append(f.installed, toolFileKeyOf(file)+" → "+file.Home)
+	for _, t := range f.tools() {
+		if t.ID != toolID {
+			continue
+		}
+		for _, file := range t.Files {
+			f.installed = append(f.installed, toolFileKeyOf(file)+" → "+file.Home)
+		}
 	}
 	f.newToolID++
 	exec := Exec{
 		ID:        fmt.Sprintf("exec_tool%d", f.newToolID),
-		Command:   append([]string{}, spec.Command...),
-		Tool:      spec.ID,
+		Command:   []string{toolID},
+		Tool:      toolID,
 		Tty:       true,
 		Live:      true,
 		CreatedAt: time.Date(2026, 8, 7, 14, 0, f.newToolID, 0, time.UTC),

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/discobox-ai/discobox/tools"
 )
 
 // openTool opens the workspace and runs one tool from the picker, waiting until
@@ -18,10 +19,20 @@ func openTool(t *testing.T, ds *fakeSource, key string) (*driver, *Model) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key(key)
 	d.wait("the tool window", func() bool { return m.showingTool() != nil })
 	return d, m
+}
+
+// waitPicker waits for the picker, and for the tools on it: they are the
+// discobox's to say, and arrive after the card does.
+func waitPicker(d *driver, m *Model) {
+	d.wait("the picker", func() bool { return m.dialog != nil && m.dialog.title == toolsTitle })
+	d.wait("the tools", func() bool {
+		_, known := m.toolCatalogs[m.currentBox().ID]
+		return known
+	})
 }
 
 // openPicker opens the workspace and puts the tools picker on screen.
@@ -30,7 +41,7 @@ func openPicker(t *testing.T, ds *fakeSource) (*driver, *Model) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	return d, m
 }
 
@@ -131,11 +142,11 @@ func TestTheToolsPickerRunsDiffInTheBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 
-	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != "diff discobox-review -by git-user" {
+	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != tools.DiffID {
 		t.Fatalf("tool runs = %v, want discobox-review as the diff tool", got)
 	}
 	p := m.showingTool()
-	if p.tool != "diff" {
+	if p.tool != tools.DiffID {
 		t.Fatalf("showing %q, want the diff tool", p.tool)
 	}
 	// The whole window, over the workspace that is still attached underneath.
@@ -171,13 +182,13 @@ func TestMinimizingAToolKeepsItsSessionAndReopensIt(t *testing.T) {
 	if got := ds.endedExecs(); len(got) != 0 {
 		t.Fatalf("ended = %v, want a put-away tool to keep running", got)
 	}
-	if m.toolPane("diff") == nil {
+	if m.toolPane(tools.DiffID) == nil {
 		t.Fatal("the tool pane should still be attached while it is put away")
 	}
 
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key("d")
 	d.wait("the tool window again", func() bool { return m.showingTool() != nil })
 
@@ -227,7 +238,7 @@ func TestAToolThatExitsTakesItsWindowWithIt(t *testing.T) {
 	term.Close()
 	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
 
-	if m.toolPane("diff") != nil {
+	if m.toolPane(tools.DiffID) != nil {
 		t.Error("a tool that exited should leave no pane behind")
 	}
 	if !m.inPanes() {
@@ -255,11 +266,11 @@ func TestTheToolWindowButtonsMinimizeAndClose(t *testing.T) {
 		t.Fatalf("ended = %v, want [-] to end nothing", got)
 	}
 
-	m.showTool(m.toolPane("diff"))
+	m.showTool(m.toolPane(tools.DiffID))
 	m.View()
 	clickAt(d, closeAt, 1)
 	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
-	if m.toolPane("diff") != nil {
+	if m.toolPane(tools.DiffID) != nil {
 		t.Error("[x] should close the tool as well as ending it")
 	}
 }
@@ -289,11 +300,11 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{{
-		ID: "exec_diff", Command: []string{"discobox-review"}, Tool: "diff",
+		ID: "exec_diff", Command: []string{"discobox-review"}, Tool: tools.DiffID,
 		Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 	}}
 	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the running tool", func() bool { return m.toolPane("diff") != nil })
+	d.wait("the running tool", func() bool { return m.toolPane(tools.DiffID) != nil })
 
 	if m.showingTool() != nil {
 		t.Error("a tool picked up off the listing should arrive put away")
@@ -302,13 +313,13 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 		t.Errorf("a tool should be neither a shell nor a terminal: %d shells, %d terminals",
 			m.shells.len(), m.terminals.len())
 	}
-	if got := m.toolPane("diff").execID; got != "exec_diff" {
+	if got := m.toolPane(tools.DiffID).execID; got != "exec_diff" {
 		t.Errorf("tool exec = %q, want the session already running", got)
 	}
 
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	if body := m.dialog.view(m.st, &m.zones, m.width, m.height); !strings.Contains(body, "running") {
 		t.Errorf("the picker should say which tools are up:\n%s", body)
 	}
@@ -341,29 +352,6 @@ func TestDetachingLeavesTheToolSessionsRunning(t *testing.T) {
 	}
 }
 
-// The tools that run in the discobox are the ones the picker lists with a
-// command; vscode is the odd one and is listed anyway, on the key it has in the
-// list, so there is one place to ask "open this box in X".
-func TestEveryToolIsReachableByItsKey(t *testing.T) {
-	t.Parallel()
-	seen := map[string]bool{}
-	for _, tool := range tools {
-		if seen[tool.key] {
-			t.Fatalf("two tools answer to %q", tool.key)
-		}
-		seen[tool.key] = true
-		if tool.id == "" || tool.label == "" || tool.detail == "" {
-			t.Errorf("tool %q is not fully described: %+v", tool.key, tool)
-		}
-	}
-	if _, ok := toolByID("vscode"); !ok {
-		t.Error("vscode should be one of the tools")
-	}
-	if t2, _ := toolByID("vscode"); t2.session() {
-		t.Error("vscode is a request that returns, not a session in the box")
-	}
-}
-
 // Launching a tool carries its files into the discobox, before the session
 // starts: the tool reads its configuration when it comes up.
 func TestLaunchingAToolCarriesItsConfigIn(t *testing.T) {
@@ -374,7 +362,6 @@ func TestLaunchingAToolCarriesItsConfigIn(t *testing.T) {
 	want := []string{
 		"fresh/config.jsonc → .config/fresh/config.json",
 		"fresh/live_diff.json → .local/share/fresh/orchestrator/state/live_diff.json",
-		"fresh/trust.json → .local/share/fresh/workspaces/{workspace}/trust.json",
 	}
 	got := ds.installedFiles()
 	if len(got) != len(want) {
@@ -400,7 +387,7 @@ func TestATooWithNoConfigSaysSo(t *testing.T) {
 
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key(toolFileKey) // the cursor is on diff, the first row
 	d.wait("the report", func() bool { return m.status != "" })
 
@@ -423,7 +410,7 @@ func TestThePickerEditsTheHighlightedToolsConfig(t *testing.T) {
 
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key("down") // onto fresh
 	d.key(toolFileKey)
 	// fresh carries more than one file, so the key opens the list first.
@@ -456,59 +443,12 @@ func TestAnUneditedConfigReportsUnchanged(t *testing.T) {
 
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key("down")
 	d.key(toolFileKey)
 	d.wait("the file list", func() bool { return m.dialog != nil })
 	d.key("1")
 	d.wait("the report", func() bool { return strings.Contains(m.status, "unchanged") })
-}
-
-// A config file has to tell an editor what it is, twice over: the copy on this
-// machine says it in its extension, and the copy inside the discobox — whose
-// name fresh dictates — says it in a modeline, because a .json file full of
-// comments is a screenful of syntax errors otherwise.
-func TestTheFreshConfigDeclaresItsFormat(t *testing.T) {
-	t.Parallel()
-	// The name fresh reads is not negotiable; the local one is ours to pick.
-	if freshConfig.Home != ".config/fresh/config.json" {
-		t.Errorf("Home = %q, want the path fresh actually reads", freshConfig.Home)
-	}
-	if !strings.HasSuffix(freshConfig.Name, ".jsonc") {
-		t.Errorf("Name = %q, want a .jsonc extension so editors color it", freshConfig.Name)
-	}
-
-	lines := strings.Split(freshConfig.Default, "\n")
-	// Vim reads modelines from the first five lines, so a modeline further down
-	// is a modeline that does nothing.
-	var found bool
-	for i, line := range lines {
-		if i >= 5 {
-			break
-		}
-		if strings.Contains(line, "vim:") {
-			found = true
-			if !strings.Contains(line, "ft=jsonc") {
-				t.Errorf("line %d sets no jsonc filetype: %q", i+1, line)
-			}
-			// The set form's options end at a colon; without it vim reads the
-			// rest of the line as more options and gives up on the lot.
-			if !strings.Contains(line, "set ") || !strings.HasSuffix(strings.TrimSpace(line), ":") {
-				t.Errorf("line %d is not a well-formed set modeline: %q", i+1, line)
-			}
-		}
-	}
-	if !found {
-		t.Errorf("no modeline in the first five lines:\n%s", strings.Join(lines[:min(5, len(lines))], "\n"))
-	}
-	// It has to still be JSONC: a comment before the top-level value, which is
-	// what every JSONC parser allows.
-	if body := strings.TrimSpace(freshConfig.Default); !strings.Contains(body, "{") {
-		t.Error("the default carries no object at all")
-	}
-	if strings.Index(freshConfig.Default, "{") < strings.Index(freshConfig.Default, "vim:") {
-		t.Error("the modeline must come before the object, where a comment is legal")
-	}
 }
 
 // A tool carrying several files gets a list, and each row has to say what the
@@ -521,7 +461,7 @@ func TestTheFileListNamesEveryFileAndWhereItGoes(t *testing.T) {
 
 	d.key("ctrl+a")
 	d.key(toolsKey)
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key("down") // onto fresh
 	d.key(toolFileKey)
 	d.wait("the file list", func() bool {
@@ -535,67 +475,6 @@ func TestTheFileListNamesEveryFileAndWhereItGoes(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the list should mention %q:\n%s", want, body)
-		}
-	}
-}
-
-// fresh has to be handed the directory. Given no argument it opens an empty
-// buffer with no file tree — the one thing you want from an editor pointed at a
-// project — so the argument is the feature, and it regresses silently.
-func TestFreshIsLaunchedOnItsDirectory(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	openTool(t, ds, "f")
-
-	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != "fresh fresh ." {
-		t.Fatalf("tool runs = %v, want fresh given a directory to open", got)
-	}
-}
-
-// The live-diff seed is plugin state, not config: it is parsed with a strict
-// JSON reader, so a comment in it would take the whole file — and the enable
-// with it — silently.
-func TestTheLiveDiffSeedIsStrictJSON(t *testing.T) {
-	t.Parallel()
-	if strings.Contains(freshLiveDiff.Default, "//") {
-		t.Fatalf("a comment would make this unparseable:\n%s", freshLiveDiff.Default)
-	}
-	var state map[string]any
-	if err := json.Unmarshal([]byte(freshLiveDiff.Default), &state); err != nil {
-		t.Fatalf("does not parse as strict JSON: %v", err)
-	}
-	// Flat map of key to value, which is the shape fresh reads it back as.
-	if got := state["live_diff.global_enabled"]; got != true {
-		t.Errorf("global_enabled = %v, want true — the plugin is opt-in", got)
-	}
-	mode, ok := state["live_diff.default_mode"].(map[string]any)
-	if !ok || mode["kind"] != "head" {
-		t.Errorf("default_mode = %v, want the HEAD revision", state["live_diff.default_mode"])
-	}
-	// It lands under the data dir, beside the plugin's own name, not in config.
-	if !strings.HasSuffix(freshLiveDiff.Home, "/orchestrator/state/live_diff.json") {
-		t.Errorf("Home = %q, want the per-plugin state path fresh reads", freshLiveDiff.Home)
-	}
-}
-
-// Every declared file has to be complete enough to deliver and to name.
-func TestEveryToolFileIsDeliverable(t *testing.T) {
-	t.Parallel()
-	for _, tool := range tools {
-		for _, file := range tool.files {
-			if file.Tool != tool.id {
-				t.Errorf("%s carries a file owned by %q", tool.id, file.Tool)
-			}
-			if file.Name == "" || file.Home == "" {
-				t.Errorf("%s/%s needs both a name and a home path: %+v", tool.id, file.Name, file)
-			}
-			if strings.HasPrefix(file.Home, "/") || strings.HasPrefix(file.Home, "~") {
-				t.Errorf("%s/%s: Home is relative to the run user's home, got %q",
-					tool.id, file.Name, file.Home)
-			}
-			if strings.TrimSpace(file.Default) == "" {
-				t.Errorf("%s/%s has no default to start from", tool.id, file.Name)
-			}
 		}
 	}
 }
@@ -654,5 +533,126 @@ func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {
 	// The way out is the one thing that never goes.
 	if !strings.Contains(narrowest, m.detachHint()) {
 		t.Errorf("the narrowest row lost the way out: %q", narrowest)
+	}
+}
+
+// The picker is the discobox's catalog, not a table of this package's: a tool
+// the box declares is a row, one that cannot run is a row that says why, and a
+// key two declarations ask for goes to the first of them.
+func TestThePickerListsTheDiscoboxsCatalog(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.catalog = append(testTools(),
+		Tool{ID: "review", Key: "d", Label: "review", Detail: "the repository's own reviewer"},
+		Tool{ID: "open", Key: "w", Label: "open", Detail: "open it here", Problem: "a tool that runs on your machine cannot be declared by the discobox's source"},
+	)
+	d, m := openPicker(t, ds)
+
+	frame := frameText(m)
+	for _, want := range []string{"review", "the repository's own reviewer", "cannot be declared by the discobox's source"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("the picker should show %q:\n%s", want, frame)
+		}
+	}
+	var review, open action
+	for _, it := range m.dialog.items {
+		switch it.key {
+		case toolRowKey("review"):
+			review = it
+		case toolRowKey("open"):
+			open = it
+		}
+	}
+	if review.press != "" {
+		t.Errorf("review took d from diff: %+v", review)
+	}
+	if open.enabled {
+		t.Errorf("a tool with a problem is offered: %+v", open)
+	}
+
+	// d is still diff's.
+	d.key("d")
+	d.wait("the diff", func() bool { return m.showingTool() != nil })
+	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != tools.DiffID {
+		t.Fatalf("tool runs = %v, want diff", got)
+	}
+}
+
+// A repository that declares its own vscode is refused, and the refusal must
+// not cost the real one: no second row under the id, and the key stays the
+// host tool's even when the refused file sorts first.
+func TestARefusedReplacementDoesNotTakeTheHostToolsRowOrKey(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.catalog = append([]Tool{
+		{ID: "vscode", Key: "v", Label: "vscode", Problem: "id \"vscode\" is a tool that runs on your machine, declared by builtin; the discobox's source cannot replace it"},
+		{ID: "lint", Key: "z", Label: "lint", Detail: "the repository's linter"},
+	}, testTools()...)
+	d, m := openPicker(t, ds)
+
+	var rows int
+	for _, it := range m.dialog.items {
+		switch it.key {
+		case toolRowKey("vscode"):
+			rows++
+			if !it.enabled || it.press != "v" {
+				t.Errorf("vscode row = %+v, want the runnable one on v", it)
+			}
+		case toolRowKey("lint"):
+			if it.press != "" {
+				t.Errorf("the box's lint took %q from zed", it.press)
+			}
+		}
+	}
+	if rows != 1 {
+		t.Fatalf("vscode has %d rows, want 1", rows)
+	}
+	d.key("v")
+	d.wait("vscode", func() bool { return len(ds.openedEditors()) == 1 })
+	if got := ds.openedEditors(); got[0] != (editorOpen{id: "sbx_one", tool: "vscode"}) {
+		t.Fatalf("ran %v, want the host vscode", got)
+	}
+}
+
+// A click on the git summary that waited for the tools lookup reports the
+// lookup's own failure, not a tool it could not find in no catalog.
+func TestAGitSummaryClickReportsAFailedToolLookup(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.toolsErr = errors.New("sandbox has no container on this pool: it is being rebuilt, or it needs repair")
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	clickAt(d, headerCol(t, m, "main@a3f9c21")+2, 0)
+	d.wait("the report", func() bool { return strings.Contains(m.status, "needs repair") })
+	if strings.Contains(m.status, "no such tool") {
+		t.Fatalf("status = %q", m.status)
+	}
+	if got := ds.toolRunsSeen(); len(got) != 0 {
+		t.Fatalf("tool runs = %v, want none", got)
+	}
+}
+
+// A lookup that already failed is not a catalog to run against: the next click
+// asks again, and reports why it still fails.
+func TestAGitSummaryClickRetriesAFailedToolLookup(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.toolsErr = errors.New("sandbox has no container on this pool: it is being rebuilt, or it needs repair")
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	col := headerCol(t, m, "main@a3f9c21") + 2
+	clickAt(d, col, 0)
+	d.wait("the first report", func() bool { return strings.Contains(m.status, "needs repair") })
+	m.status = ""
+	clickAt(d, col, 0)
+	d.wait("the second report", func() bool { return m.status != "" })
+	if !strings.Contains(m.status, "needs repair") {
+		t.Fatalf("second click status = %q, want the lookup's reason again", m.status)
+	}
+	ds.mu.Lock()
+	lookups := len(ds.toolLookups)
+	ds.mu.Unlock()
+	if lookups < 2 {
+		t.Fatalf("lookups = %d, want the second click to ask again", lookups)
 	}
 }

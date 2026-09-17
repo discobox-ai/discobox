@@ -37,6 +37,7 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	// same scopes. It needs its own registrations because this router names
 	// every sandbox-agent path it forwards rather than forwarding a prefix.
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/tools", service.autoStart(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}", service.autoStart(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/logs", service.autoStart(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/start", service.autoStart(service.sandboxAgentProxyHandler()))
@@ -147,6 +148,12 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 	if strings.Contains(r.URL.Path, "/udp/attach") {
 		if r.Method == http.MethodGet {
 			return ScopeUDPConnect
+		}
+		return ""
+	}
+	if strings.HasSuffix(r.URL.Path, "/tools") {
+		if r.Method == http.MethodGet {
+			return ScopeExecRead
 		}
 		return ""
 	}

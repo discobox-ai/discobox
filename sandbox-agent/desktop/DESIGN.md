@@ -303,24 +303,22 @@ the viewer, in every sandbox, whether or not anybody wanted a desktop.
 So the port is neither discovered nor probed. The image declares it, in the same
 format a repository's `.discobox/services` uses and read by the same code
 ([ADR 0094](../../docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md)) —
-`sandbox-agent/image/services/10-desktop.sh`, installed at
+`sandbox-agent/image/services/10-desktop.yaml`, installed at
 `/usr/local/share/discobox/services`:
 
-```sh
-#---
-# id: ai.discobox.desktop
-# name: Desktop
-# description: The sandbox's graphical desktop, in a browser tab.
-# port: 6900
-# protocol: http
-# start: never
-#---
+```yaml
+id: ai.discobox.desktop
+name: Desktop
+description: The sandbox's graphical desktop, in a browser tab.
+port: 6900
+protocol: http
 ```
 
 `protocol:` is reported instead of connecting to the port, which is the whole
-point. `start: never` says the sandbox starts nothing here — systemd does, on
-demand — so the file needs no shebang and no executable bit and is not listed as
-a broken service.
+point. The file is `.yaml`, which says the sandbox starts nothing here — systemd
+does, on demand — so it is a declaration rather than a script, needs no shebang
+and no executable bit, and is not listed as a broken service
+([ADR 0125](../../docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md) §1).
 
 `id:` is stated rather than derived from the filename because it is what a
 client matches on: the port arrives as `serviceId: ai.discobox.desktop` with

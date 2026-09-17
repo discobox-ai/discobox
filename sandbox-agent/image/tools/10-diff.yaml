@@ -1,0 +1,18 @@
+# What has changed, in discobox-review. It is installed in the image, so it is
+# the same version for everyone looking at the same discobox and there is
+# nothing to have on your machine.
+#
+# See docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md.
+# The id is stated rather than derived from this filename: it is what the
+# launcher opens from a discobox's git summary (tools.DiffID). It is not
+# reserved — declare your own tool with this id to make the git summary open it.
+id: ai.discobox.diff
+name: diff
+description: what has changed, in discobox-review
+key: d
+program: discobox-review
+# -by is what a comment written in the window is signed with, and
+# discobox-review has no default for it: a name it guessed could be the
+# person's on an agent's remark. git-user is how a person says "the name git
+# already knows me by", which is who is at this keyboard.
+args: [-by, git-user]

@@ -35,8 +35,7 @@ flowchart LR
     S -->|C| Cred
     WS -->|leader g| Cred
     L -->|y| Overlay["overlay pane → DataSource.Open"]
-    L -->|v| Editor["DataSource.OpenEditor"]
-    WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor / Addresses"]
+    WS -->|leader o| T["tools picker → Tools / NewTool / EndExec / RunHostTool / Addresses"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|v| ACard["config card → HarnessSecrets"]
     A -->|e| ACfg["configuration overlay pane → OpenHarnessConfigure"]
@@ -785,38 +784,19 @@ until something is done, and typing into the prompt is not that
 (`typingIntoPrompt`): a create fails a minute after its Enter, often while the
 next prompt is being written, and would otherwise be gone before anyone read it.
 
-**An editor is a fourth kind** (`vscodeKey`, `zedKey`, `editorForKey`,
-`openEditor`, `DataSource.OpenEditor`). It is neither a `Verb` — it changes
-nothing about the discobox — nor an `Interaction` — it takes no terminal: `v`
-runs `discobox tools vscode` and `z` runs `discobox tools zed`, which hand the
-sandbox to the editor and return.
-The editor is another program in another window, so the window carries on
-exactly where it was: the terminal on screen and the editor beside it are two
-views of one discobox, open at once. Because it is in neither `verbs` nor
-`interactions`, both the list's key map and `actOn` name it explicitly, the way
-`renameKey` is named. On the workspace neither is a key of its own — each is a
-row in the tools picker, below.
-
-**Two editor keys, not one key that asks which** (`Editor`, `editorForKey`).
-The editor is a `DataSource.OpenEditor` argument rather than two methods,
-because everything either one does through this window is identical and only
-which `tools` command runs differs — so `apiDataSource.OpenEditor` is one
-`switch` and `editorForKey` is the one table behind both of the things the
-list does with an editor key — running it and knowing it needs the box's
-container — while the picker reaches the same editors by its rows' own
-`tool.editor`. A dialog between the key and the launch would be a step
-someone with one editor installed never needed, and someone with both already
-knows which they want. Both rows are listed whether or not either editor is on
-PATH: which builds exist is a question only the launch can answer, and it
-answers it with an error naming what it looked for (`editorFamily.resolve` in
-`internal/cli`), where a hidden row would leave someone hunting for the editor
-they just installed. That error leads with the names for this reason and not
-for readability — the status line cuts from the middle (`truncateMiddle`), and
-the names at the back of a sentence that long were the part it cut, which left
-exactly the hunt this paragraph says the row prevents. The
-command writes an `ssh_config` and prints what it wrote, so `apiDataSource`
-gives it `io.Discard` for both streams — a stray line of stderr would draw over
-a full-screen window — and lets the error carry what went wrong to the status
+**A host tool is a request that returns** (`runHostTool`,
+`DataSource.RunHostTool`). It is neither a `Verb` — it changes nothing about the
+discobox — nor a session: it is a tool declared to run on this machine
+(ADR 0125), handed the sandbox, and the window carries on exactly where it was.
+It is reached only from the tools picker inside a discobox, never from the
+list: the list is for acting on boxes, and opening one in an editor is working
+in it. Every host row is offered whether or not its program is on PATH: which
+builds exist is a question only the launch can answer, and it answers with an
+error naming what it looked for (`tools.ProgramError`), leading with the names
+because the status line cuts from the middle (`truncateMiddle`). The run writes
+an `ssh_config` and reports what it wrote, so `apiDataSource.RunHostTool` gives
+it `io.Discard` for both streams — a stray line of stderr would draw over a
+full-screen window — and lets the error carry what went wrong to the status
 line. `DataSource.Run` refreshes the same `ssh_config` after a create, and obeys
 the same rule from the other side: it passes a `noteFunc` that reports onto the
 busy line, so "wrote …/config" is narration rather than a line drawn across the
@@ -1042,17 +1022,26 @@ looked at** (`tools.go`, ADR-0071). `Model.tools` is a third `column` and
 the whole screen, the apply overlay or the showing tool, and every place that
 asked `overlay != nil` asks it instead.
 
-- The catalog is this package's (`tools`): `diff` runs `discobox-review`,
-  `fresh` runs the `fresh` editor — both carried by the sandbox image, so
-  everyone looking at one discobox is looking at the same versions — and
-  `vscode` and `zed` have no command at all and are run rather than opened —
-  `tool.editor`, set on exactly the commandless rows, is what `runTool`
-  dispatches on, so the picker needs no second table mapping a row to an
-  editor. The picker is on the leader's `o`, because `t` is stop and `x` is
-  archive in the key map the two screens share.
+- The catalog is not this package's (ADR 0125): `DataSource.Tools` merges the
+  CLI's, the discobox's image and primary source, and the user's declarations,
+  and the picker asks for it each time it opens (`resolveTools` →
+  `toolsResolved`, cached per box in `Model.toolCatalogs` so a reopen draws the
+  last answer while the next arrives). A row's identity is `toolRowKey(id)`;
+  its press is the key the declaration asked for, given first come, first served
+  by `toolKeys` and never one the card already uses (`e`, `s`, `g`, `q`, `j`,
+  `k`). A declaration with a problem is a disabled row with the reason. `Tool.Host`
+  is what `runTool` dispatches on: a host tool is run, a sandbox tool is opened.
+  The header's git summary runs `tools.DiffID` (`ai.discobox.diff`) through
+  `runToolWhenKnown`, which waits for the catalog when it is not known yet —
+  whichever declaration of that id wins, so a repository or user diff tool
+  replaces discobox-review there too. The picker is on the leader's
+  `o`, because `t` is stop and `x` is archive in the key map the two screens
+  share.
 - A tool session is a plain TTY exec labeled `metadata.tool` = the tool's id,
   created with no workdir so it lands in the discobox's primary source
-  directory. `Exec.Tool` carries it back off the listing; `toolExec` is asked
+  directory. `NewTool` takes the id and the data source looks the declaration
+  up again, so what runs is what the declarations say now. A labeled session is
+  a tool whether or not the catalog has arrived, so a reattach draws it first. `Exec.Tool` carries it back off the listing; `toolExec` is asked
   before `terminalExec`, because a tool is neither a terminal nor a shell and
   never joins the strip.
 - The two buttons are not the same button (`toolControls`). `[-]` puts the
@@ -1078,7 +1067,8 @@ asked `overlay != nil` asks it instead.
   show you the discobox. That is what makes a diff survive quitting the
   launcher, and the only client-side state it needs is `ending`, which says
   which of them this window has just killed.
-- A tool can carry a **config** (`ToolFile`, `tui_tools.go`). The copy lives on
+- A tool can carry a **config** (`ToolFile`, `tui_tools.go`), declared as
+  `files:` with its default beside the declaration. The copy lives on
   this machine under `os.UserConfigDir()/discobox/tools/<tool>/<name>`, created
   from the tool's `Default` the first time anything reads it, and `e` in the
   picker opens it in `$EDITOR` — the real path, in place, so a dotfile manager
@@ -1096,12 +1086,12 @@ asked `overlay != nil` asks it instead.
   not care — a path under the run user's home and some bytes — which is what
   makes it able to answer "have it set up the way I like it" rather than only
   "have it configured".
-- A file's `Home` may contain `{workspace}`, resolved in the discobox to its
-  working directory, encoded as fresh encodes a project state directory. That is
-  how fresh's *trust* decision is recorded — it gates language servers and
-  environment activation per folder, and a discobox is a new folder every time,
-  so without it every box opens Restricted forever.
-- A tool's `command` is what it takes to open the discobox, not just the binary
+- A file's `Home` is a fixed path. State keyed on what only the discobox knows
+  is the tool's own script's to write: fresh's *trust* decision, keyed on the
+  working directory as fresh encodes it, is recorded by the image's
+  `20-fresh.sh` before it execs fresh — without it every box opens Restricted
+  forever.
+- What a tool runs is what it takes to open the discobox, not just the binary
   name: `fresh .` rather than `fresh`, because fresh opens a directory — file
   tree, workspace, the lot — only when handed exactly one, and comes up on an
   empty buffer otherwise.

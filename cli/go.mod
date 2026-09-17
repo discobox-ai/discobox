@@ -26,6 +26,7 @@ require (
 	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
 	golang.org/x/mod v0.37.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (

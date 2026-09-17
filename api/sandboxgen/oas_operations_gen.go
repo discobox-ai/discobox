@@ -21,6 +21,7 @@ const (
 	ListSandboxExecsOperation               OperationName = "ListSandboxExecs"
 	ListSandboxServiceLogsOperation         OperationName = "ListSandboxServiceLogs"
 	ListSandboxServicesOperation            OperationName = "ListSandboxServices"
+	ListSandboxToolsOperation               OperationName = "ListSandboxTools"
 	RestartSandboxServiceOperation          OperationName = "RestartSandboxService"
 	StartSandboxExecOperation               OperationName = "StartSandboxExec"
 	StartSandboxServiceOperation            OperationName = "StartSandboxService"

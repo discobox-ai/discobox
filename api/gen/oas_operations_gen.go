@@ -74,6 +74,7 @@ const (
 	ListSandboxProviderInstancesOperation     OperationName = "ListSandboxProviderInstances"
 	ListSandboxServiceLogsOperation           OperationName = "ListSandboxServiceLogs"
 	ListSandboxServicesOperation              OperationName = "ListSandboxServices"
+	ListSandboxToolsOperation                 OperationName = "ListSandboxTools"
 	ListSandboxesOperation                    OperationName = "ListSandboxes"
 	ListSecretGrantsOperation                 OperationName = "ListSecretGrants"
 	ListSecretRequestsOperation               OperationName = "ListSecretRequests"

@@ -70,6 +70,8 @@ var yamlOwnedEnums = map[string]string{
 	"PoolSandboxState.state":             "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
 	"SandboxConfig.harnessMode":          "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
+	"SandboxTool.runs":                   "a declaration's vocabulary, owned by the root tools package and listed by the sandbox agent; no model stores it (ADR 0125)",
+	"SandboxTool.layer":                  "the sandbox's two declaration directories, owned by the root tools package; no model stores it (ADR 0125)",
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
 	"SandboxAgentResourceUsage.source":   "the sandbox-agent's own reporting vocabulary: where it read its totals from (its cgroup, or a procfs rollup when that was unreadable). Relayed telemetry, never stored on a model field",
 	"SandboxService.status":              "service state is derived by the sandbox-agent from the exec running a repository-declared service (ADR 0070); the server stores nothing about services",

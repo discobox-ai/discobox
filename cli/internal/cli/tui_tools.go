@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/tools"
 )
 
 // A tool's configuration lives on this machine, not in the project and not in
@@ -45,11 +46,29 @@ func toolConfigDir() (string, error) {
 // yet. Empty when there is no config directory to resolve it against, which the
 // picker draws as simply not saying.
 func (d *apiDataSource) ToolFilePath(file tui.ToolFile) string {
-	dir, err := toolConfigDir()
+	path, err := toolFilePath(file.Tool, file.Name)
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, file.Tool, file.Name)
+	return path
+}
+
+// toolFilePath is where one tool file's copy lives on this machine: under the
+// user's tools directory, in a directory named for the tool. For a tool the
+// user declared, that is the default beside the declaration itself.
+func toolFilePath(tool, name string) (string, error) {
+	// Both halves come from declarations, some of them a discobox's, and are
+	// joined into a path on this machine. Checked here as well as where they
+	// were read, because this is the write that a name full of separators
+	// would carry out of the config directory.
+	if !tools.PlainFileName(tool) || !tools.PlainFileName(name) {
+		return "", fmt.Errorf("tool file %q of %q is not a plain file name", name, tool)
+	}
+	dir, err := toolConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, tool, name), nil
 }
 
 // ensureToolFile reads the local copy, creating it from the tool's default when
@@ -58,10 +77,10 @@ func (d *apiDataSource) ToolFilePath(file tui.ToolFile) string {
 // Created on first read rather than on first edit, so that a tool run before it
 // was ever configured still carries the default in — and so that the first edit
 // opens on that default rather than on an empty buffer.
-func (d *apiDataSource) ensureToolFile(file tui.ToolFile) (string, string, error) {
-	path := d.ToolFilePath(file)
-	if path == "" {
-		return "", "", fmt.Errorf("cannot find a config directory for %s", file.Name)
+func ensureToolFile(tool string, file tools.File) (string, string, error) {
+	path, err := toolFilePath(tool, file.Name)
+	if err != nil {
+		return "", "", fmt.Errorf("cannot find a config directory for %s: %w", file.Name, err)
 	}
 	content, err := os.ReadFile(path)
 	switch {
@@ -89,7 +108,7 @@ func (d *apiDataSource) ensureToolFile(file tui.ToolFile) (string, string, error
 // $VISUAL of "code --wait" that opens the actual file in your actual project
 // window, and a crash that loses nothing.
 func (d *apiDataSource) EditToolFile(ctx context.Context, file tui.ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
-	path, before, err := d.ensureToolFile(file)
+	path, before, err := ensureToolFile(file.Tool, tools.File{Name: file.Name, Home: file.Home, Default: file.Default})
 	if err != nil {
 		return false, err
 	}
@@ -123,18 +142,18 @@ func (d *apiDataSource) EditToolFile(ctx context.Context, file tui.ToolFile, std
 // its own argv element, so there is no quoting to get wrong and no encoding to
 // depend on — only sh, printf and mkdir, which is as portable as the inside of
 // a discobox gets.
-func (d *apiDataSource) installToolFiles(ctx context.Context, sandboxID string, files []tui.ToolFile) error {
-	for _, file := range files {
+func (a *App) installToolFiles(ctx context.Context, projectID, sandboxID string, def tools.Definition) error {
+	for _, file := range def.Files {
 		home := strings.TrimPrefix(strings.TrimSpace(file.Home), "/")
 		if home == "" {
 			continue
 		}
-		_, content, err := d.ensureToolFile(file)
+		_, content, err := ensureToolFile(def.ID, file)
 		if err != nil {
 			return err
 		}
 		command := []string{"sh", "-c", installToolFileScript, "sh", home, content}
-		_, errOut, code, err := d.app.sandboxCommandOutput(ctx, d.projectID, sandboxID, "", command)
+		_, errOut, code, err := a.sandboxCommandOutput(ctx, projectID, sandboxID, "", command)
 		if err != nil {
 			return fmt.Errorf("install %s: %w", file.Name, err)
 		}
@@ -152,40 +171,16 @@ func (d *apiDataSource) installToolFiles(ctx context.Context, sandboxID string, 
 // installToolFileScript writes $2 to $HOME/$1, and does nothing at all if
 // something is already there.
 //
-// A "{workspace}" in the destination stands for the tool's working directory,
-// encoded the way a per-project state directory names itself. It is resolved
-// here rather than on this machine because only the sandbox knows what its
-// working directory actually is.
-//
-// The encoding is fresh's `encode_path_for_filename`, byte for byte: "/" and
-// "\\" become "_", alphanumerics and "-" "." pass through, "_" becomes %5F so
-// it cannot be mistaken for a separator, every other byte is percent-encoded,
-// and then leading underscores are trimmed and runs collapsed. Getting it wrong
-// is silent — the file lands somewhere nothing reads.
+// The destination is a fixed path under the home directory. A tool whose state
+// has to be keyed on something only the discobox knows — fresh's trust
+// decision, keyed on the working directory — records it in its own script
+// instead (ADR 0125 §6).
 //
 // The test is an `if` rather than `[ -e "$p" ] && exit 0`: under `set -e` a
 // failing AND-list is the list's own exit status, so the shell would leave with
 // 1 in exactly the case that is supposed to be normal.
 const installToolFileScript = `set -e
-dest="$1"
-case "$dest" in
-*'{workspace}'*)
-	slug=$(printf %s "$PWD" | od -An -tu1 -v | tr -s ' ' '\n' | grep -v '^$' |
-		while read -r b; do
-			if [ "$b" -eq 47 ] || [ "$b" -eq 92 ]; then printf _
-			elif [ "$b" -eq 95 ]; then printf %%5F
-			elif [ "$b" -eq 45 ] || [ "$b" -eq 46 ] ||
-				{ [ "$b" -ge 48 ] && [ "$b" -le 57 ]; } ||
-				{ [ "$b" -ge 65 ] && [ "$b" -le 90 ]; } ||
-				{ [ "$b" -ge 97 ] && [ "$b" -le 122 ]; }; then
-				printf "\\$(printf '%03o' "$b")"
-			else printf '%%%02X' "$b"
-			fi
-		done | sed 's/__*/_/g; s/^_*//')
-	dest="${dest%%\{workspace\}*}$slug${dest#*\{workspace\}}"
-	;;
-esac
-p="$HOME/$dest"
+p="$HOME/$1"
 if [ ! -e "$p" ]; then
 	mkdir -p "$(dirname "$p")"
 	printf %s "$2" > "$p"

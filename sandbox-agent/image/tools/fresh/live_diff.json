@@ -1,0 +1,4 @@
+{
+  "live_diff.global_enabled": true,
+  "live_diff.default_mode": { "kind": "head" }
+}

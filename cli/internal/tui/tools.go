@@ -60,198 +60,180 @@ const (
 // is the one it was for.
 const toolsTitle = "Tools"
 
-// tool is one entry in the picker: what it is called, the key it answers to,
-// and what running it means.
-type tool struct {
-	id     string
-	key    string
-	label  string
-	detail string
+// Which tools there are is not this package's answer (ADR 0125): they are
+// declarations — the CLI's, the discobox's image's and primary source's, and
+// the user's — merged by the data source. The picker asks for one box's
+// catalog each time it opens, and it is the only way to a tool from this
+// window — the list of boxes offers none.
 
-	// command is what a tool session runs inside the discobox, in its primary
-	// source directory. A tool with no command is not a session at all — vscode
-	// and zed are programs on this machine, handed the discobox and left to
-	// them — and is run rather than opened.
-	command []string
-
-	// editor is the editor this tool hands the discobox to, set on exactly the
-	// tools that have no command. It is what runTool dispatches on, so the
-	// picker needs no second table mapping a row to an editor.
-	editor Editor
-
-	// files are the configuration this tool carries into a discobox, kept on
-	// this machine and copied in the first time the tool runs in a box that has
-	// none. See ToolFile.
-	files []ToolFile
+// resolvedTools is one discobox's entry in the picker's catalog cache: what
+// came back, or why nothing did. It is kept across opens, so reopening the
+// picker draws the last answer while the next one is on its way.
+type resolvedTools struct {
+	tools []Tool
+	err   string
 }
 
-// session reports whether this tool is a window in the discobox rather than a
-// request that returns.
-func (t tool) session() bool { return len(t.command) > 0 }
+// toolRowKey is the identity a tool's row answers the picker's callback with.
+// It is not the key the row is pressed by: that is the declaration's to ask
+// for, and two declarations can ask for the same one.
+func toolRowKey(id string) string { return "tool:" + id }
 
-// spec is the part of a tool the outside needs to run it.
-func (t tool) spec() ToolSpec {
-	return ToolSpec{ID: t.id, Command: t.command, Files: t.files}
-}
-
-// tools is every tool, in the order the picker lists them.
+// toolByID is the tool with an id in the catalog of the discobox the window is
+// on.
 //
-// The two that run in the discobox come from its image: discobox-review and
-// fresh are installed there, not here, so they are the same version for
-// everyone looking at the same discobox and there is nothing to have on your
-// machine. vscode and zed are the opposite and are listed anyway: it is the
-// same question — "open this discobox in X" — and a picker that answered it
-// for the ones in the image only would leave the rest on keys you had to
-// remember separately.
-//
-// Both editors are listed whether or not either is installed. Which builds are
-// on PATH is a question only the launch can answer, and it answers it with an
-// error naming what it looked for; a picker that hid a row would instead leave
-// someone wondering where the editor they just installed went.
-var tools = []tool{
-	{
-		id: "diff", key: "d", label: "diff",
-		detail: "what has changed, in discobox-review",
-		// -by is what a comment written in the window is signed with, and
-		// discobox-review has no default for it: a name it guessed could be the
-		// person's on an agent's remark. git-user is how a person says "the
-		// name git already knows me by", which is who is at this keyboard.
-		command: []string{"discobox-review", "-by", "git-user"},
-	},
-	{
-		id: "fresh", key: "f", label: "fresh",
-		detail: "the fresh editor, in the box",
-		// The "." is not decoration. fresh opens the directory — with its file
-		// tree, and the project as a workspace it can remember — only when it
-		// is given exactly one argument and that argument is a directory;
-		// with none it comes up on an empty [No Name] buffer and no tree,
-		// however promising the working directory looked. The exec already
-		// lands in the primary source directory, so "." is that directory, and
-		// fresh makes it absolute before keying anything on it.
-		command: []string{"fresh", "."},
-		files:   []ToolFile{freshConfig, freshLiveDiff, freshTrust},
-	},
-	{
-		id: "vscode", key: vscodeKey, label: "vscode",
-		detail: "open the box in VS Code, in a window of its own",
-		editor: EditorVSCode,
-	},
-	{
-		id: "zed", key: zedKey, label: "zed",
-		detail: "open the box in Zed, in a window of its own",
-		editor: EditorZed,
-	},
-}
-
-// freshConfig is the editor's own configuration, which is the one thing a tool
-// so far needs carried into a discobox.
-//
-// The two names differ on purpose. fresh reads ~/.config/fresh/config.json, so
-// that is where it has to land; the copy on this machine is config.jsonc,
-// because that is what the contents actually are and because the extension is
-// how every editor works out how to color it. A .json file full of comments is
-// a screenful of syntax errors in vim, VS Code and everything else that keys off
-// the name.
-//
-// The modeline covers the other copy — the one inside the discobox, which has to
-// be called config.json and which you may well end up opening there. Vim ships
-// a jsonc syntax (json5 and hjson get a filetype and no highlighting, so jsonc
-// is the one to claim), reads modelines from the first five lines by default,
-// and lets one override what the extension said. It is a comment before the
-// top-level value, which is exactly what JSONC is for.
-var freshConfig = ToolFile{
-	Tool: "fresh",
-	Name: "config.jsonc",
-	Home: ".config/fresh/config.json",
-	Default: `// vim: set ft=jsonc :
-//
-// fresh's configuration, as discobox carries it into a discobox.
-//
-// This file lives on your machine. It is copied to ~/.config/fresh/config.json
-// the first time fresh runs in a discobox that has none, and never over one
-// that is already there — so editing here changes what the next discobox gets,
-// not what an open one is using.
-//
-// The format is JSONC: JSON, plus // comments and trailing commas.
-// Everything that can go here: https://getfresh.dev/docs/configuration
-{
-  // A discobox is disposable and its fresh comes from the image, so there is
-  // nothing for an upgrade check to usefully tell you. Turning it off takes
-  // the anonymous telemetry with it.
-  "check_for_updates": false,
-
-  // "theme": "default",
-  // "editor": {
-  //   "tab_size": 4,
-  //   "line_numbers": true,
-  //   "line_wrap": false,
-  // },
-}
-`,
-}
-
-// freshLiveDiff turns the live-diff plugin on, and pins what it diffs against.
-//
-// This is not configuration — fresh has no config key for it. It is plugin
-// state, which fresh keeps per plugin under its data directory and reads at
-// startup, so seeding the file is the same thing as having enabled the plugin
-// in an earlier run. The plugin is opt-in and off until something says
-// otherwise, which in a discobox nothing ever does.
-//
-// HEAD is already the plugin's own default for the diff base, and it is written
-// out anyway: a default that is only a default moves when upstream changes its
-// mind, and "against HEAD" is the whole point of the thing here — the agent has
-// been editing the working tree and what you want to see is what it did.
-//
-// Strict JSON, unlike the config beside it: this file is parsed with serde_json
-// and a comment in it would make the whole file unreadable — taking the enable
-// with it, silently, since unparseable plugin state is skipped rather than
-// reported.
-var freshLiveDiff = ToolFile{
-	Tool: "fresh",
-	Name: "live_diff.json",
-	Home: ".local/share/fresh/orchestrator/state/live_diff.json",
-	Default: `{
-  "live_diff.global_enabled": true,
-  "live_diff.default_mode": { "kind": "head" }
-}
-`,
-}
-
-// freshTrust records that the discobox's own source directory is trusted.
-//
-// fresh gates repo-controlled execution per folder: a directory carrying
-// anything that can run code — a package.json, a Cargo.toml, an .envrc — opens
-// Restricted, which means no language servers and no environment activation
-// until somebody says otherwise. The decision is remembered per folder, in the
-// user's data directory rather than in the repository, because a repository
-// must not be able to vouch for itself.
-//
-// Nothing in a discobox ever says otherwise: it is a new folder every time, so
-// every discobox opens Restricted and stays there. Recording the decision up
-// front is the discobox's whole premise stated in fresh's terms — the sandbox
-// is the boundary, the agent already runs this repository's code inside it, and
-// an editor refusing to start its language server is protecting the sandbox
-// from the thing the sandbox exists to run.
-//
-// This is the one file whose destination is not fixed: fresh keys it on the
-// working directory, which only the discobox knows. See installToolFileScript
-// for what {workspace} is replaced with.
-var freshTrust = ToolFile{
-	Tool:    "fresh",
-	Name:    "trust.json",
-	Home:    ".local/share/fresh/workspaces/{workspace}/trust.json",
-	Default: "{\n  \"level\": \"trusted\"\n}\n",
-}
-
-// toolByID and toolByKey find one, or report that there is none.
-func toolByID(id string) (tool, bool) {
-	for _, t := range tools {
-		if t.id == id {
+// A catalog can hold a declaration the merge refused beside the tool it tried
+// to replace, under the same id (ADR 0125 §5). The one that runs is the tool.
+func (m *Model) toolByID(id string) (Tool, bool) {
+	var refused *Tool
+	catalog := m.toolCatalogs[m.currentBox().ID].tools
+	for i, t := range catalog {
+		if t.ID != id {
+			continue
+		}
+		if t.Problem == "" {
 			return t, true
 		}
+		if refused == nil {
+			refused = &catalog[i]
+		}
 	}
-	return tool{}, false
+	if refused != nil {
+		return *refused, true
+	}
+	return Tool{}, false
+}
+
+// toolKeys decides which tools get the keys they ask for on a card whose other
+// rows already answer to taken. Only a tool that can run gets one — a refused
+// row holding a key would turn the key into an error. Tools that run on this
+// machine choose first, because what a key on your machine does is not a
+// discobox's to change (ADR 0125 §5); then first come, first served, in the
+// catalog's order. A tool that loses its key is still on the card, reached by
+// moving to it.
+func toolKeys(catalog []Tool, taken ...string) map[string]string {
+	used := map[string]bool{}
+	for _, key := range taken {
+		used[key] = true
+	}
+	keys := map[string]string{}
+	for _, host := range []bool{true, false} {
+		for _, t := range catalog {
+			if t.Host != host || t.Problem != "" || t.Key == "" || used[t.Key] {
+				continue
+			}
+			used[t.Key] = true
+			keys[t.ID] = t.Key
+		}
+	}
+	return keys
+}
+
+// pickerTools is a catalog as the picker lists it: every tool, and every
+// declaration that cannot run with the reason, except one the merge refused
+// beside a tool that does run under its id — that row would be a second entry
+// for the same tool, and choosing either would mean the one that runs.
+func pickerTools(catalog []Tool) []Tool {
+	runs := map[string]bool{}
+	for _, t := range catalog {
+		if t.Problem == "" {
+			runs[t.ID] = true
+		}
+	}
+	out := make([]Tool, 0, len(catalog))
+	for _, t := range catalog {
+		if t.Problem != "" && runs[t.ID] {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// runToolWhenKnown runs a tool by id from outside the picker, which has no card
+// to wait on: straight away when the discobox's catalog is known, and when it
+// arrives otherwise. The availability check is the picker's own, so a box that
+// could not run a tool from there cannot from here either.
+func (m *Model) runToolWhenKnown(id string) tea.Cmd {
+	box := m.currentBox()
+	if why := attachWhy(true, []Sandbox{box}); why != "" {
+		return status("%s: %s", id, why)
+	}
+	// A lookup that failed is not a known catalog: asking again is how the
+	// click learns whether it still fails, and the reason reaches the status
+	// line (toolsResolved) rather than "no such tool" against no tools.
+	if entry, known := m.toolCatalogs[box.ID]; known && entry.err == "" {
+		return m.runTool(id)
+	}
+	m.toolWanted = toolWant{box: box.ID, id: id}
+	return m.resolveTools(box)
+}
+
+// toolWant is a tool asked for by id before its discobox's catalog was known.
+type toolWant struct {
+	box string
+	id  string
+}
+
+// toolsMsg is one discobox's catalog, looked up.
+type toolsMsg struct {
+	id    string
+	tools []Tool
+	err   error
+}
+
+// resolveTools starts one discobox's catalog lookup.
+func (m *Model) resolveTools(box Sandbox) tea.Cmd {
+	if box.ID == "" {
+		return nil
+	}
+	ctx, ds, id := m.ctx, m.ds, box.ID
+	return func() tea.Msg {
+		catalog, err := ds.Tools(ctx, id)
+		return toolsMsg{id: id, tools: catalog, err: err}
+	}
+}
+
+// toolsResolved records a catalog and, when the picker is still the card on
+// screen and still on that discobox, builds it again — for the reason
+// addressesResolved does.
+func (m *Model) toolsResolved(msg toolsMsg) tea.Cmd {
+	if m.toolCatalogs == nil {
+		m.toolCatalogs = map[string]resolvedTools{}
+	}
+	entry := resolvedTools{tools: msg.tools}
+	if msg.err != nil {
+		// A failed lookup keeps the last catalog it had, with the reason: the
+		// tools a box offered a moment ago are a better card than none.
+		entry = resolvedTools{tools: m.toolCatalogs[msg.id].tools, err: msg.err.Error()}
+	}
+	_, hadCatalog := m.toolCatalogs[msg.id]
+	m.toolCatalogs[msg.id] = entry
+	box := m.currentBox()
+	if want := m.toolWanted; want.box == msg.id {
+		m.toolWanted = toolWant{}
+		// A lookup that failed is the answer to the click that was waiting on
+		// it: running the tool against no catalog would report "no such tool"
+		// and lose the reason there is none.
+		if msg.err != nil {
+			return m.report(true, "%s: %v", want.id, msg.err)
+		}
+		if box.ID == want.box {
+			return m.runTool(want.id)
+		}
+	}
+	if m.dialog == nil || m.dialog.title != toolsTitle || box.ID != msg.id {
+		return nil
+	}
+	cursor := m.dialog.cursor
+	m.dialog = m.toolsDialog(box)
+	// A card that had no tools on it had nothing for the cursor to be on: the
+	// first tool is where it starts, as it would have on a card built with
+	// them. Otherwise it stays where the reader put it.
+	if hadCatalog {
+		m.dialog.cursor = min(cursor, len(m.dialog.items)-1)
+	}
+	return nil
 }
 
 // openToolsMsg is the leader plus the tools key: the picker, over whatever is
@@ -308,9 +290,10 @@ type toolTermMsg struct {
 	show bool
 }
 
-// openTools opens the picker, and starts the lookup its two address rows are
-// waiting on. Every tool is offered whatever is running: the row says which are
-// up, and choosing one is "show me that", not "start another".
+// openTools opens the picker, and starts the two lookups its rows are waiting
+// on: the discobox's tools, and its addresses. Every tool is offered whatever
+// is running: the row says which are up, and choosing one is "show me that",
+// not "start another".
 func (m *Model) openTools() tea.Cmd {
 	box := m.currentBox()
 	// A receipt belongs to the press that earned it, not to the card: reopening
@@ -318,7 +301,7 @@ func (m *Model) openTools() tea.Cmd {
 	m.copied = ""
 	// Before the card is built, so the rows are drawn against the lookup this
 	// open started rather than against the state before it.
-	fetch := m.resolveAddresses(box)
+	fetch := tea.Batch(m.resolveTools(box), m.resolveAddresses(box))
 	m.dialog = m.toolsDialog(box)
 	return fetch
 }
@@ -327,19 +310,32 @@ func (m *Model) openTools() tea.Cmd {
 // separate from openTools because the addresses arrive after the card does, and
 // the card is then built again rather than patched — see addressesResolved.
 func (m *Model) toolsDialog(box Sandbox) *dialog {
-	items := make([]action, 0, len(tools)+2)
-	for _, t := range tools {
-		detail := t.detail
-		if m.toolPane(t.id) != nil {
+	resolved, known := m.toolCatalogs[box.ID]
+	catalog := pickerTools(resolved.tools)
+	keys := toolKeys(catalog, toolFileKey, addressSSHKey, addressGitKey, "q", "j", "k")
+	items := make([]action, 0, len(catalog)+3)
+	for _, t := range catalog {
+		detail := t.Detail
+		if m.toolPane(t.ID) != nil {
 			// Every tool pane is a running one: a tool that exits takes its
 			// window with it (see paneClosed).
-			detail = t.detail + " · running"
+			detail = t.Detail + " · running"
 		}
-		items = append(items, action{
-			key: t.key, press: t.key, label: t.label, detail: detail,
+		row := action{
+			key: toolRowKey(t.ID), press: keys[t.ID], label: t.Label, detail: detail,
 			enabled: box.attachable(),
 			why:     attachWhy(true, []Sandbox{box}),
-		})
+		}
+		if t.Problem != "" {
+			row.enabled, row.why = false, t.Problem
+		}
+		items = append(items, row)
+	}
+	switch {
+	case !known:
+		items = append(items, action{key: "tools", label: "tools", why: "looking them up…"})
+	case resolved.err != "" && len(catalog) == 0:
+		items = append(items, action{key: "tools", label: "tools", why: resolved.err})
 	}
 	// An address is only worth printing for a discobox the config has a stanza
 	// for, which is the same boxes the tools apply to: an archived one is out
@@ -358,18 +354,20 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 			case addressGitKey:
 				return copyAddress(addr.Git)
 			}
-			for _, t := range tools {
-				if t.key == key {
-					return func() tea.Msg { return runToolMsg{id: t.id} }
+			for _, t := range catalog {
+				if toolRowKey(t.ID) == key {
+					id := t.ID
+					return func() tea.Msg { return runToolMsg{id: id} }
 				}
 			}
 			return nil
 		})
 	d.altKey = toolFileKey
 	d.alt = func(key string) tea.Cmd {
-		for _, t := range tools {
-			if t.key == key {
-				return func() tea.Msg { return toolFilesMsg{id: t.id} }
+		for _, t := range catalog {
+			if toolRowKey(t.ID) == key {
+				id := t.ID
+				return func() tea.Msg { return toolFilesMsg{id: id} }
 			}
 		}
 		return nil
@@ -526,19 +524,19 @@ func (m *Model) addressCopied(msg copyAddressMsg) tea.Cmd {
 // the key is offered on every row, because which rows have files is not
 // something to have to remember.
 func (m *Model) openToolFiles(id string) tea.Cmd {
-	t, ok := toolByID(id)
+	t, ok := m.toolByID(id)
 	if !ok {
 		return status("no such tool: %s", id)
 	}
-	if len(t.files) == 0 {
-		return status("%s carries no config", t.label)
+	if len(t.Files) == 0 {
+		return status("%s carries no config", t.Label)
 	}
-	if len(t.files) == 1 {
-		file := t.files[0]
+	if len(t.Files) == 1 {
+		file := t.Files[0]
 		return func() tea.Msg { return toolFileMsg{file: file} }
 	}
-	items := make([]action, 0, len(t.files))
-	for i, file := range t.files {
+	items := make([]action, 0, len(t.Files))
+	for i, file := range t.Files {
 		n := itoa(i + 1)
 		items = append(items, action{
 			// The key is the row's index, so the first nine files can be
@@ -551,8 +549,8 @@ func (m *Model) openToolFiles(id string) tea.Cmd {
 			enabled: true,
 		})
 	}
-	files := t.files
-	menu := actionsDialog("Config — "+t.label, "", items, func(key string) tea.Cmd {
+	files := t.Files
+	menu := actionsDialog("Config — "+t.Label, "", items, func(key string) tea.Cmd {
 		for i, file := range files {
 			if itoa(i+1) == key {
 				return func() tea.Msg { return toolFileMsg{file: file} }
@@ -616,28 +614,28 @@ func (m *Model) toolFileEdited(msg toolFileDoneMsg) tea.Cmd {
 
 // runTool is what choosing a row does.
 //
-// A tool that is not a session is simply run — an editor is a request that
+// A tool that runs on this machine is simply run — it is a request that
 // returns. A tool already on screen is shown again, wherever it was left; one
 // that is not is created, which is the only path that talks to the server.
 func (m *Model) runTool(id string) tea.Cmd {
-	t, ok := toolByID(id)
+	t, ok := m.toolByID(id)
 	if !ok {
 		return status("no such tool: %s", id)
 	}
-	if !t.session() {
-		return m.openEditor(m.currentBox(), t.editor)
+	if t.Host {
+		return m.runHostTool(m.currentBox(), t)
 	}
 	if !m.inPanes() {
 		// A tool is a window over the workspace, and there is no workspace to
 		// put it over. Nothing offers this today; saying so beats opening a
 		// screen with nothing under it.
-		return status("%s opens over a workspace — attach first", t.label)
+		return status("%s opens over a workspace — attach first", t.Label)
 	}
-	if p := m.toolPane(t.id); p != nil {
+	if p := m.toolPane(t.ID); p != nil {
 		m.showTool(p)
 		return nil
 	}
-	if m.toolOpening[t.id] {
+	if m.toolOpening[t.ID] {
 		return nil
 	}
 	return m.newTool(t, true)
@@ -647,19 +645,54 @@ func (m *Model) runTool(id string) tea.Cmd {
 // window before it is opened — it is drawn at the full width whether or not it
 // is showing — for the same reason every other pane is: the size is what the
 // far end is told.
-func (m *Model) newTool(t tool, show bool) tea.Cmd {
+func (m *Model) newTool(t Tool, show bool) tea.Cmd {
 	if m.toolOpening == nil {
 		m.toolOpening = map[string]bool{}
 	}
-	m.toolOpening[t.id] = true
-	m.busy = t.label + "…"
+	m.toolOpening[t.ID] = true
+	m.busy = t.Label + "…"
 	gen := m.wsGen
 	cols, rows := m.paneCells(max(m.width, 4))
-	ctx, ds, box, id, spec := m.ctx, m.ds, m.paneBox.ID, t.id, t.spec()
+	ctx, ds, box, id := m.ctx, m.ds, m.paneBox.ID, t.ID
 	return func() tea.Msg {
-		exec, term, err := ds.NewTool(ctx, box, spec, cols, rows)
+		exec, term, err := ds.NewTool(ctx, box, id, cols, rows)
 		return toolTermMsg{gen: gen, id: id, exec: exec, term: term, err: err, show: show}
 	}
+}
+
+// hostToolRanMsg is what came of handing a sandbox to a host tool.
+type hostToolRanMsg struct {
+	name string
+	tool Tool
+	err  error
+}
+
+// runHostTool hands one sandbox to a tool on this machine and reports on the
+// status line.
+//
+// Nothing is suspended for it. The tool is another program, usually in another
+// window, and the CLI's part is over as soon as it has been told which host to
+// connect to — so this is a request that returns, like a verb, rather than
+// something that owns the screen.
+func (m *Model) runHostTool(box Sandbox, t Tool) tea.Cmd {
+	m.busy = t.ID + "…"
+	ctx, ds, id, name := m.ctx, m.ds, box.ID, box.Name
+	return func() tea.Msg {
+		return hostToolRanMsg{name: name, tool: t, err: ds.RunHostTool(ctx, id, t.ID)}
+	}
+}
+
+// hostToolRan reports it. A failure carries the tool's id, which is the name
+// of the `discobox tools` command that ran it — how someone runs it again by
+// hand to read the whole error the status line had to cut. Only the sentence
+// about a window that did open reads as prose, and only that one takes the
+// label.
+func (m *Model) hostToolRan(msg hostToolRanMsg) tea.Cmd {
+	m.busy = ""
+	if msg.err != nil {
+		return m.report(true, "%s: %v", msg.tool.ID, msg.err)
+	}
+	return m.report(false, "opened %s in %s", msg.name, msg.tool.Label)
 }
 
 // openToolExec attaches to a tool session the poll found already running: this
@@ -694,8 +727,8 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 	m.busy = ""
 	delete(m.toolOpening, msg.id)
 	label := msg.id
-	if t, ok := toolByID(msg.id); ok {
-		label = t.label
+	if t, ok := m.toolByID(msg.id); ok {
+		label = t.Label
 	}
 	if msg.err != nil {
 		return m.report(true, "%s: %v", label, msg.err)

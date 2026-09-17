@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/tools"
 )
 
 // The leader plus c opens another of the discobox's own terminals, beside the
@@ -396,22 +398,22 @@ func TestAnEndedToolIsNotReopenedByThePoll(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{{
-		ID: "exec_diff", Command: []string{"discobox-review"}, Tool: "diff",
+		ID: "exec_diff", Command: []string{"discobox-review"}, Tool: tools.DiffID,
 		Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 	}}
 	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the running tool", func() bool { return m.toolPane("diff") != nil })
+	d.wait("the running tool", func() bool { return m.toolPane(tools.DiffID) != nil })
 	// The answer a poll started before the kill comes back with.
 	stale, _ := ds.Execs(t.Context(), "")
 
-	m.showTool(m.toolPane("diff"))
+	m.showTool(m.toolPane(tools.DiffID))
 	d.key("ctrl+a")
 	d.key(toolCloseKey)
 	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
 
 	d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})
 	d.settle()
-	if p := m.toolPane("diff"); p != nil {
+	if p := m.toolPane(tools.DiffID); p != nil {
 		t.Fatalf("the tool came back as %q, want a closed tool to stay closed", p.name())
 	}
 }

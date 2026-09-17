@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/discobox-ai/discobox/tools"
 )
 
 // headerCol finds the display column where text begins on the header row.
@@ -51,7 +53,7 @@ func TestClickingTheHeaderGitInfoOpensDiff(t *testing.T) {
 	clickAt(d, headerCol(t, m, "main@a3f9c21")+2, 0)
 	d.wait("the diff tool", func() bool {
 		runs := ds.toolRunsSeen()
-		return len(runs) == 1 && runs[0] == "diff discobox-review -by git-user"
+		return len(runs) == 1 && runs[0] == tools.DiffID
 	})
 }
 

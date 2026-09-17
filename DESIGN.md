@@ -186,6 +186,8 @@ Root module package map:
 | [`sandboxconfig`](sandboxconfig) | The sandbox's effective runtime config (`/etc/discobox/sandbox.json`) assembled from attribute-owned layers. See [`sandboxconfig/DESIGN.md`](sandboxconfig/DESIGN.md). |
 | [`sandboxuser`](sandboxuser) | The identity a sandbox process runs as and the precedence between the layers that describe it. See [`sandboxuser/DESIGN.md`](sandboxuser/DESIGN.md). |
 | [`sandboxservices`](sandboxservices) | Names of the services Discobox itself declares inside a sandbox, shared by the sandbox agent that reports them and the CLI that recognizes them. |
+| [`declared`](declared) | The file shapes of a declaration directory — a `.yaml` that is only metadata, or a script with front matter — and the id, name, duplicate and script problems every declaration shares. Read by `services` and `tools` (ADR 0125 §1). |
+| [`tools`](tools) | What a declared tool means: where it runs (the discobox, or this machine handed the discobox as `ssh`/`git` placeholders), which of the builtin, image, source and user layers may declare what, and how the layers merge. Shared because the sandbox agent lists the image's and source's declarations and the CLI merges them with its own and the user's ([ADR 0125](docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md)). |
 | [`layout`](layout) | Where Discobox stores state, as the container sees it, scoped so no two pools share a writable path. |
 | [`controlplane`](controlplane) | Shared control-plane endpoint defaults. |
 | [`health`](health) | Wire contract for the server's readiness endpoint, which the CLI polls after launching a server. |

@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/tools"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -1203,46 +1204,61 @@ func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Ad
 	if err != nil {
 		return tui.Addresses{}, err
 	}
-	return tui.Addresses{SSH: "ssh " + remote.host, Git: remote.gitURL()}, nil
+	return tui.Addresses{SSH: "ssh " + remote.host, Git: tools.Remote{Host: remote.host, Workdir: remote.folder}.GitURL()}, nil
 }
 
-// OpenEditor opens one sandbox in an editor, by running that editor's own
-// `discobox tools` command.
-//
-// It runs the command rather than reimplementing it for the same reason an
-// overlay pane runs `discobox apply`: what the window opens is the command, with
-// its own editor discovery and its own ssh_config handling, not a second
-// version of them. That is also why the window's two editors cost it one
-// dispatch and nothing else — everything that differs between them already
-// lives in the command that means it.
+// Tools is every tool one sandbox can be worked on with (ADR 0125).
+func (d *apiDataSource) Tools(ctx context.Context, sandboxID string) ([]tui.Tool, error) {
+	d = d.at(sandboxID)
+	catalog, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	return tuiTools(catalog), nil
+}
+
+func tuiTools(catalog []tools.Definition) []tui.Tool {
+	out := make([]tui.Tool, 0, len(catalog))
+	for _, def := range catalog {
+		t := tui.Tool{
+			ID:      def.ID,
+			Key:     def.Key,
+			Label:   def.Label(),
+			Detail:  def.Description,
+			Host:    def.Runs == tools.RunsHost,
+			Problem: def.Problem,
+		}
+		for _, file := range def.Files {
+			t.Files = append(t.Files, tui.ToolFile{Tool: def.ID, Name: file.Name, Home: file.Home, Default: file.Default})
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// RunHostTool hands one sandbox to a tool that runs on this machine: the same
+// run `discobox tools <id>` makes, with its own program discovery and its own
+// ssh_config handling.
 //
 // Nothing it writes reaches the screen. The window is a full-screen program
-// that a stray line of stderr would draw over, and the command's progress
-// reporting — which key it enrolled, which config it wrote — is not what
-// someone pressing a key in a list is waiting to read. What went wrong still
-// comes back as the error, which the status line reports.
-func (d *apiDataSource) OpenEditor(ctx context.Context, sandboxID string, editor tui.Editor) error {
+// that a stray line of stderr would draw over, and the progress reporting —
+// which key it enrolled, which config it wrote — is not what someone pressing a
+// key in a list is waiting to read. What went wrong still comes back as the
+// error, which the status line reports.
+func (d *apiDataSource) RunHostTool(ctx context.Context, sandboxID, toolID string) error {
 	d = d.at(sandboxID)
-	sandboxFlag := ""
-	// Both named, and an editor this does not know is an error rather than a
-	// default. A default here opens the wrong editor and reports it as the one
-	// that was asked for: the window would say "opened mybox in VS Code" to
-	// someone who pressed z, and a commandless tool row that left `editor`
-	// unset would launch an editor nobody chose.
-	var cmd *cobra.Command
-	switch editor {
-	case tui.EditorVSCode:
-		cmd = d.app.newToolsVSCodeCommand(&sandboxFlag)
-	case tui.EditorZed:
-		cmd = d.app.newToolsZedCommand(&sandboxFlag)
-	default:
-		return fmt.Errorf("no command opens a discobox in %q", string(editor))
+	catalog, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
+	if err != nil {
+		return err
 	}
-	cmd.SetContext(ctx)
-	cmd.SetArgs([]string{sandboxID})
-	cmd.SetIn(strings.NewReader(""))
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-	cmd.SilenceUsage, cmd.SilenceErrors = true, true
-	return cmd.Execute()
+	def, err := findTool(catalog, toolID)
+	if err != nil {
+		return err
+	}
+	if def.Runs != tools.RunsHost {
+		return fmt.Errorf("tool %s runs in the discobox, not here", toolID)
+	}
+	target := toolTarget{app: d.app, client: d.client, projectID: d.projectID, sandboxID: sandboxID}
+	silent := noteFunc(func(string, ...any) {})
+	return d.app.runHostTool(ctx, def, target, "", nil, strings.NewReader(""), io.Discard, io.Discard, silent)
 }

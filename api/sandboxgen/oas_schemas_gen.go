@@ -2843,6 +2843,326 @@ func (s *SandboxServicesResponse) SetServices(val []SandboxService) {
 	s.Services = val
 }
 
+// A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary
+// source under .discobox/tools (ADR 0125). The client merges these with the tools it declares itself
+// and runs the result; the sandbox only lists them.
+// Ref: #/components/schemas/SandboxTool
+type SandboxTool struct {
+	// Arguments that follow the program or the script.
+	Args []string `json:"args"`
+	// What the tool is for.
+	Description OptString `json:"description"`
+	// Environment added to the tool's, in NAME=value form.
+	Env []string `json:"env"`
+	// The declaring file's own name, which orders the listing.
+	FileName string `json:"fileName"`
+	// Files the tool carries into the sandbox, each copied under the run user's home only where nothing
+	// is there already.
+	Files []SandboxToolFile `json:"files"`
+	// Stable filename-derived tool ID, with any numeric ordering prefix and known extension removed -
+	// 20-fresh.yaml is fresh - unless the declaration states one.
+	ID string `json:"id"`
+	// The single key the tool asks to answer to in a picker.
+	Key OptString `json:"key"`
+	// Which of the sandbox's directories declared it.
+	Layer SandboxToolLayer `json:"layer"`
+	// Display name from the declaration, defaulted from the filename.
+	Name string `json:"name"`
+	// Absolute path to the declaring file inside the sandbox. For a script tool it is what runs.
+	Path OptString `json:"path"`
+	// Why this declaration cannot run. A tool with a problem is listed rather than dropped.
+	Problem OptString `json:"problem"`
+	// The program a .yaml declaration runs.
+	Program []string `json:"program"`
+	// Where the tool runs. A host tool declared by a sandbox is always listed with a problem, because
+	// only the client's own layers may put a program on the client's machine.
+	Runs SandboxToolRuns `json:"runs"`
+	// True when the declaring file is a script and is itself what runs; false for a .yaml declaration,
+	// which runs program.
+	Script bool `json:"script"`
+}
+
+// GetArgs returns the value of Args.
+func (s *SandboxTool) GetArgs() []string {
+	return s.Args
+}
+
+// GetDescription returns the value of Description.
+func (s *SandboxTool) GetDescription() OptString {
+	return s.Description
+}
+
+// GetEnv returns the value of Env.
+func (s *SandboxTool) GetEnv() []string {
+	return s.Env
+}
+
+// GetFileName returns the value of FileName.
+func (s *SandboxTool) GetFileName() string {
+	return s.FileName
+}
+
+// GetFiles returns the value of Files.
+func (s *SandboxTool) GetFiles() []SandboxToolFile {
+	return s.Files
+}
+
+// GetID returns the value of ID.
+func (s *SandboxTool) GetID() string {
+	return s.ID
+}
+
+// GetKey returns the value of Key.
+func (s *SandboxTool) GetKey() OptString {
+	return s.Key
+}
+
+// GetLayer returns the value of Layer.
+func (s *SandboxTool) GetLayer() SandboxToolLayer {
+	return s.Layer
+}
+
+// GetName returns the value of Name.
+func (s *SandboxTool) GetName() string {
+	return s.Name
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxTool) GetPath() OptString {
+	return s.Path
+}
+
+// GetProblem returns the value of Problem.
+func (s *SandboxTool) GetProblem() OptString {
+	return s.Problem
+}
+
+// GetProgram returns the value of Program.
+func (s *SandboxTool) GetProgram() []string {
+	return s.Program
+}
+
+// GetRuns returns the value of Runs.
+func (s *SandboxTool) GetRuns() SandboxToolRuns {
+	return s.Runs
+}
+
+// GetScript returns the value of Script.
+func (s *SandboxTool) GetScript() bool {
+	return s.Script
+}
+
+// SetArgs sets the value of Args.
+func (s *SandboxTool) SetArgs(val []string) {
+	s.Args = val
+}
+
+// SetDescription sets the value of Description.
+func (s *SandboxTool) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetEnv sets the value of Env.
+func (s *SandboxTool) SetEnv(val []string) {
+	s.Env = val
+}
+
+// SetFileName sets the value of FileName.
+func (s *SandboxTool) SetFileName(val string) {
+	s.FileName = val
+}
+
+// SetFiles sets the value of Files.
+func (s *SandboxTool) SetFiles(val []SandboxToolFile) {
+	s.Files = val
+}
+
+// SetID sets the value of ID.
+func (s *SandboxTool) SetID(val string) {
+	s.ID = val
+}
+
+// SetKey sets the value of Key.
+func (s *SandboxTool) SetKey(val OptString) {
+	s.Key = val
+}
+
+// SetLayer sets the value of Layer.
+func (s *SandboxTool) SetLayer(val SandboxToolLayer) {
+	s.Layer = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxTool) SetName(val string) {
+	s.Name = val
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxTool) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetProblem sets the value of Problem.
+func (s *SandboxTool) SetProblem(val OptString) {
+	s.Problem = val
+}
+
+// SetProgram sets the value of Program.
+func (s *SandboxTool) SetProgram(val []string) {
+	s.Program = val
+}
+
+// SetRuns sets the value of Runs.
+func (s *SandboxTool) SetRuns(val SandboxToolRuns) {
+	s.Runs = val
+}
+
+// SetScript sets the value of Script.
+func (s *SandboxTool) SetScript(val bool) {
+	s.Script = val
+}
+
+// One file a tool carries into the sandbox.
+// Ref: #/components/schemas/SandboxToolFile
+type SandboxToolFile struct {
+	// What the client's local copy starts as, from the file of this name beside the declaration.
+	Default OptString `json:"default"`
+	// Where it lands, relative to the run user's home.
+	Home string `json:"home"`
+	// The file's name, and the name of its local copy on the client.
+	Name string `json:"name"`
+}
+
+// GetDefault returns the value of Default.
+func (s *SandboxToolFile) GetDefault() OptString {
+	return s.Default
+}
+
+// GetHome returns the value of Home.
+func (s *SandboxToolFile) GetHome() string {
+	return s.Home
+}
+
+// GetName returns the value of Name.
+func (s *SandboxToolFile) GetName() string {
+	return s.Name
+}
+
+// SetDefault sets the value of Default.
+func (s *SandboxToolFile) SetDefault(val OptString) {
+	s.Default = val
+}
+
+// SetHome sets the value of Home.
+func (s *SandboxToolFile) SetHome(val string) {
+	s.Home = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxToolFile) SetName(val string) {
+	s.Name = val
+}
+
+// Which of the sandbox's directories declared it.
+type SandboxToolLayer string
+
+const (
+	SandboxToolLayerImage  SandboxToolLayer = "image"
+	SandboxToolLayerSource SandboxToolLayer = "source"
+)
+
+// AllValues returns all SandboxToolLayer values.
+func (SandboxToolLayer) AllValues() []SandboxToolLayer {
+	return []SandboxToolLayer{
+		SandboxToolLayerImage,
+		SandboxToolLayerSource,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxToolLayer) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxToolLayerImage:
+		return []byte(s), nil
+	case SandboxToolLayerSource:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxToolLayer) UnmarshalText(data []byte) error {
+	switch SandboxToolLayer(data) {
+	case SandboxToolLayerImage:
+		*s = SandboxToolLayerImage
+		return nil
+	case SandboxToolLayerSource:
+		*s = SandboxToolLayerSource
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Where the tool runs. A host tool declared by a sandbox is always listed with a problem, because
+// only the client's own layers may put a program on the client's machine.
+type SandboxToolRuns string
+
+const (
+	SandboxToolRunsSandbox SandboxToolRuns = "sandbox"
+	SandboxToolRunsHost    SandboxToolRuns = "host"
+)
+
+// AllValues returns all SandboxToolRuns values.
+func (SandboxToolRuns) AllValues() []SandboxToolRuns {
+	return []SandboxToolRuns{
+		SandboxToolRunsSandbox,
+		SandboxToolRunsHost,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxToolRuns) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxToolRunsSandbox:
+		return []byte(s), nil
+	case SandboxToolRunsHost:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxToolRuns) UnmarshalText(data []byte) error {
+	switch SandboxToolRuns(data) {
+	case SandboxToolRunsSandbox:
+		*s = SandboxToolRunsSandbox
+		return nil
+	case SandboxToolRunsHost:
+		*s = SandboxToolRunsHost
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/SandboxToolsResponse
+type SandboxToolsResponse struct {
+	Tools []SandboxTool `json:"tools"`
+}
+
+// GetTools returns the value of Tools.
+func (s *SandboxToolsResponse) GetTools() []SandboxTool {
+	return s.Tools
+}
+
+// SetTools sets the value of Tools.
+func (s *SandboxToolsResponse) SetTools(val []SandboxTool) {
+	s.Tools = val
+}
+
 // Run identity and group membership. Every field is optional; omitting the
 // whole object means the image's own user (ADR 0025 §5). On sandbox create
 // this defines the sandbox.json default user, and on exec create it

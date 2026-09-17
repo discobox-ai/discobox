@@ -288,7 +288,8 @@ yours alone and safe.
 Read from the primary source's tree, versioned with it:
 
 - `.discobox/services/` — executable scripts with front matter: `name`,
-  `description`, `ports`, `protocol`, and `id`. Started at boot, each drawn as
+  `description`, `ports`, `protocol`, and `id` — or a `.yaml` file with the same
+  fields for a declaration that runs nothing. Started at boot, each drawn as
   its own pane with its output recorded. A service that exits stays exited;
   nothing restarts it.
 
@@ -304,9 +305,9 @@ Read from the primary source's tree, versioned with it:
   second file for the UDP side, saying `start: never` so it runs nothing.
 
   A declaration that only names ports — because something else already serves
-  them — must say `start: never`. That is what makes it a declaration rather
-  than a script, and without it the file is checked for a shebang and an
-  executable bit and listed as broken for lacking them.
+  them — is a `.yaml` file, or a script saying `start: never`. Either makes it a
+  declaration rather than a script; without one the file is checked for a
+  shebang and an executable bit and listed as broken for lacking them.
 
   A service file only takes effect at the **next** boot: autostart is a
   one-shot launch, and a declaration added mid-session is listed as stopped and
@@ -318,11 +319,20 @@ Read from the primary source's tree, versioned with it:
   `/usr/local/share/discobox/services` — that is where the desktop's port comes
   from. A repository wins on a shared id, except in the reserved
   `ai.discobox.` namespace, which it cannot claim.
+- `.discobox/tools/` — tools the user can open on this box from their picker or
+  `discobox tools <id>`: a `.yaml` naming a `program` and `args`, or a script
+  with front matter (`name`, `description`, `key`) that is itself what runs, in
+  the primary source directory. A tool declared here runs in the box; one that
+  says `runs: host` is refused, because only the user decides what runs on
+  their machine. The image's `diff` and `fresh` are declared the same way in
+  `/usr/local/share/discobox/tools`, and the user's own win over both. The diff
+  is `id: ai.discobox.diff`, which the user's git summary opens; a declaration
+  with that id replaces it.
 - `.discobox/skills/` — skills installed into the harness's skill directories
   once, at the box's first launch. One added later reaches the next box, not
   this one.
 
-Most repositories have neither.
+Most repositories have none of these.
 
 ## The other built-in skills
 

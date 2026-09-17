@@ -16,18 +16,13 @@
 package services
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
-	"regexp"
-	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"github.com/discobox-ai/discobox/declared"
 	"github.com/discobox-ai/discobox/sandboxservices"
 	"github.com/discobox-ai/x/frontmatter"
 )
@@ -48,12 +43,6 @@ const DirName = ".discobox/services"
 // server in every sandbox on a timer. A declaration states the port and the
 // protocol, and the port is then reported without ever being touched.
 const BuiltinDir = "/usr/local/share/discobox/services"
-
-// idPattern is what an explicit `id:` may look like: lowercase reverse-DNS.
-// Deliberately narrower than what a filename normalizes to, because an id
-// written by hand is a name other things match on, and case or punctuation
-// differences would be invisible reasons for a match to fail.
-var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$`)
 
 // StartMode says who starts a service.
 type StartMode string
@@ -177,30 +166,16 @@ func Discover(builtinDir, projectRoot string) ([]Definition, error) {
 // nothing declared, not an error: almost every repository has none, and an
 // image built without the desktop ships none.
 func discoverDir(dir string, builtin bool) ([]Definition, error) {
-	if strings.TrimSpace(dir) == "" {
-		return nil, nil
-	}
-	entries, err := os.ReadDir(dir)
+	files, err := declared.ReadDir(dir)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read %s: %w", dir, err)
+		return nil, err
 	}
-	var out []Definition
-	seen := map[string]string{}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || strings.HasPrefix(name, ".") {
-			continue
-		}
-		def := parseFile(filepath.Join(dir, name), name)
-		if def.ID == "" {
-			continue
-		}
+	out := make([]Definition, 0, len(files))
+	for _, file := range files {
+		def := definition(file)
 		def.Builtin = builtin
 		// The reserved namespace belongs to the image. Enforced here rather
-		// than in parseFile because only the caller knows which directory the
+		// than in definition because only the caller knows which directory the
 		// file came out of.
 		if !builtin && def.Problem == "" && sandboxservices.Reserved(def.ID) {
 			def.Problem = fmt.Sprintf("front matter: id: %q is reserved for services the image declares", def.ID)
@@ -213,63 +188,29 @@ func discoverDir(dir string, builtin bool) ([]Definition, error) {
 			// whether or not it can run, would put the repository's port on
 			// the wire under the image's id. NormalizeID turns a dot into a
 			// dash, so a filename can never produce a reserved id.
-			def.ID = frontmatter.NormalizeID(name)
-		}
-		// Two files whose names normalize to one id would otherwise take turns
-		// being "the" service depending on directory order, and stopping one
-		// would stop whichever the last listing happened to resolve to.
-		if first, ok := seen[def.ID]; ok {
-			def.Problem = fmt.Sprintf("service id %q is already declared by %s", def.ID, first)
-		} else {
-			seen[def.ID] = name
+			def.ID = frontmatter.NormalizeID(file.FileName)
 		}
 		out = append(out, def)
 	}
-	// Filename order, so the `NN-` prefix does what it looks like it does.
-	sort.Slice(out, func(i, j int) bool { return out[i].FileName < out[j].FileName })
 	return out, nil
 }
 
-func parseFile(path, filename string) Definition {
+// definition reads what one declaration file says about a service. The shape
+// of the file — id, name, a duplicate, a malformed block — is declared's to
+// judge; what is left is what a service's fields mean.
+func definition(file declared.File) Definition {
 	def := Definition{
-		ID:       frontmatter.NormalizeID(filename),
-		Name:     frontmatter.DefaultName(filename),
-		Path:     path,
-		FileName: filename,
+		ID:          file.ID,
+		Name:        file.Name,
+		Description: file.Description,
+		Path:        file.Path,
+		FileName:    file.FileName,
+		Problem:     file.Problem,
 	}
-	if def.ID == "" {
+	if def.Problem != "" {
 		return def
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		def.Problem = err.Error()
-		return def
-	}
-	parsed, err := frontmatter.Parse(data)
-	if err != nil {
-		def.Problem = err.Error()
-		return def
-	}
-	fields, err := frontmatter.Decode(parsed.Meta)
-	if err != nil {
-		def.Problem = "front matter: " + err.Error()
-		return def
-	}
-	// An explicit id replaces the filename-derived one, and is not normalized:
-	// NormalizeID turns a dot into a dash, which would quietly make
-	// `ai.discobox.desktop` into `ai-discobox-desktop` and break every match on
-	// it. It is validated instead.
-	if id := strings.TrimSpace(firstField(fields, "id")); id != "" {
-		if !idPattern.MatchString(id) {
-			def.Problem = fmt.Sprintf("front matter: id: %q is not a lowercase reverse-DNS identifier", id)
-			return def
-		}
-		def.ID = id
-	}
-	if name := fields.String("name"); name != "" {
-		def.Name = name
-	}
-	def.Description = fields.String("description")
+	fields := file.Fields
 	ports, err := parsePorts(fields)
 	if err != nil {
 		def.Problem = "front matter: " + err.Error()
@@ -281,7 +222,7 @@ func parseFile(path, filename string) Definition {
 	// confirming it, so an unrecognized value is an error rather than a field
 	// quietly ignored: the difference between them is whether a
 	// socket-activated service gets started by classification.
-	protocol := strings.ToLower(strings.TrimSpace(firstField(fields, "protocol")))
+	protocol := strings.ToLower(firstField(fields, "protocol"))
 	switch protocol {
 	case "", "http", "https", "tcp", "udp":
 		def.Protocol = protocol
@@ -290,11 +231,17 @@ func parseFile(path, filename string) Definition {
 		return def
 	}
 
-	switch mode := StartMode(strings.ToLower(strings.TrimSpace(firstField(fields, "start")))); mode {
-	case "", StartCommand:
-		def.Start = StartCommand
-	case StartNever:
+	// A .yaml declaration is metadata with no script in it (ADR 0125 §1), so
+	// there is nothing it could start: saying nothing means never, and saying
+	// command is a contradiction worth reporting.
+	switch mode := StartMode(strings.ToLower(firstField(fields, "start"))); {
+	case mode == "" && file.Metadata, mode == StartNever:
 		def.Start = StartNever
+	case mode == StartCommand && file.Metadata:
+		def.Problem = "start: command needs a script to run, and a .yaml declaration has none"
+		return def
+	case mode == "", mode == StartCommand:
+		def.Start = StartCommand
 	default:
 		def.Problem = fmt.Sprintf("front matter: start: %q is not command or never", mode)
 		return def
@@ -302,7 +249,7 @@ func parseFile(path, filename string) Definition {
 	// A declaration that starts nothing is not a script, so the two things that
 	// make a script runnable are not asked of it.
 	if def.Start != StartNever {
-		def.Problem = validate(path, data)
+		def.Problem = declared.ScriptProblem(file)
 	}
 	return def
 }
@@ -347,23 +294,3 @@ func parsePorts(fields frontmatter.Fields) ([]int, error) {
 }
 
 func isPortSeparator(r rune) bool { return r == ',' || unicode.IsSpace(r) }
-
-// validate holds a service script to the same two rules a hook script is held
-// to, and for the same reason: the file is run by path, so the kernel needs a
-// shebang to know what to run it with and the bit to be allowed to.
-func validate(path string, data []byte) string {
-	if !frontmatter.HasShebangLine(data) {
-		return "script must start with a shebang line"
-	}
-	if runtime.GOOS == "windows" {
-		return ""
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return err.Error()
-	}
-	if info.Mode()&0o111 == 0 {
-		return "script is not executable"
-	}
-	return ""
-}

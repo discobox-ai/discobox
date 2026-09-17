@@ -1,0 +1,24 @@
+# VS Code, on this machine, over Remote-SSH (ADR 0125). Override any of it by
+# declaring a vscode.yaml of your own in your tools directory.
+id: vscode
+name: vscode
+description: open the box in VS Code, in a window of its own
+key: v
+runs: host
+# The builds looked for on PATH, in order. They are all the same program with
+# the same CLI; --program or $DISCOBOX_VSCODE names one that is not listed.
+program: [code, code-insiders, codium, cursor, windsurf]
+program-env: DISCOBOX_VSCODE
+# A new window by default: the one you are reading this in is on something
+# else, and Remote-SSH would take it over.
+#
+# A folder URI rather than --remote and a path, because a path argument is the
+# one thing the launcher rewrites. VS Code started from WSL is usually the
+# Windows build, whose CLI reads a bare path as a path in *this* distribution
+# and opens the local directory instead of the discobox. A folder URI carries
+# its own authority and is passed through untouched (ADR 0074 §4).
+args: [--new-window, --folder-uri, "vscode-remote://ssh-remote+{ssh.host}{workdir.urlpath}"]
+# VS Code's launcher asks "Continue anyway? [y/N]" when it finds itself
+# installed inside WSL, reading from a stdin nobody is typing at. The binary has
+# already been chosen, and the config its ssh needs already written.
+env: [DONT_PROMPT_WSL_INSTALL=1]

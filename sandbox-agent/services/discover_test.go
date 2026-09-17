@@ -273,6 +273,33 @@ func TestADeclarationThatStartsNothingIsNotBroken(t *testing.T) {
 	}
 }
 
+// A .yaml service is metadata with nothing to run, so it starts never without
+// saying so — and saying start: command is a contradiction, not a script
+// missing its shebang.
+func TestAYAMLDeclarationStartsNothing(t *testing.T) {
+	builtin := t.TempDir()
+	writeBuiltin(t, builtin, "10-desktop.yaml", "name: Desktop\nports: [6900]\nprotocol: http\n", 0o644)
+	writeBuiltin(t, builtin, "20-api.yml", "start: command\n", 0o644)
+
+	defs, err := Discover(builtin, t.TempDir())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(defs) != 2 {
+		t.Fatalf("expected two declarations, got %+v", defs)
+	}
+	desktop, api := defs[0], defs[1]
+	if desktop.ID != "desktop" || desktop.Problem != "" || desktop.Start != StartNever || desktop.Runnable() {
+		t.Fatalf("desktop = %+v, want a problem-free declaration that starts never", desktop)
+	}
+	if len(desktop.Ports) != 1 || desktop.Ports[0] != 6900 || desktop.Protocol != "http" {
+		t.Fatalf("desktop ports = %v, protocol %q", desktop.Ports, desktop.Protocol)
+	}
+	if api.ID != "api" || !strings.Contains(api.Problem, ".yaml") {
+		t.Fatalf("api = %+v, want a problem naming the .yaml shape", api)
+	}
+}
+
 // An ordinary script is still validated as one, so `start: never` cannot be
 // inferred from a missing executable bit.
 func TestAScriptThatStartsNothingIsStillCheckedWhenItSaysNothing(t *testing.T) {

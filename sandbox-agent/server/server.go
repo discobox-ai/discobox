@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
+	sandboxtools "github.com/discobox-ai/discobox/tools"
 )
 
 type Identity struct {
@@ -208,6 +210,14 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		slog.Default().Warn("sandbox agent services disabled", "error", err)
 		serviceManager = nil
 	}
+	// Tools are declared beside services, in the same working tree, so they
+	// are rooted at the same default (ADR 0125 §7).
+	var declaredTools toolDirs
+	if root, err := execManager.DefaultWorkdir(); err == nil {
+		declaredTools = toolDirs{image: sandboxtools.ImageDir, source: filepath.Join(root, sandboxtools.SourceDirName)}
+	} else {
+		slog.Default().Warn("sandbox agent tools disabled", "error", err)
+	}
 	portsWatch, err := newPortsWatcher(cfg, execManager, serviceManager)
 	if err != nil {
 		// Telemetry must not be what keeps a sandbox from booting. A sandbox
@@ -226,6 +236,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		terminals:         manager,
 		execs:             execManager,
 		services:          serviceManager,
+		tools:             declaredTools,
 		store:             localStore,
 		resourceCollector: cfg.ResourceCollector,
 		resourceSampler:   resources.NewSampler(),

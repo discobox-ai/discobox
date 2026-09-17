@@ -799,14 +799,9 @@ type ToolFile struct {
 
 	// Home is where it goes in the discobox, relative to the run user's home
 	// directory — ".config/fresh/config.json". Relative because only the
-	// discobox knows what its run user's home actually is.
-	//
-	// It may contain "{workspace}", which stands for the tool's working
-	// directory encoded the way a per-project state directory names itself.
-	// That is for the state a tool keys on the project rather than on the user
-	// — fresh's trust decision — and it is resolved in the discobox, since the
-	// working directory is another thing only the discobox knows. See
-	// installToolFileScript.
+	// discobox knows what its run user's home actually is. It is a fixed path:
+	// state keyed on something only the discobox knows is the tool's own
+	// script's to write.
 	Home string
 
 	// Default is what the local copy is created with the first time anything
@@ -815,14 +810,25 @@ type ToolFile struct {
 	Default string
 }
 
-// ToolSpec is everything running a tool takes: what to run in the discobox, and
-// the files to have in place before it starts. The picker's own columns — the
-// key it answers to, the label it wears — stay in this package; this is the
-// part the outside needs.
-type ToolSpec struct {
-	ID      string
-	Command []string
-	Files   []ToolFile
+// Tool is one tool as the picker offers it: a declaration from the CLI, the
+// discobox's image or primary source, or the user (ADR 0125). What it runs is
+// the data source's to know; this is what the window needs to list it, bind a
+// key to it, and tell a session from a request.
+type Tool struct {
+	ID string
+	// Key is the key the declaration asks for, empty when it asks for none.
+	// Whether it gets it is the window's call: a key something else on the
+	// same card already answers to is not given away.
+	Key    string
+	Label  string
+	Detail string
+	// Host reports a tool that runs on this machine, handed the discobox. It is
+	// a request that returns rather than a session with a window.
+	Host bool
+	// Files are what the tool carries into the discobox.
+	Files []ToolFile
+	// Problem is why the declaration cannot run, empty when it can.
+	Problem string
 }
 
 // Addresses are the ways into a discobox that are not this window: the ssh
@@ -975,38 +981,6 @@ const (
 	// so this names what such a pane is rather than an action that creates it.
 	InteractService Interaction = "service"
 )
-
-// Editor is a program on this machine that opens a discobox over SSH and then
-// runs on its own. Which one is a choice the window offers rather than a
-// setting, because someone with both installed uses both.
-type Editor string
-
-const (
-	EditorVSCode Editor = "vscode"
-	EditorZed    Editor = "zed"
-)
-
-// Label is the editor's name as prose names it, for the line that reports a
-// window opened.
-//
-// The value itself is the name of the `discobox tools` subcommand that opens
-// it, and that is what the busy line and a failure carry — "zed…", then
-// "zed: looked for zeditor, zedit, zed on PATH…" — because what failed is that
-// command, and naming it is how someone runs it again by hand to read the
-// whole error the status line had to cut. Only the sentence about a window
-// that did open reads as prose, and only that one takes this.
-//
-// An Editor this does not know labels as itself rather than as one of the two,
-// so a name that reaches the screen is never the wrong editor's.
-func (e Editor) Label() string {
-	switch e {
-	case EditorVSCode:
-		return "VS Code"
-	case EditorZed:
-		return "Zed"
-	}
-	return string(e)
-}
 
 // TerminalConnectionState is what the transport underneath a pane is doing. A
 // reconnect is invisible in the output — the stream simply carries on — so it is
@@ -1409,14 +1383,19 @@ type DataSource interface {
 	// the window already has, and this one needs the name typed first.
 	Rename(ctx context.Context, sandboxID, name string) error
 
-	// OpenEditor opens one sandbox in the named editor, in a window of its own.
+	// Tools is every tool one sandbox can be worked on with: the CLI's and the
+	// user's, merged with what the sandbox's image and primary source declare.
+	// It asks the sandbox, so it is a call rather than a field of the listing.
+	Tools(ctx context.Context, sandboxID string) ([]Tool, error)
+
+	// RunHostTool hands one sandbox to a tool that runs on this machine.
 	//
 	// It is neither a Verb nor an Interaction: it changes nothing about the
-	// sandbox, and it takes no terminal — the editor is a separate program in a
-	// separate window, and this returns as soon as it has been handed the
-	// sandbox. The window stays exactly where it was, which is the point: the
-	// terminal and the editor are two views of one sandbox, open at once.
-	OpenEditor(ctx context.Context, sandboxID string, editor Editor) error
+	// sandbox, and it takes no terminal — the tool is a separate program,
+	// usually in a separate window, and this returns once it has been handed
+	// the sandbox. The window stays exactly where it was, which is the point:
+	// the terminal and the editor are two views of one sandbox, open at once.
+	RunHostTool(ctx context.Context, sandboxID, toolID string) error
 
 	// PushSources sends this machine's new commits into the origin repositories
 	// the discobox's push-delivered sources fetch from — the transport
@@ -1521,17 +1500,17 @@ type DataSource interface {
 	// so there is nothing here for the window to remember.
 	DoService(ctx context.Context, verb ServiceVerb, sandboxID, serviceID string) error
 
-	// NewTool does the same for a tool session: the spec's command, run in the
+	// NewTool does the same for a tool session: the tool's command, run in the
 	// sandbox's primary source directory, labeled with the tool it is so that
 	// this window — and the next one to attach — can tell it from a shell.
-	// Which tools there are and what they run is this package's answer; see
-	// tools.go.
+	// Which tool that is, is looked up again by id, so what runs is what the
+	// declarations say now.
 	//
-	// The spec's files are put in place first, and only where the discobox has
+	// The tool's files are put in place first, and only where the discobox has
 	// none of its own. A tool whose files could not be delivered does not
 	// start: an editor that silently comes up unconfigured is worse than one
 	// that says why it did not.
-	NewTool(ctx context.Context, sandboxID string, spec ToolSpec, cols, rows int) (Exec, Terminal, error)
+	NewTool(ctx context.Context, sandboxID, toolID string, cols, rows int) (Exec, Terminal, error)
 
 	// EndExec ends one exec session in the sandbox, killing what is running in
 	// it. It is what closing a tool window does, and the one place this window

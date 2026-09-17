@@ -1129,100 +1129,23 @@ func TestTabGoesRoundTheWindow(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// editors
+// host tools
 
-// TestVSCodeOpensTheBoxUnderTheCursor: v is a request that returns, so the
-// window stays where it was and says what happened on its status line.
-func TestVSCodeOpensTheBoxUnderTheCursor(t *testing.T) {
+// The host tools are reached from inside a discobox, on the tools picker, and
+// nowhere on the list: v and z there run nothing and offer nothing.
+func TestTheListOffersNoHostTools(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("tab"), keyPress("v"))
+	send(t, m, keyPress("tab"), keyPress("v"), keyPress("z"))
 
-	if got := ds.openedEditors(); len(got) != 1 || got[0] != (editorOpen{id: "sbx_one", editor: EditorVSCode}) {
-		t.Fatalf("editors = %v", got)
+	if got := ds.openedEditors(); len(got) != 0 {
+		t.Fatalf("the list ran host tools: %v", got)
 	}
-	if m.dialog != nil {
-		t.Fatalf("v should open nothing over the window, got %+v", m.dialog)
-	}
-	if m.focus != focusList {
-		t.Fatalf("focus = %v, want the list it was pressed from", m.focus)
-	}
-	if !strings.Contains(m.status, "VS Code") {
-		t.Fatalf("status = %q, want it to report the window that opened", m.status)
-	}
-}
-
-// A failure to reach the editor is the status line's, not a dialog's: nothing
-// about the box changed, and there is nothing to answer.
-func TestVSCodeReportsFailureOnTheStatusLine(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	// The shape editorFamily.resolve actually returns, so the fake cannot go
-	// on asserting a sentence the code stopped producing.
-	ds.editorErr = errors.New("looked for code, code-insiders, codium, cursor, windsurf on PATH and found no VS Code command")
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("tab"), keyPress("v"))
-
-	if !m.statusE || !strings.Contains(m.status, "found no VS Code command") {
-		t.Fatalf("status = %q (error %v), want the failure reported", m.status, m.statusE)
-	}
-}
-
-// An archived box has no container to run an editor server in, so v is refused
-// with the reason rather than sent and failed.
-func TestVSCodeRefusedOnAnArchivedBox(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := newTestModel(t, ds)
-	// The archived row is the last one, and only shown once A asks for it.
-	// The archived discobox was cut from a repository URL, which is a folder
-	// of its own (ADR 0111), so every folder is shown to reach it.
-	showAllFolders(t, m)
-	send(t, m, keyPress("A"), keyPress("G"), keyPress("v"))
-
-	if len(ds.editors) != 0 {
-		t.Fatalf("an archived box should not reach the editor, got %v", ds.editors)
-	}
-	if m.dialog == nil || m.dialog.kind != dlgMessage {
-		t.Fatalf("v on an archived box should say why, got %+v", m.dialog)
-	}
-}
-
-// TestZedOpensTheBoxUnderTheCursor: z is v's twin, and the only thing that
-// differs is which editor the data source is asked for — which is the whole
-// reason the two keys share one path.
-func TestZedOpensTheBoxUnderTheCursor(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("tab"), keyPress("z"))
-
-	if got := ds.openedEditors(); len(got) != 1 || got[0] != (editorOpen{id: "sbx_one", editor: EditorZed}) {
-		t.Fatalf("editors = %v, want the box under the cursor in Zed", got)
-	}
-	if m.dialog != nil {
-		t.Fatalf("z should open nothing over the window, got %+v", m.dialog)
-	}
-	if !strings.Contains(m.status, "Zed") {
-		t.Fatalf("status = %q, want it to name the editor that opened", m.status)
-	}
-}
-
-// An archived box has no container for Zed's server either, so z is refused
-// with the reason for the same reason v is.
-func TestZedRefusedOnAnArchivedBox(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := newTestModel(t, ds)
-	showAllFolders(t, m)
-	send(t, m, keyPress("A"), keyPress("G"), keyPress("z"))
-
-	if len(ds.editors) != 0 {
-		t.Fatalf("an archived box should not reach the editor, got %v", ds.editors)
-	}
-	if m.dialog == nil || m.dialog.kind != dlgMessage {
-		t.Fatalf("z on an archived box should say why, got %+v", m.dialog)
+	for _, a := range m.actions(m.list.targets()) {
+		if a.label == "vscode" || a.label == "zed" {
+			t.Fatalf("the list's actions offer %s: %+v", a.label, a)
+		}
 	}
 }
 

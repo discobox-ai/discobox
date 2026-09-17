@@ -119,9 +119,12 @@ machine, the client pushes your new commits into it while you are attached, and
 - **Terminal and SSH:** Use the TUI or `discobox shell`. SSH configuration syncs
   automatically when a box is created, so `ssh $DISCOBOX_ID` works without manual
   setup. You can also connect by box name.
-- **Editor:** Use `discobox tools vscode` or `discobox tools zed` to open VS Code
-  or Zed in the box's working directory. Other editors with SSH remote support
-  can also connect directly.
+- **Editor and tools:** Use `discobox tools vscode` or `discobox tools zed` to
+  open VS Code or Zed in the box's working directory; `discobox tools ls` lists
+  every tool a box offers. Declare your own as a `.yaml` or a front-matter script
+  in the box's `.discobox/tools` or in your own config directory's
+  `discobox/tools` (ADR 0125). Other editors with SSH remote support can also
+  connect directly.
 - **Desktop:** Access the box's graphical desktop and browser through VNC or
   noVNC, using port forwarding.
 - **Toolchain:** direnv loads the project's declared environment, including

@@ -1,14 +1,5 @@
-#---
-# id: ai.discobox.desktop
-# name: Desktop
-# description: The sandbox's graphical desktop, in a browser tab.
-# port: 6900
-# protocol: http
-# start: never
-#---
-#
-# A declaration, not a script. `start: never` is what says so, and it is why
-# this file has no shebang, no executable bit, and nothing to run.
+# The sandbox's graphical desktop. A declaration and nothing to run: it is a
+# .yaml file, and a .yaml service starts never.
 #
 # The desktop viewer is started by systemd, on demand, when something connects
 # to 6900 — see sandbox-agent/image/systemd/discobox-desktop.socket. That is
@@ -28,4 +19,10 @@
 # as an HTTP port on 6900. Renaming this file must not change it, and the
 # `ai.discobox.` namespace is reserved so a repository cannot declare it.
 #
-# See docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md.
+# See docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md
+# and docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md.
+id: ai.discobox.desktop
+name: Desktop
+description: The sandbox's graphical desktop, in a browser tab.
+port: 6900
+protocol: http

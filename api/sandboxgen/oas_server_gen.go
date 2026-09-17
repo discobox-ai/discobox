@@ -111,6 +111,13 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
 	ListSandboxServices(ctx context.Context, params ListSandboxServicesParams) (*SandboxServicesResponse, error)
+	// ListSandboxTools implements list-sandbox-tools operation.
+	//
+	// Lists the tools the sandbox's image and primary source declare, in filename order within each.
+	// Declarations are re-read on every request.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
+	ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (*SandboxToolsResponse, error)
 	// RestartSandboxService implements restart-sandbox-service operation.
 	//
 	// Stops the service if it is running and starts it again under the same exec ID. A service that is

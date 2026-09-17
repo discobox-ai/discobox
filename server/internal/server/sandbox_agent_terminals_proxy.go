@@ -29,6 +29,7 @@ func registerSandboxAgentTerminalRoutes(router chi.Router, service services.Sand
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/services", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/tools", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start", sandboxAgentTerminalProxyHandler(service))
@@ -107,6 +108,11 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	// A service is an exec (ADR 0070), so the exec scopes are what gate it:
 	// reading one reads an exec record and its transcript, and starting,
 	// stopping or restarting one is creating or ending an exec.
+	// Listing tools reads declaration files, and what it says is how to start
+	// an exec, so it is read like one (ADR 0125 §7).
+	if strings.HasSuffix(r.URL.Path, "/tools") && r.Method == http.MethodGet {
+		return []string{poolagentauth.ScopeExecRead}
+	}
 	if strings.Contains(r.URL.Path, "/services") {
 		switch r.Method {
 		case http.MethodGet:

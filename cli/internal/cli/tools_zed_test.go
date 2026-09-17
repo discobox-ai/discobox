@@ -29,26 +29,14 @@ func fakeZed(t *testing.T) string {
 	t.Setenv("PATH", dir)
 	// A DISCOBOX_ZED left over in the developer's environment would name a
 	// different binary and quietly bypass the one just written.
-	t.Setenv(zedEditorEnv, "")
+	t.Setenv("DISCOBOX_ZED", "")
 	return record
 }
 
-// runToolsZedCmd runs `tools zed` against fake with HOME and XDG_STATE_HOME
-// redirected, so nothing here touches the real ~/.ssh.
+// runToolsZedCmd runs `tools zed` the way runToolsVSCodeCmd runs VS Code.
 func runToolsZedCmd(t *testing.T, fake *sshConfigFakeServer, args ...string) (home, state, stderr string, err error) {
 	t.Helper()
-	home, state = t.TempDir(), t.TempDir()
-	setHome(t, home)
-	t.Setenv("XDG_STATE_HOME", state)
-
-	server := fake.start(t)
-	cmd := NewRootCommand()
-	var out, errOut strings.Builder
-	cmd.SetOut(&out)
-	cmd.SetErr(&errOut)
-	cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "tools", "zed"}, args...))
-	err = cmd.Execute()
-	return home, state, errOut.String(), err
+	return runToolsCmd(t, fake, t.TempDir(), "zed", args...)
 }
 
 // TestToolsZedWritesTheConfigAndOpensTheWorkTree is the whole command: Zed
@@ -77,19 +65,6 @@ func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	want := []string{"--new", "ssh://devbox/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
-	}
-}
-
-// The window opens beside whatever you were already editing, not over it.
-func TestToolsZedReusesTheWindowOnlyWhenAsked(t *testing.T) {
-	record := fakeZed(t)
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--reuse-window"); err != nil {
-		t.Fatalf("execute tools zed: %v", err)
-	}
-	args := editorArgs(t, record)
-	if !contains(args, "--reuse") || contains(args, "--new") {
-		t.Fatalf("editor args = %v, want --reuse alone", args)
 	}
 }
 
@@ -144,12 +119,12 @@ func TestToolsZedOpensTheRootWhenNoWorkTreeIsKnown(t *testing.T) {
 // the one failure the user cannot fix after the fact, so it is found first.
 func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv(zedEditorEnv, "")
+	t.Setenv("DISCOBOX_ZED", "")
 	_, state, _, err := runToolsZedCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
 	if err == nil {
 		t.Fatal("expected tools zed to fail with no editor installed")
 	}
-	for _, want := range []string{"Zed", "--editor"} {
+	for _, want := range []string{"zed", "--program"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error should name the editor and how to point at one, got: %v", err)
 		}
@@ -160,12 +135,12 @@ func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 	}
 }
 
-// --editor names a build that is not one of the ones looked for, which is how a
+// --program names a build that is not one of the ones looked for, which is how a
 // Zed installed under a packager's own name is reached.
 func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 	record := fakeZed(t)
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--editor", "zed"); err != nil {
+		"--discobox-id", "sbx_devbox00000001", "--program", "zed"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 	if args := editorArgs(t, record); len(args) == 0 {
@@ -173,7 +148,7 @@ func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 	}
 
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--editor", "not-an-editor"); err == nil {
+		"--discobox-id", "sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
 	}
 }
@@ -189,7 +164,7 @@ func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 func TestToolsZedDoesNotFallBackToVSCode(t *testing.T) {
 	record := fakeVSCode(t)
 	t.Setenv("PATH", filepath.Dir(record))
-	t.Setenv(zedEditorEnv, "")
+	t.Setenv("DISCOBOX_ZED", "")
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001"); err == nil {
 		t.Fatal("expected tools zed to fail on a machine with only VS Code installed")
 	}

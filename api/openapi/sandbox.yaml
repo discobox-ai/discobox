@@ -730,6 +730,101 @@ components:
             required:
                 - services
             type: object
+        SandboxTool:
+            additionalProperties: false
+            description: A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary source under .discobox/tools (ADR 0125). The client merges these with the tools it declares itself and runs the result; the sandbox only lists them.
+            properties:
+                args:
+                    description: Arguments that follow the program or the script.
+                    items:
+                        type: string
+                    type: array
+                description:
+                    description: What the tool is for.
+                    type: string
+                env:
+                    description: Environment added to the tool's, in NAME=value form.
+                    items:
+                        type: string
+                    type: array
+                fileName:
+                    description: The declaring file's own name, which orders the listing.
+                    type: string
+                files:
+                    description: Files the tool carries into the sandbox, each copied under the run user's home only where nothing is there already.
+                    items:
+                        $ref: '#/components/schemas/SandboxToolFile'
+                    type: array
+                id:
+                    description: Stable filename-derived tool ID, with any numeric ordering prefix and known extension removed - 20-fresh.yaml is fresh - unless the declaration states one.
+                    type: string
+                key:
+                    description: The single key the tool asks to answer to in a picker.
+                    type: string
+                layer:
+                    description: Which of the sandbox's directories declared it.
+                    enum:
+                        - image
+                        - source
+                    type: string
+                name:
+                    description: Display name from the declaration, defaulted from the filename.
+                    type: string
+                path:
+                    description: Absolute path to the declaring file inside the sandbox. For a script tool it is what runs.
+                    type: string
+                problem:
+                    description: Why this declaration cannot run. A tool with a problem is listed rather than dropped.
+                    type: string
+                program:
+                    description: The program a .yaml declaration runs.
+                    items:
+                        type: string
+                    type: array
+                runs:
+                    description: Where the tool runs. A host tool declared by a sandbox is always listed with a problem, because only the client's own layers may put a program on the client's machine.
+                    enum:
+                        - sandbox
+                        - host
+                    type: string
+                script:
+                    description: True when the declaring file is a script and is itself what runs; false for a .yaml declaration, which runs program.
+                    type: boolean
+            required:
+                - id
+                - name
+                - runs
+                - layer
+                - fileName
+                - script
+            type: object
+        SandboxToolFile:
+            additionalProperties: false
+            description: One file a tool carries into the sandbox.
+            properties:
+                default:
+                    description: What the client's local copy starts as, from the file of this name beside the declaration.
+                    type: string
+                home:
+                    description: Where it lands, relative to the run user's home.
+                    type: string
+                name:
+                    description: The file's name, and the name of its local copy on the client.
+                    type: string
+            required:
+                - name
+                - home
+            type: object
+        SandboxToolsResponse:
+            additionalProperties: false
+            properties:
+                tools:
+                    items:
+                        $ref: '#/components/schemas/SandboxTool'
+                    type: array
+            required:
+                - tools
+            type: object
         SandboxUser:
             additionalProperties: false
             description: |-
@@ -1563,6 +1658,39 @@ paths:
             summary: Get sandbox-agent-reported status (git status, harness session state, active connections).
             tags:
                 - Sandbox Status
+    /api/projects/{projectId}/sandboxes/{sandboxId}/tools:
+        get:
+            description: Lists the tools the sandbox's image and primary source declare, in filename order within each. Declarations are re-read on every request.
+            operationId: list-sandbox-tools
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxToolsResponse'
+                    description: Tools declared in the sandbox.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List declared tools in a sandbox.
+            tags:
+                - Sandbox Tools
 servers:
     - description: Provider-delegated sandbox endpoint
       url: http://sandbox.local

@@ -22,17 +22,18 @@ func fakeWSLMachine(t *testing.T, opts ...wslMachineOption) (root, record string
 	if runtime.GOOS == "windows" {
 		t.Skip("the fakes are shell scripts")
 	}
-	machine := wslMachine{windowsPathOnPATH: true, editor: vscodeFamily}
+	machine := wslMachine{windowsPathOnPATH: true, editor: "vscode"}
 	for _, opt := range opts {
 		opt(&machine)
 	}
+	editor := builtinTool(t, machine.editor)
 	base := t.TempDir()
 	root = filepath.Join(base, "mnt", "c")
 	tools := filepath.Join(base, "tools")
 	// The Windows editor lives on the Windows drive, which is how these
 	// commands tell it apart from a Linux build in the distribution's own
 	// filesystem.
-	editorDir := filepath.Join(root, "Program Files", machine.editor.label, "bin")
+	editorDir := filepath.Join(root, "Program Files", editor.Label(), "bin")
 	for _, dir := range []string{root, tools, editorDir} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
@@ -44,7 +45,7 @@ func fakeWSLMachine(t *testing.T, opts ...wslMachineOption) (root, record string
 	// inherited PATH below is a real developer's, and the names are searched in
 	// the family's order: with only `zed` installed here, a `zeditor` of theirs
 	// would answer first and this test would drive their editor.
-	for _, name := range machine.editor.candidates {
+	for _, name := range editor.Program {
 		writeFakeTool(t, filepath.Join(editorDir, name),
 			"#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+record+"'\n")
 	}
@@ -84,15 +85,16 @@ esac
 	t.Setenv("PATH", strings.Join(append([]string{tools, editorDir}, withoutTheRealWindowsPATH()...), string(os.PathListSeparator)))
 	// Neither editor may be redirected by a variable left in the developer's
 	// environment, whichever one this machine has installed.
-	t.Setenv(vscodeEditorEnv, "")
-	t.Setenv(zedEditorEnv, "")
+	t.Setenv("DISCOBOX_VSCODE", "")
+	t.Setenv("DISCOBOX_ZED", "")
 	return root, record
 }
 
 // wslMachine is what a test can vary about the fake machine.
 type wslMachine struct {
-	// editor is the Windows editor installed on the drive.
-	editor editorFamily
+	// editor is the Windows editor installed on the drive: the id of the CLI's
+	// own declaration of it.
+	editor string
 	// windowsPathOnPATH is WSL's default of appending the Windows PATH to this
 	// distribution's. A distribution with appendWindowsPath=false has none of
 	// it, and the Windows programs are still installed.
@@ -129,9 +131,10 @@ func withoutTheRealWindowsPATH() []string {
 	return kept
 }
 
-// withWindowsEditor installs a different Windows editor than VS Code.
-func withWindowsEditor(family editorFamily) wslMachineOption {
-	return func(m *wslMachine) { m.editor = family }
+// withWindowsEditor installs a different Windows editor than VS Code: the
+// CLI's own declaration of it, by id.
+func withWindowsEditor(id string) wslMachineOption {
+	return func(m *wslMachine) { m.editor = id }
 }
 
 func withLeakyKeyACL(m *wslMachine) { m.leakyACL = "id_ed25519" }
@@ -462,7 +465,7 @@ func TestSSHConfigPrintOnWSLIsThisSideOnly(t *testing.T) {
 // and needs the config under the Windows profile, with a ProxyCommand that
 // re-enters this distribution to reach the CLI (ADR 0074).
 func TestToolsZedOnWSLWritesTheConfigWindowsReads(t *testing.T) {
-	root, record := fakeWSLMachine(t, withWindowsEditor(zedFamily))
+	root, record := fakeWSLMachine(t, withWindowsEditor("zed"))
 
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)

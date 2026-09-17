@@ -2318,11 +2318,11 @@ func TestTheToolsPickerOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 
 	d.key("ctrl+a")
 	d.key("o")
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key("v")
 	d.wait("the editor", func() bool { return len(ds.openedEditors()) == 1 })
 
-	if got := ds.openedEditors(); got[0] != (editorOpen{id: "sbx_one", editor: EditorVSCode}) {
+	if got := ds.openedEditors(); got[0] != (editorOpen{id: "sbx_one", tool: "vscode"}) {
 		t.Fatalf("editors = %v, want the box on screen in VS Code", got)
 	}
 	if !m.inPanes() {
@@ -2331,6 +2331,26 @@ func TestTheToolsPickerOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 	// The leader consumed the key; the sandbox never saw it.
 	if got := term.typed("o"); strings.Contains(got, "o") {
 		t.Fatalf("typed %q, want the leader to take the key", got)
+	}
+}
+
+// A host tool that cannot run says why on the status line, not in a dialog:
+// nothing about the box changed, and there is nothing to answer.
+func TestTheToolsPickerReportsAHostToolFailureOnTheStatusLine(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	// The shape tools.ProgramError actually returns, so the fake cannot go on
+	// asserting a sentence the code stopped producing.
+	ds.hostToolErr = errors.New("looked for code, code-insiders, codium, cursor, windsurf on PATH and found none; install vscode, or name the program with --program or $DISCOBOX_VSCODE")
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("o")
+	waitPicker(d, m)
+	d.key("v")
+	d.wait("the report", func() bool { return strings.Contains(m.status, "found none; install vscode") })
+	if !m.statusE {
+		t.Fatalf("status = %q, want it reported as an error", m.status)
 	}
 }
 
@@ -2343,11 +2363,11 @@ func TestTheToolsPickerOpensTheWorkspaceBoxInZed(t *testing.T) {
 
 	d.key("ctrl+a")
 	d.key("o")
-	d.wait("the picker", func() bool { return m.dialog != nil })
+	waitPicker(d, m)
 	d.key("z")
 	d.wait("the editor", func() bool { return len(ds.openedEditors()) == 1 })
 
-	if got := ds.openedEditors(); got[0] != (editorOpen{id: "sbx_one", editor: EditorZed}) {
+	if got := ds.openedEditors(); got[0] != (editorOpen{id: "sbx_one", tool: "zed"}) {
 		t.Fatalf("editors = %v, want the box on screen in Zed", got)
 	}
 	if !m.inPanes() {

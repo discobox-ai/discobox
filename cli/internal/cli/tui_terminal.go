@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/execstream/client"
 	"github.com/discobox-ai/discobox/execstream/frame"
 	"github.com/discobox-ai/discobox/execstream/resume"
+	"github.com/discobox-ai/discobox/tools"
 )
 
 // Open connects a terminal for one of this CLI's own commands — apply — drawn
@@ -73,7 +74,7 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 		Harness:     exec.HarnessId.Value,
 		Primary:     exec.Primary.Value,
 		Service:     metadata[sandboxServiceIDMetadata],
-		Tool:        metadata[execToolMetadataKey],
+		Tool:        execToolID(metadata[execToolMetadataKey]),
 		ServiceName: metadata[sandboxServiceNameMetadata],
 		Tty:         exec.Tty,
 		Live:        live,
@@ -96,6 +97,23 @@ const (
 // service keys it is this client's own: the sandbox knows nothing about tools.
 // See ADR 0071 on tool sessions.
 const execToolMetadataKey = "tool"
+
+// legacyDiffToolID is the label a diff session carries when a launcher from
+// before the diff tool had a stable id opened it. The label is stored in the
+// sandbox with the exec, so such a session is still running in boxes this
+// launcher attaches to.
+const legacyDiffToolID = "diff"
+
+// execToolID is a tool session's label as this launcher names that tool: the
+// stored label, except the diff's old one, which is read as tools.DiffID so the
+// running diff is picked back up as the diff rather than stranded while `d`
+// starts a second one (ADR 0125 §2).
+func execToolID(label string) string {
+	if label == legacyDiffToolID {
+		return tools.DiffID
+	}
+	return label
+}
 
 // Services is the sandbox's declared services, running or not — what the
 // workspace's services menu is drawn from.
@@ -204,26 +222,37 @@ func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols,
 	}, cols, rows)
 }
 
-// NewTool creates, attaches and starts a tool session: command, run in the
-// sandbox's default working directory — which is its primary source — and
-// labeled with the tool it is.
+// NewTool creates, attaches and starts a tool session: the tool's command, run
+// in the sandbox's default working directory — which is its primary source —
+// and labeled with the tool it is.
 //
-// No workdir is sent for the same reason `disco tools git` sends none: an exec
-// with no workdir already lands in the sandbox's primary source directory, and
-// naming it here would be this machine guessing at a path only the sandbox
+// No workdir is sent for the same reason `discobox tools git` sends none: an
+// exec with no workdir already lands in the sandbox's primary source directory,
+// and naming it here would be this machine guessing at a path only the sandbox
 // knows.
-func (d *apiDataSource) NewTool(ctx context.Context, sandboxID string, spec tui.ToolSpec, cols, rows int) (tui.Exec, tui.Terminal, error) {
+func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
 	d = d.at(sandboxID)
+	catalog, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
+	if err != nil {
+		return tui.Exec{}, nil, err
+	}
+	def, err := findTool(catalog, toolID)
+	if err != nil {
+		return tui.Exec{}, nil, err
+	}
+	if def.Runs != tools.RunsSandbox {
+		return tui.Exec{}, nil, fmt.Errorf("tool %s runs here, not in the discobox", toolID)
+	}
 	// Before the session, not alongside it: the tool reads its configuration
 	// when it starts, so a file that lands a moment later is a file this run
 	// never saw. See tui_tools.go.
-	if err := d.installToolFiles(ctx, sandboxID, spec.Files); err != nil {
+	if err := d.app.installToolFiles(ctx, d.projectID, sandboxID, def); err != nil {
 		return tui.Exec{}, nil, err
 	}
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
-		interactive: true, tty: true, env: paneTerminalEnv(),
-		metadata: map[string]string{execToolMetadataKey: spec.ID},
-	}, cols, rows, spec.Command...)
+		interactive: true, tty: true, env: append(paneTerminalEnv(), def.Env...),
+		metadata: map[string]string{execToolMetadataKey: def.ID},
+	}, cols, rows, sandboxToolCommand(def, nil)...)
 }
 
 // EndExec ends one exec session in the sandbox, killing what is running in it.

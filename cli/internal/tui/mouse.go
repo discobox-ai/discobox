@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/discobox-ai/discobox/termpane"
+	"github.com/discobox-ai/discobox/tools"
 	"github.com/discobox-ai/x/selection"
 )
 
@@ -341,12 +342,11 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		return nil, true
 
 	case hitGit:
-		// The leader's tools key is handled by the pane asynchronously, but a
-		// pointer is already aimed at the diff choice. Build the same picker and
-		// choose its d row through the dialog's key handler, preserving the
-		// picker's availability check without flashing it on screen.
-		_ = m.openTools()
-		return m.updateKey(keyPress("d")), true
+		// The git summary is the diff's natural label, so a pointer on it is
+		// already aimed at the diff tool: whichever declaration of
+		// tools.DiffID wins for this discobox — the image's discobox-review, or
+		// one the repository or the user put in its place.
+		return m.runToolWhenKnown(tools.DiffID), true
 
 	case hitURL:
 		// The text carries the URL as an OSC 8 link, which is what the

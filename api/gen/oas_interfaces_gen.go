@@ -273,6 +273,10 @@ type ListSandboxServicesRes interface {
 	listSandboxServicesRes()
 }
 
+type ListSandboxToolsRes interface {
+	listSandboxToolsRes()
+}
+
 type ListSandboxesRes interface {
 	listSandboxesRes()
 }

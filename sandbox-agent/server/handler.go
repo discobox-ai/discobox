@@ -29,6 +29,7 @@ type handler struct {
 	execs             *execs.Manager
 	terminals         *terminal.Service
 	services          *services.Manager
+	tools             toolDirs
 	store             terminalStore
 	resourceCollector resources.Collector
 	resourceSampler   resources.Sampler

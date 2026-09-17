@@ -1,0 +1,21 @@
+# Zed, on this machine, over its remote development (ADR 0125). Override any of
+# it by declaring a zed.yaml of your own in your tools directory.
+#
+# Zed installs its own server into ~/.zed_server in the discobox on first
+# connection, downloading it from zed.dev. A discobox without egress needs
+# "upload_binary_over_ssh": true for the host in Zed's own settings.
+id: zed
+name: zed
+description: open the box in Zed, in a window of its own
+key: z
+runs: host
+# `zed` is the name upstream's installer links on every channel, and it is
+# looked for last because it is the only ambiguous one: nixpkgs ships a data
+# lake under that name and the editor as `zeditor`. Looking for the
+# unambiguous names first costs nothing where only `zed` exists.
+program: [zeditor, zedit, zed]
+program-env: DISCOBOX_ZED
+# An ssh:// URL rather than a path, for the reason VS Code gets a folder URI:
+# launched from WSL, Zed is normally the Windows build, and a bare path is a
+# Windows path that does not exist.
+args: [--new, "{ssh.url}"]

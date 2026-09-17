@@ -68,6 +68,10 @@ func (h *Handler) ListSandboxServices(context.Context, serverapi.ListSandboxServ
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+func (h *Handler) ListSandboxTools(context.Context, serverapi.ListSandboxToolsParams) (serverapi.ListSandboxToolsRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) GetSandboxService(context.Context, serverapi.GetSandboxServiceParams) (serverapi.GetSandboxServiceRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

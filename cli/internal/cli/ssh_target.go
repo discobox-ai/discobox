@@ -62,7 +62,7 @@ type sshTarget struct {
 	// through interop, a Windows profile and a Windows ACL, and none of it is
 	// a reason to lose the config for the ssh this shell is running — least of
 	// all in the middle of a run that has already made a discobox to attach
-	// to. `tools vscode` launching a Windows editor is the one caller with
+	// to. A host tool launching a Windows program is the one caller with
 	// nothing left to connect through, and clears it. See ADR 0102.
 	optional bool
 }
@@ -125,13 +125,13 @@ func windowsSSHTarget(ctx context.Context) (sshTarget, error) {
 // both — a Windows VS Code or JetBrains Gateway on one side, `git` and `scp` on
 // the other — and a config that exists on only one side is a machine that works
 // until you reach for the other tool. Writing both also means no command is the
-// only way to produce one of them, which is what `tools vscode` had become.
+// only way to produce one of them, which is what the editor commands had become.
 //
 // The Windows side needs interop to resolve at all, so its failure travels on
 // the value rather than being raised: `admin ssh-config --write` has still
-// written a usable config for this side and says what it could not do, while an
-// editor command launching a Windows editor — `tools vscode` or `tools zed` —
-// cannot proceed and turns it into an error (editorFamily.sshTargets).
+// written a usable config for this side and says what it could not do, while a
+// host tool launching a Windows program cannot proceed and turns it into an
+// error (hostToolLaunch.sshTargets).
 func machineSSHTargets(ctx context.Context) (machineTargets, error) {
 	local, err := localSSHTarget()
 	if err != nil {
