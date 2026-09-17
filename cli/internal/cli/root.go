@@ -514,6 +514,13 @@ func (t serverTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	resp, err := base.RoundTrip(req)
 	if err != nil {
+		// A plain-text error response is one the server answered, turned into
+		// an error further down the chain: marking it would tell somebody to
+		// diagnose a connection that worked.
+		var answered *plainStatusError
+		if errors.As(err, &answered) {
+			return nil, err
+		}
 		return nil, serverUnreachable{err: err}
 	}
 	return resp, nil

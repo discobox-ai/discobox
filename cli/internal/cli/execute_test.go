@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -107,5 +109,32 @@ func TestUnreachableServerErrorNamesTheDiagnosis(t *testing.T) {
 	}
 	if got := withUnreachableServerHint(status, dial); got.Error() != dial.Error() {
 		t.Fatalf("status error = %q, want no hint naming itself", got)
+	}
+}
+
+// A plain-text error response is the server answering, even though the
+// transport chain hands it back as an error: the mark that says a connection
+// failed must not be put on it, or a 409 from the pool reads as a server that
+// could not be reached.
+func TestAPlainTextAnswerIsNotAnUnreachableServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "sandbox has no container on this pool", http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+
+	transport := serverTransport{base: textPlainErrorTransport{}}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "409 Conflict") {
+		t.Fatalf("err = %v, want the server's answer", err)
+	}
+	if unreachableServer(err) {
+		t.Fatalf("an answered request was marked unreachable: %v", err)
 	}
 }
