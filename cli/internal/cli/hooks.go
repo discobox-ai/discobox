@@ -66,7 +66,7 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 			}
 			logs := body.GetHooks()
 			if a.output == "json" {
-				return writeJSON(cmd.OutOrStdout(), body)
+				return writeTerminalSafeJSON(cmd.OutOrStdout(), body)
 			}
 			return writeHarnessHookLogs(cmd.OutOrStdout(), logs)
 		},
@@ -91,13 +91,16 @@ func writeHarnessHookLogs(out io.Writer, logs []apimodel.HarnessHookLog) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "TIME\tTERMINAL\tPROVIDER\tEVENT\tPAYLOAD")
 	for _, log := range logs {
+		// Every field but the time is whatever the discobox recorded, in a
+		// database it can rewrite, and a payload that is not valid JSON is
+		// printed as its raw bytes.
 		payload := compactJSON(log.Payload)
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			formatTime(log.CreatedAt),
-			log.TerminalId.Or(""),
-			log.Provider,
-			log.Event,
-			truncateTableValue(payload, 120),
+			terminalSafe(log.TerminalId.Or("")),
+			terminalSafe(log.Provider),
+			terminalSafe(log.Event),
+			truncateTableValue(terminalSafe(payload), 120),
 		)
 	}
 	return tw.Flush()

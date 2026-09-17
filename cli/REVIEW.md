@@ -24,6 +24,13 @@
   exists for this — it rewrites one row and takes it back down — so narrate on
   it and clear before the stream changes hands.
 
+- **Text a discobox wrote is escaped before it is printed.** A judge's reason,
+  an argv, a hook payload, a prompt, and every ID or name that arrived beside
+  them: anything composed inside a discobox goes through `terminalSafe`
+  (`audit.go`) on its way to a terminal, and JSON carrying it through
+  `writeTerminalSafeJSON`. It is display data, and printed raw a control
+  sequence in it is an instruction to the reader's terminal.
+
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
   comes out with the spinner glued to its front.

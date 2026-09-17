@@ -17,6 +17,7 @@ func (a *App) newAdminCommand() *cobra.Command {
 	cmd.AddCommand(a.newJobCommand())
 	cmd.AddCommand(a.newHarnessCommand())
 	cmd.AddCommand(a.newHooksCommand())
+	cmd.AddCommand(a.newAuditCommand())
 	cmd.AddCommand(a.newServerCommand())
 	cmd.AddCommand(a.newServersCommand())
 	cmd.AddCommand(a.newSSHKeyCommand())

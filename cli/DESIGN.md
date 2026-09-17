@@ -1460,6 +1460,36 @@ tool rather than only as a screenful:
   every boot the pool has ever had, and the operator running this almost always
   means the most recent one; `--tail 0` asks for the whole thing.
 
+## Audit Reads (`discobox admin audit`)
+
+The audit commands read what a discobox left behind (ADR 0130), under `admin`
+per ADR 0112. `creds` lists the judge's recorded verdicts on agent credential
+uses from `list-credential-verdicts`.
+
+Two rules shape the output, and both are about who wrote what is on screen:
+
+- **Provenance is a column, not a footnote.** `RECORDED` is `use` for a verdict
+  that rode the call taking the credential's value and `report` for a denial the
+  discobox sent on its own, which nothing forced it to send. They are ADR 0130
+  §2's `control-plane` and `sandbox` attestors, derived from `volunteered`,
+  under the names this one trail has for them.
+- **Text written inside a discobox is escaped before it reaches a terminal.**
+  Every string field a row prints passes through `terminalSafe` (or
+  `terminalSafeMultiline` for the prompt block) — the use ID too, since a
+  reported denial's use ID is the discobox's own text — which prints every
+  control and invisible format character (ESC, BEL, C1 controls, bidirectional
+  overrides) as its Go escape. Printed raw, an escape sequence could move the
+  cursor and overwrite the row that said `deny`. `displayArgv` Go-quotes any
+  argv element holding whitespace, a quote or a non-printing rune, so elements
+  stay distinct the way ADR 0091 records them. `-o json` goes through
+  `writeTerminalSafeJSON`, which writes the same runes as `\u` escapes: Go's
+  encoder escapes only C0 controls, and a `\u` escape decodes to the recorded
+  value, so JSON stays exact.
+
+A `--discobox-id` that is a full generated ID is sent without a lookup, so a
+purged discobox's trail stays readable; a short ID resolves against the live
+list, which a purged discobox is no longer in.
+
 ## SSH Keys and Config (ADR 0024)
 
 `discobox admin ssh-key` and `discobox admin ssh-config` are the CLI-side counterpart
