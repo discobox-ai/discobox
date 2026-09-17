@@ -147,6 +147,7 @@ func TestExportTreeSkipsAMissingSubtree(t *testing.T) {
 }
 
 func TestTreeRoundTripPreservesModesSymlinksAndHardLinks(t *testing.T) {
+	requirePOSIXHost(t)
 	source, sourceRoot := treeFixture(t)
 	writeFile(t, filepath.Join(sourceRoot, "data", "script.sh"), "#!/bin/sh\n", 0o755)
 	writeFile(t, filepath.Join(sourceRoot, "data", "private"), "secret-ish\n", 0o600)
@@ -305,6 +306,7 @@ func TestImportTreeRefusesEntriesOutsideTheSubtrees(t *testing.T) {
 }
 
 func TestImportTreeRemovesAPartialRestore(t *testing.T) {
+	requirePOSIXHost(t)
 	// Owned by whoever runs the test, so the restore gets as far as the end of
 	// the archive rather than failing on a chown first.
 	var buf bytes.Buffer

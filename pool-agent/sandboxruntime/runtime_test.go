@@ -248,6 +248,7 @@ func TestGitSourceCloneURLPrefixesAbsoluteLocalDirectoryWithHostMountPrefix(t *t
 }
 
 func TestGitSourceCloneURLDoesNotDoublePrefixHostMountedLocalDirectory(t *testing.T) {
+	requirePOSIXHost(t)
 	source := workerapimodel.GitSource{
 		Kind:           workerclient.GitSourceKindGit,
 		LocalDirectory: workerclient.NewOptString("/host/home/darren/project"),
@@ -262,6 +263,7 @@ func TestGitSourceCloneURLDoesNotDoublePrefixHostMountedLocalDirectory(t *testin
 }
 
 func TestGitSourceCloneURLPreservesLocalDirectoryWithoutHostMountPrefix(t *testing.T) {
+	requirePOSIXHost(t)
 	source := workerapimodel.GitSource{
 		Kind:           workerclient.GitSourceKindGit,
 		LocalDirectory: workerclient.NewOptString("/home/darren/project"),
@@ -1048,6 +1050,7 @@ func TestEnsureOriginRemoteSkipsASourceThatIsNotThereYet(t *testing.T) {
 // is the pure piece of prepareSandboxVolumes' origin-mount logic; it needs no
 // real filesystem state or privilege to exercise directly.
 func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
+	requirePOSIXHost(t)
 	req := &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: "sandbox-1",
 		Config: workerapimodel.SandboxConfig{
