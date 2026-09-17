@@ -899,6 +899,14 @@ const (
 	SecretGrantScopeProject       = "project"
 )
 
+// OAuth token request encodings (SecretValue.TokenRequestEncoding). JSON is the
+// empty value because it is what every OAuth secret stored before the field
+// existed was refreshed with.
+const (
+	OAuthTokenRequestJSON = ""
+	OAuthTokenRequestForm = "form"
+)
+
 // Secret is a project-scoped encrypted credential that can be requested by sandboxes.
 type Secret struct {
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
@@ -980,6 +988,13 @@ type SecretValue struct {
 	TokenURL             string `json:"tokenUrl,omitempty"`
 	ClientID             string `json:"clientId,omitempty"`
 	AccessTokenExpiresAt int64  `json:"accessTokenExpiresAt,omitempty"` // unix milliseconds; 0 means unknown
+	// TokenRequestEncoding is how the refresh request's body is encoded:
+	// empty for JSON, OAuthTokenRequestForm for application/x-www-form-urlencoded.
+	// It is a property of the authorization server, not of the grant, and it is
+	// not negotiable after the fact — a refresh token rotates on use, so a
+	// request an endpoint rejects for its encoding cannot be retried in the
+	// other one without risking a spent token.
+	TokenRequestEncoding string `json:"tokenRequestEncoding,omitempty" enum:"form"`
 	// Scopes and SubscriptionType describe what the grant is, not what it is —
 	// non-secret metadata the authorization server returned alongside the token.
 	// They are recorded because a client may gate features on them locally: Claude

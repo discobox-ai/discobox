@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -19,9 +20,10 @@ import (
 // oauthTokenServer stands in for the upstream token endpoint. It records how many
 // times it was called and the last request body, and returns a rotated pair.
 type oauthTokenServer struct {
-	server   *httptest.Server
-	calls    atomic.Int32
-	lastBody map[string]string
+	server          *httptest.Server
+	calls           atomic.Int32
+	lastBody        map[string]string
+	lastContentType string
 }
 
 func newOAuthTokenServer(t *testing.T, access, refresh string, expiresIn int64) *oauthTokenServer {
@@ -36,9 +38,17 @@ func newOAuthTokenServer(t *testing.T, access, refresh string, expiresIn int64) 
 			return
 		}
 		ts.calls.Add(1)
+		ts.lastContentType = r.Header.Get("Content-Type")
 		body, _ := io.ReadAll(r.Body)
-		var parsed map[string]string
-		_ = json.Unmarshal(body, &parsed)
+		parsed := map[string]string{}
+		if ts.lastContentType == "application/x-www-form-urlencoded" {
+			form, _ := url.ParseQuery(string(body))
+			for key := range form {
+				parsed[key] = form.Get(key)
+			}
+		} else {
+			_ = json.Unmarshal(body, &parsed)
+		}
 		ts.lastBody = parsed
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -124,6 +134,68 @@ func TestResolveOAuthRefreshesExpiredToken(t *testing.T) {
 	}
 	if got := res.ExpiresAt.UnixMilli(); got != val.AccessTokenExpiresAt {
 		t.Fatalf("resolution expiresAt = %d, want token expiry %d", got, val.AccessTokenExpiresAt)
+	}
+}
+
+// TestResolveOAuthRefreshesWithTheRecordedEncoding covers an authorization
+// server that takes the refresh request form-encoded, as RFC 6749 defines it
+// (xAI's, which the opencode harness captures). JSON stays the default, since
+// every secret stored before the encoding was recorded was refreshed that way.
+func TestResolveOAuthRefreshesWithTheRecordedEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		encoding    string
+		contentType string
+	}{
+		{"absent is json", model.OAuthTokenRequestJSON, "application/json"},
+		{"form", model.OAuthTokenRequestForm, "application/x-www-form-urlencoded"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			svc, st := newResolveFixture(t)
+
+			tokenSrv := newOAuthTokenServer(t, "new-access", "rt-2", 3600)
+			sec := mustOAuthSecret(t, st, "xai", model.SecretValue{
+				Token:                "old-access",
+				RefreshToken:         "rt-1",
+				TokenURL:             tokenSrv.server.URL,
+				ClientID:             "client-x",
+				AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(),
+				TokenRequestEncoding: tc.encoding,
+			})
+			mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+			createSandbox(t, st, "sb-1", "pool-1")
+			mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OA")
+
+			res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-OA", "api.x.ai")
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			if res.Value == nil || res.Value.Token != "new-access" {
+				t.Fatalf("resolved token = %#v, want new-access", res.Value)
+			}
+			if tokenSrv.lastContentType != tc.contentType {
+				t.Fatalf("refresh content type = %q, want %q", tokenSrv.lastContentType, tc.contentType)
+			}
+			if tokenSrv.lastBody["grant_type"] != "refresh_token" ||
+				tokenSrv.lastBody["refresh_token"] != "rt-1" ||
+				tokenSrv.lastBody["client_id"] != "client-x" {
+				t.Fatalf("refresh request body = %#v", tokenSrv.lastBody)
+			}
+			// The encoding describes the authorization server, so a rotation
+			// keeps it: the next refresh goes to the same endpoint.
+			reloaded, err := st.GetSecret(ctx, "project-1", sec.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			val, err := st.OpenSecretValue(ctx, reloaded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if val.TokenRequestEncoding != tc.encoding {
+				t.Fatalf("rotated encoding = %q, want %q", val.TokenRequestEncoding, tc.encoding)
+			}
+		})
 	}
 }
 

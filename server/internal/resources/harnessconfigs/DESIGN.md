@@ -245,7 +245,8 @@ Refresh happens lazily inside `ResolveSandboxSecret` (`resources/secrets`), the
 one place that decrypts and hands out a value:
 
 - When the access token is within `oauthRefreshSkew` of expiry, the server
-  POSTs `grant_type=refresh_token` to `tokenUrl` and re-encrypts the rotated
+  POSTs `grant_type=refresh_token` to `tokenUrl` — as JSON, or form-encoded when
+  the secret records `tokenRequestEncoding: form` — and re-encrypts the rotated
   pair before returning. The refresh token rotates on every use, so the server
   is the **single writer**: a per-secret `singleflight` collapses concurrent
   resolves onto one upstream refresh, and the persisted write is guarded by the

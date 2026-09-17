@@ -749,6 +749,7 @@ func marshalSecretValue(val apigen.SecretValue) ([]byte, error) {
 		ClientID:             strings.TrimSpace(val.ClientId.Or("")),
 		AccessTokenExpiresAt: val.AccessTokenExpiresAt.Or(0),
 		SubscriptionType:     strings.TrimSpace(val.SubscriptionType.Or("")),
+		TokenRequestEncoding: string(val.TokenRequestEncoding.Or("")),
 	}
 	if scopes, ok := val.Scopes.Get(); ok {
 		mv.Scopes = scopes

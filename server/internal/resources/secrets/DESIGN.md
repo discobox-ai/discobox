@@ -279,3 +279,11 @@ a concurrent rotation elsewhere wins rather than being clobbered, and the
 resolution's expiry is capped by the token's own so the proxy re-resolves as it
 ages out. A failed refresh serves the token on hand; only having no token at
 all fails the resolve. See ADR 0011.
+
+The refresh request is JSON unless the secret records
+`tokenRequestEncoding: form`, which sends it form-encoded as RFC 6749 defines
+(xAI's endpoint requires it). JSON stays the default because every secret stored
+before the field existed was refreshed that way. The encoding is recorded at
+capture and never guessed at refresh time: a refresh token rotates on use, so a
+request retried in the other encoding may be spending a token the first attempt
+already spent. See ADR 0127 §3.

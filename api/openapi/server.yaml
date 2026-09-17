@@ -3824,6 +3824,11 @@ components:
                 token:
                     description: The credential itself (type=token), or an OAuth access token
                     type: string
+                tokenRequestEncoding:
+                    description: How the refresh request's body is encoded (type=oauth). Absent means JSON; form is application/x-www-form-urlencoded, as RFC 6749 defines it.
+                    enum:
+                        - form
+                    type: string
                 tokenUrl:
                     description: Where the refresh token is exchanged for a new access token (type=oauth)
                     type: string

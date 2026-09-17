@@ -7725,6 +7725,52 @@ func (o OptSecretValue) Or(d SecretValue) SecretValue {
 	return d
 }
 
+// NewOptSecretValueTokenRequestEncoding returns new OptSecretValueTokenRequestEncoding with value set to v.
+func NewOptSecretValueTokenRequestEncoding(v SecretValueTokenRequestEncoding) OptSecretValueTokenRequestEncoding {
+	return OptSecretValueTokenRequestEncoding{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretValueTokenRequestEncoding is optional SecretValueTokenRequestEncoding.
+type OptSecretValueTokenRequestEncoding struct {
+	Value SecretValueTokenRequestEncoding
+	Set   bool
+}
+
+// IsSet returns true if OptSecretValueTokenRequestEncoding was set.
+func (o OptSecretValueTokenRequestEncoding) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretValueTokenRequestEncoding) Reset() {
+	var v SecretValueTokenRequestEncoding
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretValueTokenRequestEncoding) SetTo(v SecretValueTokenRequestEncoding) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretValueTokenRequestEncoding) Get() (v SecretValueTokenRequestEncoding, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretValueTokenRequestEncoding) Or(d SecretValueTokenRequestEncoding) SecretValueTokenRequestEncoding {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -16900,6 +16946,9 @@ type SecretValue struct {
 	SubscriptionType OptString `json:"subscriptionType"`
 	// The credential itself (type=token), or an OAuth access token.
 	Token OptString `json:"token"`
+	// How the refresh request's body is encoded (type=oauth). Absent means JSON; form is
+	// application/x-www-form-urlencoded, as RFC 6749 defines it.
+	TokenRequestEncoding OptSecretValueTokenRequestEncoding `json:"tokenRequestEncoding"`
 	// Where the refresh token is exchanged for a new access token (type=oauth).
 	TokenUrl OptString `json:"tokenUrl"`
 }
@@ -16932,6 +16981,11 @@ func (s *SecretValue) GetSubscriptionType() OptString {
 // GetToken returns the value of Token.
 func (s *SecretValue) GetToken() OptString {
 	return s.Token
+}
+
+// GetTokenRequestEncoding returns the value of TokenRequestEncoding.
+func (s *SecretValue) GetTokenRequestEncoding() OptSecretValueTokenRequestEncoding {
+	return s.TokenRequestEncoding
 }
 
 // GetTokenUrl returns the value of TokenUrl.
@@ -16969,9 +17023,50 @@ func (s *SecretValue) SetToken(val OptString) {
 	s.Token = val
 }
 
+// SetTokenRequestEncoding sets the value of TokenRequestEncoding.
+func (s *SecretValue) SetTokenRequestEncoding(val OptSecretValueTokenRequestEncoding) {
+	s.TokenRequestEncoding = val
+}
+
 // SetTokenUrl sets the value of TokenUrl.
 func (s *SecretValue) SetTokenUrl(val OptString) {
 	s.TokenUrl = val
+}
+
+// How the refresh request's body is encoded (type=oauth). Absent means JSON; form is
+// application/x-www-form-urlencoded, as RFC 6749 defines it.
+type SecretValueTokenRequestEncoding string
+
+const (
+	SecretValueTokenRequestEncodingForm SecretValueTokenRequestEncoding = "form"
+)
+
+// AllValues returns all SecretValueTokenRequestEncoding values.
+func (SecretValueTokenRequestEncoding) AllValues() []SecretValueTokenRequestEncoding {
+	return []SecretValueTokenRequestEncoding{
+		SecretValueTokenRequestEncodingForm,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretValueTokenRequestEncoding) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretValueTokenRequestEncodingForm:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretValueTokenRequestEncoding) UnmarshalText(data []byte) error {
+	switch SecretValueTokenRequestEncoding(data) {
+	case SecretValueTokenRequestEncodingForm:
+		*s = SecretValueTokenRequestEncodingForm
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // What this server calls itself (ADR 0116). A client registering this server offers the name as the

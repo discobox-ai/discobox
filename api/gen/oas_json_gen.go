@@ -11865,6 +11865,39 @@ func (s *OptSecretValue) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SecretValueTokenRequestEncoding as json.
+func (o OptSecretValueTokenRequestEncoding) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SecretValueTokenRequestEncoding from json.
+func (o *OptSecretValueTokenRequestEncoding) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretValueTokenRequestEncoding to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretValueTokenRequestEncoding) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretValueTokenRequestEncoding) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes string as json.
 func (o OptString) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -30065,6 +30098,12 @@ func (s *SecretValue) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.TokenRequestEncoding.Set {
+			e.FieldStart("tokenRequestEncoding")
+			s.TokenRequestEncoding.Encode(e)
+		}
+	}
+	{
 		if s.TokenUrl.Set {
 			e.FieldStart("tokenUrl")
 			s.TokenUrl.Encode(e)
@@ -30072,14 +30111,15 @@ func (s *SecretValue) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretValue = [7]string{
+var jsonFieldsNameOfSecretValue = [8]string{
 	0: "accessTokenExpiresAt",
 	1: "clientId",
 	2: "refreshToken",
 	3: "scopes",
 	4: "subscriptionType",
 	5: "token",
-	6: "tokenUrl",
+	6: "tokenRequestEncoding",
+	7: "tokenUrl",
 }
 
 // Decode decodes SecretValue from json.
@@ -30150,6 +30190,16 @@ func (s *SecretValue) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"token\"")
 			}
+		case "tokenRequestEncoding":
+			if err := func() error {
+				s.TokenRequestEncoding.Reset()
+				if err := s.TokenRequestEncoding.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tokenRequestEncoding\"")
+			}
 		case "tokenUrl":
 			if err := func() error {
 				s.TokenUrl.Reset()
@@ -30180,6 +30230,44 @@ func (s *SecretValue) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SecretValue) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretValueTokenRequestEncoding as json.
+func (s SecretValueTokenRequestEncoding) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SecretValueTokenRequestEncoding from json.
+func (s *SecretValueTokenRequestEncoding) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretValueTokenRequestEncoding to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SecretValueTokenRequestEncoding(v) {
+	case SecretValueTokenRequestEncodingForm:
+		*s = SecretValueTokenRequestEncodingForm
+	default:
+		*s = SecretValueTokenRequestEncoding(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SecretValueTokenRequestEncoding) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretValueTokenRequestEncoding) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -161,19 +162,40 @@ func refreshOAuthToken(ctx context.Context, val *model.SecretValue) (*model.Secr
 	if tokenURL == "" || clientID == "" {
 		return nil, fmt.Errorf("oauth secret is missing tokenUrl or clientId")
 	}
-	payload, err := json.Marshal(map[string]string{
+	fields := map[string]string{
 		"grant_type":    "refresh_token",
 		"refresh_token": val.RefreshToken,
 		"client_id":     clientID,
-	})
-	if err != nil {
-		return nil, err
+	}
+	// RFC 6749 §6 defines the refresh request as form-encoded, but the
+	// endpoints this was first written for (Anthropic's among them) take JSON,
+	// and a secret stored before the encoding was recorded was refreshed as
+	// JSON. So JSON stays the default and form is what a secret asks for.
+	var (
+		payload     []byte
+		contentType string
+	)
+	switch val.TokenRequestEncoding {
+	case model.OAuthTokenRequestJSON:
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			return nil, err
+		}
+		payload, contentType = encoded, "application/json"
+	case model.OAuthTokenRequestForm:
+		form := url.Values{}
+		for key, value := range fields {
+			form.Set(key, value)
+		}
+		payload, contentType = []byte(form.Encode()), "application/x-www-form-urlencoded"
+	default:
+		return nil, fmt.Errorf("oauth secret has unknown token request encoding %q", val.TokenRequestEncoding)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := oauthHTTPClient.Do(req)
