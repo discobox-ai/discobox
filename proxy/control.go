@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -57,7 +58,12 @@ func (s *Server) ListenAndServeControl(ctx context.Context) error {
 }
 
 func (s *Server) handleControlListHTTP(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.audit.ListHTTP(r.Context(), controlQueryOptions(r))
+	opts, err := controlQueryOptions(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rows, err := s.audit.ListHTTP(r.Context(), opts)
 	writeControlJSON(w, rows, err)
 }
 
@@ -70,7 +76,12 @@ func (s *Server) handleControlListSOCKS(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "use_id does not apply to SOCKS connects", http.StatusBadRequest)
 		return
 	}
-	rows, err := s.audit.ListSOCKS(r.Context(), controlQueryOptions(r))
+	opts, err := controlQueryOptions(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rows, err := s.audit.ListSOCKS(r.Context(), opts)
 	writeControlJSON(w, rows, err)
 }
 
@@ -138,14 +149,23 @@ func (s *Server) handleControlHTTPArtifact(w http.ResponseWriter, r *http.Reques
 	http.ServeContent(w, r, name, row.CreatedAt, file)
 }
 
-func controlQueryOptions(r *http.Request) audit.QueryOptions {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	return audit.QueryOptions{
-		ClientID: r.URL.Query().Get("client_id"),
-		Host:     r.URL.Query().Get("host"),
-		UseID:    r.URL.Query().Get("use_id"),
+func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
+	query := r.URL.Query()
+	limit, _ := strconv.Atoi(query.Get("limit"))
+	opts := audit.QueryOptions{
+		ClientID: query.Get("client_id"),
+		Host:     query.Get("host"),
+		UseID:    query.Get("use_id"),
 		Limit:    limit,
 	}
+	if raw := query.Get("since"); raw != "" {
+		since, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return audit.QueryOptions{}, fmt.Errorf("since %q is not an RFC 3339 time", raw)
+		}
+		opts.Since = since
+	}
+	return opts, nil
 }
 
 func controlHTTPArtifact(path string) (uint, string, bool) {

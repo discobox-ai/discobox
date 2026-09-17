@@ -192,6 +192,10 @@ type QueryOptions struct {
 	// It applies to HTTP reads only: a SOCKS connect tunnels bytes the proxy
 	// never inspects, so no sentinel is ever swapped in one.
 	UseID string
+	// Since keeps rows written at or after it. Rows are written in UTC
+	// (nonZeroTime), and SQLite compares times as text carrying their offset,
+	// so the bound is compared in UTC too.
+	Since time.Time
 	Limit int
 }
 
@@ -556,6 +560,9 @@ func applyHTTPQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
 	if opts.Host != "" {
 		query = query.Where("host = ?", opts.Host)
 	}
+	if !opts.Since.IsZero() {
+		query = query.Where("created_at >= ?", opts.Since.UTC())
+	}
 	if opts.UseID != "" {
 		// Match a whole element of the comma-joined list rather than a
 		// substring: padding both sides with the delimiter is what keeps one
@@ -583,6 +590,9 @@ func applySOCKSQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
 	}
 	if opts.Host != "" {
 		query = query.Where("destination = ?", opts.Host)
+	}
+	if !opts.Since.IsZero() {
+		query = query.Where("created_at >= ?", opts.Since.UTC())
 	}
 	return query.Limit(queryLimit(opts.Limit))
 }

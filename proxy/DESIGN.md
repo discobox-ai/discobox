@@ -358,8 +358,9 @@ which is the ordinary injected-sentinel case rather than a gap.
 
 The control API (`ControlHandler`, served by `ListenAndServeControl` only when
 `Control.ListenAddress` is set) is read-only. It lists HTTP and SOCKS audit rows
-(`GET /audit/http`, `/audit/socks`, filtered by `client_id`, `host` and `limit`
-up to 1000; HTTP also takes `use_id`, which the SOCKS route rejects rather than
+(`GET /audit/http`, `/audit/socks`, filtered by `client_id`, `host`, `since`
+(RFC 3339, compared in UTC because rows are written in UTC) and `limit` up to
+1000; HTTP also takes `use_id`, which the SOCKS route rejects rather than
 ignores, because a tunnel the proxy never reads can have spent no credential),
 reports the dropped-event counter (`/audit/dropped`), and serves
 body and upgraded-stream spool files only through the owning HTTP audit row
@@ -374,8 +375,14 @@ omitted the parameter would read every sandbox's rows and spooled bodies. A
 contradictory `client_id` is still refused, so asking for another sandbox is a
 403 rather than a silent read of your own. The proxy stores only the public verification key;
 `CreateControlToken` signs with the private key its caller holds.
-`pool-agent/proxyagent` sets no `Control` config, so a Discobox pool proxy serves
-no control API.
+
+`ControlClient` is the other half of the control API, in this package so the
+paths, parameters, token and response shape have one owner. It signs a fresh
+token per call and never sends `client_id`: a sandbox-scoped read puts the
+sandbox in the token, where the narrowing above applies. A Discobox pool proxy
+serves the control API on loopback only, trusting a key the pool agent holds,
+and the pool agent is its only reader
+([`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md#reading-the-proxys-audit)).
 
 SOCKS5 is a TCP tunnel (no-auth method). It is authenticated by the same mTLS
 listener and records connect attempts, destination, allow/deny, and client
