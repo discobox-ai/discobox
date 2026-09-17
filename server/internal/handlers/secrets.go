@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -262,6 +263,38 @@ func apiSecretUses(uses []model.SecretUse) []apimodel.SecretUse {
 		out = append(out, item)
 	}
 	return out
+}
+
+func (h *Handler) ListCredentialVerdicts(ctx context.Context, params serverapi.ListCredentialVerdictsParams) (serverapi.ListCredentialVerdictsRes, error) {
+	filter := services.CredentialVerdictFilter{
+		SandboxID: params.SandboxId.Or(""),
+		UseID:     params.UseId.Or(""),
+		GrantID:   params.GrantId.Or(""),
+		Since:     params.Since.Or(time.Time{}),
+		Limit:     params.Limit.Or(100),
+	}
+	if allow, ok := params.Allow.Get(); ok {
+		filter.Allow = &allow
+	}
+	verdicts, err := h.services.Secrets.ListCredentialVerdicts(ctx, params.ProjectId, filter)
+	if err != nil {
+		return apiError(err), nil
+	}
+	if verdicts == nil {
+		// The body is built by round-tripping through JSON, where a nil slice
+		// encodes as null and the required array refuses it. The store's Find
+		// returns an empty slice, so this guards the service contract rather
+		// than a path the store takes: any implementation returning nil for
+		// "nothing matched" would otherwise answer 500.
+		verdicts = []model.CredentialVerdict{}
+	}
+	body, err := services.Convert[apimodel.ListCredentialVerdictsBody](struct {
+		CredentialVerdicts any `json:"credentialVerdicts"`
+	}{CredentialVerdicts: verdicts})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
 }
 
 func (h *Handler) ListSecretGrants(ctx context.Context, params serverapi.ListSecretGrantsParams) (serverapi.ListSecretGrantsRes, error) {

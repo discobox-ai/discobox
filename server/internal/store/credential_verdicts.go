@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -18,20 +19,58 @@ func (s *Store) CreateCredentialVerdict(ctx context.Context, verdict *model.Cred
 	return write.Create(verdict).Error
 }
 
-// ListCredentialVerdicts returns a sandbox's recorded verdicts, newest first —
-// the read side of ADR 0091's trail. Nothing in this repository serves it over
-// HTTP yet; it exists so the rows a credential use writes are checkable from a
-// test today and queryable by whatever needs them later, without a second
-// migration to add the ability to read back what the first one started
-// writing.
-func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID, sandboxID string) ([]model.CredentialVerdict, error) {
+// CredentialVerdictFilter narrows ListCredentialVerdicts. A zero field matches
+// everything, so the zero filter is the whole project.
+type CredentialVerdictFilter struct {
+	// SandboxID is matched against the recorded ID, never resolved through the
+	// sandboxes table: the trail outlives the sandbox it describes, and the
+	// sandboxes most worth asking about are often already purged.
+	SandboxID string
+	UseID     string
+	GrantID   string
+	// Allow selects allowed verdicts when true and denied ones when false.
+	Allow *bool
+	// Since keeps verdicts recorded at or after it.
+	Since time.Time
+	// Limit caps the rows returned; zero returns every match.
+	Limit int
+}
+
+// ListCredentialVerdicts returns a project's recorded verdicts that match
+// filter, newest first — the read side of ADR 0091's trail, served by
+// list-credential-verdicts.
+func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, filter CredentialVerdictFilter) ([]model.CredentialVerdict, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
+	query := read.Where("project_id = ?", projectID)
+	if filter.SandboxID != "" {
+		query = query.Where("sandbox_id = ?", filter.SandboxID)
+	}
+	if filter.UseID != "" {
+		query = query.Where("use_id = ?", filter.UseID)
+	}
+	if filter.GrantID != "" {
+		query = query.Where("grant_id = ?", filter.GrantID)
+	}
+	if filter.Allow != nil {
+		query = query.Where("allow = ?", *filter.Allow)
+	}
+	if !filter.Since.IsZero() {
+		// UTC because created_at is written in UTC (CredentialVerdict's
+		// BeforeCreate). On SQLite both sides are text with an offset and are
+		// compared as text, so a bound in any other zone is off by its offset.
+		query = query.Where("created_at >= ?", filter.Since.UTC())
+	}
+	if filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
+	}
 	var out []model.CredentialVerdict
-	err = read.Where("project_id = ? AND sandbox_id = ?", projectID, sandboxID).
-		Order("created_at DESC").
-		Find(&out).Error
+	// id breaks ties so two verdicts recorded in the same instant come back in
+	// a stable order, which is what lets a reader compare two listings. The
+	// created_at order is only an order in time because every row carries the
+	// same offset; see the since bound above.
+	err = query.Order("created_at DESC").Order("id DESC").Find(&out).Error
 	return out, err
 }

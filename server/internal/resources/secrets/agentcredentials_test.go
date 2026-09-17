@@ -193,7 +193,7 @@ func TestRecordCredentialVerdictResolvesTheGrantFromTheUseID(t *testing.T) {
 		t.Fatalf("record verdict: %v", err)
 	}
 
-	rows, err := st.ListCredentialVerdicts(ctx, "project-1", testSandboxID)
+	rows, err := st.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{SandboxID: testSandboxID})
 	if err != nil {
 		t.Fatalf("list verdicts: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestRecordCredentialVerdictSurvivesAnUnresolvableUseID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record verdict: %v", err)
 	}
-	rows, err := st.ListCredentialVerdicts(ctx, "project-1", testSandboxID)
+	rows, err := st.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{SandboxID: testSandboxID})
 	if err != nil {
 		t.Fatalf("list verdicts: %v", err)
 	}

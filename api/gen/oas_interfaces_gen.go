@@ -205,6 +205,10 @@ type GetServerPeerRes interface {
 	getServerPeerRes()
 }
 
+type ListCredentialVerdictsRes interface {
+	listCredentialVerdictsRes()
+}
+
 type ListHarnessConfigSecretBindingsRes interface {
 	listHarnessConfigSecretBindingsRes()
 }

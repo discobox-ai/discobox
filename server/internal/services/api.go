@@ -281,7 +281,15 @@ type SecretService interface {
 	// RecordCredentialVerdict persists one judge decision, so a credential
 	// cannot be issued without a record of why (ADR 0091).
 	RecordCredentialVerdict(ctx context.Context, poolID string, input RecordCredentialVerdictBody) error
+	// ListCredentialVerdicts reads that record back for a project's members.
+	// Unlike the broker calls above it is a user read, scoped by project, and
+	// does not require the sandbox a verdict names to still exist.
+	ListCredentialVerdicts(ctx context.Context, projectID string, filter CredentialVerdictFilter) ([]model.CredentialVerdict, error)
 }
+
+// CredentialVerdictFilter is the store's filter, named here so a handler builds
+// it through its services dependency rather than importing internal/store.
+type CredentialVerdictFilter = store.CredentialVerdictFilter
 
 // SSHKeyService manages project-scoped SSH keys that authorize SSH access to
 // that project's sandboxes (ADR 0024 §5).

@@ -7,6 +7,7 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -127,7 +128,51 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := migrateSandboxStateSplit(write); err != nil {
 		return err
 	}
+	if err := normalizeCredentialVerdictTimes(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
+}
+
+// normalizeCredentialVerdictTimes rewrites into UTC any credential verdict
+// created_at written before CredentialVerdict stamped it in UTC itself.
+//
+// Until then GORM's autoCreateTime wrote it in the server's local zone. SQLite
+// keeps a time as text carrying that offset and orders and compares it as text,
+// so on a server outside UTC every such row sorts, and answers a `since` bound,
+// as if it were off by its offset. A rewritten row is the same instant, so this
+// changes no row's meaning, only whether a text comparison can read it.
+//
+// SQLite only: Postgres stores timestamptz and compares instants. The rows to
+// rewrite are chosen in SQL by the offset their text ends in, because the
+// migration runs on every start and the table only grows: after the first run
+// this matches nothing and reads nothing, rather than loading every verdict to
+// find it has no work.
+func normalizeCredentialVerdictTimes(db *gorm.DB) error {
+	if db.Name() != "sqlite" {
+		return nil
+	}
+	var rows []struct {
+		ID        string
+		CreatedAt time.Time
+	}
+	if err := db.Model(&model.CredentialVerdict{}).
+		Select("id", "created_at").
+		Where("created_at NOT LIKE ?", "%+00:00").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if _, offset := row.CreatedAt.Zone(); offset == 0 {
+			continue
+		}
+		if err := db.Model(&model.CredentialVerdict{}).
+			Where("id = ?", row.ID).
+			UpdateColumn("created_at", row.CreatedAt.UTC()).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // prepareSandboxStateSplit makes the sandboxes table safe for AutoMigrate to

@@ -194,6 +194,10 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			return err
 		}
 		for _, scoped := range []any{
+			// Verdicts outlive their sandbox (ADR 0091), not their project:
+			// they reference it, so a project with any recorded verdict could
+			// not otherwise be deleted at all.
+			&model.CredentialVerdict{},
 			&model.HarnessConfigSecretBinding{},
 			&model.HarnessConfig{},
 			&model.SecretGrant{},

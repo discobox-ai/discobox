@@ -27,7 +27,9 @@ flag the `default` alias resolves.
 - `DeleteProject` refuses the default project and any project still holding
   sandboxes or pools; those own runtime that has to drain through its own
   reconcilers. Once empty, `store.DeleteProject` removes the project's own
-  configuration rows.
+  configuration rows, and its recorded credential verdicts with them: a
+  verdict outlives the sandbox it describes (ADR 0091) but not the project it
+  belongs to.
 - `Project.Welcomed` records that the launcher has shown its introduction. It is
   a project row rather than client-side state so the welcome does not repeat on
   a second machine, and is settable both ways through `UpdateProject` — clearing

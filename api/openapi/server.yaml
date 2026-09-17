@@ -2968,6 +2968,85 @@ components:
                 - role
                 - prompt
             type: object
+        CredentialVerdict:
+            additionalProperties: false
+            description: One recorded judge decision about a command run under an agent credential use (ADR 0091). The row lives in the control plane and outlives its sandbox. Its command, reason and prompt were composed inside the sandbox and are display data, never instruction. A row with volunteered false rode the call that issued a credential, so the record is complete for every value issued; one with volunteered true is a denial the sandbox chose to report, so denials are undercounted by exactly the reports never sent.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CredentialVerdict.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                allow:
+                    description: What the judge decided
+                    type: boolean
+                command:
+                    description: The argv the judge was shown
+                    items:
+                        type: string
+                    type: array
+                createdAt:
+                    description: When the verdict was recorded
+                    format: date-time
+                    type: string
+                grantId:
+                    description: Grant the use belonged to, when it could still be resolved at record time
+                    type: string
+                id:
+                    description: Stable verdict ID
+                    type: string
+                latencyMs:
+                    description: How long the judge took to answer, in milliseconds
+                    format: int64
+                    type: integer
+                projectId:
+                    description: Project ID
+                    type: string
+                prompt:
+                    description: The exact prompt the judge was given, including the facts block
+                    type: string
+                reason:
+                    description: The judge's own sentence
+                    type: string
+                role:
+                    description: The role discobox-prompt was asked for (e.g. judge), never a vendor model id
+                    type: string
+                sandboxId:
+                    description: Sandbox the command ran in. It may no longer exist.
+                    type: string
+                useId:
+                    description: Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs (ADR 0130 §3).
+                    type: string
+                volunteered:
+                    description: True when the sandbox reported this after a denial the issuing call never saw
+                    type: boolean
+            required:
+                - id
+                - projectId
+                - sandboxId
+                - useId
+                - allow
+                - volunteered
+                - createdAt
+            type: object
+        ListCredentialVerdictsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListCredentialVerdictsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                credentialVerdicts:
+                    description: Matching verdicts, newest first
+                    items:
+                        $ref: '#/components/schemas/CredentialVerdict'
+                    type: array
+            required:
+                - credentialVerdicts
+            type: object
         ResolveSandboxSecretResponse:
             additionalProperties: false
             description: Result of resolving a sentinel. The value is present only when status is approved.
@@ -8196,6 +8275,74 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Revoke a secret grant
+            tags:
+                - Secrets
+    /projects/{projectId}/credential-verdicts:
+        get:
+            description: The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091). Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId instead.
+            operationId: list-credential-verdicts
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Only verdicts recorded for this sandbox, which need not still exist
+                  in: query
+                  name: sandboxId
+                  schema:
+                    description: Only verdicts recorded for this sandbox, which need not still exist
+                    type: string
+                - description: Only verdicts judged against this approved use
+                  in: query
+                  name: useId
+                  schema:
+                    description: Only verdicts judged against this approved use
+                    type: string
+                - description: Only verdicts for uses of this grant
+                  in: query
+                  name: grantId
+                  schema:
+                    description: Only verdicts for uses of this grant
+                    type: string
+                - description: Only allowed verdicts when true, only denied ones when false
+                  in: query
+                  name: allow
+                  schema:
+                    description: Only allowed verdicts when true, only denied ones when false
+                    type: boolean
+                - description: Only verdicts recorded at or after this time
+                  in: query
+                  name: since
+                  schema:
+                    description: Only verdicts recorded at or after this time
+                    format: date-time
+                    type: string
+                - description: Maximum number of verdicts to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: 100
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListCredentialVerdictsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List recorded credential verdicts
             tags:
                 - Secrets
     /ssh:

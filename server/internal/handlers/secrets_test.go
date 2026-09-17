@@ -135,6 +135,10 @@ func (fakeSecretService) RecordCredentialVerdict(context.Context, string, svcapi
 	return nil
 }
 
+func (fakeSecretService) ListCredentialVerdicts(context.Context, string, store.CredentialVerdictFilter) ([]model.CredentialVerdict, error) {
+	return nil, nil
+}
+
 func fakeSecret() model.Secret {
 	now := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
 	return model.Secret{
@@ -189,5 +193,96 @@ func assertResponseDoesNotContain(t *testing.T, res any, needle string) {
 	}
 	if strings.Contains(string(data), needle) {
 		t.Fatalf("response = %s, did not expect %q", data, needle)
+	}
+}
+
+// capturingVerdictService records the filter the handler built, so the test
+// asserts what reached the service rather than what the handler meant.
+type capturingVerdictService struct {
+	fakeSecretService
+	filter *store.CredentialVerdictFilter
+	rows   []model.CredentialVerdict
+}
+
+func (c capturingVerdictService) ListCredentialVerdicts(_ context.Context, _ string, filter store.CredentialVerdictFilter) ([]model.CredentialVerdict, error) {
+	*c.filter = filter
+	return c.rows, nil
+}
+
+// allow is tri-state: absent is every verdict, false is denials only. An
+// optional bool read with Or(false) would turn "denials only" into "everything"
+// and nobody reading a trail of refusals would notice.
+func TestListCredentialVerdictsKeepsAllowTriState(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		allow serverapi.OptBool
+		want  *bool
+	}{
+		{name: "absent", allow: serverapi.OptBool{}},
+		{name: "denied only", allow: serverapi.NewOptBool(false), want: new(bool)},
+		{name: "allowed only", allow: serverapi.NewOptBool(true), want: func() *bool { v := true; return &v }()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got store.CredentialVerdictFilter
+			h := New(svcapi.Services{Secrets: capturingVerdictService{filter: &got}})
+			if _, err := h.ListCredentialVerdicts(context.Background(), serverapi.ListCredentialVerdictsParams{ProjectId: "project-1", Allow: tc.allow}); err != nil {
+				t.Fatalf("ListCredentialVerdicts() error = %v", err)
+			}
+			switch {
+			case tc.want == nil && got.Allow != nil:
+				t.Fatalf("Allow = %v, want no filter", *got.Allow)
+			case tc.want != nil && (got.Allow == nil || *got.Allow != *tc.want):
+				t.Fatalf("Allow = %v, want %v", got.Allow, *tc.want)
+			}
+			if got.Limit != 100 {
+				t.Fatalf("Limit = %d, want the default 100", got.Limit)
+			}
+		})
+	}
+}
+
+// A query that matches nothing is an empty list, not an error. A nil slice from
+// the service would otherwise encode as null and fail the required array.
+func TestListCredentialVerdictsEmptyIsAnEmptyList(t *testing.T) {
+	var got store.CredentialVerdictFilter
+	h := New(svcapi.Services{Secrets: capturingVerdictService{filter: &got}})
+	res, err := h.ListCredentialVerdicts(context.Background(), serverapi.ListCredentialVerdictsParams{ProjectId: "project-1"})
+	if err != nil {
+		t.Fatalf("ListCredentialVerdicts() error = %v", err)
+	}
+	body, ok := res.(*serverapi.ListCredentialVerdictsBody)
+	if !ok || body.CredentialVerdicts == nil || len(body.CredentialVerdicts) != 0 {
+		t.Fatalf("response = %#v, want an empty list", res)
+	}
+}
+
+// Every field of a recorded verdict reaches the response. The body is built by
+// round-tripping the model through JSON into the generated type, which drops a
+// field whose name does not match the schema without saying so.
+func TestListCredentialVerdictsReturnsEveryField(t *testing.T) {
+	createdAt := time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)
+	var got store.CredentialVerdictFilter
+	h := New(svcapi.Services{Secrets: capturingVerdictService{filter: &got, rows: []model.CredentialVerdict{{
+		ID: "cv_1", ProjectID: "project-1", SandboxID: "sbx_gone", GrantID: "grant_1", UseID: "use_1",
+		Command: []string{"gh", "pr", "create"}, Allow: false, Reason: "not what was approved",
+		Role: "judge", Prompt: "the facts block", LatencyMS: 812, Volunteered: true, CreatedAt: createdAt,
+	}}}})
+	res, err := h.ListCredentialVerdicts(context.Background(), serverapi.ListCredentialVerdictsParams{ProjectId: "project-1"})
+	if err != nil {
+		t.Fatalf("ListCredentialVerdicts() error = %v", err)
+	}
+	body, ok := res.(*serverapi.ListCredentialVerdictsBody)
+	if !ok {
+		t.Fatalf("response = %T, want the list body", res)
+	}
+	if len(body.CredentialVerdicts) != 1 {
+		t.Fatalf("got %d verdicts, want 1", len(body.CredentialVerdicts))
+	}
+	v := body.CredentialVerdicts[0]
+	if v.ID != "cv_1" || v.ProjectId != "project-1" || v.SandboxId != "sbx_gone" || v.GrantId.Or("") != "grant_1" ||
+		v.UseId != "use_1" || strings.Join(v.Command, " ") != "gh pr create" || v.Allow ||
+		v.Reason.Or("") != "not what was approved" || v.Role.Or("") != "judge" || v.Prompt.Or("") != "the facts block" ||
+		v.LatencyMs.Or(0) != 812 || !v.Volunteered || !v.CreatedAt.Equal(createdAt) {
+		t.Fatalf("verdict lost a field on the way out: %+v", v)
 	}
 }

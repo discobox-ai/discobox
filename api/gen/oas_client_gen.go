@@ -365,6 +365,15 @@ type Invoker interface {
 	//
 	// GET /peer
 	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
+	// ListCredentialVerdicts invokes list-credential-verdicts operation.
+	//
+	// The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091).
+	// Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes,
+	// and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId
+	// instead.
+	//
+	// GET /projects/{projectId}/credential-verdicts
+	ListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (ListCredentialVerdictsRes, error)
 	// ListHarnessConfigSecretBindings invokes list-harness-config-secret-bindings operation.
 	//
 	// List harness config secret bindings.
@@ -6278,6 +6287,208 @@ func (c *Client) sendGetServerPeer(ctx context.Context) (res GetServerPeerRes, e
 
 	stage = "DecodeResponse"
 	result, err := decodeGetServerPeerResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListCredentialVerdicts invokes list-credential-verdicts operation.
+//
+// The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091).
+// Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes,
+// and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId
+// instead.
+//
+// GET /projects/{projectId}/credential-verdicts
+func (c *Client) ListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (ListCredentialVerdictsRes, error) {
+	res, err := c.sendListCredentialVerdicts(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (res ListCredentialVerdictsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-credential-verdicts"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/credential-verdicts"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListCredentialVerdictsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/credential-verdicts"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.SandboxId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "useId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "useId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.UseId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "grantId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "grantId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.GrantId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "allow" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "allow",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Allow.Get(); ok {
+				return e.EncodeValue(conv.BoolToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "since" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "since",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Since.Get(); ok {
+				return e.EncodeValue(conv.DateTimeToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "limit" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Limit.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListCredentialVerdictsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -130,6 +130,14 @@ The entry points:
   use ID. The pool agent records before it issues, and a store failure stops the
   issue, so no credential goes out without a verdict on record (ADR 0091). A
   refused use is reported too, best-effort, and flagged `Volunteered`.
+- **`ListCredentialVerdicts`** — the read side, for a project's members rather
+  than a pool: every recorded verdict in the project, newest first, narrowed by
+  sandbox, use, grant, allow/deny and a start time. It never looks the sandbox
+  up. A verdict outlives its sandbox's purge, and the sandboxes whose trail is
+  worth reading are often the ones already gone, so the sandbox is a filter on
+  the recorded ID and the route is `/projects/{projectId}/credential-verdicts`
+  rather than one under the sandbox (ADR 0130 §5). Verdicts are removed only
+  when their project is deleted.
 
 A protocol request is always recorded as type `token`. Both types carry their
 current value in `Value.Token`, the one field `ResolveSandboxSecret` emits, so

@@ -346,6 +346,15 @@ type Handler interface {
 	//
 	// GET /peer
 	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
+	// ListCredentialVerdicts implements list-credential-verdicts operation.
+	//
+	// The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091).
+	// Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes,
+	// and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId
+	// instead.
+	//
+	// GET /projects/{projectId}/credential-verdicts
+	ListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (ListCredentialVerdictsRes, error)
 	// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 	//
 	// List harness config secret bindings.

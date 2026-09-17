@@ -57,6 +57,7 @@ const (
 	GetSecretRequestOperation                 OperationName = "GetSecretRequest"
 	GetServerInfoOperation                    OperationName = "GetServerInfo"
 	GetServerPeerOperation                    OperationName = "GetServerPeer"
+	ListCredentialVerdictsOperation           OperationName = "ListCredentialVerdicts"
 	ListHarnessConfigSecretBindingsOperation  OperationName = "ListHarnessConfigSecretBindings"
 	ListHarnessConfigsOperation               OperationName = "ListHarnessConfigs"
 	ListHarnessHooksOperation                 OperationName = "ListHarnessHooks"

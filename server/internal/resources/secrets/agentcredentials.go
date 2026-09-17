@@ -194,6 +194,14 @@ func (s *Service) RecordCredentialVerdict(ctx context.Context, poolID string, in
 	return s.store.CreateCredentialVerdict(ctx, row)
 }
 
+// ListCredentialVerdicts returns the project's recorded verdicts matching
+// filter, newest first. It deliberately does not look the sandbox up: a
+// verdict is kept past its sandbox's purge (ADR 0091), so requiring the
+// sandbox to exist would hide exactly the trails most worth reading.
+func (s *Service) ListCredentialVerdicts(ctx context.Context, projectID string, filter store.CredentialVerdictFilter) ([]model.CredentialVerdict, error) {
+	return s.store.ListCredentialVerdicts(ctx, projectID, filter)
+}
+
 // findGrantForUse resolves which of a sandbox's live grants a use ID belongs
 // to. Best-effort: a grant revoked in the moment between judging and
 // recording is not found here, and the verdict is recorded without it rather

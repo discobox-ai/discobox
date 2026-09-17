@@ -1370,3 +1370,86 @@ func TestMigrateRetiresPrepullWithoutLosingPools(t *testing.T) {
 		t.Fatalf("dirty work = %v, want only pool", types)
 	}
 }
+
+// A verdict written before CredentialVerdict stamped created_at in UTC carries
+// the server's local offset, and SQLite compares times as text. The upgrade
+// rewrites it into UTC — the same instant — and a second run changes nothing.
+func TestMigrateNormalizesCredentialVerdictTimesToUTC(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	if err := db.Write.Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	// Written the way autoCreateTime used to write it: skipping the hook that
+	// now stamps UTC, in a zone nine hours east.
+	written := time.Date(2026, 9, 1, 19, 0, 0, 0, time.FixedZone("UTC+9", 9*60*60))
+	legacy := &model.CredentialVerdict{
+		ID: "cv_legacy", ProjectID: "project-1", SandboxID: "sbx_a", UseID: "use_1",
+		Role: "judge", Prompt: "p", CreatedAt: written,
+	}
+	if err := db.Write.Session(&gorm.Session{SkipHooks: true}).Create(legacy).Error; err != nil {
+		t.Fatalf("create legacy verdict: %v", err)
+	}
+	storedText := func() string {
+		var text string
+		if err := db.Write.Raw("SELECT CAST(created_at AS TEXT) FROM credential_verdicts WHERE id = ?", "cv_legacy").Scan(&text).Error; err != nil {
+			t.Fatalf("read created_at: %v", err)
+		}
+		return text
+	}
+	if text := storedText(); !strings.HasSuffix(text, "+09:00") {
+		t.Fatalf("fixture created_at = %q, want a +09:00 row to upgrade", text)
+	}
+
+	// A row already in UTC sits beside it: the upgrade must leave it untouched,
+	// and once both are UTC the selection it rewrites from must be empty.
+	current := &model.CredentialVerdict{
+		ID: "cv_current", ProjectID: "project-1", SandboxID: "sbx_a", UseID: "use_1", Role: "judge", Prompt: "p",
+		CreatedAt: time.Date(2026, 9, 2, 8, 0, 0, 0, time.UTC),
+	}
+	if err := db.Write.Create(current).Error; err != nil {
+		t.Fatalf("create current verdict: %v", err)
+	}
+
+	for run := 1; run <= 2; run++ {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatalf("upgrade migrate %d: %v", run, err)
+		}
+		var pending int64
+		if err := db.Write.Model(&model.CredentialVerdict{}).Where("created_at NOT LIKE ?", "%+00:00").Count(&pending).Error; err != nil {
+			t.Fatalf("count unnormalized rows: %v", err)
+		}
+		if pending != 0 {
+			t.Fatalf("run %d: %d rows still outside UTC, want none left to read", run, pending)
+		}
+		var kept model.CredentialVerdict
+		if err := db.Write.First(&kept, "id = ?", "cv_current").Error; err != nil || !kept.CreatedAt.Equal(current.CreatedAt) {
+			t.Fatalf("run %d: current verdict = %s, %v; want it unchanged", run, kept.CreatedAt, err)
+		}
+		if text := storedText(); !strings.HasSuffix(text, "+00:00") {
+			t.Fatalf("run %d: created_at = %q, want UTC", run, text)
+		}
+		var got model.CredentialVerdict
+		if err := db.Write.First(&got, "id = ?", "cv_legacy").Error; err != nil {
+			t.Fatalf("read verdict: %v", err)
+		}
+		if !got.CreatedAt.Equal(written) {
+			t.Fatalf("run %d: created_at = %s, want the same instant as %s", run, got.CreatedAt, written)
+		}
+	}
+}

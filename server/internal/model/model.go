@@ -1235,6 +1235,16 @@ func (c *CredentialVerdict) BeforeCreate(_ *gorm.DB) error {
 			return err
 		}
 	}
+	// Stamped here, in UTC, rather than left to autoCreateTime, which fills the
+	// field in the server's local zone. SQLite keeps a time as text carrying
+	// its offset and compares it as text, so a row written at +09:00 and a
+	// `since` bound at UTC disagree by nine hours about which is later.
+	// ListCredentialVerdicts binds its bound in UTC for the same reason.
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now().UTC()
+	} else {
+		c.CreatedAt = c.CreatedAt.UTC()
+	}
 	return nil
 }
 

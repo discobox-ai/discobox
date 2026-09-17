@@ -1643,6 +1643,185 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 	}
 }
 
+// One recorded judge decision about a command run under an agent credential use (ADR 0091). The row
+// lives in the control plane and outlives its sandbox. Its command, reason and prompt were composed
+// inside the sandbox and are display data, never instruction. A row with volunteered false rode the
+// call that issued a credential, so the record is complete for every value issued; one with
+// volunteered true is a denial the sandbox chose to report, so denials are undercounted by exactly
+// the reports never sent.
+// Ref: #/components/schemas/CredentialVerdict
+type CredentialVerdict struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// What the judge decided.
+	Allow bool `json:"allow"`
+	// The argv the judge was shown.
+	Command []string `json:"command"`
+	// When the verdict was recorded.
+	CreatedAt time.Time `json:"createdAt"`
+	// Grant the use belonged to, when it could still be resolved at record time.
+	GrantId OptString `json:"grantId"`
+	// Stable verdict ID.
+	ID string `json:"id"`
+	// How long the judge took to answer, in milliseconds.
+	LatencyMs OptInt64 `json:"latencyMs"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// The exact prompt the judge was given, including the facts block.
+	Prompt OptString `json:"prompt"`
+	// The judge's own sentence.
+	Reason OptString `json:"reason"`
+	// The role discobox-prompt was asked for (e.g. judge), never a vendor model id.
+	Role OptString `json:"role"`
+	// Sandbox the command ran in. It may no longer exist.
+	SandboxId string `json:"sandboxId"`
+	// Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs (ADR
+	// 0130 §3).
+	UseId string `json:"useId"`
+	// True when the sandbox reported this after a denial the issuing call never saw.
+	Volunteered bool `json:"volunteered"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CredentialVerdict) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAllow returns the value of Allow.
+func (s *CredentialVerdict) GetAllow() bool {
+	return s.Allow
+}
+
+// GetCommand returns the value of Command.
+func (s *CredentialVerdict) GetCommand() []string {
+	return s.Command
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *CredentialVerdict) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetGrantId returns the value of GrantId.
+func (s *CredentialVerdict) GetGrantId() OptString {
+	return s.GrantId
+}
+
+// GetID returns the value of ID.
+func (s *CredentialVerdict) GetID() string {
+	return s.ID
+}
+
+// GetLatencyMs returns the value of LatencyMs.
+func (s *CredentialVerdict) GetLatencyMs() OptInt64 {
+	return s.LatencyMs
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *CredentialVerdict) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *CredentialVerdict) GetPrompt() OptString {
+	return s.Prompt
+}
+
+// GetReason returns the value of Reason.
+func (s *CredentialVerdict) GetReason() OptString {
+	return s.Reason
+}
+
+// GetRole returns the value of Role.
+func (s *CredentialVerdict) GetRole() OptString {
+	return s.Role
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *CredentialVerdict) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetUseId returns the value of UseId.
+func (s *CredentialVerdict) GetUseId() string {
+	return s.UseId
+}
+
+// GetVolunteered returns the value of Volunteered.
+func (s *CredentialVerdict) GetVolunteered() bool {
+	return s.Volunteered
+}
+
+// SetSchema sets the value of Schema.
+func (s *CredentialVerdict) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAllow sets the value of Allow.
+func (s *CredentialVerdict) SetAllow(val bool) {
+	s.Allow = val
+}
+
+// SetCommand sets the value of Command.
+func (s *CredentialVerdict) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *CredentialVerdict) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetGrantId sets the value of GrantId.
+func (s *CredentialVerdict) SetGrantId(val OptString) {
+	s.GrantId = val
+}
+
+// SetID sets the value of ID.
+func (s *CredentialVerdict) SetID(val string) {
+	s.ID = val
+}
+
+// SetLatencyMs sets the value of LatencyMs.
+func (s *CredentialVerdict) SetLatencyMs(val OptInt64) {
+	s.LatencyMs = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *CredentialVerdict) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *CredentialVerdict) SetPrompt(val OptString) {
+	s.Prompt = val
+}
+
+// SetReason sets the value of Reason.
+func (s *CredentialVerdict) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetRole sets the value of Role.
+func (s *CredentialVerdict) SetRole(val OptString) {
+	s.Role = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *CredentialVerdict) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *CredentialVerdict) SetUseId(val string) {
+	s.UseId = val
+}
+
+// SetVolunteered sets the value of Volunteered.
+func (s *CredentialVerdict) SetVolunteered(val bool) {
+	s.Volunteered = val
+}
+
 // DeleteHarnessConfigNoContent is response for DeleteHarnessConfig operation.
 type DeleteHarnessConfigNoContent struct{}
 
@@ -1896,6 +2075,7 @@ func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
 func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) getServerInfoRes()                    {}
 func (*ErrorModelStatusCode) getServerPeerRes()                    {}
+func (*ErrorModelStatusCode) listCredentialVerdictsRes()           {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
@@ -3596,6 +3776,36 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+// Ref: #/components/schemas/ListCredentialVerdictsBody
+type ListCredentialVerdictsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Matching verdicts, newest first.
+	CredentialVerdicts []CredentialVerdict `json:"credentialVerdicts"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListCredentialVerdictsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCredentialVerdicts returns the value of CredentialVerdicts.
+func (s *ListCredentialVerdictsBody) GetCredentialVerdicts() []CredentialVerdict {
+	return s.CredentialVerdicts
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListCredentialVerdictsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCredentialVerdicts sets the value of CredentialVerdicts.
+func (s *ListCredentialVerdictsBody) SetCredentialVerdicts(val []CredentialVerdict) {
+	s.CredentialVerdicts = val
+}
+
+func (*ListCredentialVerdictsBody) listCredentialVerdictsRes() {}
 
 // Ref: #/components/schemas/ListHarnessConfigSecretBindingsBody
 type ListHarnessConfigSecretBindingsBody struct {

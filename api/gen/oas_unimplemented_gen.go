@@ -504,6 +504,18 @@ func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerR
 	return r, ht.ErrNotImplemented
 }
 
+// ListCredentialVerdicts implements list-credential-verdicts operation.
+//
+// The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091).
+// Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes,
+// and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId
+// instead.
+//
+// GET /projects/{projectId}/credential-verdicts
+func (UnimplementedHandler) ListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (r ListCredentialVerdictsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 //
 // List harness config secret bindings.
