@@ -13,12 +13,12 @@ import (
 )
 
 func registerSandboxGitRoutes(router chi.Router, service *sandboxService) {
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/*", service.autoStart(service.sandboxGitHTTPHandler(service.sandboxWorktreeLocation)))
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/*", service.autoStart(failFast, service.sandboxGitHTTPHandler(service.sandboxWorktreeLocation)))
 	// A push-delivered source's origin repository is a different repository from
 	// the worktree above, addressed by its own route rather than a synthesized
 	// repository id: source slugs are client-supplied, so any suffix convention
 	// could collide with a real one (ADR 0058 §3).
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-origins/*", service.autoStart(service.sandboxGitHTTPHandler(service.sandboxOriginLocation)))
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-origins/*", service.autoStart(failFast, service.sandboxGitHTTPHandler(service.sandboxOriginLocation)))
 }
 
 // gitLocator resolves the repository one of the two git routes serves.

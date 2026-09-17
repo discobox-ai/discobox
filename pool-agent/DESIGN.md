@@ -282,6 +282,16 @@ shorter than the control plane's, so the tier that can see the container is the
 one that reports it missing. An id whose tree is not here is not late, it is
 wrong, and is answered immediately.
 
+**Only the route the control plane waits on waits here** (`autoStart`'s
+`awaitContainer`/`failFast`): exec attach, which is the one route
+`AwaitSandboxHTTPClient` serves. The sandbox-agent API (exec listing and create,
+services, tools, hooks), the tcp/udp tunnels and the git and port proxies are all
+failed fast upstream, and this tier cannot tell a rebuild in progress from a
+container that is simply gone: a `failed` sandbox left without one held each of
+those calls for the whole wait and then said "sandbox not found". Either way the
+sandbox with a tree and no container is `ErrNoContainer`, a 409 that says it is
+being rebuilt or needs repair.
+
 Archived sandboxes are exempt from that latch and fail those routes with 409.
 `archive` and `delete` take the same per-sandbox mutex, and both answer only once
 the work is done rather than accepting it: each is a destructive act on state

@@ -16,33 +16,33 @@ import (
 const sandboxAgentAuthorizationHeader = "X-Discobox-Sandbox-Agent-Authorization"
 
 func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}", service.autoStart(service.sandboxHTTPProxyHandler()))
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/*", service.autoStart(service.sandboxHTTPProxyHandler()))
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}", service.autoStart(failFast, service.sandboxHTTPProxyHandler()))
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/*", service.autoStart(failFast, service.sandboxHTTPProxyHandler()))
 
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodDelete, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/logs", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/start", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/events", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodDelete, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/logs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(awaitContainer, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(awaitContainer, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/start", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/events", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 
 	// A service is an exec (ADR 0070), reached the same way and gated by the
 	// same scopes. It needs its own registrations because this router names
 	// every sandbox-agent path it forwards rather than forwarding a prefix.
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/tools", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/logs", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/start", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/stop", service.autoStart(service.sandboxAgentProxyHandler()))
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/restart", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/tools", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/logs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/start", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/stop", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/restart", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 
 	// direct-tcpip tunnel (ADR 0024 §3). Reuses sandboxAgentProxyHandler and
 	// autoStart unchanged: the handler already generically forwards any
@@ -51,10 +51,10 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	// tcp:connect — this registration is the entire auto-start inheritance
 	// the ADR asks for, achieved by literally reusing autoStart rather than
 	// reimplementing it.
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/tcp/attach", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/tcp/attach", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	// Its datagram twin (ADR 0109 §4), registered the same way for the same
 	// reasons, and gated by udp:connect below.
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/udp/attach", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/udp/attach", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 }
 
 func (s *sandboxService) sandboxHTTPProxyHandler() http.Handler {

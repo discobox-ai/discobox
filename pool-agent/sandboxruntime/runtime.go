@@ -106,6 +106,11 @@ const (
 
 var (
 	ErrNotFound = errors.New("sandbox not found")
+	// ErrNoContainer is a sandbox this pool holds the tree of and has no
+	// container for: one being rebuilt, or one whose container was lost and
+	// that nothing is rebuilding. Separate from ErrNotFound because the sandbox
+	// is not missing, and the answer the caller can act on is repair.
+	ErrNoContainer = errors.New("sandbox has no container on this pool: it is being rebuilt, or it needs repair")
 	// ErrRepositoryNotFound is the sandbox being there and the repository asked
 	// of it not being. Separate from ErrNotFound because the two send a client
 	// somewhere completely different: one means the sandbox is gone, the other
@@ -218,8 +223,10 @@ type Runtime interface {
 	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
 	RestartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
 	// EnsureSandboxRunning starts a stopped sandbox on demand, for the
-	// sandbox-directed routes (ADR 0017 §12).
-	EnsureSandboxRunning(ctx context.Context, sandboxID string) error
+	// sandbox-directed routes (ADR 0017 §12). awaitContainer says whether a
+	// sandbox this pool holds without a container is waited on as a rebuild
+	// in progress (ADR 0039 tier 2) or answered at once with ErrNoContainer.
+	EnsureSandboxRunning(ctx context.Context, sandboxID string, awaitContainer bool) error
 	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error)
 	// GitOriginPath serves the bare origin repository of a push-delivered
 	// source, which the client pushes into (ADR 0058 §3).
@@ -2452,7 +2459,7 @@ func (r *MemorySandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 	return r.StartSandbox(ctx, sandboxID, req)
 }
 
-func (r *MemorySandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandboxID string) error {
+func (r *MemorySandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandboxID string, _ bool) error {
 	return r.StartSandbox(ctx, sandboxID, nil)
 }
 

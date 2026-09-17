@@ -75,18 +75,22 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 // Nothing about it is a special path: it takes the same lock and calls the same
 // start as an explicit instruction, so an implicitly started sandbox reports
 // starting and then running exactly like any other.
-func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandboxID string) error {
-	// A sandbox whose container is not there yet is waited for, not failed
-	// (ADR 0039 tier 2). This tier is the only one that can see the container,
-	// and a rebuild — repair, or a recreate after runtime loss — leaves a
-	// window where this pool holds the sandbox's tree and its container is
-	// between removal and recreation. Falling through it produced "no
-	// inspectable IP address" from the proxy, about a fact the caller could
-	// not act on.
+func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandboxID string, awaitContainer bool) error {
+	// A sandbox whose container is not there yet is waited for, not failed,
+	// when the caller is one that waits (ADR 0039 tier 2). This tier is the
+	// only one that can see the container, and a rebuild — repair, or a
+	// recreate after runtime loss — leaves a window where this pool holds the
+	// sandbox's tree and its container is between removal and recreation.
+	//
+	// It cannot see whether a rebuild is actually coming, so the wait is only
+	// for the routes the control plane itself waits on. Everything else is
+	// asked on a cadence or by a command that wants an answer, and a failed
+	// sandbox whose container is simply gone held each of those for the whole
+	// wait before saying so.
 	//
 	// The wait is outside the lock: the create it is waiting for takes the same
 	// lock, so holding it here would wait for something it was blocking.
-	current, err := r.waitForSandboxContainer(ctx, sandboxID)
+	current, err := r.sandboxContainer(ctx, sandboxID, awaitContainer)
 	if err != nil {
 		return err
 	}
@@ -130,8 +134,9 @@ const (
 	sandboxContainerPollInterval = 250 * time.Millisecond
 )
 
-// waitForSandboxContainer returns as soon as the sandbox has a container, and
-// waits for one only when this pool is holding the sandbox's tree.
+// sandboxContainer returns as soon as the sandbox has a container, and — when
+// asked to await one — waits for one only when this pool is holding the
+// sandbox's tree.
 //
 // An id whose tree is not here is not late, it is wrong: waiting on it would
 // turn a prompt error into a minute and a half of silence on every route
@@ -141,8 +146,11 @@ const (
 //
 // It returns the sandbox as last read, or nil when it stopped waiting without
 // one.
-func (r *DockerSandboxRuntime) waitForSandboxContainer(ctx context.Context, sandboxID string) (*Sandbox, error) {
-	deadline := time.Now().Add(sandboxContainerWaitTimeout)
+func (r *DockerSandboxRuntime) sandboxContainer(ctx context.Context, sandboxID string, await bool) (*Sandbox, error) {
+	deadline := time.Now()
+	if await {
+		deadline = deadline.Add(sandboxContainerWaitTimeout)
+	}
 	for {
 		sb, err := r.GetSandbox(ctx, sandboxID)
 		if err == nil {
@@ -155,9 +163,9 @@ func (r *DockerSandboxRuntime) waitForSandboxContainer(ctx context.Context, sand
 			return nil, nil
 		}
 		if !time.Now().Before(deadline) {
-			// The caller reports the container that never came back; there is
-			// nothing more specific this tier can say about it.
-			return nil, err
+			// The tree is here and the container is not: the sandbox exists,
+			// and repair is what gives it one.
+			return nil, ErrNoContainer
 		}
 		select {
 		case <-ctx.Done():

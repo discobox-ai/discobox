@@ -29,17 +29,25 @@ import (
 // intent, so starting one on first use would undo the archive and put the
 // sandbox back beyond the reach of its retention policy, in response to nothing
 // more than an exec.
-func (s *sandboxService) autoStart(next http.Handler) http.Handler {
+//
+// wait is the route's side of ADR 0039: whether a sandbox with no container is
+// waited on as a rebuild in progress. It is the control plane's split, mirrored
+// exactly — exec attach is the one route the control plane waits on
+// (AwaitSandboxHTTPClient), so it is the one that waits here. Every other route
+// — the sandbox-agent API, the tcp/udp tunnels, the git and port proxies — is
+// failed fast upstream, and waiting here would only turn that prompt refusal
+// into a long silence for a sandbox nothing is rebuilding.
+func (s *sandboxService) autoStart(wait containerWait, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sandboxID := chi.URLParam(r, "sandboxId")
 		if sandboxID != "" {
-			if err := s.runtime.EnsureSandboxRunning(r.Context(), sandboxID); err != nil {
-				// Archived is the one failure worth reporting here. The sandbox
-				// has no container by intent, so falling through would produce
-				// an unrelated error from the proxy ("no inspectable IP
-				// address") about a fact the caller cannot act on — where
-				// "unarchive it" is something they can (ADR 0022 §5).
-				if errors.Is(err, sandboxruntime.ErrArchived) {
+			if err := s.runtime.EnsureSandboxRunning(r.Context(), sandboxID, wait == awaitContainer); err != nil {
+				// Archived and containerless are the failures worth reporting
+				// here. Falling through would produce an unrelated error from
+				// the proxy ("no inspectable IP address", "sandbox not found")
+				// about a fact the caller cannot act on — where "unarchive it"
+				// (ADR 0022 §5) and "repair it" are things they can.
+				if errors.Is(err, sandboxruntime.ErrArchived) || errors.Is(err, sandboxruntime.ErrNoContainer) {
 					http.Error(w, err.Error(), http.StatusConflict)
 					return
 				}
@@ -54,3 +62,12 @@ func (s *sandboxService) autoStart(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// containerWait is whether a route waits for a sandbox's container to be
+// rebuilt. See autoStart.
+type containerWait bool
+
+const (
+	awaitContainer containerWait = true
+	failFast       containerWait = false
+)
