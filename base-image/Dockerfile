@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 # The base every Discobox systemd container image is built FROM: the pool agent
 # (pool-agent/Dockerfile), the sandbox agent (sandbox-agent/Dockerfile), and
@@ -18,7 +18,7 @@
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://security.debian.org/debian-security
 
-FROM debian:13-slim
+FROM public.ecr.aws/docker/library/debian:13-slim
 
 ARG DEBIAN_MIRROR
 ARG DEBIAN_SECURITY_MIRROR

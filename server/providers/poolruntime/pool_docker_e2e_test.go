@@ -41,7 +41,7 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	sandboxID := "sandbox-e2e-" + uuid.NewString()
 	image := os.Getenv("DISCOBOX_SANDBOX_DOCKER_TEST_IMAGE")
 	if image == "" {
-		image = "alpine:3.20"
+		image = "public.ecr.aws/docker/library/alpine:3.20"
 	}
 
 	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, projectID, poolID, server.ScopeSandboxRead, server.ScopeSandboxWrite)

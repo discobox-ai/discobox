@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 # The libkrun guest kernel, released on its own line as `discobox-vm-kernel`.
 #
@@ -18,7 +18,7 @@
 # krun_set_kernel, plus the config it was built with, so what booted can be read
 # back off the artifact.
 
-FROM debian:13-slim AS build
+FROM public.ecr.aws/docker/library/debian:13-slim AS build
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

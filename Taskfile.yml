@@ -1767,7 +1767,7 @@ tasks:
           echo "pool-agent, slow for sandbox-agent's apt, Nix, and language runtime installs." >&2
           # buildx needs both of these for a foreign architecture and says
           # nothing useful when they are missing.
-          docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 >/dev/null
+          docker run --privileged --rm mirror.gcr.io/tonistiigi/binfmt --install arm64,amd64 >/dev/null
           go tool task buildx:builder
           docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} \
             -f {{.DOCKERFILE}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
@@ -1962,7 +1962,7 @@ tasks:
             --metadata-file "$metadata" .
         else
           echo "depot not found; falling back to emulated docker buildx." >&2
-          docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 >/dev/null
+          docker run --privileged --rm mirror.gcr.io/tonistiigi/binfmt --install arm64,amd64 >/dev/null
           docker buildx build --builder {{.BUILDX_BUILDER}} \
             --platform {{.PUSH_PLATFORMS}} \
             -f {{.PUSH_DOCKERFILE}} -t "$ref" --push \

@@ -31,7 +31,7 @@ func TestDockerIntegrationPoolConsole(t *testing.T) {
 
 	image := os.Getenv("DISCOBOX_CONSOLE_TEST_IMAGE")
 	if image == "" {
-		image = "debian:13-slim"
+		image = "public.ecr.aws/docker/library/debian:13-slim"
 	}
 	driver, err := NewLocalDriver(ctx, "", defaultAgentPort)
 	if err != nil {

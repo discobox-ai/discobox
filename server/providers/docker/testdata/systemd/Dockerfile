@@ -1,4 +1,4 @@
-FROM debian:13-slim
+FROM public.ecr.aws/docker/library/debian:13-slim
 
 ENV container=docker
 

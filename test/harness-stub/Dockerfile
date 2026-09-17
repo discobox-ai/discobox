@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 ARG SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local
 FROM ${SANDBOX_AGENT_IMAGE}

@@ -168,19 +168,19 @@ func TestLibkrunEndToEnd(t *testing.T) {
 
 	dockerSocket := filepath.Join(driver.poolRuntimeDir(poolID), dockerSocketName)
 	loadImageIntoGuest(ctx, t, dockerCLI, dockerSocket, poolImage)
-	loadImageIntoGuest(ctx, t, dockerCLI, dockerSocket, "busybox:1.37.0")
-	guestDocker(ctx, t, dockerCLI, dockerSocket, "image", "rm", "busybox:1.37.0")
-	guestDocker(ctx, t, dockerCLI, dockerSocket, "pull", "busybox:1.37.0")
+	loadImageIntoGuest(ctx, t, dockerCLI, dockerSocket, "public.ecr.aws/docker/library/busybox:1.37.0")
+	guestDocker(ctx, t, dockerCLI, dockerSocket, "image", "rm", "public.ecr.aws/docker/library/busybox:1.37.0")
+	guestDocker(ctx, t, dockerCLI, dockerSocket, "pull", "public.ecr.aws/docker/library/busybox:1.37.0")
 	guestDocker(ctx, t, dockerCLI, dockerSocket,
-		"run", "--rm", "busybox:1.37.0", "sh", "-ec",
-		`nslookup registry-1.docker.io >/dev/null && nc -z -w 10 registry-1.docker.io 443`)
+		"run", "--rm", "public.ecr.aws/docker/library/busybox:1.37.0", "sh", "-ec",
+		`nslookup public.ecr.aws >/dev/null && nc -z -w 10 public.ecr.aws 443`)
 	guestDocker(ctx, t, dockerCLI, dockerSocket,
 		"run", "--rm", "--network", "none",
 		"--mount", "type=bind,src=/,dst=/host",
 		"--mount", "type=bind,src=/var/lib/discobox,dst=/data",
 		"--mount", "type=bind,src=/var/lib/discobox/cache,dst=/cache",
 		"--mount", "type=bind,src=/var/lib/docker,dst=/docker",
-		"busybox:1.37.0", "sh", "-ec", strings.Join([]string{
+		"public.ecr.aws/docker/library/busybox:1.37.0", "sh", "-ec", strings.Join([]string{
 			`root_device=$(stat -c %d /host)`,
 			`data_device=$(stat -c %d /data)`,
 			`cache_device=$(stat -c %d /cache)`,
@@ -242,7 +242,7 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		"run", "--rm", "--network", "none",
 		"--mount", "type=bind,src=/var/lib/discobox,dst=/data",
 		"--mount", "type=bind,src=/var/lib/discobox/cache,dst=/cache",
-		"busybox:1.37.0", "sh", "-ec",
+		"public.ecr.aws/docker/library/busybox:1.37.0", "sh", "-ec",
 		`test "$(cat /data/libkrun-e2e-data)" = data-persisted && test "$(cat /cache/libkrun-e2e-cache)" = cache-persisted`)
 
 	if err := engine.EnsurePool(ctx, nil, provider, pool, mint, nil, func(context.Context) error { return nil }); err != nil {

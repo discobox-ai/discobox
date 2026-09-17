@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 # Declared before the first FROM so it is a global build argument the runtime
 # stage's FROM can expand; declared alongside that FROM it would belong to the
@@ -7,7 +7,7 @@ ARG BASE_IMAGE=discobox-base:local
 
 # Build natively on the host platform and cross-compile, so multi-arch image
 # builds only emulate the (apt-based) runtime stage, not the Go compiler.
-FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS sandbox-agent-builder
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS sandbox-agent-builder
 ARG TARGETOS TARGETARCH
 
 WORKDIR /src

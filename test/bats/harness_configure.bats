@@ -154,7 +154,7 @@ with open(target, "w") as fh:
     json.dump(image, fh)
 KEEPIMAGE
   docker build -t discobox-harness-stub-keep:local -f - "$ctx" <<'DOCKERFILE'
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 FROM discobox-harness-stub:local
 COPY image.json /usr/share/discobox/image.json
 DOCKERFILE

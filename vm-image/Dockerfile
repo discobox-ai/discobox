@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 # The Discobox pool VM guest image.
 #
@@ -22,7 +22,7 @@
 # release line (kernel/Dockerfile), and it ignores the one this build lifts out
 # of the distribution package.
 
-FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS guest-tools
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS guest-tools
 ARG TARGETOS=linux
 ARG TARGETARCH
 
@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/discobox-vsock-guest ./cmd/discobox-vsock-guest
 
-FROM debian:13-slim AS rootfs
+FROM public.ecr.aws/docker/library/debian:13-slim AS rootfs
 ARG TARGETARCH
 
 ENV container=discobox-vm
@@ -190,7 +190,7 @@ RUN mkdir -p \
         systemd-networkd-wait-online.service \
         systemd-resolved.service
 
-FROM debian:13-slim AS assemble
+FROM public.ecr.aws/docker/library/debian:13-slim AS assemble
 ARG TARGETARCH
 ARG ROOT_SLACK_MIB=32
 

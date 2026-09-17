@@ -181,7 +181,7 @@ func TestDevelopmentImageSynchronizerIntegration(t *testing.T) {
 	}
 	reference := strings.TrimSpace(os.Getenv("DISCOBOX_DOCKER_IMAGE_SYNC_TEST_IMAGE"))
 	if reference == "" {
-		reference = "busybox:1.37.0"
+		reference = "public.ecr.aws/docker/library/busybox:1.37.0"
 	}
 	source, err := client.New(client.FromEnv)
 	if err != nil {

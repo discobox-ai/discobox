@@ -160,7 +160,7 @@ func buildDockerPoolFlowImage(ctx context.Context, t *testing.T, dockerClient *c
 	// always define a HEALTHCHECK; mirror that so this test reflects
 	// realistic container readiness timing instead of always paying the
 	// worst-case wait.
-	dockerfile := []byte("FROM debian:13-slim\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends ca-certificates \\\n    && apt-get clean \\\n    && rm -rf /var/lib/apt/lists/*\nHEALTHCHECK --interval=1s --timeout=1s --start-period=1s --retries=1 CMD [\"true\"]\nCMD [\"sleep\", \"300\"]\n")
+	dockerfile := []byte("FROM public.ecr.aws/docker/library/debian:13-slim\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends ca-certificates \\\n    && apt-get clean \\\n    && rm -rf /var/lib/apt/lists/*\nHEALTHCHECK --interval=1s --timeout=1s --start-period=1s --retries=1 CMD [\"true\"]\nCMD [\"sleep\", \"300\"]\n")
 	var buf bytes.Buffer
 	writer := tar.NewWriter(&buf)
 	if err := writer.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: int64(len(dockerfile))}); err != nil {

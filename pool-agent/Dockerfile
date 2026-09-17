@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 # Declared before the first FROM so it is a global build argument the runtime
 # stage's FROM can expand; declared alongside that FROM it would belong to the
@@ -7,7 +7,7 @@ ARG BASE_IMAGE=discobox-base:local
 
 # Build natively on the host platform and cross-compile, so multi-arch image
 # builds only emulate the (apt-based) runtime stage, not the Go compiler.
-FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS build
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS build
 ARG TARGETOS TARGETARCH
 
 WORKDIR /src
@@ -50,14 +50,14 @@ COPY pool-agent/image/systemd/discobox-proxy.service /etc/systemd/system/discobo
 # BuildKit's CNI plugins are the `buildkit-cni-*` binaries in /usr/bin, not a
 # /opt/cni/bin tree: `--oci-worker-net=bridge` generates its own CNI config
 # against them, which is why no cni.json is needed here.
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkitd /usr/local/bin/buildkitd
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildctl /usr/local/bin/buildctl
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-runc /usr/bin/buildkit-runc
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-bridge /usr/bin/buildkit-cni-bridge
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-firewall /usr/bin/buildkit-cni-firewall
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-host-local /usr/bin/buildkit-cni-host-local
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-loopback /usr/bin/buildkit-cni-loopback
-COPY --from=registry:2.8.3 /bin/registry /usr/local/bin/registry
+COPY --from=mirror.gcr.io/moby/buildkit:v0.32.2 /usr/bin/buildkitd /usr/local/bin/buildkitd
+COPY --from=mirror.gcr.io/moby/buildkit:v0.32.2 /usr/bin/buildctl /usr/local/bin/buildctl
+COPY --from=mirror.gcr.io/moby/buildkit:v0.32.2 /usr/bin/buildkit-runc /usr/bin/buildkit-runc
+COPY --from=mirror.gcr.io/moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-bridge /usr/bin/buildkit-cni-bridge
+COPY --from=mirror.gcr.io/moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-firewall /usr/bin/buildkit-cni-firewall
+COPY --from=mirror.gcr.io/moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-host-local /usr/bin/buildkit-cni-host-local
+COPY --from=mirror.gcr.io/moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-loopback /usr/bin/buildkit-cni-loopback
+COPY --from=public.ecr.aws/docker/library/registry:2.8.3 /bin/registry /usr/local/bin/registry
 
 COPY pool-agent/image/systemd/discobox-buildkitd.service /etc/systemd/system/discobox-buildkitd.service
 COPY pool-agent/image/systemd/discobox-registry.service /etc/systemd/system/discobox-registry.service
