@@ -8,9 +8,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -567,4 +570,87 @@ func tarNames(t *testing.T, archive []byte) []string {
 		names = append(names, header.Name)
 	}
 	return names
+}
+
+// The meta file travels in the tree, and the control plane's copy of it
+// travels in the spec, so an imported discobox lists and filters by its
+// description and tags before it has reported them from its new home. The copy
+// arrives unobserved: the source's observation time is another host's clock,
+// and the discobox's first report here must replace it whatever that clock
+// says (ADR 0136).
+func TestExportAndImportCarryTheMetaCopy(t *testing.T) {
+	ctx, svc, st, provider := transferFixture(t)
+	config := configuredHarness(t, st, "codex", "Codex")
+	if err := st.CreateSandbox(ctx, &model.Sandbox{
+		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Image: config.Image, HarnessMode: "run"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reported := sandboxmeta.Meta{Description: "fix the reaper", Tags: map[string]string{"wip": "", "ticket": "ENG-12"}}
+	if err := st.UpdateSandboxMeta(ctx, "project-1", "sb-1", reported, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	provider.exportTree = emptyTar(t)
+
+	stream, err := svc.ExportSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	archive, err := io.ReadAll(stream)
+	_ = stream.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, tree, err := sandboxexport.Read(bytes.NewReader(archive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = tree.Close()
+	if manifest.Sandbox.Description == nil || *manifest.Sandbox.Description != reported.Description {
+		t.Fatalf("exported description = %v, want %q", manifest.Sandbox.Description, reported.Description)
+	}
+	if !reflect.DeepEqual(manifest.Sandbox.Tags, reported.Tags) {
+		t.Fatalf("exported tags = %v, want %v", manifest.Sandbox.Tags, reported.Tags)
+	}
+
+	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{Name: "moved"})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	got, err := st.GetSandbox(ctx, "project-1", result.Sandbox.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description == nil || *got.Description != reported.Description || !reflect.DeepEqual(got.Tags, reported.Tags) {
+		t.Fatalf("imported meta = %v %v, want %v", got.Description, got.Tags, reported)
+	}
+	if got.MetaObservedAt != nil {
+		t.Fatalf("imported metaObservedAt = %v, want unobserved", got.MetaObservedAt)
+	}
+	// Its first report here lands, even stamped an hour before the source's.
+	if err := st.UpdateSandboxMeta(ctx, "project-1", got.ID, sandboxmeta.Meta{Tags: map[string]string{"moved": ""}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.GetSandbox(ctx, "project-1", got.ID); !reflect.DeepEqual(got.Tags, map[string]string{"moved": ""}) {
+		t.Fatalf("tags after the first report = %v, want the report's", got.Tags)
+	}
+}
+
+// An archive is not trusted to hold a valid tag set; one that does not is
+// dropped rather than failing the import, and the discobox's first report
+// fills the copy in.
+func TestImportDropsInvalidTags(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	archive := exportArchive(t, func(m *sandboxexport.Manifest) {
+		m.Sandbox.Tags = map[string]string{"bad key": ""}
+	}, nil)
+	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if len(result.Sandbox.Tags) != 0 {
+		t.Fatalf("imported tags = %v, want none", result.Sandbox.Tags)
+	}
 }

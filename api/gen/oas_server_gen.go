@@ -746,6 +746,25 @@ type Handler interface {
 	//
 	// PATCH /projects/{projectId}/sandboxes/{sandboxId}
 	UpdateSandbox(ctx context.Context, req *UpdateSandboxBody, params UpdateSandboxParams) (UpdateSandboxRes, error)
+	// UpdateSandboxAgentMeta implements update-sandbox-agent-meta operation.
+	//
+	// Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
+	// and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
+	// the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
+	// refused rather than overwritten (ADR 0136).
+	//
+	// PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
+	UpdateSandboxAgentMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (UpdateSandboxAgentMetaRes, error)
+	// UpdateSandboxMeta implements update-sandbox-meta operation.
+	//
+	// Change a sandbox's description or tags. The change is carried into the sandbox and applied to its
+	// meta file, ~/.discobox/meta.json, which is their system of record; the server records what the
+	// sandbox then holds and returns the sandbox with it (ADR 0136). A stopped sandbox is started to
+	// take the change, and a sandbox that cannot be reached is an error rather than a change recorded
+	// only here.
+	//
+	// PATCH /projects/{projectId}/sandboxes/{sandboxId}/meta
+	UpdateSandboxMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxMetaParams) (UpdateSandboxMetaRes, error)
 	// UpdateSandboxProviderInstance implements update-sandbox-provider-instance operation.
 	//
 	// Update a sandbox provider instance.

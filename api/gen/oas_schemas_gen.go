@@ -2121,6 +2121,7 @@ func (*ErrorModelStatusCode) updateHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) updatePoolRes()                       {}
 func (*ErrorModelStatusCode) updatePoolStatusRes()                 {}
 func (*ErrorModelStatusCode) updateProjectRes()                    {}
+func (*ErrorModelStatusCode) updateSandboxMetaRes()                {}
 func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) updateSandboxRes()                    {}
 func (*ErrorModelStatusCode) updateSecretRes()                     {}
@@ -2190,6 +2191,7 @@ func (*ErrorResponseStatusCode) startSandboxExecRes()               {}
 func (*ErrorResponseStatusCode) startSandboxServiceRes()            {}
 func (*ErrorResponseStatusCode) stopSandboxServiceRes()             {}
 func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()     {}
+func (*ErrorResponseStatusCode) updateSandboxAgentMetaRes()         {}
 
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
@@ -8530,6 +8532,52 @@ func (o OptSandboxMemoryConsumption) Or(d SandboxMemoryConsumption) SandboxMemor
 	return d
 }
 
+// NewOptSandboxMeta returns new OptSandboxMeta with value set to v.
+func NewOptSandboxMeta(v SandboxMeta) OptSandboxMeta {
+	return OptSandboxMeta{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxMeta is optional SandboxMeta.
+type OptSandboxMeta struct {
+	Value SandboxMeta
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxMeta was set.
+func (o OptSandboxMeta) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxMeta) Reset() {
+	var v SandboxMeta
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxMeta) SetTo(v SandboxMeta) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxMeta) Get() (v SandboxMeta, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxMeta) Or(d SandboxMeta) SandboxMeta {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxProviderInstance returns new OptSandboxProviderInstance with value set to v.
 func NewOptSandboxProviderInstance(v SandboxProviderInstance) OptSandboxProviderInstance {
 	return OptSandboxProviderInstance{
@@ -9352,6 +9400,52 @@ func (o OptUpdateProjectBodySandboxUpgradePolicy) Get() (v UpdateProjectBodySand
 
 // Or returns value if set, or given parameter if does not.
 func (o OptUpdateProjectBodySandboxUpgradePolicy) Or(d UpdateProjectBodySandboxUpgradePolicy) UpdateProjectBodySandboxUpgradePolicy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptUpdateSandboxMetaBodySetTags returns new OptUpdateSandboxMetaBodySetTags with value set to v.
+func NewOptUpdateSandboxMetaBodySetTags(v UpdateSandboxMetaBodySetTags) OptUpdateSandboxMetaBodySetTags {
+	return OptUpdateSandboxMetaBodySetTags{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptUpdateSandboxMetaBodySetTags is optional UpdateSandboxMetaBodySetTags.
+type OptUpdateSandboxMetaBodySetTags struct {
+	Value UpdateSandboxMetaBodySetTags
+	Set   bool
+}
+
+// IsSet returns true if OptUpdateSandboxMetaBodySetTags was set.
+func (o OptUpdateSandboxMetaBodySetTags) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptUpdateSandboxMetaBodySetTags) Reset() {
+	var v UpdateSandboxMetaBodySetTags
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptUpdateSandboxMetaBodySetTags) SetTo(v UpdateSandboxMetaBodySetTags) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptUpdateSandboxMetaBodySetTags) Get() (v UpdateSandboxMetaBodySetTags, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptUpdateSandboxMetaBodySetTags) Or(d UpdateSandboxMetaBodySetTags) UpdateSandboxMetaBodySetTags {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -12760,6 +12854,16 @@ type Sandbox struct {
 	PoolId OptString `json:"poolId"`
 	// Observed sandbox runtime state.
 	Runtime SandboxRuntime `json:"runtime"`
+	// The sandbox's description and tags. The sandbox holds them, in
+	// ~/.discobox/meta.json, and this is the copy it last reported (ADR 0136): what a
+	// listing filters on, and what a stopped sandbox is read as. Change them with
+	// update-sandbox-meta, or by editing that file inside the sandbox. Until the
+	// sandbox has reported (metaObservedAt absent) it holds the description the
+	// sandbox was created with, or for an imported one the description and tags it
+	// was exported with.
+	Meta OptSandboxMeta `json:"meta"`
+	// When the sandbox read or wrote the meta above, on its own clock. Absent until it has reported.
+	MetaObservedAt OptDateTime `json:"metaObservedAt"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -12832,6 +12936,16 @@ func (s *Sandbox) GetPoolId() OptString {
 // GetRuntime returns the value of Runtime.
 func (s *Sandbox) GetRuntime() SandboxRuntime {
 	return s.Runtime
+}
+
+// GetMeta returns the value of Meta.
+func (s *Sandbox) GetMeta() OptSandboxMeta {
+	return s.Meta
+}
+
+// GetMetaObservedAt returns the value of MetaObservedAt.
+func (s *Sandbox) GetMetaObservedAt() OptDateTime {
+	return s.MetaObservedAt
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -12909,6 +13023,16 @@ func (s *Sandbox) SetRuntime(val SandboxRuntime) {
 	s.Runtime = val
 }
 
+// SetMeta sets the value of Meta.
+func (s *Sandbox) SetMeta(val OptSandboxMeta) {
+	s.Meta = val
+}
+
+// SetMetaObservedAt sets the value of MetaObservedAt.
+func (s *Sandbox) SetMetaObservedAt(val OptDateTime) {
+	s.MetaObservedAt = val
+}
+
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Sandbox) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
@@ -12924,6 +13048,7 @@ func (*Sandbox) repairSandboxRes()             {}
 func (*Sandbox) restartSandboxRes()            {}
 func (*Sandbox) startSandboxRes()              {}
 func (*Sandbox) stopSandboxRes()               {}
+func (*Sandbox) updateSandboxMetaRes()         {}
 func (*Sandbox) updateSandboxRes()             {}
 func (*Sandbox) upgradeSandboxRes()            {}
 
@@ -13508,6 +13633,38 @@ func (s *SandboxAgentMemoryUsage) SetResidentBytes(val int64) {
 	s.ResidentBytes = val
 }
 
+// A sandbox's meta as its meta file holds it after a write (ADR 0136).
+// Ref: #/components/schemas/SandboxAgentMeta
+type SandboxAgentMeta struct {
+	// Everything the file now holds.
+	Meta SandboxMeta `json:"meta"`
+	// When the sandbox wrote the file, on the sandbox's own clock - the same clock its status reports
+	// are stamped with, so the two can be ordered.
+	ObservedAt time.Time `json:"observedAt"`
+}
+
+// GetMeta returns the value of Meta.
+func (s *SandboxAgentMeta) GetMeta() SandboxMeta {
+	return s.Meta
+}
+
+// GetObservedAt returns the value of ObservedAt.
+func (s *SandboxAgentMeta) GetObservedAt() time.Time {
+	return s.ObservedAt
+}
+
+// SetMeta sets the value of Meta.
+func (s *SandboxAgentMeta) SetMeta(val SandboxMeta) {
+	s.Meta = val
+}
+
+// SetObservedAt sets the value of ObservedAt.
+func (s *SandboxAgentMeta) SetObservedAt(val time.Time) {
+	s.ObservedAt = val
+}
+
+func (*SandboxAgentMeta) updateSandboxAgentMetaRes() {}
+
 // One candidate process, with cumulative counters for the same reason the
 // sandbox totals carry them. This is a candidate list, not an answer: it is the
 // union of the busiest by cumulative CPU and the largest by resident size, and
@@ -13890,8 +14047,14 @@ type SandboxAgentStatusResponse struct {
 	Resources OptSandboxAgentResourceUsage `json:"resources"`
 	// The sandbox's idle-stop policy (ADR 0108). Absent while the policy is not running, which in a
 	// configure-mode sandbox is always.
-	Autostop   OptSandboxAgentAutostopStatus `json:"autostop"`
-	ObservedAt time.Time                     `json:"observedAt"`
+	Autostop OptSandboxAgentAutostopStatus `json:"autostop"`
+	// The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home,
+	// which is their system of record (ADR 0136). Empty when there is no such file. Absent when the file
+	// could not be read or is not valid, in which case metaError says why.
+	Meta OptSandboxMeta `json:"meta"`
+	// Why the meta file could not be read. Present only when meta is absent.
+	MetaError  OptString `json:"metaError"`
+	ObservedAt time.Time `json:"observedAt"`
 }
 
 // GetSources returns the value of Sources.
@@ -13917,6 +14080,16 @@ func (s *SandboxAgentStatusResponse) GetResources() OptSandboxAgentResourceUsage
 // GetAutostop returns the value of Autostop.
 func (s *SandboxAgentStatusResponse) GetAutostop() OptSandboxAgentAutostopStatus {
 	return s.Autostop
+}
+
+// GetMeta returns the value of Meta.
+func (s *SandboxAgentStatusResponse) GetMeta() OptSandboxMeta {
+	return s.Meta
+}
+
+// GetMetaError returns the value of MetaError.
+func (s *SandboxAgentStatusResponse) GetMetaError() OptString {
+	return s.MetaError
 }
 
 // GetObservedAt returns the value of ObservedAt.
@@ -13947,6 +14120,16 @@ func (s *SandboxAgentStatusResponse) SetResources(val OptSandboxAgentResourceUsa
 // SetAutostop sets the value of Autostop.
 func (s *SandboxAgentStatusResponse) SetAutostop(val OptSandboxAgentAutostopStatus) {
 	s.Autostop = val
+}
+
+// SetMeta sets the value of Meta.
+func (s *SandboxAgentStatusResponse) SetMeta(val OptSandboxMeta) {
+	s.Meta = val
+}
+
+// SetMetaError sets the value of MetaError.
+func (s *SandboxAgentStatusResponse) SetMetaError(val OptString) {
+	s.MetaError = val
 }
 
 // SetObservedAt sets the value of ObservedAt.
@@ -14107,8 +14290,6 @@ type SandboxConfig struct {
 	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
 	// Model service tier the harness should use.
 	ModelServiceTier OptString `json:"modelServiceTier"`
-	// Sandbox description.
-	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxConfigEnv `json:"env"`
 	// Git authorship identity to seed the sandbox user's ~/.gitconfig with.
@@ -14153,11 +14334,6 @@ func (s *SandboxConfig) GetModelReasoningLevel() OptString {
 // GetModelServiceTier returns the value of ModelServiceTier.
 func (s *SandboxConfig) GetModelServiceTier() OptString {
 	return s.ModelServiceTier
-}
-
-// GetDescription returns the value of Description.
-func (s *SandboxConfig) GetDescription() OptString {
-	return s.Description
 }
 
 // GetEnv returns the value of Env.
@@ -14228,11 +14404,6 @@ func (s *SandboxConfig) SetModelReasoningLevel(val OptString) {
 // SetModelServiceTier sets the value of ModelServiceTier.
 func (s *SandboxConfig) SetModelServiceTier(val OptString) {
 	s.ModelServiceTier = val
-}
-
-// SetDescription sets the value of Description.
-func (s *SandboxConfig) SetDescription(val OptString) {
-	s.Description = val
 }
 
 // SetEnv sets the value of Env.
@@ -14360,7 +14531,8 @@ type SandboxCreateConfig struct {
 	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
 	// Model service tier the harness should use.
 	ModelServiceTier OptString `json:"modelServiceTier"`
-	// Sandbox description.
+	// The sandbox's first description. It seeds the meta file inside the sandbox, which holds the
+	// description from then on (ADR 0136); read the current one from the sandbox's meta.
 	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxCreateConfigEnv `json:"env"`
@@ -15560,6 +15732,48 @@ func (s *SandboxMemoryConsumptionAdditional) init() SandboxMemoryConsumptionAddi
 	m := *s
 	if m == nil {
 		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// A sandbox's description and tags, as the file inside it that holds them says (ADR 0136).
+// Ref: #/components/schemas/SandboxMeta
+type SandboxMeta struct {
+	// What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing
+	// shows the first.
+	Description OptString `json:"description"`
+	// Tags labeling the sandbox, key to value. A tag with an empty value is a plain label.
+	Tags SandboxMetaTags `json:"tags"`
+}
+
+// GetDescription returns the value of Description.
+func (s *SandboxMeta) GetDescription() OptString {
+	return s.Description
+}
+
+// GetTags returns the value of Tags.
+func (s *SandboxMeta) GetTags() SandboxMetaTags {
+	return s.Tags
+}
+
+// SetDescription sets the value of Description.
+func (s *SandboxMeta) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetTags sets the value of Tags.
+func (s *SandboxMeta) SetTags(val SandboxMetaTags) {
+	s.Tags = val
+}
+
+// Tags labeling the sandbox, key to value. A tag with an empty value is a plain label.
+type SandboxMetaTags map[string]string
+
+func (s *SandboxMetaTags) init() SandboxMetaTags {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
 		*s = m
 	}
 	return m
@@ -19514,6 +19728,63 @@ func (s *UpdateSandboxBody) SetSchema(val OptURI) {
 // SetConfig sets the value of Config.
 func (s *UpdateSandboxBody) SetConfig(val OptSandboxUpdateConfig) {
 	s.Config = val
+}
+
+// A change to a sandbox's meta, applied to the meta file in the sandbox (ADR 0136). What the change
+// does not name is left as it is, including what the sandbox wrote itself.
+// Ref: #/components/schemas/UpdateSandboxMetaBody
+type UpdateSandboxMetaBody struct {
+	// Replaces the description. An empty string clears it; omit it to leave the description alone.
+	Description OptString `json:"description"`
+	// Tags to add or overwrite, key to value. An empty value makes a plain label. A key is printable,
+	// has no whitespace, and contains neither = nor ,; a value is one line with no ,.
+	SetTags OptUpdateSandboxMetaBodySetTags `json:"setTags"`
+	// Tag keys to delete. Naming a key the sandbox does not have is not an error. A key may not be both
+	// set and removed.
+	RemoveTags []string `json:"removeTags"`
+}
+
+// GetDescription returns the value of Description.
+func (s *UpdateSandboxMetaBody) GetDescription() OptString {
+	return s.Description
+}
+
+// GetSetTags returns the value of SetTags.
+func (s *UpdateSandboxMetaBody) GetSetTags() OptUpdateSandboxMetaBodySetTags {
+	return s.SetTags
+}
+
+// GetRemoveTags returns the value of RemoveTags.
+func (s *UpdateSandboxMetaBody) GetRemoveTags() []string {
+	return s.RemoveTags
+}
+
+// SetDescription sets the value of Description.
+func (s *UpdateSandboxMetaBody) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetSetTags sets the value of SetTags.
+func (s *UpdateSandboxMetaBody) SetSetTags(val OptUpdateSandboxMetaBodySetTags) {
+	s.SetTags = val
+}
+
+// SetRemoveTags sets the value of RemoveTags.
+func (s *UpdateSandboxMetaBody) SetRemoveTags(val []string) {
+	s.RemoveTags = val
+}
+
+// Tags to add or overwrite, key to value. An empty value makes a plain label. A key is printable,
+// has no whitespace, and contains neither = nor ,; a value is one line with no ,.
+type UpdateSandboxMetaBodySetTags map[string]string
+
+func (s *UpdateSandboxMetaBodySetTags) init() UpdateSandboxMetaBodySetTags {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/UpdateSandboxProviderInstanceBody

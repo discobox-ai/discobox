@@ -1300,6 +1300,12 @@ components:
                 autostop:
                     $ref: '#/components/schemas/SandboxAgentAutostopStatus'
                     description: The sandbox's idle-stop policy (ADR 0108). Absent while the policy is not running, which in a configure-mode sandbox is always.
+                meta:
+                    $ref: '#/components/schemas/SandboxMeta'
+                    description: The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record (ADR 0136). Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
+                metaError:
+                    description: Why the meta file could not be read. Present only when meta is absent.
+                    type: string
                 observedAt:
                     format: date-time
                     type: string
@@ -1308,6 +1314,54 @@ components:
                 - sessions
                 - ports
                 - observedAt
+            type: object
+        SandboxMeta:
+            additionalProperties: false
+            description: A sandbox's description and tags, as the file inside it that holds them says (ADR 0136).
+            properties:
+                description:
+                    description: What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing shows the first.
+                    type: string
+                tags:
+                    additionalProperties:
+                        type: string
+                    description: Tags labeling the sandbox, key to value. A tag with an empty value is a plain label.
+                    type: object
+            required:
+                - tags
+            type: object
+        SandboxAgentMeta:
+            additionalProperties: false
+            description: A sandbox's meta as its meta file holds it after a write (ADR 0136).
+            properties:
+                meta:
+                    $ref: '#/components/schemas/SandboxMeta'
+                    description: Everything the file now holds.
+                observedAt:
+                    description: When the sandbox wrote the file, on the sandbox's own clock - the same clock its status reports are stamped with, so the two can be ordered.
+                    format: date-time
+                    type: string
+            required:
+                - meta
+                - observedAt
+            type: object
+        UpdateSandboxMetaBody:
+            additionalProperties: false
+            description: A change to a sandbox's meta, applied to the meta file in the sandbox (ADR 0136). What the change does not name is left as it is, including what the sandbox wrote itself.
+            properties:
+                description:
+                    description: Replaces the description. An empty string clears it; omit it to leave the description alone.
+                    type: string
+                setTags:
+                    additionalProperties:
+                        type: string
+                    description: Tags to add or overwrite, key to value. An empty value makes a plain label. A key is printable, has no whitespace, and contains neither = nor ,; a value is one line with no ,.
+                    type: object
+                removeTags:
+                    description: Tag keys to delete. Naming a key the sandbox does not have is not an error. A key may not be both set and removed.
+                    items:
+                        type: string
+                    type: array
             type: object
         SandboxExec:
             additionalProperties: false
@@ -2627,9 +2681,6 @@ components:
                 modelServiceTier:
                     description: Model service tier the harness should use
                     type: string
-                description:
-                    description: Sandbox description
-                    type: string
                 env:
                     additionalProperties:
                         type: string
@@ -2690,7 +2741,7 @@ components:
                     description: Model service tier the harness should use
                     type: string
                 description:
-                    description: Sandbox description
+                    description: The sandbox's first description. It seeds the meta file inside the sandbox, which holds the description from then on (ADR 0136); read the current one from the sandbox's meta.
                     type: string
                 env:
                     additionalProperties:
@@ -3624,6 +3675,22 @@ components:
                 runtime:
                     $ref: '#/components/schemas/SandboxRuntime'
                     description: Observed sandbox runtime state.
+                meta:
+                    $ref: '#/components/schemas/SandboxMeta'
+                    description: |-
+                        The sandbox's description and tags. The sandbox holds them, in
+                        ~/.discobox/meta.json, and this is the copy it last reported (ADR 0136): what a
+                        listing filters on, and what a stopped sandbox is read as. Change them with
+                        update-sandbox-meta, or by editing that file inside the sandbox. Until the
+                        sandbox has reported (metaObservedAt absent) it holds the description the
+                        sandbox was created with, or for an imported one the description and tags it
+                        was exported with.
+                    readOnly: true
+                metaObservedAt:
+                    description: When the sandbox read or wrote the meta above, on its own clock. Absent until it has reported.
+                    format: date-time
+                    readOnly: true
+                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
@@ -6860,6 +6927,16 @@ paths:
                     items:
                         type: string
                     type: array
+                - description: Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors (ADR 0136) - key to require the tag with any value, key=value to require that value; repeat the parameter for each selector
+                  explode: true
+                  in: query
+                  name: tag
+                  required: false
+                  schema:
+                    description: Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors (ADR 0136) - key to require the tag with any value, key=value to require that value; repeat the parameter for each selector
+                    items:
+                        type: string
+                    type: array
             responses:
                 200:
                     content:
@@ -7118,6 +7195,48 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Purge a sandbox and its data
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/meta:
+        patch:
+            operationId: update-sandbox-meta
+            description: Change a sandbox's description or tags. The change is carried into the sandbox and applied to its meta file, ~/.discobox/meta.json, which is their system of record; the server records what the sandbox then holds and returns the sandbox with it (ADR 0136). A stopped sandbox is started to take the change, and a sandbox that cannot be reached is an error rather than a change recorded only here.
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateSandboxMetaBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Change a sandbox's description or tags
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/complete-apply:
@@ -7630,6 +7749,46 @@ paths:
             summary: Get sandbox-agent-reported status (git status, harness session state, active connections).
             tags:
                 - Sandbox Status
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/meta:
+        patch:
+            description: Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home, and returns what it holds afterwards. The file is read, changed and replaced in one step, so what the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is refused rather than overwritten (ADR 0136).
+            operationId: update-sandbox-agent-meta
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateSandboxMetaBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentMeta'
+                    description: The sandbox's meta after the change.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Change the description or tags in the sandbox's meta file.
+            tags:
+                - Sandbox Meta
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/services:
         get:

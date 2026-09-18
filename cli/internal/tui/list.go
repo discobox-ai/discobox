@@ -32,6 +32,10 @@ type sandboxList struct {
 	// no key it is every folder, which is the one choice that is not a place.
 	folder folder
 
+	// tag is the tag the list is filtered to, chosen in the header after the
+	// folder (tags.go). Empty is every discobox, tagged or not.
+	tag string
+
 	// server is the server the list is filtered to, chosen in the header
 	// beside the folder. Empty is every server at once, which is the one
 	// choice that is not a server; it is also what a window with only the
@@ -155,12 +159,13 @@ func (l *sandboxList) rows() []Sandbox {
 	return out
 }
 
-// inView reports whether a discobox is inside the header's two filters: on the
-// server they name, in the folder they name. It is one predicate rather than
-// two tests repeated wherever a count is taken, so everything that says how many
-// discoboxes there are — the rows, the archived offer — counts the same ones.
+// inView reports whether a discobox is inside the header's filters: on the
+// server they name, in the folder they name, carrying the tag they name. It is
+// one predicate rather than tests repeated wherever a count is taken, so
+// everything that says how many discoboxes there are — the rows, the archived
+// offer — counts the same ones.
 func (l *sandboxList) inView(s Sandbox) bool {
-	return l.onServer(s) && l.folder.holds(s, l.session)
+	return l.onServer(s) && l.folder.holds(s, l.session) && l.tagged(s)
 }
 
 // onServer reports whether a discobox is on the server the header names. Every
@@ -805,6 +810,27 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	}
 	nameW -= lipgloss.Width(from)
 
+	// Its tags follow, dim, for the same reason and on the same terms as the
+	// qualifier above: they say which box this is, so they sit by the name,
+	// and they give way before the name does — as many as fit, and none when
+	// even one would squeeze the name (ADR 0136).
+	tagged := ""
+	if len(s.Tags) > 0 {
+		room := nameW - (nameReserve - lipgloss.Width(head))
+		text := ""
+		for _, tag := range s.Tags {
+			next := text + " #" + tag
+			if lipgloss.Width(next) > room {
+				break
+			}
+			text = next
+		}
+		if text != "" {
+			tagged = st.dimText.Render(text)
+		}
+	}
+	nameW -= lipgloss.Width(tagged)
+
 	if atCursor {
 		// The cursor row is the one that can be scrolled, so it is the one
 		// whose measurements are worth keeping for the next key press. They
@@ -821,7 +847,7 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 		nameStyle = st.cursorName
 	}
 
-	cell := padANSI(nameStyle.Render(truncate(name, nameW))+from, nameW+lipgloss.Width(from))
+	cell := padANSI(nameStyle.Render(truncate(name, nameW))+from+tagged, nameW+lipgloss.Width(from)+lipgloss.Width(tagged))
 	line := padANSI(head+cell+tail, l.width)
 	switch {
 	case atCursor && selected:

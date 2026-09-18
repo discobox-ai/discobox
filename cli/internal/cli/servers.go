@@ -503,7 +503,7 @@ type unansweredServer struct {
 // A discobox listed by two servers is one server registered under two
 // addresses — IDs are random, so it cannot be two discoboxes — and is listed
 // once, from whichever comes first: the primary, or the one registered first.
-func (a *App) listEveryServer(ctx context.Context, all bool) ([]serverSandbox, []unansweredServer, error) {
+func (a *App) listEveryServer(ctx context.Context, all bool, tags []string) ([]serverSandbox, []unansweredServer, error) {
 	set, err := a.servers()
 	if err != nil {
 		return nil, nil, err
@@ -518,7 +518,7 @@ func (a *App) listEveryServer(ctx context.Context, all bool) ([]serverSandbox, [
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i].sandboxes, results[i].err = s.listSandboxes(ctx, all, len(set) > 1)
+			results[i].sandboxes, results[i].err = s.listSandboxes(ctx, all, tags, len(set) > 1)
 		}()
 	}
 	wg.Wait()
@@ -548,7 +548,7 @@ func (a *App) listEveryServer(ctx context.Context, all bool) ([]serverSandbox, [
 // listSandboxes is one server's part of a listing. named asks a primary
 // nobody registered what it is called, which is only worth a round trip once
 // there is more than one server to tell apart.
-func (s *server) listSandboxes(ctx context.Context, all, named bool) ([]apimodel.Sandbox, error) {
+func (s *server) listSandboxes(ctx context.Context, all bool, tags []string, named bool) ([]apimodel.Sandbox, error) {
 	ctx, cancel := s.bounded(ctx)
 	defer cancel()
 	if _, err := s.app.resolveServerAddress(ctx); err != nil {
@@ -562,7 +562,7 @@ func (s *server) listSandboxes(ctx context.Context, all, named bool) ([]apimodel
 	if err != nil {
 		return nil, err
 	}
-	sandboxes, err := s.app.listProjectSandboxes(ctx, client, projectID, all)
+	sandboxes, err := s.app.listProjectSandboxes(ctx, client, projectID, all, tags)
 	if err != nil {
 		return nil, err
 	}

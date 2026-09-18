@@ -709,12 +709,16 @@ func (m SandboxManifest) Fingerprint() string {
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID         string  `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_sandbox_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	CreatedByUserID   string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	PoolID            string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
-	Name              string  `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
-	Description       *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
+	ID              string `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID       string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_sandbox_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	CreatedByUserID string `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
+	PoolID          string `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
+	Name            string `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
+	// Description is a copy of the sandbox's description, which lives with its
+	// tags in the meta file inside the sandbox (ADR 0136). Until the sandbox
+	// first reports (MetaObservedAt nil) it holds the description the sandbox
+	// was created with, which is what seeds that file.
+	Description       *string `gorm:"type:text" json:"description,omitempty" doc:"The sandbox's description as it last reported it, or the one it was created with until it has (ADR 0136)"`
 	SandboxManifest   `gorm:"embedded"`
 	ResourceLifecycle `gorm:"embedded"`
 	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
@@ -776,8 +780,18 @@ type Sandbox struct {
 	// ticks on its own schedule.
 	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest CPU, memory and disk consumption for this sandbox, computed by the hosting pool agent (ADR 0071)"`
 	ResourcesObservedAt *time.Time      `gorm:"column:resources_observed_at" json:"resourcesObservedAt,omitempty" doc:"When Resources was observed" format:"date-time"`
-	CreatedAt           time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt           time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	// Tags are a copy of the sandbox's tags, which live with its description
+	// in the meta file inside the sandbox (ADR 0136). The copy is what a
+	// listing filters on and what a stopped sandbox is read as; the file is
+	// what is true. Two paths write the copy — the status report, and a meta
+	// write the sandbox has answered — and MetaObservedAt orders them: both are
+	// stamped on the sandbox's own clock, and only a newer observation replaces
+	// an older one, so a status poll read before a write cannot land after it
+	// and undo it.
+	Tags           map[string]string `gorm:"column:tags;type:text;serializer:json" json:"tags,omitempty" doc:"The sandbox's tags as it last reported them (ADR 0136)"`
+	MetaObservedAt *time.Time        `gorm:"column:meta_observed_at" json:"metaObservedAt,omitempty" doc:"When the sandbox read or wrote Description and Tags, on its own clock" format:"date-time"`
+	CreatedAt      time.Time         `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt      time.Time         `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project       *Project       `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy     *User          `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`

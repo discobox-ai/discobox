@@ -225,6 +225,13 @@ type Sandbox struct {
 	// rename guard reads it (nameIsTitle).
 	ConfigName string
 
+	// Tags are the discobox's tags as it last reported them, spelled `key` or
+	// `key=value` in key order, and Description is the first line of its
+	// description (ADR 0136). The discobox holds both, in its meta file; these
+	// are the copy the server keeps, so a stopped box still shows them.
+	Tags        []string
+	Description string
+
 	Harness string
 	// HarnessID is that harness's config ID. The slug above is what the row
 	// shows; this is what matches a credential the window has been told is

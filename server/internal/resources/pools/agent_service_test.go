@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -567,5 +568,57 @@ func TestReportedLastAccess(t *testing.T) {
 		`[{"terminalId":"t1","primary":true,"state":"running","attacherCount":1,"execStatus":"running","lastAccessedAt":"`+older.Format(time.RFC3339)+`"}]`), observed)
 	if got == nil || !got.Equal(observed) {
 		t.Fatalf("attached now = %v, want %v", got, observed)
+	}
+}
+
+// A status report carries the sandbox's meta, and the report is how an edit
+// made inside the sandbox reaches the recorded copy. A report without it — an
+// agent that could not read its meta file, or one older than meta — leaves the
+// copy alone rather than recording the description cleared and every tag
+// removed (ADR 0136).
+func TestReportSandboxAgentStatusRecordsMeta(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
+		Type:   auth.PrincipalTypePool,
+		PoolID: "pool-a",
+	})
+	observedAt := time.Now().UTC().Truncate(time.Second)
+	report := func(at time.Time, status serverapi.SandboxAgentStatusEntryStatus) {
+		t.Helper()
+		err := svc.ReportSandboxAgentStatus(ctx, "pool-a", services.ReportSandboxAgentStatusBody{
+			Sandboxes: []serverapi.SandboxAgentStatusEntry{{SandboxId: "sandbox-a", Status: status, ObservedAt: at}},
+		})
+		if err != nil {
+			t.Fatalf("report status: %v", err)
+		}
+	}
+	recorded := func() (string, map[string]string) {
+		t.Helper()
+		got, err := svc.store.GetSandbox(ctx, "project-1", "sandbox-a")
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		description := ""
+		if got.Description != nil {
+			description = *got.Description
+		}
+		return description, got.Tags
+	}
+	wantTags := map[string]string{"wip": "", "ticket": "ENG-12"}
+
+	report(observedAt, serverapi.SandboxAgentStatusEntryStatus{"meta": jx.Raw(`{"description":"fix the reaper","tags":{"wip":"","ticket":"ENG-12"}}`)})
+	if description, tags := recorded(); description != "fix the reaper" || !reflect.DeepEqual(tags, wantTags) {
+		t.Fatalf("recorded %q %v", description, tags)
+	}
+
+	report(observedAt.Add(time.Second), serverapi.SandboxAgentStatusEntryStatus{"metaError": jx.Raw(`"the meta file is not valid"`)})
+	report(observedAt.Add(2*time.Second), serverapi.SandboxAgentStatusEntryStatus{"meta": jx.Raw(`{"tags":{"bad key":""}}`)})
+	if description, tags := recorded(); description != "fix the reaper" || !reflect.DeepEqual(tags, wantTags) {
+		t.Fatalf("after reports carrying none, recorded %q %v; want the copy kept", description, tags)
+	}
+
+	report(observedAt.Add(3*time.Second), serverapi.SandboxAgentStatusEntryStatus{"meta": jx.Raw(`{"tags":{}}`)})
+	if description, tags := recorded(); description != "" || len(tags) != 0 {
+		t.Fatalf("recorded %q %v, want nothing once the sandbox reports nothing", description, tags)
 	}
 }

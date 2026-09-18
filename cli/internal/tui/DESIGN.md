@@ -578,8 +578,17 @@ ladder, above the folder, so Down from it steps back to the folder (see "Focus
 is a ladder" below). It opens on `all servers`, which leads the choices and is
 the listing §4 describes; the servers follow it, the primary first.
 
-**The two filters are one filter.** `sandboxList.inView` is the server and the
-folder together, and everything that counts discoboxes counts through it — the
+**The header can narrow the list to one tag** (`tags.go`, `sandboxList.tag`),
+drawn after the folder once any discobox inside the server and folder filters
+carries one ([ADR 0136](../../../docs/adr/0136-a-sandboxs-meta-lives-in-the-sandbox-and-the-server-caches-it.md)):
+`all tags`, then each tag as the rows spell it (`#wip`, `#ticket=ENG-12`). A
+chosen tag stays among the choices after its last box drops it, like the folder
+the header is on, so the control never vanishes from under what it is showing.
+It narrows the list only; unlike the other two it says nothing about where a
+create goes.
+
+**The filters are one filter.** `sandboxList.inView` is the server, the
+folder and the tag together, and everything that counts discoboxes counts through it — the
 rows, the archived offer — so a filter added to one count cannot be forgotten
 in another. The dropdowns count the same way from the other side: the folder
 dropdown offers the folders on the server the header names and counts on it,
@@ -2343,7 +2352,9 @@ way.
 **Focus is a ladder, and its ends stop.** Prompt, discoboxes, folder filter,
 server filter, bottom to top, and the arrows climb it one rung at a time: Up off
 the top of the list reaches the folder, Up again the server; Down steps back
-the same way, and past the last row returns to the prompt. The server rung is
+the same way, and past the last row returns to the prompt. The tag filter is
+not a rung: it is beside the folder, not above it, so Tab reaches it and Up
+from it climbs to the server as Up from the folder does. The server rung is
 there only when there is more than one server, and without it the folder is the
 top. Neither end wraps — Down at the prompt stays in the prompt and Up at the
 top stays there, because a key that jumped from one end to the other would be
@@ -2352,7 +2363,7 @@ although it is drawn to the left of it: it is the wider scope, and the one you
 change least.
 
 Tab is the one key that does go round, in the order Up climbs: prompt →
-discoboxes → folder → server → prompt. Esc is the short way straight out to the
+discoboxes → folder → tags (when shown) → server → prompt. Esc is the short way straight out to the
 prompt from any stop. With an empty list, leaving the prompt lands on the folder
 filter instead — that is exactly when it is the control you want, and refusing
 to move would leave no way to reach it. Down from there passes straight through
@@ -2455,6 +2466,7 @@ the newest one where the busy line goes.
 | `harnesses.go` | the harnesses screen: the list, its actions, the config card, `F3` |
 | `folder.go` | the header's folder filter: the choices, the dropdown, and applying one |
 | `server.go` | the header's server filter: the choices, the dropdown, and the create that follows it |
+| `tags.go` | the header's tag filter: the choices, shown once anything is tagged, the dropdown, and applying one |
 | `compact.go` | the opening window: the prompt beside the mark, and opening out |
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
 | `model.go` | the window: update, actions, run, layout, view, help |

@@ -14,7 +14,8 @@ control plane's resolved harness config.
 
 - `RuntimeLayer`: control-plane/pool-agent-owned identity (`SandboxID`,
   `Provider`), sandbox-agent daemon settings (`AgentRuntime`), sources,
-  model/prompt/user/git, `HarnessMode`, and per-sandbox env/files. `Env`
+  model/prompt/user/git, the create-time `Description` (only a seed for the
+  sandbox's meta file, ADR 0136), `HarnessMode`, and per-sandbox env/files. `Env`
   includes pool-agent's proxy-trust env, and `ProxyEnvs` names those keys for
   sandbox-agent's runc wrapper. `Files` is the harness config's configured-file
   overlay. Each `Source` carries its ownership (`UID`/`GID`, absent when the

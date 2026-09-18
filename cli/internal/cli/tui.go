@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/tools"
 	"github.com/discobox-ai/x/gitutil"
 )
@@ -811,6 +812,10 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		// host id is what identifies the machine.
 		row.OriginHostID = strings.TrimSpace(origin.HostId)
 		row.OriginHost = strings.TrimSpace(origin.Hostname.Or(""))
+	}
+	row.Tags = sandboxmeta.TagStrings(sandboxTags(sb))
+	if meta, ok := sb.Meta.Get(); ok {
+		row.Description = sandboxmeta.Summary(meta.Description.Or(""))
 	}
 	if cfg, ok := sb.HarnessConfig.Get(); ok {
 		row.Harness = cfg.Slug

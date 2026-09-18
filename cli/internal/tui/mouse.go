@@ -335,6 +335,12 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		m.dialog = m.folderDialog()
 		return nil, true
 
+	case hitTags:
+		m.prompt.Blur()
+		m.focus = focusTags
+		m.dialog = m.tagDialog()
+		return nil, true
+
 	case hitServer:
 		// Over the harnesses and secrets screens the keys stay theirs, so the
 		// focus does not move to a control those screens do not route keys to.

@@ -8,6 +8,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/sandboxmeta"
 )
 
 // newListCommand lists this machine's discoboxes for -C (the working directory
@@ -20,6 +21,7 @@ import (
 // it, so the machine has to be part of the answer once the server is remote.
 func (a *App) newListCommand() *cobra.Command {
 	var all bool
+	var tags []string
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"ps"},
@@ -33,15 +35,26 @@ Discoboxes cut from anywhere else, or created on another machine, are not
 listed; pass --all (or use "discobox admin box ls") to list every discobox in
 the project.
 
+--tag narrows the list to discoboxes carrying a tag: KEY for the tag with any
+value, KEY=VALUE for exactly that value. Repeat it to require several. A
+discobox's tags are its own, in ~/.discobox/meta.json inside it; this filters on
+the copy it last reported, so a stopped discobox is listed by the tags it had.
+
 Every server is listed: the primary, and the ones "discobox admin remote"
 registered, with a SERVER column once there is more than one. A registered server that does
 not answer is left out, and says so on stderr.`,
 		Example: `  discobox ls
   discobox ls --all
+  discobox ls --tag wip --tag ticket=ENG-12
   discobox ls -o json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			listed, unreachable, err := a.listEveryServer(cmd.Context(), all)
+			// Checked here, so a selector the server would refuse is said once
+			// rather than once per server.
+			if _, err := sandboxmeta.ParseSelectors(tags); err != nil {
+				return err
+			}
+			listed, unreachable, err := a.listEveryServer(cmd.Context(), all, tags)
 			if err != nil {
 				return err
 			}
@@ -68,6 +81,7 @@ not answer is left out, and says so on stderr.`,
 		},
 	}
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "List every discobox in the project, whatever it was cut from and on whichever machine, and show a SOURCE column")
+	cmd.Flags().StringArrayVar(&tags, "tag", nil, "Only list discoboxes with this tag: KEY, or KEY=VALUE for that value; repeat to require several")
 	a.addQuietFlag(cmd)
 	return cmd
 }
@@ -75,9 +89,14 @@ not answer is left out, and says so on stderr.`,
 // listProjectSandboxes lists the project's sandboxes, filtered to this
 // machine's for -C unless all is set: the two origin keys OriginKeys names. It is the
 // listing behind `discobox ls`, shared with the commands that ask the user to pick
-// one of those sandboxes.
-func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Client, projectID string, all bool) ([]apimodel.Sandbox, error) {
-	params := apiclientgen.ListSandboxesParams{ProjectId: projectID}
+// one of those sandboxes. tags are selectors matched against each sandbox's
+// recorded tags (ADR 0136); none lists them whatever their tags.
+func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Client, projectID string, all bool, tags []string) ([]apimodel.Sandbox, error) {
+	selectors, err := sandboxmeta.ParseSelectors(tags)
+	if err != nil {
+		return nil, err
+	}
+	params := apiclientgen.ListSandboxesParams{ProjectId: projectID, Tag: tags}
 	if !all {
 		sourceKey, hostKey, err := sandboxcreate.OriginKeys(ctx, a.source)
 		if err != nil {
@@ -93,5 +112,20 @@ func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Cli
 	if err != nil {
 		return nil, err
 	}
-	return body.GetSandboxes(), nil
+	sandboxes := body.GetSandboxes()
+	if len(selectors) == 0 {
+		return sandboxes, nil
+	}
+	// The server filters, and the answer is filtered again here: a server
+	// older than tags ignores the parameter it does not know and lists every
+	// discobox, and `discobox ls` asks every registered server. Its discoboxes
+	// carry no tags, so matching here lists none of them, which is the true
+	// answer rather than an unfiltered one.
+	matched := sandboxes[:0]
+	for _, sandbox := range sandboxes {
+		if sandboxmeta.MatchesAll(sandboxTags(sandbox), selectors) {
+			matched = append(matched, sandbox)
+		}
+	}
+	return matched, nil
 }

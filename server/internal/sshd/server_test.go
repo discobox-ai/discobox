@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -79,7 +80,7 @@ func (f *fakeSandboxService) FallbackHarnessConfig(context.Context, string) (*mo
 func (f *fakeSandboxService) PurgeSandbox(context.Context, string, string) error {
 	panic("not implemented")
 }
-func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, []string) ([]model.Sandbox, error) {
+func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, []string, []sandboxmeta.Selector) ([]model.Sandbox, error) {
 	panic("not implemented")
 }
 func (f *fakeSandboxService) CreateSandbox(context.Context, string, services.CreateSandboxBody) (*model.Sandbox, error) {
@@ -113,6 +114,9 @@ func (f *fakeSandboxService) CompleteSandboxSourcePush(context.Context, string, 
 	panic("not implemented")
 }
 func (f *fakeSandboxService) CompleteSandboxApply(context.Context, string, string, services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
+	panic("not implemented")
+}
+func (f *fakeSandboxService) UpdateSandboxMeta(context.Context, string, string, services.UpdateSandboxMetaBody) (*model.Sandbox, error) {
 	panic("not implemented")
 }
 func (f *fakeSandboxService) ReconcileSandbox(context.Context, string, string) (*model.Sandbox, error) {

@@ -44,6 +44,13 @@ func (h *Handler) GetSandboxAgentStatus(context.Context, serverapi.GetSandboxAge
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// UpdateSandboxAgentMeta is the sandbox agent's half of a meta write. The
+// control plane's own is UpdateSandboxMeta, which calls it and records the
+// answer (ADR 0136); this route is neither served nor proxied here.
+func (h *Handler) UpdateSandboxAgentMeta(context.Context, *serverapi.UpdateSandboxMetaBody, serverapi.UpdateSandboxAgentMetaParams) (serverapi.UpdateSandboxAgentMetaRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) ListHarnessHooks(context.Context, serverapi.ListHarnessHooksParams) (serverapi.ListHarnessHooksRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

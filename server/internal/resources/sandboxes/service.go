@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 
@@ -103,11 +104,15 @@ type SandboxProviderCatalogItem struct {
 	ConfigFields []ProviderConfigField
 }
 
-func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error) {
+func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	return s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys)
+	sandboxes, err := s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys)
+	if err != nil {
+		return nil, err
+	}
+	return matchingTags(sandboxes, tags), nil
 }
 
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {

@@ -19,6 +19,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/sandboxmeta"
 )
 
 func writeJSON(w io.Writer, value any) error {
@@ -92,7 +93,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	if serverOf != nil {
 		header = append(header, "SERVER")
 	}
-	header = append(header, "STATE", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "ERROR", "CREATED")
+	header = append(header, "STATE", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED")
 	if showSource {
 		header = append(header, "SOURCE")
 	}
@@ -103,13 +104,14 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		if serverOf != nil {
 			fmt.Fprintf(tw, "%s\t", serverOf[sandbox.ID])
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			sandboxDisplayState(sandbox),
 			sandboxHarness(sandbox),
 			sandboxGitColumn(sandbox),
 			git.changes(sandboxSpawnCommit(sandbox)),
 			git.diffColumn(),
 			sandboxUpgradeState(sandbox),
+			truncateTableValue(sandboxTagsColumn(sandbox), 40),
 			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.CreatedAt),
 		)
@@ -142,6 +144,24 @@ func withServerField(sandbox apimodel.Sandbox, server string) (json.RawMessage, 
 		out = append(out, '}')
 	}
 	return out, nil
+}
+
+// sandboxTags is the sandbox's tags as it last reported them (ADR 0136): what
+// its meta file holds, which is the only place they are written.
+func sandboxTags(sandbox apimodel.Sandbox) map[string]string {
+	meta, ok := sandbox.Meta.Get()
+	if !ok {
+		return nil
+	}
+	return meta.Tags
+}
+
+// sandboxTagsColumn is the tags as one column spells them, "-" for none.
+func sandboxTagsColumn(sandbox apimodel.Sandbox) string {
+	if tags := sandboxmeta.FormatTags(sandboxTags(sandbox)); tags != "" {
+		return tags
+	}
+	return "-"
 }
 
 // sandboxHarness is the harness the sandbox runs, by the name a user would

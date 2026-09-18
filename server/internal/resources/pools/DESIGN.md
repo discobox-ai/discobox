@@ -101,7 +101,9 @@ flowchart LR
   `UpdateSandbox`/`WithGeneration` — this telemetry is outside the
   desired/observed generation contract and a whole-row save would risk
   clobbering concurrent desired-state writes. Agent status also moves a
-  sandbox's `LastActiveAt` forward from the reported session access.
+  sandbox's `LastActiveAt` forward from the reported session access, and
+  records the reported `meta` through `store.UpdateSandboxMeta` (ADR 0136); a
+  report without it leaves the recorded copy alone.
   `ReportPoolResources` stores the pool-wide half on the pool row and each
   sandbox's half on that sandbox's row. `ReconcilePool` (a manual reconcile
   request from the API) also lives here.

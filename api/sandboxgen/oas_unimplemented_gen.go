@@ -232,6 +232,18 @@ func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, para
 	return r, ht.ErrNotImplemented
 }
 
+// UpdateSandboxAgentMeta implements update-sandbox-agent-meta operation.
+//
+// Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
+// and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
+// the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
+// refused rather than overwritten (ADR 0136).
+//
+// PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
+func (UnimplementedHandler) UpdateSandboxAgentMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (r *SandboxAgentMeta, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // NewError creates *ErrorResponseStatusCode from error returned by handler.
 //
 // Used for common default response.

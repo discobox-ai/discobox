@@ -23,6 +23,7 @@ COPY harness ./harness
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxmeta ./sandboxmeta
 COPY sandboxservices ./sandboxservices
 COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser

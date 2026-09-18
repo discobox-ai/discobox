@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
+	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/secretswatch"
@@ -50,8 +52,10 @@ type Config struct {
 	DatabasePath          string
 	Env                   map[string]string
 	Prompt                []string
-	HarnessMode           string
-	Resources             config.ResourceConfig
+	// Description seeds the meta file when the sandbox has none (ADR 0136).
+	Description string
+	HarnessMode string
+	Resources   config.ResourceConfig
 	// IdleTimeout is the pool's idle timeout for autostop; zero is its
 	// default (ADR 0108).
 	IdleTimeout       time.Duration
@@ -88,6 +92,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		DatabasePath:          cfg.DatabasePath,
 		Env:                   cfg.Env,
 		Prompt:                cfg.Prompt,
+		Description:           cfg.Description,
 		HarnessMode:           cfg.HarnessMode,
 		Resources:             cfg.Resources,
 		IdleTimeout:           cfg.IdleTimeout,
@@ -231,6 +236,16 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// changes, attachers, last access — fresh on each evaluation (ADR 0108,
 	// ADR 0124).
 	idleStop := autostop.New(autostop.Config{Execs: execManager.List, IdleTimeout: cfg.IdleTimeout})
+	metaFile, err := newMetaFile(execManager)
+	if err != nil {
+		// Like the port watcher: meta is not worth failing a boot over, and a
+		// sandbox whose run identity does not resolve has to come up far enough
+		// to be diagnosed. Its status then says why it reports no meta.
+		slog.Default().Warn("sandbox agent meta disabled", "error", err)
+		metaFile = nil
+	} else if err := metaFile.Seed(cfg.Description); err != nil {
+		slog.Default().Warn("seed sandbox meta description", "path", metaFile.Path(), "error", err)
+	}
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
@@ -246,6 +261,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		execUser:          execManager.DefaultUser(),
 		ports:             portsWatch,
 		autostop:          idleStop,
+		meta:              metaFile,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {
@@ -347,6 +363,31 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 		watcher.Declared = serviceManager.Declarations
 	}
 	return ports.New(watcher), nil
+}
+
+// newMetaFile is the sandbox's meta file, in the home of the identity the
+// sandbox runs processes as and owned by it, so the agent working in the
+// sandbox can edit what an API write leaves there (ADR 0136). That identity is
+// asked of the exec manager, as the port watcher asks it (see REVIEW.md). A
+// manifest that names nobody means an exec inherits this process's identity
+// (ADR 0025 §5), so the home is this process's own and nothing is chowned.
+func newMetaFile(execManager *execs.Manager) (*meta.File, error) {
+	user, err := execManager.ResolveUser(execs.CreateRequest{})
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		return meta.New(home, meta.Owner{}), nil
+	}
+	home := strings.TrimSpace(user.HomeDirectory)
+	if home == "" {
+		return nil, errors.New("the sandbox user has no home directory")
+	}
+	return meta.New(home, meta.Owner{UID: user.UID, GID: user.GID}), nil
 }
 
 // listenPorts is the agent's own listen port, or nothing when the address does

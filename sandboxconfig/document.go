@@ -39,13 +39,18 @@ type RuntimeLayer struct {
 	AgentRuntime AgentRuntime `json:"agentRuntime"`
 	Sources      []Source     `json:"sources,omitempty"`
 
-	Model               string            `json:"model,omitempty"`
-	ModelReasoningLevel string            `json:"modelReasoningLevel,omitempty"`
-	ModelServiceTier    string            `json:"modelServiceTier,omitempty"`
-	Prompt              []string          `json:"prompt,omitempty"`
-	User                User              `json:"user"`
-	Git                 GitIdentity       `json:"git"`
-	Env                 map[string]string `json:"env,omitempty"`
+	Model               string   `json:"model,omitempty"`
+	ModelReasoningLevel string   `json:"modelReasoningLevel,omitempty"`
+	ModelServiceTier    string   `json:"modelServiceTier,omitempty"`
+	Prompt              []string `json:"prompt,omitempty"`
+	// Description is the one the sandbox was created with. It is a seed, not
+	// the sandbox's description: the sandbox agent writes it into the meta
+	// file only when there is no meta file yet, and from then on that file is
+	// the description (ADR 0136).
+	Description string            `json:"description,omitempty"`
+	User        User              `json:"user"`
+	Git         GitIdentity       `json:"git"`
+	Env         map[string]string `json:"env,omitempty"`
 
 	// ProxyEnvs names the subset of Env's keys that carry proxy-trust
 	// material (proxy.ClientMaterial.EnvironmentVars) rather than ordinary

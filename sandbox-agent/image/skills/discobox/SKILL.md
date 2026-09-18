@@ -1,6 +1,6 @@
 ---
 name: discobox
-description: You are running inside a discobox — a disposable sandbox holding the user's source, where you have root over everything inside and can reach nothing of theirs outside. Use when orienting, when something outside the box seems missing or unreachable, before telling the user how to reach what you built or ran, or to answer a question about discobox itself.
+description: You are running inside a discobox — a disposable sandbox holding the user's source, where you have root over everything inside and can reach nothing of theirs outside. Use when orienting, when something outside the box seems missing or unreachable, before telling the user how to reach what you built or ran, when asked to describe, tag or label this box (its description and tags live in ~/.discobox/meta.json), or to answer a question about discobox itself.
 ---
 
 # You are in a discobox
@@ -219,6 +219,39 @@ changed, or why you did not, and let them close it.
 Do not regenerate the file. Edits are surgical so that your replies and their
 notes both survive; rewriting it from what you parsed deletes whatever you did
 not.
+
+## This box's description and tags
+
+`~/.discobox/meta.json` is what the user sees this box as: a description of
+what it is for, and tags that label it. It is yours to read and edit, and it is
+the only place they live — the user's `discobox ls` and window show what it
+held when the box last reported, within about fifteen seconds of a change, and filter
+on its tags (`discobox ls --tag wip`). When the user changes them from outside,
+the change is written into this same file.
+
+```json
+{
+  "description": "Fix the reaper race in pool sync.\nRepro in pool_sync_test.go.",
+  "tags": {"wip": "", "ticket": "ENG-12", "area": "pool"}
+}
+```
+
+- `description` — what the box is for. The listing shows its first line, so
+  make that line stand on its own; more lines are for detail.
+- `tags` — key to value. An empty value makes a plain label (`"wip": ""`).
+  Keys have no spaces, `=` or `,`; values are one line with no `,`. At most
+  64 tags.
+- No other fields. A file that is not exactly this shape is reported as invalid
+  and ignored — the user keeps seeing the last valid version — and a change
+  from outside is refused until it is fixed, so check it parses after editing
+  (`jq . ~/.discobox/meta.json`).
+- No file means no description and no tags. To clear them, write `{}` rather
+  than deleting the file: a missing file may be refilled with the description
+  the box was created with the next time it starts.
+
+Keep them true as the work moves — a description of what you were asked to do,
+a tag for where it stands — when the user asks you to, or when the box was
+created without one and you know what it is for.
 
 ## The box stops itself when idle
 

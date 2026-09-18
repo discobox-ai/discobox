@@ -765,6 +765,25 @@ type Invoker interface {
 	//
 	// PATCH /projects/{projectId}/sandboxes/{sandboxId}
 	UpdateSandbox(ctx context.Context, request *UpdateSandboxBody, params UpdateSandboxParams) (UpdateSandboxRes, error)
+	// UpdateSandboxAgentMeta invokes update-sandbox-agent-meta operation.
+	//
+	// Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
+	// and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
+	// the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
+	// refused rather than overwritten (ADR 0136).
+	//
+	// PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
+	UpdateSandboxAgentMeta(ctx context.Context, request *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (UpdateSandboxAgentMetaRes, error)
+	// UpdateSandboxMeta invokes update-sandbox-meta operation.
+	//
+	// Change a sandbox's description or tags. The change is carried into the sandbox and applied to its
+	// meta file, ~/.discobox/meta.json, which is their system of record; the server records what the
+	// sandbox then holds and returns the sandbox with it (ADR 0136). A stopped sandbox is started to
+	// take the change, and a sandbox that cannot be reached is an error rather than a change recorded
+	// only here.
+	//
+	// PATCH /projects/{projectId}/sandboxes/{sandboxId}/meta
+	UpdateSandboxMeta(ctx context.Context, request *UpdateSandboxMetaBody, params UpdateSandboxMetaParams) (UpdateSandboxMetaRes, error)
 	// UpdateSandboxProviderInstance invokes update-sandbox-provider-instance operation.
 	//
 	// Update a sandbox provider instance.
@@ -9404,6 +9423,32 @@ func (c *Client) sendListSandboxes(ctx context.Context, params ListSandboxesPara
 			return res, errors.Wrap(err, "encode query")
 		}
 	}
+	{
+		// Encode "tag" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "tag",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if params.Tag != nil {
+				return e.EncodeArray(func(e uri.Encoder) error {
+					for i, item := range params.Tag {
+						if err := func() error {
+							return e.EncodeValue(conv.StringToString(item))
+						}(); err != nil {
+							return errors.Wrapf(err, "[%d]", i)
+						}
+					}
+					return nil
+				})
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
 	u.RawQuery = q.Values().Encode()
 
 	stage = "EncodeRequest"
@@ -13595,6 +13640,243 @@ func (c *Client) sendUpdateSandbox(ctx context.Context, request *UpdateSandboxBo
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdateSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateSandboxAgentMeta invokes update-sandbox-agent-meta operation.
+//
+// Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
+// and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
+// the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
+// refused rather than overwritten (ADR 0136).
+//
+// PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
+func (c *Client) UpdateSandboxAgentMeta(ctx context.Context, request *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (UpdateSandboxAgentMetaRes, error) {
+	res, err := c.sendUpdateSandboxAgentMeta(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateSandboxAgentMeta(ctx context.Context, request *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (res UpdateSandboxAgentMetaRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-sandbox-agent-meta"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/meta"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateSandboxAgentMetaOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/meta"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateSandboxAgentMetaRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateSandboxAgentMetaResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateSandboxMeta invokes update-sandbox-meta operation.
+//
+// Change a sandbox's description or tags. The change is carried into the sandbox and applied to its
+// meta file, ~/.discobox/meta.json, which is their system of record; the server records what the
+// sandbox then holds and returns the sandbox with it (ADR 0136). A stopped sandbox is started to
+// take the change, and a sandbox that cannot be reached is an error rather than a change recorded
+// only here.
+//
+// PATCH /projects/{projectId}/sandboxes/{sandboxId}/meta
+func (c *Client) UpdateSandboxMeta(ctx context.Context, request *UpdateSandboxMetaBody, params UpdateSandboxMetaParams) (UpdateSandboxMetaRes, error) {
+	res, err := c.sendUpdateSandboxMeta(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateSandboxMeta(ctx context.Context, request *UpdateSandboxMetaBody, params UpdateSandboxMetaParams) (res UpdateSandboxMetaRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-sandbox-meta"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/meta"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateSandboxMetaOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/meta"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateSandboxMetaRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateSandboxMetaResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

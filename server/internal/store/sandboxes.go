@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
@@ -337,6 +338,23 @@ var observedSandboxColumns = []string{
 	"resources_observed_at",
 }
 
+// sandboxMetaColumns are the control plane's copy of the sandbox's meta
+// (ADR 0136), written by create and by UpdateSandboxMeta and by nothing else.
+// UpdateSandbox omits them for the reason it omits the observed columns above:
+// a stale load-modify-save must not put back a tag the sandbox has since
+// dropped. They are a list of their own rather than members of that one,
+// because ApplySandboxStateReports writes every observed column back from the
+// row it loaded, and a meta write that committed in between would be undone,
+// its observation time with it.
+var sandboxMetaColumns = []string{
+	"description",
+	"tags",
+	"meta_observed_at",
+}
+
+// sandboxOmittedColumns is what UpdateSandbox never writes.
+var sandboxOmittedColumns = append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...)
+
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
 	var opts sandboxGetOptions
 	for _, option := range options {
@@ -354,13 +372,13 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 		return err
 	}
 	if opts.generation == nil {
-		return write.Omit(observedSandboxColumns...).Save(persisted).Error
+		return write.Omit(sandboxOmittedColumns...).Save(persisted).Error
 	}
 
 	result := write.Model(&model.Sandbox{}).
 		Where("project_id = ? AND id = ? AND generation = ?", sandbox.ProjectID, sandbox.ID, *opts.generation).
 		Select("*").
-		Omit(observedSandboxColumns...).
+		Omit(sandboxOmittedColumns...).
 		Updates(persisted)
 	if result.Error != nil {
 		return result.Error
@@ -409,6 +427,46 @@ func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandbox
 		return ErrNotFound
 	}
 	return nil
+}
+
+// UpdateSandboxMeta records the description and tags a sandbox reported
+// holding at observedAt, on the sandbox's own clock (ADR 0136). It writes only
+// when observedAt is newer than what is recorded, because two paths report
+// them — the periodic status and the answer to a meta write — and a poll that
+// read the file before a write must not undo that write by arriving after it.
+// A report that loses that race is not an error: something newer is already
+// recorded.
+//
+// Like UpdateSandboxAgentStatus it is an observation, so it neither goes
+// through the generation contract nor stamps updated_at.
+func (s *Store) UpdateSandboxMeta(ctx context.Context, projectID, sandboxID string, meta sandboxmeta.Meta, observedAt time.Time) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	tags := meta.Tags
+	if tags == nil {
+		tags = map[string]string{}
+	}
+	// Encoded here rather than left to the field's serializer, which a
+	// column-map update does not apply.
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+	var description any
+	if meta.Description != "" {
+		description = meta.Description
+	}
+	observedAt = observedAt.UTC()
+	return write.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ?", projectID, sandboxID).
+		Where("meta_observed_at IS NULL OR meta_observed_at < ?", observedAt).
+		UpdateColumns(map[string]any{
+			"description":      description,
+			"tags":             string(encoded),
+			"meta_observed_at": observedAt,
+		}).Error
 }
 
 // UpdateSandboxResources writes only the two resource columns, pushed

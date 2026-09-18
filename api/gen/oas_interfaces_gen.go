@@ -445,6 +445,14 @@ type UpdateProjectRes interface {
 	updateProjectRes()
 }
 
+type UpdateSandboxAgentMetaRes interface {
+	updateSandboxAgentMetaRes()
+}
+
+type UpdateSandboxMetaRes interface {
+	updateSandboxMetaRes()
+}
+
 type UpdateSandboxProviderInstanceRes interface {
 	updateSandboxProviderInstanceRes()
 }

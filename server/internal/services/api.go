@@ -9,6 +9,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -30,6 +31,7 @@ type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
 type CompleteSandboxSourcePushBody = apimodel.CompleteSandboxSourcePushBody
 type CompleteSandboxApplyBody = apimodel.CompleteSandboxApplyBody
+type UpdateSandboxMetaBody = apimodel.UpdateSandboxMetaBody
 type SandboxSecretInput = apimodel.SandboxSecretInput
 type UpdateSandboxBody = apimodel.UpdateSandboxBody
 type StartSandboxBody = apimodel.StartSandboxBody
@@ -131,7 +133,9 @@ type SandboxService interface {
 	// (ADR 0032 §4); create never ends at it (ADR 0048). The API mappers need
 	// it to report that upgrade. Nil when seeding has not created it.
 	FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error)
-	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error)
+	// ListSandboxes filters on the sandboxes' recorded tags as well as where
+	// they came from; no selectors lists them whatever their tags.
+	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)
@@ -154,6 +158,10 @@ type SandboxService interface {
 	UpgradeSandbox(ctx context.Context, projectID, sandboxID string, input UpgradeSandboxBody) (*model.Sandbox, error)
 	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
 	CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input CompleteSandboxApplyBody) (*model.Sandbox, error)
+	// UpdateSandboxMeta carries a change to the description or tags into the
+	// sandbox, which holds them, and records what it holds afterwards
+	// (ADR 0136).
+	UpdateSandboxMeta(ctx context.Context, projectID, sandboxID string, input UpdateSandboxMetaBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
 	// AwaitSandboxHTTPClient is the same acquire for a caller that means "I

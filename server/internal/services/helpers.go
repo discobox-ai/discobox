@@ -200,9 +200,6 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.ModelReasoningLevel != nil {
 		config["modelReasoningLevel"] = *sandbox.ModelReasoningLevel
 	}
-	if sandbox.Description != nil {
-		config["description"] = *sandbox.Description
-	}
 	if sandbox.Env != nil {
 		config["env"] = sandbox.Env
 	}
@@ -298,6 +295,20 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	}
 	if sandbox.HarnessConfig != nil {
 		fields["harnessConfig"] = sandbox.HarnessConfig
+	}
+	// The copy of what the sandbox holds (ADR 0136). Before it has reported,
+	// that is the description it was created with and no tags; metaObservedAt
+	// is absent until then, which is what says so.
+	meta := map[string]any{"tags": sandbox.Tags}
+	if sandbox.Tags == nil {
+		meta["tags"] = map[string]string{}
+	}
+	if sandbox.Description != nil && *sandbox.Description != "" {
+		meta["description"] = *sandbox.Description
+	}
+	fields["meta"] = meta
+	if sandbox.MetaObservedAt != nil {
+		fields["metaObservedAt"] = *sandbox.MetaObservedAt
 	}
 	result, err := Convert[serverapi.Sandbox](fields)
 	if err != nil {

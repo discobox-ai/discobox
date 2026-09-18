@@ -215,6 +215,14 @@ func requiredRequestScope(r *http.Request) string {
 			return ""
 		}
 	}
+	// Writing the meta file is gated like starting an exec: it is a write into
+	// the sandbox's filesystem, and exec:write already allows any such write.
+	if strings.HasSuffix(r.URL.Path, "/meta") {
+		if r.Method == http.MethodPatch {
+			return ScopeExecWrite
+		}
+		return ""
+	}
 	if strings.Contains(r.URL.Path, "/tcp/attach") {
 		if r.Method == http.MethodGet {
 			return ScopeTCPConnect

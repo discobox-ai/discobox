@@ -47,6 +47,9 @@ var (
 	rn21AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
+	rn143AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
 	rn34AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
@@ -92,6 +95,9 @@ var (
 	rn9AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
+	rn144AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
 	rn122AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
@@ -101,7 +107,7 @@ var (
 	rn135AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn144AllowedHeaders = map[string]string{
+	rn146AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn49AllowedHeaders = map[string]string{
@@ -1083,6 +1089,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											allowedHeaders: nil,
 											acceptPost:     "",
 											acceptPatch:    "",
+										})
+									}
+
+									return
+								}
+
+							case 'm': // Prefix: "meta"
+
+								if l := len("meta"); len(elem) >= l && elem[0:l] == "meta" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "PATCH":
+										s.handleUpdateSandboxAgentMetaRequest([2]string{
+											args[0],
+											args[1],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "PATCH",
+											allowedHeaders: rn143AllowedHeaders,
+											acceptPost:     "",
+											acceptPatch:    "application/json",
 										})
 									}
 
@@ -2630,6 +2664,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														return
 													}
 
+												case 'm': // Prefix: "meta"
+
+													if l := len("meta"); len(elem) >= l && elem[0:l] == "meta" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "PATCH":
+															s.handleUpdateSandboxMetaRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "PATCH",
+																allowedHeaders: rn144AllowedHeaders,
+																acceptPost:     "",
+																acceptPatch:    "application/json",
+															})
+														}
+
+														return
+													}
+
 												case 'p': // Prefix: "purge"
 
 													if l := len("purge"); len(elem) >= l && elem[0:l] == "purge" {
@@ -2885,7 +2947,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 															default:
 																s.notAllowed(w, r, notAllowedParams{
 																	allowedMethods: "POST",
-																	allowedHeaders: rn144AllowedHeaders,
+																	allowedHeaders: rn146AllowedHeaders,
 																	acceptPost:     "application/json",
 																	acceptPatch:    "",
 																})
@@ -4381,6 +4443,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 										r.operationID = "list-harness-hooks"
 										r.operationGroup = ""
 										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"
+										r.args = args
+										r.count = 2
+										return r, true
+									default:
+										return
+									}
+								}
+
+							case 'm': // Prefix: "meta"
+
+								if l := len("meta"); len(elem) >= l && elem[0:l] == "meta" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "PATCH":
+										r.name = UpdateSandboxAgentMetaOperation
+										r.summary = "Change the description or tags in the sandbox's meta file."
+										r.operationID = "update-sandbox-agent-meta"
+										r.operationGroup = ""
+										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/meta"
 										r.args = args
 										r.count = 2
 										return r, true
@@ -5895,6 +5982,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 															r.operationID = "assign-sandbox-harness-secrets"
 															r.operationGroup = ""
 															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/harness-secrets"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 'm': // Prefix: "meta"
+
+													if l := len("meta"); len(elem) >= l && elem[0:l] == "meta" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "PATCH":
+															r.name = UpdateSandboxMetaOperation
+															r.summary = "Change a sandbox's description or tags"
+															r.operationID = "update-sandbox-meta"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/meta"
 															r.args = args
 															r.count = 2
 															return r, true

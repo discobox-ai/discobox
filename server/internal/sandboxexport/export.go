@@ -95,9 +95,21 @@ type Source struct {
 // on one server and nothing at all on another. Harness names the harness config
 // by slug, which is the only handle that can mean the same thing on both.
 type Spec struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description,omitempty"`
-	Harness     Harness `json:"harness"`
+	Name string `json:"name"`
+	// Description and Tags are the control plane's copy of the sandbox's
+	// meta, whose system of record is the meta file in the tree this archive
+	// also carries (ADR 0136). They travel so the destination can list and
+	// filter the discobox by them before it has started and reported the file
+	// itself. When the copy was observed does not travel: it is a reading of
+	// the source host's clock, and a destination whose clock is behind would
+	// ignore its own reports until it caught up.
+	//
+	// Tags were added without a format version: an older reader ignores the
+	// field and loses only this copy, which the discobox's first report
+	// restores, while a version bump would refuse the whole archive.
+	Description *string           `json:"description,omitempty"`
+	Tags        map[string]string `json:"tags,omitempty"`
+	Harness     Harness           `json:"harness"`
 	// Origin is the client host the discobox was created from. It travels
 	// because it is not a fact about the server: it says which machine's
 	// checkout this discobox belongs to, which is still true after a move, and
@@ -120,22 +132,24 @@ type Spec struct {
 // a nested one.
 func (s Spec) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Name        string          `json:"name"`
-		Description *string         `json:"description,omitempty"`
-		Harness     Harness         `json:"harness"`
-		Origin      *model.Origin   `json:"origin,omitempty"`
-		Secrets     []SecretBinding `json:"secrets,omitempty"`
+		Name        string            `json:"name"`
+		Description *string           `json:"description,omitempty"`
+		Tags        map[string]string `json:"tags,omitempty"`
+		Harness     Harness           `json:"harness"`
+		Origin      *model.Origin     `json:"origin,omitempty"`
+		Secrets     []SecretBinding   `json:"secrets,omitempty"`
 		model.SandboxManifest
-	}{Name: s.Name, Description: s.Description, Harness: s.Harness, Origin: s.Origin, Secrets: s.Secrets, SandboxManifest: s.Manifest})
+	}{Name: s.Name, Description: s.Description, Tags: s.Tags, Harness: s.Harness, Origin: s.Origin, Secrets: s.Secrets, SandboxManifest: s.Manifest})
 }
 
 func (s *Spec) UnmarshalJSON(data []byte) error {
 	var decoded struct {
-		Name        string          `json:"name"`
-		Description *string         `json:"description,omitempty"`
-		Harness     Harness         `json:"harness"`
-		Origin      *model.Origin   `json:"origin,omitempty"`
-		Secrets     []SecretBinding `json:"secrets,omitempty"`
+		Name        string            `json:"name"`
+		Description *string           `json:"description,omitempty"`
+		Tags        map[string]string `json:"tags,omitempty"`
+		Harness     Harness           `json:"harness"`
+		Origin      *model.Origin     `json:"origin,omitempty"`
+		Secrets     []SecretBinding   `json:"secrets,omitempty"`
 		model.SandboxManifest
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
@@ -143,6 +157,7 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	}
 	s.Name = decoded.Name
 	s.Description = decoded.Description
+	s.Tags = decoded.Tags
 	s.Harness = decoded.Harness
 	s.Origin = decoded.Origin
 	s.Secrets = decoded.Secrets

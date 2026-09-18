@@ -28,4 +28,5 @@ const (
 	StartSandboxServiceOperation            OperationName = "StartSandboxService"
 	StopSandboxServiceOperation             OperationName = "StopSandboxService"
 	StreamSandboxExecResourcesOperation     OperationName = "StreamSandboxExecResources"
+	UpdateSandboxAgentMetaOperation         OperationName = "UpdateSandboxAgentMeta"
 )

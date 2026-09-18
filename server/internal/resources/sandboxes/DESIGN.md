@@ -378,6 +378,19 @@ It reads the title out of the last agent-status report already on the row
 resolution and rename still act on `config.name`, which is left untouched
 beside it.
 
+## Meta
+
+A sandbox's description and tags live in the sandbox, in its meta file, and the
+row holds a copy (ADR 0136): the `description` column, `tags`, and
+`meta_observed_at`, stamped on the sandbox's clock. `UpdateSandboxMeta` carries
+a change to the sandbox agent (`PATCH .../meta`, as `exec:write`) and records
+what it answers; the status report (pools) records what the file holds. Either
+write lands only when newer, and both are observed columns `UpdateSandbox`
+omits. Until the first report the description is the create-time one, which
+the reconciler also hands the pool as the seed for the file. `ListSandboxes`
+filters on the recorded tags in Go. Export writes the copy into the spec and
+import restores it unobserved; the file itself travels in the tree.
+
 ## Source delivery
 
 Each materialized source also receives an opaque source-data key before the

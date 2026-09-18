@@ -118,6 +118,8 @@ const (
 	UpdatePoolStatusOperation                 OperationName = "UpdatePoolStatus"
 	UpdateProjectOperation                    OperationName = "UpdateProject"
 	UpdateSandboxOperation                    OperationName = "UpdateSandbox"
+	UpdateSandboxAgentMetaOperation           OperationName = "UpdateSandboxAgentMeta"
+	UpdateSandboxMetaOperation                OperationName = "UpdateSandboxMeta"
 	UpdateSandboxProviderInstanceOperation    OperationName = "UpdateSandboxProviderInstance"
 	UpdateSecretOperation                     OperationName = "UpdateSecret"
 	UpgradeSandboxOperation                   OperationName = "UpgradeSandbox"

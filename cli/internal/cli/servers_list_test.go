@@ -135,7 +135,7 @@ func TestListEveryServerListsEachServerOnce(t *testing.T) {
 	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
 
 	app := &App{serverURL: primary.URL, projectID: "project-1"}
-	listed, unreachable, err := app.listEveryServer(context.Background(), true)
+	listed, unreachable, err := app.listEveryServer(context.Background(), true, nil)
 	if err != nil {
 		t.Fatalf("listEveryServer() error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestListEveryServerLeavesOutARegisteredServerThatDoesNotAnswer(t *testing.T
 	registerForTest(t, registeredServer{Name: "gone", Address: deadServer(t)})
 
 	app := &App{serverURL: primary.URL, projectID: "project-1"}
-	listed, unreachable, err := app.listEveryServer(context.Background(), true)
+	listed, unreachable, err := app.listEveryServer(context.Background(), true, nil)
 	if err != nil {
 		t.Fatalf("listEveryServer() error = %v", err)
 	}
@@ -174,7 +174,7 @@ func TestListEveryServerLeavesOutARegisteredServerThatDoesNotAnswer(t *testing.T
 	}
 
 	app = &App{serverURL: deadServer(t), projectID: "project-1"}
-	if _, _, err := app.listEveryServer(context.Background(), true); err == nil {
+	if _, _, err := app.listEveryServer(context.Background(), true, nil); err == nil {
 		t.Fatal("listEveryServer() succeeded with the primary down")
 	}
 }
@@ -1396,5 +1396,25 @@ func TestAnAmbiguousShortIDOnAnotherServerSaysWhichDiscoboxes(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "did not") {
 		t.Fatalf("error = %v, want beta reported as a server that answered", err)
+	}
+}
+
+// A server older than tags ignores the tag parameter and lists everything. Its
+// discoboxes carry no tags, so a tag filter lists none of them rather than all
+// of them (ADR 0136).
+func TestListEveryServerFiltersTagsAServerIgnored(t *testing.T) {
+	useTempServersFile(t)
+	primary := fakeServer(t, "Alpha", sandboxA, sandboxB)
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+
+	listed, _, err := app.listEveryServer(context.Background(), true, []string{"wip"})
+	if err != nil {
+		t.Fatalf("listEveryServer() error = %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("listed %d discoboxes, want none: none of them is tagged", len(listed))
+	}
+	if listed, _, _ := app.listEveryServer(context.Background(), true, nil); len(listed) != 2 {
+		t.Fatalf("listed %d without a filter, want both", len(listed))
 	}
 }

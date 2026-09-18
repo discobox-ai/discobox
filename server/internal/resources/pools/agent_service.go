@@ -14,6 +14,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
@@ -184,8 +185,35 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 		if err := s.store.UpdateSandboxAgentStatus(ctx, pool.ProjectID, sandboxID, status, entry.ObservedAt, lastActive); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
+		if meta, ok := reportedMeta(entry.Status); ok {
+			if err := s.store.UpdateSandboxMeta(ctx, pool.ProjectID, sandboxID, meta, entry.ObservedAt); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// reportedMeta is the description and tags a status report carries
+// (ADR 0136), and whether it carries them to record. A report without them —
+// from an agent that could not read its meta file, or one older than meta —
+// leaves the recorded copy as it was: absent is "not known", and recording it
+// as empty would say the description was cleared and every tag removed. Meta
+// that is not valid is not recorded either; the sandbox agent validates what
+// it reports, so meta that fails here was not written by it.
+func reportedMeta(status map[string]jx.Raw) (sandboxmeta.Meta, bool) {
+	raw, ok := status["meta"]
+	if !ok {
+		return sandboxmeta.Meta{}, false
+	}
+	var meta sandboxmeta.Meta
+	if err := json.Unmarshal(raw, &meta); err != nil || meta.Tags == nil {
+		return sandboxmeta.Meta{}, false
+	}
+	if err := meta.Validate(); err != nil {
+		return sandboxmeta.Meta{}, false
+	}
+	return meta, true
 }
 
 // ReportPoolResources records what a pool and its sandboxes are consuming

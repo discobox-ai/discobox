@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
@@ -502,5 +504,70 @@ func TestUpdateSandboxAgentStatusLastActiveOnlyMovesForward(t *testing.T) {
 	}
 	if got, err = s.GetSandbox(ctx, "project-1", sandbox.ID); err != nil || !got.LastActiveAt.Equal(later) {
 		t.Fatalf("lastActiveAt = %v (err %v), want untouched %v", got.LastActiveAt, err, later)
+	}
+}
+
+// Meta is recorded from two paths — the status report and a meta write the
+// sandbox answered — so only a newer observation replaces an older one: a poll
+// that read the file before a write must not undo the write by landing after
+// it (ADR 0136). Like every observed column it survives a whole-row save from a
+// read taken before it was written, and until the sandbox reports, the
+// description is the one it was created with.
+func TestUpdateSandboxMetaKeepsTheNewestObservation(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	seed := "created to fix the reaper"
+	sandbox := &model.Sandbox{
+		ID: "sandbox-meta", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "meta",
+		Description: &seed,
+	}
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	stale, err := s.GetSandbox(ctx, "project-1", sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if stale.Description == nil || *stale.Description != seed || stale.MetaObservedAt != nil {
+		t.Fatalf("before any report: description = %v, observed = %v; want the seed, unobserved", stale.Description, stale.MetaObservedAt)
+	}
+
+	written := time.Now().UTC().Truncate(time.Millisecond)
+	reported := sandboxmeta.Meta{Description: "fixing the reaper", Tags: map[string]string{"wip": "", "ticket": "ENG-12"}}
+	if err := s.UpdateSandboxMeta(ctx, "project-1", sandbox.ID, reported, written); err != nil {
+		t.Fatalf("update meta: %v", err)
+	}
+	if err := s.UpdateSandboxMeta(ctx, "project-1", sandbox.ID, sandboxmeta.Meta{}, written.Add(-time.Second)); err != nil {
+		t.Fatalf("update meta with an older observation: %v", err)
+	}
+	stale.Name = "renamed"
+	if err := s.UpdateSandbox(ctx, stale); err != nil {
+		t.Fatalf("update sandbox from a stale read: %v", err)
+	}
+
+	got, err := s.GetSandbox(ctx, "project-1", sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if got.Description == nil || *got.Description != reported.Description {
+		t.Fatalf("description = %v, want %q", got.Description, reported.Description)
+	}
+	if !reflect.DeepEqual(got.Tags, reported.Tags) {
+		t.Fatalf("tags = %v, want %v", got.Tags, reported.Tags)
+	}
+	if got.MetaObservedAt == nil || !got.MetaObservedAt.Equal(written) {
+		t.Fatalf("metaObservedAt = %v, want %v", got.MetaObservedAt, written)
+	}
+
+	if err := s.UpdateSandboxMeta(ctx, "project-1", sandbox.ID, sandboxmeta.Meta{}, written.Add(time.Second)); err != nil {
+		t.Fatalf("update meta with a newer observation: %v", err)
+	}
+	got, err = s.GetSandbox(ctx, "project-1", sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if got.Description != nil || len(got.Tags) != 0 || got.MetaObservedAt == nil {
+		t.Fatalf("meta = %v %v at %v, want none recorded as observed", got.Description, got.Tags, got.MetaObservedAt)
 	}
 }

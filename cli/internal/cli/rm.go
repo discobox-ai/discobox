@@ -74,7 +74,7 @@ To destroy a discobox and its data now, use "discobox admin box purge".`,
 			// is not something a discobox needs a runtime for, and a name the
 			// listing still shows must not come back as no such discobox.
 			// Archiving an already-archived one is the no-op it reads as.
-			sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, false)
+			sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, false, nil)
 			if err != nil {
 				return err
 			}

@@ -15,12 +15,14 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/agentstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
 	"github.com/discobox-ai/discobox/sandbox-agent/store"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/go-faster/jx"
 )
 
@@ -39,6 +41,9 @@ type handler struct {
 	execUser          *execs.User
 	ports             *ports.Watcher
 	autostop          *autostop.Policy
+	// meta is the sandbox's meta file (ADR 0136), nil when the sandbox user's
+	// home did not resolve.
+	meta *meta.File
 }
 
 type terminalStore interface {
@@ -532,7 +537,61 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	if state, ok := h.autostop.Status(); ok {
 		response.Autostop = sandboxapi.NewOptSandboxAgentAutostopStatus(sandboxAgentAutostopStatus(state))
 	}
+	// The meta file is read on every poll, like git status: it is the system
+	// of record and the agent in the sandbox edits it directly, so this report
+	// is how an edit made in here reaches the control plane's copy (ADR 0136).
+	// A file that does not read reports why instead of empty meta, which the
+	// control plane would take as the description cleared and every tag
+	// removed.
+	if h.meta == nil {
+		response.MetaError = sandboxapi.NewOptString("meta is unavailable: the sandbox user's home did not resolve")
+	} else if current, _, err := h.meta.Read(); err != nil {
+		response.MetaError = sandboxapi.NewOptString(err.Error())
+	} else {
+		response.Meta = sandboxapi.NewOptSandboxMeta(sandboxAgentMeta(current))
+	}
 	return &response, nil
+}
+
+// UpdateSandboxAgentMeta applies a change to the meta file and answers with
+// what it holds afterwards, stamped on this sandbox's clock so the control
+// plane can order it against the status reports it also records from
+// (ADR 0136).
+func (h *handler) UpdateSandboxAgentMeta(_ context.Context, req *sandboxapi.UpdateSandboxMetaBody, _ sandboxapi.UpdateSandboxAgentMetaParams) (*sandboxapi.SandboxAgentMeta, error) {
+	if h.meta == nil {
+		return nil, statusError{status: http.StatusServiceUnavailable, message: "meta is unavailable: the sandbox user's home did not resolve"}
+	}
+	var change sandboxmeta.Change
+	if req != nil {
+		if description, ok := req.Description.Get(); ok {
+			change.Description = &description
+		}
+		change.SetTags, _ = req.SetTags.Get()
+		change.RemoveTags = req.RemoveTags
+	}
+	current, observedAt, err := h.meta.Update(change)
+	switch {
+	case errors.Is(err, meta.ErrInvalidChange):
+		return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
+	case errors.Is(err, meta.ErrInvalidFile):
+		return nil, statusError{status: http.StatusConflict, message: err.Error()}
+	case err != nil:
+		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+	}
+	return &sandboxapi.SandboxAgentMeta{Meta: sandboxAgentMeta(current), ObservedAt: observedAt}, nil
+}
+
+// sandboxAgentMeta carries meta onto the wire. Tags are always present, empty
+// or not, so a reader can tell "no tags" from a field it did not get.
+func sandboxAgentMeta(in sandboxmeta.Meta) sandboxapi.SandboxMeta {
+	out := sandboxapi.SandboxMeta{Tags: sandboxapi.SandboxMetaTags(in.Tags)}
+	if out.Tags == nil {
+		out.Tags = sandboxapi.SandboxMetaTags{}
+	}
+	if in.Description != "" {
+		out.Description = sandboxapi.NewOptString(in.Description)
+	}
+	return out
 }
 
 // sandboxAgentAutostopStatus carries the idle stop's view onto the wire

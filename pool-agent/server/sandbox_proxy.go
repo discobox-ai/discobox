@@ -47,6 +47,11 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/stop", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/restart", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 
+	// The meta file (ADR 0136). Writing it starts a stopped sandbox like any
+	// other use: the sandbox is where its description and tags live, so a
+	// change cannot be taken while it is down.
+	router.Method(http.MethodPatch, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/meta", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+
 	// direct-tcpip tunnel (ADR 0024 §3). Reuses sandboxAgentProxyHandler and
 	// autoStart unchanged: the handler already generically forwards any
 	// /api/project/.../sandboxes/{sandboxId}/* suffix to the sandbox-agent,
@@ -151,6 +156,12 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 	if strings.Contains(r.URL.Path, "/udp/attach") {
 		if r.Method == http.MethodGet {
 			return ScopeUDPConnect
+		}
+		return ""
+	}
+	if strings.HasSuffix(r.URL.Path, "/meta") {
+		if r.Method == http.MethodPatch {
+			return ScopeExecWrite
 		}
 		return ""
 	}

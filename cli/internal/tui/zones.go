@@ -66,6 +66,8 @@ const (
 	// beside it: each one the dropdown, closed.
 	hitFolder
 	hitServer
+	// hitTags is the header's tag filter, after the folder.
+	hitTags
 
 	// hitGit is the workspace header's git position and status. Pressing it
 	// opens the diff tool, the same as the leader's tools, diff chord.

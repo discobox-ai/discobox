@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -123,6 +124,7 @@ func (s *Service) exportManifest(ctx context.Context, sb *model.Sandbox) (*sandb
 	spec := sandboxexport.Spec{
 		Name:        sb.Name,
 		Description: sb.Description,
+		Tags:        sb.Tags,
 		Harness:     harness,
 		Origin:      sb.Origin,
 		Manifest:    sb.SandboxManifest,
@@ -280,6 +282,14 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		SourceDeliveredAt: importedAt(manifest),
 	}
 	sb.HarnessConfigID = &harnessConfig.ID
+	// The archive's copy of the tags, so the discobox lists and filters by
+	// them before it has reported its meta file here (ADR 0136). It is left
+	// unobserved, which the discobox's first report always replaces. An
+	// archive is not trusted to hold a valid set; one that does not is dropped
+	// and waits for that report.
+	if len(spec.Tags) > 0 && sandboxmeta.ValidateTags(spec.Tags) == nil {
+		sb.Tags = spec.Tags
+	}
 	// The image is the destination harness config's, exactly as a create takes
 	// it from there (ADR 0123 §1). It cannot come from the archive: the rest of
 	// what the harness contributes -- RunCommand, Files, Volumes, Env -- is read

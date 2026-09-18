@@ -42,6 +42,10 @@ const (
 	// filter with only one server to list, and then the folder is the top.
 	focusFolder
 	focusServer
+	// The tag filter, drawn after the folder once any discobox carries a tag.
+	// It is beside the folder rather than above it, so Up climbs past it: Tab
+	// is what reaches it, folder then tags then server.
+	focusTags
 	// A sandbox's terminal, drawn in place of everything else. While it has
 	// focus every key belongs to the sandbox except the detach prefix.
 	focusPane
@@ -1022,6 +1026,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case serverChosenMsg:
 		return m.selectServer(msg.server)
 
+	case tagChosenMsg:
+		return m.selectTag(msg.tag)
+
 	case sourceChosenMsg:
 		if msg.enter {
 			m.askForSource(m.opts.typedSource(), "", msg.run)
@@ -1493,6 +1500,8 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.updateServer(msg)
 	case focusFolder:
 		return m.updateFolder(msg)
+	case focusTags:
+		return m.updateTags(msg)
 	default:
 		return m.updatePrompt(msg)
 	}
@@ -3236,6 +3245,12 @@ func (m *Model) viewHeaderLeft() string {
 		out += m.st.headerLabel.Render("  ")
 	}
 	mark(hitFolder, m.viewFolder)
+	// The narrowest of the three, so last, and only once there is a tag to
+	// narrow to.
+	if m.showsTagFilter() {
+		out += m.st.headerLabel.Render("  ")
+		mark(hitTags, m.viewTags)
+	}
 	return out
 }
 
@@ -3452,7 +3467,8 @@ func (m *Model) viewStatus() string {
 }
 
 // statusIdentity is the discobox under the cursor, named the two ways the row
-// itself cannot name it: its id, and the name it is configured with.
+// itself cannot name it — its id, and the name it is configured with — and
+// followed by its description when it has one.
 //
 // Neither is on the row. The name a row shows is the display name, which is
 // the primary terminal's window title as soon as the harness has set one — so
@@ -3481,6 +3497,11 @@ func (m *Model) statusIdentity() string {
 	out := m.st.dimText.Render(box.ID)
 	if box.ConfigName != "" {
 		out += "  " + m.st.name.Render(box.ConfigName)
+	}
+	// What the box is for, in the words of whoever described it — the one
+	// thing about it no column has room for (ADR 0136).
+	if box.Description != "" {
+		out += "  " + m.st.dimText.Render(box.Description)
 	}
 	return out
 }
@@ -3635,11 +3656,28 @@ func (m *Model) hints() []hint {
 			pressing("↓ folder", "down"),
 			pressing("Tab or Esc prompt", "esc"),
 		}
+	case focusTags:
+		hints := []hint{
+			says("←→ change tag"),
+			pressing("Enter lists them all", "enter"),
+			pressing("↓ boxes", "down"),
+		}
+		if m.manyServers() {
+			return append(hints, pressing("↑ or Tab server", "up"), pressing("Esc prompt", "esc"))
+		}
+		return append(hints, pressing("Tab or Esc prompt", "esc"))
 	case focusFolder:
 		hints := []hint{
 			says("←→ change folder"),
 			pressing("Enter lists them all", "enter"),
 			pressing("↓ boxes", "down"),
+		}
+		if m.showsTagFilter() {
+			hints = append(hints, pressing("Tab tags", "tab"))
+			if m.manyServers() {
+				return append(hints, pressing("↑ server", "up"), pressing("Esc prompt", "esc"))
+			}
+			return append(hints, pressing("Esc prompt", "esc"))
 		}
 		// The server is the rung above, when there is one; Tab goes there too
 		// on its way round, so the prompt is Esc's alone.
@@ -3984,6 +4022,20 @@ func (m *Model) helpText() string {
 		"    ↑              reach it, from the top of the discobox list",
 		"    ← →            change it without opening anything",
 		"    Enter          open the list of folders, with what is in each",
+		"    ↓              back down into the discoboxes",
+		"",
+		"───────────────────────────────────────────────────────────────",
+		"The tag filter",
+		"",
+		"  Once any discobox carries a tag, the header offers one after the",
+		"  folder: `all tags`, or one tag, which lists only the discoboxes",
+		"  carrying it. A tag reads as the row draws it, #wip or",
+		"  #ticket=ENG-12. Tags are written in the discobox, in",
+		"  ~/.discobox/meta.json, or with the API.",
+		"",
+		"    Tab            reach it, from the folder filter",
+		"    ← →            change it without opening anything",
+		"    Enter          open the list of tags, with how many carry each",
 		"    ↓              back down into the discoboxes",
 		"",
 		"───────────────────────────────────────────────────────────────",

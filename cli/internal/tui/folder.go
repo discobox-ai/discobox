@@ -137,8 +137,12 @@ func (m *Model) updateFolder(msg tea.KeyPressMsg) tea.Cmd {
 		m.list.moveTo(0)
 		return nil
 	case "tab":
-		// On round the ring to the server when there is one to choose, and
-		// back to the prompt when there is not.
+		// On round the ring: the tag filter beside this one when there is a
+		// tag to choose, then the server when there is one, then the prompt.
+		if m.showsTagFilter() {
+			m.focus = focusTags
+			return nil
+		}
 		if m.manyServers() {
 			m.focus = focusServer
 			return nil

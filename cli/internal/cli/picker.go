@@ -115,7 +115,7 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 // ls` shows, or with all `discobox ls --all`, less the archived discoboxes,
 // which have no runtime to act on.
 func (a *App) sandboxCandidates(ctx context.Context, all bool) ([]serverSandbox, []unansweredServer, error) {
-	listed, unreachable, err := a.listEveryServer(ctx, all)
+	listed, unreachable, err := a.listEveryServer(ctx, all, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -170,7 +170,7 @@ func serverSandboxPickerItems(rows []serverSandbox, localHostID string, several 
 // inspected and unarchived, but they have no runtime and cannot be selected
 // for an operation.
 func (a *App) listProjectSandboxCandidates(ctx context.Context, client *apiclientgen.Client, projectID string, all bool) ([]apimodel.Sandbox, error) {
-	sandboxes, err := a.listProjectSandboxes(ctx, client, projectID, all)
+	sandboxes, err := a.listProjectSandboxes(ctx, client, projectID, all, nil)
 	if err != nil {
 		return nil, err
 	}

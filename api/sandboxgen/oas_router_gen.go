@@ -17,6 +17,9 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
+	rn33AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
 )
 
 func (s *Server) cutPrefix(path string) (string, bool) {
@@ -493,6 +496,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									allowedHeaders: nil,
 									acceptPost:     "",
 									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					case 'm': // Prefix: "meta"
+
+						if l := len("meta"); len(elem) >= l && elem[0:l] == "meta" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "PATCH":
+								s.handleUpdateSandboxAgentMetaRequest([2]string{
+									args[0],
+									args[1],
+								}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "PATCH",
+									allowedHeaders: rn33AllowedHeaders,
+									acceptPost:     "",
+									acceptPatch:    "application/json",
 								})
 							}
 
@@ -1275,6 +1306,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								r.operationID = "list-harness-hooks"
 								r.operationGroup = ""
 								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"
+								r.args = args
+								r.count = 2
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 'm': // Prefix: "meta"
+
+						if l := len("meta"); len(elem) >= l && elem[0:l] == "meta" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "PATCH":
+								r.name = UpdateSandboxAgentMetaOperation
+								r.summary = "Change the description or tags in the sandbox's meta file."
+								r.operationID = "update-sandbox-agent-meta"
+								r.operationGroup = ""
+								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/meta"
 								r.args = args
 								r.count = 2
 								return r, true

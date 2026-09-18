@@ -2,15 +2,22 @@ package handlers
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/sandboxmeta"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
 func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandboxesParams) (serverapi.ListSandboxesRes, error) {
-	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), originKeys(params.OriginKey))
+	selectors, err := sandboxmeta.ParseSelectors(params.Tag)
+	if err != nil {
+		return apiError(apperrors.NewStatusError(http.StatusBadRequest, err.Error())), nil
+	}
+	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), originKeys(params.OriginKey), selectors)
 	if err != nil {
 		return apiError(err), nil
 	}
@@ -29,6 +36,18 @@ func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandbo
 
 func (h *Handler) CreateSandbox(ctx context.Context, req *apimodel.CreateSandboxBody, params serverapi.CreateSandboxParams) (serverapi.CreateSandboxRes, error) {
 	sandbox, err := h.services.Sandboxes.CreateSandbox(ctx, params.ProjectId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) UpdateSandboxMeta(ctx context.Context, req *apimodel.UpdateSandboxMetaBody, params serverapi.UpdateSandboxMetaParams) (serverapi.UpdateSandboxMetaRes, error) {
+	sandbox, err := h.services.Sandboxes.UpdateSandboxMeta(ctx, params.ProjectId, params.SandboxId, *req)
 	if err != nil {
 		return apiError(err), nil
 	}

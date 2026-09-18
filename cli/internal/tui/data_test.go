@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // The base column prefers the reported position, and marks the state of the
@@ -171,5 +173,27 @@ func TestSandboxElsewhere(t *testing.T) {
 				t.Fatalf("elsewhere = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A discobox's tags follow its name on its row, as many as leave the name room
+// to be read, and none on a window too narrow for even one (ADR 0136).
+func TestARowShowsTheTagsItHasRoomFor(t *testing.T) {
+	t.Parallel()
+	box := Sandbox{ID: "sbx_one", Name: "fix the reaper", State: StateRunning, Tags: []string{"ticket=ENG-12", "wip"}}
+	row := func(width int) string {
+		l := newSandboxList(Session{})
+		l.width = width
+		return ansi.Strip(l.row(newStyles(false), box, 0, false))
+	}
+	if wide := row(160); !strings.Contains(wide, "fix the reaper #ticket=ENG-12 #wip") {
+		t.Fatalf("wide row = %q, want the name followed by both tags", wide)
+	}
+	narrow := row(40)
+	if strings.Contains(narrow, "#") {
+		t.Fatalf("narrow row = %q, want the tags dropped before the name is squeezed", narrow)
+	}
+	if !strings.Contains(narrow, "fix the") {
+		t.Fatalf("narrow row = %q, want the name kept", narrow)
 	}
 }

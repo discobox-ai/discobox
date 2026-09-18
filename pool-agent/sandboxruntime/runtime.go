@@ -1282,6 +1282,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 		doc.Runtime.ModelReasoningLevel = optString(config.ModelReasoningLevel)
 		doc.Runtime.ModelServiceTier = optString(config.ModelServiceTier)
 		doc.Runtime.Prompt = append([]string{}, config.Prompt...)
+		doc.Runtime.Description = optString(config.Description)
 		if mode, ok := config.HarnessMode.Get(); ok {
 			doc.Runtime.HarnessMode = string(mode)
 		}
