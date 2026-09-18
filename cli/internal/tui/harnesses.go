@@ -85,6 +85,12 @@ func (l *harnessList) setAll(all []Harness) {
 	l.clamp()
 }
 
+// clear forgets the listing, for a server whose harnesses have not been read
+// yet: not loaded, so nothing is refused or asked on the strength of it.
+func (l *harnessList) clear() {
+	l.all, l.loaded, l.cursor, l.offset = nil, false, 0, 0
+}
+
 func (l *harnessList) current() *Harness {
 	if l.cursor < 0 || l.cursor >= len(l.all) {
 		return nil
@@ -279,6 +285,9 @@ func harnessAge(h Harness, now time.Time) string {
 // harnessesLoadedMsg is the listing, which is read at startup for the run
 // options as well as for this screen.
 type harnessesLoadedMsg struct {
+	// server is the server the listing was read from, so one that lands after
+	// the header has moved to another server is not drawn under its name.
+	server    string
 	harnesses []Harness
 	err       error
 }
@@ -346,9 +355,10 @@ type harnessCardMsg struct {
 // the screen
 
 func (m *Model) loadHarnesses() tea.Cmd {
+	server := m.configServer()
 	return func() tea.Msg {
-		harnesses, err := m.ds.Harnesses(m.ctx)
-		return harnessesLoadedMsg{harnesses: harnesses, err: err}
+		harnesses, err := m.ds.Harnesses(m.ctx, server)
+		return harnessesLoadedMsg{server: server, harnesses: harnesses, err: err}
 	}
 }
 
@@ -356,6 +366,11 @@ func (m *Model) loadHarnesses() tea.Cmd {
 // both: what the panel offers as a harness to run is what this reports, so
 // enabling one makes it selectable without the window being reopened.
 func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
+	if m.serverName(msg.server) != m.configServer() {
+		// Read for a server the header has since moved off. The one it is on
+		// now was asked for when it moved (configServerChanged).
+		return nil
+	}
 	if msg.err != nil {
 		// A run waiting on this listing goes anyway: what the questions here
 		// would have caught, the server catches, and a run held forever behind
@@ -411,6 +426,10 @@ func (m *Model) updateHarnesses(msg tea.KeyPressMsg) tea.Cmd {
 		m.harnesses.moveTo(len(m.harnesses.all) - 1)
 	case "?":
 		m.dialog = m.helpDialog()
+	case "left", "right":
+		// The header's server, which is what this screen is showing: the
+		// keys the control itself answers to when the list has focus.
+		return m.cycleServer(serverStep(msg))
 	case ".":
 		return m.harnessMenu()
 	case "enter":
@@ -535,8 +554,9 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness, resume *RunRequest) tea.Cmd {
 	name := harness.displayName()
 	m.busy = string(verb) + " " + name + "…"
+	server := m.configServer()
 	return func() tea.Msg {
-		if err := m.ds.DoHarness(m.ctx, verb, harness.ID); err != nil {
+		if err := m.ds.DoHarness(m.ctx, server, verb, harness.ID); err != nil {
 			return harnessDoneMsg{err: fmt.Errorf("%s %s: %w", verb, name, err)}
 		}
 		return harnessDoneMsg{text: verb.done(name), resume: resume}
@@ -555,12 +575,12 @@ func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resum
 	m.busy = "configuring " + name + "…"
 	m.expanded = true
 	cols, rows := m.paneCells(m.width)
-	ctx, ds := m.ctx, m.ds
+	ctx, ds, server := m.ctx, m.ds, m.configServer()
 	return func() tea.Msg {
 		// Asked before the flow starts, so the probe's own bind has let go of
 		// the port by the time the flow binds it for real.
 		warning := configurePortWarning(ctx, harness, ds)
-		term, err := ds.OpenHarnessConfigure(ctx, harness.ID, cols, rows)
+		term, err := ds.OpenHarnessConfigure(ctx, server, harness.ID, cols, rows)
 		return configurePaneOpenedMsg{harness: harness, andDefault: andDefault, resume: resume, term: term, err: err, warning: warning}
 	}
 }
@@ -593,13 +613,14 @@ func configurePortWarning(ctx context.Context, harness Harness, ds DataSource) s
 // and saves back what it wrote.
 func (m *Model) editHarnessFile(harness Harness, path string) tea.Cmd {
 	m.busy = "editing " + path + "…"
+	server := m.configServer()
 	var changed bool
 	exec := &harnessExec{
 		title: "Editing " + path,
 		ctx:   m.ctx,
 		run: func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
 			var err error
-			changed, err = m.ds.EditHarnessFile(ctx, harness.ID, path, stdin, stdout, stderr)
+			changed, err = m.ds.EditHarnessFile(ctx, server, harness.ID, path, stdin, stdout, stderr)
 			return err
 		},
 	}
@@ -690,9 +711,9 @@ func harnessFileDetail(file HarnessFile) string {
 // to date for every row.
 func (m *Model) showHarnessCard(harness Harness) tea.Cmd {
 	m.busy = "reading " + harness.displayName() + "…"
-	st := m.st
+	st, server := m.st, m.configServer()
 	return func() tea.Msg {
-		secrets, err := m.ds.HarnessSecrets(m.ctx, harness.ID)
+		secrets, err := m.ds.HarnessSecrets(m.ctx, server, harness.ID)
 		if err != nil {
 			return harnessCardMsg{err: err}
 		}
@@ -859,6 +880,9 @@ func (m *Model) harnessHints() []hint {
 				out = append(out, keyed(a.key, a.key, a.label))
 			}
 		}
+	}
+	if m.manyServers() {
+		out = append(out, says("←→ server"))
 	}
 	return append(out, pressing("Esc back", "esc"))
 }

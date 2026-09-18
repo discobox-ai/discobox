@@ -21,10 +21,14 @@ import (
 // the same API and the same flows the `admin harnesses` subcommands run, so what
 // the screen does is reproducible from a shell.
 
-// Harnesses is the project's harness configs, oldest first, which is the order
+// Harnesses is one server's harness configs, oldest first, which is the order
 // they were registered in — the built-ins the server ships lead, and anything
 // registered by hand follows.
-func (d *apiDataSource) Harnesses(ctx context.Context) ([]tui.Harness, error) {
+func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Harness, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
 	configs, err := d.app.listHarnessConfigs(ctx, d.client, d.projectID)
 	if err != nil {
 		return nil, err
@@ -118,7 +122,11 @@ func harnessState(cfg apimodel.HarnessConfig) tui.HarnessState {
 // needs: the image's declarations resolved against the project's secret
 // bindings, plus the bindings the image never declared, which are the ones
 // somebody bound by hand.
-func (d *apiDataSource) HarnessSecrets(ctx context.Context, harnessID string) ([]tui.HarnessSecret, error) {
+func (d *apiDataSource) HarnessSecrets(ctx context.Context, server, harnessID string) ([]tui.HarnessSecret, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
 	res, err := d.client.GetHarnessConfig(ctx, apiclientgen.GetHarnessConfigParams{ProjectId: d.projectID, HarnessConfigId: harnessID})
 	if err != nil {
 		return nil, err
@@ -178,7 +186,11 @@ func resolveHarnessSecret(out tui.HarnessSecret, secretID string, secretsByID ma
 }
 
 // DoHarness runs one of the harness verbs against the API.
-func (d *apiDataSource) DoHarness(ctx context.Context, verb tui.HarnessVerb, harnessID string) error {
+func (d *apiDataSource) DoHarness(ctx context.Context, server string, verb tui.HarnessVerb, harnessID string) error {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
 	switch verb {
 	case tui.HarnessSetDefault:
 		return d.app.setDefaultHarnessConfig(ctx, d.client, d.projectID, harnessID)
@@ -217,7 +229,11 @@ func (d *apiDataSource) DoHarness(ctx context.Context, verb tui.HarnessVerb, har
 	}
 }
 
-func (d *apiDataSource) OpenHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (tui.Terminal, error) {
+func (d *apiDataSource) OpenHarnessConfigure(ctx context.Context, server, harnessID string, cols, rows int) (tui.Terminal, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
 	return d.openLocalHarnessConfigure(ctx, harnessID, cols, rows)
 }
 
@@ -242,7 +258,11 @@ func (d *apiDataSource) LocalPortsInUse(ctx context.Context, ports []int) []int 
 // EditHarnessFile opens one of the harness's files in the user's editor and
 // saves what it wrote back. The config is re-read first, so the editor opens on
 // what the file is now rather than on what the listing said it was.
-func (d *apiDataSource) EditHarnessFile(ctx context.Context, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
+func (d *apiDataSource) EditHarnessFile(ctx context.Context, server, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return false, err
+	}
 	res, err := d.client.GetHarnessConfig(ctx, apiclientgen.GetHarnessConfigParams{ProjectId: d.projectID, HarnessConfigId: harnessID})
 	if err != nil {
 		return false, err

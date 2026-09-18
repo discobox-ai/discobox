@@ -3199,12 +3199,11 @@ func (m *Model) viewHeaderLeft() string {
 		}
 		out += field
 	}
-	// Only over the screens it filters. The harnesses and secrets screens share
-	// this header and are the primary's whatever the list is narrowed to (ADR
-	// 0116 §4), so a live "server beta" above them says the secret being added
-	// is going to beta — and a press on it there would re-point the next create
-	// from a screen that is not creating anything.
-	if m.manyServers() && !m.harnessesOpen && !m.secretsOpen {
+	// Over every screen that shares this header. The harnesses and secrets
+	// screens are one server's, and this is where they say which (ADR 0131
+	// §2): the server the list is narrowed to, or the primary while it shows
+	// every server.
+	if m.manyServers() {
 		mark(hitServer, m.viewServer)
 		out += m.st.headerLabel.Render("  ")
 	}
@@ -3971,9 +3970,10 @@ func (m *Model) helpText() string {
 		"    ↓              back down to the folder filter",
 		"",
 		"  The run options' Server row is the same choice from the other",
-		"  side: changing it moves the list too. The harnesses, the secrets",
-		"  and the credential inbox are the primary's whichever server is",
-		"  showing.",
+		"  side: changing it moves the list too. The harnesses and secrets",
+		"  screens are that server's too, or the primary's while every",
+		"  server is showing; ← → there moves it. A credential request is",
+		"  marked wherever its discobox is, and answered on its server.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"The workspace screen",

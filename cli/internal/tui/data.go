@@ -1105,6 +1105,11 @@ type Forward interface {
 type CredentialRequest struct {
 	ID        string
 	SandboxID string
+	// Server is the server the request is waiting on, by the name the window
+	// lists it under, and where everything that answers it goes (ADR 0131
+	// §1): a request is answered with one of its own server's secrets. Empty
+	// when there is only one server.
+	Server string
 	// Name is the credential the agent asked for ("github"), which is not a
 	// secret ID: choosing which secret answers it is the approval.
 	Name          string
@@ -1418,23 +1423,29 @@ type DataSource interface {
 	// still can be.
 	PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]SourcePush, error)
 
-	// Harnesses is the project's harnesses, oldest first, which is the order
+	// Harnesses is one server's harnesses, oldest first, which is the order
 	// they were registered in. It is read at startup as well as by the harnesses
-	// screen: the run options offer the harnesses it reports, so enabling one
-	// makes it selectable without reopening the window.
-	Harnesses(ctx context.Context) ([]Harness, error)
+	// screen, for the server the next create goes to: the run options offer
+	// what it reports, so enabling one makes it selectable without reopening
+	// the window.
+	//
+	// Every harness and secret call names its server by the name the window
+	// lists it under, empty or the primary's for the primary (ADR 0131 §3):
+	// the configuration they read and change is per server, and nothing in
+	// their arguments says which one otherwise.
+	Harnesses(ctx context.Context, server string) ([]Harness, error)
 
 	// HarnessSecrets is one harness's environment variables with the project
 	// secret bound to each, for the config card. It is a request of its own, so it
 	// is made when the card is opened rather than for every row of a listing.
-	HarnessSecrets(ctx context.Context, harnessID string) ([]HarnessSecret, error)
+	HarnessSecrets(ctx context.Context, server, harnessID string) ([]HarnessSecret, error)
 
 	// DoHarness runs a lifecycle verb against one harness.
-	DoHarness(ctx context.Context, verb HarnessVerb, harnessID string) error
+	DoHarness(ctx context.Context, server string, verb HarnessVerb, harnessID string) error
 
 	// OpenHarnessConfigure starts the harness's interactive setup on a terminal
 	// the window draws in a dedicated configuration pane.
-	OpenHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (Terminal, error)
+	OpenHarnessConfigure(ctx context.Context, server, harnessID string, cols, rows int) (Terminal, error)
 
 	// LocalPortsInUse reports which of the given local ports cannot be bound
 	// on this machine right now. The window asks just before it opens a
@@ -1447,7 +1458,7 @@ type DataSource interface {
 	// EditHarnessFile opens one of the harness's files in the user's editor and
 	// saves what it wrote back, reporting whether anything changed. The window
 	// is suspended for it, for the same reason.
-	EditHarnessFile(ctx context.Context, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
+	EditHarnessFile(ctx context.Context, server, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
 
 	// Open connects a terminal for one of the CLI's own commands — apply —
 	// sized to the overlay it is going into. The discobox's terminals come
@@ -1540,18 +1551,20 @@ type DataSource interface {
 	Addresses(ctx context.Context, sandboxID string) (Addresses, error)
 
 	// CredentialRequests is every credential request in the project still
-	// waiting on a person, newest first. It is polled with the listing rather
+	// waiting on a person, on every server the window lists, newest first,
+	// each naming its server (ADR 0131 §1). A server that did not answer
+	// contributes none. It is polled with the listing rather
 	// than streamed: the client-facing event stream is gone (ADR 0061), and a
 	// request is answered on human time anyway.
 	CredentialRequests(ctx context.Context) ([]CredentialRequest, error)
 
-	// Secrets is the project's secrets, for choosing which one answers a
-	// request. It never carries a value.
-	Secrets(ctx context.Context) ([]Secret, error)
+	// Secrets is one server's secrets, for choosing which one answers a
+	// request and for the secrets screen. It never carries a value.
+	Secrets(ctx context.Context, server string) ([]Secret, error)
 
 	// CreateSecret stores a credential typed into the approval dialog and
 	// returns it, so the approval that follows has a secret to name.
-	CreateSecret(ctx context.Context, secret NewSecret) (Secret, error)
+	CreateSecret(ctx context.Context, server string, secret NewSecret) (Secret, error)
 
 	// UpdateSecret changes what a secret says about itself: its name, the host
 	// it may be sent to, how long consent to it may last, and the credential
@@ -1560,29 +1573,29 @@ type DataSource interface {
 	// It is one call because it is one endpoint and, from the window, one form:
 	// a card whose rows were saved by a call each would half-apply when the
 	// second one failed, and would report two things where a person did one.
-	UpdateSecret(ctx context.Context, secretID string, update SecretUpdate) error
+	UpdateSecret(ctx context.Context, server, secretID string, update SecretUpdate) error
 
-	// Grants lists the standing grants on one secret, or on every secret in the
-	// project when secretID is empty.
-	Grants(ctx context.Context, secretID string) ([]Grant, error)
+	// Grants lists the standing grants on one secret, or on every secret the
+	// server holds for the project when secretID is empty.
+	Grants(ctx context.Context, server, secretID string) ([]Grant, error)
 
 	// CreateGrant mints a standing grant without a request behind it: the
 	// pre-approval an operator makes because they already know the answer.
-	CreateGrant(ctx context.Context, grant NewGrant) (Grant, error)
+	CreateGrant(ctx context.Context, server string, grant NewGrant) (Grant, error)
 
 	// RevokeGrant withdraws one grant. The credential stops resolving at once —
 	// the request that produced it stays approved, because it is history.
-	RevokeGrant(ctx context.Context, grantID string) error
+	RevokeGrant(ctx context.Context, server, grantID string) error
 
 	// DeleteSecret removes a secret and everything standing on it.
-	DeleteSecret(ctx context.Context, secretID string) error
+	DeleteSecret(ctx context.Context, server, secretID string) error
 
 	// ApproveCredentialRequest answers a request yes, minting the grant that
 	// authorizes it. The server decides the scope and the approved uses from
 	// the request itself.
-	ApproveCredentialRequest(ctx context.Context, approval Approval) error
+	ApproveCredentialRequest(ctx context.Context, server string, approval Approval) error
 
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
 	// a dismissal: the asking agent is waiting on one.
-	DenyCredentialRequest(ctx context.Context, requestID string) error
+	DenyCredentialRequest(ctx context.Context, server, requestID string) error
 }

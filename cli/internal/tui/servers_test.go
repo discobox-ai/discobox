@@ -654,10 +654,10 @@ func TestANarrowedServerThatIsNotAnsweringSaysSo(t *testing.T) {
 	}
 }
 
-// The harnesses and secrets screens share the header and are the primary's
-// whatever the list is narrowed to, so the server filter is not over them: a
-// live "server beta" there would say the secret being added goes to beta.
-func TestTheServerFilterIsNotOverThePrimarysScreens(t *testing.T) {
+// The harnesses and secrets screens are the header's server's, and the header
+// says so over them (ADR 0131 §2): narrowed to beta, F3 and F4 read and name
+// beta, and the control is one a pointer can reach there too.
+func TestTheConfigScreensAreTheHeadersServer(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{harnessesKey, secretsKey} {
 		ds := newFakeSource(onServer("alpha", testSandboxes())...)
@@ -667,19 +667,152 @@ func TestTheServerFilterIsNotOverThePrimarysScreens(t *testing.T) {
 		if m.list.server != "beta" {
 			t.Fatalf("the list is showing %q, want beta", m.list.server)
 		}
-		send(t, m, keyPress("esc"))
-		if header := frame(m)[1]; !strings.Contains(header, "server beta") {
-			t.Fatalf("the launcher's header does not carry the filter to begin with: %q", header)
-		}
-		send(t, m, keyPress(key))
+		send(t, m, keyPress("esc"), keyPress(key))
 
-		header := frame(m)[1]
-		if strings.Contains(header, "server beta") {
-			t.Fatalf("%s: the screen is headed with the server filter: %q", key, header)
+		if header := frame(m)[1]; !strings.Contains(header, "server beta") {
+			t.Fatalf("%s: the screen does not say it is beta's: %q", key, header)
 		}
-		if _, ok := m.zones.find(hitServer); ok {
-			t.Fatalf("%s: the screen marks a server filter that is not drawn", key)
+		if _, ok := m.zones.find(hitServer); !ok {
+			t.Fatalf("%s: the server the screen names is not marked", key)
 		}
+		want := "Harnesses@beta"
+		if key == secretsKey {
+			want = "Secrets@beta"
+		}
+		if !slices.Contains(ds.calls(), want) {
+			t.Fatalf("%s: calls = %v, want %s", key, ds.calls(), want)
+		}
+	}
+}
+
+// From every server, the screens are the primary's and say so by name — every
+// server at once is not a server a secret can be added to — and leaving them
+// leaves the list showing every server, as it was.
+func TestTheConfigScreensNameThePrimaryFromEveryServer(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress(secretsKey))
+
+	header := frame(m)[1]
+	if !strings.Contains(header, "server alpha") || strings.Contains(header, allServers) {
+		t.Fatalf("header = %q, want it to name the primary", header)
+	}
+	if choices := m.serverChoices(); slices.Contains(choices, "") {
+		t.Fatalf("choices = %q, want no every-server choice over the secrets screen", choices)
+	}
+	if !slices.Contains(ds.calls(), "Secrets@alpha") {
+		t.Fatalf("calls = %v, want the primary's secrets", ds.calls())
+	}
+	send(t, m, keyPress("esc"))
+	if m.list.server != "" {
+		t.Fatalf("the list is showing %q after the secrets screen, want every server", m.list.server)
+	}
+}
+
+// The arrows move the one server there is over the screens, and it is the
+// list's: beta's secrets replace alpha's rather than sitting under beta's name
+// while they are read, and the list is on beta after Esc.
+func TestTheArrowsMoveTheConfigScreensServer(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	ds.secretsOn = map[string][]Secret{
+		"alpha": {{ID: "sec_a", Name: "alpha token"}},
+		"beta":  {{ID: "sec_b", Name: "beta token"}},
+	}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress(secretsKey))
+	if out := plainFrame(m); !strings.Contains(out, "alpha token") {
+		t.Fatalf("the secrets screen does not list alpha's:\n%s", out)
+	}
+
+	send(t, m, keyPress("right"))
+	out := plainFrame(m)
+	if !strings.Contains(out, "beta token") || strings.Contains(out, "alpha token") {
+		t.Fatalf("after → the screen does not list beta's alone:\n%s", out)
+	}
+	if !strings.Contains(frame(m)[1], "server beta") {
+		t.Fatalf("header = %q, want beta named", frame(m)[1])
+	}
+	// Round, without stopping at every server.
+	send(t, m, keyPress("right"))
+	if m.configServer() != "alpha" {
+		t.Fatalf("→ from beta reached %q, want alpha", m.configServer())
+	}
+	send(t, m, keyPress("left"), keyPress("esc"))
+	if m.list.server != "beta" {
+		t.Fatalf("the list is showing %q after beta's secrets, want beta", m.list.server)
+	}
+}
+
+// A secrets listing that lands after the header moved on is not drawn under
+// the name of the server it was not read from.
+func TestAStaleSecretsListingIsDropped(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("alpha", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress(secretsKey), keyPress("right"))
+
+	send(t, m, secretsLoadedListMsg{server: "alpha", secrets: []Secret{{ID: "sec_a", Name: "alpha token"}}})
+	if out := plainFrame(m); strings.Contains(out, "alpha token") {
+		t.Fatalf("alpha's secrets are drawn under beta:\n%s", out)
+	}
+}
+
+// A request on a registered server's discobox marks its row, and everything
+// that answers it goes to that server: the secrets offered, and the approval
+// (ADR 0131 §1). The secrets screen only offers it on that server.
+func TestARequestOnAnotherServerIsAnsweredThere(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("beta", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	req := waitingRequest()
+	req.Server = "beta"
+	ds.requests = []CredentialRequest{req}
+	ds.secretsOn = map[string][]Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}}
+	m := newTestModel(t, ds)
+
+	if pending := m.pendingFor("sbx_one"); len(pending) != 1 {
+		t.Fatalf("pending on beta's discobox = %v, want its request", pending)
+	}
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
+	}
+	if body := dialogText(m); !strings.Contains(body, "beta") {
+		t.Fatalf("card = %q, want it to name the server", body)
+	}
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+	calls := ds.calls()
+	for _, want := range []string{"Secrets@beta", "ApproveCredentialRequest@beta"} {
+		if !slices.Contains(calls, want) {
+			t.Fatalf("calls = %v, want %s", calls, want)
+		}
+	}
+}
+
+// The secrets screen's inbox is its server's: alpha's secrets cannot answer
+// beta's request, so alpha's screen does not offer it.
+func TestTheSecretsScreenListsItsServersRequests(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(onServer("beta", testSandboxes())...)
+	ds.session.Servers = []string{"alpha", "beta"}
+	req := waitingRequest()
+	req.Server = "beta"
+	ds.requests = []CredentialRequest{req}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress(secretsKey))
+	if n := len(m.requestRows.all); n != 0 {
+		t.Fatalf("alpha's secrets screen lists %d requests, want beta's left out", n)
+	}
+	send(t, m, keyPress("right"))
+	if n := len(m.requestRows.all); n != 1 {
+		t.Fatalf("beta's secrets screen lists %d requests, want its one", n)
 	}
 }
 

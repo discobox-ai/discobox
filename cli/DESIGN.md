@@ -399,12 +399,13 @@ is an error rather than a lost convenience.
   server.
 - **The launcher's listing is a snapshot, not a round trip.** A command asks
   once and exits; the window polls every five seconds for as long as it is
-  open, so `apiDataSource.listEveryServer` keeps what each server last said
-  (`tuiServer.listed`) and each poll asks only the servers that are not
-  already being asked (`tuiServer.asking`), waits `listPatience` for the
-  answers, and reports what it has. Five rules follow from that, and every one
-  of them is about a server that has gone quiet costing the window nothing but
-  its own rows:
+  open, so each server keeps what it last said to each poll (`serverPoll`:
+  `tuiServer.listing`, and `tuiServer.requests` for the credential inbox,
+  which is every server's too — ADR 0131 §1) and each poll
+  (`pollEveryServer`) asks only the servers that are not already being asked,
+  waits `listPatience` for the answers, and reports what it has. Five rules
+  follow from that, and every one of them is about a server that has gone
+  quiet costing the window nothing but its own rows:
   - **Every request is on a leash, the primary included** (`pollTimeout`),
     and the leash is long — minutes, not a listing's bound. Nothing waits on
     it: a poll gives up after `listPatience` and draws the answer whenever it
@@ -441,8 +442,9 @@ is an error rather than a lost convenience.
     command" for the launcher and leaves it standing for `ls` and the picker).
     One that fails is reported as not answering (`Listing.Unreachable`), the
     other servers are still the listing, and the window reports *that* server
-    as an error rather than a note, since everything else it does is the
-    primary's. A window with one server keeps §4's rule: there is no listing
+    as an error rather than a note, since it is still where a create goes
+    from `all servers`, whose harnesses and secrets the screens show there,
+    and whose machine the readout measures. A window with one server keeps §4's rule: there is no listing
     without it, so its failure is the listing's failure. A server that failed
     is asked again after `unreachableServerRetry`.
 - **A discobox argument** goes through `selectSandbox`, which returns the App
@@ -458,6 +460,13 @@ is an error rather than a lost convenience.
   server at once, so an ID copied from `ls` works whichever server listed it.
   The picker lists every server; a registered server's rows say `on <name>`
   and are keyed `<name>/<id>`, which is how the pick says where to go.
+- **The launcher routes two ways.** A call about one discobox finds its server
+  from the ID the listing located it under (`apiDataSource.at`). A call about
+  a server's configuration — harnesses, secrets, grants, answering a
+  credential request — is handed the server's name and resolves it
+  (`apiDataSource.on`), because a secret ID says nothing about where it lives
+  until that server has been asked, and asking is the call that needs to know
+  (ADR 0131 §3).
 - **The SSH config is every server's.** `discobox admin ssh-config --write`
   syncs each server in turn (`writeEverySSHConfig`), and registering one syncs
   it there and then, which is the same rewrite a create on that server does

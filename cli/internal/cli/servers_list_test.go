@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
 )
@@ -75,6 +76,15 @@ func fakePeerServerHandler(name, peerID string, sandboxIDs ...string) http.Handl
 			// sync writes are named by what the server says it is.
 			_, _ = fmt.Fprintf(w, `{"id":%q,"name":"P","ownerUserId":"user-1","default":false,"welcomed":true,`+
 				`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, fakeProjectID(name))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/secret-requests"):
+			// One request waiting on each discobox, named for the server, so a
+			// test can tell whose inbox a request came from.
+			rows := make([]string, 0, len(sandboxIDs))
+			for _, id := range sandboxIDs {
+				rows = append(rows, fmt.Sprintf(`{"id":"sreq_%s_%s","projectId":%q,"sandboxId":%q,"requestedBy":"agent","type":"token","status":"pending",`+
+					`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, name, id, fakeProjectID(name), id))
+			}
+			_, _ = fmt.Fprintf(w, `{"secretRequests":[%s]}`, strings.Join(rows, ","))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/sandboxes"):
 			rows := make([]string, 0, len(sandboxIDs))
 			for i, id := range sandboxIDs {
@@ -418,6 +428,165 @@ func TestLauncherListsEveryServerAndRoutesToIt(t *testing.T) {
 	}
 	if len(listing.Sandboxes) != 1 || !reflect.DeepEqual(listing.Unreachable, []string{"beta"}) {
 		t.Fatalf("List() with beta down = %+v", listing)
+	}
+}
+
+// The inbox is every server's (ADR 0131 §1): each request names the server
+// it is waiting on, and a server-scoped call names its server to reach it.
+func TestLauncherGathersEveryServersRequests(t *testing.T) {
+	useTempServersFile(t)
+	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
+	t.Chdir(t.TempDir())
+	primary := fakeServer(t, "alpha", sandboxA)
+	other := httptest.NewServer(fakeServerHandler("beta", sandboxB))
+	t.Cleanup(other.Close)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+
+	ds := launcherDataSource(t, primary.URL)
+	requests, err := ds.CredentialRequests(context.Background())
+	if err != nil {
+		t.Fatalf("CredentialRequests() error = %v", err)
+	}
+	got := map[string]string{}
+	for _, req := range requests {
+		got[req.ID] = req.Server
+	}
+	want := map[string]string{"sreq_alpha_" + sandboxA: "alpha", "sreq_beta_" + sandboxB: "beta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CredentialRequests() = %v, want %v", got, want)
+	}
+
+	for _, name := range []string{"", "alpha"} {
+		if on, err := ds.on(context.Background(), name); err != nil || on != ds {
+			t.Fatalf("on(%q) = %v, %v, want the primary's own", name, on, err)
+		}
+	}
+	on, err := ds.on(context.Background(), "beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if on.app.serverURL != other.URL || on.projectID != defaultProjectAlias {
+		t.Fatalf("on(beta) is aimed at %s %s", on.app.serverURL, on.projectID)
+	}
+	if _, err := ds.on(context.Background(), "gamma"); err == nil {
+		t.Fatal("on() found a server the window does not list")
+	}
+
+	// A server that stops answering has nothing waiting as far as the window
+	// can tell, and the rest are still the inbox.
+	other.Close()
+	requests, err = ds.CredentialRequests(context.Background())
+	if err != nil {
+		t.Fatalf("CredentialRequests() with beta down error = %v", err)
+	}
+	if len(requests) != 1 || requests[0].Server != "alpha" {
+		t.Fatalf("CredentialRequests() with beta down = %+v, want alpha's alone", requests)
+	}
+}
+
+// One server registered under two addresses lists its requests once, as it
+// lists its discoboxes once: a request counted twice marks a row twice and sits
+// in two servers' inboxes.
+func TestLauncherListsARequestOnce(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	primary := fakeServer(t, "alpha", sandboxA)
+	beta := fakeServer(t, "beta", sandboxB)
+	again := fakeServer(t, "beta", sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: beta.URL}, registeredServer{Name: "beta-2", Address: again.URL})
+
+	ds := launcherDataSource(t, primary.URL)
+	requests, err := ds.CredentialRequests(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onB []string
+	for _, req := range requests {
+		if req.SandboxID == sandboxB {
+			onB = append(onB, req.Server)
+		}
+	}
+	if !reflect.DeepEqual(onB, []string{"beta"}) {
+		t.Fatalf("beta's request is listed under %v, want once under beta", onB)
+	}
+}
+
+// A primary that offers a registered server's name keeps its address in the
+// window: names route configuration and approvals (on), and two servers under
+// one would send one's approvals to the other.
+func TestLauncherServerNamesAreUnique(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	primary := fakeServer(t, "beta", sandboxA)
+	registered := fakeServer(t, "beta", sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: registered.URL})
+
+	ds := launcherDataSource(t, primary.URL)
+	session, err := ds.Session(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Servers) != 2 || session.Servers[0] == session.Servers[1] {
+		t.Fatalf("Session().Servers = %v, want two different names", session.Servers)
+	}
+	on, err := ds.on(context.Background(), "beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if on.app.serverURL != registered.URL {
+		t.Fatalf("on(beta) is aimed at %s, want the registered beta", on.app.serverURL)
+	}
+}
+
+// Answering a request takes it out of the inbox however slow its server is to
+// list again: an answer that was in flight when the request was answered is
+// discarded when it lands, rather than putting the request back.
+func TestAnAnsweredRequestIsNotPutBackByAStaleRead(t *testing.T) {
+	d := &apiDataSource{}
+	s := &tuiServer{server: &server{name: "alpha", primary: true}, source: d}
+	d.servers = []*tuiServer{s}
+	req := tui.CredentialRequest{ID: "sreq_1"}
+	poll := func(s *tuiServer) *serverPoll[tui.CredentialRequest] { return &s.requests }
+	answer := func(context.Context, *apiDataSource) ([]tui.CredentialRequest, error) {
+		return []tui.CredentialRequest{req}, nil
+	}
+
+	pollEveryServer(context.Background(), d, poll, answer)
+	if len(s.requests.last) != 1 {
+		t.Fatalf("first poll holds %v, want the request", s.requests.last)
+	}
+
+	// A read that is slower than the poll's patience, and so still out when
+	// the request is answered.
+	release, landed := make(chan struct{}), make(chan struct{})
+	slow := func(context.Context, *apiDataSource) ([]tui.CredentialRequest, error) {
+		defer close(landed)
+		<-release
+		return []tui.CredentialRequest{req}, nil
+	}
+	pollEveryServer(context.Background(), d, poll, slow)
+
+	d.mu.Lock()
+	stale(&s.requests, func(r tui.CredentialRequest) bool { return r.ID == req.ID })
+	d.mu.Unlock()
+	if len(s.requests.last) != 0 {
+		t.Fatalf("after the answer the poll holds %v, want it gone", s.requests.last)
+	}
+
+	close(release)
+	<-landed
+	// The landing takes the lock just after the read returns.
+	time.Sleep(100 * time.Millisecond)
+	d.mu.Lock()
+	got := append([]tui.CredentialRequest(nil), s.requests.last...)
+	d.mu.Unlock()
+	if len(got) != 0 {
+		t.Fatalf("the read taken before the answer put %v back", got)
+	}
+	none := func(context.Context, *apiDataSource) ([]tui.CredentialRequest, error) { return nil, nil }
+	pollEveryServer(context.Background(), d, poll, none)
+	if len(s.requests.last) != 0 {
+		t.Fatalf("the next poll holds %v, want nothing waiting", s.requests.last)
 	}
 }
 

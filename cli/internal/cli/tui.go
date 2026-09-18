@@ -174,20 +174,36 @@ type tuiServer struct {
 	// primary, and for a registered one made the first time it is asked for
 	// (sourceFor).
 	source *apiDataSource
+	// listing is the poll of this server's discoboxes, and requests the poll
+	// of its credential requests waiting on a person (ADR 0131 §1). They are
+	// two polls rather than one because the inbox is re-read on its own the
+	// moment a request is answered, and the listing has no reason to be.
+	listing  serverPoll[tui.Sandbox]
+	requests serverPoll[tui.CredentialRequest]
+}
+
+// serverPoll is what one server said to one of the window's polls the last
+// time it answered, and whether it is being asked again.
+type serverPoll[T any] struct {
 	// asking is set while a request to this server is outstanding. A request
 	// outlives the poll that started it, so a server that is slow is asked
 	// once rather than once per tick, and its answer is drawn by whichever
 	// poll comes after it.
 	asking bool
-	// listed is what this server said the last time it answered, which is what
+	// last is what this server said the last time it answered, which is what
 	// the window goes on showing until it answers again, and answered is
-	// whether it ever has: a server with no discoboxes has answered, and is
-	// not one the window is still waiting on.
-	listed   []tui.Sandbox
+	// whether it ever has: a server with nothing to report has answered, and
+	// is not one the window is still waiting on.
+	last     []T
 	answered bool
 	// failed is whether the last attempt ended in an error, which is what puts
 	// the server under "not answering" instead of leaving its rows on screen.
 	failed bool
+	// generation counts the answers this poll has been told are stale. A
+	// request carries the generation it was sent in, and one that lands after
+	// the count moved is discarded: it was taken before whatever made it
+	// stale, and the poll that re-asks is already on its way (stale).
+	generation int
 	// retryAt is when a server that did not answer is asked again. Until then
 	// it is left alone, so a server that is down is not dialed on every tick.
 	retryAt time.Time
@@ -236,8 +252,13 @@ func newAPIDataSource(ctx context.Context, a *App, client *apiclientgen.Client, 
 	// and the session publishes it as the name those rows are grouped under. A
 	// name learned between them would file the primary's own rows under a
 	// server the session does not list until the next poll.
+	//
+	// And it is only taken when no registered server has it already. Names are
+	// how the window routes a server's configuration calls and its credential
+	// requests (on, ADR 0131 §3), so two servers under one name would send one
+	// server's approvals to the other; the primary keeps its address instead.
 	if primary := set[0]; !primary.registered {
-		if name := offeredName(ctx, client); name != "" {
+		if name := offeredName(ctx, client); name != "" && !registeredName(set[1:], name) {
 			primary.name = name
 		}
 	}
@@ -250,6 +271,12 @@ func newAPIDataSource(ctx context.Context, a *App, client *apiclientgen.Client, 
 		ds.servers = append(ds.servers, entry)
 	}
 	return ds, nil
+}
+
+// registeredName reports whether one of the registered servers goes by name.
+func registeredName(registered []*server, name string) bool {
+	_, ok := serverNamed(registered, name)
+	return ok
 }
 
 // sourceFor is the data source aimed at s. A registered server's is made the
@@ -432,41 +459,15 @@ func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
 // A discobox two servers both list is one server registered under two
 // addresses, and is listed once.
 func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error) {
-	now := time.Now()
-	var asked sync.WaitGroup
-	for _, s := range d.servers {
-		d.mu.Lock()
-		ask := !s.asking && !now.Before(s.retryAt)
-		if ask {
-			s.asking = true
-		}
-		d.mu.Unlock()
-		if !ask {
-			continue
-		}
-		asked.Add(1)
-		go func() {
-			defer asked.Done()
-			sandboxes, err := d.listFrom(ctx, s)
-			d.mu.Lock()
-			defer d.mu.Unlock()
-			s.asking = false
-			if err != nil {
-				s.listed, s.answered, s.failed = nil, false, true
-				s.retryAt = time.Now().Add(unreachableServerRetry)
-				return
-			}
-			s.listed, s.answered, s.failed = sandboxes, true, false
-		}()
-	}
-	waitForAnswers(ctx, &asked)
+	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[tui.Sandbox] { return &s.listing },
+		func(ctx context.Context, source *apiDataSource) ([]tui.Sandbox, error) { return source.listHere(ctx) })
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var listing tui.Listing
 	seen := map[string]bool{}
 	for _, s := range d.servers {
-		if s.failed {
+		if s.listing.failed {
 			listing.Unreachable = append(listing.Unreachable, s.name)
 			continue
 		}
@@ -477,11 +478,11 @@ func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error
 		// quicker than that had answered before the wait ended. A server that
 		// has rows says nothing — they are on screen, and the next poll
 		// replaces them.
-		if s.asking && !s.answered {
+		if s.listing.asking && !s.listing.answered {
 			listing.Waiting = append(listing.Waiting, s.name)
 			continue
 		}
-		for _, box := range s.listed {
+		for _, box := range s.listing.last {
 			if seen[box.ID] {
 				continue
 			}
@@ -498,16 +499,97 @@ func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error
 	return listing, nil
 }
 
-// listFrom is one server's part of one poll, bounded so that it ends whether
+// pollEveryServer is one poll across the servers: it asks each one that is not
+// already being asked and is not resting after a failure, waits listPatience
+// for the answers, and leaves what arrived in each server's poll. What has not
+// arrived by then lands on its own, for the poll after this one to read.
+func pollEveryServer[T any](ctx context.Context, d *apiDataSource, poll func(*tuiServer) *serverPoll[T], fetch func(context.Context, *apiDataSource) ([]T, error)) {
+	now := time.Now()
+	var asked sync.WaitGroup
+	for _, s := range d.servers {
+		p := poll(s)
+		d.mu.Lock()
+		ask := !p.asking && !now.Before(p.retryAt)
+		if ask {
+			p.asking = true
+		}
+		generation := p.generation
+		d.mu.Unlock()
+		if !ask {
+			continue
+		}
+		asked.Add(1)
+		go func() {
+			defer asked.Done()
+			got, err := fetchFrom(ctx, d, s, fetch)
+			d.mu.Lock()
+			defer d.mu.Unlock()
+			if p.generation != generation {
+				// Taken before the poll was told its answers were stale; the
+				// request sent since is the one to believe.
+				return
+			}
+			p.asking = false
+			if err != nil {
+				p.last, p.answered, p.failed = nil, false, true
+				p.retryAt = time.Now().Add(unreachableServerRetry)
+				return
+			}
+			p.last, p.answered, p.failed = got, true, false
+		}()
+	}
+	waitForAnswers(ctx, &asked)
+}
+
+// stale tells a poll that what it holds, and what it has in flight, was taken
+// before something changed it: the answer to a request in flight is discarded
+// when it lands, and the next poll asks again rather than waiting on it. drop
+// takes out of what it holds anything the change is already known to have
+// removed, so a poll that has to show the old answer meanwhile does not show
+// that.
+func stale[T any](p *serverPoll[T], drop func(T) bool) {
+	p.generation++
+	p.asking = false
+	p.retryAt = time.Time{}
+	kept := p.last[:0:0]
+	for _, v := range p.last {
+		if !drop(v) {
+			kept = append(kept, v)
+		}
+	}
+	p.last = kept
+}
+
+// fetchFrom is one server's part of one poll, bounded so that it ends whether
 // or not the server answers.
-func (d *apiDataSource) listFrom(ctx context.Context, s *tuiServer) ([]tui.Sandbox, error) {
+func fetchFrom[T any](ctx context.Context, d *apiDataSource, s *tuiServer, fetch func(context.Context, *apiDataSource) ([]T, error)) ([]T, error) {
 	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
 	defer cancel()
 	source, err := d.sourceFor(ctx, s)
 	if err != nil {
 		return nil, err
 	}
-	return source.listHere(ctx)
+	return fetch(ctx, source)
+}
+
+// on is the data source for the server the window lists as name: this one for
+// the primary, and for a window with one server, whatever the name. It is how
+// the server-scoped calls — harnesses, secrets, grants, answering a request —
+// reach the server the window said (ADR 0131 §3), where the calls about one
+// discobox find theirs from its ID (at).
+func (d *apiDataSource) on(ctx context.Context, name string) (*apiDataSource, error) {
+	if d.servers == nil || name == "" {
+		return d, nil
+	}
+	for _, s := range d.servers {
+		if s.name == name {
+			if s.primary {
+				return d, nil
+			}
+			return d.sourceFor(ctx, s)
+		}
+	}
+	return nil, fmt.Errorf("%s is not a server this window lists", name)
 }
 
 // waitForAnswers waits for the requests one poll started, for listPatience.

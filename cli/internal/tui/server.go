@@ -29,11 +29,41 @@ const allServers = "all servers"
 // serverChoices are what the dropdown offers: every server at once, which is
 // the empty name, then every server the window lists, the primary first. Nil
 // when there is only the primary, and then the header draws no filter at all.
+//
+// Over the harnesses and secrets screens every server at once is not offered:
+// what they show is one server's, and a harness enabled or a secret added has
+// to go to one (ADR 0131 §2).
 func (m *Model) serverChoices() []string {
 	if !m.manyServers() {
 		return nil
 	}
+	if m.onConfigScreen() {
+		return append([]string(nil), m.session.Servers...)
+	}
 	return append([]string{""}, m.session.Servers...)
+}
+
+// onConfigScreen reports whether the harnesses or the secrets screen is the
+// one the header is drawn over.
+func (m *Model) onConfigScreen() bool { return m.harnessesOpen || m.secretsOpen }
+
+// configServer is the server the harnesses and secrets screens show and change,
+// and the one whose harnesses a create is checked against (ADR 0131 §2): the
+// server the header names, or the primary when it names every server. It is
+// always the server the next create goes to, which is why one list of
+// harnesses serves the screen, the run options and the questions a run asks.
+// Empty with one server, where the data source needs no name.
+func (m *Model) configServer() string { return m.serverName(m.list.server) }
+
+// serverName is a server's name with the empty one — the primary, however it
+// was written before the session named it — spelled out, so two names for the
+// primary compare equal. A load that went before the session landed carries
+// the empty name, and the model it lands in may since have learned the other.
+func (m *Model) serverName(name string) string {
+	if name == "" && len(m.session.Servers) > 0 {
+		return m.session.Servers[0]
+	}
+	return name
 }
 
 // manyServers reports whether there is a server to choose, which is what puts
@@ -44,6 +74,9 @@ func (m *Model) manyServers() bool { return len(m.session.Servers) > 1 }
 // the word the list's own section headers give it: a bare hostname beside a
 // path is one more name on the row, and does not say what it names.
 func (m *Model) serverLabel() string {
+	if m.onConfigScreen() {
+		return "server " + m.configServer()
+	}
 	if m.list.server == "" {
 		return allServers
 	}
@@ -60,10 +93,16 @@ func (m *Model) cycleServer(delta int) tea.Cmd {
 	return m.selectServer(choices[(at+delta+len(choices))%len(choices)])
 }
 
-// serverIndex is where the current filter sits among the choices.
+// serverIndex is where the current filter sits among the choices. Over the
+// harnesses and secrets screens that is the server they show, which is the
+// primary while the list shows every server.
 func (m *Model) serverIndex(choices []string) int {
+	current := m.list.server
+	if m.onConfigScreen() {
+		current = m.configServer()
+	}
 	for i, choice := range choices {
-		if choice == m.list.server {
+		if choice == current {
 			return i
 		}
 	}
@@ -76,6 +115,7 @@ func (m *Model) serverIndex(choices []string) int {
 // rows under it are a different set of discoboxes now, and leaving it on row
 // four of a list that has been replaced points it at something nobody chose.
 func (m *Model) selectServer(choice string) tea.Cmd {
+	was := m.configServer()
 	m.list.server = choice
 	// Where the window is listing from is where it creates. Every server at
 	// once is no answer to that, so the create falls back to the primary,
@@ -84,10 +124,39 @@ func (m *Model) selectServer(choice string) tea.Cmd {
 	m.opts.setServer(choice)
 	m.list.resetCursor()
 	m.layout()
-	if choice == "" {
-		return status("showing every server · new discoboxes go to %s", m.primaryServer())
+	reload := m.configServerChanged(was)
+	switch {
+	case m.harnessesOpen:
+		return tea.Batch(reload, status("harnesses on %s · new discoboxes go there", choice))
+	case m.secretsOpen:
+		return tea.Batch(reload, status("secrets on %s · new discoboxes go there", choice))
+	case choice == "":
+		return tea.Batch(reload, status("showing every server · new discoboxes go to %s", m.primaryServer()))
 	}
-	return status("showing %s · new discoboxes go there", choice)
+	return tea.Batch(reload, status("showing %s · new discoboxes go there", choice))
+}
+
+// configServerChanged re-reads what is kept for the server the harnesses and
+// secrets screens show, when a change of filter has moved it off was. The
+// rows another server listed are dropped rather than left under the new
+// server's name while its own are read: a secret listed under "server beta"
+// that is alpha's is the one mistake this screen exists to prevent.
+//
+// The harnesses are read whichever screen is up, because they are also what
+// a create is checked against and what the run options offer; the secrets
+// only while their screen is, which is the only place they are drawn.
+func (m *Model) configServerChanged(was string) tea.Cmd {
+	if m.configServer() == was {
+		return nil
+	}
+	m.harnesses.clear()
+	m.secrets.clear()
+	m.syncRequestRows()
+	cmds := []tea.Cmd{m.loadHarnesses()}
+	if m.secretsOpen {
+		cmds = append(cmds, m.loadSecrets())
+	}
+	return tea.Batch(cmds...)
 }
 
 // primaryServer is the server a create goes to when the filter names none,
@@ -112,12 +181,24 @@ func (m *Model) followServer() tea.Cmd {
 	// The row has no "every server" choice — a create goes to one server — so
 	// following it always lands the list on one, wherever it was before.
 	name := row.selected()
+	var reload tea.Cmd
 	if name != m.list.server {
+		was := m.configServer()
 		m.list.server = name
 		m.list.resetCursor()
 		m.layout()
+		reload = m.configServerChanged(was)
 	}
-	return status("creating on %s · showing its discoboxes", name)
+	return tea.Batch(reload, status("creating on %s · showing its discoboxes", name))
+}
+
+// serverStep is which way an arrow moves the server: the harnesses and secrets
+// screens change it with the arrows the control itself answers to.
+func serverStep(msg tea.KeyPressMsg) int {
+	if keyName(msg) == "left" {
+		return -1
+	}
+	return 1
 }
 
 // updateServer handles the header's server dropdown. Left and right change it
@@ -177,7 +258,14 @@ func (m *Model) serverDialog() *dialog {
 			enabled: true,
 		})
 	}
-	menu := actionsDialog("Show discoboxes on", "The window creates on the server it is showing.", items, func(key string) tea.Cmd {
+	title, keys := "Show discoboxes on", "Enter shows that server's discoboxes"
+	switch {
+	case m.harnessesOpen:
+		title, keys = "Show harnesses on", "Enter shows that server's harnesses"
+	case m.secretsOpen:
+		title, keys = "Show secrets on", "Enter shows that server's secrets"
+	}
+	menu := actionsDialog(title, "The window creates on the server it is showing.", items, func(key string) tea.Cmd {
 		for i, choice := range choices {
 			if itoa(i+1) == key {
 				return func() tea.Msg { return serverChosenMsg{server: choice} }
@@ -186,7 +274,7 @@ func (m *Model) serverDialog() *dialog {
 		return nil
 	})
 	menu.cursor = m.serverIndex(choices)
-	menu.keys = []hint{pressing("Enter shows that server's discoboxes", "enter"), pressing("Esc cancels", "esc")}
+	menu.keys = []hint{pressing(keys, "enter"), pressing("Esc cancels", "esc")}
 	return menu
 }
 

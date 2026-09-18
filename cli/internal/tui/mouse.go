@@ -336,8 +336,12 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		return nil, true
 
 	case hitServer:
-		m.prompt.Blur()
-		m.focus = focusServer
+		// Over the harnesses and secrets screens the keys stay theirs, so the
+		// focus does not move to a control those screens do not route keys to.
+		if !m.onConfigScreen() {
+			m.prompt.Blur()
+			m.focus = focusServer
+		}
 		m.dialog = m.serverDialog()
 		return nil, true
 

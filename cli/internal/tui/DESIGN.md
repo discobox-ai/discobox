@@ -250,6 +250,14 @@ and an approval is answered on human time anyway. One read serves both the row
 and the workspace: `setCredentialRequests` indexes by discobox and stamps the
 count onto the rows, so the draw stays a pure function of what the list holds.
 
+**It is every server's, and each request is answered on its own**
+([ADR 0131](../../../docs/adr/0131-the-launcher-answers-every-servers-credential-requests-and-names-the-server-its-config-screens-edit.md) §1).
+`CredentialRequest.Server` names where it waits, and everything that answers
+it — the secrets offered, a credential typed in, the approval, the denial —
+is sent there, because only that server's secrets can answer it. So a
+registered server's discobox is marked and bannered like the primary's, and
+the card names the server once there is more than one.
+
 **The list marks, and never interrupts.** A row with a request waiting wears a
 `!` beside the upgrade arrow, in the error color rather than the warning one —
 an upgrade can wait, an agent cannot. Nothing raises a dialog on its own: a
@@ -564,10 +572,23 @@ narrowing the list to a machine is also the way to send the next prompt there.
 `all servers` is no answer to which server, so a create from there goes to the
 primary — `--server` unset, as §5 has it.
 
-**Only the list narrows.** The harnesses, secrets and credential inbox are the
-primary's, so the filter is not drawn over the harnesses and secrets screens,
-which share the header: a live `server beta` above them would say the secret
-being added goes to beta. The machine line is the primary's figures too
+**The harnesses and secrets screens are the header's server's**
+([ADR 0131](../../../docs/adr/0131-the-launcher-answers-every-servers-credential-requests-and-names-the-server-its-config-screens-edit.md) §2,
+`Model.configServer`): the server the filter names, or the primary under `all
+servers`. The filter stays drawn over them and names it, offering the servers
+but not `all servers`, which nothing can be added to; ←→ on either screen
+moves it. It is the same control, so a server chosen there is the list's
+after Esc, and opening one from `all servers` and leaving leaves it there.
+Since the configured server is always where the next create goes, one list of
+harnesses serves the screen, the run options and the questions a run asks
+before it creates. A change of server drops the rows kept for the last one
+(`configServerChanged`) and a load that lands for a server the header has left
+is not drawn (`harnessesLoadedMsg.server`, `secretsLoadedListMsg.server`): a
+secret listed under `server beta` that is alpha's is the mistake this screen
+exists to prevent. The secrets screen's request table is its server's
+(`syncRequestRows`), and a grant's discobox choices are too.
+
+The machine line is the primary's figures
 (`DataSource.Resources`), and is drawn only while the list shows the primary's
 discoboxes (`sandboxList.onPrimary`) — unnamed above a list narrowed to another
 server, it reads as that server's capacity, which is the number checked before
@@ -599,8 +620,9 @@ server beside an ID. The run options carry a **Server** row — last, and only
 when `Session.Servers` has more than one — whose first choice is the primary, marked
 `(primary)`, so an untouched panel creates where it always did; anything else
 is `RunRequest.Server`, and `--server <name>` in the preview. It is the header's
-filter from the other side (above). The harnesses, secrets and credential
-screens are the primary's.
+filter from the other side (above). Every harness, secret and grant call takes
+the server by name (ADR 0131 §3) — the configured server, or the request's
+own.
 
 ## Decisions
 

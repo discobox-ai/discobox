@@ -146,7 +146,7 @@ func TestDoHarnessDisableReleasesTheDefaultFirst(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
-	if err := ds.DoHarness(context.Background(), tui.HarnessDisable, harnessID); err != nil {
+	if err := ds.DoHarness(context.Background(), "", tui.HarnessDisable, harnessID); err != nil {
 		t.Fatalf("disable the default harness: %v", err)
 	}
 
@@ -189,7 +189,7 @@ func TestDoHarnessDisableKeepsAnotherDefault(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
-	if err := ds.DoHarness(context.Background(), tui.HarnessDisable, harnessID); err != nil {
+	if err := ds.DoHarness(context.Background(), "", tui.HarnessDisable, harnessID); err != nil {
 		t.Fatalf("disable a harness: %v", err)
 	}
 	for _, path := range gotPaths {

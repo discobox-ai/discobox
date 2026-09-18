@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,15 +20,70 @@ import (
 // is made, and a second path to it that skipped a check would be the one worth
 // exploiting.
 
-// CredentialRequests returns the project's pending requests, newest first.
+// CredentialRequests returns the pending requests on every server the window
+// lists, newest first, each naming its server (ADR 0131 §1).
 //
-// It is polled on the listing's beat, so it is on the same leash the listing
-// puts its requests on (pollTimeout): long enough that a slow server's answer
-// still arrives, short enough that a request which will never come back is not
-// left outstanding for the life of the window.
+// It is polled on the listing's beat, and on the listing's terms: a server that
+// is slow is left in flight rather than waited on, and one that fails has
+// nothing waiting on it as far as the window can tell. That is said where its
+// discoboxes are when the listing failed too. A server that lists and refuses
+// this call alone is not called out: its requests are missing until it answers
+// again, which is the cost of not reporting a polled failure on every beat. Each request is on the same leash the listing puts
+// its requests on (pollTimeout): long enough that a slow server's answer still
+// arrives, short enough that a request which will never come back is not left
+// outstanding for the life of the window.
 func (d *apiDataSource) CredentialRequests(ctx context.Context) ([]tui.CredentialRequest, error) {
-	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
-	defer cancel()
+	if d.servers == nil {
+		ctx, cancel := context.WithTimeout(ctx, pollTimeout)
+		defer cancel()
+		return d.requestsHere(ctx)
+	}
+	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[tui.CredentialRequest] { return &s.requests },
+		func(ctx context.Context, source *apiDataSource) ([]tui.CredentialRequest, error) {
+			return source.requestsHere(ctx)
+		})
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var out []tui.CredentialRequest
+	// A request two servers both list is one server registered under two
+	// addresses, and is listed once, under the first — as its discobox is.
+	seen := map[string]bool{}
+	for _, s := range d.servers {
+		for _, req := range s.requests.last {
+			if seen[req.ID] {
+				continue
+			}
+			seen[req.ID] = true
+			req.Server = s.name
+			out = append(out, req)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
+	return out, nil
+}
+
+// answered tells the inbox poll of the server named that one of its requests
+// has just been answered, which is what the window re-reads the inbox for. The
+// request goes from what the poll holds, and anything it had in flight — asked
+// before the answer — is discarded when it lands, so the mark and the banner
+// go with the request however slow the server is to list again.
+func (d *apiDataSource) answered(server, requestID string) {
+	if d.servers == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, s := range d.servers {
+		if s.name == server {
+			stale(&s.requests, func(r tui.CredentialRequest) bool { return r.ID == requestID })
+			return
+		}
+	}
+}
+
+// requestsHere is this data source's own server's pending requests.
+func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialRequest, error) {
 	res, err := d.client.ListSecretRequests(ctx, apiclientgen.ListSecretRequestsParams{
 		ProjectId: d.projectID,
 		Status:    apiclientgen.NewOptListSecretRequestsStatus(apiclientgen.ListSecretRequestsStatusPending),
@@ -69,8 +125,12 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 	return req
 }
 
-// Secrets returns the project's secrets, without values.
-func (d *apiDataSource) Secrets(ctx context.Context) ([]tui.Secret, error) {
+// Secrets returns one server's secrets, without values.
+func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secret, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
 	res, err := d.client.ListSecrets(ctx, apiclientgen.ListSecretsParams{ProjectId: d.projectID})
 	if err != nil {
 		return nil, err
@@ -111,7 +171,11 @@ func (d *apiDataSource) Secrets(ctx context.Context) ([]tui.Secret, error) {
 }
 
 // CreateSecret stores a credential typed into the approval dialog.
-func (d *apiDataSource) CreateSecret(ctx context.Context, secret tui.NewSecret) (tui.Secret, error) {
+func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret tui.NewSecret) (tui.Secret, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return tui.Secret{}, err
+	}
 	kind := strings.TrimSpace(secret.Type)
 	if kind == "" {
 		kind = "token"
@@ -170,7 +234,11 @@ func secretValueBody(value tui.SecretValue) apimodel.SecretValue {
 // field the update names is set even when it is empty or zero — an unset field
 // changes nothing, so releasing a binding and lifting a limit both have to be
 // said rather than left out — and every field it does not name is left out.
-func (d *apiDataSource) UpdateSecret(ctx context.Context, secretID string, update tui.SecretUpdate) error {
+func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID string, update tui.SecretUpdate) error {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
 	body := &apimodel.UpdateSecretBody{}
 	if update.Name != nil {
 		body.SetName(apiclientgen.NewOptString(strings.TrimSpace(*update.Name)))
@@ -196,7 +264,12 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, secretID string, updat
 }
 
 // ApproveCredentialRequest mints the grant that answers a request.
-func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, approval tui.Approval) error {
+func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server string, approval tui.Approval) error {
+	window := d
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
 	// The lifetime is always sent, zero included: zero is a grant that never
 	// expires, and leaving it out would ask the server for the secret's own
 	// limit instead — a different grant from the one the window said it was
@@ -210,12 +283,20 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, approval t
 	if err != nil {
 		return err
 	}
-	_, err = expectResponse[apimodel.SecretRequest](res)
-	return err
+	if _, err := expectResponse[apimodel.SecretRequest](res); err != nil {
+		return err
+	}
+	window.answered(server, approval.RequestID)
+	return nil
 }
 
 // DenyCredentialRequest answers a request no.
-func (d *apiDataSource) DenyCredentialRequest(ctx context.Context, requestID string) error {
+func (d *apiDataSource) DenyCredentialRequest(ctx context.Context, server, requestID string) error {
+	window := d
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
 	res, err := d.client.DenySecretRequest(ctx, apiclientgen.DenySecretRequestParams{
 		ProjectId: d.projectID,
 		RequestId: requestID,
@@ -223,11 +304,20 @@ func (d *apiDataSource) DenyCredentialRequest(ctx context.Context, requestID str
 	if err != nil {
 		return err
 	}
-	return expectNoContent[apiclientgen.DenySecretRequestNoContent](res)
+	if err := expectNoContent[apiclientgen.DenySecretRequestNoContent](res); err != nil {
+		return err
+	}
+	window.answered(server, requestID)
+	return nil
 }
 
-// Grants lists the standing grants on a secret, or on the whole project.
-func (d *apiDataSource) Grants(ctx context.Context, secretID string) ([]tui.Grant, error) {
+// Grants lists the standing grants on a secret, or on one server's whole
+// project.
+func (d *apiDataSource) Grants(ctx context.Context, server, secretID string) ([]tui.Grant, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
 	params := apiclientgen.ListSecretGrantsParams{ProjectId: d.projectID}
 	if secretID = strings.TrimSpace(secretID); secretID != "" {
 		params.SecretId = apiclientgen.NewOptString(secretID)
@@ -271,7 +361,11 @@ func (d *apiDataSource) Grants(ctx context.Context, secretID string) ([]tui.Gran
 }
 
 // CreateGrant mints a standing grant.
-func (d *apiDataSource) CreateGrant(ctx context.Context, grant tui.NewGrant) (tui.Grant, error) {
+func (d *apiDataSource) CreateGrant(ctx context.Context, server string, grant tui.NewGrant) (tui.Grant, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return tui.Grant{}, err
+	}
 	scope, err := createSecretGrantBodyScope(grant.Scope)
 	if err != nil {
 		return tui.Grant{}, err
@@ -313,7 +407,11 @@ func (d *apiDataSource) CreateGrant(ctx context.Context, grant tui.NewGrant) (tu
 }
 
 // RevokeGrant withdraws one grant.
-func (d *apiDataSource) RevokeGrant(ctx context.Context, grantID string) error {
+func (d *apiDataSource) RevokeGrant(ctx context.Context, server, grantID string) error {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
 	res, err := d.client.RevokeSecretGrant(ctx, apiclientgen.RevokeSecretGrantParams{
 		ProjectId: d.projectID,
 		GrantId:   grantID,
@@ -325,7 +423,11 @@ func (d *apiDataSource) RevokeGrant(ctx context.Context, grantID string) error {
 }
 
 // DeleteSecret removes a secret and everything standing on it.
-func (d *apiDataSource) DeleteSecret(ctx context.Context, secretID string) error {
+func (d *apiDataSource) DeleteSecret(ctx context.Context, server, secretID string) error {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
 	res, err := d.client.DeleteSecret(ctx, apiclientgen.DeleteSecretParams{
 		ProjectId: d.projectID,
 		SecretId:  secretID,

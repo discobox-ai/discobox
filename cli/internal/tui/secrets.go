@@ -55,6 +55,11 @@ func newSecretList() *secretList { return &secretList{now: time.Now} }
 
 // setAll takes a refreshed listing, keeping the cursor on the secret it was on
 // rather than on the row number it was at.
+// clear forgets the listing, for a server whose secrets have not been read yet.
+func (l *secretList) clear() {
+	l.all, l.grants, l.loaded, l.cursor, l.offset = nil, nil, false, 0, 0
+}
+
 func (l *secretList) setAll(all []Secret) {
 	l.loaded = true
 	var onID string
@@ -257,6 +262,8 @@ func shortDuration(d time.Duration) string {
 // the screen
 
 type secretsLoadedListMsg struct {
+	// server is the server the listing was read from; see harnessesLoadedMsg.
+	server  string
 	secrets []Secret
 	grants  []Grant
 	err     error
@@ -270,13 +277,14 @@ type secretActionMsg struct {
 }
 
 func (m *Model) loadSecrets() tea.Cmd {
+	server := m.configServer()
 	return func() tea.Msg {
-		secrets, err := m.ds.Secrets(m.ctx)
+		secrets, err := m.ds.Secrets(m.ctx, server)
 		if err != nil {
-			return secretsLoadedListMsg{err: err}
+			return secretsLoadedListMsg{server: server, err: err}
 		}
-		grants, err := m.ds.Grants(m.ctx, "")
-		return secretsLoadedListMsg{secrets: secrets, grants: grants, err: err}
+		grants, err := m.ds.Grants(m.ctx, server, "")
+		return secretsLoadedListMsg{server: server, secrets: secrets, grants: grants, err: err}
 	}
 }
 
@@ -295,6 +303,11 @@ func (m *Model) closeSecrets() {
 }
 
 func (m *Model) secretsLoaded(msg secretsLoadedListMsg) tea.Cmd {
+	if m.serverName(msg.server) != m.configServer() {
+		// Read for a server the header has since moved off; see
+		// harnessesLoaded.
+		return nil
+	}
 	if msg.err != nil {
 		return m.report(true, "cannot read secrets: %v", msg.err)
 	}
@@ -320,6 +333,9 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "r":
 		return tea.Batch(m.loadSecrets(), m.loadCredentialRequests(), status("refreshing"))
+	case "left", "right":
+		// The header's server, as on the harnesses screen.
+		return m.cycleServer(serverStep(msg))
 	case credentialsKey:
 		return m.openWaitingRequest()
 	}
@@ -414,7 +430,15 @@ func (m *Model) askForGrantScope() tea.Cmd {
 		scopes = append(scopes, choice{key: "harnessConfig", label: "one harness",
 			hint: "every discobox running that harness may use the credential"})
 	}
-	if len(m.list.all) > 0 {
+	// A grant names a discobox on the secret's own server: one on another
+	// server is not one this secret can ever reach.
+	var boxes []choice
+	for _, box := range m.list.all {
+		if m.serverName(box.Server) == m.configServer() {
+			boxes = append(boxes, choice{key: box.ID, label: box.Name, hint: box.ID})
+		}
+	}
+	if len(boxes) > 0 {
 		scopes = append(scopes, choice{key: "sandbox", label: "one discobox",
 			hint: "the narrowest, and what approving a request mints"})
 	}
@@ -422,10 +446,6 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	harnesses := make([]choice, 0, len(m.harnesses.all))
 	for _, h := range m.harnesses.all {
 		harnesses = append(harnesses, choice{key: h.ID, label: h.Name, hint: h.ID})
-	}
-	boxes := make([]choice, 0, len(m.list.all))
-	for _, box := range m.list.all {
-		boxes = append(boxes, choice{key: box.ID, label: box.Name, hint: box.ID})
 	}
 
 	const who, how, where = "who may use it", "how it may be used", "where, and for how long"
@@ -534,8 +554,9 @@ const grantScopeProject = "project"
 
 func (m *Model) mintGrant(grant NewGrant) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "granting…")
+	server := m.configServer()
 	return func() tea.Msg {
-		created, err := m.ds.CreateGrant(m.ctx, grant)
+		created, err := m.ds.CreateGrant(m.ctx, server, grant)
 		did := "granted"
 		if created.Host != "" {
 			did = "granted for " + created.Host
@@ -545,13 +566,14 @@ func (m *Model) mintGrant(grant NewGrant) tea.Cmd {
 }
 
 // openWaitingRequest answers a request from here, where there is no discobox
-// under the cursor to take it from: the oldest one waiting anywhere in the
-// project, including the ones no discobox owns.
+// under the cursor to take it from: the oldest one waiting on the server this
+// screen shows, including the ones no discobox owns. Only that server's,
+// because its secrets are the only ones that can answer it.
 func (m *Model) openWaitingRequest() tea.Cmd {
 	var oldest *CredentialRequest
-	for i := range m.allRequests {
-		if oldest == nil || m.allRequests[i].Created.Before(oldest.Created) {
-			oldest = &m.allRequests[i]
+	for i := range m.requestRows.all {
+		if oldest == nil || m.requestRows.all[i].Created.Before(oldest.Created) {
+			oldest = &m.requestRows.all[i]
 		}
 	}
 	if oldest == nil {
@@ -836,8 +858,9 @@ func grantExpiry(g Grant, now time.Time) string {
 
 func (m *Model) revokeGrant(grantID string) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "revoking…")
+	server := m.configServer()
 	return func() tea.Msg {
-		err := m.ds.RevokeGrant(m.ctx, grantID)
+		err := m.ds.RevokeGrant(m.ctx, server, grantID)
 		return secretActionMsg{did: "revoked", err: err}
 	}
 }
@@ -1096,8 +1119,9 @@ func formSecretValue(f *form) SecretValue {
 
 func (m *Model) storeSecret(secret NewSecret) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "storing "+secret.Name+"…")
+	server := m.configServer()
 	return func() tea.Msg {
-		_, err := m.ds.CreateSecret(m.ctx, secret)
+		_, err := m.ds.CreateSecret(m.ctx, server, secret)
 		return secretActionMsg{did: "stored " + secret.Name, err: err}
 	}
 }
@@ -1216,8 +1240,9 @@ func (m *Model) saveSecret(id string, was Secret, update SecretUpdate) tea.Cmd {
 		return m.report(false, "%s is unchanged", was.Name)
 	}
 	m.dialog = statusDialog("Secrets", "saving "+was.Name+"…")
+	server := m.configServer()
 	return func() tea.Msg {
-		if err := m.ds.UpdateSecret(m.ctx, id, update); err != nil {
+		if err := m.ds.UpdateSecret(m.ctx, server, id, update); err != nil {
 			return secretActionMsg{err: err}
 		}
 		return secretActionMsg{did: strings.Join(did, ", ")}
@@ -1241,10 +1266,11 @@ func (m *Model) confirmDeleteSecret() tea.Cmd {
 		text: "a discobox holding a sentinel for it keeps a placeholder that now resolves to nothing",
 		tone: toneAlert,
 	}}
+	server := m.configServer()
 	d := confirmDialog("Delete secret", "", func(string) tea.Cmd {
 		m.dialog = statusDialog("Secrets", "deleting "+name+"…")
 		return func() tea.Msg {
-			err := m.ds.DeleteSecret(m.ctx, id)
+			err := m.ds.DeleteSecret(m.ctx, server, id)
 			return secretActionMsg{did: "deleted " + name, err: err}
 		}
 	})
@@ -1337,6 +1363,9 @@ func (m *Model) secretHints() []hint {
 	}
 	if len(m.requestRows.all) > 0 {
 		hints = append(hints, keyed("tab", "tab", "requests"))
+	}
+	if m.manyServers() {
+		hints = append(hints, says("←→ server"))
 	}
 	return append(hints, keyed("esc", "esc", "back"))
 }

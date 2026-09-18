@@ -75,8 +75,15 @@ type fakeSource struct {
 
 	// The credential inbox: what is waiting, what can answer it, and what the
 	// window did about it.
-	requests        []CredentialRequest
-	projectSecrets  []Secret
+	requests       []CredentialRequest
+	projectSecrets []Secret
+	// secretsOn and harnessesOn are what a server named in the call holds,
+	// for a window with several; one not named there answers with
+	// projectSecrets and harnesses. onServer is every server-scoped call, as
+	// "Method@server", which is what says where the window sent it.
+	secretsOn       map[string][]Secret
+	harnessesOn     map[string][]Harness
+	onServer        []string
 	requestsErr     error
 	secretsErr      error
 	approvals       []Approval
@@ -936,31 +943,38 @@ func (f *fakeSource) endExec(execID string) {
 	}
 }
 
-func (f *fakeSource) Harnesses(context.Context) ([]Harness, error) {
+func (f *fakeSource) Harnesses(_ context.Context, server string) ([]Harness, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "Harnesses@"+server)
 	if f.harnessErr != nil {
 		return nil, f.harnessErr
+	}
+	if on, ok := f.harnessesOn[server]; ok {
+		return append([]Harness(nil), on...), nil
 	}
 	return append([]Harness(nil), f.harnesses...), nil
 }
 
-func (f *fakeSource) HarnessSecrets(_ context.Context, _ string) ([]HarnessSecret, error) {
+func (f *fakeSource) HarnessSecrets(_ context.Context, server, _ string) ([]HarnessSecret, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "HarnessSecrets@"+server)
 	return append([]HarnessSecret(nil), f.secrets...), nil
 }
 
-func (f *fakeSource) DoHarness(_ context.Context, verb HarnessVerb, id string) error {
+func (f *fakeSource) DoHarness(_ context.Context, server string, verb HarnessVerb, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DoHarness@"+server)
 	f.didHarness = append(f.didHarness, string(verb)+" "+id)
 	return nil
 }
 
-func (f *fakeSource) OpenHarnessConfigure(_ context.Context, id string, _, _ int) (Terminal, error) {
+func (f *fakeSource) OpenHarnessConfigure(_ context.Context, server, id string, _, _ int) (Terminal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "OpenHarnessConfigure@"+server)
 	f.configured = append(f.configured, id)
 	if f.configureErr != nil {
 		return nil, f.configureErr
@@ -982,9 +996,10 @@ func (f *fakeSource) LocalPortsInUse(_ context.Context, ports []int) []int {
 	return inUse
 }
 
-func (f *fakeSource) EditHarnessFile(_ context.Context, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {
+func (f *fakeSource) EditHarnessFile(_ context.Context, server, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "EditHarnessFile@"+server)
 	f.editedFiles = append(f.editedFiles, id+" "+path)
 	return f.editChanged, nil
 }
@@ -1341,15 +1356,20 @@ func (f *fakeSource) CredentialRequests(context.Context) ([]CredentialRequest, e
 	return append([]CredentialRequest(nil), f.requests...), f.requestsErr
 }
 
-func (f *fakeSource) Secrets(context.Context) ([]Secret, error) {
+func (f *fakeSource) Secrets(_ context.Context, server string) ([]Secret, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "Secrets@"+server)
+	if on, ok := f.secretsOn[server]; ok {
+		return append([]Secret(nil), on...), f.secretsErr
+	}
 	return append([]Secret(nil), f.projectSecrets...), f.secretsErr
 }
 
-func (f *fakeSource) CreateSecret(_ context.Context, secret NewSecret) (Secret, error) {
+func (f *fakeSource) CreateSecret(_ context.Context, server string, secret NewSecret) (Secret, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "CreateSecret@"+server)
 	if f.createSecretErr != nil {
 		return Secret{}, f.createSecretErr
 	}
@@ -1359,9 +1379,10 @@ func (f *fakeSource) CreateSecret(_ context.Context, secret NewSecret) (Secret, 
 	return created, nil
 }
 
-func (f *fakeSource) ApproveCredentialRequest(_ context.Context, approval Approval) error {
+func (f *fakeSource) ApproveCredentialRequest(_ context.Context, server string, approval Approval) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "ApproveCredentialRequest@"+server)
 	if f.approveErr != nil {
 		return f.approveErr
 	}
@@ -1370,9 +1391,10 @@ func (f *fakeSource) ApproveCredentialRequest(_ context.Context, approval Approv
 	return nil
 }
 
-func (f *fakeSource) DenyCredentialRequest(_ context.Context, requestID string) error {
+func (f *fakeSource) DenyCredentialRequest(_ context.Context, server, requestID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DenyCredentialRequest@"+server)
 	f.denials = append(f.denials, requestID)
 	f.dropRequestLocked(requestID)
 	return nil
@@ -1393,9 +1415,10 @@ func (f *fakeSource) dropRequestLocked(requestID string) {
 // UpdateSecret records each part of an edit the way the server would apply it,
 // so a test can assert on what the window asked for rather than on how many
 // calls it took to ask.
-func (f *fakeSource) UpdateSecret(_ context.Context, secretID string, update SecretUpdate) error {
+func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, update SecretUpdate) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "UpdateSecret@"+server)
 	if update.Host != nil && f.unbindErr != nil {
 		return f.unbindErr
 	}
@@ -1432,9 +1455,10 @@ func (f *fakeSource) UpdateSecret(_ context.Context, secretID string, update Sec
 	return nil
 }
 
-func (f *fakeSource) Grants(_ context.Context, secretID string) ([]Grant, error) {
+func (f *fakeSource) Grants(_ context.Context, server, secretID string) ([]Grant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "Grants@"+server)
 	if f.grantsErr != nil {
 		return nil, f.grantsErr
 	}
@@ -1447,9 +1471,10 @@ func (f *fakeSource) Grants(_ context.Context, secretID string) ([]Grant, error)
 	return out, nil
 }
 
-func (f *fakeSource) CreateGrant(_ context.Context, grant NewGrant) (Grant, error) {
+func (f *fakeSource) CreateGrant(_ context.Context, server string, grant NewGrant) (Grant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "CreateGrant@"+server)
 	if f.createGrantErr != nil {
 		return Grant{}, f.createGrantErr
 	}
@@ -1462,9 +1487,10 @@ func (f *fakeSource) CreateGrant(_ context.Context, grant NewGrant) (Grant, erro
 	return made, nil
 }
 
-func (f *fakeSource) RevokeGrant(_ context.Context, grantID string) error {
+func (f *fakeSource) RevokeGrant(_ context.Context, server, grantID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "RevokeGrant@"+server)
 	f.revoked = append(f.revoked, grantID)
 	kept := f.projectGrants[:0]
 	for _, g := range f.projectGrants {
@@ -1476,9 +1502,10 @@ func (f *fakeSource) RevokeGrant(_ context.Context, grantID string) error {
 	return nil
 }
 
-func (f *fakeSource) DeleteSecret(_ context.Context, secretID string) error {
+func (f *fakeSource) DeleteSecret(_ context.Context, server, secretID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DeleteSecret@"+server)
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
@@ -1502,4 +1529,12 @@ func hintLine(hints []hint) string {
 		text = append(text, h.text)
 	}
 	return strings.Join(text, hintSep)
+}
+
+// calls is every server-scoped call the window has made so far, as
+// "Method@server".
+func (f *fakeSource) calls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.onServer...)
 }

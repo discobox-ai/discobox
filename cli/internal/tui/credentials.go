@@ -113,11 +113,27 @@ func (m *Model) setCredentialRequests(requests []CredentialRequest) {
 	had := m.bannerCost()
 	m.requests = byBox
 	m.list.setPending(byBox)
-	m.requestRows.setAll(requests)
+	m.syncRequestRows()
 	// The band takes a row from the panes rather than adding one to the
 	// frame, so a request arriving — or being answered — resizes them.
 	if m.bannerCost() != had {
 		m.layout()
+	}
+}
+
+// syncRequestRows puts the requests waiting on the secrets screen's server in
+// its table (ADR 0131 §2): a request is answered with one of its own server's
+// secrets, so the table under another server's secrets offers none of it.
+func (m *Model) syncRequestRows() {
+	var rows []CredentialRequest
+	for _, req := range m.allRequests {
+		if m.serverName(req.Server) == m.configServer() {
+			rows = append(rows, req)
+		}
+	}
+	m.requestRows.setAll(rows)
+	if len(rows) == 0 {
+		m.onRequests = false
 	}
 }
 
@@ -145,7 +161,7 @@ func (m *Model) openCredentialDialog(sandboxID string) tea.Cmd {
 func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
 	m.dialog = statusDialog("Credential request", "reading the project's secrets…")
 	return func() tea.Msg {
-		secrets, err := m.ds.Secrets(m.ctx)
+		secrets, err := m.ds.Secrets(m.ctx, req.Server)
 		return secretsLoadedMsg{requestID: req.ID, secrets: secrets, err: err}
 	}
 }
@@ -401,6 +417,12 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 		fields = append(fields, field{label: "wanted for", value: lifetime.Label(req.GrantTTL)})
 	}
 	fields = append(fields, field{label: "asked", value: asked, tone: toneDim})
+	// Where the secrets offered below are from, once there is more than one
+	// place they could be: the answer is stored and granted there (ADR 0131
+	// §1).
+	if req.Server != "" {
+		fields = append(fields, field{label: "on server", value: req.Server, tone: toneDim})
+	}
 	sections := []section{{label: "asked for", fields: fields}}
 
 	if len(req.Uses) == 0 && req.Justification == "" {
@@ -519,7 +541,7 @@ func (m *Model) createAndApprove(a approval, value string) tea.Cmd {
 	req, ttl := a.req, a.ttl
 	m.dialog = statusDialog("Credential request", "storing the credential…")
 	return func() tea.Msg {
-		secret, err := m.ds.CreateSecret(m.ctx, NewSecret{
+		secret, err := m.ds.CreateSecret(m.ctx, req.Server, NewSecret{
 			Name:  credentialName(req),
 			Type:  req.Type,
 			Host:  req.Host,
@@ -528,7 +550,7 @@ func (m *Model) createAndApprove(a approval, value string) tea.Cmd {
 		if err != nil {
 			return credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		}
-		err = m.ds.ApproveCredentialRequest(m.ctx, Approval{
+		err = m.ds.ApproveCredentialRequest(m.ctx, req.Server, Approval{
 			RequestID:  req.ID,
 			SecretID:   secret.ID,
 			TTLSeconds: lifetime.Seconds(ttl),
@@ -700,11 +722,11 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 	changing := a.update.Host != nil || a.update.MaxTTLSeconds != nil
 	return func() tea.Msg {
 		if changing {
-			if err := m.ds.UpdateSecret(m.ctx, a.secret.ID, a.update); err != nil {
+			if err := m.ds.UpdateSecret(m.ctx, a.req.Server, a.secret.ID, a.update); err != nil {
 				return credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err}
 			}
 		}
-		err := m.ds.ApproveCredentialRequest(m.ctx, Approval{
+		err := m.ds.ApproveCredentialRequest(m.ctx, a.req.Server, Approval{
 			RequestID:  a.req.ID,
 			SecretID:   a.secret.ID,
 			TTLSeconds: lifetime.Seconds(a.ttl),
@@ -744,7 +766,7 @@ func appliedChanges(a approval) []string {
 func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {
 	m.dialog = statusDialog("Credential request", "denying…")
 	return func() tea.Msg {
-		err := m.ds.DenyCredentialRequest(m.ctx, req.ID)
+		err := m.ds.DenyCredentialRequest(m.ctx, req.Server, req.ID)
 		return credentialAnsweredMsg{request: req, approved: false, err: err}
 	}
 }
