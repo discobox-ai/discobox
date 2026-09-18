@@ -13,14 +13,16 @@ import (
 // The tools are the programs you reach for beside the agent: a diff viewer, an
 // editor, the IDE running on this machine. They are not harnesses — nothing
 // runs them for you and nothing is pinned to them — and they are not shells,
-// which is why they are not tabs.
+// which is why they sort after the shells in the column they share and have a
+// window of their own to be given.
 //
 // A tool that runs in the discobox is one exec session with the whole window,
 // opened over the workspace the way apply is, and it is the only kind of pane
-// that survives being put away: minimizing leaves the session running and the
-// stream attached, and choosing the tool again shows the same screen where it
-// was. Closing is the other thing entirely — it ends the session — which is why
-// the two are different buttons.
+// that survives being put away: minimizing moves it into the shells column, as
+// a tab after the shells, with the session running and the stream attached, so
+// it is still in sight and one press from its window again. Closing is the
+// other thing entirely — it ends the session — which is why the two are
+// different buttons.
 //
 // The session carries the tool's id as exec metadata, so the listing says which
 // sessions are tools and which tool each one is. That is what lets a window
@@ -33,12 +35,6 @@ const (
 	// key map the list and the workspace share, and not x, which is archive in
 	// it; o is what the picker does — open one of them.
 	toolsKey = "o"
-	// toolCloseKey ends the tool that has the screen and the session behind
-	// it. It is shifted for the reason repair is: the letter that only hides a
-	// window and the letter that kills what is in it should not be one finger
-	// apart, and this is the destructive one. It is bound only inside a tool
-	// window, where the list's own x — archive — is not.
-	toolCloseKey = "X"
 	// toolFileKey opens the files of the tool the picker's cursor is on. It is
 	// the picker's second action, on a key no tool answers to, because a row
 	// there means "run this" and its files are the other thing you might want
@@ -245,10 +241,6 @@ type openToolsMsg struct{}
 // running it, the way the action menu does.
 type runToolMsg struct{ id string }
 
-// closeToolMsg is the leader plus the close key, or the [x] button: end the
-// tool that has the screen, and the session behind it.
-type closeToolMsg struct{}
-
 // toolFilesMsg is the picker's second action on the highlighted row: show that
 // tool's files. Like runToolMsg it is a message rather than a call, because a
 // dialog closes over the model by value.
@@ -285,8 +277,9 @@ type toolTermMsg struct {
 	term Terminal
 	err  error
 	// show is whether this tool should take the screen when it arrives. The
-	// picker's do; the ones the poll picks up arrive minimized, because
-	// attaching to a discobox should show you the discobox.
+	// picker's do; the ones the poll picks up arrive minimized, as tabs after
+	// the shells, because attaching to a discobox should show you the
+	// discobox.
 	show bool
 }
 
@@ -382,7 +375,7 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 		pressing("Enter opens or copies", "enter"),
 		keyed(toolFileKey, toolFileKey, "its config"),
 		pressing(m.leader()+" "+paneDetachAlt+" puts one away", m.leader(), paneDetachAlt),
-		pressing(m.leader()+" "+toolCloseKey+" ends it", m.leader(), toolCloseKey),
+		pressing(m.leader()+" "+paneEndKey+" ends it", m.leader(), paneEndKey),
 		pressing("Esc cancels", "esc"),
 	}
 	return d
@@ -641,10 +634,10 @@ func (m *Model) runTool(id string) tea.Cmd {
 	return m.newTool(t, true)
 }
 
-// newTool creates a tool session and attaches to it. The pane is sized for the
-// window before it is opened — it is drawn at the full width whether or not it
-// is showing — for the same reason every other pane is: the size is what the
-// far end is told.
+// newTool creates a tool session and attaches to it. The pane is sized before
+// it is opened — for the window when it arrives showing, which is the only way
+// this is asked for — for the same reason every other pane is: the size is
+// what the far end is told.
 func (m *Model) newTool(t Tool, show bool) tea.Cmd {
 	if m.toolOpening == nil {
 		m.toolOpening = map[string]bool{}
@@ -703,7 +696,9 @@ func (m *Model) openToolExec(gen int, exec Exec) tea.Cmd {
 		m.toolOpening = map[string]bool{}
 	}
 	m.toolOpening[exec.Tool] = true
-	cols, rows := m.paneCells(max(m.width, 4))
+	// It arrives put away, as one more tab in the shells column.
+	_, width := m.columns(m.shells.len() + 1)
+	cols, rows := m.paneCells(width)
 	ctx, ds, box := m.ctx, m.ds, m.paneBox.ID
 	return func() tea.Msg {
 		term, err := ds.OpenExec(ctx, box, exec.ID, cols, rows)
@@ -746,7 +741,7 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 	m.nextPaneID++
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(paneTool, false)...),
+		term:    termpane.New(m.paneOptions(paneWorkspace, false)...),
 		stream:  msg.term,
 		action:  Interaction(label),
 		sandbox: m.paneBox,
@@ -754,9 +749,11 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 		title:   label,
 		tool:    msg.id,
 	}
-	// The strip is in session order like the other two, and a tool arriving
-	// beside the one being looked at must not move the window onto it.
-	m.tools.insert(p, msg.exec, m.toolOpen)
+	// Its place is after the shells (execBefore), and a tool arriving beside
+	// the tab being looked at must not move the focus onto it.
+	exec := msg.exec
+	exec.Tool = msg.id
+	m.shells.insert(p, exec, m.onShells)
 	if msg.show {
 		m.showTool(p)
 	}
@@ -770,7 +767,7 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 // toolPane is the pane running one tool, showing or put away, or nil when that
 // tool is not open in this window.
 func (m *Model) toolPane(id string) *pane {
-	for _, p := range m.tools.panes {
+	for _, p := range m.shells.panes {
 		if p.tool == id {
 			return p
 		}
@@ -780,86 +777,37 @@ func (m *Model) toolPane(id string) *pane {
 
 // showingTool is the tool pane with the window, or nil when the workspace
 // itself is on screen.
-func (m *Model) showingTool() *pane {
-	if !m.toolOpen {
-		return nil
-	}
-	return m.tools.visible()
-}
+func (m *Model) showingTool() *pane { return m.toolShown }
 
 // showTool gives one tool the window. The keys go with it: it is the whole
 // screen, and every key in it is the tool's.
+//
+// The tab it leaves in the shells column is not made the visible one: putting
+// the tool away gives back the workspace as it was, with the tool's tab beside
+// whatever the column was showing.
 func (m *Model) showTool(p *pane) {
-	if i := m.tools.index(p); i >= 0 {
-		m.tools.active = i
+	if m.shells.index(p) < 0 {
+		return
 	}
-	m.toolOpen = true
+	m.toolShown = p
 	m.focus = focusPane
 	m.prompt.Blur()
 	m.layout()
 }
 
 // minimizeTool puts the showing tool away: the window goes back to the
-// workspace, which has been running underneath the whole time, and the tool's
-// session keeps running with its stream still attached — so choosing it again
-// shows the screen it is on now, not the screen it was on when you left.
+// workspace, which has been running underneath the whole time, and the tool
+// stays in sight as a tab after the shells, its session running and its stream
+// attached — so it can be read there, given the window again, or ended.
 func (m *Model) minimizeTool() tea.Cmd {
 	p := m.showingTool()
 	if p == nil {
 		return nil
 	}
-	m.toolOpen = false
+	m.toolShown = nil
 	m.layout()
-	return status("%s put away — %s %s reopens it", p.name(), m.leader(), toolsKey)
-}
-
-// closeTool ends the showing tool: the session is killed in the discobox and
-// the pane goes with it. It is the one place this window ends a session rather
-// than closing its own view of one, which is why it is a separate button from
-// the one that only hides it.
-func (m *Model) closeTool() tea.Cmd {
-	p := m.showingTool()
-	if p == nil {
-		return nil
-	}
-	name := p.name()
-	return tea.Batch(m.dropTool(p, true), status("%s closed", name))
-}
-
-// dropTool takes a tool off the screen and out of the strip, ending its session
-// when there is one still running.
-func (m *Model) dropTool(p *pane, kill bool) tea.Cmd {
-	execID, name, gen := p.execID, p.name(), m.wsGen
-	i := m.tools.index(p)
-	if i < 0 {
-		return nil
-	}
-	// Only the tool being looked at gives the window back. One that was put
-	// away and has since died leaves the strip without disturbing the screen.
-	showing := m.hasScreen(p)
-	m.tools.close(i)
-	if showing {
-		m.toolOpen = false
-	}
-	m.layout()
-	if !kill || execID == "" {
-		return nil
-	}
-	// The listing is a poll behind the kill, so the next tick still reports
-	// this session live and would pick the tool back up off it — put away,
-	// into a strip the press just emptied. Remembering it is what keeps a
-	// closed tool closed. See endPane, which ends a session the same way.
-	if m.ending == nil {
-		m.ending = map[string]bool{}
-	}
-	m.ending[execID] = true
-	ctx, ds, box := m.ctx, m.ds, m.paneBox.ID
-	return func() tea.Msg {
-		if err := ds.EndExec(ctx, box, execID); err != nil {
-			return endExecFailedMsg{gen: gen, execID: execID, name: name, err: err}
-		}
-		return nil
-	}
+	return status("%s put away beside the shells — %s %s on its tab gives it the window again",
+		p.name(), m.leader(), paneZoomKey)
 }
 
 // toolExec reports whether a session is a tool's. It is the exec's own label
@@ -907,7 +855,7 @@ func (m *Model) toolHints(p *pane) []hint {
 	return []hint{
 		says("every key goes to " + p.name()),
 		pressing(m.detachHint()+" put away", leader, paneDetachAlt),
-		pressing(leader+" "+toolCloseKey+" close", leader, toolCloseKey),
+		pressing(leader+" "+paneEndKey+" close", leader, paneEndKey),
 		pressing(leader+" "+toolsKey+" tools", leader, toolsKey),
 	}
 }

@@ -408,7 +408,7 @@ func TestAnEndedToolIsNotReopenedByThePoll(t *testing.T) {
 
 	m.showTool(m.toolPane(tools.DiffID))
 	d.key("ctrl+a")
-	d.key(toolCloseKey)
+	d.key(paneEndKey)
 	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
 
 	d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})

@@ -200,6 +200,169 @@ func TestMinimizingAToolKeepsItsSessionAndReopensIt(t *testing.T) {
 	}
 }
 
+// A tool put away is still in sight: a tab in the shells column, after the
+// shells — even one opened after it — drawn at that column's width, and the
+// focus left where the workspace had it.
+func TestAPutAwayToolIsATabAfterTheShells(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the shell", func() bool { return m.shells.len() == 1 })
+	shell := m.shells.visible()
+
+	d.key("ctrl+a")
+	d.key(toolsKey)
+	waitPicker(d, m)
+	d.key("d")
+	d.wait("the tool window", func() bool { return m.showingTool() != nil })
+	tool := m.showingTool()
+	d.key("ctrl+a")
+	d.key(paneDetachAlt)
+	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
+
+	if m.focusedPane() != shell {
+		t.Fatalf("focus = %q, want the shell it was on before the tool", m.focusedPane().name())
+	}
+	if m.shells.index(tool) != 1 {
+		t.Fatalf("tool at %d in the shells column, want after the shell", m.shells.index(tool))
+	}
+	if got, want := m.paneWidthOf(tool), m.width-m.width/2; got != want {
+		t.Errorf("put-away tool is %d wide, want the shells column's %d", got, want)
+	}
+
+	// A shell opened afterwards still goes ahead of it.
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the second shell", func() bool { return m.shells.len() == 3 })
+	if m.shells.index(tool) != 2 {
+		t.Fatalf("tool at %d, want it to stay after the shells", m.shells.index(tool))
+	}
+	if frame := frameText(m); !strings.Contains(frame, "3 "+tool.name()) {
+		t.Errorf("the tool's tab should be in the strip after the shells:\n%s", frame)
+	}
+}
+
+// With no shell open, putting a tool away is what opens the right column: the
+// tool is what it shows.
+func TestAPutAwayToolSplitsTheWindowOnItsOwn(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openTool(t, ds, "d")
+	tool := m.showingTool()
+
+	d.key("ctrl+a")
+	d.key(paneDetachAlt)
+	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
+
+	if !m.split() || m.shells.visible() != tool {
+		t.Fatalf("split=%v, right column showing %v, want the tool beside the terminal", m.split(), m.shells.visible())
+	}
+	if m.onShells {
+		t.Error("putting the tool away should give the keys back to the terminal")
+	}
+}
+
+// On its tab, the zoom key and the [+] give the tool its window back, and the
+// [x] ends it like any other tab's.
+func TestAPutAwayToolsTabMaximizesAndCloses(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openTool(t, ds, "d")
+	tool := m.showingTool()
+	d.key("ctrl+a")
+	d.key(paneDetachAlt)
+	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
+
+	d.key("ctrl+a")
+	d.key("1")
+	d.wait("the tool's tab focused", func() bool { return m.focusedPane() == tool })
+	d.key("ctrl+a")
+	d.key(paneZoomKey)
+	d.wait("the tool window", func() bool { return m.showingTool() == tool })
+	if got := m.paneWidthOf(tool); got != m.width {
+		t.Errorf("tool width = %d, want the window's %d once it has it again", got, m.width)
+	}
+
+	d.key("ctrl+a")
+	d.key(paneDetachAlt)
+	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
+	d.key("ctrl+a")
+	d.key("1")
+	d.wait("the tool's tab focused", func() bool { return m.focusedPane() == tool })
+	_ = rawFrame(m)
+	_, zoom := zoomButtons(t, m)
+	if zoom < 0 {
+		t.Fatal("the tool's tab should wear a [+]")
+	}
+	clickAt(d, zoom, 1)
+	if m.showingTool() != tool {
+		t.Fatal("[+] on the tool's tab should give it the window")
+	}
+
+	d.key("ctrl+a")
+	d.key(paneDetachAlt)
+	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
+	d.key("ctrl+a")
+	d.key("1")
+	d.wait("the tool's tab focused", func() bool { return m.focusedPane() == tool })
+	_ = rawFrame(m)
+	_, end := endButtons(t, m)
+	if end < 0 {
+		t.Fatal("the tool's tab should wear an [x]")
+	}
+	clickAt(d, end, 1)
+	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
+	if m.toolPane(tools.DiffID) != nil || m.shells.len() != 0 {
+		t.Error("[x] on the tool's tab should take the tab with the session")
+	}
+}
+
+// A maximized shells column whose visible tab is a tool still restores: the
+// zoom key means the column's toggle there, or a tool left as the last tab
+// would hold the window with no key that gives the split back.
+func TestAToolsTabRestoresAMaximizedColumn(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openTool(t, ds, "d")
+	tool := m.showingTool()
+	d.key("ctrl+a")
+	d.key(paneDetachAlt)
+	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
+	m.focusPane(tool)
+	m.toggleMaximized(true)
+
+	d.key("ctrl+a")
+	d.key(paneZoomKey)
+	d.wait("the split back", func() bool { return !m.maximized })
+	if m.showingTool() != nil {
+		t.Fatal("restoring a maximized column should not open the tool's window")
+	}
+}
+
+// While a tool has the window, the keys that would move or open something
+// under it say so rather than doing nothing where nobody can see.
+func TestKeysUnderAToolWindowAnswer(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openTool(t, ds, "d")
+	tool := m.showingTool()
+
+	for _, key := range []string{"s", "0", "left", paneTerminalKey} {
+		m.status = ""
+		d.key("ctrl+a")
+		d.key(key)
+		d.wait("the answer to "+key, func() bool { return strings.Contains(m.status, "has the window") })
+		if m.showingTool() != tool {
+			t.Fatalf("%s moved the window off the tool", key)
+		}
+	}
+	if m.shells.len() != 1 || m.terminals.len() != 1 {
+		t.Fatalf("keys under the tool opened something: %d shells, %d terminals", m.shells.len(), m.terminals.len())
+	}
+}
+
 // Closing is the other button: it ends the session in the discobox, which is
 // the one thing the window does that a detach never does.
 func TestClosingAToolEndsItsSession(t *testing.T) {
@@ -209,7 +372,7 @@ func TestClosingAToolEndsItsSession(t *testing.T) {
 	execID := m.showingTool().execID
 
 	d.key("ctrl+a")
-	d.key(toolCloseKey)
+	d.key(paneEndKey)
 	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
 
 	if got := ds.endedExecs(); got[0] != execID {
@@ -309,8 +472,8 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 	if m.showingTool() != nil {
 		t.Error("a tool picked up off the listing should arrive put away")
 	}
-	if m.shells.len() != 0 || m.terminals.len() != 1 {
-		t.Errorf("a tool should be neither a shell nor a terminal: %d shells, %d terminals",
+	if m.shells.len() != 1 || m.terminals.len() != 1 {
+		t.Errorf("a put-away tool should be a tab in the shells column: %d shells, %d terminals",
 			m.shells.len(), m.terminals.len())
 	}
 	if got := m.toolPane(tools.DiffID).execID; got != "exec_diff" {
@@ -344,7 +507,7 @@ func TestDetachingLeavesTheToolSessionsRunning(t *testing.T) {
 	d.key(paneDetachAlt) // and leave the workspace
 	d.wait("the list", func() bool { return !m.inPanes() })
 
-	if m.tools.len() != 0 {
+	if m.shells.len() != 0 {
 		t.Error("detaching should close this window's view of every tool")
 	}
 	if got := ds.endedExecs(); len(got) != 0 {

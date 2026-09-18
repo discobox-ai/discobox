@@ -109,7 +109,7 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 	box := ready[0]
 	box.HarnessID = "harness_claude"
 	m.paneBox = box
-	m.toolOpen = true
+	m.toolShown = &pane{tool: "diff"}
 	m.setSecretRejections(ds.rejections)
 
 	if got := m.bannerShowing(); got != bannerRejected {
@@ -288,7 +288,7 @@ func workspaceWithRejection(t *testing.T, rejection SecretRejection) (*Model, *f
 	m.paneBox = box
 	// A tool window is a workspace as far as the band is concerned: the bar is
 	// drawn over whatever the screen is showing.
-	m.toolOpen = true
+	m.toolShown = &pane{tool: "diff"}
 	m.setSecretRejections(ds.rejections)
 	return m, ds
 }

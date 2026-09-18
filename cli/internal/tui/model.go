@@ -150,7 +150,7 @@ type Model struct {
 	// poll running behind the kill does not open the pane straight back up.
 	// Entries live for the workspace — exec ids are not reused, and the
 	// listings overlap, so no one answer is proof the kill has landed. See
-	// endPane and dropTool.
+	// endPane.
 	ending map[string]bool
 	// wsGen numbers workspaces. Detaching bumps it, and a poll tick or an
 	// open still in flight from the one that was left is stale and dropped.
@@ -163,12 +163,11 @@ type Model struct {
 	// slug, for as long as the workspace is open. A source is not pushed again
 	// while its branch still names the commit that was refused; see push.go.
 	pushHeld map[string]string
-	// The tools open on this discobox: a strip of panes like the two columns,
-	// except that only one is ever drawn and it is drawn over everything.
-	// toolOpen is whether that column has the window; put away, its panes stay
-	// attached and their sessions keep running. See tools.go.
-	tools    column
-	toolOpen bool
+	// toolShown is the tool with the whole window, or nil when the workspace
+	// is on screen. A tool's pane lives in the shells column, after the
+	// shells, whether or not it is showing: put away, it is a tab there like
+	// any other, still attached and still running. See tools.go.
+	toolShown *pane
 	// toolOpening is the tools with an attach in flight, keyed by tool id, so
 	// the poll and the picker cannot open two panes onto one session.
 	toolOpening map[string]bool
@@ -3267,7 +3266,7 @@ const headerSep = "  ·  "
 func (m *Model) headerHints() []hint {
 	if p := m.focusedPane(); p != nil {
 		out := "detach"
-		if p.tool != "" {
+		if m.hasScreen(p) && p.tool != "" {
 			// The leader's way out of a screen is the same key; what it does
 			// here is put this window away, not leave the workspace.
 			out = "put away"
@@ -3727,7 +3726,7 @@ func (m *Model) paneHints() []hint {
 		}
 		return out
 	}
-	if p.tool != "" {
+	if m.hasScreen(p) && p.tool != "" {
 		return m.toolHints(p)
 	}
 	// A workspace terminal is the discobox's own and you detach from the
@@ -3768,7 +3767,12 @@ func (m *Model) paneHints() []hint {
 	// Either way it is only there with two columns to choose between: more
 	// terminals are more tabs in the one box.
 	var zoom []hint
-	if m.shells.len() > 0 {
+	switch {
+	case p.tool != "" && !m.maximized:
+		// A tool put away beside the shells is one key from its window again,
+		// and that is what the zoom key means on its tab. See zoomPaneMsg.
+		zoom = []hint{pressing(leader+" "+paneZoomKey+" maximize", leader, paneZoomKey)}
+	case m.shells.len() > 0:
 		zoom = []hint{pressing(leader+" "+paneZoomKey+" maximize", leader, paneZoomKey)}
 		if m.maximized {
 			hints = append(hints, pressing(leader+" "+paneZoomKey+" restore", leader, paneZoomKey))
@@ -4091,18 +4095,19 @@ func (m *Model) helpText() string {
 		"  A tool that runs in the discobox opens a window over the workspace,",
 		"  which keeps running underneath:",
 		"",
-		"    [-]            put it away. The session keeps running and stays",
-		"                   attached, so reopening the tool shows where it",
-		"                   has got to. " + m.detachHint() + " does the same",
-		"    [x]            close it, ending the session. " + leader + " " + toolCloseKey + " does the",
-		"                   same",
+		"    [-]            put it away, into a tab after the shells. The",
+		"                   session keeps running and stays attached. " + m.detachHint(),
+		"                   does the same, and the tab's [+] or " + leader + " " + paneZoomKey,
+		"                   gives it the window again",
+		"    [x]            close it, ending the session. " + leader + " " + paneEndKey + " does the",
+		"                   same, in the window or on its tab",
 		"",
 		"  A tool that runs here — vscode, zed — is handed the box over SSH",
 		"  and opens on its own.",
 		"",
 		"  Tool sessions live in the discobox, not in this window. Quit the",
 		"  launcher with a diff open and the next attach picks it back up,",
-		"  put away.",
+		"  put away beside the shells.",
 		"",
 		"  A tool can carry a config, kept on this machine and copied into a",
 		"  discobox the first time that tool runs in one without it. fresh",

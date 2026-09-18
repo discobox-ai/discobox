@@ -127,7 +127,7 @@ func TestTheThrobsClockRunsOnlyWhileTheBandIsUp(t *testing.T) {
 	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
 	// A tool window is a workspace as far as the band is concerned: the bar is
 	// drawn over whatever the screen is showing.
-	m.toolOpen = true
+	m.toolShown = &pane{tool: "diff"}
 
 	if cmd := m.armBannerPulse(); cmd == nil || !m.pulsing {
 		t.Fatal("no clock started behind the request's band")

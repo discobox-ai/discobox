@@ -65,10 +65,11 @@ func (c *column) insert(p *pane, exec Exec, focused bool) int {
 	p.created = exec.CreatedAt
 	at := len(c.panes)
 	for i, s := range c.panes {
-		// The pane's own service is carried into the comparison: the ordering
-		// groups services ahead of everything else in the column, and a pane
-		// described without it would be sorted as though it were a terminal.
-		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created, Service: s.service, ServiceOrder: s.serviceOrder}) {
+		// The pane's own service and tool are carried into the comparison: the
+		// ordering groups services ahead of everything else in the column and
+		// tools after it, and a pane described without them would be sorted as
+		// though it were a terminal or a shell.
+		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created, Service: s.service, ServiceOrder: s.serviceOrder, Tool: s.tool}) {
 			at = i
 			break
 		}

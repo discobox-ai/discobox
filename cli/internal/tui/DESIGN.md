@@ -916,7 +916,8 @@ been fixed.
 
 The left side is `[services, terminals]`: what the discobox is running on your
 behalf, the code itself running and the harness working on it, while the right
-side is what you opened by hand. Only shells split the window, so a discobox
+side is what you opened by hand. Only shells — and tools put away after them —
+split the window, so a discobox
 with three services and no shell still draws its terminal at the full width.
 Within the column the two kinds are *grouped* rather than strictly aged
 (`execBefore`), and the services come first: they are the discobox's own
@@ -1062,10 +1063,11 @@ emulating off-screen at their drawn size, so flipping to one shows where it is
 now.
 
 **The tools are a third kind of pane, and the only one that outlives being
-looked at** (`tools.go`, ADR-0071). `Model.tools` is a third `column` and
-`toolOpen` says whether it has the window; `screenPane` is the one pane with
-the whole screen, the apply overlay or the showing tool, and every place that
-asked `overlay != nil` asks it instead.
+looked at** (`tools.go`, ADR-0071, ADR-0134). A tool's pane lives in the shells
+column, sorted after every shell (`execBefore`), and `Model.toolShown` is the one
+with the whole window, if any; `screenPane` is the one pane with the whole
+screen, the apply overlay or the showing tool, and every place that asked
+`overlay != nil` asks it instead.
 
 - The catalog is not this package's (ADR 0125): `DataSource.Tools` merges the
   CLI's, the discobox's image and primary source, and the user's declarations,
@@ -1087,20 +1089,29 @@ asked `overlay != nil` asks it instead.
   directory. `NewTool` takes the id and the data source looks the declaration
   up again, so what runs is what the declarations say now. A labeled session is
   a tool whether or not the catalog has arrived, so a reattach draws it first. `Exec.Tool` carries it back off the listing; `toolExec` is asked
-  before `terminalExec`, because a tool is neither a terminal nor a shell and
-  never joins the strip.
+  before `terminalExec`, because a tool is neither a terminal nor a shell.
 - The two buttons are not the same button (`toolControls`). `[-]` puts the
-  window away and leaves the session running with its stream attached, so
-  choosing the tool again shows where it has got to — the leader's own way out
-  of a screen does the same. `[x]` calls `DataSource.EndExec` and is on the
-  shifted `X`, the same key and the same bracket a column's own end button
-  wears (`columnControls`): on this screen, `X` ends what you are looking at.
-  Like a column's, the kill goes out after the pane is already gone and the
-  exec id is recorded in `Model.ending`, so the poll that still lists the
-  session does not pick the tool straight back up — put away, into a strip the
-  press just emptied.
-- **A tool that exits takes its window with it** (`paneClosed`), unlike every
-  other non-primary pane. Quitting discobox-review or fresh is how you say you
+  window away — the leader's own way out of a screen does the same — and the
+  tool becomes its tab after the shells: drawn at the column's width, session
+  running, stream attached, so it stays in sight and shows where it has got
+  to. The focus goes back where the workspace had it, and the tab is not made
+  the column's visible one unless there is nothing else there — with no shells,
+  the tool is what opens the right column. On that tab in the split, the
+  column's `[+]` and `leader z` mean the tool's own window rather than the
+  column's maximize (`pressButton`, `zoomPaneMsg`); with the column maximized
+  they restore it as on any tab, so a tool left as the last tab cannot hold the
+  window. `[x]` is `endPane`, on the shifted `X`, the
+  same key and the same bracket a column's own end button wears
+  (`columnControls`) — in the window or on the tab, `X` ends what you are
+  looking at. The kill goes out after the pane is already gone and the exec id
+  is recorded in `Model.ending`, so the poll that still lists the session does
+  not pick the tool straight back up.
+- A tool keeps the strip's whole key map, since it is in the strip either way.
+  While it has the window, the keys that would move or open something under it
+  (`movePaneMsg`, the digits, `paneActionMsg`, the services chord) answer
+  instead of acting.
+- **A tool that exits takes its window — or its tab — with it** (`paneClosed`),
+  unlike every other non-primary pane. Quitting discobox-review or fresh is how you say you
   are done with it, so a held screen captioned with its exit would be one more
   thing to dismiss after every look at the diff — and there is nothing left to
   reopen anyway. A broken stream is still reported on the status line, since
@@ -1108,8 +1119,8 @@ asked `overlay != nil` asks it instead.
   why no tool pane is ever `exited`: the picker's rows are running or not open
   at all.
 - The sessions live in the discobox, so the poll picks up every labeled one it
-  finds and puts it away rather than showing it: attaching to a discobox should
-  show you the discobox. That is what makes a diff survive quitting the
+  finds and puts it away — a tab after the shells — rather than showing it:
+  attaching to a discobox should show you the discobox. That is what makes a diff survive quitting the
   launcher, and the only client-side state it needs is `ending`, which says
   which of them this window has just killed.
 - A tool can carry a **config** (`ToolFile`, `tui_tools.go`), declared as
@@ -1207,13 +1218,14 @@ is a view onto — ending it ends the screen, which is what detaching and
 quitting already are, and neither kills anything — and a service starts and
 stops on the discobox's schedule, on the two verbs its own pane already offers.
 
-It is the second place this window ends a session rather than closing a view of
-one (the tool window's `[x]` is the first), and both go the same way round: the
-pane goes first and `DataSource.EndExec` is sent after it, since what the press
-asked for is that this session is gone. Both then record the exec id in
-`Model.ending`, which `workspaceExecs` skips over — the poll runs behind the
-kill, and without it the very next tick would open the pane straight back up
-off a listing that still reports it live.
+It is the one place this window ends a session rather than closing a view of
+one — the tool window's `[x]` is the same call on the pane that has the window
+— and it goes the same way round every time: the pane goes first and
+`DataSource.EndExec` is sent after it, since what the press asked for is that
+this session is gone. The exec id is then recorded in `Model.ending`, which
+`workspaceExecs` skips over — the poll runs behind the kill, and without it the
+very next tick would open the pane straight back up off a listing that still
+reports it live.
 
 An entry is never forgotten while the workspace lasts. The tick re-arms
 alongside `listExecs` rather than after its answer, so two listings can be in

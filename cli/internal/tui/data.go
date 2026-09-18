@@ -1584,8 +1584,9 @@ type DataSource interface {
 	NewTool(ctx context.Context, sandboxID, toolID string, cols, rows int) (Exec, Terminal, error)
 
 	// EndExec ends one exec session in the sandbox, killing what is running in
-	// it. It is what closing a tool window does, and the one place this window
-	// ends a session rather than closing its own view of one.
+	// it. It is what ending a shell, a tool or an extra terminal does (endPane),
+	// and the one place this window ends a session rather than closing its own
+	// view of one.
 	EndExec(ctx context.Context, sandboxID, execID string) error
 
 	// ToolFilePath is where a tool file's copy lives on this machine, whether

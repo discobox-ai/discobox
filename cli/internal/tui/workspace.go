@@ -285,12 +285,15 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 				continue
 			}
 			if toolExec(exec) {
-				// A tool is not a tab. It is picked up so that a diff left
-				// running by a window that has since exited is the same diff
-				// when you ask for it again — put away until you do, because
+				// A tool is picked up so that a diff left running by a window
+				// that has since exited is the same diff when you ask for it
+				// again — put away, as a tab after the shells, because
 				// attaching to a discobox should show you the discobox.
 				if !m.toolOpening[exec.Tool] && m.toolPane(exec.Tool) == nil {
 					cmds = append(cmds, m.openToolExec(msg.gen, exec))
+					// It lands in the shells column, so it splits the window
+					// the way a shell would.
+					newShells++
 				}
 				continue
 			}
@@ -305,11 +308,11 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 		sort.SliceStable(open, func(i, j int) bool { return execBefore(open[i], open[j]) })
 	}
 
-	// Sized for the box they will be drawn in, counting the shells about to
-	// arrive as well as the ones already here: the full window when there is
-	// one box, the halves when there are two. Only the shells decide that —
-	// another terminal is a tab in the box the primary already has. See
-	// columns.
+	// Sized for the box they will be drawn in, counting the shells and tools
+	// about to arrive as well as the ones already here: the full window when
+	// there is one box, the halves when there are two. Only the right column
+	// decides that — another terminal is a tab in the box the primary already
+	// has. See columns.
 	term, shells := m.columns(newShells + m.shells.len())
 	if first {
 		cmds = append(cmds, m.openExec(msg.gen, Exec{ID: ExecPrimary, Primary: true}, term))
@@ -700,6 +703,12 @@ func execBefore(a, b Exec) bool {
 	if serviceExec(a) != serviceExec(b) {
 		return serviceExec(a)
 	}
+	// Tools go after everything else in the shells column for the same
+	// reason, the other way round: a tool is put there to be out of the way
+	// of the shells, and a shell opened later must not land beyond it.
+	if toolExec(a) != toolExec(b) {
+		return toolExec(b)
+	}
 	// Two services are ordered as the repository declares them, not by when
 	// their processes happened to start: that is what the numeric filename
 	// prefix is for, it is the order `discobox admin services ls` shows, and
@@ -720,10 +729,7 @@ func (m *Model) paneByExec(execID string) *pane {
 	if p := m.terminals.byExec(execID); p != nil {
 		return p
 	}
-	if p := m.shells.byExec(execID); p != nil {
-		return p
-	}
-	return m.tools.byExec(execID)
+	return m.shells.byExec(execID)
 }
 
 // closeTab takes one pane off the screen: its stream is closed and it leaves
@@ -740,6 +746,10 @@ func (m *Model) closeTab(p *pane) {
 		return
 	}
 	col.close(i)
+	if p == m.toolShown {
+		// A tool that had the window gives it back to the workspace.
+		m.toolShown = nil
+	}
 	if m.shells.len() == 0 {
 		// Nothing left to share the window with, so there is nothing left to
 		// maximize over either; the terminals take it back on their own.
@@ -775,10 +785,10 @@ func (m *Model) endablePane(p *pane) (why string, ok bool) {
 // was typed into or the button was drawn on, and no other. The tabs beside it
 // are other sessions, still running, still attached.
 //
-// The tab goes first and the kill is sent after it, the way a tool window's
-// [x] works: what the press asked for is that this session is gone, and a tab
-// that lingered until the server answered would leave the one thing the press
-// was about still on screen. A pane whose session is already over has nothing
+// It is also what a tool window's [x] does, to the tool with the window. The
+// tab goes first and the kill is sent after it: what the press asked for is
+// that this session is gone, and a tab that lingered until the server answered
+// would leave the one thing the press was about still on screen. A pane whose session is already over has nothing
 // to kill and is only dismissed.
 func (m *Model) endPane(p *pane) tea.Cmd {
 	if why, ok := m.endablePane(p); !ok {
@@ -860,12 +870,11 @@ func (m *Model) closeWorkspace() {
 		m.overlay = nil
 	}
 	m.terminals.closeAll()
-	m.shells.closeAll()
-	// The tools go with the screen they were opened over, and like every other
+	// The tools go with the shells they sit after, and like every other
 	// session they keep running: this closes the window onto them, and the next
 	// attach picks them back up off the listing.
-	m.tools.closeAll()
-	m.toolOpen = false
+	m.shells.closeAll()
+	m.toolShown = nil
 	m.toolOpening = nil
 	m.onShells = false
 	m.maximized = false
