@@ -1389,12 +1389,15 @@ instead (below).
   and is reported gone; the same number is reused when it comes back. A dev
   server restarting is the common case, and a URL the user has open must not
   move under them.
+- A port a service declares (ADR 0076) is printed with the service's name and
+  id. The declaration can arrive after the port is bound, so a bound port whose
+  service changes emits its own event (`Renamed`) rather than staying unnamed.
 - `--port` narrows the set to the ports named — `8080`, `8080/tcp`, or
   `5353/udp` — and forwards them whether or not the listing mentions them yet.
   Naming a port asserts it is there, and the report is a poll behind
   (ADR 0046); a flag that waits for the listing to agree is useless in the
   minute after a server starts, which is the minute it is reached for. What the listing does say about a named port — the address to
-  dial, what it speaks — is still used.
+  dial, what it speaks, the service it belongs to — is still used.
 - The launcher runs the same forwarder. Opening a workspace opens one
   (`apiDataSource.Forward`, `internal/cli/tui_forward.go`) and detaching closes
   it, so the local ports live as long as the screen showing them; the window

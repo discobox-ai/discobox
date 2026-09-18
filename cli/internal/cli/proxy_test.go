@@ -30,12 +30,14 @@ func TestSandboxPortTargetsKeepsTheAddressToDial(t *testing.T) {
 		{Port: 9000, Addresses: []string{"10.1.2.3"}, Protocol: "unknown"},
 		{Port: 0, Addresses: []string{"0.0.0.0"}, Protocol: "tcp"},
 		{Port: 5353, Addresses: []string{"0.0.0.0"}, Protocol: "udp"},
+		{Port: 6900, Protocol: "http", Declared: apiclientgen.NewOptBool(true), ServiceId: apiclientgen.NewOptString("ai.discobox.desktop"), ServiceName: apiclientgen.NewOptString("Desktop")},
 	})
 	want := []portforward.Target{
 		{Network: portforward.TCP, Host: "localhost", Port: 8080, Protocol: "http"},
 		{Network: portforward.TCP, Host: "localhost", Port: 5432, Protocol: "tcp"},
 		{Network: portforward.TCP, Host: "10.1.2.3", Port: 9000, Protocol: "unknown"},
 		{Network: portforward.UDP, Host: "127.0.0.1", Port: 5353, Protocol: "udp"},
+		{Network: portforward.TCP, Host: "localhost", Port: 6900, Protocol: "http", ServiceID: "ai.discobox.desktop", ServiceName: "Desktop"},
 	}
 	if got := sandboxPortTargets(sandbox); !reflect.DeepEqual(got, want) {
 		t.Fatalf("sandboxPortTargets = %#v, want %#v", got, want)

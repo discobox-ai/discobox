@@ -267,6 +267,39 @@ func TestForwarderRebindingTheSamePortIsANoOp(t *testing.T) {
 	}
 }
 
+func TestForwarderNamesAServiceDeclaredAfterItsPortWasBound(t *testing.T) {
+	sandbox := echoServer(t)
+	events := newCollector()
+	forwarder := New(t.Context(), Options{Dialer: dialerTo(sandbox), Observe: events.observe})
+	defer forwarder.Close()
+
+	target := Target{Port: 4718}
+	forwarder.Set([]Target{target})
+	bound := events.await(t, Bound, target.Port)
+
+	named := target
+	named.ServiceID, named.ServiceName = "web", "Web"
+	forwarder.Set([]Target{named})
+	renamed := events.await(t, Renamed, target.Port)
+	if renamed.Local != bound.Local || renamed.Target.ServiceID != "web" || renamed.Target.ServiceName != "Web" {
+		t.Fatalf("renamed = %#v, want web on local %d", renamed, bound.Local)
+	}
+
+	// The same declaration on the next listing says nothing new.
+	forwarder.Set([]Target{named})
+	events.mu.Lock()
+	defer events.mu.Unlock()
+	var renames int
+	for _, event := range events.events {
+		if event.Kind == Renamed {
+			renames++
+		}
+	}
+	if renames != 1 {
+		t.Fatalf("renamed %d times, want 1: %v", renames, events.events)
+	}
+}
+
 // halfCloseConn reports whether the forwarder passed a half-close through
 // instead of only closing the connection outright.
 type halfCloseConn struct {
@@ -414,6 +447,12 @@ func TestEventStringNamesTheMoveAndTheReason(t *testing.T) {
 		{Event{Kind: Bound, Target: Target{Network: UDP, Port: 5353, Protocol: "udp"}, Local: 5354}, "listening on 5354/udp -> discobox 5353/udp (5353/udp was taken)"},
 		{Event{Kind: Accepted, Target: Target{Network: UDP, Port: 53}, Local: 8053, Peer: "127.0.0.1:5000"}, "8053/udp -> discobox 53/udp: flow from 127.0.0.1:5000"},
 		{Event{Kind: Closed, Target: Target{Network: UDP, Port: 53}, Local: 8053, Peer: "127.0.0.1:5000"}, "8053/udp -> discobox 53/udp: flow from 127.0.0.1:5000 ended"},
+		{Event{Kind: Bound, Target: Target{Port: 6900, Protocol: "http", ServiceID: "ai.discobox.desktop", ServiceName: "Desktop"}, Local: 6900}, "listening on 6900 -> discobox 6900 (http) Desktop (ai.discobox.desktop)"},
+		{Event{Kind: Bound, Target: Target{Port: 3000, ServiceID: "web", ServiceName: "web"}, Local: 3001}, "listening on 3001 -> discobox 3000 web (3000 was taken)"},
+		{Event{Kind: Gone, Target: Target{Port: 3000, ServiceID: "web"}, Local: 3000}, "discobox 3000 web stopped listening; 3000 is held open"},
+		{Event{Kind: Accepted, Target: Target{Port: 3000, ServiceID: "web"}, Local: 3000, Peer: "127.0.0.1:5000"}, "3000 -> discobox 3000: connection from 127.0.0.1:5000"},
+		{Event{Kind: Renamed, Target: Target{Port: 3000, ServiceID: "web", ServiceName: "Web"}, Local: 3001}, "discobox 3000 on 3001 is Web (web)"},
+		{Event{Kind: Renamed, Target: Target{Port: 3000}, Local: 3001}, "discobox 3000 on 3001 is no longer a declared service"},
 	} {
 		if got := testCase.event.String(); got != testCase.want {
 			t.Errorf("String() = %q, want %q", got, testCase.want)

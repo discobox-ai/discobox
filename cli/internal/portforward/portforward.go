@@ -56,6 +56,11 @@ type Target struct {
 	// "unknown"). It is carried through to events and bindings for display
 	// only; forwarding is the same either way.
 	Protocol string
+	// ServiceID and ServiceName are the service declaration the port came
+	// from (ADR 0076), empty for a port only discovery found. Display only,
+	// like Protocol: they tell a person what the port is.
+	ServiceID   string
+	ServiceName string
 }
 
 func (t Target) dialHost() string {
@@ -257,10 +262,18 @@ func (f *Forwarder) Set(targets []Target) {
 			}
 			continue
 		}
+		renamed := bound.target.ServiceID != target.ServiceID || bound.target.ServiceName != target.ServiceName
 		bound.target = target
-		if !bound.active {
+		switch {
+		case !bound.active:
 			bound.active = true
 			events = append(events, Event{Kind: Back, Target: target, Local: bound.local})
+		case renamed:
+			// A declaration can arrive after its port was bound — a service
+			// file added beside a server already running, or a --port bound
+			// before the listing named it — and the port it labels is
+			// otherwise never named.
+			events = append(events, Event{Kind: Renamed, Target: target, Local: bound.local})
 		}
 	}
 	for key := range f.bindFailed {

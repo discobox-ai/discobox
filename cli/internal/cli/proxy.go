@@ -45,7 +45,9 @@ The discobox reports what its own processes are serving, and each port is bound
 locally at the same number when it is free and at the nearest one above it when
 it is not — a discobox serving 8080 is http://localhost:8081 when something else
 already has 8080. Ports that appear while the command runs are bound as they
-appear, and the command prints every bind and every connection it forwards.
+appear, and the command prints every bind and every connection it forwards. A
+port a service under .discobox/services declares is printed with that service's
+name and id, so the list says what each port is.
 
 A UDP port is bound locally by the same rule, independently of the TCP port of
 the same number. Each local address that sends it datagrams gets its own tunnel,
@@ -117,8 +119,13 @@ func (a *App) runProxy(ctx context.Context, client *apiclientgen.Client, project
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	// reported is the last listing that arrived. A failed one leaves it as it
+	// was rather than empty: a named port's dial host, protocol and service
+	// come from the listing, and a blip in the API is not the sandbox
+	// forgetting them.
+	var reported []portforward.Target
 	for {
-		reported, err := fetchSandboxPortTargets(ctx, client, projectID, sandboxID)
+		listed, err := fetchSandboxPortTargets(ctx, client, projectID, sandboxID)
 		if err != nil {
 			// The sandbox is asked again on the next tick. A listing that
 			// failed is not a reason to drop the ports already bound: the
@@ -127,6 +134,8 @@ func (a *App) runProxy(ctx context.Context, client *apiclientgen.Client, project
 			writeMu.Lock()
 			fmt.Fprintf(status, "listing ports: %v\n", err)
 			writeMu.Unlock()
+		} else {
+			reported = listed
 		}
 		if err == nil || len(requested) > 0 {
 			forwarder.Set(proxyTargets(reported, requested))
@@ -147,7 +156,8 @@ func (a *App) runProxy(ctx context.Context, client *apiclientgen.Client, project
 // agent's own poll (ADR 0046) — waiting for the listing to agree would make
 // the flag useless in the minute after a server starts, which is the minute
 // someone reaches for it. What is reported about a named port is still used:
-// it carries the address to dial and what the port speaks.
+// it carries the address to dial, what the port speaks, and the service it
+// belongs to.
 func proxyTargets(reported, requested []portforward.Target) []portforward.Target {
 	if len(requested) == 0 {
 		return reported

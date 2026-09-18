@@ -34,10 +34,12 @@ func sandboxPortTargets(sb apimodel.Sandbox) []portforward.Target {
 		}
 		network := portNetwork(string(port.Protocol))
 		targets = append(targets, portforward.Target{
-			Network:  network,
-			Host:     dialHostForPort(port.Addresses, network),
-			Port:     int(port.Port),
-			Protocol: string(port.Protocol),
+			Network:     network,
+			Host:        dialHostForPort(port.Addresses, network),
+			Port:        int(port.Port),
+			Protocol:    string(port.Protocol),
+			ServiceID:   port.ServiceId.Or(""),
+			ServiceName: port.ServiceName.Or(""),
 		})
 	}
 	return targets
@@ -119,10 +121,8 @@ func sandboxListeningPorts(sb apimodel.Sandbox) []tui.Port {
 		if port.Port <= 0 || port.Port > 65535 {
 			continue
 		}
-		// Read from the report rather than from the forward targets: a target
-		// is a host and a port, which is all a tunnel needs, and the service a
-		// port came from is exactly the part it has no use for. The header
-		// does.
+		// Read from the report rather than from the forward targets: the
+		// header's ports are what the sandbox serves, bound locally or not.
 		out = append(out, tui.Port{
 			Number:      int(port.Port),
 			UDP:         portNetwork(string(port.Protocol)) == portforward.UDP,
