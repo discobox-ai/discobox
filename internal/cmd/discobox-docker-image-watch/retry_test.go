@@ -50,7 +50,7 @@ esac
 			ticks := make(chan time.Time)
 			presence := make(chan time.Time)
 			done := make(chan error, 1)
-			go func() { done <- watchImages(ctx, dir, specs, ticks, presence) }()
+			go func() { done <- watchImages(ctx, dir, specs, ticks, presence, nil, nil) }()
 			t.Cleanup(func() { cancel(); <-done })
 			now := time.Now()
 			tick := func(ch chan time.Time, elapsed time.Duration) {

@@ -360,7 +360,9 @@ partial rebuild, the watcher derives both the complete development manifest and
 every image setting in `.env` from one inspection of the full local image set;
 the two publications must never name different pool or sandbox images. Failed
 build or publication work stays pending and retries without requiring another
-file change, including the initial build.
+file change, including the initial build. The inputs themselves are discovered
+again every few seconds, not only at startup, so a file added to a package an
+image builds is watched without restarting the loop.
 Dockerfile verification reuses the Taskfile build recipes with test-only tags,
 so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
 a running development server.

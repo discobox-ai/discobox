@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -103,10 +104,19 @@ func run(ctx context.Context) error {
 	// Docker call where the file check costs a stat.
 	presence := time.NewTicker(missingImageCheckInterval)
 	defer presence.Stop()
-	return watchImages(ctx, repoRoot, specs, ticker.C, presence.C)
+	// And a third, for which files are inputs at all. The file check stats a
+	// fixed list; a Go file added to a package, or a package newly imported,
+	// is not on it until the list is discovered again.
+	discovery := time.NewTicker(inputDiscoveryInterval)
+	defer discovery.Stop()
+	rediscover := func(ctx context.Context) ([]imageSpec, error) { return dockerImageSpecs(ctx, repoRoot) }
+	return watchImages(ctx, repoRoot, specs, ticker.C, presence.C, discovery.C, rediscover)
 }
 
-func watchImages(ctx context.Context, repoRoot string, specs []imageSpec, ticks, presence <-chan time.Time) error {
+// watchImages rebuilds images whose inputs change. rediscover, called on each
+// discovery tick, lists the inputs again: an image whose set of input files
+// changed is rebuilt just as one whose files did.
+func watchImages(ctx context.Context, repoRoot string, specs []imageSpec, ticks, presence, discovery <-chan time.Time, rediscover func(context.Context) ([]imageSpec, error)) error {
 	states := make(map[string]map[string]fileState, len(specs))
 	pending := make(map[string]bool, len(specs))
 	for _, spec := range specs {
@@ -145,6 +155,25 @@ func watchImages(ctx context.Context, repoRoot string, specs []imageSpec, ticks,
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case now = <-discovery:
+			fresh, err := rediscover(ctx)
+			if err != nil {
+				log.Printf("discover Docker inputs: %v", err)
+				continue
+			}
+			for i := range specs {
+				next, ok := specNamed(fresh, specs[i].name)
+				if !ok || slices.Equal(next.files, specs[i].files) {
+					continue
+				}
+				log.Printf("Docker inputs for %s changed: now %d files", specs[i].name, len(next.files))
+				// The whole spec, not only its files: the metadata file and
+				// build args are derived from the same inputs, and a stale one
+				// names a file that is gone or misses one that was added.
+				specs[i] = next
+				states[specs[i].name] = snapshot(next.files)
+				pending[specs[i].name] = true
+			}
 		case now = <-presence:
 			missing, err := missingImageSpecs(ctx, repoRoot, specs)
 			if err != nil {
@@ -164,6 +193,19 @@ func watchImages(ctx context.Context, repoRoot string, specs []imageSpec, ticks,
 			}
 		}
 	}
+}
+
+// inputDiscoveryInterval paces listing each image's inputs again, which costs a
+// `go list` per Go image where the file check costs a stat per file.
+const inputDiscoveryInterval = 10 * time.Second
+
+func specNamed(specs []imageSpec, name string) (imageSpec, bool) {
+	for _, spec := range specs {
+		if spec.name == name {
+			return spec, true
+		}
+	}
+	return imageSpec{}, false
 }
 
 // imageBuildRetryInterval bounds retries while continuing to collect file changes.
