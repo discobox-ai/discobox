@@ -1,6 +1,6 @@
 # 0130 — An audit record is read where it was written, and names its attestor
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-16
 - **Relates to**: [ADR 0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md),
   whose closing paragraph — "nothing in the sandbox is a place to keep a record
@@ -82,19 +82,26 @@ of.
 ## Decision
 
 **Audit records are read from where they were written. The control plane fans
-out, merges, and labels; it copies nothing. Every row names the party that
+out and authorizes every read, and copies nothing; the CLI merges and labels. Every row names the party that
 attested it, and a swapped request records the use it spent.**
 
 ### 1. Each source stays where it is, and the server fans out
 
 `discobox admin audit` is one CLI surface over four readers, not one table. The
-control plane queries the proxy control API on the pool, the sandbox-agent
-through the reverse proxy it already runs, and its own database directly, then
-merges by timestamp.
+control plane serves each trail on its own route: it queries the proxy control
+API on each pool and merges the pools, reaches the sandbox-agent through the
+reverse proxy it already runs, and reads its own database directly. The CLI
+merges the trails by timestamp.
 
-The merge is the control plane's because it is the only party that can see all
-four and the only one that knows which sandboxes a caller may read. Nothing is
-copied forward: a copy would need its own retention, its own migration and its
+Every read goes through the control plane because it is the only party that can
+reach all four and the only one that knows which sandboxes a caller may read.
+The merge across trails is the CLI's because by then there is nothing left to
+decide: each route has already authorized and scoped its read under its own
+token scope, and a server route that combined them would have to hold four
+authorizations and four cursors in one response to add nothing a client cannot
+do by time. The first draft put this merge on the server as well; it moved when
+the follow cursor (§5) made the combined route's contract four times the size of
+any one trail's. Nothing is copied forward: a copy would need its own retention, its own migration and its
 own answer to what happens when the copy and the original disagree, and for the
 proxy trail it would mean replicating every HTTP request every sandbox makes
 into the control-plane database.
@@ -105,7 +112,7 @@ unreachable source by name rather than returning a short answer that looks
 complete. A trail that silently omits what it could not reach is worse than one
 that says so.
 
-### 2. Every row carries its attestor, and the CLI never mixes them silently
+### 2. Every record carries its attestor, and the CLI never mixes them silently
 
 Each record is labeled with who vouches for it:
 
@@ -121,18 +128,24 @@ Each record is labeled with who vouches for it:
 
   For a verdict the attestor is derived rather than stored: `volunteered` false
   is `control-plane`, true is `sandbox`. `admin audit creds` reads one trail and
-  shows the same split under that trail's own names, `use` and `report`; the
-  merged `list` is where the attestor itself is the column.
+  shows the same split under that trail's own names, `use` and `report`.
 - `pool` — proxy HTTP and SOCKS rows. Written by the pool proxy from what
   crossed the wire; the sandbox cannot reach the row.
 - `sandbox` — harness hooks and exec events. Written inside the sandbox, by a
   process the sandbox controls, into a database the sandbox can rewrite.
 
-The distinction is a field on the record and a column in the default output, not
-a footnote in the documentation. A `sandbox`-attested row is a diagnostic: it
-says what a cooperating agent reported, which is useful and is not evidence. Put
-the three side by side with no marking and the interface launders the third into
-the other two.
+The distinction is a field on every record, and the merged listing marks it
+without a column of its own: `SOURCE` names the trail, and a trail is attested
+one way — `http` by the pool, `hooks` and `execs` by the sandbox — with the
+verdict trail's two cases distinguished in the record itself, which reads
+`(use)` or `(report)`. `-o json` keeps `attestor` as a field.
+
+An attestor column was the first draft, and it was a column repeating what the
+line beside it already said, in an output whose whole point is to be scannable.
+What must not happen is the marking disappearing: a `sandbox`-attested record is
+a diagnostic — it says what a cooperating agent reported, which is useful and is
+not evidence — and put beside the other two with nothing to tell them apart, the
+interface launders it into them. Naming the trail is what tells them apart.
 
 `--attestor` filters on it, and `--trusted` is the shorthand for excluding
 `sandbox`.
@@ -239,32 +252,96 @@ leaves no request shape that can express the unnarrowed read.
 
 ### 5. What the CLI surfaces
 
-The commands live under `admin`, beside `admin hooks` and the exec log reads
-they sit with. [ADR 0112](0112-the-top-level-is-for-people-not-a-transport-diagnosis.md)
+The commands live under `admin`, beside the exec log reads they sit with;
+`admin hooks logs` moves into them. [ADR 0112](0112-the-top-level-is-for-people-not-a-transport-diagnosis.md)
 keeps the top level for the things somebody does with a discobox and puts what
 exists to inspect or operate the system under `admin`; reading a trail is the
 second kind.
 
 ```
-discobox admin audit list  [--since] [--source] [--attestor] [--trusted] [-f]
-discobox admin audit http  [--discobox-id] [--pool] [--host] [--use-id] [--since] [--limit]
-discobox admin audit creds [--discobox-id] [--use-id] [--grant-id] [--denied|--allowed] [--since] [--prompt]
-discobox admin audit hooks [--provider] [--event]
+discobox admin audit list  --discobox-id [--source] [--since] [--limit] [-f]
+discobox admin audit get   <discobox-id> <record-id> [--pool]
+discobox admin audit http  [--discobox-id] [--pool] [--host] [--use-id] [--status] [--blocked] [--since] [--limit] [-f]
+discobox admin audit http  --pool --body ID [--part response|request|stream] [--discobox-id]
+discobox admin audit creds [--discobox-id] [--use-id] [--grant-id] [--denied|--allowed] [--since] [--limit] [--prompt] [-f]
+discobox admin audit hooks --discobox-id [--terminal-id] [--provider] [--event] [--since] [--limit] [-f]
+discobox admin audit execs --discobox-id [--exec-id] [--type] [--since] [--limit] [-f]
 ```
 
-`http` does not yet take `--status`, `--blocked`, `--body ID` (a recorded
-request or response body, or an upgraded stream) or `--follow`; `list` and
-`hooks` are not built. Those are what remains of this section.
+**Every record has an ID, spelled the same way in every trail.** `list` prints
+it and `get` reads that one record in full, which is where the fields no
+listing carries are: for an exchange, the headers as the recorder redacted
+them, the rewrite rule that applied, cache state, body formats and errors, the
+upgrade byte counts, and the recorder's own `enqueuedAt`/`writtenAt` beside
+`createdAt`.
+
+Three of the four trails already number their records with an `x/id` value,
+which carries a prefix. The pool trail numbers them by audit-database row,
+because that order is the write order the cursor reads along, and a bare integer
+beside `cvd_…` and `evt_…` reads as a different kind of thing and cannot be
+routed by a command handed one ID. So the component that owns the row writes it
+as `http_<row>` on every API above the database
+([`auditid`](../../auditid)) — the integer in the database and in Go, the
+prefixed string on the wire — rather than the CLI dressing an integer up for
+display, which would leave every other client to invent its own spelling. The
+cursor parameter carries the same spelling, one per pool.
+
+An `evt_` ID does not say which of the two sandbox-kept trails it is in, since
+the sandbox agent numbers hooks and exec events from one sequence. `get` asks
+both; a record is in at most one.
+
+`hooks` and `execs` read the trails kept inside one sandbox, and `list` is
+scoped to one sandbox for the same reason: a timeline that includes them is
+about a single discobox, and one that spans a project would leave two of the
+four trails out of it, or fan out to every running sandbox on every poll. With
+the sandbox fixed, neither it nor its pool is worth a column — a discobox runs
+on one pool — so the listing is the time, the trail, and the record. `--body` needs the pool
+because a row ID is only unique on the pool that recorded it; a recording is
+unbounded bytes, so it is served on a hand-wired streaming route beside the
+contract, and written raw when stdout is not a terminal and escaped when it is
+(§6).
+
+**Reading a sandbox's own trail never starts it.** Every other sandbox-agent
+route through the pool starts a stopped sandbox on demand. An audit read is not
+a use of the sandbox, and starting one to read its log would undo the stop the
+log may be read to explain — ADR 0108's idle stop above all. A stopped sandbox
+answers 409 saying so, and `list` reports that trail as unavailable.
 
 `creds` reads the project, not a sandbox: `list-credential-verdicts` is
 `/projects/{projectId}/credential-verdicts` with the sandbox as a filter, because
 a route under `/sandboxes/{id}` invites a handler that looks the sandbox up
 first and answers 404 for exactly the purged sandboxes the trail outlives.
 
-Two mechanical gaps close with it. `audit.QueryOptions` carries `ClientID`,
-`Host`, `UseID` and `Limit`, and grows a time bound and an `after_id` cursor,
-because a `--follow` that re-fetches the last hundred rows on every tick is not
-a tail. `list-harness-hooks` grows the same.
+**`--follow` reads forward, by write order where a trail has one.** Every
+trail's read takes an inclusive `since` and `order=asc`; the pool trail also
+takes `after`, a row id per pool. A follower prints the last `--limit` oldest
+first and then reads forward, printing only records it has not printed.
+
+The pool trail is the one that needs a real cursor and the one that can have
+one. Its row id is the write order, which is the order rows become readable,
+while `created_at` is the order things happened: the proxy stamps an exchange
+when it ends and writes it from a queue, and pools are separate hosts with
+separate clocks. Reading that trail by time means re-reading a window on every
+poll to catch what was written late — and where a busy pool records more in that
+window than a page holds, re-walking the whole window, page by page, forever.
+Reading after a row id is exact and needs no window. The id is scoped to the
+pool that issued it, so the parameter is one cursor per pool, and a pool the
+caller has no cursor for is read from the time bound, which is how a pool joins
+a follow already running.
+
+The other three trails have no such order — their IDs are random — and need
+much less of one: each is written by a single process that commits as it
+records, so only two commits interleaving can reorder them. They are read from a
+few seconds behind the newest record printed, with the keys already printed
+recognized and skipped. A full page is read past at once; a full page that no
+cursor can get past waits rather than spinning.
+
+**A followed batch is spread across the poll interval.** Polling produces
+records in bursts, which reads as stalling rather than following. A batch is
+printed one record at a time over the interval it was collected in — never while
+catching up, and never when the output is not a terminal, because a pipe must
+get each record as soon as it is read. It spends the interval rather than adding
+to it.
 
 ### 6. Everything a sandbox wrote is display data
 
@@ -367,9 +444,29 @@ lacks is a witness.
 - An agent that predates the audit operation answers the relay with its router's
   404. The control plane reports that pool as unavailable, by name, rather than
   as an empty trail.
-- A `--follow` over four sources is four polls at four cadences. The proxy trail
-  is the high-volume one and the others are quiet; nothing here makes any of
-  them a push.
+- A `--follow` over four sources is four polls on one cadence, and the merge
+  keeps one position per trail. The proxy trail is the high-volume one and the
+  only one read by a write-order cursor; the others are quiet and read by time.
+  Nothing here makes any of them a push.
+- `http_exchanges.id` becomes part of the read contract rather than an
+  implementation detail, in two ways: `after_id` promises that ids increase with
+  write order, and `http_<row>` puts the row number in an API. Both are already
+  true of a SQLite `AUTOINCREMENT` primary key, and the retention sweep only
+  deletes. A future audit database that numbered rows differently would have to
+  keep a monotonic column to stay a followable trail.
+- Spelling the pool trail's ID changes the pool relay's response shape, so a
+  pool agent older than this control plane answers the audit read with a row
+  the control plane cannot decode, and the pool is reported unavailable until it
+  is reconciled onto the current agent. That is the same degradation an agent
+  predating the operation gets, and it is why the CLI names the pool rather than
+  returning a short trail. The error says which field it could not read; it is
+  not mapped to `ErrPoolAgentUnsupported`, because nothing distinguishes an old
+  agent's answer from a corrupt one except a guess at an error string.
+- Reading one record in full is a read per trail, not one operation: the pool
+  trail gains `get-http-audit`, and the other three gain an `id` filter on the
+  list they already serve. A filter rather than a route because their lists are
+  already the only reader, and a 404 for an ID in neither sandbox trail is the
+  CLI's to report once it has asked both.
 - The verdict trail becomes readable by whoever can read the project, which is
   the point and is also the first time a judge's full prompt leaves the
   database. It contains the facts block and the argv, both composed inside the
