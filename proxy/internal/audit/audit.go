@@ -18,6 +18,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
+
+	"github.com/discobox-ai/discobox/auditid"
 )
 
 const tracerName = "github.com/discobox-ai/discobox/proxy"
@@ -84,7 +86,11 @@ type SOCKSEvent struct {
 
 // HTTPExchange is the GORM model for audited HTTP exchanges.
 type HTTPExchange struct {
-	ID             uint `gorm:"primaryKey"`
+	// ID is the row number, and on every API above this database it is written
+	// as http_<number> (auditid.ExchangeID): the number is the write order a
+	// cursor reads along, and the prefix is what tells a reader which trail an
+	// ID names.
+	ID             auditid.ExchangeID `gorm:"primaryKey"`
 	CreatedAt      time.Time
 	EnqueuedAt     time.Time
 	WrittenAt      time.Time
@@ -196,7 +202,45 @@ type QueryOptions struct {
 	// (nonZeroTime), and SQLite compares times as text carrying their offset,
 	// so the bound is compared in UTC too.
 	Since time.Time
-	Limit int
+	// MinStatus and MaxStatus bound the response status, inclusive; zero leaves
+	// that side open. HTTP reads only.
+	MinStatus int
+	MaxStatus int
+	// Blocked selects exchanges the destination policy refused when true and
+	// ones it let through when false; nil is both. HTTP reads only.
+	Blocked *bool
+	// Ascending returns the oldest rows first. A follower reads forward from a
+	// since bound, and newest-first with a limit would drop whatever falls
+	// between its last read and the newest page.
+	Ascending bool
+	// AfterID keeps rows written after the one a reader last read, and orders
+	// by id rather than time. It is the cursor a follower should use where it
+	// can: the id is the write order, which is the order rows become readable,
+	// while created_at is the order they happened. The recorder stamps an
+	// exchange when it ends and writes it from a queue, so a slow write lands
+	// behind a faster one — and a reader paging by time either re-reads a
+	// window on every poll to catch those, or loses them. Reading by id needs
+	// neither.
+	//
+	// It takes precedence over Since and Ascending: with a cursor there is
+	// nothing for a time bound to add, and the write order is forward by
+	// definition.
+	AfterID auditid.ExchangeID
+	Limit   int
+}
+
+// order is the ORDER BY for opts. id breaks ties between rows written in the
+// same instant, so a reader paging forward sees a stable sequence.
+func (opts QueryOptions) order() string {
+	if opts.AfterID > 0 {
+		// Write order, which is what a cursor reads along. It is also the
+		// primary key, so this is the one read here that needs no index.
+		return "id ASC"
+	}
+	if opts.Ascending {
+		return "created_at ASC, id ASC"
+	}
+	return "created_at DESC, id DESC"
 }
 
 // ConfigureStreamSpool sets the directory used for raw upgraded-stream spool files.
@@ -301,7 +345,7 @@ func (r *Recorder) ListHTTP(ctx context.Context, opts QueryOptions) ([]HTTPExcha
 	}
 	var rows []HTTPExchange
 	query := applyHTTPQueryOptions(r.db.WithContext(contextOrBackground(ctx)).Model(&HTTPExchange{}), opts)
-	if err := query.Order("created_at DESC").Find(&rows).Error; err != nil {
+	if err := query.Order(opts.order()).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -314,14 +358,14 @@ func (r *Recorder) ListSOCKS(ctx context.Context, opts QueryOptions) ([]SOCKSCon
 	}
 	var rows []SOCKSConnect
 	query := applySOCKSQueryOptions(r.db.WithContext(contextOrBackground(ctx)).Model(&SOCKSConnect{}), opts)
-	if err := query.Order("created_at DESC").Find(&rows).Error; err != nil {
+	if err := query.Order(opts.order()).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
 }
 
 // GetHTTP returns one HTTP audit row scoped to clientID.
-func (r *Recorder) GetHTTP(ctx context.Context, id uint, clientID string) (HTTPExchange, error) {
+func (r *Recorder) GetHTTP(ctx context.Context, id auditid.ExchangeID, clientID string) (HTTPExchange, error) {
 	if r == nil || !r.enabled {
 		return HTTPExchange{}, gorm.ErrRecordNotFound
 	}
@@ -554,14 +598,21 @@ func marshalHeaders(headers http.Header, redactedHeaders []string) string {
 }
 
 func applyHTTPQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
+	query = applyCursor(query, opts)
 	if opts.ClientID != "" {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
 	if opts.Host != "" {
 		query = query.Where("host = ?", opts.Host)
 	}
-	if !opts.Since.IsZero() {
-		query = query.Where("created_at >= ?", opts.Since.UTC())
+	if opts.MinStatus > 0 {
+		query = query.Where("status >= ?", opts.MinStatus)
+	}
+	if opts.MaxStatus > 0 {
+		query = query.Where("status <= ?", opts.MaxStatus)
+	}
+	if opts.Blocked != nil {
+		query = query.Where("blocked = ?", *opts.Blocked)
 	}
 	if opts.UseID != "" {
 		// Match a whole element of the comma-joined list rather than a
@@ -585,16 +636,27 @@ func escapeLike(value string) string {
 }
 
 func applySOCKSQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
+	query = applyCursor(query, opts)
 	if opts.ClientID != "" {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
 	if opts.Host != "" {
 		query = query.Where("destination = ?", opts.Host)
 	}
-	if !opts.Since.IsZero() {
-		query = query.Where("created_at >= ?", opts.Since.UTC())
-	}
 	return query.Limit(queryLimit(opts.Limit))
+}
+
+// applyCursor bounds a read by where the reader left off: after a row id, or
+// at a time. Rows are written in UTC (nonZeroTime), and SQLite compares times
+// as text carrying their offset, so a time bound is compared in UTC too.
+func applyCursor(query *gorm.DB, opts QueryOptions) *gorm.DB {
+	switch {
+	case opts.AfterID > 0:
+		return query.Where("id > ?", opts.AfterID)
+	case !opts.Since.IsZero():
+		return query.Where("created_at >= ?", opts.Since.UTC())
+	}
+	return query
 }
 
 func queryLimit(limit int) int {

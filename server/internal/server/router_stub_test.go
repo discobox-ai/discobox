@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -749,6 +750,14 @@ func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID 
 }
 
 func (s *routerTestServices) ListHTTPAudit(context.Context, string, services.HTTPAuditFilter) (*services.HTTPAuditResult, error) {
+	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
+}
+
+func (s *routerTestServices) OpenHTTPAuditArtifact(context.Context, string, string, string, auditid.ExchangeID, string) (*sandbox.HTTPAuditArtifact, error) {
+	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
+}
+
+func (s *routerTestServices) GetHTTPAudit(context.Context, string, string, string, auditid.ExchangeID) (*services.PoolHTTPAuditExchangeDetail, error) {
 	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
 }
 

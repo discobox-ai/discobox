@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/discobox-ai/x/gormdb"
+
+	"github.com/discobox-ai/discobox/auditid"
 )
 
 func TestRecorderDropsInsteadOfBlocking(t *testing.T) {
@@ -260,5 +262,71 @@ func TestListHTTPUseIDWildcardSelectsNothing(t *testing.T) {
 	}
 	if len(rows) != 0 {
 		t.Fatalf("a literal %% matched %d rows, want 0", len(rows))
+	}
+}
+
+// The cursor reads along the write order, which is the order rows become
+// readable. Reading forward by time loses a row stamped earlier and written
+// later, which is what the recorder's queue produces under load; reading
+// forward by id cannot.
+func TestListHTTPCursorReadsRowsWrittenOutOfTimeOrder(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 8, true)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = recorder.Close() })
+
+	base := time.Now().UTC().Add(-time.Hour)
+	// Written in this order; the slow request started first and ended last.
+	recorder.RecordHTTP(HTTPEvent{Time: base, ClientID: "sandbox-1", URL: "https://first.example.com"})
+	recorder.RecordHTTP(HTTPEvent{Time: base.Add(2 * time.Minute), ClientID: "sandbox-1", URL: "https://fast.example.com"})
+	recorder.RecordHTTP(HTTPEvent{Time: base.Add(time.Minute), ClientID: "sandbox-1", URL: "https://slow.example.com"})
+	drainRecorder(t, recorder)
+
+	read := recorder.ListHTTP
+	forward, err := read(context.Background(), QueryOptions{Ascending: true, Limit: 2})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(forward) != 2 || forward[1].URL != "https://slow.example.com" {
+		t.Fatalf("time-ordered read = %+v", forward)
+	}
+	// A follower that had printed up to the fast row and asked again by time
+	// would never be given the slow row: it is older than what it has seen.
+	byTime, err := read(context.Background(), QueryOptions{Since: base.Add(2 * time.Minute), Ascending: true})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	for _, row := range byTime {
+		if row.URL == "https://slow.example.com" {
+			t.Fatal("reading forward by time returned the late row; this test no longer proves anything")
+		}
+	}
+
+	// By cursor it is the next row, because it was written next.
+	all, err := read(context.Background(), QueryOptions{Ascending: true})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	var fastID auditid.ExchangeID
+	for _, row := range all {
+		if row.URL == "https://fast.example.com" {
+			fastID = row.ID
+		}
+	}
+	if fastID == 0 {
+		t.Fatalf("rows = %+v, want the fast row's id", all)
+	}
+	byCursor, err := read(context.Background(), QueryOptions{AfterID: fastID})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(byCursor) != 1 || byCursor[0].URL != "https://slow.example.com" {
+		t.Fatalf("cursor read after the fast row = %+v, want the row written after it", byCursor)
+	}
+	// And the cursor is where reading stops repeating itself: nothing is
+	// returned twice, and there is no window to re-walk.
+	if rows, err := read(context.Background(), QueryOptions{AfterID: byCursor[0].ID}); err != nil || len(rows) != 0 {
+		t.Fatalf("cursor read after the last row = %+v, %v", rows, err)
 	}
 }

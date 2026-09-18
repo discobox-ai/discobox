@@ -625,3 +625,29 @@ func (sandboxAgentNoopAudit) LoadExecRecords(context.Context) ([]execs.Exec, err
 func (sandboxAgentNoopAudit) DeleteExecRecord(context.Context, string) error {
 	return nil
 }
+
+// /exec-events does not contain /execs, so it needs its own scope entry; without
+// one it would be served to a token with no exec scope at all.
+func TestListExecEventsRequiresExecReadScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	for _, tc := range []struct {
+		scope string
+		want  int
+	}{
+		{ScopeExecRead, http.StatusOK},
+		{ScopeExecWrite, http.StatusForbidden},
+		{ScopeTerminalRead, http.StatusForbidden},
+	} {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/exec-events", nil)
+		req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", tc.scope))
+		router.ServeHTTP(resp, req)
+		if resp.Code != tc.want {
+			t.Fatalf("GET exec-events with %s: status = %d, want %d; body = %s", tc.scope, resp.Code, tc.want, resp.Body.String())
+		}
+	}
+}

@@ -589,50 +589,56 @@ func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 	}
 }
 
-func TestSandboxHarnessHookRouteUsesExecReadScope(t *testing.T) {
-	ctx := context.Background()
-	stubs := newRouterTestServices()
-	stubs.sandboxes["sandbox-1"] = model.Sandbox{
-		ID:              "sandbox-1",
-		ProjectID:       testDefaultProjectID,
-		CreatedByUserID: service.DefaultUserID,
-		Name:            "sandbox",
-		PoolID:          "pool-1",
-	}
-	projectID := testDefaultProjectID
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/harness-hooks"
-		if r.URL.Path != wantPath {
-			t.Fatalf("upstream path = %q", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"hooks":[]}`))
-	}))
-	t.Cleanup(upstream.Close)
-	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", nil)
-	stubs.sandboxLease.ForwardAuthTokenProvider = func(context.Context) (string, error) {
-		return "sandbox-agent-token", nil
-	}
+// Both audit trails a sandbox agent keeps — harness hooks and the events of
+// every exec — are exec reads.
+func TestSandboxAuditTrailRoutesUseExecReadScope(t *testing.T) {
+	for _, trail := range []string{"harness-hooks", "exec-events"} {
+		t.Run(trail, func(t *testing.T) {
+			ctx := context.Background()
+			stubs := newRouterTestServices()
+			stubs.sandboxes["sandbox-1"] = model.Sandbox{
+				ID:              "sandbox-1",
+				ProjectID:       testDefaultProjectID,
+				CreatedByUserID: service.DefaultUserID,
+				Name:            "sandbox",
+				PoolID:          "pool-1",
+			}
+			projectID := testDefaultProjectID
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/" + trail
+				if r.URL.Path != wantPath {
+					t.Errorf("upstream path = %q, want %q", r.URL.Path, wantPath)
+				}
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			t.Cleanup(upstream.Close)
+			stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", nil)
+			stubs.sandboxLease.ForwardAuthTokenProvider = func(context.Context) (string, error) {
+				return "sandbox-agent-token", nil
+			}
 
-	router, err := NewRouter(services.Services{
-		Projects:       stubs,
-		HarnessConfigs: stubs,
-		Sandboxes:      stubs,
-		Providers:      stubs,
-		Pools:          stubs,
-		Jobs:           stubs,
-	})
-	if err != nil {
-		t.Fatalf("new router: %v", err)
-	}
-	resp := httptest.NewRecorder()
-	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/harness-hooks", nil, poolagentauth.ScopeExecRead)
-	router.ServeHTTP(resp, req)
+			router, err := NewRouter(services.Services{
+				Projects:       stubs,
+				HarnessConfigs: stubs,
+				Sandboxes:      stubs,
+				Providers:      stubs,
+				Pools:          stubs,
+				Jobs:           stubs,
+			})
+			if err != nil {
+				t.Fatalf("new router: %v", err)
+			}
+			resp := httptest.NewRecorder()
+			req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/"+trail+"?order=asc", nil, poolagentauth.ScopeExecRead)
+			router.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET harness hooks status = %d, body = %s", resp.Code, resp.Body.String())
-	}
-	if !slices.Equal(stubs.sandboxScopes, []string{poolagentauth.ScopeExecRead}) {
-		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, body = %s", trail, resp.Code, resp.Body.String())
+			}
+			if !slices.Equal(stubs.sandboxScopes, []string{poolagentauth.ScopeExecRead}) {
+				t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
+			}
+		})
 	}
 }
 

@@ -5399,6 +5399,163 @@ func (s *Server) handleForceJobRequest(args [2]string, argsEscaped bool, w http.
 	}
 }
 
+// handleGetHTTPAuditRequest handles get-http-audit operation.
+//
+// One audited HTTP exchange in full, read from the pool that recorded it (ADR 0130 §5). The pool is
+// in the path because an audit record ID is only unique within it. The bodies and any upgraded
+// stream are read separately, through the recording route beside this one.
+//
+// GET /projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}
+func (s *Server) handleGetHTTPAuditRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-http-audit"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), GetHTTPAuditOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: GetHTTPAuditOperation,
+			ID:   "get-http-audit",
+		}
+	)
+	params, err := decodeGetHTTPAuditParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response GetHTTPAuditRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    GetHTTPAuditOperation,
+			OperationSummary: "Read one audited HTTP exchange in full",
+			OperationID:      "get-http-audit",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+				{
+					Name: "poolId",
+					In:   "path",
+				}: params.PoolId,
+				{
+					Name: "exchangeId",
+					In:   "path",
+				}: params.ExchangeId,
+				{
+					Name: "sandboxId",
+					In:   "query",
+				}: params.SandboxId,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = GetHTTPAuditParams
+			Response = GetHTTPAuditRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackGetHTTPAuditParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.GetHTTPAudit(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.GetHTTPAudit(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeGetHTTPAuditResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
 // handleGetHarnessConfigRequest handles get-harness-config operation.
 //
 // Get a harness config.
@@ -7797,6 +7954,10 @@ func (s *Server) handleListCredentialVerdictsRequest(args [1]string, argsEscaped
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
 				{
+					Name: "id",
+					In:   "query",
+				}: params.ID,
+				{
 					Name: "projectId",
 					In:   "path",
 				}: params.ProjectId,
@@ -7824,6 +7985,10 @@ func (s *Server) handleListCredentialVerdictsRequest(args [1]string, argsEscaped
 					Name: "limit",
 					In:   "query",
 				}: params.Limit,
+				{
+					Name: "order",
+					In:   "query",
+				}: params.Order,
 			},
 			Raw: r,
 		}
@@ -7856,6 +8021,181 @@ func (s *Server) handleListCredentialVerdictsRequest(args [1]string, argsEscaped
 	}
 
 	if err := encodeListCredentialVerdictsResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleListExecEventsRequest handles list-exec-events operation.
+//
+// Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),
+//
+//	recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and
+//
+// read only from a running sandbox; the read never starts one.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+func (s *Server) handleListExecEventsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-exec-events"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/exec-events"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListExecEventsOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: ListExecEventsOperation,
+			ID:   "list-exec-events",
+		}
+	)
+	params, err := decodeListExecEventsParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response ListExecEventsRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    ListExecEventsOperation,
+			OperationSummary: "List lifecycle events for every exec in a sandbox.",
+			OperationID:      "list-exec-events",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "id",
+					In:   "query",
+				}: params.ID,
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+				{
+					Name: "sandboxId",
+					In:   "path",
+				}: params.SandboxId,
+				{
+					Name: "execId",
+					In:   "query",
+				}: params.ExecId,
+				{
+					Name: "type",
+					In:   "query",
+				}: params.Type,
+				{
+					Name: "since",
+					In:   "query",
+				}: params.Since,
+				{
+					Name: "order",
+					In:   "query",
+				}: params.Order,
+				{
+					Name: "limit",
+					In:   "query",
+				}: params.Limit,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = ListExecEventsParams
+			Response = ListExecEventsRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackListExecEventsParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.ListExecEvents(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.ListExecEvents(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeListExecEventsResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -7994,6 +8334,26 @@ func (s *Server) handleListHTTPAuditRequest(args [1]string, argsEscaped bool, w 
 					Name: "limit",
 					In:   "query",
 				}: params.Limit,
+				{
+					Name: "after",
+					In:   "query",
+				}: params.After,
+				{
+					Name: "minStatus",
+					In:   "query",
+				}: params.MinStatus,
+				{
+					Name: "maxStatus",
+					In:   "query",
+				}: params.MaxStatus,
+				{
+					Name: "blocked",
+					In:   "query",
+				}: params.Blocked,
+				{
+					Name: "order",
+					In:   "query",
+				}: params.Order,
 			},
 			Raw: r,
 		}
@@ -8424,6 +8784,10 @@ func (s *Server) handleListHarnessHooksRequest(args [2]string, argsEscaped bool,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
 				{
+					Name: "id",
+					In:   "query",
+				}: params.ID,
+				{
 					Name: "projectId",
 					In:   "path",
 				}: params.ProjectId,
@@ -8439,6 +8803,22 @@ func (s *Server) handleListHarnessHooksRequest(args [2]string, argsEscaped bool,
 					Name: "limit",
 					In:   "query",
 				}: params.Limit,
+				{
+					Name: "provider",
+					In:   "query",
+				}: params.Provider,
+				{
+					Name: "event",
+					In:   "query",
+				}: params.Event,
+				{
+					Name: "since",
+					In:   "query",
+				}: params.Since,
+				{
+					Name: "order",
+					In:   "query",
+				}: params.Order,
 			},
 			Raw: r,
 		}

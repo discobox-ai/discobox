@@ -55,10 +55,20 @@ flowchart LR
   operation (`sandbox.ErrPoolAgentUnsupported`) answers 409 saying so, rather
   than the 404 that reads as a missing pool.
   `ListHTTPAudit` reads the pool proxies' HTTP audit for the whole project and
-  merges it newest first (ADR 0130 §§1, 4). It asks the pool `poolId` names;
+  merges it newest first, or oldest first from `Since` for a follower reading
+  forward (ADR 0130 §§1, 4). Status, blocked and order filters are passed to
+  every pool. `After` is per pool, keyed by pool ID, because a row id is only
+  ordered within the pool that issued it: each pool is read from its own cursor,
+  and a pool the caller has no cursor for is read from the shared time bound,
+  which is how a pool whose rows have not been seen yet joins a follow already
+  running. It asks the pool `poolId` names;
   otherwise the pool a still-existing sandbox runs on; otherwise every pool in
   the project, because a purged sandbox's requests stay on its pool with no row
-  left saying which. Pools are asked in parallel, each for the whole limit,
+  left saying which. The pools' pages are merged by taking heads rather than by
+  sorting everything and slicing: a pool reading from its cursor answers in
+  write order, so a cut made by time can drop a record the caller's cursor is
+  about to move past, and that record is never offered again
+  (`mergeAuditPages`). Pools are asked in parallel, each for the whole limit,
   since the newest N can all come from one pool, and each under
   `auditPoolReadTimeout`, so one unreachable host cannot hold the answer. A pool
   being deleted, or whose agent never registered, is reported without being
@@ -66,6 +76,11 @@ flowchart LR
   reconcile-and-wait recovery: a read must not restart the pools it reads. A pool that cannot be read is
   not an error: it is returned in `UnavailablePools` with why, beside what the
   others answered, because a trail silently short a pool reads as complete.
+  `GetHTTPAudit` reads one exchange in full from the one pool named, and
+  `OpenHTTPAuditArtifact` streams one recorded body from it,
+  under the same no-recovery rule; with a single pool there is no partial
+  answer, so a pool that cannot be read is a 503 and a recording that is not
+  there is a 404.
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
   (`RegisterPool`, authenticated by the token itself), heartbeats
   (`UpdatePoolStatus`), sandbox-state and sandbox provisioning-progress

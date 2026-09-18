@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/harness"
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	poolapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -120,14 +121,33 @@ func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, q
 	if query.Limit > 0 {
 		params.Limit = poolclient.NewOptInt(query.Limit)
 	}
+	if query.MinStatus > 0 {
+		params.MinStatus = poolclient.NewOptInt(query.MinStatus)
+	}
+	if query.MaxStatus > 0 {
+		params.MaxStatus = poolclient.NewOptInt(query.MaxStatus)
+	}
+	if query.Blocked != nil {
+		params.Blocked = poolclient.NewOptBool(*query.Blocked)
+	}
+	if query.Ascending {
+		params.Order = poolclient.NewOptPoolListHTTPAuditOrder(poolclient.PoolListHTTPAuditOrderAsc)
+	}
+	if query.AfterID > 0 {
+		params.AfterId = poolclient.NewOptString(query.AfterID.String())
+	}
 	res, err := client.PoolListHTTPAudit(ctx, params)
 	if err != nil {
 		return nil, mapPoolClientError(err)
 	}
 	out := make([]sandbox.HTTPAuditExchange, 0, len(res.Exchanges))
 	for _, e := range res.Exchanges {
+		id, err := auditid.ParseExchange(e.ID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, sandbox.HTTPAuditExchange{
-			ID:               e.ID,
+			ID:               id,
 			CreatedAt:        e.CreatedAt,
 			SandboxID:        e.SandboxId,
 			Method:           e.Method,
@@ -146,6 +166,127 @@ func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, q
 		})
 	}
 	return out, nil
+}
+
+// GetHTTPAudit reads one audited exchange in full from the pool that recorded
+// it. As with the list, a sandbox the caller names goes into the token as well
+// as the query.
+func (p *poolAgentClient) GetHTTPAudit(ctx context.Context, projectID, sandboxID string, id auditid.ExchangeID) (*sandbox.HTTPAuditExchangeDetail, error) {
+	client, release, err := p.poolClient(sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, poolagentauth.ScopeAuditRead)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	params := poolclient.PoolGetHTTPAuditParams{ProjectId: projectID, PoolId: p.poolID, ExchangeId: id.String()}
+	if sandboxID != "" {
+		params.SandboxId = poolclient.NewOptString(sandboxID)
+	}
+	res, err := client.PoolGetHTTPAudit(ctx, params)
+	if err != nil {
+		return nil, mapPoolClientError(err)
+	}
+	return httpAuditExchangeDetail(res)
+}
+
+// httpAuditExchangeDetail is the relayed row as the control plane's own type.
+func httpAuditExchangeDetail(res *poolapimodel.PoolHTTPAuditExchangeDetail) (*sandbox.HTTPAuditExchangeDetail, error) {
+	id, err := auditid.ParseExchange(res.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &sandbox.HTTPAuditExchangeDetail{
+		HTTPAuditExchange: sandbox.HTTPAuditExchange{
+			ID:               id,
+			CreatedAt:        res.CreatedAt,
+			SandboxID:        res.SandboxId,
+			Method:           res.Method,
+			URL:              res.URL,
+			Host:             res.Host,
+			Status:           res.Status,
+			DurationMillis:   res.DurationMillis.Or(0),
+			Blocked:          res.Blocked,
+			BlockedReason:    res.BlockedReason.Or(""),
+			CacheHit:         res.CacheHit.Or(false),
+			SwappedUseIDs:    append([]string{}, res.SwappedUseIds...),
+			RequestBodyBytes: res.RequestBodyBytes.Or(0),
+			ResponseBytes:    res.ResponseBytes.Or(0),
+			Upgrade:          res.Upgrade.Or(false),
+			UpgradeType:      res.UpgradeType.Or(""),
+		},
+		EnqueuedAt:           res.EnqueuedAt.Or(time.Time{}),
+		WrittenAt:            res.WrittenAt.Or(time.Time{}),
+		RequestHeaders:       res.RequestHeaders,
+		ResponseHeaders:      res.ResponseHeaders,
+		AppliedRuleID:        res.AppliedRuleId.Or(""),
+		AppliedPattern:       res.AppliedPattern.Or(""),
+		AppliedHeaders:       append([]string{}, res.AppliedHeaders...),
+		CacheKey:             res.CacheKey.Or(""),
+		CacheStored:          res.CacheStored.Or(false),
+		CacheError:           res.CacheError.Or(""),
+		RequestBodyFormat:    res.RequestBodyFormat.Or(""),
+		RequestBodyError:     res.RequestBodyError.Or(""),
+		RequestBodyRecorded:  res.RequestBodyRecorded.Or(false),
+		ResponseBodyFormat:   res.ResponseBodyFormat.Or(""),
+		ResponseBodyError:    res.ResponseBodyError.Or(""),
+		ResponseBodyRecorded: res.ResponseBodyRecorded.Or(false),
+		UpgradeC2SBytes:      res.UpgradeC2sBytes.Or(0),
+		UpgradeS2CBytes:      res.UpgradeS2cBytes.Or(0),
+		StreamSessionID:      res.StreamSessionId.Or(""),
+		StreamFormat:         res.StreamFormat.Or(""),
+		StreamRecorded:       res.StreamRecorded.Or(false),
+		StreamDroppedChunks:  res.StreamDroppedChunks.Or(0),
+		StreamDroppedBytes:   res.StreamDroppedBytes.Or(0),
+	}, nil
+}
+
+// OpenHTTPAuditArtifact streams one recorded body or upgraded stream from the
+// pool agent's hand-wired relay. As with ListHTTPAudit, a sandbox the caller
+// names goes into the token as well as the query.
+func (p *poolAgentClient) OpenHTTPAuditArtifact(ctx context.Context, projectID, sandboxID string, id auditid.ExchangeID, artifact string) (*sandbox.HTTPAuditArtifact, error) {
+	lease, err := p.treeLease(sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, poolagentauth.ScopeAuditRead)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("/api/project/%s/pool/%s/audit/http/%s/%s",
+		url.PathEscape(projectID), url.PathEscape(p.poolID), id, url.PathEscape(artifact))
+	if sandboxID != "" {
+		path += "?" + url.Values{"sandboxId": []string{sandboxID}}.Encode()
+	}
+	resp, err := p.agentRequest(ctx, http.MethodGet, path, lease, nil)
+	if err != nil {
+		lease.Release()
+		return nil, poolAgentTransportError("read the HTTP audit from", p.poolID, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		lease.Release()
+		return nil, auditArtifactStatusError(resp)
+	}
+	// The lease holds the transport this body is being read over, so it is
+	// released when the body is closed and not when this returns.
+	return &sandbox.HTTPAuditArtifact{
+		Body:        &leasedReader{ReadCloser: resp.Body, lease: lease},
+		Format:      resp.Header.Get(auditArtifactFormatHeader),
+		ContentType: resp.Header.Get("Content-Type"),
+	}, nil
+}
+
+// auditArtifactStatusError separates the two 404s this route can answer.
+//
+// The agent writes its own refusals as problem+json, as the API says every
+// error is; the router's 404 for a route an agent too old to have it never
+// reaches is text/plain. Reading the second as "no such recording" would report
+// a pool that recorded the body perfectly well as one that recorded nothing,
+// which is the answer ADR 0130 rules out — the pool is named as unreadable
+// instead.
+func auditArtifactStatusError(resp *http.Response) error {
+	if resp.StatusCode == http.StatusNotFound {
+		mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+		if err != nil || mediaType != "application/problem+json" {
+			return fmt.Errorf("%w: the pool agent has no audit recording route", sandbox.ErrPoolAgentUnsupported)
+		}
+	}
+	return treeStatusError(resp)
 }
 
 func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {

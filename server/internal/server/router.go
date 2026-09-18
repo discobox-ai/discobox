@@ -121,6 +121,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	registerSandboxTunnelRoutes(router, svc.Sandboxes)
 	registerPoolConsoleRoutes(router, svc.Pools)
 	registerPoolLogsRoutes(router, svc.Pools)
+	registerPoolHTTPAuditRoutes(router, svc.Pools)
 	registerPoolGuestImageRoutes(router, svc.Pools)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
@@ -224,6 +225,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	registerSandboxTunnelRoutes(router, appServices)
 	registerPoolConsoleRoutes(router, appServices)
 	registerPoolLogsRoutes(router, appServices)
+	registerPoolHTTPAuditRoutes(router, appServices)
 	registerPoolGuestImageRoutes(router, appServices)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {

@@ -11,13 +11,16 @@ import (
 )
 
 var (
-	rn11AllowedHeaders = map[string]string{
+	rn13AllowedHeaders = map[string]string{
+		"GET": "Authorization",
+	}
+	rn12AllowedHeaders = map[string]string{
 		"GET": "Authorization",
 	}
 	rn9AllowedHeaders = map[string]string{
 		"POST": "Authorization",
 	}
-	rn17AllowedHeaders = map[string]string{
+	rn19AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
 	}
 	rn10AllowedHeaders = map[string]string{
@@ -32,13 +35,13 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Authorization",
 	}
-	rn13AllowedHeaders = map[string]string{
-		"POST": "Authorization,Content-Type",
-	}
-	rn14AllowedHeaders = map[string]string{
+	rn15AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
 	}
 	rn16AllowedHeaders = map[string]string{
+		"POST": "Authorization,Content-Type",
+	}
+	rn18AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
 	}
 )
@@ -145,7 +148,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
 							switch r.Method {
 							case "GET":
 								s.handlePoolListHTTPAuditRequest([2]string{
@@ -155,13 +157,53 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "GET",
-									allowedHeaders: rn11AllowedHeaders,
+									allowedHeaders: rn13AllowedHeaders,
 									acceptPost:     "",
 									acceptPatch:    "",
 								})
 							}
 
 							return
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/"
+
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							// Param: "exchangeId"
+							// Leaf parameter, slashes are prohibited
+							idx := strings.IndexByte(elem, '/')
+							if idx >= 0 {
+								break
+							}
+							args[2] = elem
+							elem = ""
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "GET":
+									s.handlePoolGetHTTPAuditRequest([3]string{
+										args[0],
+										args[1],
+										args[2],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "GET",
+										allowedHeaders: rn12AllowedHeaders,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
 						}
 
 					case 'c': // Prefix: "cache/clear"
@@ -211,7 +253,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn17AllowedHeaders,
+									allowedHeaders: rn19AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -362,7 +404,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "POST",
-												allowedHeaders: rn13AllowedHeaders,
+												allowedHeaders: rn15AllowedHeaders,
 												acceptPost:     "application/json",
 												acceptPatch:    "",
 											})
@@ -403,7 +445,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn14AllowedHeaders,
+													allowedHeaders: rn16AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -432,7 +474,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn16AllowedHeaders,
+													allowedHeaders: rn18AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -604,7 +646,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
 							switch method {
 							case "GET":
 								r.name = PoolListHTTPAuditOperation
@@ -618,6 +659,42 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							default:
 								return
 							}
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/"
+
+							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							// Param: "exchangeId"
+							// Leaf parameter, slashes are prohibited
+							idx := strings.IndexByte(elem, '/')
+							if idx >= 0 {
+								break
+							}
+							args[2] = elem
+							elem = ""
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "GET":
+									r.name = PoolGetHTTPAuditOperation
+									r.summary = "Read one audited HTTP exchange in full"
+									r.operationID = "pool-get-http-audit"
+									r.operationGroup = ""
+									r.pathPattern = "/api/project/{projectId}/pool/{poolId}/audit/http/{exchangeId}"
+									r.args = args
+									r.count = 3
+									return r, true
+								default:
+									return
+								}
+							}
+
 						}
 
 					case 'c': // Prefix: "cache/clear"

@@ -1820,6 +1820,52 @@ func (o OptNilStringArray) Or(d []string) []string {
 	return d
 }
 
+// NewOptPoolListHTTPAuditOrder returns new OptPoolListHTTPAuditOrder with value set to v.
+func NewOptPoolListHTTPAuditOrder(v PoolListHTTPAuditOrder) OptPoolListHTTPAuditOrder {
+	return OptPoolListHTTPAuditOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolListHTTPAuditOrder is optional PoolListHTTPAuditOrder.
+type OptPoolListHTTPAuditOrder struct {
+	Value PoolListHTTPAuditOrder
+	Set   bool
+}
+
+// IsSet returns true if OptPoolListHTTPAuditOrder was set.
+func (o OptPoolListHTTPAuditOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolListHTTPAuditOrder) Reset() {
+	var v PoolListHTTPAuditOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolListHTTPAuditOrder) SetTo(v PoolListHTTPAuditOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolListHTTPAuditOrder) Get() (v PoolListHTTPAuditOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolListHTTPAuditOrder) Or(d PoolListHTTPAuditOrder) PoolListHTTPAuditOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptResolvedHarnessConfig returns new OptResolvedHarnessConfig with value set to v.
 func NewOptResolvedHarnessConfig(v ResolvedHarnessConfig) OptResolvedHarnessConfig {
 	return OptResolvedHarnessConfig{
@@ -2361,8 +2407,8 @@ type PoolHTTPAuditExchange struct {
 	DurationMillis OptInt64 `json:"durationMillis"`
 	// Destination host.
 	Host string `json:"host"`
-	// Audit row ID, unique within this pool.
-	ID int64 `json:"id"`
+	// Audit record ID, written http_<row>, unique within this pool and ordered by write.
+	ID string `json:"id"`
 	// HTTP method.
 	Method string `json:"method"`
 	// Size of the recorded request body.
@@ -2419,7 +2465,7 @@ func (s *PoolHTTPAuditExchange) GetHost() string {
 }
 
 // GetID returns the value of ID.
-func (s *PoolHTTPAuditExchange) GetID() int64 {
+func (s *PoolHTTPAuditExchange) GetID() string {
 	return s.ID
 }
 
@@ -2504,7 +2550,7 @@ func (s *PoolHTTPAuditExchange) SetHost(val string) {
 }
 
 // SetID sets the value of ID.
-func (s *PoolHTTPAuditExchange) SetID(val int64) {
+func (s *PoolHTTPAuditExchange) SetID(val string) {
 	s.ID = val
 }
 
@@ -2553,6 +2599,519 @@ func (s *PoolHTTPAuditExchange) SetURL(val string) {
 	s.URL = val
 }
 
+// One audited HTTP exchange in full: every field the pool proxy's recorder
+// wrote about it (ADR 0130 §5). Headers are stored already redacted, so a
+// credential swapped into a request is never in one. The bodies and the
+// upgraded stream themselves stay on the pool and are read through the
+// artifact route.
+// Ref: #/components/schemas/PoolHTTPAuditExchangeDetail
+type PoolHTTPAuditExchangeDetail struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Header names the proxy's rewrite rule set.
+	AppliedHeaders []string `json:"appliedHeaders"`
+	// The destination pattern that matched.
+	AppliedPattern OptString `json:"appliedPattern"`
+	// The proxy rewrite rule that applied.
+	AppliedRuleId OptString `json:"appliedRuleId"`
+	// True when the proxy's destination policy refused the request.
+	Blocked bool `json:"blocked"`
+	// Why the request was refused.
+	BlockedReason OptString `json:"blockedReason"`
+	// Why the response cache could not be used.
+	CacheError OptString `json:"cacheError"`
+	// True when the response came from the pool's response cache.
+	CacheHit OptBool `json:"cacheHit"`
+	// Key the response cache stored or looked up under.
+	CacheKey OptString `json:"cacheKey"`
+	// True when the response was written to the cache.
+	CacheStored OptBool `json:"cacheStored"`
+	// When the exchange happened, stamped as it ended.
+	CreatedAt time.Time `json:"createdAt"`
+	// How long the exchange took, in milliseconds.
+	DurationMillis OptInt64 `json:"durationMillis"`
+	// When the recorder queued the row; its distance from createdAt is the recorder's lag.
+	EnqueuedAt OptDateTime `json:"enqueuedAt"`
+	// Destination host.
+	Host string `json:"host"`
+	// Audit record ID, written http_<row>, unique within this pool and ordered by write.
+	ID string `json:"id"`
+	// HTTP method.
+	Method string `json:"method"`
+	// Size of the recorded request body.
+	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
+	// Why the request body was not recorded in full.
+	RequestBodyError OptString `json:"requestBodyError"`
+	// How the request body was spooled.
+	RequestBodyFormat OptString `json:"requestBodyFormat"`
+	// True when a request body was spooled and can be read.
+	RequestBodyRecorded OptBool `json:"requestBodyRecorded"`
+	// Request headers as recorded, with sensitive and swapped ones already redacted.
+	RequestHeaders PoolHTTPAuditExchangeDetailRequestHeaders `json:"requestHeaders"`
+	// Why the response body was not recorded in full.
+	ResponseBodyError OptString `json:"responseBodyError"`
+	// How the response body was spooled.
+	ResponseBodyFormat OptString `json:"responseBodyFormat"`
+	// True when a response body was spooled and can be read.
+	ResponseBodyRecorded OptBool `json:"responseBodyRecorded"`
+	// Size of the response body.
+	ResponseBytes OptInt64 `json:"responseBytes"`
+	// Response headers as recorded.
+	ResponseHeaders PoolHTTPAuditExchangeDetailResponseHeaders `json:"responseHeaders"`
+	// Sandbox whose client certificate made the request.
+	SandboxId string `json:"sandboxId"`
+	// Response status; zero when no response was received.
+	Status int `json:"status"`
+	// Upgraded stream bytes the recorder dropped under load.
+	StreamDroppedBytes OptInt64 `json:"streamDroppedBytes"`
+	// Upgraded stream chunks the recorder dropped under load.
+	StreamDroppedChunks OptInt64 `json:"streamDroppedChunks"`
+	// How the upgraded stream was spooled.
+	StreamFormat OptString `json:"streamFormat"`
+	// True when an upgraded stream was spooled and can be read.
+	StreamRecorded OptBool `json:"streamRecorded"`
+	// The upgraded stream's session.
+	StreamSessionId OptString `json:"streamSessionId"`
+	// Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3).
+	SwappedUseIds []string `json:"swappedUseIds"`
+	// True for an upgraded (e.g. WebSocket) connection.
+	Upgrade OptBool `json:"upgrade"`
+	// Bytes the sandbox sent over the upgraded connection.
+	UpgradeC2sBytes OptInt64 `json:"upgradeC2sBytes"`
+	// Bytes the upstream sent over the upgraded connection.
+	UpgradeS2cBytes OptInt64 `json:"upgradeS2cBytes"`
+	// The upgrade protocol.
+	UpgradeType OptString `json:"upgradeType"`
+	// Request URL, with any swapped query value left as its sentinel.
+	URL string `json:"url"`
+	// When the recorder wrote the row, which is when it became readable.
+	WrittenAt OptDateTime `json:"writtenAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolHTTPAuditExchangeDetail) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAppliedHeaders returns the value of AppliedHeaders.
+func (s *PoolHTTPAuditExchangeDetail) GetAppliedHeaders() []string {
+	return s.AppliedHeaders
+}
+
+// GetAppliedPattern returns the value of AppliedPattern.
+func (s *PoolHTTPAuditExchangeDetail) GetAppliedPattern() OptString {
+	return s.AppliedPattern
+}
+
+// GetAppliedRuleId returns the value of AppliedRuleId.
+func (s *PoolHTTPAuditExchangeDetail) GetAppliedRuleId() OptString {
+	return s.AppliedRuleId
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *PoolHTTPAuditExchangeDetail) GetBlocked() bool {
+	return s.Blocked
+}
+
+// GetBlockedReason returns the value of BlockedReason.
+func (s *PoolHTTPAuditExchangeDetail) GetBlockedReason() OptString {
+	return s.BlockedReason
+}
+
+// GetCacheError returns the value of CacheError.
+func (s *PoolHTTPAuditExchangeDetail) GetCacheError() OptString {
+	return s.CacheError
+}
+
+// GetCacheHit returns the value of CacheHit.
+func (s *PoolHTTPAuditExchangeDetail) GetCacheHit() OptBool {
+	return s.CacheHit
+}
+
+// GetCacheKey returns the value of CacheKey.
+func (s *PoolHTTPAuditExchangeDetail) GetCacheKey() OptString {
+	return s.CacheKey
+}
+
+// GetCacheStored returns the value of CacheStored.
+func (s *PoolHTTPAuditExchangeDetail) GetCacheStored() OptBool {
+	return s.CacheStored
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *PoolHTTPAuditExchangeDetail) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDurationMillis returns the value of DurationMillis.
+func (s *PoolHTTPAuditExchangeDetail) GetDurationMillis() OptInt64 {
+	return s.DurationMillis
+}
+
+// GetEnqueuedAt returns the value of EnqueuedAt.
+func (s *PoolHTTPAuditExchangeDetail) GetEnqueuedAt() OptDateTime {
+	return s.EnqueuedAt
+}
+
+// GetHost returns the value of Host.
+func (s *PoolHTTPAuditExchangeDetail) GetHost() string {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *PoolHTTPAuditExchangeDetail) GetID() string {
+	return s.ID
+}
+
+// GetMethod returns the value of Method.
+func (s *PoolHTTPAuditExchangeDetail) GetMethod() string {
+	return s.Method
+}
+
+// GetRequestBodyBytes returns the value of RequestBodyBytes.
+func (s *PoolHTTPAuditExchangeDetail) GetRequestBodyBytes() OptInt64 {
+	return s.RequestBodyBytes
+}
+
+// GetRequestBodyError returns the value of RequestBodyError.
+func (s *PoolHTTPAuditExchangeDetail) GetRequestBodyError() OptString {
+	return s.RequestBodyError
+}
+
+// GetRequestBodyFormat returns the value of RequestBodyFormat.
+func (s *PoolHTTPAuditExchangeDetail) GetRequestBodyFormat() OptString {
+	return s.RequestBodyFormat
+}
+
+// GetRequestBodyRecorded returns the value of RequestBodyRecorded.
+func (s *PoolHTTPAuditExchangeDetail) GetRequestBodyRecorded() OptBool {
+	return s.RequestBodyRecorded
+}
+
+// GetRequestHeaders returns the value of RequestHeaders.
+func (s *PoolHTTPAuditExchangeDetail) GetRequestHeaders() PoolHTTPAuditExchangeDetailRequestHeaders {
+	return s.RequestHeaders
+}
+
+// GetResponseBodyError returns the value of ResponseBodyError.
+func (s *PoolHTTPAuditExchangeDetail) GetResponseBodyError() OptString {
+	return s.ResponseBodyError
+}
+
+// GetResponseBodyFormat returns the value of ResponseBodyFormat.
+func (s *PoolHTTPAuditExchangeDetail) GetResponseBodyFormat() OptString {
+	return s.ResponseBodyFormat
+}
+
+// GetResponseBodyRecorded returns the value of ResponseBodyRecorded.
+func (s *PoolHTTPAuditExchangeDetail) GetResponseBodyRecorded() OptBool {
+	return s.ResponseBodyRecorded
+}
+
+// GetResponseBytes returns the value of ResponseBytes.
+func (s *PoolHTTPAuditExchangeDetail) GetResponseBytes() OptInt64 {
+	return s.ResponseBytes
+}
+
+// GetResponseHeaders returns the value of ResponseHeaders.
+func (s *PoolHTTPAuditExchangeDetail) GetResponseHeaders() PoolHTTPAuditExchangeDetailResponseHeaders {
+	return s.ResponseHeaders
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolHTTPAuditExchangeDetail) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetStatus returns the value of Status.
+func (s *PoolHTTPAuditExchangeDetail) GetStatus() int {
+	return s.Status
+}
+
+// GetStreamDroppedBytes returns the value of StreamDroppedBytes.
+func (s *PoolHTTPAuditExchangeDetail) GetStreamDroppedBytes() OptInt64 {
+	return s.StreamDroppedBytes
+}
+
+// GetStreamDroppedChunks returns the value of StreamDroppedChunks.
+func (s *PoolHTTPAuditExchangeDetail) GetStreamDroppedChunks() OptInt64 {
+	return s.StreamDroppedChunks
+}
+
+// GetStreamFormat returns the value of StreamFormat.
+func (s *PoolHTTPAuditExchangeDetail) GetStreamFormat() OptString {
+	return s.StreamFormat
+}
+
+// GetStreamRecorded returns the value of StreamRecorded.
+func (s *PoolHTTPAuditExchangeDetail) GetStreamRecorded() OptBool {
+	return s.StreamRecorded
+}
+
+// GetStreamSessionId returns the value of StreamSessionId.
+func (s *PoolHTTPAuditExchangeDetail) GetStreamSessionId() OptString {
+	return s.StreamSessionId
+}
+
+// GetSwappedUseIds returns the value of SwappedUseIds.
+func (s *PoolHTTPAuditExchangeDetail) GetSwappedUseIds() []string {
+	return s.SwappedUseIds
+}
+
+// GetUpgrade returns the value of Upgrade.
+func (s *PoolHTTPAuditExchangeDetail) GetUpgrade() OptBool {
+	return s.Upgrade
+}
+
+// GetUpgradeC2sBytes returns the value of UpgradeC2sBytes.
+func (s *PoolHTTPAuditExchangeDetail) GetUpgradeC2sBytes() OptInt64 {
+	return s.UpgradeC2sBytes
+}
+
+// GetUpgradeS2cBytes returns the value of UpgradeS2cBytes.
+func (s *PoolHTTPAuditExchangeDetail) GetUpgradeS2cBytes() OptInt64 {
+	return s.UpgradeS2cBytes
+}
+
+// GetUpgradeType returns the value of UpgradeType.
+func (s *PoolHTTPAuditExchangeDetail) GetUpgradeType() OptString {
+	return s.UpgradeType
+}
+
+// GetURL returns the value of URL.
+func (s *PoolHTTPAuditExchangeDetail) GetURL() string {
+	return s.URL
+}
+
+// GetWrittenAt returns the value of WrittenAt.
+func (s *PoolHTTPAuditExchangeDetail) GetWrittenAt() OptDateTime {
+	return s.WrittenAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolHTTPAuditExchangeDetail) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAppliedHeaders sets the value of AppliedHeaders.
+func (s *PoolHTTPAuditExchangeDetail) SetAppliedHeaders(val []string) {
+	s.AppliedHeaders = val
+}
+
+// SetAppliedPattern sets the value of AppliedPattern.
+func (s *PoolHTTPAuditExchangeDetail) SetAppliedPattern(val OptString) {
+	s.AppliedPattern = val
+}
+
+// SetAppliedRuleId sets the value of AppliedRuleId.
+func (s *PoolHTTPAuditExchangeDetail) SetAppliedRuleId(val OptString) {
+	s.AppliedRuleId = val
+}
+
+// SetBlocked sets the value of Blocked.
+func (s *PoolHTTPAuditExchangeDetail) SetBlocked(val bool) {
+	s.Blocked = val
+}
+
+// SetBlockedReason sets the value of BlockedReason.
+func (s *PoolHTTPAuditExchangeDetail) SetBlockedReason(val OptString) {
+	s.BlockedReason = val
+}
+
+// SetCacheError sets the value of CacheError.
+func (s *PoolHTTPAuditExchangeDetail) SetCacheError(val OptString) {
+	s.CacheError = val
+}
+
+// SetCacheHit sets the value of CacheHit.
+func (s *PoolHTTPAuditExchangeDetail) SetCacheHit(val OptBool) {
+	s.CacheHit = val
+}
+
+// SetCacheKey sets the value of CacheKey.
+func (s *PoolHTTPAuditExchangeDetail) SetCacheKey(val OptString) {
+	s.CacheKey = val
+}
+
+// SetCacheStored sets the value of CacheStored.
+func (s *PoolHTTPAuditExchangeDetail) SetCacheStored(val OptBool) {
+	s.CacheStored = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *PoolHTTPAuditExchangeDetail) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDurationMillis sets the value of DurationMillis.
+func (s *PoolHTTPAuditExchangeDetail) SetDurationMillis(val OptInt64) {
+	s.DurationMillis = val
+}
+
+// SetEnqueuedAt sets the value of EnqueuedAt.
+func (s *PoolHTTPAuditExchangeDetail) SetEnqueuedAt(val OptDateTime) {
+	s.EnqueuedAt = val
+}
+
+// SetHost sets the value of Host.
+func (s *PoolHTTPAuditExchangeDetail) SetHost(val string) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *PoolHTTPAuditExchangeDetail) SetID(val string) {
+	s.ID = val
+}
+
+// SetMethod sets the value of Method.
+func (s *PoolHTTPAuditExchangeDetail) SetMethod(val string) {
+	s.Method = val
+}
+
+// SetRequestBodyBytes sets the value of RequestBodyBytes.
+func (s *PoolHTTPAuditExchangeDetail) SetRequestBodyBytes(val OptInt64) {
+	s.RequestBodyBytes = val
+}
+
+// SetRequestBodyError sets the value of RequestBodyError.
+func (s *PoolHTTPAuditExchangeDetail) SetRequestBodyError(val OptString) {
+	s.RequestBodyError = val
+}
+
+// SetRequestBodyFormat sets the value of RequestBodyFormat.
+func (s *PoolHTTPAuditExchangeDetail) SetRequestBodyFormat(val OptString) {
+	s.RequestBodyFormat = val
+}
+
+// SetRequestBodyRecorded sets the value of RequestBodyRecorded.
+func (s *PoolHTTPAuditExchangeDetail) SetRequestBodyRecorded(val OptBool) {
+	s.RequestBodyRecorded = val
+}
+
+// SetRequestHeaders sets the value of RequestHeaders.
+func (s *PoolHTTPAuditExchangeDetail) SetRequestHeaders(val PoolHTTPAuditExchangeDetailRequestHeaders) {
+	s.RequestHeaders = val
+}
+
+// SetResponseBodyError sets the value of ResponseBodyError.
+func (s *PoolHTTPAuditExchangeDetail) SetResponseBodyError(val OptString) {
+	s.ResponseBodyError = val
+}
+
+// SetResponseBodyFormat sets the value of ResponseBodyFormat.
+func (s *PoolHTTPAuditExchangeDetail) SetResponseBodyFormat(val OptString) {
+	s.ResponseBodyFormat = val
+}
+
+// SetResponseBodyRecorded sets the value of ResponseBodyRecorded.
+func (s *PoolHTTPAuditExchangeDetail) SetResponseBodyRecorded(val OptBool) {
+	s.ResponseBodyRecorded = val
+}
+
+// SetResponseBytes sets the value of ResponseBytes.
+func (s *PoolHTTPAuditExchangeDetail) SetResponseBytes(val OptInt64) {
+	s.ResponseBytes = val
+}
+
+// SetResponseHeaders sets the value of ResponseHeaders.
+func (s *PoolHTTPAuditExchangeDetail) SetResponseHeaders(val PoolHTTPAuditExchangeDetailResponseHeaders) {
+	s.ResponseHeaders = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolHTTPAuditExchangeDetail) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *PoolHTTPAuditExchangeDetail) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetStreamDroppedBytes sets the value of StreamDroppedBytes.
+func (s *PoolHTTPAuditExchangeDetail) SetStreamDroppedBytes(val OptInt64) {
+	s.StreamDroppedBytes = val
+}
+
+// SetStreamDroppedChunks sets the value of StreamDroppedChunks.
+func (s *PoolHTTPAuditExchangeDetail) SetStreamDroppedChunks(val OptInt64) {
+	s.StreamDroppedChunks = val
+}
+
+// SetStreamFormat sets the value of StreamFormat.
+func (s *PoolHTTPAuditExchangeDetail) SetStreamFormat(val OptString) {
+	s.StreamFormat = val
+}
+
+// SetStreamRecorded sets the value of StreamRecorded.
+func (s *PoolHTTPAuditExchangeDetail) SetStreamRecorded(val OptBool) {
+	s.StreamRecorded = val
+}
+
+// SetStreamSessionId sets the value of StreamSessionId.
+func (s *PoolHTTPAuditExchangeDetail) SetStreamSessionId(val OptString) {
+	s.StreamSessionId = val
+}
+
+// SetSwappedUseIds sets the value of SwappedUseIds.
+func (s *PoolHTTPAuditExchangeDetail) SetSwappedUseIds(val []string) {
+	s.SwappedUseIds = val
+}
+
+// SetUpgrade sets the value of Upgrade.
+func (s *PoolHTTPAuditExchangeDetail) SetUpgrade(val OptBool) {
+	s.Upgrade = val
+}
+
+// SetUpgradeC2sBytes sets the value of UpgradeC2sBytes.
+func (s *PoolHTTPAuditExchangeDetail) SetUpgradeC2sBytes(val OptInt64) {
+	s.UpgradeC2sBytes = val
+}
+
+// SetUpgradeS2cBytes sets the value of UpgradeS2cBytes.
+func (s *PoolHTTPAuditExchangeDetail) SetUpgradeS2cBytes(val OptInt64) {
+	s.UpgradeS2cBytes = val
+}
+
+// SetUpgradeType sets the value of UpgradeType.
+func (s *PoolHTTPAuditExchangeDetail) SetUpgradeType(val OptString) {
+	s.UpgradeType = val
+}
+
+// SetURL sets the value of URL.
+func (s *PoolHTTPAuditExchangeDetail) SetURL(val string) {
+	s.URL = val
+}
+
+// SetWrittenAt sets the value of WrittenAt.
+func (s *PoolHTTPAuditExchangeDetail) SetWrittenAt(val OptDateTime) {
+	s.WrittenAt = val
+}
+
+// Request headers as recorded, with sensitive and swapped ones already redacted.
+type PoolHTTPAuditExchangeDetailRequestHeaders map[string][]string
+
+func (s *PoolHTTPAuditExchangeDetailRequestHeaders) init() PoolHTTPAuditExchangeDetailRequestHeaders {
+	m := *s
+	if m == nil {
+		m = map[string][]string{}
+		*s = m
+	}
+	return m
+}
+
+// Response headers as recorded.
+type PoolHTTPAuditExchangeDetailResponseHeaders map[string][]string
+
+func (s *PoolHTTPAuditExchangeDetailResponseHeaders) init() PoolHTTPAuditExchangeDetailResponseHeaders {
+	m := *s
+	if m == nil {
+		m = map[string][]string{}
+		*s = m
+	}
+	return m
+}
+
 // Ref: #/components/schemas/PoolHTTPAuditResponse
 type PoolHTTPAuditResponse struct {
 	// A URL to the JSON Schema for this object.
@@ -2579,6 +3138,47 @@ func (s *PoolHTTPAuditResponse) SetSchema(val OptURI) {
 // SetExchanges sets the value of Exchanges.
 func (s *PoolHTTPAuditResponse) SetExchanges(val []PoolHTTPAuditExchange) {
 	s.Exchanges = val
+}
+
+type PoolListHTTPAuditOrder string
+
+const (
+	PoolListHTTPAuditOrderAsc  PoolListHTTPAuditOrder = "asc"
+	PoolListHTTPAuditOrderDesc PoolListHTTPAuditOrder = "desc"
+)
+
+// AllValues returns all PoolListHTTPAuditOrder values.
+func (PoolListHTTPAuditOrder) AllValues() []PoolListHTTPAuditOrder {
+	return []PoolListHTTPAuditOrder{
+		PoolListHTTPAuditOrderAsc,
+		PoolListHTTPAuditOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolListHTTPAuditOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolListHTTPAuditOrderAsc:
+		return []byte(s), nil
+	case PoolListHTTPAuditOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolListHTTPAuditOrder) UnmarshalText(data []byte) error {
+	switch PoolListHTTPAuditOrder(data) {
+	case PoolListHTTPAuditOrderAsc:
+		*s = PoolListHTTPAuditOrderAsc
+		return nil
+	case PoolListHTTPAuditOrderDesc:
+		*s = PoolListHTTPAuditOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/PoolSandboxCreateRequest

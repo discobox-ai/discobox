@@ -378,8 +378,29 @@ contradictory `client_id` is still refused, so asking for another sandbox is a
 
 `ControlClient` is the other half of the control API, in this package so the
 paths, parameters, token and response shape have one owner. It signs a fresh
-token per call and never sends `client_id`: a sandbox-scoped read puts the
-sandbox in the token, where the narrowing above applies. A Discobox pool proxy
+token per call. A sandbox-scoped read carries the sandbox twice, in the token
+and as `client_id`: an authenticated proxy narrows by the token (and the two
+agree), and a proxy serving the control API without authentication, which
+ignores the token, is still narrowed by the query. It also reads recorded
+bodies and upgraded streams (`OpenHTTPArtifact`), scoped the same way, and
+passes `order=asc` for a follower reading forward from a `since` bound;
+`min_status`, `max_status` and `blocked` filter HTTP rows, and the SOCKS route
+refuses them.
+
+A row's ID is written `http_<row>` wherever it leaves this package
+([`auditid`](../auditid)): `audit.HTTPExchange.ID` is an integer in the database
+and in Go, and the prefixed string in JSON and on every path and parameter that
+names a record. The integer is what the write order and the cursor need; the
+prefix is what makes an ID say which trail it came from, beside the `cvd_` and
+`evt_` IDs of the trails that generate their own.
+
+`after_id` is what a follower should actually read by. The row id is the write
+order, which is the order rows become readable, while `created_at` is the order
+they happened: the recorder stamps an exchange when it ends and writes it from a
+queue, so a slow write lands behind a faster one. A reader paging by time has to
+re-read a window on every poll to catch those and can still miss one; reading
+after an id needs neither, and orders by the primary key. It takes precedence
+over `since` and `order`. A Discobox pool proxy
 serves the control API on loopback only, trusting a key the pool agent holds,
 and the pool agent is its only reader
 ([`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md#reading-the-proxys-audit)).

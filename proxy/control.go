@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"gorm.io/gorm"
 )
@@ -68,13 +69,15 @@ func (s *Server) handleControlListHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleControlListSOCKS(w http.ResponseWriter, r *http.Request) {
-	// A SOCKS connect is a tunnel the proxy never reads, so no sentinel is ever
-	// swapped in one and there is nothing for use_id to select. Refusing beats
-	// answering 200 with every row, which reads as "this use touched all of
-	// these" to whoever asked.
-	if r.URL.Query().Has("use_id") {
-		http.Error(w, "use_id does not apply to SOCKS connects", http.StatusBadRequest)
-		return
+	// A SOCKS connect is a tunnel the proxy never reads: no sentinel is swapped
+	// in one, and it has no HTTP status or policy verdict of that kind. A filter
+	// on those is refused rather than ignored, because answering 200 with every
+	// row reads as "all of these matched" to whoever asked.
+	for _, param := range httpOnlyControlParams {
+		if r.URL.Query().Has(param) {
+			http.Error(w, param+" does not apply to SOCKS connects", http.StatusBadRequest)
+			return
+		}
 	}
 	opts, err := controlQueryOptions(r)
 	if err != nil {
@@ -93,6 +96,17 @@ func (s *Server) handleControlHTTPArtifact(w http.ResponseWriter, r *http.Reques
 	id, artifact, ok := controlHTTPArtifact(r.URL.Path)
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if artifact == "" {
+		// The row itself, which is every field the recorder wrote rather than
+		// the summary a list returns.
+		row, err := s.audit.GetHTTP(r.Context(), id, r.URL.Query().Get("client_id"))
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		writeControlJSON(w, row, err)
 		return
 	}
 	row, err := s.audit.GetHTTP(r.Context(), id, r.URL.Query().Get("client_id"))
@@ -149,6 +163,15 @@ func (s *Server) handleControlHTTPArtifact(w http.ResponseWriter, r *http.Reques
 	http.ServeContent(w, r, name, row.CreatedAt, file)
 }
 
+// httpOnlyControlParams are the filters that only mean something for an HTTP
+// exchange.
+//
+// after_id is one of them because the cursor is spelled http_<row>
+// (auditid.ExchangeID): the prefix is what says which trail an ID names, and a
+// SOCKS read handed one would answer an arbitrary suffix of a different table
+// as though the cursor meant something there.
+var httpOnlyControlParams = []string{"use_id", "min_status", "max_status", "blocked", "after_id"}
+
 func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 	query := r.URL.Query()
 	limit, _ := strconv.Atoi(query.Get("limit"))
@@ -165,20 +188,53 @@ func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 		}
 		opts.Since = since
 	}
+	switch order := query.Get("order"); order {
+	case "", "desc":
+	case "asc":
+		opts.Ascending = true
+	default:
+		return audit.QueryOptions{}, fmt.Errorf("order %q is not asc or desc", order)
+	}
+	for param, field := range map[string]*int{"min_status": &opts.MinStatus, "max_status": &opts.MaxStatus} {
+		if raw := query.Get(param); raw != "" {
+			status, err := strconv.Atoi(raw)
+			if err != nil || status < 0 {
+				return audit.QueryOptions{}, fmt.Errorf("%s %q is not a status code", param, raw)
+			}
+			*field = status
+		}
+	}
+	if raw := query.Get("after_id"); raw != "" {
+		after, err := auditid.ParseExchange(raw)
+		if err != nil {
+			return audit.QueryOptions{}, fmt.Errorf("after_id %q: %w", raw, err)
+		}
+		opts.AfterID = after
+	}
+	if raw := query.Get("blocked"); raw != "" {
+		blocked, err := strconv.ParseBool(raw)
+		if err != nil {
+			return audit.QueryOptions{}, fmt.Errorf("blocked %q is not true or false", raw)
+		}
+		opts.Blocked = &blocked
+	}
 	return opts, nil
 }
 
-func controlHTTPArtifact(path string) (uint, string, bool) {
+// controlHTTPArtifact reads /audit/http/{id}, whose artifact is empty and
+// which is the row, and /audit/http/{id}/{artifact}, which is what it recorded
+// beside it. The id is spelled the way every API above this one spells it.
+func controlHTTPArtifact(path string) (auditid.ExchangeID, string, bool) {
 	rest := strings.TrimPrefix(path, "/audit/http/")
-	idPart, artifact, ok := strings.Cut(rest, "/")
-	if !ok || idPart == "" || artifact == "" {
+	idPart, artifact, hasArtifact := strings.Cut(rest, "/")
+	if idPart == "" || (hasArtifact && artifact == "") {
 		return 0, "", false
 	}
-	id, err := strconv.ParseUint(idPart, 10, 0)
+	id, err := auditid.ParseExchange(idPart)
 	if err != nil {
 		return 0, "", false
 	}
-	return uint(id), artifact, true
+	return id, artifact, true
 }
 
 type httpFile interface {

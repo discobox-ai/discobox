@@ -397,6 +397,88 @@ func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
 	s.Hooks = val
 }
 
+type ListExecEventsOrder string
+
+const (
+	ListExecEventsOrderAsc  ListExecEventsOrder = "asc"
+	ListExecEventsOrderDesc ListExecEventsOrder = "desc"
+)
+
+// AllValues returns all ListExecEventsOrder values.
+func (ListExecEventsOrder) AllValues() []ListExecEventsOrder {
+	return []ListExecEventsOrder{
+		ListExecEventsOrderAsc,
+		ListExecEventsOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListExecEventsOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListExecEventsOrderAsc:
+		return []byte(s), nil
+	case ListExecEventsOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListExecEventsOrder) UnmarshalText(data []byte) error {
+	switch ListExecEventsOrder(data) {
+	case ListExecEventsOrderAsc:
+		*s = ListExecEventsOrderAsc
+		return nil
+	case ListExecEventsOrderDesc:
+		*s = ListExecEventsOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type ListHarnessHooksOrder string
+
+const (
+	ListHarnessHooksOrderAsc  ListHarnessHooksOrder = "asc"
+	ListHarnessHooksOrderDesc ListHarnessHooksOrder = "desc"
+)
+
+// AllValues returns all ListHarnessHooksOrder values.
+func (ListHarnessHooksOrder) AllValues() []ListHarnessHooksOrder {
+	return []ListHarnessHooksOrder{
+		ListHarnessHooksOrderAsc,
+		ListHarnessHooksOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListHarnessHooksOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListHarnessHooksOrderAsc:
+		return []byte(s), nil
+	case ListHarnessHooksOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListHarnessHooksOrder) UnmarshalText(data []byte) error {
+	switch ListHarnessHooksOrder(data) {
+	case ListHarnessHooksOrderAsc:
+		*s = ListHarnessHooksOrderAsc
+		return nil
+	case ListHarnessHooksOrderDesc:
+		*s = ListHarnessHooksOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -713,6 +795,98 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListExecEventsOrder returns new OptListExecEventsOrder with value set to v.
+func NewOptListExecEventsOrder(v ListExecEventsOrder) OptListExecEventsOrder {
+	return OptListExecEventsOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListExecEventsOrder is optional ListExecEventsOrder.
+type OptListExecEventsOrder struct {
+	Value ListExecEventsOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListExecEventsOrder was set.
+func (o OptListExecEventsOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListExecEventsOrder) Reset() {
+	var v ListExecEventsOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListExecEventsOrder) SetTo(v ListExecEventsOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListExecEventsOrder) Get() (v ListExecEventsOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListExecEventsOrder) Or(d ListExecEventsOrder) ListExecEventsOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListHarnessHooksOrder returns new OptListHarnessHooksOrder with value set to v.
+func NewOptListHarnessHooksOrder(v ListHarnessHooksOrder) OptListHarnessHooksOrder {
+	return OptListHarnessHooksOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListHarnessHooksOrder is optional ListHarnessHooksOrder.
+type OptListHarnessHooksOrder struct {
+	Value ListHarnessHooksOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListHarnessHooksOrder was set.
+func (o OptListHarnessHooksOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListHarnessHooksOrder) Reset() {
+	var v ListHarnessHooksOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListHarnessHooksOrder) SetTo(v ListHarnessHooksOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListHarnessHooksOrder) Get() (v ListHarnessHooksOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListHarnessHooksOrder) Or(d ListHarnessHooksOrder) ListHarnessHooksOrder {
 	if v, ok := o.Get(); ok {
 		return v
 	}

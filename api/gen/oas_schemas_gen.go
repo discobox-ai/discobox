@@ -2063,6 +2063,7 @@ func (*ErrorModelStatusCode) deleteSandboxRes()                    {}
 func (*ErrorModelStatusCode) deleteSecretRes()                     {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                {}
 func (*ErrorModelStatusCode) forceJobRes()                         {}
+func (*ErrorModelStatusCode) getHTTPAuditRes()                     {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
 func (*ErrorModelStatusCode) getJobRes()                           {}
 func (*ErrorModelStatusCode) getPoolRes()                          {}
@@ -2173,6 +2174,7 @@ func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()          {}
 func (*ErrorResponseStatusCode) getSandboxExecRes()                 {}
 func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
+func (*ErrorResponseStatusCode) listExecEventsRes()                 {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
 func (*ErrorResponseStatusCode) listSandboxExecEventsRes()          {}
 func (*ErrorResponseStatusCode) listSandboxExecLogsRes()            {}
@@ -2582,8 +2584,9 @@ type HTTPAuditExchange struct {
 	DurationMillis OptInt64 `json:"durationMillis"`
 	// Destination host.
 	Host string `json:"host"`
-	// Audit row ID, unique within its pool.
-	ID int64 `json:"id"`
+	// Audit record ID, written http_<row>, unique within its pool and ordered by write. Pass it to
+	// get-http-audit or to the recording route.
+	ID string `json:"id"`
 	// HTTP method.
 	Method string `json:"method"`
 	// Pool whose proxy recorded the exchange.
@@ -2643,7 +2646,7 @@ func (s *HTTPAuditExchange) GetHost() string {
 }
 
 // GetID returns the value of ID.
-func (s *HTTPAuditExchange) GetID() int64 {
+func (s *HTTPAuditExchange) GetID() string {
 	return s.ID
 }
 
@@ -2733,7 +2736,7 @@ func (s *HTTPAuditExchange) SetHost(val string) {
 }
 
 // SetID sets the value of ID.
-func (s *HTTPAuditExchange) SetID(val int64) {
+func (s *HTTPAuditExchange) SetID(val string) {
 	s.ID = val
 }
 
@@ -2785,6 +2788,533 @@ func (s *HTTPAuditExchange) SetUpgradeType(val OptString) {
 // SetURL sets the value of URL.
 func (s *HTTPAuditExchange) SetURL(val string) {
 	s.URL = val
+}
+
+// One audited HTTP exchange in full: every field the pool proxy's recorder wrote about it (ADR 0130
+// §5). Headers are stored already redacted, so a credential swapped into a request is never in one.
+// The bodies and the upgraded stream themselves stay on the pool and are read through the recording
+// route.
+// Ref: #/components/schemas/HTTPAuditExchangeDetail
+type HTTPAuditExchangeDetail struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Header names the proxy's rewrite rule set.
+	AppliedHeaders []string `json:"appliedHeaders"`
+	// The destination pattern that matched.
+	AppliedPattern OptString `json:"appliedPattern"`
+	// The proxy rewrite rule that applied.
+	AppliedRuleId OptString `json:"appliedRuleId"`
+	// True when the proxy's destination policy refused the request.
+	Blocked bool `json:"blocked"`
+	// Why the request was refused.
+	BlockedReason OptString `json:"blockedReason"`
+	// Why the response cache could not be used.
+	CacheError OptString `json:"cacheError"`
+	// True when the response came from the pool's response cache.
+	CacheHit OptBool `json:"cacheHit"`
+	// Key the response cache stored or looked up under.
+	CacheKey OptString `json:"cacheKey"`
+	// True when the response was written to the cache.
+	CacheStored OptBool `json:"cacheStored"`
+	// When the exchange happened, stamped as it ended.
+	CreatedAt time.Time `json:"createdAt"`
+	// How long the exchange took, in milliseconds.
+	DurationMillis OptInt64 `json:"durationMillis"`
+	// When the recorder queued the row; its distance from createdAt is the recorder's lag.
+	EnqueuedAt OptDateTime `json:"enqueuedAt"`
+	// Destination host.
+	Host string `json:"host"`
+	// Audit record ID, written http_<row>, unique within its pool and ordered by write.
+	ID string `json:"id"`
+	// HTTP method.
+	Method string `json:"method"`
+	// Pool whose proxy recorded the exchange.
+	PoolId string `json:"poolId"`
+	// Size of the recorded request body.
+	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
+	// Why the request body was not recorded in full.
+	RequestBodyError OptString `json:"requestBodyError"`
+	// How the request body was spooled.
+	RequestBodyFormat OptString `json:"requestBodyFormat"`
+	// True when a request body was spooled and can be read through the recording route.
+	RequestBodyRecorded OptBool `json:"requestBodyRecorded"`
+	// Request headers as recorded, with sensitive and swapped ones already redacted.
+	RequestHeaders HTTPAuditExchangeDetailRequestHeaders `json:"requestHeaders"`
+	// Why the response body was not recorded in full.
+	ResponseBodyError OptString `json:"responseBodyError"`
+	// How the response body was spooled.
+	ResponseBodyFormat OptString `json:"responseBodyFormat"`
+	// True when a response body was spooled and can be read through the recording route.
+	ResponseBodyRecorded OptBool `json:"responseBodyRecorded"`
+	// Size of the response body.
+	ResponseBytes OptInt64 `json:"responseBytes"`
+	// Response headers as recorded.
+	ResponseHeaders HTTPAuditExchangeDetailResponseHeaders `json:"responseHeaders"`
+	// Sandbox whose client certificate made the request. It may no longer exist.
+	SandboxId string `json:"sandboxId"`
+	// Response status; zero when no response was received.
+	Status int `json:"status"`
+	// Upgraded stream bytes the recorder dropped under load.
+	StreamDroppedBytes OptInt64 `json:"streamDroppedBytes"`
+	// Upgraded stream chunks the recorder dropped under load.
+	StreamDroppedChunks OptInt64 `json:"streamDroppedChunks"`
+	// How the upgraded stream was spooled.
+	StreamFormat OptString `json:"streamFormat"`
+	// True when an upgraded stream was spooled and can be read through the recording route.
+	StreamRecorded OptBool `json:"streamRecorded"`
+	// The upgraded stream's session.
+	StreamSessionId OptString `json:"streamSessionId"`
+	// Approved credential uses whose sentinels were swapped into this request. Joins to credential
+	// verdicts by useId (ADR 0130 §3).
+	SwappedUseIds []string `json:"swappedUseIds"`
+	// True for an upgraded (e.g. WebSocket) connection.
+	Upgrade OptBool `json:"upgrade"`
+	// Bytes the sandbox sent over the upgraded connection.
+	UpgradeC2sBytes OptInt64 `json:"upgradeC2sBytes"`
+	// Bytes the upstream sent over the upgraded connection.
+	UpgradeS2cBytes OptInt64 `json:"upgradeS2cBytes"`
+	// The upgrade protocol.
+	UpgradeType OptString `json:"upgradeType"`
+	// Request URL, with any swapped query value left as its sentinel.
+	URL string `json:"url"`
+	// When the recorder wrote the row, which is when it became readable.
+	WrittenAt OptDateTime `json:"writtenAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *HTTPAuditExchangeDetail) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAppliedHeaders returns the value of AppliedHeaders.
+func (s *HTTPAuditExchangeDetail) GetAppliedHeaders() []string {
+	return s.AppliedHeaders
+}
+
+// GetAppliedPattern returns the value of AppliedPattern.
+func (s *HTTPAuditExchangeDetail) GetAppliedPattern() OptString {
+	return s.AppliedPattern
+}
+
+// GetAppliedRuleId returns the value of AppliedRuleId.
+func (s *HTTPAuditExchangeDetail) GetAppliedRuleId() OptString {
+	return s.AppliedRuleId
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *HTTPAuditExchangeDetail) GetBlocked() bool {
+	return s.Blocked
+}
+
+// GetBlockedReason returns the value of BlockedReason.
+func (s *HTTPAuditExchangeDetail) GetBlockedReason() OptString {
+	return s.BlockedReason
+}
+
+// GetCacheError returns the value of CacheError.
+func (s *HTTPAuditExchangeDetail) GetCacheError() OptString {
+	return s.CacheError
+}
+
+// GetCacheHit returns the value of CacheHit.
+func (s *HTTPAuditExchangeDetail) GetCacheHit() OptBool {
+	return s.CacheHit
+}
+
+// GetCacheKey returns the value of CacheKey.
+func (s *HTTPAuditExchangeDetail) GetCacheKey() OptString {
+	return s.CacheKey
+}
+
+// GetCacheStored returns the value of CacheStored.
+func (s *HTTPAuditExchangeDetail) GetCacheStored() OptBool {
+	return s.CacheStored
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HTTPAuditExchangeDetail) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDurationMillis returns the value of DurationMillis.
+func (s *HTTPAuditExchangeDetail) GetDurationMillis() OptInt64 {
+	return s.DurationMillis
+}
+
+// GetEnqueuedAt returns the value of EnqueuedAt.
+func (s *HTTPAuditExchangeDetail) GetEnqueuedAt() OptDateTime {
+	return s.EnqueuedAt
+}
+
+// GetHost returns the value of Host.
+func (s *HTTPAuditExchangeDetail) GetHost() string {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *HTTPAuditExchangeDetail) GetID() string {
+	return s.ID
+}
+
+// GetMethod returns the value of Method.
+func (s *HTTPAuditExchangeDetail) GetMethod() string {
+	return s.Method
+}
+
+// GetPoolId returns the value of PoolId.
+func (s *HTTPAuditExchangeDetail) GetPoolId() string {
+	return s.PoolId
+}
+
+// GetRequestBodyBytes returns the value of RequestBodyBytes.
+func (s *HTTPAuditExchangeDetail) GetRequestBodyBytes() OptInt64 {
+	return s.RequestBodyBytes
+}
+
+// GetRequestBodyError returns the value of RequestBodyError.
+func (s *HTTPAuditExchangeDetail) GetRequestBodyError() OptString {
+	return s.RequestBodyError
+}
+
+// GetRequestBodyFormat returns the value of RequestBodyFormat.
+func (s *HTTPAuditExchangeDetail) GetRequestBodyFormat() OptString {
+	return s.RequestBodyFormat
+}
+
+// GetRequestBodyRecorded returns the value of RequestBodyRecorded.
+func (s *HTTPAuditExchangeDetail) GetRequestBodyRecorded() OptBool {
+	return s.RequestBodyRecorded
+}
+
+// GetRequestHeaders returns the value of RequestHeaders.
+func (s *HTTPAuditExchangeDetail) GetRequestHeaders() HTTPAuditExchangeDetailRequestHeaders {
+	return s.RequestHeaders
+}
+
+// GetResponseBodyError returns the value of ResponseBodyError.
+func (s *HTTPAuditExchangeDetail) GetResponseBodyError() OptString {
+	return s.ResponseBodyError
+}
+
+// GetResponseBodyFormat returns the value of ResponseBodyFormat.
+func (s *HTTPAuditExchangeDetail) GetResponseBodyFormat() OptString {
+	return s.ResponseBodyFormat
+}
+
+// GetResponseBodyRecorded returns the value of ResponseBodyRecorded.
+func (s *HTTPAuditExchangeDetail) GetResponseBodyRecorded() OptBool {
+	return s.ResponseBodyRecorded
+}
+
+// GetResponseBytes returns the value of ResponseBytes.
+func (s *HTTPAuditExchangeDetail) GetResponseBytes() OptInt64 {
+	return s.ResponseBytes
+}
+
+// GetResponseHeaders returns the value of ResponseHeaders.
+func (s *HTTPAuditExchangeDetail) GetResponseHeaders() HTTPAuditExchangeDetailResponseHeaders {
+	return s.ResponseHeaders
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *HTTPAuditExchangeDetail) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetStatus returns the value of Status.
+func (s *HTTPAuditExchangeDetail) GetStatus() int {
+	return s.Status
+}
+
+// GetStreamDroppedBytes returns the value of StreamDroppedBytes.
+func (s *HTTPAuditExchangeDetail) GetStreamDroppedBytes() OptInt64 {
+	return s.StreamDroppedBytes
+}
+
+// GetStreamDroppedChunks returns the value of StreamDroppedChunks.
+func (s *HTTPAuditExchangeDetail) GetStreamDroppedChunks() OptInt64 {
+	return s.StreamDroppedChunks
+}
+
+// GetStreamFormat returns the value of StreamFormat.
+func (s *HTTPAuditExchangeDetail) GetStreamFormat() OptString {
+	return s.StreamFormat
+}
+
+// GetStreamRecorded returns the value of StreamRecorded.
+func (s *HTTPAuditExchangeDetail) GetStreamRecorded() OptBool {
+	return s.StreamRecorded
+}
+
+// GetStreamSessionId returns the value of StreamSessionId.
+func (s *HTTPAuditExchangeDetail) GetStreamSessionId() OptString {
+	return s.StreamSessionId
+}
+
+// GetSwappedUseIds returns the value of SwappedUseIds.
+func (s *HTTPAuditExchangeDetail) GetSwappedUseIds() []string {
+	return s.SwappedUseIds
+}
+
+// GetUpgrade returns the value of Upgrade.
+func (s *HTTPAuditExchangeDetail) GetUpgrade() OptBool {
+	return s.Upgrade
+}
+
+// GetUpgradeC2sBytes returns the value of UpgradeC2sBytes.
+func (s *HTTPAuditExchangeDetail) GetUpgradeC2sBytes() OptInt64 {
+	return s.UpgradeC2sBytes
+}
+
+// GetUpgradeS2cBytes returns the value of UpgradeS2cBytes.
+func (s *HTTPAuditExchangeDetail) GetUpgradeS2cBytes() OptInt64 {
+	return s.UpgradeS2cBytes
+}
+
+// GetUpgradeType returns the value of UpgradeType.
+func (s *HTTPAuditExchangeDetail) GetUpgradeType() OptString {
+	return s.UpgradeType
+}
+
+// GetURL returns the value of URL.
+func (s *HTTPAuditExchangeDetail) GetURL() string {
+	return s.URL
+}
+
+// GetWrittenAt returns the value of WrittenAt.
+func (s *HTTPAuditExchangeDetail) GetWrittenAt() OptDateTime {
+	return s.WrittenAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *HTTPAuditExchangeDetail) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAppliedHeaders sets the value of AppliedHeaders.
+func (s *HTTPAuditExchangeDetail) SetAppliedHeaders(val []string) {
+	s.AppliedHeaders = val
+}
+
+// SetAppliedPattern sets the value of AppliedPattern.
+func (s *HTTPAuditExchangeDetail) SetAppliedPattern(val OptString) {
+	s.AppliedPattern = val
+}
+
+// SetAppliedRuleId sets the value of AppliedRuleId.
+func (s *HTTPAuditExchangeDetail) SetAppliedRuleId(val OptString) {
+	s.AppliedRuleId = val
+}
+
+// SetBlocked sets the value of Blocked.
+func (s *HTTPAuditExchangeDetail) SetBlocked(val bool) {
+	s.Blocked = val
+}
+
+// SetBlockedReason sets the value of BlockedReason.
+func (s *HTTPAuditExchangeDetail) SetBlockedReason(val OptString) {
+	s.BlockedReason = val
+}
+
+// SetCacheError sets the value of CacheError.
+func (s *HTTPAuditExchangeDetail) SetCacheError(val OptString) {
+	s.CacheError = val
+}
+
+// SetCacheHit sets the value of CacheHit.
+func (s *HTTPAuditExchangeDetail) SetCacheHit(val OptBool) {
+	s.CacheHit = val
+}
+
+// SetCacheKey sets the value of CacheKey.
+func (s *HTTPAuditExchangeDetail) SetCacheKey(val OptString) {
+	s.CacheKey = val
+}
+
+// SetCacheStored sets the value of CacheStored.
+func (s *HTTPAuditExchangeDetail) SetCacheStored(val OptBool) {
+	s.CacheStored = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HTTPAuditExchangeDetail) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDurationMillis sets the value of DurationMillis.
+func (s *HTTPAuditExchangeDetail) SetDurationMillis(val OptInt64) {
+	s.DurationMillis = val
+}
+
+// SetEnqueuedAt sets the value of EnqueuedAt.
+func (s *HTTPAuditExchangeDetail) SetEnqueuedAt(val OptDateTime) {
+	s.EnqueuedAt = val
+}
+
+// SetHost sets the value of Host.
+func (s *HTTPAuditExchangeDetail) SetHost(val string) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *HTTPAuditExchangeDetail) SetID(val string) {
+	s.ID = val
+}
+
+// SetMethod sets the value of Method.
+func (s *HTTPAuditExchangeDetail) SetMethod(val string) {
+	s.Method = val
+}
+
+// SetPoolId sets the value of PoolId.
+func (s *HTTPAuditExchangeDetail) SetPoolId(val string) {
+	s.PoolId = val
+}
+
+// SetRequestBodyBytes sets the value of RequestBodyBytes.
+func (s *HTTPAuditExchangeDetail) SetRequestBodyBytes(val OptInt64) {
+	s.RequestBodyBytes = val
+}
+
+// SetRequestBodyError sets the value of RequestBodyError.
+func (s *HTTPAuditExchangeDetail) SetRequestBodyError(val OptString) {
+	s.RequestBodyError = val
+}
+
+// SetRequestBodyFormat sets the value of RequestBodyFormat.
+func (s *HTTPAuditExchangeDetail) SetRequestBodyFormat(val OptString) {
+	s.RequestBodyFormat = val
+}
+
+// SetRequestBodyRecorded sets the value of RequestBodyRecorded.
+func (s *HTTPAuditExchangeDetail) SetRequestBodyRecorded(val OptBool) {
+	s.RequestBodyRecorded = val
+}
+
+// SetRequestHeaders sets the value of RequestHeaders.
+func (s *HTTPAuditExchangeDetail) SetRequestHeaders(val HTTPAuditExchangeDetailRequestHeaders) {
+	s.RequestHeaders = val
+}
+
+// SetResponseBodyError sets the value of ResponseBodyError.
+func (s *HTTPAuditExchangeDetail) SetResponseBodyError(val OptString) {
+	s.ResponseBodyError = val
+}
+
+// SetResponseBodyFormat sets the value of ResponseBodyFormat.
+func (s *HTTPAuditExchangeDetail) SetResponseBodyFormat(val OptString) {
+	s.ResponseBodyFormat = val
+}
+
+// SetResponseBodyRecorded sets the value of ResponseBodyRecorded.
+func (s *HTTPAuditExchangeDetail) SetResponseBodyRecorded(val OptBool) {
+	s.ResponseBodyRecorded = val
+}
+
+// SetResponseBytes sets the value of ResponseBytes.
+func (s *HTTPAuditExchangeDetail) SetResponseBytes(val OptInt64) {
+	s.ResponseBytes = val
+}
+
+// SetResponseHeaders sets the value of ResponseHeaders.
+func (s *HTTPAuditExchangeDetail) SetResponseHeaders(val HTTPAuditExchangeDetailResponseHeaders) {
+	s.ResponseHeaders = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *HTTPAuditExchangeDetail) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *HTTPAuditExchangeDetail) SetStatus(val int) {
+	s.Status = val
+}
+
+// SetStreamDroppedBytes sets the value of StreamDroppedBytes.
+func (s *HTTPAuditExchangeDetail) SetStreamDroppedBytes(val OptInt64) {
+	s.StreamDroppedBytes = val
+}
+
+// SetStreamDroppedChunks sets the value of StreamDroppedChunks.
+func (s *HTTPAuditExchangeDetail) SetStreamDroppedChunks(val OptInt64) {
+	s.StreamDroppedChunks = val
+}
+
+// SetStreamFormat sets the value of StreamFormat.
+func (s *HTTPAuditExchangeDetail) SetStreamFormat(val OptString) {
+	s.StreamFormat = val
+}
+
+// SetStreamRecorded sets the value of StreamRecorded.
+func (s *HTTPAuditExchangeDetail) SetStreamRecorded(val OptBool) {
+	s.StreamRecorded = val
+}
+
+// SetStreamSessionId sets the value of StreamSessionId.
+func (s *HTTPAuditExchangeDetail) SetStreamSessionId(val OptString) {
+	s.StreamSessionId = val
+}
+
+// SetSwappedUseIds sets the value of SwappedUseIds.
+func (s *HTTPAuditExchangeDetail) SetSwappedUseIds(val []string) {
+	s.SwappedUseIds = val
+}
+
+// SetUpgrade sets the value of Upgrade.
+func (s *HTTPAuditExchangeDetail) SetUpgrade(val OptBool) {
+	s.Upgrade = val
+}
+
+// SetUpgradeC2sBytes sets the value of UpgradeC2sBytes.
+func (s *HTTPAuditExchangeDetail) SetUpgradeC2sBytes(val OptInt64) {
+	s.UpgradeC2sBytes = val
+}
+
+// SetUpgradeS2cBytes sets the value of UpgradeS2cBytes.
+func (s *HTTPAuditExchangeDetail) SetUpgradeS2cBytes(val OptInt64) {
+	s.UpgradeS2cBytes = val
+}
+
+// SetUpgradeType sets the value of UpgradeType.
+func (s *HTTPAuditExchangeDetail) SetUpgradeType(val OptString) {
+	s.UpgradeType = val
+}
+
+// SetURL sets the value of URL.
+func (s *HTTPAuditExchangeDetail) SetURL(val string) {
+	s.URL = val
+}
+
+// SetWrittenAt sets the value of WrittenAt.
+func (s *HTTPAuditExchangeDetail) SetWrittenAt(val OptDateTime) {
+	s.WrittenAt = val
+}
+
+func (*HTTPAuditExchangeDetail) getHTTPAuditRes() {}
+
+// Request headers as recorded, with sensitive and swapped ones already redacted.
+type HTTPAuditExchangeDetailRequestHeaders map[string][]string
+
+func (s *HTTPAuditExchangeDetailRequestHeaders) init() HTTPAuditExchangeDetailRequestHeaders {
+	m := *s
+	if m == nil {
+		m = map[string][]string{}
+		*s = m
+	}
+	return m
+}
+
+// Response headers as recorded.
+type HTTPAuditExchangeDetailResponseHeaders map[string][]string
+
+func (s *HTTPAuditExchangeDetailResponseHeaders) init() HTTPAuditExchangeDetailResponseHeaders {
+	m := *s
+	if m == nil {
+		m = map[string][]string{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/HarnessConfig
@@ -4032,6 +4562,90 @@ func (s *ListCredentialVerdictsBody) SetCredentialVerdicts(val []CredentialVerdi
 
 func (*ListCredentialVerdictsBody) listCredentialVerdictsRes() {}
 
+// Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
+// the newest first.
+type ListCredentialVerdictsOrder string
+
+const (
+	ListCredentialVerdictsOrderAsc  ListCredentialVerdictsOrder = "asc"
+	ListCredentialVerdictsOrderDesc ListCredentialVerdictsOrder = "desc"
+)
+
+// AllValues returns all ListCredentialVerdictsOrder values.
+func (ListCredentialVerdictsOrder) AllValues() []ListCredentialVerdictsOrder {
+	return []ListCredentialVerdictsOrder{
+		ListCredentialVerdictsOrderAsc,
+		ListCredentialVerdictsOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListCredentialVerdictsOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListCredentialVerdictsOrderAsc:
+		return []byte(s), nil
+	case ListCredentialVerdictsOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListCredentialVerdictsOrder) UnmarshalText(data []byte) error {
+	switch ListCredentialVerdictsOrder(data) {
+	case ListCredentialVerdictsOrderAsc:
+		*s = ListCredentialVerdictsOrderAsc
+		return nil
+	case ListCredentialVerdictsOrderDesc:
+		*s = ListCredentialVerdictsOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type ListExecEventsOrder string
+
+const (
+	ListExecEventsOrderAsc  ListExecEventsOrder = "asc"
+	ListExecEventsOrderDesc ListExecEventsOrder = "desc"
+)
+
+// AllValues returns all ListExecEventsOrder values.
+func (ListExecEventsOrder) AllValues() []ListExecEventsOrder {
+	return []ListExecEventsOrder{
+		ListExecEventsOrderAsc,
+		ListExecEventsOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListExecEventsOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListExecEventsOrderAsc:
+		return []byte(s), nil
+	case ListExecEventsOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListExecEventsOrder) UnmarshalText(data []byte) error {
+	switch ListExecEventsOrder(data) {
+	case ListExecEventsOrderAsc:
+		*s = ListExecEventsOrderAsc
+		return nil
+	case ListExecEventsOrderDesc:
+		*s = ListExecEventsOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ListHTTPAuditBody
 type ListHTTPAuditBody struct {
 	// A URL to the JSON Schema for this object.
@@ -4073,6 +4687,49 @@ func (s *ListHTTPAuditBody) SetUnavailablePools(val []UnavailableAuditPool) {
 }
 
 func (*ListHTTPAuditBody) listHTTPAuditRes() {}
+
+// Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
+// the newest first.
+type ListHTTPAuditOrder string
+
+const (
+	ListHTTPAuditOrderAsc  ListHTTPAuditOrder = "asc"
+	ListHTTPAuditOrderDesc ListHTTPAuditOrder = "desc"
+)
+
+// AllValues returns all ListHTTPAuditOrder values.
+func (ListHTTPAuditOrder) AllValues() []ListHTTPAuditOrder {
+	return []ListHTTPAuditOrder{
+		ListHTTPAuditOrderAsc,
+		ListHTTPAuditOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListHTTPAuditOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListHTTPAuditOrderAsc:
+		return []byte(s), nil
+	case ListHTTPAuditOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListHTTPAuditOrder) UnmarshalText(data []byte) error {
+	switch ListHTTPAuditOrder(data) {
+	case ListHTTPAuditOrderAsc:
+		*s = ListHTTPAuditOrderAsc
+		return nil
+	case ListHTTPAuditOrderDesc:
+		*s = ListHTTPAuditOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/ListHarnessConfigSecretBindingsBody
 type ListHarnessConfigSecretBindingsBody struct {
@@ -4132,6 +4789,47 @@ func (s *ListHarnessConfigsBody) SetHarnessConfigs(val []HarnessConfig) {
 }
 
 func (*ListHarnessConfigsBody) listHarnessConfigsRes() {}
+
+type ListHarnessHooksOrder string
+
+const (
+	ListHarnessHooksOrderAsc  ListHarnessHooksOrder = "asc"
+	ListHarnessHooksOrderDesc ListHarnessHooksOrder = "desc"
+)
+
+// AllValues returns all ListHarnessHooksOrder values.
+func (ListHarnessHooksOrder) AllValues() []ListHarnessHooksOrder {
+	return []ListHarnessHooksOrder{
+		ListHarnessHooksOrderAsc,
+		ListHarnessHooksOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListHarnessHooksOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListHarnessHooksOrderAsc:
+		return []byte(s), nil
+	case ListHarnessHooksOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListHarnessHooksOrder) UnmarshalText(data []byte) error {
+	switch ListHarnessHooksOrder(data) {
+	case ListHarnessHooksOrderAsc:
+		*s = ListHarnessHooksOrderAsc
+		return nil
+	case ListHarnessHooksOrderDesc:
+		*s = ListHarnessHooksOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/ListJobsBody
 type ListJobsBody struct {
@@ -5402,6 +6100,190 @@ func (o OptIrohListener) Get() (v IrohListener, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIrohListener) Or(d IrohListener) IrohListener {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListCredentialVerdictsOrder returns new OptListCredentialVerdictsOrder with value set to v.
+func NewOptListCredentialVerdictsOrder(v ListCredentialVerdictsOrder) OptListCredentialVerdictsOrder {
+	return OptListCredentialVerdictsOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListCredentialVerdictsOrder is optional ListCredentialVerdictsOrder.
+type OptListCredentialVerdictsOrder struct {
+	Value ListCredentialVerdictsOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListCredentialVerdictsOrder was set.
+func (o OptListCredentialVerdictsOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListCredentialVerdictsOrder) Reset() {
+	var v ListCredentialVerdictsOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListCredentialVerdictsOrder) SetTo(v ListCredentialVerdictsOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListCredentialVerdictsOrder) Get() (v ListCredentialVerdictsOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListCredentialVerdictsOrder) Or(d ListCredentialVerdictsOrder) ListCredentialVerdictsOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListExecEventsOrder returns new OptListExecEventsOrder with value set to v.
+func NewOptListExecEventsOrder(v ListExecEventsOrder) OptListExecEventsOrder {
+	return OptListExecEventsOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListExecEventsOrder is optional ListExecEventsOrder.
+type OptListExecEventsOrder struct {
+	Value ListExecEventsOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListExecEventsOrder was set.
+func (o OptListExecEventsOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListExecEventsOrder) Reset() {
+	var v ListExecEventsOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListExecEventsOrder) SetTo(v ListExecEventsOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListExecEventsOrder) Get() (v ListExecEventsOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListExecEventsOrder) Or(d ListExecEventsOrder) ListExecEventsOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListHTTPAuditOrder returns new OptListHTTPAuditOrder with value set to v.
+func NewOptListHTTPAuditOrder(v ListHTTPAuditOrder) OptListHTTPAuditOrder {
+	return OptListHTTPAuditOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListHTTPAuditOrder is optional ListHTTPAuditOrder.
+type OptListHTTPAuditOrder struct {
+	Value ListHTTPAuditOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListHTTPAuditOrder was set.
+func (o OptListHTTPAuditOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListHTTPAuditOrder) Reset() {
+	var v ListHTTPAuditOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListHTTPAuditOrder) SetTo(v ListHTTPAuditOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListHTTPAuditOrder) Get() (v ListHTTPAuditOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListHTTPAuditOrder) Or(d ListHTTPAuditOrder) ListHTTPAuditOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListHarnessHooksOrder returns new OptListHarnessHooksOrder with value set to v.
+func NewOptListHarnessHooksOrder(v ListHarnessHooksOrder) OptListHarnessHooksOrder {
+	return OptListHarnessHooksOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListHarnessHooksOrder is optional ListHarnessHooksOrder.
+type OptListHarnessHooksOrder struct {
+	Value ListHarnessHooksOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListHarnessHooksOrder was set.
+func (o OptListHarnessHooksOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListHarnessHooksOrder) Reset() {
+	var v ListHarnessHooksOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListHarnessHooksOrder) SetTo(v ListHarnessHooksOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListHarnessHooksOrder) Get() (v ListHarnessHooksOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListHarnessHooksOrder) Or(d ListHarnessHooksOrder) ListHarnessHooksOrder {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -14066,6 +14948,7 @@ func (s *SandboxExecEventsResponse) SetEvents(val []SandboxExecEvent) {
 	s.Events = val
 }
 
+func (*SandboxExecEventsResponse) listExecEventsRes()        {}
 func (*SandboxExecEventsResponse) listSandboxExecEventsRes() {}
 
 // Ref: #/components/schemas/SandboxExecLogEntry

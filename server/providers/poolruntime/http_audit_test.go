@@ -5,8 +5,10 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -89,19 +91,30 @@ func seedHTTPAuditRows(t *testing.T, dsn string) {
 	defer pools.Close()
 	older := time.Now().UTC().Add(-2 * time.Minute)
 	newer := time.Now().UTC().Add(-time.Minute)
+	// sandbox-1's response body is spooled where the proxy looks for it by
+	// default, beside its database.
+	bodyDir := filepath.Join(filepath.Dir(dsn), "proxy-bodies")
+	if err := os.MkdirAll(bodyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bodyDir, "response-1"), []byte(`{"login":"octocat"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for _, row := range []struct {
-		createdAt time.Time
-		client    string
-		url, host string
-		uses      string
+		createdAt    time.Time
+		client       string
+		url, host    string
+		uses         string
+		status       int
+		responseBody string
 	}{
-		{older, "sandbox-1", "https://api.github.com/user", "api.github.com", "use_abc"},
-		{newer, "sandbox-2", "https://example.com/", "example.com", ""},
+		{older, "sandbox-1", "https://api.github.com/user", "api.github.com", "use_abc", 200, "response-1"},
+		{newer, "sandbox-2", "https://example.com/", "example.com", "", 404, ""},
 	} {
 		if err := pools.Write.Exec(
-			`INSERT INTO http_exchanges (created_at, enqueued_at, written_at, client_id, method, url, host, status, duration_millis, swapped_use_ids)
-			 VALUES (?, ?, ?, ?, 'GET', ?, ?, 200, 12, ?)`,
-			row.createdAt, row.createdAt, row.createdAt, row.client, row.url, row.host, row.uses,
+			`INSERT INTO http_exchanges (created_at, enqueued_at, written_at, client_id, method, url, host, status, duration_millis, swapped_use_ids, response_body_file, response_body_format)
+			 VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, 12, ?, ?, 'raw')`,
+			row.createdAt, row.createdAt, row.createdAt, row.client, row.url, row.host, row.status, row.uses, row.responseBody,
 		).Error; err != nil {
 			t.Fatalf("seed audit row: %v", err)
 		}
@@ -143,6 +156,97 @@ func TestPoolProviderListHTTPAuditReadsTheProxyThroughTheAgent(t *testing.T) {
 	}
 	if len(scoped) != 1 || scoped[0].SandboxID != "sandbox-2" {
 		t.Fatalf("exchanges for sandbox-2 = %+v", scoped)
+	}
+
+	// A follower reads forward; the status bound travels all three hops.
+	forward, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{Ascending: true})
+	if err != nil {
+		t.Fatalf("list forward: %v", err)
+	}
+	if len(forward) != 2 || forward[0].SandboxID != "sandbox-1" {
+		t.Fatalf("exchanges read forward = %+v, want oldest first", forward)
+	}
+	// The cursor reaches the proxy's own read, three hops down: after the
+	// older row's id, only the newer row is left.
+	cursored, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{AfterID: forward[0].ID})
+	if err != nil {
+		t.Fatalf("list after a cursor: %v", err)
+	}
+	if len(cursored) != 1 || cursored[0].SandboxID != "sandbox-2" {
+		t.Fatalf("exchanges after the first row = %+v", cursored)
+	}
+	if rows, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{AfterID: cursored[0].ID}); err != nil || len(rows) != 0 {
+		t.Fatalf("exchanges after the last row = %+v, %v; want nothing re-read", rows, err)
+	}
+
+	failed, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{MinStatus: 400})
+	if err != nil {
+		t.Fatalf("list by status: %v", err)
+	}
+	if len(failed) != 1 || failed[0].Status != 404 {
+		t.Fatalf("exchanges with status >= 400 = %+v", failed)
+	}
+}
+
+// One exchange read in full carries the fields a list leaves out, and is
+// narrowed to the sandbox the read names.
+func TestPoolProviderGetsOneExchangeInFull(t *testing.T) {
+	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	ctx := context.Background()
+
+	rows, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{SandboxID: "sandbox-1"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("list sandbox-1 = %+v, %v", rows, err)
+	}
+	detail, err := provider.GetHTTPAudit(ctx, activePool("pool-1"), "sandbox-1", rows[0].ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if detail.ID != rows[0].ID || detail.URL != rows[0].URL || detail.Host != "api.github.com" {
+		t.Fatalf("detail = %+v, want the exchange the list named", detail)
+	}
+	// What the summary does not carry: when the recorder wrote the row, and
+	// that its response body can be read.
+	if detail.WrittenAt.IsZero() || !detail.ResponseBodyRecorded || detail.ResponseBodyFormat != "raw" {
+		t.Fatalf("detail = %+v, want the recorder's own fields", detail)
+	}
+	if _, err := provider.GetHTTPAudit(ctx, activePool("pool-1"), "sandbox-2", rows[0].ID); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("get scoped to another sandbox = %v, want not found", err)
+	}
+	if _, err := provider.GetHTTPAudit(ctx, activePool("pool-1"), "", 999999); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("get of an exchange that does not exist = %v, want not found", err)
+	}
+}
+
+// A recorded body comes back through the agent as it was spooled, and a scope
+// to another sandbox cannot reach it.
+func TestPoolProviderOpensARecordedBodyThroughTheAgent(t *testing.T) {
+	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	ctx := context.Background()
+
+	rows, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{SandboxID: "sandbox-1"})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("list sandbox-1 = %+v, %v", rows, err)
+	}
+	opened, err := provider.OpenHTTPAuditArtifact(ctx, activePool("pool-1"), "sandbox-1", rows[0].ID, "response-body")
+	if err != nil {
+		t.Fatalf("open response body: %v", err)
+	}
+	body, err := io.ReadAll(opened.Body)
+	_ = opened.Body.Close()
+	if err != nil || string(body) != `{"login":"octocat"}` || opened.Format != "raw" {
+		t.Fatalf("response body = %q (format %q), %v", body, opened.Format, err)
+	}
+
+	if _, err := provider.OpenHTTPAuditArtifact(ctx, activePool("pool-1"), "sandbox-2", rows[0].ID, "response-body"); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("open sandbox-1's body scoped to sandbox-2 = %v, want not found", err)
+	}
+	if _, err := provider.OpenHTTPAuditArtifact(ctx, activePool("pool-1"), "", rows[0].ID, "request-body"); !errors.Is(err, sandbox.ErrNotFound) {
+		t.Fatalf("open a body that was never recorded = %v, want not found", err)
 	}
 }
 
@@ -211,5 +315,45 @@ func TestPoolProviderHTTPAuditDoesNotReconcileAnUnreachablePool(t *testing.T) {
 	}
 	if runtimeProvider.acquireCalls != 1 {
 		t.Fatalf("acquired %d clients, want one attempt and no retry", runtimeProvider.acquireCalls)
+	}
+}
+
+// An agent too old for the hand-wired recording route answers the router's
+// text/plain 404. Read as "no such recording" that reports a pool which
+// recorded the body as one that recorded nothing (ADR 0130); it has to reach
+// the caller as the pool being unreadable.
+func TestPoolProviderSeparatesAMissingRouteFromAMissingRecording(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		contentType string
+		body        string
+		wantOldMiss bool
+	}{
+		{name: "router 404", contentType: "text/plain; charset=utf-8", body: "404 page not found\n", wantOldMiss: true},
+		{name: "agent 404", contentType: "application/problem+json", body: `{"status":404,"title":"Not Found","detail":"recorded no response-body"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(agent.Close)
+			runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+			runtimeProvider.baseURL = agent.URL
+			runtimeProvider.client = agent.Client()
+			manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+
+			_, err := provider.OpenHTTPAuditArtifact(context.Background(), activePool("pool-1"), "sandbox-1", 42, "response-body")
+			if tc.wantOldMiss && !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+				t.Fatalf("a router 404 = %v, want ErrPoolAgentUnsupported", err)
+			}
+			if !tc.wantOldMiss {
+				if !errors.Is(err, sandbox.ErrNotFound) || errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+					t.Fatalf("the agent's own 404 = %v, want ErrNotFound", err)
+				}
+			}
+		})
 	}
 }

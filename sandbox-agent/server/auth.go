@@ -186,6 +186,15 @@ func requiredRequestScope(r *http.Request) string {
 	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status") {
 		return ScopeStatusRead
 	}
+	// Exec events across a sandbox are read-only audit data, read like an exec.
+	// Named before /execs, which this path does not contain: without its own
+	// entry it would fall through to no scope at all.
+	if strings.HasSuffix(r.URL.Path, "/exec-events") {
+		if r.Method == http.MethodGet {
+			return ScopeExecRead
+		}
+		return ""
+	}
 	// Harness hooks are read-only audit data tied to execs (harness terminals).
 	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {

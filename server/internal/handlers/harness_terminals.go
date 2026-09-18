@@ -48,6 +48,10 @@ func (h *Handler) ListHarnessHooks(context.Context, serverapi.ListHarnessHooksPa
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+func (h *Handler) ListExecEvents(context.Context, serverapi.ListExecEventsParams) (serverapi.ListExecEventsRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) ListSandboxExecEvents(context.Context, serverapi.ListSandboxExecEventsParams) (serverapi.ListSandboxExecEventsRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

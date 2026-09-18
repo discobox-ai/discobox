@@ -84,8 +84,8 @@ Current proxy routes:
   `/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/{path...}`.
   The pool agent owns reaching `{port}` inside the sandbox, and starts a
   stopped sandbox on demand.
-- `/api/projects/{projectId}/sandboxes/{sandboxId}/execs...`, `.../services...`
-  and `.../harness-hooks` forward their path suffix to the pool-agent sandbox
+- `/api/projects/{projectId}/sandboxes/{sandboxId}/execs...`, `.../services...`,
+  `.../harness-hooks` and `.../exec-events` forward their path suffix to the pool-agent sandbox
   route, which reaches the sandbox-agent exec API. The pool agent and sandbox
   agent own serving that API; the server owns project authorization, scope
   selection, and lease/token injection only. An `attach` acquires through
@@ -123,6 +123,28 @@ The route rejects before upgrading, so a caller whose pool host is unreachable
 reads the reason instead of watching a websocket close, and it passes the
 terminal size on the open (`?rows=&cols=`) so the first prompt is drawn at the
 caller's size.
+
+`get-http-audit` reads one exchange in full from the pool that recorded it; the
+pool is in the path because a record ID is only unique within it.
+
+The `after` parameter on `list-http-audit` is one cursor per pool, written
+`poolId:http_<row>`, and the handler refuses a malformed one rather than
+ignoring it:
+a dropped cursor silently restarts a follow from its time bound and re-prints
+what it already showed.
+
+### Pool Proxy Audit Recordings
+
+`/api/projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}/{artifact}`
+streams a body or upgraded stream the pool proxy recorded beside an audit row
+(ADR 0130 §5). It is hand-wired beside `list-http-audit` for the transfer
+routes' reason: the body is unbounded opaque bytes the generated scaffold would
+buffer. The pool is in the path because a row ID is only unique on the pool
+that recorded it, and `?sandboxId=` narrows the read the way the list's does.
+The recording is served as an attachment with `nosniff`, since it is what some
+service answered a discobox and must never render as this server's page, and a
+read that fails part way aborts the connection rather than ending a truncated
+body cleanly.
 
 ### Pool Host Logs
 

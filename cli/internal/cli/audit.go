@@ -2,17 +2,19 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -26,24 +28,94 @@ func (a *App) newAuditCommand() *cobra.Command {
 		Use:   "audit",
 		Short: "Read the records discoboxes leave behind",
 	}
+	cmd.AddCommand(a.newAuditListCommand())
+	cmd.AddCommand(a.newAuditGetCommand())
 	cmd.AddCommand(a.newAuditCredsCommand())
 	cmd.AddCommand(a.newAuditHTTPCommand())
+	cmd.AddCommand(a.newAuditHooksCommand())
+	cmd.AddCommand(a.newAuditExecsCommand())
 	return cmd
 }
 
+// httpAuditQuery is what `audit http` and `audit list` ask the pool trail.
+type httpAuditQuery struct {
+	projectID string
+	params    apiclientgen.ListHTTPAuditParams
+}
+
+// httpAuditSource reads the pool trail. A pool that could not be read is
+// reported through unavailable on every read, and the caller decides how often
+// to say so.
+//
+// It is the one trail with a write-ordered cursor: a row id is the order the
+// pool wrote the row, which is the order it became readable, so a follower
+// reads by id per pool rather than re-reading a window of time.
+func httpAuditSource(client *apiclientgen.Client, query httpAuditQuery, unavailable func([]apimodel.UnavailableAuditPool)) auditSource[apimodel.HTTPAuditExchange] {
+	return auditSource[apimodel.HTTPAuditExchange]{
+		read: func(ctx context.Context, cursor auditReadCursor, limit int) ([]apimodel.HTTPAuditExchange, error) {
+			params := query.params
+			params.ProjectId = query.projectID
+			params.Limit = apiclientgen.NewOptInt(limit)
+			if !cursor.Since.IsZero() {
+				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
+			}
+			if cursor.Forward {
+				params.Order = apiclientgen.NewOptListHTTPAuditOrder(apiclientgen.ListHTTPAuditOrderAsc)
+			}
+			// One cursor per pool, because that is what a row id is scoped to;
+			// a pool with no cursor yet is read from the time bound.
+			params.After = nil
+			for pool, id := range cursor.After {
+				params.After = append(params.After, pool+":"+auditid.ExchangeID(id).String())
+			}
+			slices.Sort(params.After)
+			res, err := client.ListHTTPAudit(ctx, params)
+			if err != nil {
+				return nil, err
+			}
+			body, err := expectResponse[apimodel.ListHTTPAuditBody](res)
+			if err != nil {
+				return nil, err
+			}
+			unavailable(body.GetUnavailablePools())
+			return body.GetExchanges(), nil
+		},
+		// Row IDs are only unique within the pool that recorded them.
+		key: func(e apimodel.HTTPAuditExchange) string { return e.PoolId + "/" + e.ID },
+		at:  func(e apimodel.HTTPAuditExchange) time.Time { return e.CreatedAt },
+		rowID: func(e apimodel.HTTPAuditExchange) (string, int64, bool) {
+			// The record ID carries the row number the pool ordered it by;
+			// following reads along that order (ADR 0130 §5).
+			id, err := auditid.ParseExchange(e.ID)
+			return e.PoolId, int64(id), err == nil && e.PoolId != ""
+		},
+		// Only reached for a pool this reader has never seen a row from; every
+		// other pool is read by cursor.
+		lookback: auditQueuedLookback,
+	}
+}
+
 func (a *App) newAuditHTTPCommand() *cobra.Command {
-	var sandboxID, poolID, host, useID, since string
+	var sandboxID, poolID, host, useID, since, status, part, body string
 	var limit int
+	var blocked, follow bool
 	cmd := &cobra.Command{
 		Use:   "http",
 		Short: "List the HTTP requests discoboxes made through their pool's proxy",
 		Long: `List the HTTP requests discoboxes made through their pool's proxy, newest
-first, from every pool in the project.
+first, from every pool in the project. With --follow, print the last --limit
+oldest first and keep printing requests as they are recorded.
 
 The proxy records these from what crossed the wire, so a discobox cannot alter
 them. USES names the approved credential uses whose values the proxy swapped
 into a request: pass one to --use-id here and to "audit creds" to see the
 verdict that authorized a credential beside every request that spent it.
+
+--body ID prints what the proxy recorded beside the request with that ID: the
+response body, or with --part the request body or an upgraded connection's
+stream. Recorded bytes are written as they are when stdout is not a terminal,
+and with non-printing characters escaped when it is. "audit get" prints the
+rest of what was recorded about one request.
 
 A request lives on the pool that proxied it for the audit retention window,
 after the discobox is gone. A pool that cannot be read is named on stderr
@@ -52,8 +124,17 @@ the list.
 
 The method, URL and host are what the discobox sent, and are shown as data,
 with non-printing characters escaped.`,
+		Example: `  discobox admin audit http --discobox-id sbx_1 --status 4xx
+  discobox admin audit http --blocked --follow
+  discobox admin audit http --discobox-id sbx_1 --body http_42 > response.json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if body != "" && (follow || status != "" || blocked || host != "" || useID != "" || since != "") {
+				return errors.New("--body reads one recorded request; it takes only --pool, --discobox-id and --part")
+			}
+			if body == "" && cmd.Flags().Changed("part") {
+				return errors.New("--part needs --body")
+			}
 			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
@@ -62,81 +143,142 @@ with non-printing characters escaped.`,
 			if err != nil {
 				return err
 			}
-			params := apiclientgen.ListHTTPAuditParams{ProjectId: projectID}
+			query := httpAuditQuery{projectID: projectID}
 			if strings.TrimSpace(sandboxID) != "" {
 				resolved, err := a.resolveSandboxID(cmd.Context(), client, projectID, sandboxID)
 				if err != nil {
 					return err
 				}
-				params.SandboxId = apiclientgen.NewOptString(resolved)
+				query.params.SandboxId = apiclientgen.NewOptString(resolved)
 			}
 			if strings.TrimSpace(poolID) != "" {
 				resolved, err := a.resolvePoolID(cmd.Context(), client, projectID, poolID)
 				if err != nil {
 					return err
 				}
-				params.PoolId = apiclientgen.NewOptString(resolved)
+				query.params.PoolId = apiclientgen.NewOptString(resolved)
 			}
-			if host != "" {
-				params.Host = apiclientgen.NewOptString(host)
-			}
-			if useID != "" {
-				params.UseId = apiclientgen.NewOptString(useID)
-			}
-			if since != "" {
-				at, err := parseSince(since, time.Now())
+			if body != "" {
+				id, err := auditid.ParseExchange(body)
 				if err != nil {
 					return err
 				}
-				params.Since = apiclientgen.NewOptDateTime(at)
+				pool, err := a.auditRecordPool(cmd.Context(), client, projectID, query.params.PoolId.Or(""), query.params.SandboxId.Or(""))
+				if err != nil {
+					return err
+				}
+				return a.writeHTTPAuditArtifact(cmd, projectID, pool, query.params.SandboxId.Or(""), id, part)
 			}
-			if limit > 0 {
-				params.Limit = apiclientgen.NewOptInt(limit)
+			if host != "" {
+				query.params.Host = apiclientgen.NewOptString(host)
 			}
-			res, err := client.ListHTTPAudit(cmd.Context(), params)
+			if useID != "" {
+				query.params.UseId = apiclientgen.NewOptString(useID)
+			}
+			if status != "" {
+				low, high, err := parseStatusFilter(status)
+				if err != nil {
+					return err
+				}
+				query.params.MinStatus = apiclientgen.NewOptInt(low)
+				query.params.MaxStatus = apiclientgen.NewOptInt(high)
+			}
+			if blocked {
+				query.params.Blocked = apiclientgen.NewOptBool(true)
+			}
+			sinceAt, err := parseOptionalSince(since)
 			if err != nil {
 				return err
 			}
-			body, err := expectResponse[apimodel.ListHTTPAuditBody](res)
-			if err != nil {
+			var reported auditOnce
+			source := httpAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) {
+				var b strings.Builder
+				writeUnavailableAuditPools(&b, pools)
+				if reported.changed(b.String()) {
+					_, _ = io.WriteString(cmd.ErrOrStderr(), b.String())
+				}
+			})
+			if a.output == "json" && !follow {
+				// One read, written whole, so -o json keeps the list and the
+				// pools missing from it together.
+				var unavailable []apimodel.UnavailableAuditPool
+				source := httpAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) { unavailable = pools })
+				exchanges, err := source.read(cmd.Context(), auditReadCursor{Since: sinceAt}, limit)
+				if err != nil {
+					return err
+				}
+				return writeTerminalSafeJSON(cmd.OutOrStdout(), &apimodel.ListHTTPAuditBody{Exchanges: exchanges, UnavailablePools: unavailable})
+			}
+			table := httpAuditTable(follow)
+			header := true
+			return readAudit(cmd.Context(), []auditSource[apimodel.HTTPAuditExchange]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(exchanges []apimodel.HTTPAuditExchange) error {
+				if a.output == "json" {
+					return writeTerminalSafeJSONLines(cmd, exchanges)
+				}
+				err := table.write(cmd.OutOrStdout(), exchanges, header, follow)
+				header = false
 				return err
-			}
-			if a.output == "json" {
-				return writeTerminalSafeJSON(cmd.OutOrStdout(), body)
-			}
-			if err := writeHTTPAuditExchanges(cmd.OutOrStdout(), body.GetExchanges()); err != nil {
-				return err
-			}
-			writeUnavailableAuditPools(cmd.ErrOrStderr(), body.GetUnavailablePools())
-			return nil
+			})
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Only this discobox's requests; a deleted one needs its full ID")
 	cmd.Flags().StringVar(&poolID, "pool", "", "Only requests proxied by this pool")
 	cmd.Flags().StringVar(&host, "host", "", "Only requests to this host")
 	cmd.Flags().StringVar(&useID, "use-id", "", "Only requests that spent this approved credential use")
+	cmd.Flags().StringVar(&status, "status", "", "Only responses with this status: 404, a class such as 5xx, or a range such as 400-499")
+	cmd.Flags().BoolVar(&blocked, "blocked", false, "Only requests the proxy's policy refused")
 	cmd.Flags().StringVar(&since, "since", "", "Only requests from this long ago (e.g. 1h) or since this RFC 3339 time")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of requests to return")
+	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of requests to return")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing requests as they are recorded")
+	cmd.Flags().StringVar(&body, "body", "", "Print what was recorded beside the request with this `ID`, as audit list or audit http reports it")
+	cmd.Flags().StringVar(&part, "part", httpAuditPartResponse, "With --body, which recording: response, request or stream")
 	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
+	_ = cmd.RegisterFlagCompletionFunc("part", cobra.FixedCompletions([]string{httpAuditPartResponse, httpAuditPartRequest, httpAuditPartStream}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 
-func writeHTTPAuditExchanges(out io.Writer, exchanges []apimodel.HTTPAuditExchange) error {
-	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "TIME\tPOOL\tDISCOBOX\tMETHOD\tSTATUS\tUSES\tURL")
-	for _, e := range exchanges {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			formatTime(e.CreatedAt),
-			terminalSafe(e.PoolId),
-			terminalSafe(e.SandboxId),
-			terminalSafe(e.Method),
-			httpAuditStatus(e),
-			terminalSafe(strings.Join(e.SwappedUseIds, ",")),
-			truncateTableValue(terminalSafe(e.URL), 100),
-		)
+func httpAuditTable(follow bool) auditTable[apimodel.HTTPAuditExchange] {
+	return auditTable[apimodel.HTTPAuditExchange]{
+		columns: []auditColumn{
+			{name: "TIME", width: 12}, {name: "POOL", width: 22}, {name: "ID", width: 12},
+			{name: "DISCOBOX", width: 22}, {name: "METHOD", width: 7}, {name: "STATUS", width: 7},
+			{name: "USES", width: 22}, {name: "URL"},
+		},
+		row: func(e apimodel.HTTPAuditExchange) []string {
+			return []string{
+				auditTime(e.CreatedAt, follow),
+				terminalSafe(e.PoolId),
+				e.ID,
+				terminalSafe(e.SandboxId),
+				terminalSafe(e.Method),
+				httpAuditStatus(e),
+				terminalSafe(strings.Join(e.SwappedUseIds, ",")),
+				truncateTableValue(terminalSafe(e.URL), 100),
+			}
+		},
 	}
-	return tw.Flush()
+}
+
+// parseStatusFilter reads --status as an inclusive range: one status, a class
+// written 4xx, or low-high.
+func parseStatusFilter(value string) (int, int, error) {
+	bad := fmt.Errorf("--status %q: want a status such as 404, a class such as 5xx, or a range such as 400-499", value)
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) == 3 && strings.HasSuffix(value, "xx") && value[0] >= '1' && value[0] <= '5' {
+		low := int(value[0]-'0') * 100
+		return low, low + 99, nil
+	}
+	lowText, highText, isRange := strings.Cut(value, "-")
+	if !isRange {
+		highText = lowText
+	}
+	low, errLow := strconv.Atoi(lowText)
+	high, errHigh := strconv.Atoi(highText)
+	if errLow != nil || errHigh != nil || low < 100 || high > 599 || low > high {
+		return 0, 0, bad
+	}
+	return low, high, nil
 }
 
 // httpAuditStatus is the response status, or why there was none: a request the
@@ -165,12 +307,14 @@ func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAu
 
 func (a *App) newAuditCredsCommand() *cobra.Command {
 	var sandboxID, useID, grantID, since string
-	var denied, allowed, showPrompt bool
+	var denied, allowed, showPrompt, follow bool
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "creds",
 		Short: "List the judge's verdicts on agent credential uses",
 		Long: `List the judge's recorded verdicts on agent credential uses, newest first.
+With --follow, print the last --limit oldest first and keep printing verdicts as
+they are recorded.
 
 A verdict recorded at "use" rode the call that took the credential's value, so
 every credential this server issued has one. A verdict recorded by "report" is a
@@ -216,31 +360,35 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 			case allowed:
 				params.Allow = apiclientgen.NewOptBool(true)
 			}
-			if since != "" {
-				at, err := parseSince(since, time.Now())
+			sinceAt, err := parseOptionalSince(since)
+			if err != nil {
+				return err
+			}
+			source := credentialVerdictSource(client, params)
+			if a.output == "json" && !follow {
+				verdicts, err := source.read(cmd.Context(), auditReadCursor{Since: sinceAt}, limit)
 				if err != nil {
 					return err
 				}
-				params.Since = apiclientgen.NewOptDateTime(at)
+				return writeTerminalSafeJSON(cmd.OutOrStdout(), &apimodel.ListCredentialVerdictsBody{CredentialVerdicts: verdicts})
 			}
-			if limit > 0 {
-				params.Limit = apiclientgen.NewOptInt(limit)
-			}
-			res, err := client.ListCredentialVerdicts(cmd.Context(), params)
-			if err != nil {
+			table := credentialVerdictTable(follow)
+			header, printed := true, false
+			return readAudit(cmd.Context(), []auditSource[apimodel.CredentialVerdict]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(verdicts []apimodel.CredentialVerdict) error {
+				switch {
+				case a.output == "json":
+					return writeTerminalSafeJSONLines(cmd, verdicts)
+				case showPrompt:
+					if len(verdicts) > 0 && printed {
+						_, _ = fmt.Fprintln(cmd.OutOrStdout())
+					}
+					printed = printed || len(verdicts) > 0
+					return writeCredentialVerdictBlocks(cmd.OutOrStdout(), verdicts)
+				}
+				err := table.write(cmd.OutOrStdout(), verdicts, header, follow)
+				header = false
 				return err
-			}
-			body, err := expectResponse[apimodel.ListCredentialVerdictsBody](res)
-			if err != nil {
-				return err
-			}
-			if a.output == "json" {
-				return writeTerminalSafeJSON(cmd.OutOrStdout(), body)
-			}
-			if showPrompt {
-				return writeCredentialVerdictBlocks(cmd.OutOrStdout(), body.GetCredentialVerdicts())
-			}
-			return writeCredentialVerdicts(cmd.OutOrStdout(), body.GetCredentialVerdicts())
+			})
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Only this discobox's verdicts; a deleted one needs its full ID")
@@ -249,10 +397,42 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 	cmd.Flags().BoolVar(&denied, "denied", false, "Only denied verdicts")
 	cmd.Flags().BoolVar(&allowed, "allowed", false, "Only allowed verdicts")
 	cmd.Flags().StringVar(&since, "since", "", "Only verdicts from this long ago (e.g. 1h) or since this RFC 3339 time")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of verdicts to return")
+	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of verdicts to return")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing verdicts as they are recorded")
 	cmd.Flags().BoolVar(&showPrompt, "prompt", false, "Print each verdict in full, including the prompt the judge was given")
 	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	return cmd
+}
+
+// credentialVerdictSource reads the verdict trail.
+func credentialVerdictSource(client *apiclientgen.Client, params apiclientgen.ListCredentialVerdictsParams) auditSource[apimodel.CredentialVerdict] {
+	return auditSource[apimodel.CredentialVerdict]{
+		read: func(ctx context.Context, cursor auditReadCursor, limit int) ([]apimodel.CredentialVerdict, error) {
+			params := params
+			params.Limit = apiclientgen.NewOptInt(limit)
+			if !cursor.Since.IsZero() {
+				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
+			}
+			if cursor.Forward {
+				params.Order = apiclientgen.NewOptListCredentialVerdictsOrder(apiclientgen.ListCredentialVerdictsOrderAsc)
+			}
+			res, err := client.ListCredentialVerdicts(ctx, params)
+			if err != nil {
+				return nil, err
+			}
+			body, err := expectResponse[apimodel.ListCredentialVerdictsBody](res)
+			if err != nil {
+				return nil, err
+			}
+			return body.GetCredentialVerdicts(), nil
+		},
+		key: func(v apimodel.CredentialVerdict) string { return v.ID },
+		at:  func(v apimodel.CredentialVerdict) time.Time { return v.CreatedAt },
+		// Verdict IDs are random, so the cursor is the time. The control plane
+		// writes each verdict on the call that mints a value and commits it
+		// there, so only two commits interleaving can reorder them.
+		lookback: auditWriterLookback,
+	}
 }
 
 // parseSince reads a --since value as a duration back from now, or as an
@@ -271,21 +451,36 @@ func parseSince(value string, now time.Time) (time.Time, error) {
 	return at, nil
 }
 
-func writeCredentialVerdicts(out io.Writer, verdicts []apimodel.CredentialVerdict) error {
-	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "TIME\tDISCOBOX\tVERDICT\tRECORDED\tUSE\tCOMMAND\tREASON")
-	for _, v := range verdicts {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			formatTime(v.CreatedAt),
-			terminalSafe(v.SandboxId),
-			verdictWord(v.Allow),
-			verdictRecorded(v.Volunteered),
-			terminalSafe(v.UseId),
-			truncateTableValue(displayArgv(v.Command), 60),
-			truncateTableValue(terminalSafe(v.Reason.Or("")), 80),
-		)
+func credentialVerdictTable(follow bool) auditTable[apimodel.CredentialVerdict] {
+	return auditTable[apimodel.CredentialVerdict]{
+		columns: []auditColumn{
+			{name: "TIME", width: 12}, {name: "DISCOBOX", width: 22}, {name: "VERDICT", width: 7},
+			{name: "RECORDED", width: 8}, {name: "USE", width: 22}, {name: "COMMAND", width: 30}, {name: "REASON"},
+		},
+		row: func(v apimodel.CredentialVerdict) []string {
+			return []string{
+				auditTime(v.CreatedAt, follow),
+				terminalSafe(v.SandboxId),
+				verdictWord(v.Allow),
+				verdictRecorded(v.Volunteered),
+				terminalSafe(v.UseId),
+				truncateTableValue(displayArgv(v.Command), 60),
+				truncateTableValue(terminalSafe(v.Reason.Or("")), 80),
+			}
+		},
 	}
-	return tw.Flush()
+}
+
+// auditReadOptions is how this invocation reads a trail. Pacing is for a
+// terminal only: a pipe, and -o json whatever it is written to, gets each
+// record as soon as it is read.
+func (a *App) auditReadOptions(cmd *cobra.Command, since time.Time, limit int, follow bool) auditReadOptions {
+	return auditReadOptions{
+		since:  since,
+		limit:  limit,
+		follow: follow,
+		paced:  follow && a.output != "json" && isTerminalStream(cmd.OutOrStdout()),
+	}
 }
 
 func writeCredentialVerdictBlocks(out io.Writer, verdicts []apimodel.CredentialVerdict) error {

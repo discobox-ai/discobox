@@ -360,6 +360,17 @@ func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams)
 	return r, ht.ErrNotImplemented
 }
 
+// GetHTTPAudit implements get-http-audit operation.
+//
+// One audited HTTP exchange in full, read from the pool that recorded it (ADR 0130 §5). The pool is
+// in the path because an audit record ID is only unique within it. The bodies and any upgraded
+// stream are read separately, through the recording route beside this one.
+//
+// GET /projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}
+func (UnimplementedHandler) GetHTTPAudit(ctx context.Context, params GetHTTPAuditParams) (r GetHTTPAuditRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetHarnessConfig implements get-harness-config operation.
 //
 // Get a harness config.
@@ -513,6 +524,19 @@ func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerR
 //
 // GET /projects/{projectId}/credential-verdicts
 func (UnimplementedHandler) ListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (r ListCredentialVerdictsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListExecEvents implements list-exec-events operation.
+//
+// Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),
+//
+//	recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and
+//
+// read only from a running sandbox; the read never starts one.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+func (UnimplementedHandler) ListExecEvents(ctx context.Context, params ListExecEventsParams) (r ListExecEventsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

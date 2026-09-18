@@ -16,6 +16,7 @@ type HarnessSecret = poolagentapi.HarnessSecret
 type HarnessVolume = poolagentapi.HarnessVolume
 type PoolClearCacheResponse = poolagentapi.PoolClearCacheResponse
 type PoolHTTPAuditExchange = poolagentapi.PoolHTTPAuditExchange
+type PoolHTTPAuditExchangeDetail = poolagentapi.PoolHTTPAuditExchangeDetail
 type PoolHTTPAuditResponse = poolagentapi.PoolHTTPAuditResponse
 type PoolSandboxCreateRequest = poolagentapi.PoolSandboxCreateRequest
 type PoolSandboxInstance = poolagentapi.PoolSandboxInstance

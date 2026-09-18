@@ -95,6 +95,19 @@ func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSan
 	return r, ht.ErrNotImplemented
 }
 
+// ListExecEvents implements list-exec-events operation.
+//
+// Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),
+//
+//	recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and
+//
+// read only from a running sandbox; the read never starts one.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
+func (UnimplementedHandler) ListExecEvents(ctx context.Context, params ListExecEventsParams) (r *SandboxExecEventsResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListHarnessHooks implements list-harness-hooks operation.
 //
 // List recent sandbox harness hook payload logs.

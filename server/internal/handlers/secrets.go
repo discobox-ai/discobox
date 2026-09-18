@@ -267,10 +267,12 @@ func apiSecretUses(uses []model.SecretUse) []apimodel.SecretUse {
 
 func (h *Handler) ListCredentialVerdicts(ctx context.Context, params serverapi.ListCredentialVerdictsParams) (serverapi.ListCredentialVerdictsRes, error) {
 	filter := services.CredentialVerdictFilter{
+		ID:        params.ID.Or(""),
 		SandboxID: params.SandboxId.Or(""),
 		UseID:     params.UseId.Or(""),
 		GrantID:   params.GrantId.Or(""),
 		Since:     params.Since.Or(time.Time{}),
+		Ascending: params.Order.Or(serverapi.ListCredentialVerdictsOrderDesc) == serverapi.ListCredentialVerdictsOrderAsc,
 		Limit:     params.Limit.Or(100),
 	}
 	if allow, ok := params.Allow.Get(); ok {

@@ -20,7 +20,7 @@ import (
 // reported. Deriving it meant reading each terminal's recorded harness hooks
 // through a per-harness event mapping, which only claude-code ever had, and
 // no client read the result. The hooks themselves are still recorded and
-// still readable through `discobox hooks logs`; only the derivation is gone.
+// still readable through `discobox admin audit hooks`; only the derivation is gone.
 func ComputeSessionStatus(all []execs.Exec) []SessionStatus {
 	var out []SessionStatus
 	for _, exec := range all {

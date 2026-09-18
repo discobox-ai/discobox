@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -291,6 +292,35 @@ func (p *Provider) ListHTTPAudit(ctx context.Context, pool *model.Pool, query sa
 	}
 	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
 	return client.ListHTTPAudit(ctx, pool.ProjectID, query)
+}
+
+// GetHTTPAudit reads one audited exchange in full through the pool agent,
+// without recovery for the reason ListHTTPAudit has none.
+func (p *Provider) GetHTTPAudit(ctx context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID) (*sandbox.HTTPAuditExchangeDetail, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	return client.GetHTTPAudit(ctx, pool.ProjectID, sandboxID, id)
+}
+
+// OpenHTTPAuditArtifact streams a recorded body or upgraded stream through the
+// pool agent. Like ListHTTPAudit it reaches the agent without recovery: a read
+// must not reconcile the pool it reads.
+func (p *Provider) OpenHTTPAuditArtifact(ctx context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID, artifact string) (*sandbox.HTTPAuditArtifact, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	return client.OpenHTTPAuditArtifact(ctx, pool.ProjectID, sandboxID, id, artifact)
 }
 
 // The registration timeout is armed by the pool reconciler, which owns the

@@ -12,15 +12,15 @@ import (
 // JSON is printed as its raw bytes.
 func TestHarnessHookLogsEscapeTheirPayload(t *testing.T) {
 	out := new(strings.Builder)
-	if err := writeHarnessHookLogs(out, []apimodel.HarnessHookLog{{
+	if err := harnessHookTable(false).write(out, []apimodel.HarnessHookLog{{
 		// Every column but the time comes from a database the discobox can
 		// rewrite, so each one carries a hostile rune here.
 		TerminalId: apiclientgen.NewOptString("term\x1b[1A"),
 		Provider:   "claude-code\u009b2K",
 		Event:      "PreToolUse\u202e",
 		Payload:    []byte("not json \x1b[2J\u202e"),
-	}}); err != nil {
-		t.Fatalf("writeHarnessHookLogs() error = %v", err)
+	}}, true, false); err != nil {
+		t.Fatalf("write hook logs: %v", err)
 	}
 	for _, raw := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(out.String(), raw) {

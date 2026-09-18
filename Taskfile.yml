@@ -781,6 +781,40 @@ tasks:
           exit 1
         fi
 
+  check:dockerfile-deps:
+    desc: Every package an image's Go binaries import is copied into its build context
+    # The other half of check:dockerfiles. That one catches a COPY naming a path
+    # that is gone; this catches the opposite and more common mistake: a new
+    # root-module package that nothing copies, which no amount of `go build` on
+    # the host notices because the host has the whole repository. The first
+    # thing to find out is the image build, minutes into a Docker layer.
+    #
+    # Deps are taken for the whole module rather than the binaries each
+    # Dockerfile builds, which is a superset: copying a directory the image did
+    # not strictly need is harmless, and parsing build targets out of a RUN line
+    # is not.
+    cmds:
+      - |
+        set -eu
+        missing=""
+        for entry in pool-agent/Dockerfile:pool-agent sandbox-agent/Dockerfile:sandbox-agent; do
+          dockerfile="${entry%:*}"
+          module="${entry##*:}"
+          copied="$(awk '/^COPY [a-z]/ { split($2, parts, "/"); print parts[1] }' "$dockerfile" | sort -u)"
+          for dep in $(cd "$module" && go list -deps ./... |
+                         sed -n 's|^github.com/discobox-ai/discobox/||p' |
+                         cut -d/ -f1 | sort -u); do
+            if ! printf '%s\n' "$copied" | grep -qx "$dep"; then
+              missing="$missing$dockerfile: $module imports $dep, which nothing copies into the build context
+        "
+            fi
+          done
+        done
+        if [ -n "$missing" ]; then
+          printf '%s' "$missing" >&2
+          exit 1
+        fi
+
   check:mermaid:
     desc: Validate Mermaid diagrams in Markdown files
     cmds:
@@ -897,6 +931,7 @@ tasks:
       - task: check
       - task: check:windows
       - task: check:dockerfiles
+      - task: check:dockerfile-deps
 
   ci:test:
     desc: Run every module's tests the way CI does

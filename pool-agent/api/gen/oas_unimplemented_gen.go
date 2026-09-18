@@ -52,6 +52,18 @@ func (UnimplementedHandler) PoolDeleteSandbox(ctx context.Context, params PoolDe
 	return ht.ErrNotImplemented
 }
 
+// PoolGetHTTPAudit implements pool-get-http-audit operation.
+//
+// One audited HTTP exchange in full, relayed from the pool proxy's loopback
+// control API (ADR 0130 §5). A request token that names a sandbox narrows
+// the read to it, whatever sandboxId says, so a row belonging to another
+// sandbox is not found rather than refused.
+//
+// GET /api/project/{projectId}/pool/{poolId}/audit/http/{exchangeId}
+func (UnimplementedHandler) PoolGetHTTPAudit(ctx context.Context, params PoolGetHTTPAuditParams) (r *PoolHTTPAuditExchangeDetail, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolGetSandbox implements pool-get-sandbox operation.
 //
 // Get pool sandbox.

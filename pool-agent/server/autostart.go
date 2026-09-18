@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -58,6 +59,27 @@ func (s *sandboxService) autoStart(wait containerWait, next http.Handler) http.H
 				slog.DebugContext(r.Context(), "on-demand sandbox start failed; proxying anyway",
 					"sandboxId", sandboxID, "error", err)
 			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireRunning serves a read of what a sandbox recorded about itself only while
+// the sandbox is running, and never starts it.
+//
+// It is autoStart's opposite, for the routes that read the sandbox's own audit
+// data (ADR 0130): its harness hooks and exec events. autoStart is right where a
+// request is a use of the sandbox. An audit read is not one, and starting a
+// stopped sandbox to read its log would undo the stop it may be reading about —
+// the idle stop of ADR 0108 above all. A sandbox that is not running answers 409
+// saying so; one this runtime does not know passes through, so the proxy fails
+// on its own terms.
+func (s *sandboxService) requireRunning(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sandboxID := chi.URLParam(r, "sandboxId")
+		if sb, err := s.runtime.GetSandbox(r.Context(), sandboxID); err == nil && sb.Status != sandboxruntime.StatusRunning {
+			http.Error(w, fmt.Sprintf("discobox %s is %s: what it recorded is inside it, and reading that does not start it", sandboxID, sb.Status), http.StatusConflict)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})

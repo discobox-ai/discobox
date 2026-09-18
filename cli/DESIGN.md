@@ -1463,31 +1463,107 @@ tool rather than only as a screenful:
 ## Audit Reads (`discobox admin audit`)
 
 The audit commands read what a discobox left behind (ADR 0130), under `admin`
-per ADR 0112. `creds` lists the judge's recorded verdicts on agent credential
-uses from `list-credential-verdicts`. `http` lists the requests discoboxes made
-through their pool's proxy from `list-http-audit`; its `USES` column is the
-join to `creds`, by `--use-id` on either. A pool that could not be read is named
-on stderr, never folded into the table, since the answer is short by it.
+per ADR 0112. Each trail is read where it is kept, through the control plane:
 
-Two rules shape the output, and both are about who wrote what is on screen:
+| Command | Trail | Kept | Record ID | Cursor |
+| --- | --- | --- | --- | --- |
+| `http` | `list-http-audit`, `get-http-audit`, and the hand-wired recording route for `--body` | each pool | `http_<row>` | row id, per pool |
+| `creds` | `list-credential-verdicts` | control plane | `cvd_…` | time |
+| `hooks` | `list-harness-hooks` | inside the discobox | `evt_…` | time |
+| `execs` | `list-exec-events` | inside the discobox | `evt_…` | time |
+| `list` | all four, merged by time, for one discobox | | each trail's own | each trail's own |
+| `get` | whichever trail the ID names | | | |
 
-- **Provenance is a column, not a footnote.** `RECORDED` is `use` for a verdict
-  that rode the call taking the credential's value and `report` for a denial the
-  discobox sent on its own, which nothing forced it to send. They are ADR 0130
-  §2's `control-plane` and `sandbox` attestors, derived from `volunteered`,
-  under the names this one trail has for them.
+`http`'s `USES` column is the join to `creds`, by `--use-id` on either. `hooks`,
+`execs` and `list` require `--discobox-id`, and a stopped discobox answers 409
+rather than being started to read (ADR 0130 §5). Something that could not be
+read — a pool, or a whole trail in `list` — is named on stderr, never folded
+into the table, since the answer is short by it; `-o json` carries it beside the
+records.
+
+- **The merge is the CLI's.** `list` reads each trail through its own route and
+  merges them by time for printing. Each read keeps its own authorization and
+  scope, a trail that fails is named without failing the rest, and no server
+  route has to know four trails' cursors.
+- **Every trail keeps its own position** (`auditPosition`, one per source). The
+  four trails are stamped by three different machines — the pool proxy, the
+  control plane, the sandbox agent — so a shared position would read every
+  trail from the clock of whichever is ahead: a pool a few minutes fast would
+  leave the verdict trail permanently unread, silently. A trail's cursor, its
+  lookback and its newest record are its own, and the merge only decides the
+  order records print in.
+- **A merged batch is never cut.** Each trail is bounded by `--limit` on its
+  own, and a record dropped from a merged batch would already have moved its
+  trail's position — lost, with nothing to say so. Where a cut is real, in the
+  backlog and in a one-off read, it is made by taking heads from each page
+  rather than by sorting everything and slicing, so what survives is a prefix
+  of every page and no cursor is ever set past a dropped record. The server's
+  merge across pools does the same thing for the same reason
+  (`mergeAuditPages`).
+- **`list` prints time, source, ID and the record.** Not the discobox, because
+  every record in the listing is that one discobox's, and not the pool, because
+  a discobox runs on one. `SOURCE` is also what says how much a record is worth
+  (ADR 0130 §2): `http` is the proxy's own observation, `hooks` and `execs` are
+  the discobox's account of itself, and a `creds` record says `use` or `report`.
+  The attestor stays a field in `-o json`.
+- **`get <discobox-id> <record-id>` routes on the ID.** `http_…` is read from
+  the pool the discobox runs on — resolved from the discobox, since a record ID
+  is only unique on one pool, with `--pool` for a discobox that is gone — and
+  shows the fields no listing carries. `cvd_…` is a verdict, printed like
+  `creds --prompt`. `evt_…` is a hook or an exec event, and since the sandbox
+  agent numbers both from one sequence, both trails are asked; an ID is in at
+  most one. A read that fails for a reason of its own (a stopped discobox
+  answers 409) is reported as that, not as "no such record". Recorded bodies
+  are not printed here — they are unbounded bytes — but the record says which
+  exist, and a line on stderr says how to read them.
+- **`--follow` reads forward from a cursor** (`readAudit`). It prints the last
+  `--limit` oldest first, then reads forward, printing only what it has not
+  printed. The pool trail is read by row id per pool, which is the write order;
+  the other three number their records at random, so each is read by time from
+  its own `auditWriterLookback` behind its own newest record. That lookback is
+  not caution — a single writer committing as it records can still interleave
+  two commits — and the pool trail needs none of it because its cursor is
+  exact. A cursor is only taken where one can be established safely: from a
+  page read in write order, or from a poll whose paging reached the end of its
+  window, taking the highest ID the whole poll saw. Per page it would be wrong
+  — a poll pages through its window, and the last page is only a sub-window, so
+  a record an earlier page held with a higher ID would be handed back as new. A full page is read past at once, from its
+  last record; a full page that nothing can get past (more records than a page
+  holds share one instant) waits instead of spinning.
+- **Nothing is read from before the tail began.** A trail is anchored on its own
+  newest backlog record — its whole page is admitted, printed or cut, so a trail
+  the cut left out still has a position on its own machine's clock. Only a trail
+  that answered with nothing takes the backlog's oldest printed record as a
+  floor, because it has no time of its own to start from; a trail with no bound
+  at all is read as "the oldest `--limit` records I hold", and one busy pool can
+  fill the whole backlog, so that is ordinary rather than exotic. The floor is
+  deliberately not shared any wider than that: one time for every trail is a
+  foreign clock to all but one of them, which is the thing the per-trail
+  positions exist to avoid.
+- **Records under a cursor are recognized by their row id, not by a key.** The
+  key set (`auditRememberedKeys`) is what the time-read trails dedupe against,
+  and those are the quiet ones; the busy trail costs nothing to remember
+  because its cursor is exact.
+- **A followed batch is paced** (`pace`). A poll that returns eight records
+  prints them spread across the poll interval rather than as a block, so the
+  output reads like the trail arriving. Never when catching up, since a full
+  page means the reader is behind, and never when stdout is not a terminal or
+  the output is JSON: a pipe gets every record the moment it is read. Pacing
+  spends the interval rather than adding to it, so the poll cadence is
+  unchanged. Paced printing is also why a followed table has declared column
+  widths (`auditTable`): records print one at a time, and a tabwriter aligns
+  only within one flush.
 - **Text written inside a discobox is escaped before it reaches a terminal.**
   Every string field a row prints passes through `terminalSafe` (or
-  `terminalSafeMultiline` for the prompt block) — the use ID too, since a
-  reported denial's use ID is the discobox's own text — which prints every
-  control and invisible format character (ESC, BEL, C1 controls, bidirectional
-  overrides) as its Go escape. Printed raw, an escape sequence could move the
-  cursor and overwrite the row that said `deny`. `displayArgv` Go-quotes any
-  argv element holding whitespace, a quote or a non-printing rune, so elements
-  stay distinct the way ADR 0091 records them. `-o json` goes through
-  `writeTerminalSafeJSON`, which writes the same runes as `\u` escapes: Go's
-  encoder escapes only C0 controls, and a `\u` escape decodes to the recorded
-  value, so JSON stays exact.
+  `terminalSafeMultiline` for the prompt block), which prints every control and
+  invisible format character (ESC, BEL, C1 controls, bidirectional overrides)
+  as its Go escape; printed raw, an escape sequence could move the cursor and
+  overwrite the row that said `deny`. `displayArgv` Go-quotes any argv element
+  holding whitespace, a quote or a non-printing rune. `-o json` goes through
+  `writeTerminalSafeJSON`, which writes the same runes as `\u` escapes, so JSON
+  stays exact; a follow writes one such object per line. `http --body` writes a
+  recording's bytes unchanged when stdout is not a terminal, so a redirect keeps
+  it, and escaped (`copyTerminalSafe`) when it is.
 
 A `--discobox-id` that is a full generated ID is sent without a lookup, so a
 purged discobox's trail stays readable; a short ID resolves against the live

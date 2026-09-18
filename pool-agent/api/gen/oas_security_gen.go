@@ -38,6 +38,7 @@ var operationRolesPoolBearerAuth = map[string][]string{
 	PoolClearCacheOperation:     []string{},
 	PoolCreateSandboxOperation:  []string{},
 	PoolDeleteSandboxOperation:  []string{},
+	PoolGetHTTPAuditOperation:   []string{},
 	PoolGetSandboxOperation:     []string{},
 	PoolListHTTPAuditOperation:  []string{},
 	PoolListSandboxesOperation:  []string{},

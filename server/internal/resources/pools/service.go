@@ -10,11 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -250,7 +250,8 @@ func (s *Service) ClearPoolCache(ctx context.Context, projectID, poolID string) 
 var auditPoolReadTimeout = 20 * time.Second
 
 // ListHTTPAudit reads the project's pool proxies' HTTP audit and merges it
-// newest first (ADR 0130 §§1, 4).
+// newest first, or oldest first from Since for a follower reading forward
+// (ADR 0130 §§1, 4).
 //
 // Which pools are asked: the one PoolID names; otherwise, when the sandbox the
 // filter names still exists, the pool it runs on; otherwise every pool in the
@@ -259,7 +260,8 @@ var auditPoolReadTimeout = 20 * time.Second
 // the retention window, and nothing left records which pool that was.
 //
 // Every pool is asked for the whole limit, because the newest N across pools
-// can all come from one of them, and each is given auditPoolReadTimeout to
+// — or, reading forward, the oldest N since a cursor — can all come from one of
+// them, and each is given auditPoolReadTimeout to
 // answer. A pool that cannot be read is reported by name with why; a trail that
 // silently omits a pool reads as a complete one. A pool being deleted, or whose
 // agent never registered, is reported without being asked: there is no agent to
@@ -274,6 +276,10 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 		Host:      filter.Host,
 		UseID:     filter.UseID,
 		Since:     filter.Since,
+		MinStatus: filter.MinStatus,
+		MaxStatus: filter.MaxStatus,
+		Blocked:   filter.Blocked,
+		Ascending: filter.Ascending,
 		Limit:     filter.Limit,
 	}
 	type poolRead struct {
@@ -293,7 +299,11 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 			defer wg.Done()
 			poolCtx, cancel := context.WithTimeout(ctx, auditPoolReadTimeout)
 			defer cancel()
-			exchanges, err := s.readPoolHTTPAudit(poolCtx, &pools[i], query)
+			poolQuery := query
+			// Each pool reads from its own cursor; the shared time bound is
+			// for the pools the caller has no cursor for.
+			poolQuery.AfterID = filter.After[pools[i].ID]
+			exchanges, err := s.readPoolHTTPAudit(poolCtx, &pools[i], poolQuery)
 			if err != nil && errors.Is(poolCtx.Err(), context.DeadlineExceeded) {
 				err = fmt.Errorf("it did not answer within %s", auditPoolReadTimeout)
 			}
@@ -306,28 +316,81 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 		Exchanges:        []services.PoolHTTPAuditExchange{},
 		UnavailablePools: []services.UnavailableAuditPool{},
 	}
+	pages := make([][]services.PoolHTTPAuditExchange, 0, len(reads))
 	for _, read := range reads {
 		if read.err != nil {
 			result.UnavailablePools = append(result.UnavailablePools, services.UnavailableAuditPool{PoolID: read.poolID, Reason: read.err.Error()})
 			continue
 		}
+		page := make([]services.PoolHTTPAuditExchange, 0, len(read.exchanges))
 		for _, exchange := range read.exchanges {
-			result.Exchanges = append(result.Exchanges, services.PoolHTTPAuditExchange{PoolID: read.poolID, HTTPAuditExchange: exchange})
+			page = append(page, services.PoolHTTPAuditExchange{PoolID: read.poolID, HTTPAuditExchange: exchange})
 		}
+		pages = append(pages, page)
 	}
-	slices.SortStableFunc(result.Exchanges, func(a, b services.PoolHTTPAuditExchange) int {
-		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
-			return c
-		}
-		if c := strings.Compare(a.PoolID, b.PoolID); c != 0 {
-			return c
-		}
-		return cmp.Compare(b.ID, a.ID)
-	})
-	if filter.Limit > 0 && len(result.Exchanges) > filter.Limit {
-		result.Exchanges = result.Exchanges[:filter.Limit]
-	}
+	result.Exchanges = mergeAuditPages(pages, filter)
 	return result, nil
+}
+
+// mergeAuditPages interleaves the pools' pages into one answer, oldest or
+// newest first, and cuts it to the limit.
+//
+// It merges by taking heads rather than sorting everything and slicing, because
+// the cut has to fall in the same order the caller's cursor advances. A pool
+// reading from a cursor answers in write order, which is deliberately not time
+// order — that is what the cursor is for (ADR 0130 §5). Sorting every page by
+// time and keeping the first N cuts inside a page and keeps whichever of its
+// rows are oldest by time; the caller then moves that pool's cursor to the
+// highest ID it was handed, and the rows below it that the cut dropped are
+// never offered again. That is the answer that looks complete while being
+// short, which §1 exists to prevent.
+//
+// Taking heads keeps what survives the cut a prefix of every page, whatever
+// order the page came back in, so the last record of a pool is always one with
+// nothing unread behind it.
+func mergeAuditPages(pages [][]services.PoolHTTPAuditExchange, filter services.HTTPAuditFilter) []services.PoolHTTPAuditExchange {
+	total := 0
+	for _, page := range pages {
+		total += len(page)
+	}
+	if filter.Limit > 0 && total > filter.Limit {
+		total = filter.Limit
+	}
+	merged := make([]services.PoolHTTPAuditExchange, 0, total)
+	heads := make([]int, len(pages))
+	for len(merged) < total {
+		next := -1
+		for i, page := range pages {
+			if heads[i] >= len(page) {
+				continue
+			}
+			if next < 0 || auditPageHeadIsFirst(page[heads[i]], pages[next][heads[next]], filter.Ascending) {
+				next = i
+			}
+		}
+		if next < 0 {
+			break
+		}
+		merged = append(merged, pages[next][heads[next]])
+		heads[next]++
+	}
+	return merged
+}
+
+// auditPageHeadIsFirst orders two pages' heads: by time, then by ID and pool, so
+// two records recorded in the same instant have one stable order.
+func auditPageHeadIsFirst(a, b services.PoolHTTPAuditExchange, ascending bool) bool {
+	c := a.CreatedAt.Compare(b.CreatedAt)
+	if c == 0 {
+		c = cmp.Compare(a.ID, b.ID)
+	}
+	if !ascending {
+		c = -c
+	}
+	if c != 0 {
+		return c < 0
+	}
+	return strings.Compare(a.PoolID, b.PoolID) < 0
 }
 
 // unaskableAuditPool says why a pool has no agent to ask, or "" when it does.
@@ -371,6 +434,82 @@ func (s *Service) auditPools(ctx context.Context, projectID string, filter servi
 
 // readPoolHTTPAudit reads one pool's audit through its provider's runtime.
 func (s *Service) readPoolHTTPAudit(ctx context.Context, pool *model.Pool, query sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
+	runtime, err := s.auditRuntime(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	exchanges, err := runtime.ListHTTPAudit(ctx, pool, query)
+	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		return nil, errors.New("its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled")
+	}
+	return exchanges, err
+}
+
+// GetHTTPAudit reads one audited exchange in full. Record IDs are only unique
+// within a pool, so the pool is required.
+func (s *Service) GetHTTPAudit(ctx context.Context, projectID, poolID, sandboxID string, id auditid.ExchangeID) (*services.PoolHTTPAuditExchangeDetail, error) {
+	runtime, pool, err := s.auditPoolRuntime(ctx, projectID, poolID)
+	if err != nil {
+		return nil, err
+	}
+	detail, err := runtime.GetHTTPAudit(ctx, pool, sandboxID, id)
+	switch {
+	case errors.Is(err, sandbox.ErrPoolAgentUnsupported):
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf(
+			"pool %s cannot be read: its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled", poolID))
+	case errors.Is(err, sandbox.ErrNotFound):
+		return nil, apperrors.NewStatusError(http.StatusNotFound, fmt.Sprintf("pool %s recorded no exchange %s", poolID, id))
+	case err != nil:
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf("pool %s cannot be read: %s", poolID, err))
+	}
+	return &services.PoolHTTPAuditExchangeDetail{PoolID: pool.ID, HTTPAuditExchangeDetail: *detail}, nil
+}
+
+// OpenHTTPAuditArtifact streams one body or upgraded stream a pool's proxy
+// recorded beside an audited exchange. Record IDs are only unique within a
+// pool, so the pool is required; like the list it never reconciles the pool it
+// reads.
+func (s *Service) OpenHTTPAuditArtifact(ctx context.Context, projectID, poolID, sandboxID string, id auditid.ExchangeID, artifact string) (*sandbox.HTTPAuditArtifact, error) {
+	runtime, pool, err := s.auditPoolRuntime(ctx, projectID, poolID)
+	if err != nil {
+		return nil, err
+	}
+	opened, err := runtime.OpenHTTPAuditArtifact(ctx, pool, sandboxID, id, artifact)
+	switch {
+	case errors.Is(err, sandbox.ErrPoolAgentUnsupported):
+		// The recording is there; the relay that reads it is not. Reporting
+		// that as "nothing was recorded" is the one answer ADR 0130 rules out.
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf(
+			"pool %s cannot be read: its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled", poolID))
+	case errors.Is(err, sandbox.ErrNotFound):
+		return nil, apperrors.NewStatusError(http.StatusNotFound, fmt.Sprintf("pool %s recorded no %s for exchange %s", poolID, artifact, id))
+	case err != nil:
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf("pool %s cannot be read: %s", poolID, err))
+	}
+	return opened, nil
+}
+
+// auditPoolRuntime resolves one pool and the runtime that reaches its proxy,
+// for the reads that name a single pool. A pool with no agent to ask is a 503
+// rather than a wait: unlike the merged list there is no other pool's answer to
+// return beside it.
+func (s *Service) auditPoolRuntime(ctx context.Context, projectID, poolID string) (sandbox.PoolRuntime, *model.Pool, error) {
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, nil, apperrors.NotFound(err, "pool not found")
+	}
+	if reason := unaskableAuditPool(pool); reason != "" {
+		return nil, nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf("pool %s cannot be read: %s", poolID, reason))
+	}
+	runtime, err := s.auditRuntime(ctx, pool)
+	if err != nil {
+		return nil, nil, apperrors.NewStatusError(http.StatusServiceUnavailable, fmt.Sprintf("pool %s cannot be read: %s", poolID, err))
+	}
+	return runtime, pool, nil
+}
+
+// auditRuntime resolves the runtime that reaches a pool's proxy.
+func (s *Service) auditRuntime(ctx context.Context, pool *model.Pool) (sandbox.PoolRuntime, error) {
 	provider, err := s.store.GetSandboxProviderInstance(ctx, pool.ProjectID, pool.ProviderInstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("its provider instance could not be loaded: %w", err)
@@ -386,11 +525,7 @@ func (s *Service) readPoolHTTPAudit(ctx context.Context, pool *model.Pool, query
 	if !ok {
 		return nil, fmt.Errorf("provider %q runs no pool proxy", provider.Type)
 	}
-	exchanges, err := runtime.ListHTTPAudit(ctx, pool, query)
-	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
-		return nil, errors.New("its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled")
-	}
-	return exchanges, err
+	return runtime, nil
 }
 
 // OpenPoolConsole attaches to the pool host's administrative console.

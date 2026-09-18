@@ -123,6 +123,28 @@ func (s *HarnessHookLogsResponse) Validate() error {
 	return nil
 }
 
+func (s ListExecEventsOrder) Validate() error {
+	switch s {
+	case "asc":
+		return nil
+	case "desc":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ListHarnessHooksOrder) Validate() error {
+	switch s {
+	case "asc":
+		return nil
+	case "desc":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ResourceHistoryResponse) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

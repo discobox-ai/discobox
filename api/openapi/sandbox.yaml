@@ -868,6 +868,82 @@ info:
     version: 0.1.0
 openapi: 3.1.1
 paths:
+    /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events:
+        get:
+            description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and read only from a running sandbox; the read never starts one.
+            operationId: list-exec-events
+            parameters:
+                - description: Only the event with this ID, which is how one record is read in full
+                  in: query
+                  name: id
+                  schema:
+                    description: Only the event with this ID, which is how one record is read in full
+                    type: string
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Only events for this exec.
+                  in: query
+                  name: execId
+                  required: false
+                  schema:
+                    type: string
+                - description: Only events of this type (e.g. exec.started).
+                  in: query
+                  name: type
+                  required: false
+                  schema:
+                    type: string
+                - description: Only events recorded at or after this time.
+                  in: query
+                  name: since
+                  required: false
+                  schema:
+                    format: date-time
+                    type: string
+                - description: asc returns the earliest matching events at or after since, for reading forward; desc, the default, returns the most recent.
+                  in: query
+                  name: order
+                  required: false
+                  schema:
+                    default: desc
+                    enum:
+                        - asc
+                        - desc
+                    type: string
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  required: false
+                  schema:
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxExecEventsResponse'
+                    description: Exec lifecycle events.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List lifecycle events for every exec in a sandbox.
+            tags:
+                - Sandbox Execs
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs:
         get:
             operationId: list-sandbox-execs
@@ -1357,6 +1433,12 @@ paths:
         get:
             operationId: list-harness-hooks
             parameters:
+                - description: Only the hook record with this ID, which is how one record is read in full
+                  in: query
+                  name: id
+                  schema:
+                    description: Only the hook record with this ID, which is how one record is read in full
+                    type: string
                 - description: Project that owns the sandbox.
                   in: path
                   name: projectId
@@ -1383,6 +1465,35 @@ paths:
                     maximum: 1000
                     minimum: 1
                     type: integer
+                - description: Only hooks from this provider (e.g. claude-code).
+                  in: query
+                  name: provider
+                  required: false
+                  schema:
+                    type: string
+                - description: Only hooks for this provider event (e.g. PreToolUse).
+                  in: query
+                  name: event
+                  required: false
+                  schema:
+                    type: string
+                - description: Only hooks recorded at or after this time.
+                  in: query
+                  name: since
+                  required: false
+                  schema:
+                    format: date-time
+                    type: string
+                - description: asc returns the earliest matching hooks at or after since, for reading forward; desc, the default, returns the most recent.
+                  in: query
+                  name: order
+                  required: false
+                  schema:
+                    default: desc
+                    enum:
+                        - asc
+                        - desc
+                    type: string
             responses:
                 "200":
                     content:

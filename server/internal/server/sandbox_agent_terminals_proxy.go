@@ -16,6 +16,7 @@ import (
 
 func registerSandboxAgentTerminalRoutes(router chi.Router, service services.SandboxService) {
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/exec-events", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}", sandboxAgentTerminalProxyHandler(service))
@@ -99,6 +100,13 @@ func writeSandboxAgentProxyError(w http.ResponseWriter, status int, message stri
 }
 
 func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
+	// The events of every exec, read across them: the exec event trail.
+	if strings.HasSuffix(r.URL.Path, "/exec-events") {
+		if r.Method == http.MethodGet {
+			return []string{poolagentauth.ScopeExecRead}
+		}
+		return nil
+	}
 	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {
 			return []string{poolagentauth.ScopeExecRead}

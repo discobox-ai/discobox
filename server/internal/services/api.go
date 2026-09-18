@@ -8,6 +8,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -208,7 +209,22 @@ type HTTPAuditFilter struct {
 	Host      string
 	UseID     string
 	Since     time.Time
-	Limit     int
+	// MinStatus and MaxStatus bound the response status, inclusive; zero
+	// leaves that side open.
+	MinStatus int
+	MaxStatus int
+	// Blocked selects refused exchanges when true and admitted ones when
+	// false; nil is both.
+	Blocked *bool
+	// Ascending reads oldest first from Since, which is how a follower reads
+	// forward without missing a row between polls.
+	Ascending bool
+	// After is a per-pool cursor, keyed by pool ID: that pool is read in write
+	// order after the record given, instead of by Since. A pool with no entry
+	// is read by Since, which is how a pool whose records the caller has not
+	// seen yet joins a follow already running.
+	After map[string]auditid.ExchangeID
+	Limit int
 }
 
 // HTTPAuditResult is a merged read of every pool that was asked.
@@ -224,6 +240,15 @@ type HTTPAuditResult struct {
 type PoolHTTPAuditExchange struct {
 	PoolID string `json:"poolId"`
 	sandbox.HTTPAuditExchange
+}
+
+// PoolHTTPAuditExchangeDetail is one audited exchange in full and the pool that
+// recorded it. As with PoolHTTPAuditExchange the pool is carried beside the
+// record rather than in it: an audit row does not know which pool holds it, and
+// its ID means nothing without one.
+type PoolHTTPAuditExchangeDetail struct {
+	PoolID string `json:"poolId"`
+	sandbox.HTTPAuditExchangeDetail
 }
 
 // UnavailableAuditPool is a pool whose part of the trail could not be read.
@@ -261,6 +286,13 @@ type PoolService interface {
 	// audited, from every pool the filter allows, merged newest first (ADR 0130
 	// §§1, 4). A pool that does not answer is reported, not dropped.
 	ListHTTPAudit(ctx context.Context, projectID string, filter HTTPAuditFilter) (*HTTPAuditResult, error)
+	// GetHTTPAudit reads one audited exchange in full from the pool that
+	// recorded it, narrowed to sandboxID when it is set.
+	GetHTTPAudit(ctx context.Context, projectID, poolID, sandboxID string, id auditid.ExchangeID) (*PoolHTTPAuditExchangeDetail, error)
+	// OpenHTTPAuditArtifact streams a body or upgraded stream recorded beside
+	// one audited exchange on one pool, narrowed to sandboxID when it is set.
+	// The caller closes the artifact's body.
+	OpenHTTPAuditArtifact(ctx context.Context, projectID, poolID, sandboxID string, id auditid.ExchangeID, artifact string) (*sandbox.HTTPAuditArtifact, error)
 	// OpenPoolConsole attaches to the pool host's administrative console: a
 	// privileged root shell on the machine running the pool's runtime, for
 	// debugging the backend itself.

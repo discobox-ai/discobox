@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -474,7 +475,7 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 		{path: "request-body", want: requestBody},
 		{path: "response-body", want: responseBody},
 	} {
-		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+strconv.FormatUint(uint64(exchange.ID), 10)+"/"+tc.path+"?client_id=sandbox-1", nil)
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+exchange.ID.String()+"/"+tc.path+"?client_id=sandbox-1", nil)
 		rec := httptest.NewRecorder()
 		server.ControlHandler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -485,13 +486,38 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 		}
 	}
 
+	// The same bodies through ControlClient, the reader the pool agent relays
+	// with: a scoped read of the owning sandbox streams them, another sandbox's
+	// scope reads them as not found.
+	control := httptest.NewServer(server.ControlHandler())
+	defer control.Close()
+	_, readerKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := NewControlClient(control.URL, readerKey, "", "", nil)
+	for artifact, want := range map[string]string{AuditArtifactRequestBody: requestBody, AuditArtifactResponseBody: responseBody} {
+		opened, err := reader.OpenHTTPArtifact(ctx, "sandbox-1", exchange.ID, artifact)
+		if err != nil {
+			t.Fatalf("OpenHTTPArtifact(%s) error = %v", artifact, err)
+		}
+		got, err := io.ReadAll(opened.Body)
+		opened.Body.Close()
+		if err != nil || string(got) != want || opened.Format != audit.BodyFormatRaw {
+			t.Fatalf("OpenHTTPArtifact(%s) = %q format %q, %v; want the recorded body", artifact, got, opened.Format, err)
+		}
+		if _, err := reader.OpenHTTPArtifact(ctx, "sandbox-2", exchange.ID, artifact); !errors.Is(err, ErrAuditArtifactNotFound) {
+			t.Fatalf("OpenHTTPArtifact(%s) scoped to another sandbox = %v, want not found", artifact, err)
+		}
+	}
+
 	// The other half of the narrowing chain: the middleware pins client_id to
 	// the token's sandbox, and this is what that pinning buys — a client_id
 	// naming another sandbox does not reach the spooled body, it 404s. Without
 	// it, narrowing would be pinning a parameter nothing enforced.
 	for _, artifact := range []string{"request-body", "response-body"} {
 		req := httptest.NewRequestWithContext(ctx, http.MethodGet,
-			"/audit/http/"+strconv.FormatUint(uint64(exchange.ID), 10)+"/"+artifact+"?client_id=sandbox-2", nil)
+			"/audit/http/"+exchange.ID.String()+"/"+artifact+"?client_id=sandbox-2", nil)
 		rec := httptest.NewRecorder()
 		server.ControlHandler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
@@ -701,7 +727,7 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	}
 	streamPath := filepath.Join(dir, "streams", filepath.FromSlash(exchange.StreamFile))
 	streamBytes := waitForStreamSpool(t, streamPath, []byte("ping"), []byte("pong"))
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+strconv.FormatUint(uint64(exchange.ID), 10)+"/stream?client_id=sandbox-1", nil)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+exchange.ID.String()+"/stream?client_id=sandbox-1", nil)
 	rec := httptest.NewRecorder()
 	server.ControlHandler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -715,7 +741,7 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	// The fetch above proves the stream is there and readable, so this is the
 	// stream half of the narrowing chain — the body routes are pinned the same
 	// way in TestHTTPProxyCapturesFullBodies.
-	scoped := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+strconv.FormatUint(uint64(exchange.ID), 10)+"/stream?client_id=sandbox-2", nil)
+	scoped := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+exchange.ID.String()+"/stream?client_id=sandbox-2", nil)
 	scopedRec := httptest.NewRecorder()
 	server.ControlHandler().ServeHTTP(scopedRec, scoped)
 	if scopedRec.Code != http.StatusNotFound {

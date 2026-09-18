@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ func TestRecordAndListEvents(t *testing.T) {
 	if err := st.RecordExecEvent(ctx, "ex_1", "exec.created", "created", map[string]any{"harnessId": "codex"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
-	events, err := st.ListEvents(ctx, "ex_1", 10)
+	events, err := st.ListEvents(ctx, ExecEventFilter{ExecID: "ex_1", Limit: 10})
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
@@ -85,7 +86,7 @@ func TestRecordAndListHarnessHooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record hook: %v", err)
 	}
-	hooks, err := st.ListHarnessHooks(ctx, "agt_1", 10)
+	hooks, err := st.ListHarnessHooks(ctx, HarnessHookFilter{TerminalID: "agt_1", Limit: 10})
 	if err != nil {
 		t.Fatalf("list hooks: %v", err)
 	}
@@ -158,7 +159,7 @@ func TestObserveExecRecordsTransitions(t *testing.T) {
 	if err := st.ObserveExec(ctx, status); err != nil {
 		t.Fatalf("observe failed: %v", err)
 	}
-	events, err := st.ListEvents(ctx, "ex_1", 10)
+	events, err := st.ListEvents(ctx, ExecEventFilter{ExecID: "ex_1", Limit: 10})
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestDeleteExecRecordKeepsEvents(t *testing.T) {
 	if states != 0 {
 		t.Fatalf("observed status survived the delete")
 	}
-	events, err := st.ListEvents(ctx, "ex_1", 10)
+	events, err := st.ListEvents(ctx, ExecEventFilter{ExecID: "ex_1", Limit: 10})
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
@@ -408,5 +409,95 @@ func TestOpenPurgesRecordsOfDeletedExecs(t *testing.T) {
 	}
 	if len(states) != len(want) {
 		t.Fatalf("states = %d, want %d", len(states), len(want))
+	}
+}
+
+func TestListHarnessHooksFiltersAndReadsForward(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "hooks.db"))
+	record := func(provider, event string) HarnessHookRecord {
+		t.Helper()
+		rec, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "agt_1", Provider: provider, Event: event, Payload: json.RawMessage(`{}`)})
+		if err != nil {
+			t.Fatalf("record hook: %v", err)
+		}
+		return rec
+	}
+	first := record("claude-code", "SessionStart")
+	record("claude-code", "PreToolUse")
+	third := record("codex-cli", "PreToolUse")
+	record("claude-code", "Stop")
+
+	events := func(hooks []HarnessHookRecord) []string {
+		out := make([]string, 0, len(hooks))
+		for _, h := range hooks {
+			out = append(out, h.Provider+"/"+h.Event)
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name   string
+		filter HarnessHookFilter
+		want   []string
+	}{
+		{name: "provider", filter: HarnessHookFilter{Provider: "codex-cli"}, want: []string{"codex-cli/PreToolUse"}},
+		{name: "event", filter: HarnessHookFilter{Event: "PreToolUse"}, want: []string{"claude-code/PreToolUse", "codex-cli/PreToolUse"}},
+		// The most recent N, still oldest first.
+		{name: "latest two", filter: HarnessHookFilter{Limit: 2}, want: []string{"codex-cli/PreToolUse", "claude-code/Stop"}},
+		// A follower reads forward from a bound: the earliest N at or after it.
+		{name: "forward from the second", filter: HarnessHookFilter{Since: first.CreatedAt.Add(time.Nanosecond), Ascending: true, Limit: 2}, want: []string{"claude-code/PreToolUse", "codex-cli/PreToolUse"}},
+		// Inclusive, and in a zone far from UTC: rows are recorded in UTC.
+		{name: "since is inclusive in any zone", filter: HarnessHookFilter{Since: third.CreatedAt.In(time.FixedZone("UTC+14", 14*60*60)), Ascending: true}, want: []string{"codex-cli/PreToolUse", "claude-code/Stop"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hooks, err := st.ListHarnessHooks(ctx, tc.filter)
+			if err != nil {
+				t.Fatalf("list hooks: %v", err)
+			}
+			if got := events(hooks); !slices.Equal(got, tc.want) {
+				t.Fatalf("hooks = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Exec events across every exec, the way an audit read asks for them.
+func TestListEventsAcrossExecsFiltersAndReadsForward(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "events.db"))
+	for _, e := range []struct{ exec, typ string }{
+		{"ex_1", "exec.created"}, {"ex_1", "exec.started"}, {"ex_2", "exec.created"}, {"ex_2", "exec.stopped"},
+	} {
+		if err := st.RecordExecEvent(ctx, e.exec, e.typ, e.typ, nil); err != nil {
+			t.Fatalf("record event: %v", err)
+		}
+	}
+	names := func(events []Event) []string {
+		out := make([]string, 0, len(events))
+		for _, e := range events {
+			out = append(out, e.TerminalID+"/"+e.Type)
+		}
+		return out
+	}
+	all, err := st.ListEvents(ctx, ExecEventFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(all); !slices.Equal(got, []string{"ex_2/exec.stopped", "ex_2/exec.created", "ex_1/exec.started", "ex_1/exec.created"}) {
+		t.Fatalf("every exec, newest first = %v", got)
+	}
+	created, err := st.ListEvents(ctx, ExecEventFilter{Type: "exec.created", Ascending: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(created); !slices.Equal(got, []string{"ex_1/exec.created", "ex_2/exec.created"}) {
+		t.Fatalf("created, oldest first = %v", got)
+	}
+	forward, err := st.ListEvents(ctx, ExecEventFilter{Since: all[1].CreatedAt, Ascending: true, Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(forward); !slices.Equal(got, []string{"ex_2/exec.created", "ex_2/exec.stopped"}) {
+		t.Fatalf("forward from ex_2's create = %v", got)
 	}
 }

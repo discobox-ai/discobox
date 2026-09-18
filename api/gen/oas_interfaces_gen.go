@@ -141,6 +141,10 @@ type ForceJobRes interface {
 	forceJobRes()
 }
 
+type GetHTTPAuditRes interface {
+	getHTTPAuditRes()
+}
+
 type GetHarnessConfigRes interface {
 	getHarnessConfigRes()
 }
@@ -207,6 +211,10 @@ type GetServerPeerRes interface {
 
 type ListCredentialVerdictsRes interface {
 	listCredentialVerdictsRes()
+}
+
+type ListExecEventsRes interface {
+	listExecEventsRes()
 }
 
 type ListHTTPAuditRes interface {

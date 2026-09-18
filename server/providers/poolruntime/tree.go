@@ -142,16 +142,22 @@ func (p *poolAgentClient) treeLease(ref sandbox.SandboxRef, scope string) (*tran
 }
 
 func (p *poolAgentClient) treeRequest(ctx context.Context, method string, ref sandbox.SandboxRef, lease *transport.HTTPClientLease, query url.Values, body io.Reader) (*http.Response, error) {
+	path := fmt.Sprintf("/api/project/%s/pool/%s/sandboxes/%s/tree",
+		url.PathEscape(ref.ProjectID), url.PathEscape(p.poolID), url.PathEscape(ref.SandboxID))
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	return p.agentRequest(ctx, method, path, lease, body)
+}
+
+// agentRequest sends a request the generated client cannot, one whose body is a
+// stream, to path on the leased pool agent. A body is a tree being written.
+func (p *poolAgentClient) agentRequest(ctx context.Context, method, path string, lease *transport.HTTPClientLease, body io.Reader) (*http.Response, error) {
 	baseURL := defaultPoolBaseURL
 	if strings.TrimSpace(lease.BaseURL) != "" {
 		baseURL = strings.TrimRight(lease.BaseURL, "/")
 	}
-	target := fmt.Sprintf("%s/api/project/%s/pool/%s/sandboxes/%s/tree",
-		baseURL, url.PathEscape(ref.ProjectID), url.PathEscape(p.poolID), url.PathEscape(ref.SandboxID))
-	if len(query) > 0 {
-		target += "?" + query.Encode()
-	}
-	req, err := http.NewRequestWithContext(ctx, method, target, body)
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +190,10 @@ func (p *poolAgentClient) treeRequest(ctx context.Context, method string, ref sa
 // imported so the server module does not reach into the agent's HTTP package
 // for a constant.
 const treeMediaType = "application/x-tar"
+
+// auditArtifactFormatHeader mirrors the pool agent's header naming a relayed
+// audit artifact's spool format, stated here for the same reason.
+const auditArtifactFormatHeader = "X-Discobox-Audit-Format"
 
 // poolAgentTransportError reports a failed hop to the pool agent without the
 // pool agent's address in it.

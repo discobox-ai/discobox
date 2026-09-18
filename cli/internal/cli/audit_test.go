@@ -250,9 +250,9 @@ func TestAuditHTTPSendsItsFilters(t *testing.T) {
 }
 
 const httpAuditBody = `{"exchanges":[
-	{"poolId":"pool-a","id":2,"createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"POST",
+	{"poolId":"pool-a","id":"http_2","createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"POST",
 	 "url":"https://api.github.com/repos/o/r/pulls\u001b[1A\u202e","host":"api.github.com","status":201,"blocked":false,"swappedUseIds":["use_x","use_y"]},
-	{"poolId":"pool-a","id":1,"createdAt":"2026-09-17T10:00:00Z","sandboxId":"sbx_1","method":"GET",
+	{"poolId":"pool-a","id":"http_1","createdAt":"2026-09-17T10:00:00Z","sandboxId":"sbx_1","method":"GET",
 	 "url":"https://evil.example/","host":"evil.example","status":0,"blocked":true,"blockedReason":"host denied","swappedUseIds":[]}
 ],"unavailablePools":[{"poolId":"pool-c","reason":"its pool agent predates the audit read"}]}`
 

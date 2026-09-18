@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -339,16 +340,47 @@ func (s *Store) LoadExecRecords(ctx context.Context) ([]execs.Exec, error) {
 	return out, nil
 }
 
-func (s *Store) ListEvents(ctx context.Context, terminalID string, limit int) ([]Event, error) {
+// ExecEventFilter narrows ListEvents. A zero field matches everything.
+type ExecEventFilter struct {
+	// ID reads the one event it names, for the reason HarnessHookFilter.ID
+	// exists.
+	ID     string
+	ExecID string
+	Type   string
+	// Since keeps events recorded at or after it, compared in UTC as the
+	// events are recorded.
+	Since time.Time
+	// Ascending returns the earliest Limit matches from Since, oldest first,
+	// for a reader following forward. Without it the most recent Limit come
+	// back newest first.
+	Ascending bool
+	Limit     int
+}
+
+func (s *Store) ListEvents(ctx context.Context, filter ExecEventFilter) ([]Event, error) {
 	if s == nil {
 		return nil, nil
 	}
+	limit := filter.Limit
 	if limit <= 0 {
 		limit = 100
 	}
-	query := s.read.WithContext(ctx).Order("created_at DESC").Limit(limit)
-	if strings.TrimSpace(terminalID) != "" {
-		query = query.Where("exec_id = ?", terminalID)
+	order := "created_at DESC, id DESC"
+	if filter.Ascending {
+		order = "created_at ASC, id ASC"
+	}
+	query := s.read.WithContext(ctx).Order(order).Limit(limit)
+	if v := strings.TrimSpace(filter.ID); v != "" {
+		query = query.Where("id = ?", v)
+	}
+	if v := strings.TrimSpace(filter.ExecID); v != "" {
+		query = query.Where("exec_id = ?", v)
+	}
+	if v := strings.TrimSpace(filter.Type); v != "" {
+		query = query.Where("type = ?", v)
+	}
+	if !filter.Since.IsZero() {
+		query = query.Where("created_at >= ?", filter.Since.UTC())
 	}
 	var rows []ExecEvent
 	if err := query.Find(&rows).Error; err != nil {
@@ -491,24 +523,62 @@ func (s *Store) RecordHarnessHook(ctx context.Context, record HarnessHookRecord)
 	return record, s.write.WithContext(ctx).Create(&row).Error
 }
 
-func (s *Store) ListHarnessHooks(ctx context.Context, terminalID string, limit int) ([]HarnessHookRecord, error) {
+// HarnessHookFilter narrows ListHarnessHooks. A zero field matches everything.
+type HarnessHookFilter struct {
+	// ID reads the one record it names, which is how a caller holding an ID
+	// from a listing reads that record in full.
+	ID         string
+	TerminalID string
+	Provider   string
+	Event      string
+	// Since keeps hooks recorded at or after it. Hooks are recorded in UTC and
+	// SQLite compares times as text carrying their offset, so the bound is
+	// compared in UTC.
+	Since time.Time
+	// Ascending takes the earliest Limit matches from Since, for a reader
+	// following the log forward. Without it the most recent Limit are taken.
+	// Either way they come back oldest first.
+	Ascending bool
+	Limit     int
+}
+
+func (s *Store) ListHarnessHooks(ctx context.Context, filter HarnessHookFilter) ([]HarnessHookRecord, error) {
 	if s == nil {
 		return nil, nil
 	}
+	limit := filter.Limit
 	if limit <= 0 {
 		limit = 100
 	}
-	query := s.read.WithContext(ctx).Order("created_at DESC").Limit(limit)
-	if strings.TrimSpace(terminalID) != "" {
-		query = query.Where("terminal_id = ?", strings.TrimSpace(terminalID))
+	order := "created_at DESC, id DESC"
+	if filter.Ascending {
+		order = "created_at ASC, id ASC"
+	}
+	query := s.read.WithContext(ctx).Order(order).Limit(limit)
+	if v := strings.TrimSpace(filter.ID); v != "" {
+		query = query.Where("id = ?", v)
+	}
+	if v := strings.TrimSpace(filter.TerminalID); v != "" {
+		query = query.Where("terminal_id = ?", v)
+	}
+	if v := strings.TrimSpace(filter.Provider); v != "" {
+		query = query.Where("provider = ?", v)
+	}
+	if v := strings.TrimSpace(filter.Event); v != "" {
+		query = query.Where("event = ?", v)
+	}
+	if !filter.Since.IsZero() {
+		query = query.Where("created_at >= ?", filter.Since.UTC())
 	}
 	var rows []HarnessHookLog
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	if !filter.Ascending {
+		slices.Reverse(rows)
+	}
 	out := make([]HarnessHookRecord, 0, len(rows))
-	for i := len(rows) - 1; i >= 0; i-- {
-		row := rows[i]
+	for _, row := range rows {
 		payload := json.RawMessage(append([]byte{}, row.Payload...))
 		if len(payload) == 0 || !json.Valid(payload) {
 			payload = json.RawMessage(`{}`)

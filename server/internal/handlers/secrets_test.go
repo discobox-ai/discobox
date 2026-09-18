@@ -237,7 +237,23 @@ func TestListCredentialVerdictsKeepsAllowTriState(t *testing.T) {
 			if got.Limit != 100 {
 				t.Fatalf("Limit = %d, want the default 100", got.Limit)
 			}
+			if got.Ascending {
+				t.Fatal("Ascending with no order asked for, want newest first")
+			}
 		})
+	}
+}
+
+func TestListCredentialVerdictsReadsForwardWhenAsked(t *testing.T) {
+	var got store.CredentialVerdictFilter
+	h := New(svcapi.Services{Secrets: capturingVerdictService{filter: &got}})
+	if _, err := h.ListCredentialVerdicts(context.Background(), serverapi.ListCredentialVerdictsParams{
+		ProjectId: "project-1", Order: serverapi.NewOptListCredentialVerdictsOrder(serverapi.ListCredentialVerdictsOrderAsc),
+	}); err != nil {
+		t.Fatalf("ListCredentialVerdicts() error = %v", err)
+	}
+	if !got.Ascending {
+		t.Fatal("order=asc did not reach the store")
 	}
 }
 

@@ -301,6 +301,12 @@ those calls for the whole wait and then said "sandbox not found". Either way the
 sandbox with a tree and no container is `ErrNoContainer`, a 409 that says it is
 being rebuilt or needs repair.
 
+**Audit reads never start a sandbox** (`requireRunning`). The harness-hooks and
+exec-events reads are what the sandbox recorded about itself (ADR 0130), and
+starting a stopped sandbox to read them would undo the stop they may be read to
+explain — ADR 0108's idle stop above all. A sandbox that is not running answers
+409 saying so; one the runtime does not know passes through to the proxy.
+
 Archived sandboxes are exempt from that latch and fail those routes with 409.
 `archive` and `delete` take the same per-sandbox mutex, and both answer only once
 the work is done rather than accepting it: each is a destructive act on state
@@ -500,6 +506,28 @@ proxy's loopback control API, with a token it signs itself.
   only that sandbox: an omitted `sandboxId` is filled from it, and a different
   one is refused with 403 rather than answered with the token's own. The
   sandbox is then carried into the proxy token, where the proxy narrows again.
+- **One exchange, in full.** `audit/http/{exchangeId}` relays every field the
+  recorder wrote, which is what a list leaves out: headers (already redacted
+  where the recorder wrote them), the rewrite rule that applied, cache state,
+  body formats and errors, upgrade byte counts, and the recorder's own
+  `enqueuedAt`/`writtenAt`. It deliberately does not carry the spool file names:
+  those are paths on the pool's disk, and what a caller can do with a body is
+  read it through the artifact route, which the `recorded` flags advertise.
+- **A follower reads by record id.** `afterId` is relayed to the proxy's
+  `after_id`, and it is what the control plane's follow uses per pool: reading
+  by time would re-walk a window of rows on every poll to catch the ones the
+  proxy's queue wrote late, and would still lose the ones that landed outside
+  it (`proxy/DESIGN.md#reading-the-proxys-audit`, ADR 0130 §5).
+- **Recordings stream, beside the contract.** `audit/http/{id}/{artifact}` is
+  hand-wired (`registerAuditRoutes`) because a request body, response body or
+  upgraded stream is unbounded bytes the generated server would buffer. It is
+  authorized and narrowed exactly as the list is, and names the spool format
+  on `X-Discobox-Audit-Format`. Its refusals are `application/problem+json`
+  like every other error here, and that is load-bearing rather than tidiness:
+  the router's own 404 for an agent too old to have the route is `text/plain`,
+  so the content type is what lets the control plane tell "this pool recorded
+  no such body" from "this agent cannot serve one" and name the pool as
+  unreadable instead (ADR 0130).
 
 ## Worker-Local HTTP Server
 

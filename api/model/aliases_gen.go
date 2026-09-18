@@ -34,6 +34,7 @@ type GitSourceCheckout = apigen.GitSourceCheckout
 type GitSourceDestination = apigen.GitSourceDestination
 type GitSourceWorkspace = apigen.GitSourceWorkspace
 type HTTPAuditExchange = apigen.HTTPAuditExchange
+type HTTPAuditExchangeDetail = apigen.HTTPAuditExchangeDetail
 type HarnessConfig = apigen.HarnessConfig
 type HarnessConfigFile = apigen.HarnessConfigFile
 type HarnessConfigPort = apigen.HarnessConfigPort

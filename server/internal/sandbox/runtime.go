@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -235,28 +236,84 @@ type HTTPAuditQuery struct {
 	Host      string
 	UseID     string
 	Since     time.Time
-	Limit     int
+	// MinStatus and MaxStatus bound the response status, inclusive; zero
+	// leaves that side open.
+	MinStatus int
+	MaxStatus int
+	// Blocked selects refused exchanges when true and admitted ones when
+	// false; nil is both.
+	Blocked *bool
+	// Ascending reads oldest first, for a follower reading forward from Since.
+	Ascending bool
+	// AfterID reads the records this pool wrote after one already read, in
+	// write order, and takes precedence over Since: it is the cursor a follower
+	// of this pool's trail uses. IDs are per pool, so it is only meaningful
+	// with the pool it came from.
+	AfterID auditid.ExchangeID
+	Limit   int
+}
+
+// HTTPAuditArtifact is a body or upgraded stream recorded beside an audited
+// exchange, still being read. Closing it releases whatever reaches the pool.
+type HTTPAuditArtifact struct {
+	Body        io.ReadCloser
+	Format      string
+	ContentType string
 }
 
 // HTTPAuditExchange is one HTTP exchange a pool proxy audited. Headers and
 // bodies stay on the pool.
 type HTTPAuditExchange struct {
-	ID               int64     `json:"id"`
-	CreatedAt        time.Time `json:"createdAt"`
-	SandboxID        string    `json:"sandboxId"`
-	Method           string    `json:"method"`
-	URL              string    `json:"url"`
-	Host             string    `json:"host"`
-	Status           int       `json:"status"`
-	DurationMillis   int64     `json:"durationMillis"`
-	Blocked          bool      `json:"blocked"`
-	BlockedReason    string    `json:"blockedReason,omitempty"`
-	CacheHit         bool      `json:"cacheHit"`
-	SwappedUseIDs    []string  `json:"swappedUseIds"`
-	RequestBodyBytes int64     `json:"requestBodyBytes"`
-	ResponseBytes    int64     `json:"responseBytes"`
-	Upgrade          bool      `json:"upgrade"`
-	UpgradeType      string    `json:"upgradeType,omitempty"`
+	ID               auditid.ExchangeID `json:"id"`
+	CreatedAt        time.Time          `json:"createdAt"`
+	SandboxID        string             `json:"sandboxId"`
+	Method           string             `json:"method"`
+	URL              string             `json:"url"`
+	Host             string             `json:"host"`
+	Status           int                `json:"status"`
+	DurationMillis   int64              `json:"durationMillis"`
+	Blocked          bool               `json:"blocked"`
+	BlockedReason    string             `json:"blockedReason,omitempty"`
+	CacheHit         bool               `json:"cacheHit"`
+	SwappedUseIDs    []string           `json:"swappedUseIds"`
+	RequestBodyBytes int64              `json:"requestBodyBytes"`
+	ResponseBytes    int64              `json:"responseBytes"`
+	Upgrade          bool               `json:"upgrade"`
+	UpgradeType      string             `json:"upgradeType,omitempty"`
+}
+
+// HTTPAuditExchangeDetail is one audited exchange in full: every field the
+// pool's proxy recorded about it, rather than the summary a list carries
+// (ADR 0130 §5). The bodies and any upgraded stream stay on the pool and are
+// read with OpenHTTPAuditArtifact; the Recorded flags say which of them exist.
+//
+// Headers are redacted by the recorder as it writes them, so a credential the
+// proxy swapped into a request was never in the row this returns.
+type HTTPAuditExchangeDetail struct {
+	HTTPAuditExchange
+	EnqueuedAt           time.Time           `json:"enqueuedAt"`
+	WrittenAt            time.Time           `json:"writtenAt"`
+	RequestHeaders       map[string][]string `json:"requestHeaders"`
+	ResponseHeaders      map[string][]string `json:"responseHeaders"`
+	AppliedRuleID        string              `json:"appliedRuleId,omitempty"`
+	AppliedPattern       string              `json:"appliedPattern,omitempty"`
+	AppliedHeaders       []string            `json:"appliedHeaders"`
+	CacheKey             string              `json:"cacheKey,omitempty"`
+	CacheStored          bool                `json:"cacheStored"`
+	CacheError           string              `json:"cacheError,omitempty"`
+	RequestBodyFormat    string              `json:"requestBodyFormat,omitempty"`
+	RequestBodyError     string              `json:"requestBodyError,omitempty"`
+	RequestBodyRecorded  bool                `json:"requestBodyRecorded"`
+	ResponseBodyFormat   string              `json:"responseBodyFormat,omitempty"`
+	ResponseBodyError    string              `json:"responseBodyError,omitempty"`
+	ResponseBodyRecorded bool                `json:"responseBodyRecorded"`
+	UpgradeC2SBytes      int64               `json:"upgradeC2sBytes"`
+	UpgradeS2CBytes      int64               `json:"upgradeS2cBytes"`
+	StreamSessionID      string              `json:"streamSessionId,omitempty"`
+	StreamFormat         string              `json:"streamFormat,omitempty"`
+	StreamRecorded       bool                `json:"streamRecorded"`
+	StreamDroppedChunks  int64               `json:"streamDroppedChunks"`
+	StreamDroppedBytes   int64               `json:"streamDroppedBytes"`
 }
 
 // PoolRuntime is the provider surface for a pool's own runtime host: the pool
@@ -280,6 +337,15 @@ type PoolRuntime interface {
 	// narrowed to it by the pool agent's token, not only by the filter. An agent
 	// too old to have the operation is ErrPoolAgentUnsupported.
 	ListHTTPAudit(ctx context.Context, pool *model.Pool, query HTTPAuditQuery) ([]HTTPAuditExchange, error)
+	// GetHTTPAudit reads one audited exchange in full — every field the pool's
+	// proxy recorded — narrowed to sandboxID when it is set. A record outside
+	// that scope is ErrNotFound.
+	GetHTTPAudit(ctx context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID) (*HTTPAuditExchangeDetail, error)
+	// OpenHTTPAuditArtifact streams one artifact recorded beside audit row id on
+	// the pool — "request-body", "response-body" or "stream" — narrowed to
+	// sandboxID when it is set. A row outside that scope, or with no such
+	// artifact, is ErrNotFound.
+	OpenHTTPAuditArtifact(ctx context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID, artifact string) (*HTTPAuditArtifact, error)
 	// OpenConsole attaches to the pool host's administrative console: a root
 	// shell in the host's own namespaces, for operators debugging the backend
 	// itself. It deliberately does not go through the pool agent, because the

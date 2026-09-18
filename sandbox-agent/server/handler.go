@@ -42,10 +42,10 @@ type handler struct {
 }
 
 type terminalStore interface {
-	ListEvents(context.Context, string, int) ([]store.Event, error)
+	ListEvents(context.Context, store.ExecEventFilter) ([]store.Event, error)
 	RecordResourceSample(context.Context, store.ResourceSample, int) (store.ResourceSample, error)
 	ListResourceSamples(context.Context, string, int) ([]store.ResourceSample, error)
-	ListHarnessHooks(context.Context, string, int) ([]store.HarnessHookRecord, error)
+	ListHarnessHooks(context.Context, store.HarnessHookFilter) ([]store.HarnessHookRecord, error)
 }
 
 func (h *handler) AttachSandboxExec(context.Context, sandboxapi.AttachSandboxExecParams) (*sandboxapi.AttachSandboxExecSwitchingProtocols, error) {
@@ -413,6 +413,32 @@ func (h *handler) ListSandboxExecEvents(ctx context.Context, params sandboxapi.L
 	return &response, nil
 }
 
+// ListExecEvents lists lifecycle events across every exec in the sandbox. Unlike
+// ListSandboxExecEvents it does not require the exec to still be known: an
+// audit read asks about execs that may have ended and been removed, and their
+// events outlive them in the store.
+func (h *handler) ListExecEvents(ctx context.Context, params sandboxapi.ListExecEventsParams) (*sandboxapi.SandboxExecEventsResponse, error) {
+	response := sandboxapi.SandboxExecEventsResponse{Events: []sandboxapi.SandboxExecEvent{}}
+	if h.store == nil {
+		return &response, nil
+	}
+	events, err := h.store.ListEvents(ctx, store.ExecEventFilter{
+		ID:        params.ID.Or(""),
+		ExecID:    params.ExecId.Or(""),
+		Type:      params.Type.Or(""),
+		Since:     params.Since.Or(time.Time{}),
+		Ascending: params.Order.Or(sandboxapi.ListExecEventsOrderDesc) == sandboxapi.ListExecEventsOrderAsc,
+		Limit:     params.Limit.Or(100),
+	})
+	if err != nil {
+		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+	}
+	for _, event := range events {
+		response.Events = append(response.Events, sandboxExecEvent(event))
+	}
+	return &response, nil
+}
+
 func (h *handler) GetSandboxExecResources(ctx context.Context, params sandboxapi.GetSandboxExecResourcesParams) (*sandboxapi.ResourceSnapshot, error) {
 	sample, err := h.collectResourceSample(ctx, params.ExecId)
 	if err != nil {
@@ -452,7 +478,15 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 	if h.store == nil {
 		return &sandboxapi.HarnessHookLogsResponse{}, nil
 	}
-	records, err := h.store.ListHarnessHooks(ctx, params.TerminalId.Or(""), params.Limit.Or(100))
+	records, err := h.store.ListHarnessHooks(ctx, store.HarnessHookFilter{
+		ID:         params.ID.Or(""),
+		TerminalID: params.TerminalId.Or(""),
+		Provider:   params.Provider.Or(""),
+		Event:      params.Event.Or(""),
+		Since:      params.Since.Or(time.Time{}),
+		Ascending:  params.Order.Or(sandboxapi.ListHarnessHooksOrderDesc) == sandboxapi.ListHarnessHooksOrderAsc,
+		Limit:      params.Limit.Or(100),
+	})
 	if err != nil {
 		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
 	}
@@ -870,7 +904,7 @@ func (h *handler) listEvents(ctx context.Context, execID string, limit int) ([]s
 	if h.store == nil {
 		return nil, nil
 	}
-	return h.store.ListEvents(ctx, execID, limit)
+	return h.store.ListEvents(ctx, store.ExecEventFilter{ExecID: execID, Limit: limit})
 }
 
 func (h *handler) listResourceSamples(ctx context.Context, execID string, limit int) ([]store.ResourceSample, error) {

@@ -14,6 +14,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY agentcreds ./agentcreds
 COPY api ./api
+COPY auditid ./auditid
 COPY controlplane ./controlplane
 COPY harness ./harness
 COPY hostscope ./hostscope

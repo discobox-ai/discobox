@@ -1,12 +1,16 @@
 package handlers
 
 import (
-	"time"
-
 	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
@@ -106,18 +110,47 @@ func (h *Handler) ReconcilePool(ctx context.Context, params serverapi.ReconcileP
 }
 
 func (h *Handler) ListHTTPAudit(ctx context.Context, params serverapi.ListHTTPAuditParams) (serverapi.ListHTTPAuditRes, error) {
-	result, err := h.services.Pools.ListHTTPAudit(ctx, params.ProjectId, services.HTTPAuditFilter{
+	filter := services.HTTPAuditFilter{
 		SandboxID: params.SandboxId.Or(""),
 		PoolID:    params.PoolId.Or(""),
 		Host:      params.Host.Or(""),
 		UseID:     params.UseId.Or(""),
 		Since:     params.Since.Or(time.Time{}),
+		MinStatus: params.MinStatus.Or(0),
+		MaxStatus: params.MaxStatus.Or(0),
+		Ascending: params.Order.Or(serverapi.ListHTTPAuditOrderDesc) == serverapi.ListHTTPAuditOrderAsc,
 		Limit:     params.Limit.Or(100),
-	})
+	}
+	if blocked, ok := params.Blocked.Get(); ok {
+		filter.Blocked = &blocked
+	}
+	after, err := parsePoolCursors(params.After)
+	if err != nil {
+		return apiError(err), nil
+	}
+	filter.After = after
+	result, err := h.services.Pools.ListHTTPAudit(ctx, params.ProjectId, filter)
 	if err != nil {
 		return apiError(err), nil
 	}
 	body, err := services.Convert[apimodel.ListHTTPAuditBody](result)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+// GetHTTPAudit reads one audited exchange in full (ADR 0130 §5).
+func (h *Handler) GetHTTPAudit(ctx context.Context, params serverapi.GetHTTPAuditParams) (serverapi.GetHTTPAuditRes, error) {
+	id, err := auditid.ParseExchange(params.ExchangeId)
+	if err != nil {
+		return apiError(apperrors.NewStatusError(http.StatusBadRequest, err.Error())), nil
+	}
+	detail, err := h.services.Pools.GetHTTPAudit(ctx, params.ProjectId, params.PoolId, params.SandboxId.Or(""), id)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.HTTPAuditExchangeDetail](detail)
 	if err != nil {
 		return nil, err
 	}
@@ -190,4 +223,30 @@ func (h *Handler) MintSandboxAgentStatusTokens(ctx context.Context, req *apimode
 		return nil, err
 	}
 	return &body, nil
+}
+
+// parsePoolCursors reads the `after` parameter: one `poolId:http_<row>` per
+// pool the caller already has records from. A record ID only means anything on
+// the pool that issued it, so the pool travels with it rather than the API
+// pretending one cursor covers a merged read.
+func parsePoolCursors(values []string) (map[string]auditid.ExchangeID, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	after := make(map[string]auditid.ExchangeID, len(values))
+	for _, value := range values {
+		poolID, recordID, ok := strings.Cut(value, ":")
+		if !ok || poolID == "" {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("after %q: want poolId:%s<row>", value, auditid.ExchangePrefix))
+		}
+		id, err := auditid.ParseExchange(recordID)
+		if err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("after %q: %s", value, err))
+		}
+		// The highest id wins, so a repeated pool cannot read a row twice.
+		if id > after[poolID] {
+			after[poolID] = id
+		}
+	}
+	return after, nil
 }

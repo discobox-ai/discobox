@@ -210,13 +210,13 @@ func TestRootCommandHelp(t *testing.T) {
 	if command, _, err := cmd.Find([]string{"shell"}); err != nil || command.Name() != "shell" {
 		t.Fatalf("find root shell: command=%v err=%v", command, err)
 	}
-	for _, unavailableAtRoot := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
+	for _, unavailableAtRoot := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "hooks", "audit", "server"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
 		}
 	}
-	for _, child := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
+	for _, child := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "audit", "server"} {
 		command, args, err := cmd.Find([]string{"admin", child})
 		if err != nil || len(args) != 0 || command.Name() != child {
 			t.Fatalf("find admin child %q: command=%v args=%v err=%v", child, command, args, err)

@@ -3078,9 +3078,9 @@ components:
                     description: Destination host
                     type: string
                 id:
-                    description: Audit row ID, unique within its pool
-                    format: int64
-                    type: integer
+                    description: Audit record ID, written http_<row>, unique within its pool and ordered by write. Pass it to get-http-audit or to the recording route.
+                    pattern: ^http_[0-9]+$
+                    type: string
                 method:
                     description: HTTP method
                     type: string
@@ -3126,6 +3126,174 @@ components:
                 - status
                 - blocked
                 - swappedUseIds
+            type: object
+        HTTPAuditExchangeDetail:
+            additionalProperties: false
+            description: "One audited HTTP exchange in full: every field the pool proxy's recorder wrote about it (ADR 0130 §5). Headers are stored already redacted, so a credential swapped into a request is never in one. The bodies and the upgraded stream themselves stay on the pool and are read through the recording route."
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/HTTPAuditExchangeDetail.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                appliedHeaders:
+                    description: Header names the proxy's rewrite rule set
+                    items:
+                        type: string
+                    type: array
+                appliedPattern:
+                    description: The destination pattern that matched
+                    type: string
+                appliedRuleId:
+                    description: The proxy rewrite rule that applied
+                    type: string
+                blocked:
+                    description: True when the proxy's destination policy refused the request
+                    type: boolean
+                blockedReason:
+                    description: Why the request was refused
+                    type: string
+                cacheError:
+                    description: Why the response cache could not be used
+                    type: string
+                cacheHit:
+                    description: True when the response came from the pool's response cache
+                    type: boolean
+                cacheKey:
+                    description: Key the response cache stored or looked up under
+                    type: string
+                cacheStored:
+                    description: True when the response was written to the cache
+                    type: boolean
+                createdAt:
+                    description: When the exchange happened, stamped as it ended
+                    format: date-time
+                    type: string
+                durationMillis:
+                    description: How long the exchange took, in milliseconds
+                    format: int64
+                    type: integer
+                enqueuedAt:
+                    description: When the recorder queued the row; its distance from createdAt is the recorder's lag
+                    format: date-time
+                    type: string
+                host:
+                    description: Destination host
+                    type: string
+                id:
+                    description: Audit record ID, written http_<row>, unique within its pool and ordered by write
+                    pattern: ^http_[0-9]+$
+                    type: string
+                method:
+                    description: HTTP method
+                    type: string
+                poolId:
+                    description: Pool whose proxy recorded the exchange
+                    type: string
+                requestBodyBytes:
+                    description: Size of the recorded request body
+                    format: int64
+                    type: integer
+                requestBodyError:
+                    description: Why the request body was not recorded in full
+                    type: string
+                requestBodyFormat:
+                    description: How the request body was spooled
+                    type: string
+                requestBodyRecorded:
+                    description: True when a request body was spooled and can be read through the recording route
+                    type: boolean
+                requestHeaders:
+                    additionalProperties:
+                        items:
+                            type: string
+                        type: array
+                    description: Request headers as recorded, with sensitive and swapped ones already redacted
+                    type: object
+                responseBodyError:
+                    description: Why the response body was not recorded in full
+                    type: string
+                responseBodyFormat:
+                    description: How the response body was spooled
+                    type: string
+                responseBodyRecorded:
+                    description: True when a response body was spooled and can be read through the recording route
+                    type: boolean
+                responseBytes:
+                    description: Size of the response body
+                    format: int64
+                    type: integer
+                responseHeaders:
+                    additionalProperties:
+                        items:
+                            type: string
+                        type: array
+                    description: Response headers as recorded
+                    type: object
+                sandboxId:
+                    description: Sandbox whose client certificate made the request. It may no longer exist.
+                    type: string
+                status:
+                    description: Response status; zero when no response was received
+                    type: integer
+                streamDroppedBytes:
+                    description: Upgraded stream bytes the recorder dropped under load
+                    format: int64
+                    type: integer
+                streamDroppedChunks:
+                    description: Upgraded stream chunks the recorder dropped under load
+                    format: int64
+                    type: integer
+                streamFormat:
+                    description: How the upgraded stream was spooled
+                    type: string
+                streamRecorded:
+                    description: True when an upgraded stream was spooled and can be read through the recording route
+                    type: boolean
+                streamSessionId:
+                    description: The upgraded stream's session
+                    type: string
+                swappedUseIds:
+                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId (ADR 0130 §3).
+                    items:
+                        type: string
+                    type: array
+                upgrade:
+                    description: True for an upgraded (e.g. WebSocket) connection
+                    type: boolean
+                upgradeC2sBytes:
+                    description: Bytes the sandbox sent over the upgraded connection
+                    format: int64
+                    type: integer
+                upgradeS2cBytes:
+                    description: Bytes the upstream sent over the upgraded connection
+                    format: int64
+                    type: integer
+                upgradeType:
+                    description: The upgrade protocol
+                    type: string
+                url:
+                    description: Request URL, with any swapped query value left as its sentinel
+                    type: string
+                writtenAt:
+                    description: When the recorder wrote the row, which is when it became readable
+                    format: date-time
+                    type: string
+            required:
+                - poolId
+                - id
+                - createdAt
+                - sandboxId
+                - method
+                - url
+                - host
+                - status
+                - blocked
+                - swappedUseIds
+                - requestHeaders
+                - responseHeaders
+                - appliedHeaders
             type: object
         UnavailableAuditPool:
             additionalProperties: false
@@ -7118,6 +7286,12 @@ paths:
         get:
             operationId: list-harness-hooks
             parameters:
+                - description: Only the hook record with this ID, which is how one record is read in full
+                  in: query
+                  name: id
+                  schema:
+                    description: Only the hook record with this ID, which is how one record is read in full
+                    type: string
                 - description: Project that owns the sandbox.
                   in: path
                   name: projectId
@@ -7144,6 +7318,35 @@ paths:
                     maximum: 1000
                     minimum: 1
                     type: integer
+                - description: Only hooks from this provider (e.g. claude-code).
+                  in: query
+                  name: provider
+                  required: false
+                  schema:
+                    type: string
+                - description: Only hooks for this provider event (e.g. PreToolUse).
+                  in: query
+                  name: event
+                  required: false
+                  schema:
+                    type: string
+                - description: Only hooks recorded at or after this time.
+                  in: query
+                  name: since
+                  required: false
+                  schema:
+                    format: date-time
+                    type: string
+                - description: asc returns the earliest matching hooks at or after since, for reading forward; desc, the default, returns the most recent.
+                  in: query
+                  name: order
+                  required: false
+                  schema:
+                    default: desc
+                    enum:
+                        - asc
+                        - desc
+                    type: string
             responses:
                 200:
                     content:
@@ -7160,6 +7363,83 @@ paths:
             summary: List recent sandbox harness hook payload logs.
             tags:
                 - Harness Hooks
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events:
+        get:
+            description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and read only from a running sandbox; the read never starts one.
+            operationId: list-exec-events
+            parameters:
+                - description: Only the event with this ID, which is how one record is read in full
+                  in: query
+                  name: id
+                  schema:
+                    description: Only the event with this ID, which is how one record is read in full
+                    type: string
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Only events for this exec.
+                  in: query
+                  name: execId
+                  required: false
+                  schema:
+                    type: string
+                - description: Only events of this type (e.g. exec.started).
+                  in: query
+                  name: type
+                  required: false
+                  schema:
+                    type: string
+                - description: Only events recorded at or after this time.
+                  in: query
+                  name: since
+                  required: false
+                  schema:
+                    format: date-time
+                    type: string
+                - description: asc returns the earliest matching events at or after since, for reading forward; desc, the default, returns the most recent.
+                  in: query
+                  name: order
+                  required: false
+                  schema:
+                    default: desc
+                    enum:
+                        - asc
+                        - desc
+                    type: string
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  required: false
+                  schema:
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxExecEventsResponse'
+                    description: Exec lifecycle events.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List lifecycle events for every exec in a sandbox.
+            tags:
+                - Sandbox Execs
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/status:
         get:
@@ -8452,6 +8732,49 @@ paths:
                     maximum: 1000
                     minimum: 1
                     type: integer
+                - description: 'Read forward from a cursor instead of a time, one per pool, as poolId:http_<row>. A pool named here is read in write order after that record; a pool not named is read by since.'
+                  explode: true
+                  in: query
+                  name: after
+                  schema:
+                    items:
+                      pattern: ^[A-Za-z0-9_-]+:http_[0-9]+$
+                      type: string
+                    maxItems: 100
+                    type: array
+                  style: form
+                - description: Only exchanges whose response status is at least this
+                  in: query
+                  name: minStatus
+                  schema:
+                    description: Only exchanges whose response status is at least this
+                    maximum: 599
+                    minimum: 0
+                    type: integer
+                - description: Only exchanges whose response status is at most this
+                  in: query
+                  name: maxStatus
+                  schema:
+                    description: Only exchanges whose response status is at most this
+                    maximum: 599
+                    minimum: 0
+                    type: integer
+                - description: Only exchanges the destination policy refused when true, or let through when false
+                  in: query
+                  name: blocked
+                  schema:
+                    description: Only exchanges the destination policy refused when true, or let through when false
+                    type: boolean
+                - description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                  in: query
+                  name: order
+                  schema:
+                    default: desc
+                    description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                    enum:
+                        - asc
+                        - desc
+                    type: string
             responses:
                 200:
                     content:
@@ -8468,11 +8791,66 @@ paths:
             summary: List audited HTTP exchanges
             tags:
                 - Pools
+    /projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}:
+        get:
+            description: One audited HTTP exchange in full, read from the pool that recorded it (ADR 0130 §5). The pool is in the path because an audit record ID is only unique within it. The bodies and any upgraded stream are read separately, through the recording route beside this one.
+            operationId: get-http-audit
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    description: Project ID
+                    type: string
+                - description: Pool whose proxy recorded the exchange
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool whose proxy recorded the exchange
+                    type: string
+                - description: Audit record ID, as a list reports it
+                  in: path
+                  name: exchangeId
+                  required: true
+                  schema:
+                    description: Audit record ID, as a list reports it
+                    pattern: ^http_[0-9]+$
+                    type: string
+                - description: Only an exchange made by this sandbox, which need not still exist
+                  in: query
+                  name: sandboxId
+                  schema:
+                    description: Only an exchange made by this sandbox, which need not still exist
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HTTPAuditExchangeDetail'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Read one audited HTTP exchange in full
+            tags:
+                - Pools
     /projects/{projectId}/credential-verdicts:
         get:
             description: The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091). Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId instead.
             operationId: list-credential-verdicts
             parameters:
+                - description: Only the verdict with this ID, which is how one record is read in full
+                  in: query
+                  name: id
+                  schema:
+                    description: Only the verdict with this ID, which is how one record is read in full
+                    type: string
                 - description: Project ID
                   in: path
                   name: projectId
@@ -8520,6 +8898,16 @@ paths:
                     maximum: 1000
                     minimum: 1
                     type: integer
+                - description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                  in: query
+                  name: order
+                  schema:
+                    default: desc
+                    description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                    enum:
+                        - asc
+                        - desc
+                    type: string
             responses:
                 200:
                     content:

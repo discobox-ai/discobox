@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -389,6 +390,14 @@ func (stubPoolProvider) RemovePool(context.Context, sandbox.PoolManager, *model.
 
 func (stubPoolProvider) ListHTTPAudit(context.Context, *model.Pool, sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
 	return nil, nil
+}
+
+func (stubPoolProvider) OpenHTTPAuditArtifact(context.Context, *model.Pool, string, auditid.ExchangeID, string) (*sandbox.HTTPAuditArtifact, error) {
+	return nil, sandbox.ErrNotFound
+}
+
+func (stubPoolProvider) GetHTTPAudit(context.Context, *model.Pool, string, auditid.ExchangeID) (*sandbox.HTTPAuditExchangeDetail, error) {
+	return nil, sandbox.ErrNotFound
 }
 
 func (stubPoolProvider) ClearCache(context.Context, *model.Pool) ([]string, error) {

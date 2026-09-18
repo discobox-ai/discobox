@@ -433,9 +433,9 @@ components:
                     description: Destination host
                     type: string
                 id:
-                    description: Audit row ID, unique within this pool
-                    format: int64
-                    type: integer
+                    description: Audit record ID, written http_<row>, unique within this pool and ordered by write
+                    pattern: ^http_[0-9]+$
+                    type: string
                 method:
                     description: HTTP method
                     type: string
@@ -477,6 +477,175 @@ components:
             - status
             - blocked
             - swappedUseIds
+            type: object
+        PoolHTTPAuditExchangeDetail:
+            additionalProperties: false
+            description: |-
+                One audited HTTP exchange in full: every field the pool proxy's recorder
+                wrote about it (ADR 0130 §5). Headers are stored already redacted, so a
+                credential swapped into a request is never in one. The bodies and the
+                upgraded stream themselves stay on the pool and are read through the
+                artifact route.
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PoolHTTPAuditExchangeDetail.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                appliedHeaders:
+                    description: Header names the proxy's rewrite rule set
+                    items:
+                        type: string
+                    type: array
+                appliedPattern:
+                    description: The destination pattern that matched
+                    type: string
+                appliedRuleId:
+                    description: The proxy rewrite rule that applied
+                    type: string
+                blocked:
+                    description: True when the proxy's destination policy refused the request
+                    type: boolean
+                blockedReason:
+                    description: Why the request was refused
+                    type: string
+                cacheError:
+                    description: Why the response cache could not be used
+                    type: string
+                cacheHit:
+                    description: True when the response came from the pool's response cache
+                    type: boolean
+                cacheKey:
+                    description: Key the response cache stored or looked up under
+                    type: string
+                cacheStored:
+                    description: True when the response was written to the cache
+                    type: boolean
+                createdAt:
+                    description: When the exchange happened, stamped as it ended
+                    format: date-time
+                    type: string
+                durationMillis:
+                    description: How long the exchange took, in milliseconds
+                    format: int64
+                    type: integer
+                enqueuedAt:
+                    description: When the recorder queued the row; its distance from createdAt is the recorder's lag
+                    format: date-time
+                    type: string
+                host:
+                    description: Destination host
+                    type: string
+                id:
+                    description: Audit record ID, written http_<row>, unique within this pool and ordered by write
+                    pattern: ^http_[0-9]+$
+                    type: string
+                method:
+                    description: HTTP method
+                    type: string
+                requestBodyBytes:
+                    description: Size of the recorded request body
+                    format: int64
+                    type: integer
+                requestBodyError:
+                    description: Why the request body was not recorded in full
+                    type: string
+                requestBodyFormat:
+                    description: How the request body was spooled
+                    type: string
+                requestBodyRecorded:
+                    description: True when a request body was spooled and can be read
+                    type: boolean
+                requestHeaders:
+                    additionalProperties:
+                        items:
+                            type: string
+                        type: array
+                    description: Request headers as recorded, with sensitive and swapped ones already redacted
+                    type: object
+                responseBodyError:
+                    description: Why the response body was not recorded in full
+                    type: string
+                responseBodyFormat:
+                    description: How the response body was spooled
+                    type: string
+                responseBodyRecorded:
+                    description: True when a response body was spooled and can be read
+                    type: boolean
+                responseBytes:
+                    description: Size of the response body
+                    format: int64
+                    type: integer
+                responseHeaders:
+                    additionalProperties:
+                        items:
+                            type: string
+                        type: array
+                    description: Response headers as recorded
+                    type: object
+                sandboxId:
+                    description: Sandbox whose client certificate made the request
+                    type: string
+                status:
+                    description: Response status; zero when no response was received
+                    type: integer
+                streamDroppedBytes:
+                    description: Upgraded stream bytes the recorder dropped under load
+                    format: int64
+                    type: integer
+                streamDroppedChunks:
+                    description: Upgraded stream chunks the recorder dropped under load
+                    format: int64
+                    type: integer
+                streamFormat:
+                    description: How the upgraded stream was spooled
+                    type: string
+                streamRecorded:
+                    description: True when an upgraded stream was spooled and can be read
+                    type: boolean
+                streamSessionId:
+                    description: The upgraded stream's session
+                    type: string
+                swappedUseIds:
+                    description: Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3)
+                    items:
+                        type: string
+                    type: array
+                upgrade:
+                    description: True for an upgraded (e.g. WebSocket) connection
+                    type: boolean
+                upgradeC2sBytes:
+                    description: Bytes the sandbox sent over the upgraded connection
+                    format: int64
+                    type: integer
+                upgradeS2cBytes:
+                    description: Bytes the upstream sent over the upgraded connection
+                    format: int64
+                    type: integer
+                upgradeType:
+                    description: The upgrade protocol
+                    type: string
+                url:
+                    description: Request URL, with any swapped query value left as its sentinel
+                    type: string
+                writtenAt:
+                    description: When the recorder wrote the row, which is when it became readable
+                    format: date-time
+                    type: string
+            required:
+            - id
+            - createdAt
+            - sandboxId
+            - method
+            - url
+            - host
+            - status
+            - blocked
+            - swappedUseIds
+            - requestHeaders
+            - responseHeaders
+            - appliedHeaders
             type: object
         PoolHTTPAuditResponse:
             additionalProperties: false
@@ -1175,6 +1344,44 @@ paths:
                     maximum: 1000
                     minimum: 1
                     type: integer
+            -   description: Only exchanges written after this record, in write order; takes precedence over since and order
+                in: query
+                name: afterId
+                schema:
+                    description: Only exchanges written after this record, in write order; takes precedence over since and order
+                    pattern: ^http_[0-9]+$
+                    type: string
+            -   description: Only exchanges whose response status is at least this
+                in: query
+                name: minStatus
+                schema:
+                    description: Only exchanges whose response status is at least this
+                    maximum: 599
+                    minimum: 0
+                    type: integer
+            -   description: Only exchanges whose response status is at most this
+                in: query
+                name: maxStatus
+                schema:
+                    description: Only exchanges whose response status is at most this
+                    maximum: 599
+                    minimum: 0
+                    type: integer
+            -   description: Only exchanges the destination policy refused when true, or let through when false
+                in: query
+                name: blocked
+                schema:
+                    description: Only exchanges the destination policy refused when true, or let through when false
+                    type: boolean
+            -   description: asc returns the oldest matches first, for reading forward from a since bound
+                in: query
+                name: order
+                schema:
+                    default: desc
+                    enum:
+                    - asc
+                    - desc
+                    type: string
             responses:
                 '200':
                     content:
@@ -1191,6 +1398,61 @@ paths:
             security:
             -   poolBearerAuth: []
             summary: List the pool proxy's audited HTTP exchanges
+            tags:
+            - Pool Sandboxes
+    "/api/project/{projectId}/pool/{poolId}/audit/http/{exchangeId}":
+        get:
+            description: |-
+                One audited HTTP exchange in full, relayed from the pool proxy's loopback
+                control API (ADR 0130 §5). A request token that names a sandbox narrows
+                the read to it, whatever sandboxId says, so a row belonging to another
+                sandbox is not found rather than refused.
+            operationId: pool-get-http-audit
+            parameters:
+            -   description: Project ID
+                in: path
+                name: projectId
+                required: true
+                schema:
+                    description: Project ID
+                    type: string
+            -   description: Pool ID
+                in: path
+                name: poolId
+                required: true
+                schema:
+                    description: Pool ID
+                    type: string
+            -   description: Audit record ID, as the list reports it
+                in: path
+                name: exchangeId
+                required: true
+                schema:
+                    description: Audit record ID, as the list reports it
+                    pattern: ^http_[0-9]+$
+                    type: string
+            -   description: Only an exchange made by this sandbox, which need not still exist
+                in: query
+                name: sandboxId
+                schema:
+                    description: Only an exchange made by this sandbox, which need not still exist
+                    type: string
+            responses:
+                '200':
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/PoolHTTPAuditExchangeDetail"
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                "$ref": "#/components/schemas/ErrorModel"
+                    description: Error
+            security:
+            -   poolBearerAuth: []
+            summary: Read one audited HTTP exchange in full
             tags:
             - Pool Sandboxes
     "/api/project/{projectId}/pool/{poolId}/pool-sync":

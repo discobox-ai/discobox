@@ -35,6 +35,15 @@ type Handler interface {
 	//
 	// DELETE /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}
 	PoolDeleteSandbox(ctx context.Context, params PoolDeleteSandboxParams) error
+	// PoolGetHTTPAudit implements pool-get-http-audit operation.
+	//
+	// One audited HTTP exchange in full, relayed from the pool proxy's loopback
+	// control API (ADR 0130 §5). A request token that names a sandbox narrows
+	// the read to it, whatever sandboxId says, so a row belonging to another
+	// sandbox is not found rather than refused.
+	//
+	// GET /api/project/{projectId}/pool/{poolId}/audit/http/{exchangeId}
+	PoolGetHTTPAudit(ctx context.Context, params PoolGetHTTPAuditParams) (*PoolHTTPAuditExchangeDetail, error)
 	// PoolGetSandbox implements pool-get-sandbox operation.
 	//
 	// Get pool sandbox.

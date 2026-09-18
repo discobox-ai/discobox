@@ -22,6 +22,9 @@ func (s *Store) CreateCredentialVerdict(ctx context.Context, verdict *model.Cred
 // CredentialVerdictFilter narrows ListCredentialVerdicts. A zero field matches
 // everything, so the zero filter is the whole project.
 type CredentialVerdictFilter struct {
+	// ID reads the one verdict it names, which is how a caller holding an ID
+	// from a listing reads that verdict in full.
+	ID string
 	// SandboxID is matched against the recorded ID, never resolved through the
 	// sandboxes table: the trail outlives the sandbox it describes, and the
 	// sandboxes most worth asking about are often already purged.
@@ -32,12 +35,15 @@ type CredentialVerdictFilter struct {
 	Allow *bool
 	// Since keeps verdicts recorded at or after it.
 	Since time.Time
+	// Ascending returns the oldest matches first, so a follower reading from
+	// Since takes the rows right after its cursor rather than the newest ones.
+	Ascending bool
 	// Limit caps the rows returned; zero returns every match.
 	Limit int
 }
 
 // ListCredentialVerdicts returns a project's recorded verdicts that match
-// filter, newest first — the read side of ADR 0091's trail, served by
+// filter, newest first unless the filter reads forward — the read side of ADR 0091's trail, served by
 // list-credential-verdicts.
 func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, filter CredentialVerdictFilter) ([]model.CredentialVerdict, error) {
 	read, err := s.getRead(ctx)
@@ -45,6 +51,9 @@ func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, fi
 		return nil, err
 	}
 	query := read.Where("project_id = ?", projectID)
+	if filter.ID != "" {
+		query = query.Where("id = ?", filter.ID)
+	}
 	if filter.SandboxID != "" {
 		query = query.Where("sandbox_id = ?", filter.SandboxID)
 	}
@@ -71,6 +80,11 @@ func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, fi
 	// a stable order, which is what lets a reader compare two listings. The
 	// created_at order is only an order in time because every row carries the
 	// same offset; see the since bound above.
-	err = query.Order("created_at DESC").Order("id DESC").Find(&out).Error
+	if filter.Ascending {
+		query = query.Order("created_at ASC").Order("id ASC")
+	} else {
+		query = query.Order("created_at DESC").Order("id DESC")
+	}
+	err = query.Find(&out).Error
 	return out, err
 }

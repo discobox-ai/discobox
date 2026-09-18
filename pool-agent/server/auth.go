@@ -182,10 +182,20 @@ func (a *SignedTokenAuthenticator) reject(r *http.Request, w http.ResponseWriter
 		"pool_id", a.identity.PoolID,
 		"error", cause)
 
+	writeProblem(w, status, reason)
+}
+
+// writeProblem answers in the shape the API says every error takes. A
+// hand-wired route has to write it itself, and it matters beyond decodability:
+// the router's own 404 for a route an older agent does not have is text/plain,
+// so answering a real "no such thing" in problem+json is what lets the control
+// plane tell "this pool never recorded that" from "this agent predates the
+// route" (ADR 0130).
+func writeProblem(w http.ResponseWriter, status int, detail string) {
 	body, err := json.Marshal(map[string]any{
 		"status": status,
 		"title":  http.StatusText(status),
-		"detail": reason,
+		"detail": detail,
 	})
 	if err != nil {
 		http.Error(w, http.StatusText(status), status)
@@ -279,7 +289,7 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 		return ScopePoolSync
 	case workerapi.PoolClearCacheOperation:
 		return ScopePoolCacheClear
-	case workerapi.PoolListHTTPAuditOperation:
+	case workerapi.PoolListHTTPAuditOperation, workerapi.PoolGetHTTPAuditOperation:
 		return ScopeAuditRead
 	default:
 		return ""

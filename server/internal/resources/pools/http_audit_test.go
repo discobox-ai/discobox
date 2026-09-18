@@ -3,6 +3,7 @@ package pools
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -131,6 +134,32 @@ func TestListHTTPAuditMergesPoolsAndNamesTheOneThatDidNotAnswer(t *testing.T) {
 	}
 }
 
+// A follower reads forward from its cursor: the merge is oldest first and keeps
+// the oldest N, and every filter reaches every pool.
+func TestListHTTPAuditReadsForwardAndPassesFiltersToEachPool(t *testing.T) {
+	svc, provider := newAuditService(t)
+	for id, rows := range provider.rows {
+		slices.Reverse(rows)
+		provider.rows[id] = rows
+	}
+	blocked := true
+	result, err := svc.ListHTTPAudit(context.Background(), "project-1", services.HTTPAuditFilter{
+		Limit: 2, Ascending: true, MinStatus: 400, MaxStatus: 499, Blocked: &blocked,
+	})
+	if err != nil {
+		t.Fatalf("ListHTTPAudit() error = %v", err)
+	}
+	for _, id := range []string{"pool-a", "pool-b"} {
+		q := provider.queries[id]
+		if !q.Ascending || q.MinStatus != 400 || q.MaxStatus != 499 || q.Blocked == nil || !*q.Blocked {
+			t.Fatalf("%s asked %+v, want the whole filter", id, q)
+		}
+	}
+	if len(result.Exchanges) != 2 || result.Exchanges[0].ID != 1 || result.Exchanges[1].ID != 9 {
+		t.Fatalf("exchanges = %+v, want the two oldest across pools, oldest first", result.Exchanges)
+	}
+}
+
 // The newest N across pools can all come from one pool, so every pool is asked
 // for the whole limit and the merge is what truncates.
 func TestListHTTPAuditAsksEachPoolForTheWholeLimit(t *testing.T) {
@@ -244,5 +273,115 @@ func TestListHTTPAuditReportsPoolsWithNoAgentWithoutAskingThem(t *testing.T) {
 	}
 	if !strings.Contains(reasons["pool-a"], "deleted") || !strings.Contains(reasons["pool-b"], "registered") {
 		t.Fatalf("unavailable = %+v, want pool-a as being deleted and pool-b as unregistered", result.UnavailablePools)
+	}
+}
+
+func (p *auditPoolProvider) OpenHTTPAuditArtifact(_ context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID, artifact string) (*sandbox.HTTPAuditArtifact, error) {
+	if pool.ID == "pool-a" && id == 2 && artifact == "response-body" && (sandboxID == "" || sandboxID == "sandbox-gone") {
+		return &sandbox.HTTPAuditArtifact{Body: io.NopCloser(strings.NewReader("body")), Format: "raw"}, nil
+	}
+	return nil, sandbox.ErrNotFound
+}
+
+// A body is read from the one pool that recorded it; missing is a 404 that says
+// what is missing, and a pool with no agent is a 503 rather than a wait.
+func TestOpenHTTPAuditArtifactReadsTheNamedPool(t *testing.T) {
+	svc, _ := newAuditServiceWith(t, func(pool *model.Pool) {
+		if pool.ID == "pool-b" {
+			pool.RegisteredAt = nil
+		}
+	})
+	ctx := context.Background()
+	opened, err := svc.OpenHTTPAuditArtifact(ctx, "project-1", "pool-a", "sandbox-gone", 2, "response-body")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	_ = opened.Body.Close()
+
+	_, err = svc.OpenHTTPAuditArtifact(ctx, "project-1", "pool-a", "sandbox-other", 2, "response-body")
+	if status := statusOf(err); status != http.StatusNotFound || !strings.Contains(err.Error(), "exchange http_2") {
+		t.Fatalf("open another sandbox's body = %v (status %d), want 404 naming the exchange", err, status)
+	}
+	_, err = svc.OpenHTTPAuditArtifact(ctx, "project-1", "pool-b", "", 9, "response-body")
+	if status := statusOf(err); status != http.StatusServiceUnavailable {
+		t.Fatalf("open from an unregistered pool = %v (status %d), want 503", err, status)
+	}
+	_, err = svc.OpenHTTPAuditArtifact(ctx, "project-1", "pool-z", "", 1, "response-body")
+	if status := statusOf(err); status != http.StatusNotFound {
+		t.Fatalf("open from a pool that does not exist = %v (status %d), want 404", err, status)
+	}
+}
+
+func statusOf(err error) int {
+	var status apperrors.StatusError
+	if errors.As(err, &status) {
+		return status.StatusCode()
+	}
+	return 0
+}
+
+// Each pool reads from its own cursor, and a pool the caller has no cursor for
+// still reads by time — that is how a pool whose rows have not been seen yet
+// joins a follow already running.
+func TestListHTTPAuditGivesEachPoolItsOwnCursor(t *testing.T) {
+	svc, provider := newAuditService(t)
+	since := time.Now().UTC().Add(-time.Hour)
+	if _, err := svc.ListHTTPAudit(context.Background(), "project-1", services.HTTPAuditFilter{
+		Limit: 10, Ascending: true, Since: since, After: map[string]auditid.ExchangeID{"pool-a": 42},
+	}); err != nil {
+		t.Fatalf("ListHTTPAudit() error = %v", err)
+	}
+	if got := provider.queries["pool-a"]; got.AfterID != 42 {
+		t.Fatalf("pool-a asked %+v, want its cursor", got)
+	}
+	if got := provider.queries["pool-b"]; got.AfterID != 0 || !got.Since.Equal(since) {
+		t.Fatalf("pool-b asked %+v, want the time bound and no cursor", got)
+	}
+}
+
+// The limit has to cut in the same order the cursor advances. A pool reading
+// from a cursor answers in write order, which is not time order, so a merge
+// that sorted everything by time and sliced would keep a pool's later-written
+// row and drop an earlier-written one — and the caller, moving that pool's
+// cursor to the highest ID it was handed, would never be offered the dropped
+// row again.
+func TestListHTTPAuditNeverCutsInsideAPoolsWriteOrder(t *testing.T) {
+	svc, provider := newAuditService(t)
+	at := func(minutesAgo int) time.Time { return time.Now().UTC().Add(-time.Duration(minutesAgo) * time.Minute) }
+	// Each pool answers in write order. pool-a's row 2 was written after row 1
+	// but stamped before it, which is what the recorder's queue produces.
+	provider.rows = map[string][]sandbox.HTTPAuditExchange{
+		"pool-a": {
+			{ID: 1, CreatedAt: at(1), SandboxID: "sandbox-gone", SwappedUseIDs: []string{}},
+			{ID: 2, CreatedAt: at(9), SandboxID: "sandbox-gone", SwappedUseIDs: []string{}},
+		},
+		"pool-b": {
+			{ID: 10, CreatedAt: at(8), SandboxID: "sandbox-live", SwappedUseIDs: []string{}},
+			{ID: 11, CreatedAt: at(7), SandboxID: "sandbox-live", SwappedUseIDs: []string{}},
+		},
+	}
+	result, err := svc.ListHTTPAudit(context.Background(), "project-1", services.HTTPAuditFilter{
+		Limit: 2, Ascending: true, After: map[string]auditid.ExchangeID{"pool-a": 0, "pool-b": 9},
+	})
+	if err != nil {
+		t.Fatalf("ListHTTPAudit() error = %v", err)
+	}
+	if len(result.Exchanges) != 2 {
+		t.Fatalf("exchanges = %+v, want the limit", result.Exchanges)
+	}
+	// Whatever survives the cut has to be a prefix of its pool's page: nothing
+	// kept may have an unread record behind it.
+	seen := map[string]auditid.ExchangeID{}
+	for _, exchange := range result.Exchanges {
+		page := provider.rows[exchange.PoolID]
+		for _, row := range page {
+			if row.ID < exchange.ID && !slices.ContainsFunc(result.Exchanges, func(kept services.PoolHTTPAuditExchange) bool {
+				return kept.PoolID == exchange.PoolID && kept.ID == row.ID
+			}) {
+				t.Fatalf("kept %s/%s but dropped %s, which its pool wrote earlier: the cursor would skip it",
+					exchange.PoolID, exchange.ID, row.ID)
+			}
+		}
+		seen[exchange.PoolID] = exchange.ID
 	}
 }

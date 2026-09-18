@@ -16,6 +16,7 @@ COPY go.mod go.sum ./
 COPY agentcreds ./agentcreds
 COPY access ./access
 COPY api ./api
+COPY auditid ./auditid
 COPY declared ./declared
 COPY execstream ./execstream
 COPY harness ./harness

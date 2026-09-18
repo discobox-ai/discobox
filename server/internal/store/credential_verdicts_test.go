@@ -64,6 +64,8 @@ func TestListCredentialVerdictsFilters(t *testing.T) {
 		{name: "denied only", filter: store.CredentialVerdictFilter{Allow: &denied}, want: []string{"cv_2"}},
 		{name: "since is inclusive", filter: store.CredentialVerdictFilter{Since: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}, want: []string{"cv_3", "cv_2"}},
 		{name: "limit keeps the newest", filter: store.CredentialVerdictFilter{Limit: 2}, want: []string{"cv_3", "cv_2"}},
+		{name: "forward keeps the oldest", filter: store.CredentialVerdictFilter{Ascending: true, Limit: 2}, want: []string{"cv_1", "cv_2"}},
+		{name: "forward from a cursor", filter: store.CredentialVerdictFilter{Ascending: true, Since: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}, want: []string{"cv_2", "cv_3"}},
 		{name: "filters compose", filter: store.CredentialVerdictFilter{SandboxID: "sbx_a", Allow: &allowed}, want: []string{"cv_1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

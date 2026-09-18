@@ -603,6 +603,253 @@ func decodePoolDeleteSandboxParams(args [3]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
+// PoolGetHTTPAuditParams is parameters of pool-get-http-audit operation.
+type PoolGetHTTPAuditParams struct {
+	// Project ID.
+	ProjectId string
+	// Pool ID.
+	PoolId string
+	// Audit record ID, as the list reports it.
+	ExchangeId string
+	// Only an exchange made by this sandbox, which need not still exist.
+	SandboxId OptString `json:",omitempty,omitzero"`
+}
+
+func unpackPoolGetHTTPAuditParams(packed middleware.Parameters) (params PoolGetHTTPAuditParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "exchangeId",
+			In:   "path",
+		}
+		params.ExchangeId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.SandboxId = v.(OptString)
+		}
+	}
+	return params
+}
+
+func decodePoolGetHTTPAuditParams(args [3]string, argsEscaped bool, r *http.Request) (params PoolGetHTTPAuditParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: exchangeId.
+	if err := func() error {
+		param := args[2]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[2])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "exchangeId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ExchangeId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^http_[0-9]+$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(params.ExchangeId)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "exchangeId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: sandboxId.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotSandboxIdVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSandboxIdVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.SandboxId.SetTo(paramsDotSandboxIdVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // PoolGetSandboxParams is parameters of pool-get-sandbox operation.
 type PoolGetSandboxParams struct {
 	// Project ID.
@@ -793,6 +1040,16 @@ type PoolListHTTPAuditParams struct {
 	Since OptDateTime `json:",omitempty,omitzero"`
 	// Maximum number of exchanges to return.
 	Limit OptInt `json:",omitempty,omitzero"`
+	// Only exchanges written after this record, in write order; takes precedence over since and order.
+	AfterId OptString `json:",omitempty,omitzero"`
+	// Only exchanges whose response status is at least this.
+	MinStatus OptInt `json:",omitempty,omitzero"`
+	// Only exchanges whose response status is at most this.
+	MaxStatus OptInt `json:",omitempty,omitzero"`
+	// Only exchanges the destination policy refused when true, or let through when false.
+	Blocked OptBool `json:",omitempty,omitzero"`
+	// Asc returns the oldest matches first, for reading forward from a since bound.
+	Order OptPoolListHTTPAuditOrder `json:",omitempty,omitzero"`
 }
 
 func unpackPoolListHTTPAuditParams(packed middleware.Parameters) (params PoolListHTTPAuditParams) {
@@ -853,6 +1110,51 @@ func unpackPoolListHTTPAuditParams(packed middleware.Parameters) (params PoolLis
 		}
 		if v, ok := packed[key]; ok {
 			params.Limit = v.(OptInt)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "afterId",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.AfterId = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "minStatus",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.MinStatus = v.(OptInt)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "maxStatus",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.MaxStatus = v.(OptInt)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "blocked",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Blocked = v.(OptBool)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "order",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Order = v.(OptPoolListHTTPAuditOrder)
 		}
 	}
 	return params
@@ -1181,6 +1483,308 @@ func decodePoolListHTTPAuditParams(args [2]string, argsEscaped bool, r *http.Req
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "limit",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: afterId.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "afterId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotAfterIdVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotAfterIdVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.AfterId.SetTo(paramsDotAfterIdVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.AfterId.Get(); ok {
+					if err := func() error {
+						if err := (validate.String{
+							MinLength:     0,
+							MinLengthSet:  false,
+							MaxLength:     0,
+							MaxLengthSet:  false,
+							Email:         false,
+							Hostname:      false,
+							Regex:         regexMap["^http_[0-9]+$"],
+							MinNumeric:    0,
+							MinNumericSet: false,
+							MaxNumeric:    0,
+							MaxNumericSet: false,
+						}).Validate(string(value)); err != nil {
+							return errors.Wrap(err, "string")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "afterId",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: minStatus.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "minStatus",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotMinStatusVal int
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotMinStatusVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.MinStatus.SetTo(paramsDotMinStatusVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.MinStatus.Get(); ok {
+					if err := func() error {
+						if err := (validate.Int{
+							MinSet:        true,
+							Min:           0,
+							MaxSet:        true,
+							Max:           599,
+							MinExclusive:  false,
+							MaxExclusive:  false,
+							MultipleOfSet: false,
+							MultipleOf:    0,
+							Pattern:       nil,
+						}).Validate(int64(value)); err != nil {
+							return errors.Wrap(err, "int")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "minStatus",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: maxStatus.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "maxStatus",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotMaxStatusVal int
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotMaxStatusVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.MaxStatus.SetTo(paramsDotMaxStatusVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.MaxStatus.Get(); ok {
+					if err := func() error {
+						if err := (validate.Int{
+							MinSet:        true,
+							Min:           0,
+							MaxSet:        true,
+							Max:           599,
+							MinExclusive:  false,
+							MaxExclusive:  false,
+							MultipleOfSet: false,
+							MultipleOf:    0,
+							Pattern:       nil,
+						}).Validate(int64(value)); err != nil {
+							return errors.Wrap(err, "int")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "maxStatus",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: blocked.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "blocked",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotBlockedVal bool
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToBool(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotBlockedVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Blocked.SetTo(paramsDotBlockedVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "blocked",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Set default value for query: order.
+	{
+		val := PoolListHTTPAuditOrder("desc")
+		params.Order.SetTo(val)
+	}
+	// Decode query: order.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "order",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotOrderVal PoolListHTTPAuditOrder
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotOrderVal = PoolListHTTPAuditOrder(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Order.SetTo(paramsDotOrderVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Order.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "order",
 			In:   "query",
 			Err:  err,
 		}

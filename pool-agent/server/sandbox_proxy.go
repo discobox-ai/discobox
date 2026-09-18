@@ -19,7 +19,10 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}", service.autoStart(failFast, service.sandboxHTTPProxyHandler()))
 	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/*", service.autoStart(failFast, service.sandboxHTTPProxyHandler()))
 
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	// The sandbox's own audit data is read only from a running sandbox and never
+	// starts one (requireRunning).
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.requireRunning(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/exec-events", service.requireRunning(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
