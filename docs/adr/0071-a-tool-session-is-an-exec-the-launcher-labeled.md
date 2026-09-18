@@ -1,6 +1,6 @@
 # 0071. A tool session is an exec the launcher labeled
 
-Status: Accepted (§6, §7's Go-constant defaults, and §11 superseded by [ADR 0125](0125-tools-are-declared-in-files-the-way-services-are.md))
+Status: Accepted (§6, §7's Go-constant defaults, and §11 superseded by [ADR 0125](0125-tools-are-declared-in-files-the-way-services-are.md); §3 superseded by [ADR 0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md))
 
 ## Context
 

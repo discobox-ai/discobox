@@ -123,7 +123,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0068](0068-container-images-share-one-base-image.md) | Container images share one base image | Accepted |
 | [0069](0069-staging-pool-images-is-a-condition.md) | Staging a pool's images is a condition, not a state | Accepted |
 | [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) | Services are declared execs the sandbox starts for you | Accepted |
-| [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted (§6, §7's Go-constant defaults and §11 superseded by [0125](0125-tools-are-declared-in-files-the-way-services-are.md)) |
+| [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted (§6, §7's Go-constant defaults and §11 superseded by [0125](0125-tools-are-declared-in-files-the-way-services-are.md); §3 superseded by [0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md)) |
 | [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md) | A repository ships skills that only exist inside a sandbox | Proposed |
 | [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) | A directory with no repository is copied only when asked | Accepted (§2 and §3's outcome superseded by [0077](0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md)) |
 | [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) | A CLI in WSL writes the ssh_config Windows reads | Accepted (§2 and §3 amended by [0078](0078-the-wsl-proxycommand-is-quoted-for-sh.md)) |
@@ -188,3 +188,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0131](0131-the-launcher-answers-every-servers-credential-requests-and-names-the-server-its-config-screens-edit.md) | The launcher answers every server's credential requests, and names the server its config screens edit | Accepted |
 | [0132](0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md) | A credential rejected after its retry is recorded against its secret | Accepted (settles [0059](0059-a-rejected-swapped-credential-is-retried-once.md)'s unsaved case) |
 | [0133](0133-the-command-that-makes-a-discobox-is-new.md) | The command that makes a discobox is `new`, and `run` is an alias | Accepted (supersedes [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) §§3–4's command spelling and [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s `discobox run` spelling) |
+| [0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md) | A tool put away is a tab after the shells | Accepted |
