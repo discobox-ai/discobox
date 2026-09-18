@@ -190,3 +190,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0133](0133-the-command-that-makes-a-discobox-is-new.md) | The command that makes a discobox is `new`, and `run` is an alias | Accepted (supersedes [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) §§3–4's command spelling and [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s `discobox run` spelling) |
 | [0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md) | A tool put away is a tab after the shells | Accepted |
 | [0135](0135-the-primary-server-is-recorded-by-admin-remote-primary.md) | The primary server is recorded by `admin remote primary` | Accepted (supersedes [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md) §3's primary sources) |
+| [0136](0136-a-sandboxs-meta-lives-in-the-sandbox-and-the-server-caches-it.md) | A sandbox's meta lives in the sandbox, and the server caches it | Accepted |
