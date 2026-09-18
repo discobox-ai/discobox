@@ -103,10 +103,12 @@ type Config struct {
 	// the agent's own uid when the manifest names nobody, since that is what an
 	// exec then inherits (ADR 0025 §5).
 	UID int64
-	// ExcludeTCPPorts are TCP ports never reported however they are bound. It
-	// exists for sandbox-agent's own listener, which the uid filter does not
-	// exclude when the sandbox user is root. A UDP port of the same number is
-	// somebody else's and is reported as usual (ADR 0109 §1).
+	// ExcludeTCPPorts are TCP ports never reported or probed however they are
+	// bound. It exists for Discobox's own listeners in the sandbox —
+	// sandbox-agent, its credentials endpoint, and the forwarders the pool
+	// stages — which the uid filter does not exclude when the sandbox user is
+	// root. A UDP port of the same number is somebody else's and is reported
+	// as usual (ADR 0109 §1).
 	ExcludeTCPPorts []int
 	// ProcRoot defaults to /proc. Tests point it at a fixture directory.
 	ProcRoot string

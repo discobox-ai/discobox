@@ -50,9 +50,9 @@ const (
 	// does for every other client that cannot present one.
 	MediatorURL = "tcp://127.0.0.1:17082"
 
-	// bridgeConfig is written by pool-agent for a sandbox whose pool runs a
+	// BridgeConfig is written by pool-agent for a sandbox whose pool runs a
 	// builder. Its absence is what tells this shim to leave a build alone.
-	bridgeConfig = "/etc/discobox/proxy/bridge-buildkit.json"
+	BridgeConfig = "/etc/discobox/proxy/bridge-buildkit.json"
 
 	// PoolRegistry is the pool's build-output registry. A build pushes here and
 	// the result is pulled back, instead of --load streaming the whole image
@@ -78,7 +78,7 @@ const (
 
 // bridgeConfigPath locates the forwarder's config. It is a variable only so
 // tests can point it at a fixture; production never reassigns it.
-var bridgeConfigPath = bridgeConfig
+var bridgeConfigPath = BridgeConfig
 
 // dockerCLI is the docker binary every subprocess here runs. It is a variable
 // only so tests can point it at a stub; production never reassigns it.

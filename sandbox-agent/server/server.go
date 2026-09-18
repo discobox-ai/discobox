@@ -21,6 +21,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
+	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
@@ -331,10 +332,12 @@ func newServiceManager(execManager *execs.Manager) (*services.Manager, error) {
 // inherits this process's own identity (ADR 0025 §5), so that is the uid whose
 // sockets count.
 //
-// The agent's own listener is excluded by port. The uid filter already excludes
-// it in the normal case, where the agent is root and the sandbox user is not,
-// but a sandbox whose run user *is* root would otherwise report the control
-// port as one of its own services.
+// Discobox's own listeners are excluded by port (agentListenPorts): the agent,
+// the credentials endpoint, and the forwarders the pool stages. The uid filter
+// already excludes them in the normal case, where they run as root and the
+// sandbox user does not, but a sandbox whose run user *is* root would otherwise
+// report them as its own services — and probe the forwarders, sending the probe
+// out of the sandbox.
 //
 // The declared set is read through the service manager on every tick, so a
 // declaration added while the sandbox is up is honored without a restart
@@ -352,7 +355,7 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 	}
 	watcher := ports.Config{
 		UID:             uid,
-		ExcludeTCPPorts: listenPorts(cfg.ListenAddress),
+		ExcludeTCPPorts: agentListenPorts(cfg.ListenAddress, bridgeConfigPath(cfg.CredentialsBridgePath), dockercache.BridgeConfig),
 	}
 	// One seam, two directories behind it: the image's declarations and the
 	// repository's, which services.Discover already merges. A declaration that
@@ -390,8 +393,58 @@ func newMetaFile(execManager *execs.Manager) (*meta.File, error) {
 	return meta.New(home, meta.Owner{UID: user.UID, GID: user.GID}), nil
 }
 
-// listenPorts is the agent's own listen port, or nothing when the address does
-// not name one it could collide with.
+// agentListenPorts are the TCP ports Discobox's own plumbing listens on inside
+// the sandbox, which are never a discobox's ports: the agent itself, the
+// credentials endpoint, and the forwarders the pool stages bridge configs for
+// (egress, BuildKit). The uid filter does not keep them out when the sandbox
+// user is root. They must not be probed either: a forwarder carries what it is
+// sent out of the sandbox, so a classification probe of one is traffic nobody
+// meant.
+//
+// A forwarder's address is read from the bridge config naming it rather than
+// assumed, because that config is where the pool decides it; a config that is
+// absent names nothing.
+func agentListenPorts(listenAddress string, bridgeConfigs ...string) []int {
+	addresses := []string{listenAddress, credentials.ListenAddress}
+	for _, path := range bridgeConfigs {
+		if address := bridgeListenAddress(path); address != "" {
+			addresses = append(addresses, address)
+		}
+	}
+	var out []int
+	for _, address := range addresses {
+		out = append(out, listenPorts(address)...)
+	}
+	return out
+}
+
+// bridgeListenAddress is the address a pool-staged bridge config tells its
+// forwarder to listen on, or empty when there is no such config.
+func bridgeListenAddress(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var bridge struct {
+		ListenAddress string `json:"listenAddress"`
+	}
+	if json.Unmarshal(data, &bridge) != nil {
+		return ""
+	}
+	return strings.TrimSpace(bridge.ListenAddress)
+}
+
+// bridgeConfigPath is the egress bridge config the agent reads, defaulted the
+// way the credentials relay defaults it.
+func bridgeConfigPath(override string) string {
+	if override != "" {
+		return override
+	}
+	return credentials.DefaultBridgeConfigPath
+}
+
+// listenPorts is the port a listen address binds, or nothing when the address
+// does not name one a discobox's port could collide with.
 func listenPorts(address string) []int {
 	_, portText, err := net.SplitHostPort(address)
 	if err != nil {
