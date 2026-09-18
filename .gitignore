@@ -62,3 +62,12 @@ server/providers/wslc/relay/artifacts/*.gz
 # Windows version resources release:binary writes beside each main package for
 # the length of one build (internal/cmd/discobox-winres).
 zz_version_windows_*.syso
+
+# `go build` output. Every main package here is named discobox*, and a bare
+# `go build ./internal/cmd/<name>` writes ./<name> into the working directory —
+# the repository root, or the package directory when run from there — where
+# `git add -A` then commits a multi-megabyte ELF. `task build` writes to build/.
+/discobox
+/discobox.exe
+/discobox-*
+**/cmd/*/discobox*
