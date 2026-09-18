@@ -122,6 +122,41 @@ func TestQuittingOnAnEmptiedPromptDropsTheDraft(t *testing.T) {
 	}
 }
 
+// "/exit" or "/quit" on its own closes the window rather than running it as a
+// prompt, and leaves no draft behind: it was a way out, not a thought to come
+// back to. Ctrl-R from the run options is the same run as Enter, and closes
+// the window the same way.
+func TestExitAndQuitCloseTheWindowInsteadOfRunning(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		typed string
+		keys  []string
+	}{
+		{" /exit ", []string{"enter"}},
+		{"/quit", []string{"enter"}},
+		{"/exit", []string{"ctrl+o", "ctrl+r"}},
+	} {
+		typed := tc.typed
+		ds := newFakeSource(testSandboxes()...)
+		m := newTestModel(t, ds)
+		send(t, m, typeString(typed)...)
+		// Saved as a draft on the way, the way anything typed is.
+		send(t, m, tickMsg{})
+		for _, k := range tc.keys {
+			send(t, m, keyPress(k))
+		}
+		if !m.quit {
+			t.Fatalf("%q should close the window", typed)
+		}
+		if len(ds.runs) != 0 {
+			t.Fatalf("runs = %v, want %q never run", ds.runs, typed)
+		}
+		if got := ds.drafts[len(ds.drafts)-1]; got != "/src/disco2 " {
+			t.Fatalf("last write = %q, want %q not kept as a draft", got, typed)
+		}
+	}
+}
+
 // A prompt that has been run is not a prompt you are still writing, so the
 // draft goes with it. Otherwise every window after it would open holding a
 // prompt that already has a discobox running it.

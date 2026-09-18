@@ -2220,6 +2220,14 @@ func (m *Model) run() tea.Cmd {
 	if m.submitting {
 		return nil
 	}
+	// "/exit" and "/quit" are what a harness's own prompt takes to leave, and
+	// somebody who types one here means to leave too — not to cut a discobox
+	// and hand it a slash command. It closes the window the way leader-q does,
+	// with the composer emptied so the next window does not open on it.
+	if v := strings.TrimSpace(m.prompt.Value()); v == "/exit" || v == "/quit" {
+		m.prompt.Reset()
+		return m.closeWindow()
+	}
 	if m.askWhereToCutFrom() {
 		return nil
 	}
@@ -3838,6 +3846,7 @@ func (m *Model) helpText() string {
 		"    Tab            to the discobox list",
 		"    Shift-Tab      switch the harness",
 		"    Ctrl-D         quit, when the prompt is empty",
+		"    /exit, /quit   quit, when that is all the prompt holds",
 		"    ↑ ↓            move a line, wrapped rows included. On the first",
 		"                   or last line, to the start or end of it",
 		"",
