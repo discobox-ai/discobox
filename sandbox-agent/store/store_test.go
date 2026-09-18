@@ -412,6 +412,35 @@ func TestOpenPurgesRecordsOfDeletedExecs(t *testing.T) {
 	}
 }
 
+// restamp spreads a table's rows one second apart in the order they were
+// written, and writes each row's new time back through the pointers given, so a
+// test that asserts an order does not depend on how finely the host's clock
+// ticks. A trail orders by time and breaks ties by ID, and an ID is random by
+// design (creation time lives in CreatedAt, not in the ID) — so rows sharing a
+// timestamp have no defined order to assert.
+func restamp(ctx context.Context, t *testing.T, st *Store, table string, out ...*time.Time) {
+	t.Helper()
+	var ids []string
+	if err := st.read.WithContext(ctx).Raw("select id from " + table + " order by rowid").Scan(&ids).Error; err != nil {
+		t.Fatalf("read %s order: %v", table, err)
+	}
+	if len(out) > 0 && len(out) != len(ids) {
+		t.Fatalf("%s has %d rows, restamping %d", table, len(ids), len(out))
+	}
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, id := range ids {
+		at := base.Add(time.Duration(i) * time.Second)
+		// Through the same table the store writes, so the text SQLite compares
+		// is written the way the store writes it.
+		if err := st.write.WithContext(ctx).Table(table).Where("id = ?", id).Update("created_at", at).Error; err != nil {
+			t.Fatalf("restamp %s: %v", table, err)
+		}
+		if i < len(out) {
+			*out[i] = at
+		}
+	}
+}
+
 func TestListHarnessHooksFiltersAndReadsForward(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(ctx, t, filepath.Join(t.TempDir(), "hooks.db"))
@@ -424,9 +453,15 @@ func TestListHarnessHooksFiltersAndReadsForward(t *testing.T) {
 		return rec
 	}
 	first := record("claude-code", "SessionStart")
-	record("claude-code", "PreToolUse")
+	second := record("claude-code", "PreToolUse")
 	third := record("codex-cli", "PreToolUse")
-	record("claude-code", "Stop")
+	fourth := record("claude-code", "Stop")
+	// The store stamps each record with the wall clock, and four written in a
+	// row are only distinguishable if the clock advanced between them: Windows
+	// ticks about every 15ms and stamps all four the same. Order among equal
+	// timestamps is not a property this trail has, so give them times a second
+	// apart and test the ordering the trail does promise.
+	restamp(ctx, t, st, "harness_hook_logs", &first.CreatedAt, &second.CreatedAt, &third.CreatedAt, &fourth.CreatedAt)
 
 	events := func(hooks []HarnessHookRecord) []string {
 		out := make([]string, 0, len(hooks))
@@ -472,6 +507,7 @@ func TestListEventsAcrossExecsFiltersAndReadsForward(t *testing.T) {
 			t.Fatalf("record event: %v", err)
 		}
 	}
+	restamp(ctx, t, st, "exec_events")
 	names := func(events []Event) []string {
 		out := make([]string, 0, len(events))
 		for _, e := range events {
