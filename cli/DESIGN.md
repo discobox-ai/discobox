@@ -38,7 +38,7 @@ transport helpers where OpenAPI does not model the stream.
   is the child's *controlling* terminal, so anything reading its keys from
   `/dev/tty` reads them from the pane rather than from the real terminal, out
   from under the window drawing it. The child inherits this invocation's
-  `--server`, `--project` and `--chdir` (and an explicit `--auto-start-server`,
+  `--server`, `--project` and `--clone` (and an explicit `--auto-start-server`,
   `App.globalFlags`); the token goes through the environment rather than the
   argument list, which every process on the machine can read. A harness's
   configure flow is drawn the same way: the harnesses screen's
@@ -720,10 +720,9 @@ The registry is spelled `remote`, git's name for the same thing — `add`,
 `rename` and `rm` change it and running it bare lists it — because
 `admin server` already names the process.
 
-The global `--project` flag is hidden from help alongside `--chdir`: it
-still works everywhere, and the launcher and scripts still pass it, but a
-project is advanced configuration and belongs with the rest of it under
-`discobox admin`.
+The global `--project` flag is hidden from help: it still works everywhere,
+and the launcher and scripts still pass it, but a project is advanced
+configuration and belongs with the rest of it under `discobox admin`.
 
 `discobox admin project` is the only command group not scoped by the global
 `--project` flag: its arguments name the project being acted on, resolved by
@@ -975,7 +974,7 @@ flowchart LR
 ## Where a Global Flag Is Parsed
 
 The root's persistent flags — `--server`, `--iroh-relay`, `--iroh-log`,
-`--project`, `--chdir`, `--token`, `--output`, `--debug` and
+`--project`, `--clone`, `--token`, `--output`, `--debug` and
 `--auto-start-server` — are parsed by the command they are written in front of
 (`TraverseChildren` on the root). Cobra's default is the other way round: it
 finds the command first and hands it every flag, wherever it stood. The
@@ -1013,6 +1012,28 @@ The set it consumes is its own — `--server`, `--project`, `--token`,
 `--output`/`-o` and `--debug`, the ones a script points at another server with
 — and not the nine above: written after those two commands, the rest are
 passed through to the catalog.
+
+`-c` is deliberately not a shorthand for anything. `--clone` keeps `-C` because
+that is the letter this flag has always had and the one every ADR that shows it
+spells (0077, 0096, 0100, 0111) — not because git's `-C` is precedent, which it is
+not: git's really is a chdir ("run as if git was started in `<path>`") and this
+one changes no directory at all.
+
+`-c` is the letter left unclaimed. `shell` (`shell.go:83`) and the `tools`
+commands (`tools.go:70`, `122`, `216`) set `SetInterspersed(false)` rather than
+disabling flag parsing, so a shorthand written before their positionals is this
+CLI's, and `discobox shell -c 'go test ./...'` is a plausible thing to type. A
+`-c` that meant `--clone` would take that command as a source path — and
+`internal/origin` falls back to the absolute path rather than failing on one
+that does not exist — hash it into an origin key nothing was ever filed under,
+and find no discobox. In a script that is `no discoboxes were started from this
+directory` (`picker.go:83`), naming a directory nobody typed; at a terminal it is
+the picker offering every discobox on every server, and a login shell in
+whichever one is chosen. Unclaimed, it says `unknown shorthand flag: 'c'`
+instead. The commands that turn flag parsing off outright (`cp`, `tools ssh`,
+`admin provider create|update`) are unaffected either way: a `-c` after those
+belongs to scp, to ssh, or to the provider catalog, and never reaches this flag
+table.
 
 ## Listing Order
 

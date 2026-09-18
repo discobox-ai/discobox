@@ -93,7 +93,7 @@ func (d *apiDataSource) openLocalHarnessConfigure(ctx context.Context, harnessID
 func (a *App) globalFlags() []string {
 	args := []string{"--server", a.serverURL, "--project", a.projectID}
 	if a.source != "" {
-		args = append(args, "--chdir", a.source)
+		args = append(args, "--clone", a.source)
 	}
 	if a.autoStart != autoStartServerAuto {
 		args = append(args, "--auto-start-server="+string(a.autoStart))

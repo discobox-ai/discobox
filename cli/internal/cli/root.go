@@ -226,10 +226,22 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	// gains nothing from a flag on every command's help. It keeps working for
 	// the scripts and the launcher that pass it; it just stops being offered.
 	_ = cmd.PersistentFlags().MarkHidden("project")
-	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what run cuts a discobox from, and what ls lists this machine's discoboxes for")
-	// Beta: the flag works but is undocumented until the source-selection UX is
-	// settled, so it stays out of help text and examples.
-	_ = cmd.PersistentFlags().MarkHidden("chdir")
+	// Not a chdir: nothing about this invocation's working directory changes.
+	// It names the source this command acts on — what run puts in the discobox,
+	// and what every other command reads the current one from — and the default
+	// is the directory the command was run in.
+	//
+	// `clone` is what the discobox ends up holding, not GitSource.delivery's
+	// `clone` | `push`, which is only how the history gets there: a local
+	// directory is push-delivered and still arrives as a Git clone of this
+	// source, which is what `apply` and `push` then work against.
+	//
+	// The old spelling, --chdir, is gone rather than deprecated: it was beta and
+	// hidden from help in 0f5737ce, no document ever spelled the long form, and
+	// the -C every ADR does spell is unchanged, so nothing copied out of one
+	// breaks. --project above is the other answer to the same question — it
+	// stays because the launcher and scripts pass it.
+	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what run cuts a discobox from, and what ls lists this machine's discoboxes for")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
