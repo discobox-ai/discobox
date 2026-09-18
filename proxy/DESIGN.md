@@ -247,6 +247,31 @@ Key properties:
   neither differs from what was rejected there is nothing new to send, and the
   401 is passed through. Only header swaps with a body small enough to hold
   (8 MiB) are retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
+- **A credential the retry could not save is reported back.** The response path
+  is the only place that learns a credential has stopped working, so it tells
+  the resolver: `rejected` when there was nothing different to send, and
+  `rejected-after-retry` when the other value was refused too. A retry that
+  *worked* reports nothing — that is the rotation the retry exists for. A
+  swapped request the upstream accepted reports `accepted` only when a rejection
+  was reported for that sentinel before it, which is how a credential fixed
+  anywhere retracts what was said about it. The report names the sentinel, the
+  client and the host, never the value.
+
+  Only a 2xx is an acceptance: a redirect to a sign-in page is how many
+  upstreams say a session is *not* good, and taking it as success would retract
+  a rejection using the upstream's own way of saying the credential is dead.
+
+  It runs off the request path, through `credentialReporter` — a bounded queue
+  that drops rather than blocks and refuses to enqueue once closed, and one
+  report per `(client, sentinel, host)` per minute, because a harness that
+  believes it is logged out retries hard and every retry is the same fact. What
+  it remembers having reported ages out after `reportMemory`, so the set is
+  bounded by what has been refused lately rather than by everything ever
+  refused — the keys include one per ephemeral sentinel, and the case this
+  exists for is a credential that stays refused. The reporter lives on the proxy
+  rather than on the `Swapper`, which `ApplyConfig` replaces on every
+  ephemeral-sentinel mint.
+  See [ADR 0132](../docs/adr/0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md).
 - **Ephemeral sentinels are just sentinels here.** Pool-agent mints short-lived
   sentinels per agent-credential use and registers them in the same per-client
   set, so this package needs no concept of them: it matches a string and asks

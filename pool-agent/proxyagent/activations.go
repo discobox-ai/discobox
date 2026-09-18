@@ -52,6 +52,16 @@ type activations struct {
 	// resolver has in hand: the proxy matched a string in an outbound request
 	// and asks who it belongs to.
 	byEphemeral map[string]activation
+	// expired keeps a lapsed activation's translation for a short while after
+	// it stops authorizing anything, so a *report* about it can still be read
+	// (ADR 0132 §2). A rejection crosses the proxy's response path and a queue
+	// before it is sent, and the sentinel it names means nothing to the control
+	// plane; without this the report would either be dropped or — worse — sent
+	// with the ephemeral string in it, which ADR 0031 §3 says never happens.
+	//
+	// It authorizes nothing: lookup, and therefore every swap, reads
+	// byEphemeral alone.
+	expired map[string]activation
 	// onChange republishes the proxy's sentinel set. An ephemeral sentinel the
 	// proxy has not been told about is never matched at all, so registration
 	// has to happen before `get` returns.
@@ -59,8 +69,14 @@ type activations struct {
 	now      func() time.Time
 }
 
+// activationReportGrace is how long after an activation lapses its translation
+// is still readable. It is generous next to the seconds a report actually takes
+// to go out, because the cost of keeping one is a map entry and the cost of
+// losing one is a dead credential nobody is told about.
+const activationReportGrace = 15 * time.Minute
+
 func newActivations() *activations {
-	return &activations{byEphemeral: map[string]activation{}, now: time.Now}
+	return &activations{byEphemeral: map[string]activation{}, expired: map[string]activation{}, now: time.Now}
 }
 
 // setChangeHandler installs the callback that republishes the proxy config.
@@ -120,10 +136,17 @@ func (a *activations) lookup(sentinel string) (activation, bool) {
 // is what separates "an activation that has lapsed or is being used against the
 // wrong host" from "an ordinary injected sentinel", so the first is refused
 // rather than forwarded as if it were a stable binding.
+//
+// "Not live" includes one that lapsed and was swept, for activationReportGrace
+// afterwards: a resolve of such a sentinel is refused either way, and a report
+// about it still has to be translatable.
 func (a *activations) lookupAny(sentinel string) (activation, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	record, ok := a.byEphemeral[sentinel]
+	if record, ok := a.byEphemeral[sentinel]; ok {
+		return record, true
+	}
+	record, ok := a.expired[sentinel]
 	return record, ok
 }
 
@@ -166,7 +189,15 @@ func (a *activations) pruneLocked(now time.Time) bool {
 	for sentinel, record := range a.byEphemeral {
 		if !record.live(now) {
 			delete(a.byEphemeral, sentinel)
+			// Kept only as a translation, and only for a while: what it
+			// authorized ended with its TTL.
+			a.expired[sentinel] = record
 			changed = true
+		}
+	}
+	for sentinel, record := range a.expired {
+		if now.After(record.ExpiresAt.Add(activationReportGrace)) {
+			delete(a.expired, sentinel)
 		}
 	}
 	return changed

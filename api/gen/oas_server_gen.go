@@ -504,6 +504,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secret-grants
 	ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (ListSecretGrantsRes, error)
+	// ListSecretRejections implements list-secret-rejections operation.
+	//
+	// List credentials an upstream has refused.
+	//
+	// GET /projects/{projectId}/secret-rejections
+	ListSecretRejections(ctx context.Context, params ListSecretRejectionsParams) (ListSecretRejectionsRes, error)
 	// ListSecretRequests implements list-secret-requests operation.
 	//
 	// List secret requests.
@@ -598,6 +604,12 @@ type Handler interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-agent-status
 	ReportSandboxAgentStatus(ctx context.Context, req *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error)
+	// ReportSandboxSecretRejection implements report-sandbox-secret-rejection operation.
+	//
+	// Report what an upstream made of a swapped credential.
+	//
+	// POST /api/pools/{poolId}/sandbox-secret-rejections
+	ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.

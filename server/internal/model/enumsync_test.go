@@ -57,6 +57,8 @@ var yamlEnumAliases = map[string]string{
 // yamlOwnedEnums lists contract enums with no authoritative Go model tag, with
 // the reason. The contract in server.yaml is the single source of truth for
 // these; server code must follow it.
+//
+//nolint:gosec // G101: these are contract enum names, not credentials.
 var yamlOwnedEnums = map[string]string{
 	"Pool.health": "derived by Pool.Health from heartbeat freshness and reported readiness",
 	"Job.status":  "job status values are owned by the orchestration module; model.Job.Status is untagged text",
@@ -92,6 +94,12 @@ var yamlOwnedEnums = map[string]string{
 	// no. secrets.AgentCredentialRequestStatus is the one place that maps
 	// between them (ADR 0031).
 	"SandboxCredentialRequestStatus.status": "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus grant liveness",
+	// The proxy's observation vocabulary, not the control plane's judgment.
+	// What is stored is SecretRejection.reason, which these three outcomes are
+	// an input to rather than a spelling of: `accepted` stores nothing at all,
+	// and both rejections can land on any of the reasons depending on what a
+	// renewal does (ADR 0132 §3).
+	"ReportSandboxSecretRejectionBody.outcome": "what a pool agent's proxy observed, owned by the proxy package in the root module; the control plane's own vocabulary is SecretRejection.reason",
 }
 
 func TestModelEnumTagsMatchOpenAPI(t *testing.T) {

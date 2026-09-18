@@ -43,6 +43,12 @@ type secretList struct {
 	// not landed, which look the same in all and mean opposite things.
 	loaded bool
 
+	// refused is which secrets an upstream has rejected, by ID. A credential
+	// that does not work is the first thing to know about it on this screen —
+	// ahead of what stands on it — because it is the answer to the question
+	// that brought somebody here (ADR 0132).
+	refused map[string]SecretRejection
+
 	width, height int
 
 	now func() time.Time
@@ -77,6 +83,18 @@ func (l *secretList) setAll(all []Secret) {
 		}
 	}
 	l.clamp()
+}
+
+// setRefused takes the credentials an upstream has refused, so the rows can say
+// which of them does not work.
+func (l *secretList) setRefused(rejections []SecretRejection) {
+	refused := make(map[string]SecretRejection, len(rejections))
+	for _, rejection := range rejections {
+		if _, seen := refused[rejection.SecretID]; !seen {
+			refused[rejection.SecretID] = rejection
+		}
+	}
+	l.refused = refused
 }
 
 // setGrants takes the project's grants, which the rows count and the grants
@@ -203,6 +221,12 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 	grantStyle := st.dimText
 	if s.Grants > 0 {
 		grants, grantStyle = plural(s.Grants, "grant", "grants"), st.statusOK
+	}
+	if _, refused := l.refused[s.ID]; refused {
+		// What stands on a credential matters less than whether it works. A
+		// row saying "2 grants" about a credential the upstream refuses is
+		// answering a question nobody is asking.
+		grants, grantStyle = "refused", st.statusER
 	}
 	addCol("  "+grantStyle.Render(pad(grants, 9)), 12)
 	addCol(st.dimText.Render(pad(secretAge(s, l.now()), 7)), 8)
@@ -367,7 +391,10 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 	case "enter", "v":
 		return m.showGrants()
 	case "e":
-		return m.editSecretForm()
+		if secret := m.secrets.current(); secret != nil {
+			return m.editSecretForm(m.configServer(), *secret)
+		}
+		return nil
 	case "d":
 		return m.confirmDeleteSecret()
 	case grantCreateKey:
@@ -1137,13 +1164,15 @@ func (m *Model) storeSecret(secret NewSecret) tea.Cmd {
 // Lowering the limit binds what is granted next, not what already stands: a
 // live grant is somebody's decision, and it is revoked rather than quietly
 // shortened.
-func (m *Model) editSecretForm() tea.Cmd {
-	secret := m.secrets.current()
-	if secret == nil {
-		return nil
-	}
-	was, id := *secret, secret.ID
-	d := formDialog("Edit "+secret.Name, secretForm(secret), func(f *form) tea.Cmd {
+// editSecretForm opens the card that replaces a credential, saving to the server
+// named. It takes the secret and the server rather than reading the cursor and
+// the header, because the same card answers a refused credential raised in a
+// workspace, where there is no cursor to read and the header may name a
+// different server from the one the credential lives on (rejections.go,
+// ADR 0131 §2).
+func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
+	was, id := secret, secret.ID
+	d := formDialog("Edit "+secret.Name, secretForm(&secret), func(f *form) tea.Cmd {
 		seconds, ok := ttlSeconds(f, "ttl")
 		if !ok {
 			f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
@@ -1165,11 +1194,17 @@ func (m *Model) editSecretForm() tea.Cmd {
 			return nil
 		}
 		update.Value = value
-		return m.saveSecret(id, was, update)
+		return m.saveSecret(server, id, was, update)
 	})
-	d.sections = []section{{lines: []line{
+	lines := []line{
 		{text: "the kind is the one thing it cannot be told: a token and an oauth credential renew differently, so that is a new credential rather than an edit", tone: toneDim},
-	}}}
+	}
+	if rejection, refused := m.secrets.refused[id]; refused {
+		// Why the card was opened, for the card opened from the band: the
+		// upstream's refusal is the reason a value is being replaced at all.
+		lines = append([]line{{text: rejectionSummary(rejection), tone: toneAccent}}, lines...)
+	}
+	d.sections = []section{{lines: lines}}
 	d.keys = []hint{says("↑↓ moves"), pressing("enter saves", "enter"), pressing("esc leaves it alone", "esc")}
 	m.dialog = d
 	return nil
@@ -1215,7 +1250,7 @@ func replacementValue(f *form, was Secret) (*SecretValue, string) {
 // saveSecret writes the edit back and says what it did, naming each part that
 // changed. Nothing changed is not an error and not a write: it closes and says
 // so, rather than reporting a save that saved nothing.
-func (m *Model) saveSecret(id string, was Secret, update SecretUpdate) tea.Cmd {
+func (m *Model) saveSecret(server, id string, was Secret, update SecretUpdate) tea.Cmd {
 	var did []string
 	if update.Name != nil {
 		did = append(did, "renamed "+was.Name+" to "+*update.Name)
@@ -1240,7 +1275,6 @@ func (m *Model) saveSecret(id string, was Secret, update SecretUpdate) tea.Cmd {
 		return m.report(false, "%s is unchanged", was.Name)
 	}
 	m.dialog = statusDialog("Secrets", "saving "+was.Name+"…")
-	server := m.configServer()
 	return func() tea.Msg {
 		if err := m.ds.UpdateSecret(m.ctx, server, id, update); err != nil {
 			return secretActionMsg{err: err}

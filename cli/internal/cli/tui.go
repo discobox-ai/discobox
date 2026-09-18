@@ -180,6 +180,11 @@ type tuiServer struct {
 	// moment a request is answered, and the listing has no reason to be.
 	listing  serverPoll[tui.Sandbox]
 	requests serverPoll[tui.CredentialRequest]
+	// rejections is the poll of the credentials this server's upstreams have
+	// refused (ADR 0132). Its own poll, beside the inbox's, for the reason the
+	// inbox has one: a server that is slow to list what is refused must not
+	// hold up what is waiting on a person.
+	rejections serverPoll[tui.SecretRejection]
 }
 
 // serverPoll is what one server said to one of the window's polls the last
@@ -812,6 +817,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		if row.Harness == "" {
 			row.Harness = cfg.Name
 		}
+		row.HarnessID = cfg.ID
 	}
 	if upgrade, ok := sb.Runtime.Upgrade.Get(); ok {
 		row.Upgrade = upgrade.Available

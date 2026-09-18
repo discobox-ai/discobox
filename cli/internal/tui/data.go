@@ -226,6 +226,10 @@ type Sandbox struct {
 	ConfigName string
 
 	Harness string
+	// HarnessID is that harness's config ID. The slug above is what the row
+	// shows; this is what matches a credential the window has been told is
+	// refused, and what its configure flow is opened by.
+	HarnessID string
 
 	// OriginKey is where the discobox is filed on the client that created it
 	// (ADR 0111): that host and where its source came from, or the host alone
@@ -360,6 +364,62 @@ const (
 	// HarnessFailed tried and did not finish. The reason is on the harness.
 	HarnessFailed HarnessState = "failed"
 )
+
+// SecretRejection is a credential the window knows does not work: an upstream
+// refused it, the pool's proxy could not save it with a second value, and the
+// server could not renew it (ADR 0132).
+//
+// The window's first job with one of these is attribution. From inside a
+// discobox a refused credential looks exactly like Discobox failing to deliver
+// one, and saying which credential was refused, and where, is what separates
+// "this is broken" from "this token is dead". The second job is the remedy,
+// which is why the harness is carried: a credential its configure flow made is
+// replaced by configuring it again, and anything else by replacing the value.
+type SecretRejection struct {
+	// Server is the server the credential belongs to, by the name the window
+	// lists it under, and where the remedy goes (ADR 0131 §1): a harness is
+	// configured again on its own server, and a secret replaced there. Empty
+	// when there is only one server.
+	Server     string
+	SecretID   string
+	SecretName string
+	SecretType string
+	// Host is the destination that refused it. A credential can be good for one
+	// host and dead at another, so the band names it.
+	Host string
+	// Reason is why a person is needed rather than another attempt:
+	// unrefreshable, refresh-failed, or rejected-after-refresh.
+	Reason string
+	// EnvName is the variable the credential is delivered in, when something
+	// names one. It is often what a person recognizes the credential by.
+	EnvName string
+	// SandboxID is the discobox that most recently ran into it, and
+	// HarnessConfigID the harness whose configure flow owns the credential,
+	// when one does. Between them they decide which workspace raises the band
+	// and what pressing it opens.
+	SandboxID         string
+	HarnessConfigID   string
+	HarnessConfigName string
+
+	FirstSeen time.Time
+	LastSeen  time.Time
+}
+
+// harnessOwned reports whether configuring a harness again is the remedy.
+func (r SecretRejection) harnessOwned() bool { return r.HarnessConfigID != "" }
+
+// name is what to call the refused credential on one line: the variable it
+// arrives in where there is one, since that is what a harness's own card and
+// its error messages say, and the secret's name otherwise.
+func (r SecretRejection) name() string {
+	if r.EnvName != "" {
+		return r.EnvName
+	}
+	if r.SecretName != "" {
+		return r.SecretName
+	}
+	return r.SecretID
+}
 
 // Harness is one of the project's harness configs, as the harnesses screen
 // draws it.
@@ -1557,6 +1617,16 @@ type DataSource interface {
 	// than streamed: the client-facing event stream is gone (ADR 0061), and a
 	// request is answered on human time anyway.
 	CredentialRequests(ctx context.Context) ([]CredentialRequest, error)
+
+	// SecretRejections is every credential an upstream has refused that its
+	// server cannot renew (ADR 0132), on every server the window lists, each
+	// naming its server — the same reach the credential inbox has (ADR 0131
+	// §1), because a discobox on a second server takes the same 401 and is
+	// fixed with that server's own harness or secret. A server that did not
+	// answer contributes none. It is polled beside the inbox, and for the same
+	// reason: a dead credential is dealt with on human time, and the
+	// client-facing event stream is gone (ADR 0061).
+	SecretRejections(ctx context.Context) ([]SecretRejection, error)
 
 	// Secrets is one server's secrets, for choosing which one answers a
 	// request and for the secrets screen. It never carries a value.

@@ -268,6 +268,55 @@ in Go rather than in SQL, and prefers the narrowest covering grant
 (`hostscope.Specificity`). Hosts are stored through `hostscope.Normalize`
 (lowercased, no port), the form the proxy reports.
 
+## A refused credential is recorded, and only the unfixable kind
+
+`rejections.go` is the control-plane half of [ADR 0132](../../../../docs/adr/0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md).
+A pool agent's proxy reports what an upstream made of a credential it swapped
+in — `rejected`, `rejected-after-retry`, or `accepted` — and this decides
+whether that needs a person. The proxy cannot: it knows a value was refused,
+and whether that is recoverable depends on what kind of credential it is and
+whether it can be renewed, neither of which it may ever be told.
+
+The judgment, in one line each: a `token` has nothing to renew, so the refusal
+is the answer; an `oauth` credential is **renewed first**, past
+`oauthRefreshSkew` and through the same singleflight as every other refresh,
+because an access token can die before its stated expiry while its refresh token
+is perfectly good. A renewal that produced a new token clears everything and
+says nothing — the proxy dropped its cached copy on the way here, so the next
+request carries the new value.
+
+**Only an answer is a verdict** (`renewal`, in `oauth.go`). A 4xx from the token
+endpoint is a refusal and is recorded; an unreachable or 5xx endpoint, a value
+that will not decrypt, and a forced refresh that joined a *non*-forced one on
+the shared singleflight are all `renewalUnavailable` — nothing is recorded, and
+the next report tries again. Recording one of those would ask a person to redo a
+sign-in they do not need, and then suppress the renewal that would have worked.
+
+Three windows bound the work, and they are deliberately different lengths: the
+proxy reports one rejection a minute, a standing rejection is re-judged no more
+often than `rejectionJudgeCooldown` (5m), and a renewal stands for
+`rejectionRefreshCooldown` (10m, `renewedRecently`, in memory). The last is the
+longest because it guards a refresh token that rotates on use, and it is what
+stops the quiet failure: a lapsed subscription can hold a good refresh token, so
+every rejection would renew happily, read as recovered, record nothing, and be
+refused again a minute later — forever, with nothing on screen.
+
+What is stored is live state, not history: one `SecretRejection` per secret and
+host, cleared when the value is replaced, when an `accepted` report retracts it,
+and when nothing has re-reported it for `rejectionStaleAfter` (30m, dropped on
+the read). That last one matters because a clearance can only come from the
+proxy process that reported the rejection: restart the pool agent, or delete the
+discobox that hit the failure, and a credential fixed upstream would otherwise
+keep a band nobody can dismiss.
+
+Replacing a value clears the rejections on it in `store.UpdateSecret`, which is
+the one point every writer passes through — the secrets service and the harness
+configure flow's update-in-place both — and the test is against what is stored
+rather than the shape of what arrived, so it holds with a sealer and without
+one. The harness that owns a credential is derived at read time from
+`ConfiguredSecretIDs` and the config's bindings rather than stored, because
+every path that would have to clear a stored copy belongs to the secret.
+
 ## Sentinel shape
 
 Sentinels are minted from the secret's `Format` through the root

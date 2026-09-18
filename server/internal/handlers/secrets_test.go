@@ -119,6 +119,14 @@ func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, s
 	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusPending}, nil
 }
 
+func (fakeSecretService) RecordSandboxSecretRejection(context.Context, string, string, string, string, string, string) error {
+	return nil
+}
+
+func (fakeSecretService) ListSecretRejections(context.Context, string) ([]model.SecretRejection, error) {
+	return nil, nil
+}
+
 func (fakeSecretService) ListSandboxCredentials(context.Context, string, string) ([]store.AgentCredential, error) {
 	return nil, nil
 }

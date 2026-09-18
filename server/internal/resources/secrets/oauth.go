@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,12 @@ const oauthRefreshSkew = 5 * time.Minute
 
 // oauthRefreshTimeout bounds a single upstream token refresh.
 const oauthRefreshTimeout = 30 * time.Second
+
+// errOAuthRefused marks a token endpoint refusing to renew a credential — a 4xx
+// answer, `invalid_grant` above all — as opposed to being unreachable or
+// erroring. Only the refusal says anything about the credential, and only the
+// refusal is worth a person's time (ADR 0132 §3).
+var errOAuthRefused = errors.New("oauth refresh refused")
 
 // oauthHTTPClient is the client used for token refreshes. It is a package var so
 // tests can point it at an httptest server.
@@ -73,7 +80,7 @@ func (s *Service) ensureFreshOAuth(ctx context.Context, secret *model.Secret, va
 	}
 
 	refreshed, err, _ := s.oauthRefresh.Do(secret.ID, func() (any, error) {
-		return s.refreshOAuthLocked(ctx, secret.ProjectID, secret.ID)
+		return s.refreshOAuthLocked(ctx, secret.ProjectID, secret.ID, false)
 	})
 	if err != nil {
 		if val != nil && strings.TrimSpace(val.Token) != "" {
@@ -94,7 +101,10 @@ func (s *Service) ensureFreshOAuth(ctx context.Context, secret *model.Secret, va
 // refresh, and persists the rotated credential with an updated_at guard. On a
 // guard conflict it re-reads and returns the winner's value rather than retrying
 // the refresh, because the refresh token it holds is already spent.
-func (s *Service) refreshOAuthLocked(ctx context.Context, projectID, secretID string) (*model.SecretValue, error) {
+// force skips the freshness check: a credential the upstream has just refused
+// is stale whatever its stated expiry says, which is the whole of what a 401
+// tells us that a clock cannot (ADR 0132 §3).
+func (s *Service) refreshOAuthLocked(ctx context.Context, projectID, secretID string, force bool) (*model.SecretValue, error) {
 	secret, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
 		return nil, err
@@ -106,7 +116,7 @@ func (s *Service) refreshOAuthLocked(ctx context.Context, projectID, secretID st
 	if val == nil {
 		return nil, fmt.Errorf("oauth secret %s has no value", secretID)
 	}
-	if !oauthNeedsRefresh(val, time.Now().UTC()) {
+	if !force && !oauthNeedsRefresh(val, time.Now().UTC()) {
 		// Someone refreshed while we waited for the lock.
 		return val, nil
 	}
@@ -207,7 +217,16 @@ func refreshOAuthToken(ctx context.Context, val *model.SecretValue) (*model.Secr
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		// The endpoint answered, and its answer is about the credential: the
+		// refresh token is spent, revoked, or belongs to a session somebody
+		// ended elsewhere. That is a finding about the secret, and the one
+		// refresh failure a person has to act on (ADR 0132 §3).
+		return nil, fmt.Errorf("%w: %s: %s", errOAuthRefused, resp.Status, strings.TrimSpace(string(body)))
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		// A 5xx, or anything else it chose to say. The endpoint is having a bad
+		// day; the credential has not been judged.
 		return nil, fmt.Errorf("oauth refresh failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 	var out oauthTokenResponse
@@ -280,4 +299,104 @@ func oauthResolutionExpiry(grantExpiry *time.Time, val *model.SecretValue) *time
 		return &tokenExpiry
 	}
 	return grantExpiry
+}
+
+// renewal is what a forced refresh settled. Four of the five are answers; the
+// fifth is the honest absence of one, and keeping it distinct is what stops a
+// credential being condemned for something that was never about it.
+type renewal int
+
+const (
+	// renewalRotated: a different credential came back. There is something new
+	// to try, and nothing to record yet.
+	renewalRotated renewal = iota
+	// renewalUnchanged: the endpoint answered and handed back the token that
+	// was just refused. Nothing renewed, whatever it said.
+	renewalUnchanged
+	// renewalRefused: the endpoint refused to renew — the refresh token is
+	// spent, revoked, or belongs to a session somebody ended elsewhere. This is
+	// the one that needs a person.
+	renewalRefused
+	// renewalImpossible: there is nothing to renew with.
+	renewalImpossible
+	// renewalUnavailable: the renewal could not be attempted or could not be
+	// judged — the endpoint was unreachable or erroring, the value could not be
+	// decrypted, or this call joined a refresh that was not forced. Nothing is
+	// known about the credential, so nothing is recorded about it.
+	renewalUnavailable
+)
+
+// forceRefreshOAuth renews a credential an upstream refused, whatever its
+// access token's stated expiry says, and reports what that settled.
+//
+// It is the recoverable half of a rejection. An access token can die before its
+// expiry — a sign-out somewhere else, a plan change, a rotation performed by
+// something that is not this control plane — and the credential behind it is
+// perfectly good; asking a person to sign in again for that is asking them to
+// redo work the refresh token can do. So the refresh is tried first, and only
+// what it cannot fix is recorded.
+//
+// What it will not do is turn its own bad day into a verdict about somebody's
+// credential. A token endpoint that is unreachable or answering 500s says
+// nothing about whether a refresh token is still good, and recording
+// "renewal refused" for it would ask a person to redo a sign-in they do not
+// need — and then suppress the retry that would have worked.
+func (s *Service) forceRefreshOAuth(ctx context.Context, secret *model.Secret) renewal {
+	if secret.Type != model.SecretTypeOAuth {
+		return renewalImpossible
+	}
+	before, err := s.store.OpenSecretValue(ctx, secret)
+	if err != nil {
+		// The stored value cannot be read. That is this side's problem, not a
+		// statement about the credential.
+		return renewalUnavailable
+	}
+	if !oauthRenewable(before) {
+		return renewalImpossible
+	}
+	// Through the same singleflight as every other refresh: the refresh token
+	// rotates on use, so two rejections arriving together must not spend it
+	// twice.
+	//
+	// Which is also why a *shared* result is not trusted. The resolve path
+	// refreshes on this same key without forcing, and a call joining one of
+	// those receives its result — which may be the unchanged value it decided
+	// not to renew. Reading that as "renewed and still refused" would condemn a
+	// credential nothing has tried yet, so a shared call that produced no new
+	// token settles nothing and the next report tries again.
+	refreshed, err, shared := s.oauthRefresh.Do(secret.ID, func() (any, error) {
+		return s.refreshOAuthLocked(ctx, secret.ProjectID, secret.ID, true)
+	})
+	if err != nil {
+		if errors.Is(err, errOAuthRefused) {
+			return renewalRefused
+		}
+		// Unreachable, erroring, unparseable, or a store failure. Not a verdict.
+		return renewalUnavailable
+	}
+	after, ok := refreshed.(*model.SecretValue)
+	if !ok || after == nil {
+		return renewalUnavailable
+	}
+	if strings.TrimSpace(after.Token) != "" && after.Token != before.Token {
+		return renewalRotated
+	}
+	if shared {
+		return renewalUnavailable
+	}
+	return renewalUnchanged
+}
+
+// oauthRenewable reports whether a credential carries everything a refresh
+// needs: the token, where to spend it, and whose client it belongs to.
+//
+// All three, because refreshOAuthToken requires all three — a credential
+// missing any of them cannot be renewed at all, which is a different thing
+// from a renewal that was refused, and the two are told apart by what gets
+// recorded about them (ADR 0132 §3).
+func oauthRenewable(val *model.SecretValue) bool {
+	return val != nil &&
+		strings.TrimSpace(val.RefreshToken) != "" &&
+		strings.TrimSpace(val.TokenURL) != "" &&
+		strings.TrimSpace(val.ClientID) != ""
 }

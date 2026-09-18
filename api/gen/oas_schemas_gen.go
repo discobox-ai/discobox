@@ -2090,6 +2090,7 @@ func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
 func (*ErrorModelStatusCode) listSandboxesRes()                    {}
 func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
+func (*ErrorModelStatusCode) listSecretRejectionsRes()             {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
@@ -2103,6 +2104,7 @@ func (*ErrorModelStatusCode) repairSandboxRes()                    {}
 func (*ErrorModelStatusCode) reportPoolResourcesRes()              {}
 func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()          {}
 func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()         {}
+func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()     {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
 func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
@@ -5113,6 +5115,35 @@ func (s *ListSecretGrantsBody) SetSecretGrants(val []SecretGrant) {
 }
 
 func (*ListSecretGrantsBody) listSecretGrantsRes() {}
+
+// Ref: #/components/schemas/ListSecretRejectionsBody
+type ListSecretRejectionsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema           OptURI            `json:"$schema"`
+	SecretRejections []SecretRejection `json:"secretRejections"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSecretRejectionsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecretRejections returns the value of SecretRejections.
+func (s *ListSecretRejectionsBody) GetSecretRejections() []SecretRejection {
+	return s.SecretRejections
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSecretRejectionsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecretRejections sets the value of SecretRejections.
+func (s *ListSecretRejectionsBody) SetSecretRejections(val []SecretRejection) {
+	s.SecretRejections = val
+}
+
+func (*ListSecretRejectionsBody) listSecretRejectionsRes() {}
 
 // Ref: #/components/schemas/ListSecretRequestsBody
 type ListSecretRequestsBody struct {
@@ -9051,6 +9082,52 @@ func (o OptSecretOAuth) Or(d SecretOAuth) SecretOAuth {
 	return d
 }
 
+// NewOptSecretRejectionSecretType returns new OptSecretRejectionSecretType with value set to v.
+func NewOptSecretRejectionSecretType(v SecretRejectionSecretType) OptSecretRejectionSecretType {
+	return OptSecretRejectionSecretType{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRejectionSecretType is optional SecretRejectionSecretType.
+type OptSecretRejectionSecretType struct {
+	Value SecretRejectionSecretType
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRejectionSecretType was set.
+func (o OptSecretRejectionSecretType) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRejectionSecretType) Reset() {
+	var v SecretRejectionSecretType
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRejectionSecretType) SetTo(v SecretRejectionSecretType) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRejectionSecretType) Get() (v SecretRejectionSecretType, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRejectionSecretType) Or(d SecretRejectionSecretType) SecretRejectionSecretType {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSecretValue returns new OptSecretValue with value set to v.
 func NewOptSecretValue(v SecretValue) OptSecretValue {
 	return OptSecretValue{
@@ -12091,6 +12168,140 @@ func (s *ReportSandboxAgentStatusBody) SetSandboxes(val []SandboxAgentStatusEntr
 type ReportSandboxAgentStatusNoContent struct{}
 
 func (*ReportSandboxAgentStatusNoContent) reportSandboxAgentStatusRes() {}
+
+// What an upstream made of a credential the pool's proxy swapped in, reported after the proxy's own
+// retry has had its chance (ADR 0132). It names the sentinel, never the value.
+// Ref: #/components/schemas/ReportSandboxSecretRejectionBody
+type ReportSandboxSecretRejectionBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandbox whose request carried the credential.
+	SandboxId string `json:"sandboxId"`
+	// Stable sentinel the credential was swapped for.
+	Sentinel string `json:"sentinel"`
+	// Destination host that answered.
+	Host string `json:"host"`
+	// What happened. `rejected` is a 401 with nothing different to retry with; `rejected-after-retry` is
+	// a 401 on a second, different credential too; `accepted` retracts a rejection reported earlier.
+	Outcome ReportSandboxSecretRejectionBodyOutcome `json:"outcome"`
+	// Agent credential use the refused sentinel was minted for, when it was one.
+	UseId OptString `json:"useId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ReportSandboxSecretRejectionBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *ReportSandboxSecretRejectionBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetSentinel returns the value of Sentinel.
+func (s *ReportSandboxSecretRejectionBody) GetSentinel() string {
+	return s.Sentinel
+}
+
+// GetHost returns the value of Host.
+func (s *ReportSandboxSecretRejectionBody) GetHost() string {
+	return s.Host
+}
+
+// GetOutcome returns the value of Outcome.
+func (s *ReportSandboxSecretRejectionBody) GetOutcome() ReportSandboxSecretRejectionBodyOutcome {
+	return s.Outcome
+}
+
+// GetUseId returns the value of UseId.
+func (s *ReportSandboxSecretRejectionBody) GetUseId() OptString {
+	return s.UseId
+}
+
+// SetSchema sets the value of Schema.
+func (s *ReportSandboxSecretRejectionBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *ReportSandboxSecretRejectionBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetSentinel sets the value of Sentinel.
+func (s *ReportSandboxSecretRejectionBody) SetSentinel(val string) {
+	s.Sentinel = val
+}
+
+// SetHost sets the value of Host.
+func (s *ReportSandboxSecretRejectionBody) SetHost(val string) {
+	s.Host = val
+}
+
+// SetOutcome sets the value of Outcome.
+func (s *ReportSandboxSecretRejectionBody) SetOutcome(val ReportSandboxSecretRejectionBodyOutcome) {
+	s.Outcome = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *ReportSandboxSecretRejectionBody) SetUseId(val OptString) {
+	s.UseId = val
+}
+
+// What happened. `rejected` is a 401 with nothing different to retry with; `rejected-after-retry` is
+// a 401 on a second, different credential too; `accepted` retracts a rejection reported earlier.
+type ReportSandboxSecretRejectionBodyOutcome string
+
+const (
+	ReportSandboxSecretRejectionBodyOutcomeRejected           ReportSandboxSecretRejectionBodyOutcome = "rejected"
+	ReportSandboxSecretRejectionBodyOutcomeRejectedAfterRetry ReportSandboxSecretRejectionBodyOutcome = "rejected-after-retry"
+	ReportSandboxSecretRejectionBodyOutcomeAccepted           ReportSandboxSecretRejectionBodyOutcome = "accepted"
+)
+
+// AllValues returns all ReportSandboxSecretRejectionBodyOutcome values.
+func (ReportSandboxSecretRejectionBodyOutcome) AllValues() []ReportSandboxSecretRejectionBodyOutcome {
+	return []ReportSandboxSecretRejectionBodyOutcome{
+		ReportSandboxSecretRejectionBodyOutcomeRejected,
+		ReportSandboxSecretRejectionBodyOutcomeRejectedAfterRetry,
+		ReportSandboxSecretRejectionBodyOutcomeAccepted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ReportSandboxSecretRejectionBodyOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case ReportSandboxSecretRejectionBodyOutcomeRejected:
+		return []byte(s), nil
+	case ReportSandboxSecretRejectionBodyOutcomeRejectedAfterRetry:
+		return []byte(s), nil
+	case ReportSandboxSecretRejectionBodyOutcomeAccepted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ReportSandboxSecretRejectionBodyOutcome) UnmarshalText(data []byte) error {
+	switch ReportSandboxSecretRejectionBodyOutcome(data) {
+	case ReportSandboxSecretRejectionBodyOutcomeRejected:
+		*s = ReportSandboxSecretRejectionBodyOutcomeRejected
+		return nil
+	case ReportSandboxSecretRejectionBodyOutcomeRejectedAfterRetry:
+		*s = ReportSandboxSecretRejectionBodyOutcomeRejectedAfterRetry
+		return nil
+	case ReportSandboxSecretRejectionBodyOutcomeAccepted:
+		*s = ReportSandboxSecretRejectionBodyOutcomeAccepted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// ReportSandboxSecretRejectionNoContent is response for ReportSandboxSecretRejection operation.
+type ReportSandboxSecretRejectionNoContent struct{}
+
+func (*ReportSandboxSecretRejectionNoContent) reportSandboxSecretRejectionRes() {}
 
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.
@@ -17922,6 +18133,284 @@ func (s *SecretOAuth) SetSubscriptionType(val OptString) {
 // SetTokenUrl sets the value of TokenUrl.
 func (s *SecretOAuth) SetTokenUrl(val OptString) {
 	s.TokenUrl = val
+}
+
+// A credential an upstream refused that this control plane cannot renew, so a person has to replace
+// it (ADR 0132). Live state, not history - it is cleared when the credential is replaced or starts
+// working again.
+// Ref: #/components/schemas/SecretRejection
+type SecretRejection struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Secret whose value was refused.
+	SecretId string `json:"secretId"`
+	// Name of the refused secret.
+	SecretName OptString `json:"secretName"`
+	// Type of the refused secret.
+	SecretType OptSecretRejectionSecretType `json:"secretType"`
+	// Destination host that refused the credential.
+	Host string `json:"host"`
+	// Why the rejection needs a person rather than another attempt.
+	Reason SecretRejectionReason `json:"reason"`
+	// Sandbox that most recently saw the rejection.
+	SandboxId OptString `json:"sandboxId"`
+	// Agent credential use the refused sentinel was minted for, when it was one.
+	UseId OptString `json:"useId"`
+	// Environment variable the credential is delivered in, when one names it.
+	EnvName OptString `json:"envName"`
+	// Harness config whose configure flow owns this credential, when one does.
+	HarnessConfigId OptString `json:"harnessConfigId"`
+	// Display name of that harness config.
+	HarnessConfigName OptString `json:"harnessConfigName"`
+	// How many times the rejection has been reported.
+	Count int64 `json:"count"`
+	// When the credential was first refused.
+	FirstSeenAt time.Time `json:"firstSeenAt"`
+	// When it was most recently refused.
+	LastSeenAt time.Time `json:"lastSeenAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SecretRejection) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *SecretRejection) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SecretRejection) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSecretName returns the value of SecretName.
+func (s *SecretRejection) GetSecretName() OptString {
+	return s.SecretName
+}
+
+// GetSecretType returns the value of SecretType.
+func (s *SecretRejection) GetSecretType() OptSecretRejectionSecretType {
+	return s.SecretType
+}
+
+// GetHost returns the value of Host.
+func (s *SecretRejection) GetHost() string {
+	return s.Host
+}
+
+// GetReason returns the value of Reason.
+func (s *SecretRejection) GetReason() SecretRejectionReason {
+	return s.Reason
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *SecretRejection) GetSandboxId() OptString {
+	return s.SandboxId
+}
+
+// GetUseId returns the value of UseId.
+func (s *SecretRejection) GetUseId() OptString {
+	return s.UseId
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *SecretRejection) GetEnvName() OptString {
+	return s.EnvName
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *SecretRejection) GetHarnessConfigId() OptString {
+	return s.HarnessConfigId
+}
+
+// GetHarnessConfigName returns the value of HarnessConfigName.
+func (s *SecretRejection) GetHarnessConfigName() OptString {
+	return s.HarnessConfigName
+}
+
+// GetCount returns the value of Count.
+func (s *SecretRejection) GetCount() int64 {
+	return s.Count
+}
+
+// GetFirstSeenAt returns the value of FirstSeenAt.
+func (s *SecretRejection) GetFirstSeenAt() time.Time {
+	return s.FirstSeenAt
+}
+
+// GetLastSeenAt returns the value of LastSeenAt.
+func (s *SecretRejection) GetLastSeenAt() time.Time {
+	return s.LastSeenAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *SecretRejection) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *SecretRejection) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SecretRejection) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSecretName sets the value of SecretName.
+func (s *SecretRejection) SetSecretName(val OptString) {
+	s.SecretName = val
+}
+
+// SetSecretType sets the value of SecretType.
+func (s *SecretRejection) SetSecretType(val OptSecretRejectionSecretType) {
+	s.SecretType = val
+}
+
+// SetHost sets the value of Host.
+func (s *SecretRejection) SetHost(val string) {
+	s.Host = val
+}
+
+// SetReason sets the value of Reason.
+func (s *SecretRejection) SetReason(val SecretRejectionReason) {
+	s.Reason = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *SecretRejection) SetSandboxId(val OptString) {
+	s.SandboxId = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *SecretRejection) SetUseId(val OptString) {
+	s.UseId = val
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *SecretRejection) SetEnvName(val OptString) {
+	s.EnvName = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *SecretRejection) SetHarnessConfigId(val OptString) {
+	s.HarnessConfigId = val
+}
+
+// SetHarnessConfigName sets the value of HarnessConfigName.
+func (s *SecretRejection) SetHarnessConfigName(val OptString) {
+	s.HarnessConfigName = val
+}
+
+// SetCount sets the value of Count.
+func (s *SecretRejection) SetCount(val int64) {
+	s.Count = val
+}
+
+// SetFirstSeenAt sets the value of FirstSeenAt.
+func (s *SecretRejection) SetFirstSeenAt(val time.Time) {
+	s.FirstSeenAt = val
+}
+
+// SetLastSeenAt sets the value of LastSeenAt.
+func (s *SecretRejection) SetLastSeenAt(val time.Time) {
+	s.LastSeenAt = val
+}
+
+// Why the rejection needs a person rather than another attempt.
+type SecretRejectionReason string
+
+const (
+	SecretRejectionReasonUnrefreshable        SecretRejectionReason = "unrefreshable"
+	SecretRejectionReasonRefreshFailed        SecretRejectionReason = "refresh-failed"
+	SecretRejectionReasonRejectedAfterRefresh SecretRejectionReason = "rejected-after-refresh"
+)
+
+// AllValues returns all SecretRejectionReason values.
+func (SecretRejectionReason) AllValues() []SecretRejectionReason {
+	return []SecretRejectionReason{
+		SecretRejectionReasonUnrefreshable,
+		SecretRejectionReasonRefreshFailed,
+		SecretRejectionReasonRejectedAfterRefresh,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRejectionReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRejectionReasonUnrefreshable:
+		return []byte(s), nil
+	case SecretRejectionReasonRefreshFailed:
+		return []byte(s), nil
+	case SecretRejectionReasonRejectedAfterRefresh:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRejectionReason) UnmarshalText(data []byte) error {
+	switch SecretRejectionReason(data) {
+	case SecretRejectionReasonUnrefreshable:
+		*s = SecretRejectionReasonUnrefreshable
+		return nil
+	case SecretRejectionReasonRefreshFailed:
+		*s = SecretRejectionReasonRefreshFailed
+		return nil
+	case SecretRejectionReasonRejectedAfterRefresh:
+		*s = SecretRejectionReasonRejectedAfterRefresh
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Type of the refused secret.
+type SecretRejectionSecretType string
+
+const (
+	SecretRejectionSecretTypeToken SecretRejectionSecretType = "token"
+	SecretRejectionSecretTypeOAuth SecretRejectionSecretType = "oauth"
+)
+
+// AllValues returns all SecretRejectionSecretType values.
+func (SecretRejectionSecretType) AllValues() []SecretRejectionSecretType {
+	return []SecretRejectionSecretType{
+		SecretRejectionSecretTypeToken,
+		SecretRejectionSecretTypeOAuth,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRejectionSecretType) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRejectionSecretTypeToken:
+		return []byte(s), nil
+	case SecretRejectionSecretTypeOAuth:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRejectionSecretType) UnmarshalText(data []byte) error {
+	switch SecretRejectionSecretType(data) {
+	case SecretRejectionSecretTypeToken:
+		*s = SecretRejectionSecretTypeToken
+		return nil
+	case SecretRejectionSecretTypeOAuth:
+		*s = SecretRejectionSecretTypeOAuth
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/SecretRequest

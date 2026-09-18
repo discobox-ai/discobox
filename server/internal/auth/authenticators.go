@@ -108,9 +108,12 @@ func bearerToken(authorization string) string {
 // The value reports whether the action addresses a specific resource, i.e.
 // whether one trailing path segment (its ID) belongs to the route.
 var poolRuntimeActions = map[string]bool{
-	"sandbox-states":              false,
-	"status":                      false,
-	"resolve-sandbox-secret":      false,
+	"sandbox-states":         false,
+	"status":                 false,
+	"resolve-sandbox-secret": false,
+	// What an upstream made of a swapped credential (ADR 0132). One call
+	// reports one verdict, so it takes no trailing ID.
+	"sandbox-secret-rejections":   false,
 	"sandbox-agent-status-tokens": false,
 	"sandbox-agent-status":        false,
 	// The pool's resource report (ADR 0071, resource accounting). It addresses the pool itself, so

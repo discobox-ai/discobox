@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/singleflight"
@@ -31,6 +32,11 @@ type Service struct {
 	// oauthRefresh collapses concurrent resolves of the same OAuth secret onto a
 	// single upstream token refresh, so a rotating refresh token is spent once.
 	oauthRefresh singleflight.Group
+	// renewals is when a rejection last forced a renewal of each credential,
+	// which bounds how often a refused credential may spend a refresh token.
+	// See renewedRecently.
+	renewalsMu sync.Mutex
+	renewals   map[string]time.Time
 }
 
 func NewService(store *store.Store) *Service {
@@ -193,6 +199,10 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 			}
 		}
 	}
+	// A replaced value retracts what was recorded about the credential it
+	// replaced (ADR 0132 §4). The store does it, for every writer at once —
+	// this one and the harness configure flow's update-in-place — rather than
+	// each of them remembering to.
 	if err := s.store.UpdateSecret(ctx, sec); err != nil {
 		return nil, secretCollision(err, sec)
 	}

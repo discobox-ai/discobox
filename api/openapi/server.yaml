@@ -2750,6 +2750,41 @@ components:
             required:
                 - env
             type: object
+        ReportSandboxSecretRejectionBody:
+            additionalProperties: false
+            description: What an upstream made of a credential the pool's proxy swapped in, reported after the proxy's own retry has had its chance (ADR 0132). It names the sentinel, never the value.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ReportSandboxSecretRejectionBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxId:
+                    description: Sandbox whose request carried the credential.
+                    type: string
+                sentinel:
+                    description: Stable sentinel the credential was swapped for.
+                    type: string
+                host:
+                    description: Destination host that answered.
+                    type: string
+                outcome:
+                    description: What happened. `rejected` is a 401 with nothing different to retry with; `rejected-after-retry` is a 401 on a second, different credential too; `accepted` retracts a rejection reported earlier.
+                    enum:
+                        - rejected
+                        - rejected-after-retry
+                        - accepted
+                    type: string
+                useId:
+                    description: Agent credential use the refused sentinel was minted for, when it was one.
+                    type: string
+            required:
+                - sandboxId
+                - sentinel
+                - host
+                - outcome
+            type: object
         ResolveSandboxSecretBody:
             additionalProperties: false
             description: Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value for a destination host.
@@ -3905,6 +3940,93 @@ components:
                     type: string
             required:
                 - type
+            type: object
+        ListSecretRejectionsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretRejectionsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretRejections:
+                    items:
+                        $ref: '#/components/schemas/SecretRejection'
+                    type: array
+            required:
+                - secretRejections
+            type: object
+        SecretRejection:
+            additionalProperties: false
+            description: A credential an upstream refused that this control plane cannot renew, so a person has to replace it (ADR 0132). Live state, not history - it is cleared when the credential is replaced or starts working again.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SecretRejection.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                secretId:
+                    description: Secret whose value was refused
+                    type: string
+                secretName:
+                    description: Name of the refused secret
+                    type: string
+                secretType:
+                    description: Type of the refused secret
+                    enum:
+                        - token
+                        - oauth
+                    type: string
+                host:
+                    description: Destination host that refused the credential
+                    type: string
+                reason:
+                    description: Why the rejection needs a person rather than another attempt
+                    enum:
+                        - unrefreshable
+                        - refresh-failed
+                        - rejected-after-refresh
+                    type: string
+                sandboxId:
+                    description: Sandbox that most recently saw the rejection
+                    type: string
+                useId:
+                    description: Agent credential use the refused sentinel was minted for, when it was one
+                    type: string
+                envName:
+                    description: Environment variable the credential is delivered in, when one names it
+                    type: string
+                harnessConfigId:
+                    description: Harness config whose configure flow owns this credential, when one does
+                    type: string
+                harnessConfigName:
+                    description: Display name of that harness config
+                    type: string
+                count:
+                    description: How many times the rejection has been reported
+                    format: int64
+                    type: integer
+                firstSeenAt:
+                    description: When the credential was first refused
+                    format: date-time
+                    type: string
+                lastSeenAt:
+                    description: When it was most recently refused
+                    format: date-time
+                    type: string
+            required:
+                - projectId
+                - secretId
+                - host
+                - reason
+                - count
+                - firstSeenAt
+                - lastSeenAt
             type: object
         ListSecretRequestsBody:
             additionalProperties: false
@@ -5453,6 +5575,41 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Record a judge's verdict about a command run under an agent credential use
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-secret-rejections:
+        post:
+            operationId: report-sandbox-secret-rejection
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer worker assertion with the secret:resolve scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer worker assertion with the secret:resolve scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ReportSandboxSecretRejectionBody'
+                required: true
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Report what an upstream made of a swapped credential
             tags:
                 - Pools
     /api/pools/{poolId}/resolve-sandbox-secret:
@@ -8402,6 +8559,34 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Update a secret
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-rejections:
+        get:
+            operationId: list-secret-rejections
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretRejectionsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List credentials an upstream has refused
             tags:
                 - Secrets
     /projects/{projectId}/secret-requests:

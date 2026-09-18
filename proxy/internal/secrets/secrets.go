@@ -45,11 +45,45 @@ type ResolveResult struct {
 	UseID string
 }
 
-// Resolver resolves a sentinel to its real credential value. Implementations
-// live outside the proxy (pool-agent/proxyagent) so the proxy stays
-// server-agnostic.
+// Outcome is what an upstream made of a credential the proxy swapped in, as
+// the response path saw it. It is the whole vocabulary of a report: the
+// resolver is told what happened, never what to do about it.
+type Outcome string
+
+const (
+	// OutcomeRejected is a 401 on a swapped credential that the proxy had
+	// nothing different to retry with — so the value the resolver would hand
+	// out now is the one that was refused.
+	OutcomeRejected Outcome = "rejected"
+	// OutcomeRejectedAfterRetry is a 401 on the retry as well, sent with a
+	// credential that differed from the one just refused (ADR 0059).
+	OutcomeRejectedAfterRetry Outcome = "rejected-after-retry"
+	// OutcomeAccepted is a swapped credential the upstream took. It is reported
+	// only where a rejection was reported before it, as the clearance for that
+	// rejection; a working credential is otherwise silent.
+	OutcomeAccepted Outcome = "accepted"
+)
+
+// ReportRequest tells the resolver what an upstream made of the value it
+// resolved. It names the sentinel and never the value: the resolver is the side
+// that knows which credential the sentinel stands for.
+type ReportRequest struct {
+	ClientID string
+	Sentinel string
+	Host     string
+	Outcome  Outcome
+}
+
+// Resolver resolves a sentinel to its real credential value, and hears back
+// what the upstream made of it. Implementations live outside the proxy
+// (pool-agent/proxyagent) so the proxy stays server-agnostic.
 type Resolver interface {
 	Resolve(ctx context.Context, req ResolveRequest) (ResolveResult, error)
+	// Report says what an upstream did with a value this resolver returned.
+	// It is required rather than optional: a resolver that silently discarded
+	// a rejection would be indistinguishable from a credential that never
+	// failed, which is the state ADR 0132 exists to end.
+	Report(ctx context.Context, req ReportRequest) error
 }
 
 // Config configures a Swapper.
@@ -173,6 +207,12 @@ type Result struct {
 	Headers []string
 	// QueryParams is the set of query parameter names whose values were swapped.
 	QueryParams []string
+	// Sentinels is the set of sentinels whose values were substituted. It is
+	// what makes a rejection attributable: a header name says a credential was
+	// swapped, and only this says which one. Sentinels are non-secret by
+	// construction — the pool publishes them in a plaintext file — so carrying
+	// them out of the swap is not carrying the credential.
+	Sentinels []string
 	// Errors holds non-fatal resolution error strings (transient failures).
 	Errors []string
 	// Encoded reports that at least one substitution happened inside a
@@ -235,6 +275,7 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 	dedupe(&res.Headers)
 	dedupe(&res.QueryParams)
 	dedupe(&res.UseIDs)
+	dedupe(&res.Sentinels)
 	return res
 }
 
@@ -308,6 +349,7 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel, host string, 
 			s.triggerRefresh(clientID, sentinel, host, key)
 		}
 		noteUseID(res, entry.useID)
+		res.Sentinels = append(res.Sentinels, sentinel)
 		return entry.value, true
 	}
 	s.mu.Unlock()
@@ -327,6 +369,7 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel, host string, 
 		s.store(key, entry)
 	}
 	noteUseID(res, result.UseID)
+	res.Sentinels = append(res.Sentinels, sentinel)
 	return result.Value, true
 }
 
@@ -451,6 +494,9 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 				// The retry spends the same approved use the rejected attempt
 				// did, so its audit row names it too.
 				noteUseID(&res, useID)
+				if ok {
+					res.Sentinels = append(res.Sentinels, sentinel)
+				}
 				return value, ok
 			})
 			if out.swapped {
@@ -461,6 +507,7 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 	}
 	dedupe(&res.Headers)
 	dedupe(&res.UseIDs)
+	dedupe(&res.Sentinels)
 	return res
 }
 
@@ -477,6 +524,17 @@ func (s *Swapper) previousFor(clientID, sentinel, host string, now time.Time) (s
 		return "", "", false
 	}
 	return prev.value, prev.useID, true
+}
+
+// Report hands the response path's verdict to the resolver. It is a
+// pass-through: the caller owns whether a report is worth making (see the
+// proxy's credential reporter), and this owns nothing but the nil checks a
+// Swapper built without a resolver needs.
+func (s *Swapper) Report(ctx context.Context, req ReportRequest) error {
+	if s == nil || s.resolver == nil {
+		return nil
+	}
+	return s.resolver.Report(ctx, req)
 }
 
 // Invalidate drops whatever this client's sentinels resolved to for host, so

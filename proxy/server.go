@@ -301,6 +301,9 @@ func (s *Server) Close() error {
 	case <-done:
 	case <-time.After(30 * time.Second):
 	}
+	if s.http != nil {
+		s.http.reports.close()
+	}
 	return s.audit.Close()
 }
 

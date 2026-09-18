@@ -773,6 +773,17 @@ flowchart LR
 - The proxy unit resolves sentinels through `proxyagent.secretResolver`, which
   calls the control plane with the scoped token the agent process writes to this
   pool's resolve-context file.
+- The same resolver reports back what an upstream made of a credential it
+  handed over: a `401` the proxy's retry could not save, and the clearance when
+  one starts working again
+  ([ADR 0132](../docs/adr/0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md)).
+  A rejection is translated the way a resolve is — the stable sentinel, plus the
+  use ID an ephemeral one was minted for — and goes to
+  `POST /api/pools/{pool}/sandbox-secret-rejections` under the same
+  `secret:resolve` scope. A *lapsed* activation is still translated here, where
+  a resolve would refuse it: the use window is an authorization, and a rejection
+  is a fact about the credential behind it that the window's ending does not
+  change.
 
 ## Agent Credentials
 

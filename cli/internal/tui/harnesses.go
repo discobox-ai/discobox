@@ -524,7 +524,7 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 
 	switch key {
 	case "e":
-		return m.configureHarness(harness)
+		return m.configureHarness(m.configServer(), harness)
 	case "d":
 		// Disabling runs the harness's deconfigure flow, which deletes the secrets
 		// and files its setup created. Archiving a discobox is reversible and
@@ -563,19 +563,24 @@ func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness, resume *RunReq
 	}
 }
 
-// configureHarness opens the harness's own setup in a clearly named pane.
-func (m *Model) configureHarness(harness Harness) tea.Cmd {
-	return m.configureHarnessThen(harness, nil, nil)
+// configureHarness opens the harness's own setup in a clearly named pane, on the
+// server named. The server is the caller's to say rather than read here: the
+// harnesses screen means the one its header names, and a refused credential's
+// band means the server the credential lives on — which need not be the same
+// one, and configuring the other server's harness of the same name is the
+// mistake ADR 0131 §2 exists to prevent.
+func (m *Model) configureHarness(server string, harness Harness) tea.Cmd {
+	return m.configureHarnessThen(server, harness, nil, nil)
 }
 
 // configureHarnessThen runs the setup and, when andDefault is set, makes that
 // harness the project default once it succeeds.
-func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resume *RunRequest) tea.Cmd {
+func (m *Model) configureHarnessThen(server string, harness Harness, andDefault *Harness, resume *RunRequest) tea.Cmd {
 	name := harness.displayName()
 	m.busy = "configuring " + name + "…"
 	m.expanded = true
 	cols, rows := m.paneCells(m.width)
-	ctx, ds, server := m.ctx, m.ds, m.configServer()
+	ctx, ds := m.ctx, m.ds
 	return func() tea.Msg {
 		// Asked before the flow starts, so the probe's own bind has let go of
 		// the port by the time the flow binds it for real.

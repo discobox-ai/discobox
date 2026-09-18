@@ -736,6 +736,15 @@ func (UnimplementedHandler) ListSecretGrants(ctx context.Context, params ListSec
 	return r, ht.ErrNotImplemented
 }
 
+// ListSecretRejections implements list-secret-rejections operation.
+//
+// List credentials an upstream has refused.
+//
+// GET /projects/{projectId}/secret-rejections
+func (UnimplementedHandler) ListSecretRejections(ctx context.Context, params ListSecretRejectionsParams) (r ListSecretRejectionsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListSecretRequests implements list-secret-requests operation.
 //
 // List secret requests.
@@ -866,6 +875,15 @@ func (UnimplementedHandler) ReportPoolSandboxStates(ctx context.Context, req *Re
 //
 // POST /api/pools/{poolId}/sandbox-agent-status
 func (UnimplementedHandler) ReportSandboxAgentStatus(ctx context.Context, req *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (r ReportSandboxAgentStatusRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ReportSandboxSecretRejection implements report-sandbox-secret-rejection operation.
+//
+// Report what an upstream made of a swapped credential.
+//
+// POST /api/pools/{poolId}/sandbox-secret-rejections
+func (UnimplementedHandler) ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (r ReportSandboxSecretRejectionRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

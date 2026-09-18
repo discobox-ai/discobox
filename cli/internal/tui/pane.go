@@ -624,6 +624,10 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	// says there is one, and an affordance that names a key the pane swallows
 	// is not one.
 	opts = append(opts, termpane.WithPrefixBinding(credentialsLeaderKey, openCredentialsMsg{}))
+	// The credential the header is telling you does not work, for the same
+	// reason: the band names this key, and a key the pane swallowed would make
+	// the band a sentence rather than a button. See rejections.go.
+	opts = append(opts, termpane.WithPrefixBinding(rejectedKey, openRejectedMsg{}))
 	// Every command the list offers, on the key it has there. One key map for
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you

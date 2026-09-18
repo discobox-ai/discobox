@@ -35,6 +35,9 @@ type stubResolver struct {
 	value string
 	host  string
 	useID string
+	// reports is where this resolver is told what the upstream made of its
+	// value, for the tests that assert on it. Nil discards.
+	reports *reportLog
 }
 
 func TestMergeResponseBodyErrorRecordsUnexpectedEOF(t *testing.T) {
@@ -47,6 +50,15 @@ func TestMergeResponseBodyErrorRecordsUnexpectedEOF(t *testing.T) {
 	if got := mergeResponseBodyError("", io.EOF); got != "" {
 		t.Fatalf("mergeResponseBodyError() recorded clean EOF as %q", got)
 	}
+}
+
+// Report satisfies the resolver contract for the tests that do not care what
+// the upstream made of the value; the ones that do use reportLog.
+func (r stubResolver) Report(_ context.Context, req secrets.ReportRequest) error {
+	if r.reports != nil {
+		return r.reports.Report(context.Background(), req)
+	}
+	return nil
 }
 
 func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (secrets.ResolveResult, error) {

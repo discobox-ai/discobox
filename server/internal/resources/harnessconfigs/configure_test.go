@@ -891,3 +891,52 @@ func TestReconcileReapsAConfigureSandboxThatIsAlreadyGone(t *testing.T) {
 		t.Fatalf("configure sandbox id = %q, want it cleared", reaped.ConfigureSandboxID)
 	}
 }
+
+// Re-running a harness's sign-in is the remedy the window offers for a
+// credential an upstream refused (ADR 0132 §5), so it has to retract what was
+// recorded about the credential it replaced. Otherwise the user does the one
+// thing they were asked to do and the band is still there.
+func TestApplyConfigureOutputClearsARefusedCredential(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Host: "api.example.com", UniqueKey: "old", EncryptedValue: []byte(`{"token":"dead"}`)}
+	if err := st.CreateSecret(ctx, previous); err != nil {
+		t.Fatalf("create previous secret: %v", err)
+	}
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "codex", Name: "Codex",
+		Image: "img:1", RunCommand: []string{"codex"},
+		Configured: true, ConfiguredSecretIDs: []string{previous.ID},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "TOKEN", SecretID: previous.ID,
+	}); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if err := st.RecordSecretRejection(ctx, &model.SecretRejection{
+		ProjectID: "project-1", SecretID: previous.ID, Host: "api.example.com",
+		Reason: model.SecretRejectionReasonUnrefreshable, SandboxID: "sandbox-1",
+	}); err != nil {
+		t.Fatalf("record rejection: %v", err)
+	}
+
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "TOKEN", Name: "new-token", Type: "bearer", Host: "api.example.com", Value: []byte(`{"token":"fresh"}`),
+	}}}
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	rejections, err := st.ListSecretRejections(ctx, "project-1")
+	if err != nil {
+		t.Fatalf("list rejections: %v", err)
+	}
+	if len(rejections) != 0 {
+		t.Fatalf("rejections = %v, want none: the sign-in that replaced the credential is the remedy", rejections)
+	}
+}

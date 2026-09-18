@@ -348,12 +348,22 @@ window, drawn **twice** — under the header and again above the keys — so tha
 whichever end of a full screen of output you are reading, the same thing is in
 reach. `banner.go` owns it; each band supplies only its own sentence.
 
-There are two, in this order of precedence, and **only one is ever on screen**
-(`bannerShowing`): a credential request waiting on this discobox
-(`credentials.go`), then work on it that is ready to apply (`apply.go`). An
-agent blocked on a person outranks an offer that will still be there in a
-minute, and a screen carrying two exception bars has a second header rather than
-an exception.
+There are three, in this order of precedence, and **only one is ever on screen**
+(`bannerShowing`): a credential an upstream has refused (`rejections.go`), then
+a credential request waiting on this discobox (`credentials.go`), then work on it
+that is ready to apply (`apply.go`). A screen carrying two exception bars has a
+second header rather than an exception.
+
+**The refusal outranks the request** — which is the opposite of what it looks
+like it should be, since a request is a person being waited on right now. The
+two are usually the same event: the agent takes the 401, concludes it needs a
+credential, and asks for one. Showing the request hides the cause and offers
+the one action that cannot help, because handing over another credential leaves
+the dead one bound to the harness and the new one belonging to nobody. So the
+refusal stays up until it is dealt with, says how many requests are queued
+behind it, and nothing is made unreachable by that: both leader keys are bound
+whichever band is drawn, and the list and the secrets screen still show pending
+requests.
 
 The band is **painted, and the text keeps its own colors over it** (`bannerRow`,
 `attentionMark`/`readyMark`/`attentionText`/`attentionHint`): a field of color,
@@ -375,6 +385,18 @@ is centered in the row and not in the gap the subject leaves, so it holds still
 as the subject changes length, and it is pushed off center rather than through a
 subject long enough to reach it. It goes before the key does and goes whole: a
 chip reading `click to ap…` is a button with a typo on it.
+
+**The refused credential's band** (`rejections.go`, ADR 0132) says which
+credential was refused and where, because that sentence is the one thing nobody
+inside a discobox can work out: from in there, a credential the upstream refuses
+looks exactly like Discobox failing to deliver one. Its call is the remedy that
+fits the credential — a harness's own is re-configured (the setup opens as an
+overlay over the box, and ends back on it), and any other secret's value is
+replaced from the same card the secrets screen opens. Nothing on it may read as
+an invitation to sign in *inside* the box: that cannot work and cannot stick,
+since the sandbox agent restores the delivered sentinel within 30 seconds
+(ADR 0059). The rejections it draws from are polled beside the credential inbox
+and also mark the secrets screen's rows, so one read answers both.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to
 answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,

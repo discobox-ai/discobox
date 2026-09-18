@@ -67,6 +67,10 @@ type Model struct {
 	listPoll    poll
 	readoutPoll poll
 	inboxPoll   poll
+	// alertPoll is the refused credentials, on its own read for the reason the
+	// readout is: a listing that fails or hangs must not cost the inbox its
+	// beat, and the two answer different questions.
+	alertPoll poll
 
 	ctx context.Context
 	ds  DataSource
@@ -104,6 +108,11 @@ type Model struct {
 	// included. The secrets screen counts and answers from it; the map above
 	// only exists to mark rows.
 	allRequests []CredentialRequest
+
+	// rejections is every credential in the project an upstream has refused
+	// and the server cannot renew (ADR 0132). Read on its own beat beside the
+	// inbox, and drawn as the workspace's third band. See rejections.go.
+	rejections []SecretRejection
 
 	// harnesses is the project's harnesses: the screen that manages them, and
 	// the listing the run options' harness choices are built from. It is read
@@ -878,6 +887,26 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.setCredentialRequests(msg.requests)
 		return again
 
+	case secretRejectionsLoadedMsg:
+		// Nothing asks for this read but the beat, so a landed one is simply
+		// released rather than followed up: unlike the inbox, no action here
+		// changes what it answers.
+		m.alertPoll.landed()
+		if msg.err != nil {
+			// Quietly, like the inbox: this is polled, and a window that
+			// shouts every few seconds about a server it cannot reach is one
+			// you stop reading.
+			return nil
+		}
+		m.setSecretRejections(msg.rejections)
+		return nil
+
+	case openRejectedMsg:
+		return m.openRejectedRemedy(m.paneBox)
+
+	case rejectionRemedyMsg:
+		return m.rejectionRemedy(msg)
+
 	case secretsLoadedMsg:
 		if msg.err != nil {
 			m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read the project's secrets: %v\n\nThe request is still waiting.", msg.err))
@@ -895,7 +924,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.credentialAnswered(msg)
 
 	case tickMsg:
-		cmds := []tea.Cmd{m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.tick()}
+		cmds := []tea.Cmd{m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadSecretRejections(), m.tick()}
 		// The draft is written on the same clock the listing is read on, so a
 		// window killed outright — a closed terminal, a lost ssh session —
 		// loses at most the last few seconds of what was typed. The keys that
@@ -1097,9 +1126,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case harnessSetupMsg:
 		if msg.andDefault {
-			return m.configureHarnessThen(msg.harness, &msg.harness, msg.resume)
+			return m.configureHarnessThen(m.configServer(), msg.harness, &msg.harness, msg.resume)
 		}
-		return m.configureHarnessThen(msg.harness, nil, msg.resume)
+		return m.configureHarnessThen(m.configServer(), msg.harness, nil, msg.resume)
 
 	case harnessDefaultMsg:
 		return m.chooseDefaultHarness(msg)
@@ -2423,7 +2452,7 @@ func (m *Model) chooseDefaultHarness(msg harnessDefaultMsg) tea.Cmd {
 	if msg.harness.State == HarnessEnabled {
 		return m.runHarnessVerb(HarnessSetDefault, msg.harness, msg.resume)
 	}
-	return m.configureHarnessThen(msg.harness, &msg.harness, msg.resume)
+	return m.configureHarnessThen(m.configServer(), msg.harness, &msg.harness, msg.resume)
 }
 
 // projectDefaultHarness is the harness the project runs when nothing says

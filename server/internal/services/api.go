@@ -340,6 +340,11 @@ type SecretService interface {
 	RevokeSecretGrant(ctx context.Context, projectID, grantID string) error
 
 	ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
+	// RecordSandboxSecretRejection takes what an upstream made of a credential
+	// the pool's proxy swapped in, and decides whether it needs a person
+	// (ADR 0132). ListSecretRejections is what the window reads back.
+	RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome, useID string) error
+	ListSecretRejections(ctx context.Context, projectID string) ([]model.SecretRejection, error)
 
 	// The agent credentials broker (ADR 0031). Every call is made by a pool
 	// agent on behalf of one of its own sandboxes, so each takes the calling

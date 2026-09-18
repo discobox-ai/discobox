@@ -133,6 +133,49 @@ func (h *Handler) DenySecretRequest(ctx context.Context, params serverapi.DenySe
 	return &serverapi.DenySecretRequestNoContent{}, nil
 }
 
+// ReportSandboxSecretRejection takes a pool agent's report about a credential
+// an upstream refused (ADR 0132). It is authorized by the same scope as
+// resolving one: the caller is saying what happened to a value it was already
+// entitled to ask for, and names nothing it was not already told.
+func (h *Handler) ReportSandboxSecretRejection(ctx context.Context, req *apimodel.ReportSandboxSecretRejectionBody, _ serverapi.ReportSandboxSecretRejectionParams) (serverapi.ReportSandboxSecretRejectionRes, error) {
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool {
+		return apiError(apperrors.NewStatusError(http.StatusUnauthorized, "pool agent authentication required")), nil
+	}
+	if !principal.HasScope(poolauth.ScopeSecretResolve) {
+		return apiError(apperrors.NewStatusError(http.StatusForbidden, "secret:resolve scope required")), nil
+	}
+	err := h.services.Secrets.RecordSandboxSecretRejection(
+		ctx,
+		principal.PoolID,
+		req.SandboxId,
+		req.Sentinel,
+		req.Host,
+		string(req.Outcome),
+		req.UseId.Or(""),
+	)
+	if err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.ReportSandboxSecretRejectionNoContent{}, nil
+}
+
+// ListSecretRejections is the window's read of the same records: which
+// credentials this project cannot use, and what to do about each.
+func (h *Handler) ListSecretRejections(ctx context.Context, params serverapi.ListSecretRejectionsParams) (serverapi.ListSecretRejectionsRes, error) {
+	rejections, err := h.services.Secrets.ListSecretRejections(ctx, params.ProjectId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.ListSecretRejectionsBody](struct {
+		SecretRejections any `json:"secretRejections"`
+	}{SecretRejections: rejections})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) ResolveSandboxSecret(ctx context.Context, req *apimodel.ResolveSandboxSecretBody, _ serverapi.ResolveSandboxSecretParams) (serverapi.ResolveSandboxSecretRes, error) {
 	principal, ok := auth.PrincipalFromContext(ctx)
 	if !ok || principal.Type != auth.PrincipalTypePool {

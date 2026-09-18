@@ -301,6 +301,10 @@ type ListSecretGrantsRes interface {
 	listSecretGrantsRes()
 }
 
+type ListSecretRejectionsRes interface {
+	listSecretRejectionsRes()
+}
+
 type ListSecretRequestsRes interface {
 	listSecretRequestsRes()
 }
@@ -351,6 +355,10 @@ type ReportPoolSandboxStatesRes interface {
 
 type ReportSandboxAgentStatusRes interface {
 	reportSandboxAgentStatusRes()
+}
+
+type ReportSandboxSecretRejectionRes interface {
+	reportSandboxSecretRejectionRes()
 }
 
 type ResolveSandboxSecretRes interface {

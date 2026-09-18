@@ -897,7 +897,33 @@ const (
 	SecretGrantScopeSandbox       = "sandbox"
 	SecretGrantScopeHarnessConfig = "harnessConfig"
 	SecretGrantScopeProject       = "project"
+
+	// SecretRejectionReasonUnrefreshable and its siblings are why a credential
+	// an upstream refused needs a person rather than another attempt
+	// (ADR 0132 §3). They are the control plane's judgment, not the proxy's
+	// observation: the proxy reports a rejection, and what is recorded is what
+	// this side could or could not do about it.
+	//
+	// Unrefreshable is a credential with nothing to renew — an API key, or an
+	// OAuth secret holding no refresh material. Whatever was stored is what was
+	// refused.
+	SecretRejectionReasonUnrefreshable = "unrefreshable"
+	// SecretRejectionReasonRefreshFailed is an OAuth credential whose renewal
+	// was attempted and refused: the refresh token is spent, revoked, or
+	// belongs to a session somebody ended elsewhere.
+	SecretRejectionReasonRefreshFailed = "refresh-failed"
+	// SecretRejectionReasonRejectedAfterRefresh is the one that costs a person
+	// the most certainty: the credential renewed, and what came back was
+	// refused too.
+	SecretRejectionReasonRejectedAfterRefresh = "rejected-after-refresh"
 )
+
+// SecretRejectionReasons is every reason a rejection can be recorded under.
+var SecretRejectionReasons = []string{
+	SecretRejectionReasonUnrefreshable,
+	SecretRejectionReasonRefreshFailed,
+	SecretRejectionReasonRejectedAfterRefresh,
+}
 
 // OAuth token request encodings (SecretValue.TokenRequestEncoding). JSON is the
 // empty value because it is what every OAuth secret stored before the field
@@ -1248,6 +1274,53 @@ func (c *CredentialVerdict) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+// SecretRejection records a credential an upstream refused, which the proxy's
+// retry could not save and this side cannot renew (ADR 0132 §4). It is live
+// state rather than history: one row per secret and destination, cleared when
+// the credential is replaced or starts working again.
+//
+// Its key is that pair rather than a generated ID. Nothing addresses a
+// rejection — the window reads them as a list and acts on the secret — and a
+// surrogate key would let the same credential be condemned twice for the same
+// host, which is the one thing the table must not hold.
+type SecretRejection struct {
+	ProjectID string `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID"`
+	SecretID  string `gorm:"column:secret_id;primaryKey;type:text;index" json:"secretId" doc:"Secret whose value was refused"`
+	// Host is the destination that refused it, normalized the way every other
+	// host on this model is. A credential good for one host and dead at another
+	// is two different facts, and the row says which one this is.
+	Host string `gorm:"column:host;primaryKey;type:text" json:"host" doc:"Destination host that refused the credential"`
+	// Reason is why a person is needed: see SecretRejectionReasons.
+	Reason string `gorm:"column:reason;not null;type:text" json:"reason" doc:"Why the rejection needs a person rather than another attempt" enum:"unrefreshable,refresh-failed,rejected-after-refresh"`
+	// SandboxID and UseID are where it was last seen, kept for the report
+	// rather than for matching: a harness credential fails in every sandbox on
+	// that harness, and naming the most recent one is how somebody finds their
+	// way to it. UseID is set when the refused sentinel was minted for one
+	// agent-credential use (ADR 0079).
+	SandboxID string `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that most recently saw the rejection"`
+	UseID     string `gorm:"column:use_id;not null;type:text;default:''" json:"useId,omitempty" doc:"Agent credential use the refused sentinel was minted for, when it was one"`
+	// Count is how many times this has been reported. The proxy coalesces its
+	// reports, so this counts minutes of failure rather than requests.
+	Count       int64     `gorm:"column:count;not null;default:0" json:"count" doc:"How many times the rejection has been reported"`
+	FirstSeenAt time.Time `gorm:"column:first_seen_at;not null" json:"firstSeenAt" doc:"When the credential was first refused" format:"date-time"`
+	LastSeenAt  time.Time `gorm:"column:last_seen_at;not null" json:"lastSeenAt" doc:"When it was most recently refused" format:"date-time"`
+
+	// Secret, HarnessConfigID and the rest are filled in on read: what the
+	// window needs to name the credential and offer the remedy that fits it.
+	// They are derived rather than stored for the reason the harness is not a
+	// column — the answer belongs to the secret and its bindings, and a copy
+	// here would be a second writer of it.
+	SecretName        string `gorm:"-" json:"secretName,omitempty" doc:"Name of the refused secret"`
+	SecretType        string `gorm:"-" json:"secretType,omitempty" doc:"Type of the refused secret" enum:"token,oauth"`
+	EnvName           string `gorm:"-" json:"envName,omitempty" doc:"Environment variable the credential is delivered in, when one names it"`
+	HarnessConfigID   string `gorm:"-" json:"harnessConfigId,omitempty" doc:"Harness config whose configure flow owns this credential, when one does"`
+	HarnessConfigName string `gorm:"-" json:"harnessConfigName,omitempty" doc:"Display name of that harness config"`
+
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+}
+
+func (SecretRejection) TableName() string { return "secret_rejections" }
+
 // AllModels returns all persisted model types.
 func AllModels() []any {
 	return []any{
@@ -1269,5 +1342,6 @@ func AllModels() []any {
 		&SSHKey{},
 		&Peer{},
 		&CredentialVerdict{},
+		&SecretRejection{},
 	}
 }

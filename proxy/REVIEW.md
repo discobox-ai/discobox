@@ -69,6 +69,21 @@
   that differs from the one just rejected. Never retry the same value, never
   retry more than once, and never retry a request whose body was too large to
   hold — a retry must not become a way to duplicate or amplify upstream load.
+- A rejection is reported off the request path, never on it, and never more
+  than once per `(client, sentinel, host)` per cooldown. Reporting state belongs
+  to the proxy, not the `Swapper`: `ApplyConfig` builds a new `Swapper` every
+  time a sentinel set changes, so anything that must outlive a config apply —
+  which rejections and their cooldowns must — cannot live there.
+- A report names a sentinel, a client and a host. Never put a resolved value, or
+  anything derived from one, into a report.
+- A queue the datapath writes to and shutdown closes needs the close guard, not
+  just the bounded drop: `Server.Close` stops waiting for in-flight connections
+  after 30s, so an enqueue after the close is reachable and would panic the
+  proxy rather than drop.
+- Only a 2xx retracts a rejection. A 3xx is frequently how an upstream says a
+  session is dead.
+- Only a request this proxy swapped a credential into may be reported. A 401 on
+  a credential the sandbox brought itself is not evidence about a secret.
 - Keep the previous-value memory out of the cache entry. `Invalidate` drops the
   entry, and the fallback exists precisely to outlive the value being dropped.
 - Do not scan or swap request bodies while the request-body audit spool would

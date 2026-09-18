@@ -19,9 +19,58 @@ import (
 // re-resolves gets something new — the control plane having rotated the
 // credential behind the sentinel.
 type rotatingResolver struct {
+	reportLog
 	mu     sync.Mutex
 	values []string
 	calls  int
+}
+
+// reportLog records what a resolver was told about the credentials it handed
+// out. It is the proxy's whole side of ADR 0132: a rejection the response path
+// saw, named by sentinel rather than by value.
+type reportLog struct {
+	mu   sync.Mutex
+	list []secrets.ReportRequest
+}
+
+func (l *reportLog) Report(_ context.Context, req secrets.ReportRequest) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.list = append(l.list, req)
+	return nil
+}
+
+func (l *reportLog) reports() []secrets.ReportRequest {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]secrets.ReportRequest(nil), l.list...)
+}
+
+// outcomes is what was reported, in order, which is what most of these tests
+// are actually asserting on.
+func (l *reportLog) outcomes() []secrets.Outcome {
+	out := []secrets.Outcome{}
+	for _, req := range l.reports() {
+		out = append(out, req.Outcome)
+	}
+	return out
+}
+
+// waitForReports waits for the background reporter to catch up, since reporting
+// is deliberately off the request path and a response can land before it.
+func waitForReports(t *testing.T, log *reportLog, want int) []secrets.ReportRequest {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := log.reports()
+		if len(got) >= want {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("reports = %v, want %d", log.outcomes(), want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func (r *rotatingResolver) Resolve(context.Context, secrets.ResolveRequest) (secrets.ResolveResult, error) {
@@ -229,6 +278,7 @@ func TestHTTPProxyDoesNotRetryUnswappedRequests(t *testing.T) {
 
 // settableResolver returns whatever the control plane currently holds.
 type settableResolver struct {
+	reportLog
 	mu    sync.Mutex
 	value string
 }

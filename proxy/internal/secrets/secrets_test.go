@@ -14,6 +14,12 @@ type fakeResolver struct {
 	calls   atomic.Int64
 	fn      func(ResolveRequest) (ResolveResult, error)
 	lastReq ResolveRequest
+	reports []ReportRequest
+}
+
+func (f *fakeResolver) Report(_ context.Context, req ReportRequest) error {
+	f.reports = append(f.reports, req)
+	return nil
 }
 
 func (f *fakeResolver) Resolve(_ context.Context, req ResolveRequest) (ResolveResult, error) {

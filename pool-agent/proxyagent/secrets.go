@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,6 +158,20 @@ type resolveResponseBody struct {
 	ExpiresAt *time.Time `json:"expiresAt"`
 }
 
+// rejectionRequestBody reports what an upstream made of a credential this pool
+// swapped in. It carries the stable sentinel, never the ephemeral one and never
+// the value (ADR 0132 §2).
+type rejectionRequestBody struct {
+	SandboxID string `json:"sandboxId"`
+	Sentinel  string `json:"sentinel"`
+	Host      string `json:"host"`
+	Outcome   string `json:"outcome"`
+	// UseID names the agent-credential use the rejected sentinel was minted
+	// for, when it was one. It is what makes a wrapped command's rejection
+	// attributable to the use that authorized it (ADR 0079).
+	UseID string `json:"useId,omitempty"`
+}
+
 func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveRequest) (proxy.SecretResolveResult, error) {
 	rc, err := readResolveContext(r.contextPath)
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
@@ -231,6 +246,75 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 		result.ExpiresAt = activationExpiry
 	}
 	return result, nil
+}
+
+// Report tells the control plane what an upstream made of a value this resolver
+// handed out.
+//
+// It translates the sentinel the same way Resolve does, and for the same
+// reason: the control plane knows stable sentinels, and an ephemeral one is
+// this process's own invention. The difference is which activations count —
+// Resolve refuses a lapsed one because the use window is an authorization, and
+// this accepts it because a rejection is a fact about the credential behind it,
+// which the window's ending does not change. A report is also necessarily late:
+// it crosses the response path, a queue, and a cooldown.
+func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportRequest) error {
+	rc, err := readResolveContext(r.contextPath)
+	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
+		return nil
+	}
+	sentinel, useID := req.Sentinel, ""
+	if record, ok := r.mintedActivation(req.Sentinel); ok {
+		if record.SandboxID != req.ClientID {
+			// A sentinel this process minted for a different sandbox. Resolve
+			// refuses that; there is nothing to say about it either.
+			return nil
+		}
+		sentinel, useID = record.Stable, record.UseID
+	}
+	payload, err := json.Marshal(rejectionRequestBody{
+		SandboxID: req.ClientID,
+		Sentinel:  sentinel,
+		Host:      req.Host,
+		Outcome:   string(req.Outcome),
+		UseID:     useID,
+	})
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/api/pools/%s/sandbox-secret-rejections", rc.ControlPlaneURL, rc.PoolID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+rc.Token)
+	resp, err := r.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("report rejected secret: control plane returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// mintedActivation returns the activation an ephemeral sentinel was minted
+// under, live or lapsed.
+//
+// A sentinel this process never minted is a stable one, and is reported as
+// itself. That is the same reading `Resolve` takes, and it is why an activation
+// outlives its own expiry here by activationReportGrace: without the grace a
+// lapsed sentinel would be indistinguishable from a stable one, and the report
+// would carry the ephemeral string to a control plane that must never see one
+// (ADR 0031 §3) and could not resolve it anyway.
+func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
+	if r.activations == nil {
+		return activation{}, false
+	}
+	return r.activations.lookupAny(sentinel)
 }
 
 // activation returns the live activation for a resolve request, if the sentinel

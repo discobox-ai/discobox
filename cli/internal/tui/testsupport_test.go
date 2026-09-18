@@ -75,7 +75,10 @@ type fakeSource struct {
 
 	// The credential inbox: what is waiting, what can answer it, and what the
 	// window did about it.
-	requests       []CredentialRequest
+	requests []CredentialRequest
+	// Credentials an upstream refused: what the third band is drawn from.
+	rejections     []SecretRejection
+	rejectionsErr  error
 	projectSecrets []Secret
 	// secretsOn and harnessesOn are what a server named in the call holds,
 	// for a window with several; one not named there answers with
@@ -984,6 +987,13 @@ func (f *fakeSource) OpenHarnessConfigure(_ context.Context, server, id string, 
 	return term, nil
 }
 
+// configuredHarnesses is which harnesses had their setup opened, in order.
+func (f *fakeSource) configuredHarnesses() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.configured...)
+}
+
 func (f *fakeSource) LocalPortsInUse(_ context.Context, ports []int) []int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1354,6 +1364,12 @@ func (f *fakeSource) CredentialRequests(context.Context) ([]CredentialRequest, e
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]CredentialRequest(nil), f.requests...), f.requestsErr
+}
+
+func (f *fakeSource) SecretRejections(context.Context) ([]SecretRejection, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]SecretRejection(nil), f.rejections...), f.rejectionsErr
 }
 
 func (f *fakeSource) Secrets(_ context.Context, server string) ([]Secret, error) {

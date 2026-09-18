@@ -103,6 +103,70 @@ func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialReque
 	return out, nil
 }
 
+// SecretRejections is what the window knows does not work: credentials an
+// upstream refused that their server could not renew (ADR 0132), on every
+// server the window lists, the way the credential inbox is (ADR 0131 §1).
+func (d *apiDataSource) SecretRejections(ctx context.Context) ([]tui.SecretRejection, error) {
+	if d.servers == nil {
+		ctx, cancel := context.WithTimeout(ctx, pollTimeout)
+		defer cancel()
+		return d.rejectionsHere(ctx)
+	}
+	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[tui.SecretRejection] { return &s.rejections },
+		func(ctx context.Context, source *apiDataSource) ([]tui.SecretRejection, error) {
+			return source.rejectionsHere(ctx)
+		})
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var out []tui.SecretRejection
+	// A server registered under two addresses lists the same rows twice; they
+	// are kept once, under the first, as its discoboxes and requests are.
+	seen := map[string]bool{}
+	for _, s := range d.servers {
+		for _, rejection := range s.rejections.last {
+			key := rejection.SecretID + "\x00" + rejection.Host
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			rejection.Server = s.name
+			out = append(out, rejection)
+		}
+	}
+	return out, nil
+}
+
+// rejectionsHere is one server's refused credentials.
+func (d *apiDataSource) rejectionsHere(ctx context.Context) ([]tui.SecretRejection, error) {
+	res, err := d.client.ListSecretRejections(ctx, apiclientgen.ListSecretRejectionsParams{ProjectId: d.projectID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListSecretRejectionsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	rejections := body.GetSecretRejections()
+	out := make([]tui.SecretRejection, 0, len(rejections))
+	for _, r := range rejections {
+		out = append(out, tui.SecretRejection{
+			SecretID:          r.SecretId,
+			SecretName:        strings.TrimSpace(r.SecretName.Or("")),
+			SecretType:        string(r.SecretType.Or("")),
+			Host:              strings.TrimSpace(r.Host),
+			Reason:            string(r.Reason),
+			EnvName:           strings.TrimSpace(r.EnvName.Or("")),
+			SandboxID:         strings.TrimSpace(r.SandboxId.Or("")),
+			HarnessConfigID:   strings.TrimSpace(r.HarnessConfigId.Or("")),
+			HarnessConfigName: strings.TrimSpace(r.HarnessConfigName.Or("")),
+			FirstSeen:         r.FirstSeenAt,
+			LastSeen:          r.LastSeenAt,
+		})
+	}
+	return out, nil
+}
+
 func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 	req := tui.CredentialRequest{
 		ID:            r.ID,

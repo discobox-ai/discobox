@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -98,19 +99,61 @@ func (s *Store) ListSecrets(ctx context.Context, projectID string) ([]model.Secr
 }
 
 func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
+	// Whether this write replaces the credential, which is what decides
+	// whether a recorded rejection of it is still true (ADR 0132 §4).
+	//
+	// The test is against what is stored rather than against the shape of what
+	// arrived, because it has to hold both with a sealer and without one. A
+	// caller replacing a value hands over plaintext, which never equals the
+	// stored ciphertext; a caller renaming hands back the row it read, whose
+	// value is byte-identical to it. With no sealer both sides are plaintext
+	// and the same comparison still separates them.
+	//
+	// It lives here rather than in each service because "the value was
+	// replaced" has more than one writer — the secrets service, the harness
+	// configure flow's update-in-place, and whatever is added next — and a rule
+	// enforced in one of them is a rule the others walk around.
+	replacedValue, err := s.secretValueReplaced(ctx, secret)
+	if err != nil {
+		return err
+	}
 	sealed, err := s.sealSecretForWrite(ctx, secret)
 	if err != nil {
 		return err
 	}
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	if err := write.Save(sealed).Error; err != nil {
+	// The write and the retraction are one act, the way DeleteSecret's cascade
+	// is: a row saying a credential was refused, standing against a credential
+	// that is no longer there, is the state this must not leave behind.
+	if err := s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		if err := tx.Save(sealed).Error; err != nil {
+			return err
+		}
+		if !replacedValue {
+			return nil
+		}
+		return s.clearSecretRejections(tx, sealed.ProjectID, sealed.ID)
+	}); err != nil {
 		return err
 	}
 	*secret = *sealed
 	return nil
+}
+
+// secretValueReplaced reports whether an update carries a different credential
+// than the row already holds. A secret that does not exist yet, or a write
+// carrying no value at all, replaces nothing.
+func (s *Store) secretValueReplaced(ctx context.Context, secret *model.Secret) (bool, error) {
+	if len(secret.EncryptedValue) == 0 || secret.ID == "" {
+		return false, nil
+	}
+	stored, err := s.GetSecret(ctx, secret.ProjectID, secret.ID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return !bytes.Equal(stored.EncryptedValue, secret.EncryptedValue), nil
 }
 
 // UpdateSecretValueIfUnchanged replaces a secret's encrypted value only if its
@@ -160,6 +203,9 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 			return err
 		}
 		if err := s.deleteSandboxSecretsBySecret(tx, secretID); err != nil {
+			return err
+		}
+		if err := s.clearSecretRejections(tx, projectID, secretID); err != nil {
 			return err
 		}
 		return tx.Delete(sec).Error

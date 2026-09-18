@@ -34,8 +34,12 @@ type httpProxy struct {
 	audit         *audit.Recorder
 	mitmConnect   *goproxy.ConnectAction
 	rejectConnect *goproxy.ConnectAction
-	mu            sync.RWMutex
-	ids           map[string]clientIdentity
+	// reports carries a refused credential back to the resolver. It outlives
+	// every swapper this proxy is given, which is the point of it being here;
+	// see credentialreport.go.
+	reports *credentialReporter
+	mu      sync.RWMutex
+	ids     map[string]clientIdentity
 }
 
 type requestMeta struct {
@@ -65,7 +69,11 @@ type requestMeta struct {
 	// backdate it onto the 401's row, which is written after the retry is
 	// chosen.
 	swappedUseIDs []string
-	auditURL      string
+	// swappedSentinels is which sentinels this request carried, kept beside the
+	// header names they were found in because a rejection has to name the
+	// credential and a header name cannot (ADR 0132 §1).
+	swappedSentinels []string
+	auditURL         string
 	// preSwapHeader is the request's headers as the sandbox sent them, with the
 	// sentinels still in place. It is what a retry re-swaps from; re-swapping
 	// the outbound headers would look for a sentinel that is no longer there.
@@ -118,6 +126,12 @@ func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, rewriter *rules.
 	p := goproxy.NewProxyHttpServer()
 	p.Verbose = false
 	h := &httpProxy{proxy: p, certs: certs, filter: flt, rewriter: rewriter, swapper: swapper, cache: c, audit: recorder, ids: map[string]clientIdentity{}}
+	// Through the current swapper rather than the one held at construction:
+	// ApplyConfig replaces it, and a report belongs to whichever resolver is
+	// live when it goes out.
+	h.reports = newCredentialReporter(func(ctx context.Context, req secrets.ReportRequest) error {
+		return h.secretSwapper().Report(ctx, req)
+	})
 	h.setupMITM()
 	h.setupHandlers()
 	return h
@@ -315,6 +329,14 @@ func (h *httpProxy) setupHandlers() {
 		if retried := h.retryRejectedSwap(resp, ctx, meta); retried != nil {
 			resp = retried
 		}
+		// A swapped credential the upstream took clears a rejection this proxy
+		// reported earlier, however the credential came to be fixed —
+		// reconfigured, replaced by hand, or rotated upstream. Nothing is sent
+		// unless something was reported, so an ordinary working request is
+		// silent.
+		if len(meta.swappedSentinels) > 0 && succeeded(resp.StatusCode) {
+			h.reports.accepted(meta.client.ID, ctx.Req.Host, meta.swappedSentinels)
+		}
 
 		if upgradedProtocol, isUpgrade := getUpgradeProtocol(ctx.Req, resp); isUpgrade {
 			resp.Header.Set("Connection", "Upgrade")
@@ -453,6 +475,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	}
 	meta.swappedHeaders = result.Headers
 	meta.swappedUseIDs = result.UseIDs
+	meta.swappedSentinels = result.Sentinels
 	// A query swap rewrote the URL, so the retry path — which rebuilds a
 	// request from the pre-swap headers — cannot reproduce this request.
 	meta.retryable = len(result.QueryParams) == 0
@@ -507,7 +530,7 @@ func (b joinedBody) Close() error { return b.closer.Close() }
 
 // retryRejectedSwap sends a request once more when the upstream rejected the
 // credential the proxy swapped into it, returning the retry's response or nil
-// to keep the original.
+// to keep the original — and reports whatever the attempt settled.
 //
 // A 401 on a swapped request is not the sandbox's error: the sandbox holds a
 // sentinel, which cannot expire, and everything behind it belongs to the
@@ -528,15 +551,31 @@ func (b joinedBody) Close() error { return b.closer.Close() }
 // If neither produces a different credential there is nothing new to send, and
 // re-sending the rejected one would only spend an upstream request to fail the
 // same way.
+//
+// What the attempt settles is then reported (ADR 0132 §1), and the retry is
+// what makes the report worth anything: "the credential was refused" is a
+// rotation as often as it is a dead login, and only "the other value was
+// refused too" tells them apart. A retry that *works* reports nothing — that is
+// the blip ADR 0059 is about, and it is handled by having handled it.
 func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx, meta *requestMeta) *http.Response {
-	if resp.StatusCode != http.StatusUnauthorized || meta.retried || !meta.retryable {
+	if resp.StatusCode != http.StatusUnauthorized || meta.retried {
 		return nil
 	}
-	if len(meta.swappedHeaders) == 0 || meta.preSwapHeader == nil {
+	if len(meta.swappedHeaders) == 0 || len(meta.swappedSentinels) == 0 {
+		// Not a request this proxy put a credential into: the 401 belongs to
+		// whatever the sandbox sent, and is neither ours to retry nor ours to
+		// report.
 		return nil
 	}
 	swapper := h.secretSwapper()
 	if swapper == nil {
+		return nil
+	}
+	// A request that cannot be retried — a body too large to hold, a swap into
+	// the URL — is still a refused credential, and the one thing that can be
+	// said about it is that it was refused.
+	if !meta.retryable || meta.preSwapHeader == nil {
+		h.reports.rejected(meta.client.ID, ctx.Req.Host, meta.swappedSentinels, secrets.OutcomeRejected)
 		return nil
 	}
 	req := ctx.Req
@@ -562,7 +601,10 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	case previousResult.Swapped() && !sameHeaderValues(req.Header, previous.Header, meta.swappedHeaders):
 		retryReq, source = previous, "previous"
 	default:
+		// Nothing to send that is not the value just refused, which means the
+		// credential the resolver would hand out now is the rejected one.
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.retry.attempted", false))
+		h.reports.rejected(meta.client.ID, req.Host, meta.swappedSentinels, secrets.OutcomeRejected)
 		return nil
 	}
 
@@ -584,6 +626,14 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 		attribute.String("proxy.secret_swap.retry.credential", source),
 		attribute.Int("proxy.secret_swap.retry.status", retryResp.StatusCode),
 	)
+	// A second credential refused is the fact that needs a person. A retry that
+	// worked says the opposite, and clears anything reported before it.
+	switch {
+	case retryResp.StatusCode == http.StatusUnauthorized:
+		h.reports.rejected(meta.client.ID, req.Host, meta.swappedSentinels, secrets.OutcomeRejectedAfterRetry)
+	case succeeded(retryResp.StatusCode):
+		h.reports.accepted(meta.client.ID, req.Host, meta.swappedSentinels)
+	}
 	ctx.Req = retryReq
 	meta.start = time.Now()
 	return retryResp
@@ -600,6 +650,16 @@ func (h *httpProxy) rebuiltRequest(req *http.Request, meta *requestMeta) *http.R
 	out.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
 	return out
 }
+
+// succeeded is the narrow reading of a response that retracts a rejection: 2xx
+// and nothing else.
+//
+// A redirect is not a success here, which is the whole reason this is a
+// function and not a `< 400`. An expired session is commonly answered with a
+// 302 to a sign-in page, and taking that as "the credential works again" would
+// retract a standing rejection about a credential that is still dead — using
+// the upstream's own way of *saying* it is dead as the evidence it is alive.
+func succeeded(status int) bool { return status >= 200 && status < 300 }
 
 // sameHeaderValues reports whether every named header holds the same values in
 // both, which for the swapped headers means the retry would send the same

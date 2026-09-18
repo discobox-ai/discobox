@@ -10169,6 +10169,77 @@ func decodeListSecretGrantsParams(args [1]string, argsEscaped bool, r *http.Requ
 	return params, nil
 }
 
+// ListSecretRejectionsParams is parameters of list-secret-rejections operation.
+type ListSecretRejectionsParams struct {
+	// Project ID.
+	ProjectId string
+}
+
+func unpackListSecretRejectionsParams(packed middleware.Parameters) (params ListSecretRejectionsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeListSecretRejectionsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSecretRejectionsParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // ListSecretRequestsParams is parameters of list-secret-requests operation.
 type ListSecretRequestsParams struct {
 	// Project ID.
@@ -11286,6 +11357,72 @@ func unpackReportSandboxAgentStatusParams(packed middleware.Parameters) (params 
 }
 
 func decodeReportSandboxAgentStatusParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportSandboxAgentStatusParams, _ error) {
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ReportSandboxSecretRejectionParams is parameters of report-sandbox-secret-rejection operation.
+type ReportSandboxSecretRejectionParams struct {
+	// Pool ID.
+	PoolId string
+}
+
+func unpackReportSandboxSecretRejectionParams(packed middleware.Parameters) (params ReportSandboxSecretRejectionParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeReportSandboxSecretRejectionParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportSandboxSecretRejectionParams, _ error) {
 	// Decode path: poolId.
 	if err := func() error {
 		param := args[0]

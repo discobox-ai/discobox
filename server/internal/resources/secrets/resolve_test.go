@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"gorm.io/gorm"
+
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -14,6 +16,15 @@ import (
 )
 
 func newResolveFixture(t *testing.T) (*resourcesecrets.Service, *store.Store) {
+	t.Helper()
+	svc, st, _ := newResolveFixtureDB(t)
+	return svc, st
+}
+
+// newResolveFixtureDB is the same fixture with the write handle, for the few
+// tests that have to set up state no service writes — a row stamped in the
+// past, above all.
+func newResolveFixtureDB(t *testing.T) (*resourcesecrets.Service, *store.Store, *gorm.DB) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -42,7 +53,7 @@ func newResolveFixture(t *testing.T) (*resourcesecrets.Service, *store.Store) {
 	}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	return resourcesecrets.NewService(st), st
+	return resourcesecrets.NewService(st), st, db.Write
 }
 
 func createSandbox(t *testing.T, st *store.Store, sandboxID, poolID string) {

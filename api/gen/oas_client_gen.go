@@ -523,6 +523,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/secret-grants
 	ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (ListSecretGrantsRes, error)
+	// ListSecretRejections invokes list-secret-rejections operation.
+	//
+	// List credentials an upstream has refused.
+	//
+	// GET /projects/{projectId}/secret-rejections
+	ListSecretRejections(ctx context.Context, params ListSecretRejectionsParams) (ListSecretRejectionsRes, error)
 	// ListSecretRequests invokes list-secret-requests operation.
 	//
 	// List secret requests.
@@ -617,6 +623,12 @@ type Invoker interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-agent-status
 	ReportSandboxAgentStatus(ctx context.Context, request *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error)
+	// ReportSandboxSecretRejection invokes report-sandbox-secret-rejection operation.
+	//
+	// Report what an upstream made of a swapped credential.
+	//
+	// POST /api/pools/{poolId}/sandbox-secret-rejections
+	ReportSandboxSecretRejection(ctx context.Context, request *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
@@ -9531,6 +9543,99 @@ func (c *Client) sendListSecretGrants(ctx context.Context, params ListSecretGran
 	return result, nil
 }
 
+// ListSecretRejections invokes list-secret-rejections operation.
+//
+// List credentials an upstream has refused.
+//
+// GET /projects/{projectId}/secret-rejections
+func (c *Client) ListSecretRejections(ctx context.Context, params ListSecretRejectionsParams) (ListSecretRejectionsRes, error) {
+	res, err := c.sendListSecretRejections(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListSecretRejections(ctx context.Context, params ListSecretRejectionsParams) (res ListSecretRejectionsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-secret-rejections"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-rejections"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSecretRejectionsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-rejections"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSecretRejectionsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListSecretRequests invokes list-secret-requests operation.
 //
 // List secret requests.
@@ -10864,6 +10969,102 @@ func (c *Client) sendReportSandboxAgentStatus(ctx context.Context, request *Repo
 
 	stage = "DecodeResponse"
 	result, err := decodeReportSandboxAgentStatusResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ReportSandboxSecretRejection invokes report-sandbox-secret-rejection operation.
+//
+// Report what an upstream made of a swapped credential.
+//
+// POST /api/pools/{poolId}/sandbox-secret-rejections
+func (c *Client) ReportSandboxSecretRejection(ctx context.Context, request *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error) {
+	res, err := c.sendReportSandboxSecretRejection(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendReportSandboxSecretRejection(ctx context.Context, request *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (res ReportSandboxSecretRejectionRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("report-sandbox-secret-rejection"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-secret-rejections"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ReportSandboxSecretRejectionOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-secret-rejections"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeReportSandboxSecretRejectionRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeReportSandboxSecretRejectionResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -11,23 +11,40 @@ import (
 // The workspace's attention band: the one thing this screen draws that is not
 // the terminal you came here to watch.
 //
-// There are two of them and they are the same object — a bar painted across the
-// window, under the header and again above the keys, that says one thing and
+// There are three of them and they are the same object — a bar painted across
+// the window, under the header and again above the keys, that says one thing and
 // does that one thing when it is pressed. A credential request is a person
-// being waited on (credentials.go); work that is ready to apply is an offer
+// being waited on (credentials.go); a refused credential is one that has to be
+// replaced out here (rejections.go); work that is ready to apply is an offer
 // (apply.go). What they share is the geometry, the paint, and the rule that the
 // key is pinned and the subject gives way, so they share the code for all
-// three: two bars that drift apart in where they sit are two bars that put the
+// three: bars that drift apart in where they sit are bars that put the
 // hardware cursor in different wrong places.
 
 // bannerKind is which band the workspace is showing. The order is the
-// precedence, and only one is ever on screen: an agent blocked on a person
-// outranks an offer that will still be there in a minute, and a screen with two
-// exception bars on it has a header rather than an exception.
+// precedence, and only one is ever on screen: a screen with two exception bars
+// on it has a header rather than an exception.
+//
+// **A refused credential outranks the request an agent makes about it.** That
+// ordering was the other way round at first, on the reasoning that somebody
+// blocked on a keystroke right now comes before a credential that has been dead
+// a while. In use it is backwards, because the two are usually the same event:
+// the agent takes the 401, concludes it needs a credential, and asks for one —
+// so the request *is* the symptom, and showing it hides the cause while
+// offering the one action that cannot help. Handing over another credential
+// leaves the dead one bound to the harness and the new one belonging to nobody;
+// the fix is to replace what is already there.
+//
+// So the refusal stays up until it is dealt with, and everything else queues
+// behind it. Nothing becomes unreachable by doing that: the leader keys for the
+// request (credentialsLeaderKey) and the refusal (rejectedKey) are both bound
+// whichever band is drawn, the list still marks a discobox with a request, and
+// the secrets screen still lists them. Only the bar prioritizes.
 type bannerKind int
 
 const (
 	bannerNone bannerKind = iota
+	bannerRejected
 	bannerCredential
 	bannerApply
 )
@@ -54,6 +71,8 @@ func (m *Model) bannerShowing() bannerKind {
 		return bannerNone
 	}
 	switch {
+	case m.hasRejection(m.paneBox):
+		return bannerRejected
 	case len(m.requests[m.paneBox.ID]) > 0:
 		return bannerCredential
 	case m.applyReady():
@@ -101,6 +120,8 @@ func (m *Model) viewBanner(width int) string {
 	kind := m.bannerShowing()
 	m.banner = bannerSpan{kind: kind}
 	switch kind {
+	case bannerRejected:
+		return m.viewRejectedBanner(width)
 	case bannerCredential:
 		return m.viewCredentialBanner(width)
 	case bannerApply:
@@ -117,6 +138,8 @@ func (m *Model) viewBanner(width int) string {
 // band asks first — see confirmApply.
 func (m *Model) pressBanner() tea.Cmd {
 	switch m.banner.kind {
+	case bannerRejected:
+		return m.openRejectedRemedy(m.paneBox)
 	case bannerCredential:
 		return m.openCredentialDialog(m.paneBox.ID)
 	case bannerApply:
@@ -128,8 +151,12 @@ func (m *Model) pressBanner() tea.Cmd {
 // The credential band's call to action throbs. It is the one animated thing in
 // the window, and it is animated because it is the one thing on screen that
 // somebody is waiting on: an agent has stopped, and every second it stays
-// stopped is a second of nothing happening. The offer's chip is still, so that
-// the moving one means what it says.
+// stopped is a second of nothing happening. The offer's chip is still, and so
+// is the refusal's, so that the moving one means what it says.
+//
+// A request waiting behind a refusal therefore does not throb — the refusal is
+// drawn instead, and what is worth hurrying there is replacing the credential,
+// not answering the question the dead one provoked.
 //
 // bannerPulseHues is the field the chip steps through, up and back down. Four
 // frames, held long enough to read as a heartbeat rather than as a blink — a
