@@ -395,6 +395,10 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 		if scope := string(v.Scope); scope != "" {
 			volume.Scope = poolclient.NewOptHarnessVolumeScope(poolclient.HarnessVolumeScope(scope))
 		}
+		// Only ever true: false and absent both mean the path travels.
+		if v.ExcludeFromExport {
+			volume.ExcludeFromExport = poolclient.NewOptBool(true)
+		}
 		if uid := string(v.UID); uid != "" {
 			volume.UID = poolclient.NewOptString(uid)
 		}

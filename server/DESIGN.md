@@ -172,7 +172,9 @@ and takes it apart again on the way in, so one implementation decides what a
 
 - Export refuses a running discobox before the first byte, because after it the
   refusal could only be a corrupt tar. The client disconnecting closes the
-  stream, which is what stops the pool-side walk behind it. A failure after the
+  stream, which is what stops the export behind it. The tree is read by the
+  sandbox's own agent, in its pinned image (ADR 0129), so the server sends that
+  pin with the request. A failure after the
   first byte aborts the connection (`http.ErrAbortHandler`): returning would
   have `net/http` end the chunked body cleanly, and the client would keep a short
   archive as a whole one.

@@ -337,6 +337,12 @@ and is answered as a 400 about the archive rather than an error about the pool
   CLI offers is the caller's, not something taken on their behalf. An archived
   sandbox exports fine: it is a tree with no container, which is exactly the
   shape an export reads.
+- **Export passes the sandbox's pin** (`Image`/`ImageDigest`, as a
+  `sandbox.ImageRef`) to `Provider.ExportTree`. The tree is read by the sandbox
+  agent's export mode in the image the sandbox runs, and an archived sandbox, or
+  one whose create failed, has no container left on the pool to name it
+  (ADR 0129 §1). Not the harness config's current image: that agent did not
+  write the tree.
 - **Import restores the tree before the row exists**, and refuses before it
   restores. The row is what wakes the reconciler, so the order is: resolve pool,
   harness and every secret binding — which is everything that can say no — then

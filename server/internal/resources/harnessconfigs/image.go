@@ -211,12 +211,7 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 		if strings.TrimSpace(volume.Path) == "" {
 			return fmt.Errorf("%s label volume[%d] requires path", harness.ImageLabel, idx)
 		}
-		switch volume.Volume {
-		case harness.VolumeData, harness.VolumeCache:
-		default:
-			return fmt.Errorf("%s label volume %q has unknown kind %q", harness.ImageLabel, volume.Path, volume.Volume)
-		}
-		if err := harness.ValidateVolumeScope(volume.Volume, volume.Scope); err != nil {
+		if err := harness.ValidateVolume(volume); err != nil {
 			return fmt.Errorf("%s label volume %q: %w", harness.ImageLabel, volume.Path, err)
 		}
 	}

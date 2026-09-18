@@ -32,6 +32,23 @@ func TestPoolHarnessVolumesForwardTheScope(t *testing.T) {
 	}
 }
 
+// excludeFromExport is declared in the image label and read by the sandbox
+// agent's export mode, and this is the hop that leaves the control plane. A
+// converter that drops it exports every nested Docker store again, silently
+// (ADR 0129 §2).
+func TestPoolHarnessVolumesForwardExcludeFromExport(t *testing.T) {
+	volumes := poolHarnessVolumes([]harness.Volume{
+		{Path: "/var/lib/docker", Volume: harness.VolumeData, ExcludeFromExport: true},
+		{Path: "%HOME%", Volume: harness.VolumeData},
+	})
+	if !volumes[0].ExcludeFromExport.Or(false) {
+		t.Fatal("/var/lib/docker lost excludeFromExport on the way to the pool")
+	}
+	if volumes[1].ExcludeFromExport.Set {
+		t.Fatalf("home carries excludeFromExport = %v, want it unset", volumes[1].ExcludeFromExport.Value)
+	}
+}
+
 func TestPoolCreateRequestForwardsSourceDataKeys(t *testing.T) {
 	primaryKey := strings.Repeat("a", 64)
 	refKey := strings.Repeat("b", 64)

@@ -14,6 +14,13 @@ import (
 // no compression and no framing of its own.
 const TreeMediaType = "application/x-tar"
 
+// TreeImageParam and TreeImageDigestParam name the image an export reads the
+// sandbox's tree with: the reference and pinned digest a create would use.
+const (
+	TreeImageParam       = "image"
+	TreeImageDigestParam = "imageDigest"
+)
+
 // registerSandboxTreeRoutes exposes a sandbox's durable tree for export and
 // restore (ADR 0123).
 //
@@ -37,7 +44,13 @@ func (s *sandboxService) exportSandboxTreeHandler() http.Handler {
 			http.Error(w, err.Error(), statusCodeForTreeError(err))
 			return
 		}
-		stream, err := s.runtime.ExportTree(r.Context(), chi.URLParam(r, "sandboxId"))
+		// The image comes from the control plane, which owns the pin; an
+		// archived sandbox has no container here to read it from (ADR 0129 §1).
+		image := sandboxruntime.TreeImage{
+			Name:   r.URL.Query().Get(TreeImageParam),
+			Digest: r.URL.Query().Get(TreeImageDigestParam),
+		}
+		stream, err := s.runtime.ExportTree(r.Context(), chi.URLParam(r, "sandboxId"), image)
 		if err != nil {
 			// Before any of the body: once bytes are flowing, "it is running"
 			// can no longer be a status.
@@ -101,8 +114,12 @@ func statusCodeForTreeError(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, sandboxruntime.ErrTreeExists),
 		errors.Is(err, sandboxruntime.ErrSandboxRunning),
-		errors.Is(err, sandboxruntime.ErrArchived):
+		errors.Is(err, sandboxruntime.ErrArchived),
+		errors.Is(err, sandboxruntime.ErrExportUnsupported),
+		errors.Is(err, sandboxruntime.ErrExportInProgress):
 		return http.StatusConflict
+	case errors.Is(err, sandboxruntime.ErrImageUnavailable):
+		return http.StatusUnprocessableEntity
 	}
 	return http.StatusInternalServerError
 }

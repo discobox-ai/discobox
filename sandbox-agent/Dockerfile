@@ -23,7 +23,9 @@ COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxservices ./sandboxservices
+COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
+COPY tarsums ./tarsums
 COPY tools ./tools
 COPY sandbox-agent ./sandbox-agent
 
@@ -581,6 +583,9 @@ RUN [ -n "${IMAGE_LAYER_METADATA}" ] || { \
         exit 1; \
     }
 LABEL io.discobox.image.v1.10-sandbox-base=${IMAGE_LAYER_METADATA}
+# The agent above has the export mode, which the pool agent checks for before
+# it runs one (harness.TreeExportLabel, ADR 0129 §3).
+LABEL io.discobox.tree-export.v1=tar
 
 WORKDIR /workspace
 # No VOLUME directives: the sandbox-agent init flow (PID 1) wires all persistent

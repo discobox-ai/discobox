@@ -5,7 +5,6 @@ package sandboxruntime
 import (
 	"archive/tar"
 	"bytes"
-	"net"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -13,50 +12,6 @@ import (
 
 	"github.com/discobox-ai/discobox/tarsums"
 )
-
-func TestExportTreeSkipsSocketsAndFifos(t *testing.T) {
-	runtime, root := treeFixture(t)
-	writeFile(t, filepath.Join(root, "data", "real"), "x\n", 0o644)
-	// A sandbox's home routinely holds both: an ssh-agent socket, a shell's
-	// named pipe. Neither can be tarred and neither means anything afterwards.
-	// Bound somewhere short and moved into place: a sandbox tree path is well
-	// past the 108 bytes a unix socket address allows, so binding it directly
-	// fails with EINVAL and the test skips itself into meaninglessness.
-	short, err := os.MkdirTemp("", "sock")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(short)
-	var config net.ListenConfig
-	listener, err := config.Listen(t.Context(), "unix", filepath.Join(short, "s"))
-	if err != nil {
-		t.Fatalf("bind a unix socket: %v", err)
-	}
-	defer listener.Close()
-	socket := filepath.Join(root, "data", "agent.sock")
-	if err := os.Rename(filepath.Join(short, "s"), socket); err != nil {
-		t.Fatalf("move the socket into the tree: %v", err)
-	}
-	fifo := filepath.Join(root, "data", "pipe")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatalf("create a fifo: %v", err)
-	}
-
-	stream, err := runtime.ExportTree(t.Context(), "sbx-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stream.Close()
-	got := entries(t, stream)
-	if got["data/real"] != "x\n" {
-		t.Errorf("data/real = %q", got["data/real"])
-	}
-	for _, name := range []string{"data/agent.sock", "data/pipe"} {
-		if _, ok := got[name]; ok {
-			t.Errorf("entry %q traveled; a socket or fifo cannot be restored", name)
-		}
-	}
-}
 
 // A symlink an archive creates must not become a way for a later entry in the
 // same archive to write outside the tree. The pool agent is root on the pool

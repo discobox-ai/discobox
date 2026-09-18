@@ -27,7 +27,7 @@ import (
 // sandbox that has actually run lives. When there is none -- a create that
 // failed before the agent reported, which is a sandbox worth exporting rather
 // than one to refuse -- the pool the caller names is used instead.
-func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, state []byte) (io.ReadCloser, error) {
+func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, image sandbox.ImageRef, state []byte) (io.ReadCloser, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {
 		if !errors.Is(err, sandbox.ErrNotFound) || strings.TrimSpace(poolID) == "" {
@@ -47,7 +47,7 @@ func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 			return nil, err
 		}
 	}
-	return client.ExportTree(ctx, ref)
+	return client.ExportTree(ctx, ref, image)
 }
 
 // ImportTree restores a durable tree onto the pool the sandbox is destined for.
@@ -80,12 +80,21 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 	return pool.ID, nil
 }
 
-func (p *poolAgentClient) ExportTree(ctx context.Context, ref sandbox.SandboxRef) (io.ReadCloser, error) {
+func (p *poolAgentClient) ExportTree(ctx context.Context, ref sandbox.SandboxRef, image sandbox.ImageRef) (io.ReadCloser, error) {
 	lease, err := p.treeLease(ref, poolagentauth.ScopeSandboxRead)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := p.treeRequest(ctx, http.MethodGet, ref, lease, nil)
+	// The image the pool reads the tree with (ADR 0129 §1). The parameter names
+	// mirror the pool agent's own (TreeImageParam, TreeImageDigestParam).
+	query := url.Values{}
+	if image.Name != "" {
+		query.Set("image", image.Name)
+	}
+	if image.Digest != "" {
+		query.Set("imageDigest", image.Digest)
+	}
+	resp, err := p.treeRequest(ctx, http.MethodGet, ref, lease, query, nil)
 	if err != nil {
 		lease.Release()
 		return nil, poolAgentTransportError("read the sandbox tree from", p.poolID, err)
@@ -106,7 +115,7 @@ func (p *poolAgentClient) ImportTree(ctx context.Context, ref sandbox.SandboxRef
 		return err
 	}
 	defer lease.Release()
-	resp, err := p.treeRequest(ctx, http.MethodPut, ref, lease, tree)
+	resp, err := p.treeRequest(ctx, http.MethodPut, ref, lease, nil, tree)
 	if err != nil {
 		return poolAgentTransportError("send the sandbox tree to", p.poolID, err)
 	}
@@ -132,13 +141,16 @@ func (p *poolAgentClient) treeLease(ref sandbox.SandboxRef, scope string) (*tran
 	return lease, nil
 }
 
-func (p *poolAgentClient) treeRequest(ctx context.Context, method string, ref sandbox.SandboxRef, lease *transport.HTTPClientLease, body io.Reader) (*http.Response, error) {
+func (p *poolAgentClient) treeRequest(ctx context.Context, method string, ref sandbox.SandboxRef, lease *transport.HTTPClientLease, query url.Values, body io.Reader) (*http.Response, error) {
 	baseURL := defaultPoolBaseURL
 	if strings.TrimSpace(lease.BaseURL) != "" {
 		baseURL = strings.TrimRight(lease.BaseURL, "/")
 	}
 	target := fmt.Sprintf("%s/api/project/%s/pool/%s/sandboxes/%s/tree",
 		baseURL, url.PathEscape(ref.ProjectID), url.PathEscape(p.poolID), url.PathEscape(ref.SandboxID))
+	if len(query) > 0 {
+		target += "?" + query.Encode()
+	}
 	req, err := http.NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
 		return nil, err

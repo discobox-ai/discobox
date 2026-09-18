@@ -169,6 +169,9 @@ components:
                     - user
                     - shared
                     type: string
+                excludeFromExport:
+                    description: The path's backing directory stays out of an export. Absent means it travels; only valid for data.
+                    type: boolean
                 uid:
                     type: string
                 gid:

@@ -37,10 +37,13 @@ type treeProvider struct {
 	// rather than out of runtime state, which is what lets a discobox whose
 	// create never reached an agent still be exported.
 	exportedPool string
+	// exportedImage is the image ExportSandbox asked the tree to be read with.
+	exportedImage sandbox.ImageRef
 }
 
-func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ []byte) (io.ReadCloser, error) {
+func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, image sandbox.ImageRef, _ []byte) (io.ReadCloser, error) {
 	p.exportedPool = poolID
+	p.exportedImage = image
 	return io.NopCloser(bytes.NewReader(p.exportTree)), nil
 }
 
@@ -495,7 +498,7 @@ func TestExportManifestIsValidJSON(t *testing.T) {
 	config := configuredHarness(t, st, "codex", "Codex")
 	if err := st.CreateSandbox(ctx, &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
-		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Image: config.Image},
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Image: config.Image, ImageDigest: "sha256:pinned"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -530,6 +533,11 @@ func TestExportManifestIsValidJSON(t *testing.T) {
 	// for -- broken here, worth taking somewhere that works.
 	if provider.exportedPool != "pool-1" {
 		t.Errorf("export addressed pool %q, want the one on the row", provider.exportedPool)
+	}
+	// The tree is read with the sandbox's own pinned image, the one its agent
+	// runs, not whatever its harness config names now (ADR 0129 §1).
+	if want := (sandbox.ImageRef{Name: config.Image, Digest: "sha256:pinned"}); provider.exportedImage != want {
+		t.Errorf("export read with image %+v, want the sandbox's pin %+v", provider.exportedImage, want)
 	}
 }
 

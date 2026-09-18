@@ -203,7 +203,10 @@ type Runtime interface {
 	// ImportTree restores one for a sandbox this pool does not hold yet. They
 	// are the two halves of moving a discobox between servers (ADR 0123), and
 	// they deal only in the tree: neither touches a container.
-	ExportTree(ctx context.Context, sandboxID string) (io.ReadCloser, error)
+	//
+	// An export reads `data` and `sources` with the sandbox's own image, which
+	// is why it is told the image (ADR 0129 §1).
+	ExportTree(ctx context.Context, sandboxID string, image TreeImage) (io.ReadCloser, error)
 	ImportTree(ctx context.Context, sandboxID string, tree io.Reader) error
 	// SyncKnownPools reaps the agent-created footprint (sandbox containers and
 	// host data/proxy subtrees) of any pool on this shared host daemon whose ID
@@ -1225,12 +1228,13 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 	out := make([]harness.Volume, 0, len(volumes))
 	for _, v := range volumes {
 		out = append(out, harness.Volume{
-			Path:   v.Path,
-			Volume: harness.VolumeKind(v.Volume),
-			Scope:  harness.VolumeScope(v.Scope.Or("")),
-			UID:    harness.ScalarToken(optString(v.UID)),
-			GID:    harness.ScalarToken(optString(v.Gid)),
-			Mode:   optString(v.Mode),
+			Path:              v.Path,
+			Volume:            harness.VolumeKind(v.Volume),
+			Scope:             harness.VolumeScope(v.Scope.Or("")),
+			ExcludeFromExport: v.ExcludeFromExport.Or(false),
+			UID:               harness.ScalarToken(optString(v.UID)),
+			GID:               harness.ScalarToken(optString(v.Gid)),
+			Mode:              optString(v.Mode),
 		})
 	}
 	return out
@@ -2367,7 +2371,7 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 // ExportTree hands back whatever tree this sandbox was imported with, and an
 // empty archive for one that was created here: there is no disk to walk, so
 // what an export means for this runtime is exactly what an import put in.
-func (r *MemorySandboxRuntime) ExportTree(_ context.Context, sandboxID string) (io.ReadCloser, error) {
+func (r *MemorySandboxRuntime) ExportTree(_ context.Context, sandboxID string, _ TreeImage) (io.ReadCloser, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if sb, ok := r.sandboxes[sandboxID]; ok && sb.Status == StatusRunning {

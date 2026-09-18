@@ -1,6 +1,6 @@
 //go:build unix
 
-package sandboxruntime
+package sandboxtree
 
 import (
 	"os"

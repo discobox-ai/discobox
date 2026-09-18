@@ -20,6 +20,16 @@ const (
 	ReclaimLabel      = "io.discobox.reclaimable.v1"
 	ReclaimLabelValue = "true"
 
+	// TreeExportLabel says the image's sandbox agent has the export mode:
+	// `discobox-sandbox-agent export`, which reads a stopped sandbox's tree
+	// (ADR 0129 §1). It is set by the sandbox-agent Dockerfile and inherited
+	// like ReclaimLabel. The pool agent checks it before starting an export,
+	// because an older agent reads an unknown argument as an ordinary start and
+	// cannot be probed. TreeExportLabelValue names the archive the mode writes;
+	// a different archive would be a different value.
+	TreeExportLabel      = "io.discobox.tree-export.v1"
+	TreeExportLabelValue = "tar"
+
 	// ConfigureDir is the one directory the configure flow exchanges files in.
 	// It is **not** /run/discobox itself: that holds the resolved secrets file
 	// (ADR 0012 §3), the proxy's CA bundles and rendered trust env (ADR 0020),

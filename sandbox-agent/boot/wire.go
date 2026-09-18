@@ -237,7 +237,7 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 // present in this one read (ADR 0012 §6) — there is no separate image-baked
 // file to read before the bind, unlike the old image.json.
 func loadEffectiveConfig() (sandboxconfig.Config, error) {
-	path := filepath.Join(configMountPath, manifestName)
+	path := manifestPath
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

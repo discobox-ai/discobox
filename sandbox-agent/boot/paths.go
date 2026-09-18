@@ -37,6 +37,11 @@ const (
 	manifestName = "sandbox.json"
 )
 
+// manifestPath is where the effective config is read from, before the config
+// volume is rebound onto /etc/discobox. A variable so a test does not read the
+// manifest of whatever sandbox it happens to run in.
+var manifestPath = path.Join(configMountPath, manifestName)
+
 // cacheUsersDir is the level at which the pool cache is partitioned by user,
 // below which each partition mirrors target paths exactly as the data volume
 // does. It is dot-prefixed because its siblings are those mirrored paths -- both

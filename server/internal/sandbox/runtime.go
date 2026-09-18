@@ -66,7 +66,11 @@ type Provider interface {
 	// The stream is the caller's to close, and the walk behind it runs while
 	// they read, so a failure part way through arrives as a read error rather
 	// than as this call's.
-	ExportTree(ctx context.Context, ref SandboxRef, poolID string, state []byte) (io.ReadCloser, error)
+	//
+	// image is the sandbox's pin. The tree's `data` and `sources` are read by
+	// the sandbox agent's export mode, from the sandbox's own image, and an
+	// archived sandbox has no container left to name it (ADR 0129 §1).
+	ExportTree(ctx context.Context, ref SandboxRef, poolID string, image ImageRef, state []byte) (io.ReadCloser, error)
 	// ImportTree restores a durable tree onto a pool for a sandbox that has no
 	// runtime and, at this point, no row either (ADR 0123 §3). The pool is named
 	// rather than read from runtime state for exactly that reason: there is no

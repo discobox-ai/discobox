@@ -140,3 +140,51 @@ func TestResolveVolumesModeCarriesSetgid(t *testing.T) {
 		})
 	}
 }
+
+// ExcludeFromExport survives resolution, since what reads it -- the sandbox
+// agent's export mode -- works from resolved volumes (ADR 0129 §2).
+func TestResolveVolumesCarriesExcludeFromExport(t *testing.T) {
+	volumes, err := ResolveVolumes([]Volume{
+		{Path: "/var/lib/docker", Volume: VolumeData, ExcludeFromExport: true},
+		{Path: "%HOME%", Volume: VolumeData},
+	}, testRuntime)
+	if err != nil {
+		t.Fatalf("resolve volumes: %v", err)
+	}
+	if !volumes[0].ExcludeFromExport {
+		t.Error("/var/lib/docker lost excludeFromExport in resolution")
+	}
+	if volumes[1].ExcludeFromExport {
+		t.Error("home was excluded without saying so; absent must mean the path travels")
+	}
+}
+
+// A cache never travels, so a claim to exclude one from an export is a
+// misunderstanding of which volume the image declared, and it is refused.
+func TestValidateVolumeRejectsExcludeFromExportOnACachePath(t *testing.T) {
+	err := ValidateVolume(Volume{Path: "/nix", Volume: VolumeCache, ExcludeFromExport: true})
+	if err == nil || !strings.Contains(err.Error(), "data paths only") {
+		t.Fatalf("err = %v, want excludeFromExport refused on a cache path", err)
+	}
+	if err := ValidateVolume(Volume{Path: "/var/lib/docker", Volume: VolumeData, ExcludeFromExport: true}); err != nil {
+		t.Fatalf("a data path refused excludeFromExport: %v", err)
+	}
+}
+
+// An image built before the field has no key, and must keep meaning "travels".
+func TestVolumeExcludeFromExportIsOmittedWhenUnset(t *testing.T) {
+	encoded, err := json.Marshal(Volume{Path: "%HOME%", Volume: VolumeData})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), "excludeFromExport") {
+		t.Fatalf("encoded = %s, want no excludeFromExport key when unset", encoded)
+	}
+	var decoded Volume
+	if err := json.Unmarshal([]byte(`{"path":"/var/lib/docker","volume":"data","excludeFromExport":true}`), &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !decoded.ExcludeFromExport {
+		t.Fatal("excludeFromExport did not decode")
+	}
+}

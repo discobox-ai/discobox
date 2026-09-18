@@ -348,6 +348,10 @@ sandbox_home() {
   [ -n "$home" ]
   docker exec "$(sandbox_container "$source_id")" sh -lc \
     "mkdir -p '$home/work/nested' && printf 'the-payload-42\n' > '$home/work/nested/keepsake.txt'"
+  # And state the image declares stays behind (ADR 0129 §2): the nested Docker
+  # daemon's, written where the daemon keeps it, as root, the way it would be.
+  docker exec "$(sandbox_container "$source_id")" sh -c \
+    "printf 'rebuildable\n' > /var/lib/docker/transfer-marker"
 
   # A running discobox is refused, and the refusal says how to get past it.
   archive="$DISCOBOX_BATS_TMP/transfer-source.dbox"
@@ -365,6 +369,13 @@ sandbox_home() {
   first_member="$(tar tf "$archive" | head -1)"
   [ "$first_member" = "manifest.json" ]
   tar tf "$archive" | grep -q "^tree/data/"
+  # The export carries the discobox's work and not what was installed into it:
+  # home and the agent's own state travel, the nested Docker store does not. The
+  # sandbox agent read the tree, in the sandbox's own image (ADR 0129 §1).
+  tar tf "$archive" | grep -q "/work/nested/keepsake.txt$"
+  tar tf "$archive" | grep -q "^tree/data/var/lib/discobox/"
+  # A test, not a negated command: bats does not fail on `! cmd`.
+  [ -z "$(tar tf "$archive" | grep "^tree/data/var/lib/docker/")" ]
   tar xOf "$archive" manifest.json | python3 -c 'import json,sys; m=json.load(sys.stdin); assert m["formatVersion"]==1, m; assert m["sandbox"]["harness"]["slug"]=="transfer-stub", m'
 
   # No secret value is in the file, whatever else is.

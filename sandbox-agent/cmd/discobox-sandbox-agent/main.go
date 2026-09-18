@@ -54,6 +54,11 @@ func run(args []string) int {
 	if len(args) > 0 && args[0] == "init" {
 		return boot.Init(slog.Default(), args[1:])
 	}
+	if len(args) > 0 && args[0] == "export" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return boot.Export(ctx, slog.Default(), args[1:], os.Stdout)
+	}
 	var configPath string
 	flags := flag.NewFlagSet("discobox-sandbox-agent", flag.ContinueOnError)
 	flags.StringVar(&configPath, "config", "", "path to sandbox manifest")

@@ -3,6 +3,7 @@ package harness
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -79,13 +80,20 @@ const (
 // derivable from UID: that field says who owns the mountpoint, and a path that
 // declares no owner at all is still filled by the sandbox user -- so inferring
 // "shareable" from "uid 0" would make the unstated case the dangerous one.
+//
+// ExcludeFromExport applies to data paths only: the path's backing directory,
+// and every declared path beneath it, is left out of an export (ADR 0129 §2).
+// It is for what was installed into a sandbox or can be rebuilt -- a nested
+// daemon's store, a package manager's prefix -- never for the user's work.
+// Absent means the path travels.
 type Volume struct {
-	Path   string      `json:"path"`
-	Volume VolumeKind  `json:"volume"`
-	Scope  VolumeScope `json:"scope,omitempty"`
-	UID    ScalarToken `json:"uid,omitempty"`
-	GID    ScalarToken `json:"gid,omitempty"`
-	Mode   string      `json:"mode,omitempty"`
+	Path              string      `json:"path"`
+	Volume            VolumeKind  `json:"volume"`
+	Scope             VolumeScope `json:"scope,omitempty"`
+	ExcludeFromExport bool        `json:"excludeFromExport,omitempty"`
+	UID               ScalarToken `json:"uid,omitempty"`
+	GID               ScalarToken `json:"gid,omitempty"`
+	Mode              string      `json:"mode,omitempty"`
 }
 
 // ScalarToken holds a JSON scalar that is either an integer literal or a token
@@ -125,12 +133,13 @@ type VolumeRuntime struct {
 // is concrete here -- never empty -- so nothing downstream has to know what an
 // unset scope meant.
 type ResolvedVolume struct {
-	Path  string
-	Kind  VolumeKind
-	Scope VolumeScope
-	UID   *int
-	GID   *int
-	Mode  *os.FileMode
+	Path              string
+	Kind              VolumeKind
+	Scope             VolumeScope
+	ExcludeFromExport bool
+	UID               *int
+	GID               *int
+	Mode              *os.FileMode
 }
 
 // ResolveVolumes expands every declared volume's tokens against the runtime
@@ -152,16 +161,16 @@ func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error
 		if !path.IsAbs(volumePath) {
 			return nil, fmt.Errorf("volume %q: path must be absolute", volumePath)
 		}
-		switch v.Volume {
-		case VolumeData, VolumeCache:
-		default:
-			return nil, fmt.Errorf("volume %q: unknown volume kind %q", volumePath, v.Volume)
-		}
-		scope, err := resolveScope(v.Volume, v.Scope)
-		if err != nil {
+		if err := ValidateVolume(v); err != nil {
 			return nil, fmt.Errorf("volume %q: %w", volumePath, err)
 		}
-		rv := ResolvedVolume{Path: path.Clean(volumePath), Kind: v.Volume, Scope: scope}
+		scope := v.Scope
+		if scope == "" {
+			// Filled in here and nowhere else, so an unset scope arrives
+			// downstream as the user scope it means.
+			scope = VolumeScopeUser
+		}
+		rv := ResolvedVolume{Path: path.Clean(volumePath), Kind: v.Volume, Scope: scope, ExcludeFromExport: v.ExcludeFromExport}
 		if uid, ok, err := resolveScalar(v.UID, rt); err != nil {
 			return nil, fmt.Errorf("volume %q uid: %w", volumePath, err)
 		} else if ok {
@@ -213,41 +222,41 @@ func fileModeFromPOSIX(mode uint32) os.FileMode {
 	return out
 }
 
-// ValidateVolumeScope reports whether a declared scope can be honored for this
-// volume kind, without needing the runtime identity ResolveVolumes wants.
+// ValidateVolume reports whether a declaration can be honored, without needing
+// the runtime identity ResolveVolumes wants.
 //
-// It is separate so the control plane can reject a bad scope where it reads the
-// image label, naming the image, rather than letting it through to fail at boot
-// four layers away -- the same reason the kind is checked there too.
+// It is separate so the control plane can reject a bad declaration where it
+// reads the image label, naming the image, rather than letting it through to
+// fail at boot four layers away. ResolveVolumes calls the same function, so the
+// two ends cannot drift.
 //
-// A shared data path is refused rather than ignored: a data volume is one
-// sandbox's own tree, so nothing could carry out the claim, and an image that
-// makes it has misunderstood which volume it declared. Honoring it silently
-// would leave the image believing in sharing that never happens.
-func ValidateVolumeScope(kind VolumeKind, scope VolumeScope) error {
-	switch scope {
-	case "", VolumeScopeUser:
-		return nil
-	case VolumeScopeShared:
-		if kind != VolumeCache {
-			return fmt.Errorf("scope %q applies to cache paths only", scope)
-		}
-		return nil
+// A claim only a cache path can carry out is refused on a data path, and the
+// reverse, rather than ignored: an image that makes one has misunderstood which
+// volume it declared, and honoring it silently would leave it believing in
+// behavior that never happens.
+//   - A shared scope on a data path: a data volume is one sandbox's own tree,
+//     so there is nobody to share it with.
+//   - ExcludeFromExport on a cache path: a cache never travels, so there is
+//     nothing to exclude it from.
+func ValidateVolume(v Volume) error {
+	switch v.Volume {
+	case VolumeData, VolumeCache:
 	default:
-		return fmt.Errorf("unknown scope %q", scope)
+		return fmt.Errorf("unknown volume kind %q", v.Volume)
 	}
-}
-
-// resolveScope validates and then fills in the default, so an unset scope
-// arrives downstream as the user scope it means.
-func resolveScope(kind VolumeKind, scope VolumeScope) (VolumeScope, error) {
-	if err := ValidateVolumeScope(kind, scope); err != nil {
-		return "", err
+	switch v.Scope {
+	case "", VolumeScopeUser:
+	case VolumeScopeShared:
+		if v.Volume != VolumeCache {
+			return fmt.Errorf("scope %q applies to cache paths only", v.Scope)
+		}
+	default:
+		return fmt.Errorf("unknown scope %q", v.Scope)
 	}
-	if scope == "" {
-		return VolumeScopeUser, nil
+	if v.ExcludeFromExport && v.Volume != VolumeData {
+		return errors.New("excludeFromExport applies to data paths only; a cache path never travels")
 	}
-	return scope, nil
+	return nil
 }
 
 func resolveScalar(tok ScalarToken, rt VolumeRuntime) (int, bool, error) {

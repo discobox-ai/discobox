@@ -451,7 +451,7 @@ func (stubPoolProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, [
 	return nil, nil
 }
 
-func (stubPoolProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []byte) (io.ReadCloser, error) {
+func (stubPoolProvider) ExportTree(context.Context, sandbox.SandboxRef, string, sandbox.ImageRef, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

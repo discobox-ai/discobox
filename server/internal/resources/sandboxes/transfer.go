@@ -74,7 +74,10 @@ func (s *Service) ExportSandbox(ctx context.Context, projectID, sandboxID string
 	// for exactly the discobox an export is most wanted for: broken here, and
 	// worth taking somewhere that works. PoolID is on the row and immutable
 	// after create.
-	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sb.PoolID, sb.ProviderState)
+	// The pin, not the harness config's current image: the tree is read by the
+	// sandbox agent the sandbox runs (ADR 0129 §1).
+	image := sandbox.ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
+	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sb.PoolID, image, sb.ProviderState)
 	if err != nil {
 		return nil, err
 	}

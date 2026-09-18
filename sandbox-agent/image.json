@@ -14,12 +14,12 @@
   },
   "volumes": [
     { "path": "%HOME%", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "/var/lib/docker", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
-    { "path": "/var/lib/containerd", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
+    { "path": "/var/lib/docker", "volume": "data", "excludeFromExport": true, "uid": 0, "gid": 0, "mode": "0711" },
+    { "path": "/var/lib/containerd", "volume": "data", "excludeFromExport": true, "uid": 0, "gid": 0, "mode": "0711" },
     { "path": "/var/lib/discobox", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
     { "path": "/nix", "volume": "cache", "scope": "shared", "uid": 0, "gid": 0, "mode": "0755" },
-    { "path": "/nix/var/nix/profiles", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
-    { "path": "/nix/var/nix/gcroots", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
+    { "path": "/nix/var/nix/profiles", "volume": "data", "excludeFromExport": true, "uid": 0, "gid": 0, "mode": "0755" },
+    { "path": "/nix/var/nix/gcroots", "volume": "data", "excludeFromExport": true, "uid": 0, "gid": 0, "mode": "0755" },
     { "path": "%HOME%/.cache", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.local/share/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.local/share/discobox/agents", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
@@ -29,7 +29,7 @@
     { "path": "%HOME%/.cargo/git", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.rustup", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.vscode-server", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "/home/linuxbrew/.linuxbrew", "volume": "data" }
+    { "path": "/home/linuxbrew/.linuxbrew", "volume": "data", "excludeFromExport": true }
   ],
   "additionalGroups": ["brew", "docker", "kvm", "systemd-journal"],
   "harness": {

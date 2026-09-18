@@ -21,6 +21,7 @@ COPY layout ./layout
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
 COPY secretformat ./secretformat
 COPY tarsums ./tarsums

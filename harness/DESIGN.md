@@ -36,6 +36,20 @@ launchers, and configure scripts.
   [ADR 0094](../docs/adr/0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)).
   An env value's `%HOME%` is expanded by `ExpandEnvHomeTokens`, and left in
   place when the home is not yet known.
+- A `data` volume may declare `excludeFromExport`: its backing directory, and
+  every declared path beneath it, stays out of an export
+  ([ADR 0129](../docs/adr/0129-the-sandbox-agent-reads-the-tree-an-export-carries.md) §2).
+  The rule for setting it is that an export carries the discobox's work, not
+  what was installed into it — a nested daemon's store or a package manager's
+  prefix is excluded, the user's home and the agent's own state are not. It is
+  refused on a `cache` path, which never travels (`ValidateVolume`, which also
+  judges kind and scope, and which both registration and `ResolveVolumes`
+  call). Absent means the path travels.
+- **`TreeExportLabel`** says an image's sandbox agent has the export mode that
+  reads a stopped sandbox's tree. `sandbox-agent/Dockerfile` sets it and every
+  image built from it inherits it; the pool agent refuses to export a sandbox
+  whose image lacks it, because an older agent reads the mode's argument as an
+  ordinary start (ADR 0129 §3).
 - A volume's `mode` is a POSIX mode word, and `ResolveVolumes` converts it to
   `os.FileMode` rather than casting: the two agree only on the low nine bits,
   and setuid/setgid/sticky sit far higher up in Go's encoding than in POSIX's.
@@ -116,12 +130,19 @@ launchers, and configure scripts.
     per-user profile state is not, because both are keyed by username and every
     sandbox in a pool runs the same user. The base image ships its own store
     aside and leaves `/nix` empty precisely so this cache bind hides nothing — a
-    cache path is always a plain bind. See ADR 0075.
+    cache path is always a plain bind. See ADR 0075. `profiles` and `gcroots`
+    are `excludeFromExport`: they point into `/nix`, which never travels.
+    `nix-seed`'s per-sandbox stamp lives inside `profiles`
+    (`.discobox-seeded`), so a restore that left the profiles behind re-seeds
+    them rather than trusting a stamp that travelled without them.
   - The Homebrew prefix, `/home/linuxbrew/.linuxbrew`, as a `data` volume:
     the image ships content there, so boot wires it as an overlay and a
     sandbox's own installs persist. The tree is handed to the `brew` group
     rather than to a uid
     ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md)).
+    It is `excludeFromExport`: `brew install`'s results are the same kind of
+    thing as `apt-get install`'s, and the image's own Homebrew is still the
+    overlay's lower layer after a restore.
   - The **agent version store**, `%HOME%/.local/share/discobox/agents` on
     `cache`, and npm's download cache `%HOME%/.npm` beside it
     ([ADR 0114](../docs/adr/0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)).
@@ -129,6 +150,10 @@ launchers, and configure scripts.
     pinned to one while the pool moves on; `~/.npm-global` is deliberately
     *not* cached, because npm's global tree is unversioned and is ahead of
     `/usr/local/bin`'s shims on PATH.
+  - `/var/lib/docker` and `/var/lib/containerd` on `data`, `excludeFromExport`:
+    the nested daemon's images, containers and volumes are rebuildable, and
+    its snapshot store cannot be carried faithfully by a plain tar.
+    `/var/lib/discobox` travels — it is the sandbox agent's own state.
   - The rest of the persistent and cached paths, the `brew`, `docker`, and
     `kvm` supplementary groups, the `NIX_*`/`HOMEBREW_*`/`PATH`/
     `NPM_CONFIG_PREFIX` env, and the pnpm `storeDir` seed file.

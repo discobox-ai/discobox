@@ -422,6 +422,21 @@ func TestDocumentVolumesKeepTheScope(t *testing.T) {
 	}
 }
 
+// sandbox.json is where the export mode reads which data paths stay behind
+// (ADR 0129 §2), so the flag has to survive this rebuild too.
+func TestDocumentVolumesKeepExcludeFromExport(t *testing.T) {
+	volumes := documentVolumes([]workerapimodel.HarnessVolume{
+		{Path: "/var/lib/docker", Volume: "data", ExcludeFromExport: workerclient.NewOptBool(true)},
+		{Path: "/home/darren", Volume: "data"},
+	})
+	if !volumes[0].ExcludeFromExport {
+		t.Fatal("/var/lib/docker lost excludeFromExport in sandbox.json")
+	}
+	if volumes[1].ExcludeFromExport {
+		t.Fatal("an undeclared path was excluded; absent must mean it travels")
+	}
+}
+
 func TestDockerSandboxRuntimePoolCacheUsesIndependentRoot(t *testing.T) {
 	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
 

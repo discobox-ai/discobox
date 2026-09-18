@@ -3091,6 +3091,9 @@ type HarnessVolume struct {
 	// Who a cache path is shared with. Absent means the sandbox user, which is the safe default; shared
 	// puts every sandbox in the pool on one directory and is only valid for cache.
 	Scope OptHarnessVolumeScope `json:"scope"`
+	// The path's backing directory stays out of an export, for what was installed into a sandbox or can
+	// be rebuilt rather than the user's work. Absent means the path travels; only valid for data.
+	ExcludeFromExport OptBool `json:"excludeFromExport"`
 	// Owner UID, as a decimal string or a %UID%/%GID% token.
 	UID OptString `json:"uid"`
 	// Owner GID, as a decimal string or a %UID%/%GID% token.
@@ -3112,6 +3115,11 @@ func (s *HarnessVolume) GetVolume() HarnessVolumeVolume {
 // GetScope returns the value of Scope.
 func (s *HarnessVolume) GetScope() OptHarnessVolumeScope {
 	return s.Scope
+}
+
+// GetExcludeFromExport returns the value of ExcludeFromExport.
+func (s *HarnessVolume) GetExcludeFromExport() OptBool {
+	return s.ExcludeFromExport
 }
 
 // GetUID returns the value of UID.
@@ -3142,6 +3150,11 @@ func (s *HarnessVolume) SetVolume(val HarnessVolumeVolume) {
 // SetScope sets the value of Scope.
 func (s *HarnessVolume) SetScope(val OptHarnessVolumeScope) {
 	s.Scope = val
+}
+
+// SetExcludeFromExport sets the value of ExcludeFromExport.
+func (s *HarnessVolume) SetExcludeFromExport(val OptBool) {
+	s.ExcludeFromExport = val
 }
 
 // SetUID sets the value of UID.

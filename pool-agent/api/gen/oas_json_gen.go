@@ -1219,6 +1219,12 @@ func (s *HarnessVolume) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ExcludeFromExport.Set {
+			e.FieldStart("excludeFromExport")
+			s.ExcludeFromExport.Encode(e)
+		}
+	}
+	{
 		if s.UID.Set {
 			e.FieldStart("uid")
 			s.UID.Encode(e)
@@ -1238,13 +1244,14 @@ func (s *HarnessVolume) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessVolume = [6]string{
+var jsonFieldsNameOfHarnessVolume = [7]string{
 	0: "path",
 	1: "volume",
 	2: "scope",
-	3: "uid",
-	4: "gid",
-	5: "mode",
+	3: "excludeFromExport",
+	4: "uid",
+	5: "gid",
+	6: "mode",
 }
 
 // Decode decodes HarnessVolume from json.
@@ -1287,6 +1294,16 @@ func (s *HarnessVolume) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"scope\"")
+			}
+		case "excludeFromExport":
+			if err := func() error {
+				s.ExcludeFromExport.Reset()
+				if err := s.ExcludeFromExport.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"excludeFromExport\"")
 			}
 		case "uid":
 			if err := func() error {

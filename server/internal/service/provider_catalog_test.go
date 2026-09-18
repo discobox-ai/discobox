@@ -763,7 +763,7 @@ func clearSeededHarnessConfigs(ctx context.Context, t *testing.T, st *store.Stor
 	}
 }
 
-func (*recordingSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, []byte) (io.ReadCloser, error) {
+func (*recordingSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, sandboxes.ImageRef, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

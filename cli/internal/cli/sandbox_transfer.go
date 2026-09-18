@@ -51,10 +51,16 @@ func (a *App) newSandboxExportCommand() *cobra.Command {
 
 The archive holds the discobox's spec and its durable data: the home directory,
 the workspace with its full git history, and the origin repositories of any
-push-delivered source. That is the same set a rebuild, a repair, or an upgrade
-already preserves — so anything installed into the container outside those
-directories is not in it, and is not in an upgraded discobox either. Put what
-you need in the harness image.
+push-delivered source. It carries the discobox's work, not what was installed
+into it: anything installed into the container outside those directories is not
+in it — and is not in an upgraded discobox either — and neither is what its
+image marks as rebuildable, which for the standard images is the nested Docker
+daemon's state (images, containers, and volumes), Homebrew installs, and nix
+profiles. Keep data you need out of Docker volumes, and put tools you need in
+the harness image.
+
+A discobox on an image too old to export is refused; upgrade it first with
+"discobox admin box upgrade".
 
 No secret values are ever written to the archive. Bindings travel by name, and
 the destination binds each to its own secret of that name.

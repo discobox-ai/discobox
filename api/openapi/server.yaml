@@ -140,6 +140,9 @@ components:
                         - user
                         - shared
                     type: string
+                excludeFromExport:
+                    description: The path's backing directory stays out of an export, for what was installed into a sandbox or can be rebuilt rather than the user's work. Absent means the path travels; only valid for data.
+                    type: boolean
                 uid:
                     description: Owner UID, as a decimal string or a %UID%/%GID% token.
                     type: string

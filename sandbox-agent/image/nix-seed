@@ -37,9 +37,14 @@ SEED_ENV=/usr/local/lib/discobox/nix-seed.env
 SEED_DB_DUMP=/usr/local/lib/discobox/nix-db.dump
 LOCK=/nix/.discobox-seed.lock
 CACHE_STAMP=/nix/.discobox-seeded
-# Outside /nix on purpose: /var/lib/discobox is a per-sandbox data volume, and
-# nothing that scans a nix directory can mistake it for a profile or a gcroot.
-SANDBOX_STAMP=/var/lib/discobox/nix-seeded
+# Inside the per-sandbox profiles volume it describes, so the stamp and the
+# profiles are always present or absent together: an export leaves both behind
+# (ADR 0129 §2), and a stamp that travelled without them would skip the seed
+# and leave the restored sandbox with no default profile. Not at /nix's root,
+# which is the pool-shared cache, where it would vouch for every sandbox in the
+# pool. Nix ignores it: a regular file whose name is not a store path is
+# neither a gcroot nor a generation.
+SANDBOX_STAMP=/nix/var/nix/profiles/.discobox-seeded
 CACHE_DB=/nix/var/nix/db/db.sqlite
 
 log() { echo "discobox-nix-seed: $*"; }
