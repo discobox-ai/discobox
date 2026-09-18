@@ -28,6 +28,16 @@ func TestStartRequiresNewPoolHealthReports(t *testing.T) {
 	if _, err := st.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
+	// The report has to be from before this run to be one this run distrusts,
+	// and startup stamps its health check with the same clock this status was
+	// stamped with. On a coarse clock — Windows moves in ~15ms steps — both land
+	// on the same instant and the report reads as current. Age it so the test
+	// is about startup invalidating an old report rather than about how finely
+	// the host's clock ticks.
+	if err := db.Write.Model(&model.Pool{}).Where("id = ?", pool.ID).
+		UpdateColumn("status_reported_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
 	engine, err := reconcile.New(db.Write, reconcile.Options{SingleNode: true})
 	if err != nil {
 		t.Fatal(err)

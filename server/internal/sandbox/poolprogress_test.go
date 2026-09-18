@@ -24,8 +24,12 @@ func TestHoldKeepsRestatingThePhase(t *testing.T) {
 	})
 
 	release := reporter.Hold(t.Context(), "pool_1", PoolPhaseStartingVM)
-	// Long enough for several heartbeats.
-	deadline := time.Now().Add(3 * poolPhaseHeartbeat)
+	// Wait for the restatements rather than for a number of heartbeat periods.
+	// A timer does not fire at the resolution it is asked for — Windows steps in
+	// about 15ms, so three 10ms heartbeats do not fit in 30ms — and the property
+	// is that a held phase keeps being restated, not that it is restated at a
+	// particular rate.
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		mu.Lock()
 		enough := len(reports) >= 3
@@ -41,7 +45,7 @@ func TestHoldKeepsRestatingThePhase(t *testing.T) {
 	got := append([]PoolProvisionPhase(nil), reports...)
 	mu.Unlock()
 	if len(got) < 3 {
-		t.Fatalf("got %d reports in %s, want the phase restated while it was held", len(got), 3*poolPhaseHeartbeat)
+		t.Fatalf("got %d reports, want the phase restated while it was held", len(got))
 	}
 	for _, phase := range got {
 		if phase != PoolPhaseStartingVM {
