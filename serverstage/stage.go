@@ -12,10 +12,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/discobox-ai/discobox/fsdurable"
 )
 
 // manifestFileName is written into a staged directory, and is what makes that
@@ -183,7 +184,7 @@ func Stage(ctx context.Context, m Manifest, opts Options) (string, error) {
 
 	// The directory itself, so the entries in it are on disk before the rename
 	// that publishes them.
-	if err := syncDir(temp); err != nil {
+	if err := fsdurable.SyncDir(temp); err != nil {
 		return "", err
 	}
 
@@ -237,33 +238,11 @@ func commit(temp, dir string) error {
 	}
 	// The rename itself, so a directory that is there after a power loss is
 	// one whose contents are there too.
-	if err := syncDir(parent); err != nil {
+	if err := fsdurable.SyncDir(parent); err != nil {
 		return err
 	}
 	if aside != "" {
 		_ = os.RemoveAll(aside)
-	}
-	return nil
-}
-
-// syncDir flushes a directory's own entries, which is what makes a rename
-// durable rather than merely visible to this boot.
-//
-// Windows cannot open a directory as a file and has no equivalent call, so
-// there it is a no-op rather than an error: NTFS orders metadata for itself,
-// and failing a staging over a call the platform does not have would be worse
-// than the guarantee is worth.
-func syncDir(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	dir, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("sync %s: %w", path, err)
-	}
-	defer dir.Close()
-	if err := dir.Sync(); err != nil {
-		return fmt.Errorf("sync %s: %w", path, err)
 	}
 	return nil
 }

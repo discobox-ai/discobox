@@ -16,6 +16,7 @@ COPY agentcreds ./agentcreds
 COPY api ./api
 COPY auditid ./auditid
 COPY controlplane ./controlplane
+COPY fsdurable ./fsdurable
 COPY harness ./harness
 COPY hostscope ./hostscope
 COPY layout ./layout

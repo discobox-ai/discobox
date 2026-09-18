@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/discobox-ai/discobox/fsdurable"
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/proxy"
 )
@@ -110,19 +111,10 @@ func createControlKey(path string, replace bool) (ed25519.PrivateKey, error) {
 	} else if err := os.Link(tmp.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
 		return nil, err
 	}
-	if err := syncDir(dir); err != nil {
+	if err := fsdurable.SyncDir(dir); err != nil {
 		return nil, err
 	}
 	return readControlKey(path)
-}
-
-func syncDir(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
 }
 
 func readControlKey(path string) (ed25519.PrivateKey, error) {
