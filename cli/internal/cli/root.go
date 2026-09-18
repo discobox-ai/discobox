@@ -30,6 +30,10 @@ import (
 
 const defaultProjectAlias = "default"
 
+// serverEnv names the server the way --server does, for every invocation in an
+// environment.
+const serverEnv = "DISCOBOX_SERVER"
+
 type App struct {
 	serverURL     string
 	irohRelayURLs string
@@ -166,7 +170,7 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 			if err := app.validate(); err != nil {
 				return err
 			}
-			if err := app.resolveServerName(); err != nil {
+			if err := app.resolveServerName(serverChosen(cmd)); err != nil {
 				return err
 			}
 			// Every command, not just the ones a pane runs: which command a
@@ -206,7 +210,7 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 			return app.runTUI(cmd, "")
 		},
 	}
-	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", endpoint.DefaultEndpoint()), "Discobox API server endpoint")
+	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault(serverEnv, endpoint.DefaultEndpoint()), "Discobox API server endpoint, or a registered server's name; defaults to the primary \"discobox admin remote primary\" set, and to the local server when none is")
 	// A client has to be told the same relays as the server it dials. An
 	// address carries a peer ID and nothing else, so a server moved off n0's
 	// public relays does not move its clients with it (ADR 0096 §6 on server

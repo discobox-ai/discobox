@@ -58,7 +58,9 @@ func (f *providerCreateHelpFlag) Provider() string { return f.provider }
 
 func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 	args = a.consumeProviderCreateGlobalFlags(args)
-	if err := a.resolveServerName(); err != nil {
+	// The root's hook settled the primary already, so what is left here is
+	// either that address or a --server given after the command name.
+	if err := a.resolveServerName(true); err != nil {
 		return err
 	}
 	args = providerCreateArgs(cmd, args)
@@ -111,7 +113,9 @@ func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 
 func (a *App) runProviderUpdate(cmd *cobra.Command, args []string) error {
 	args = a.consumeProviderCreateGlobalFlags(args)
-	if err := a.resolveServerName(); err != nil {
+	// The root's hook settled the primary already, so what is left here is
+	// either that address or a --server given after the command name.
+	if err := a.resolveServerName(true); err != nil {
 		return err
 	}
 	if helpProvider, ok := providerCreateHelpRequest(nil, args); ok {

@@ -23,9 +23,10 @@ func (a *App) newServersCommand() *cobra.Command {
 		Short:   "List and manage the servers discoboxes are listed from",
 		Long: `List and manage the servers this client lists discoboxes from.
 
-There is always a primary server: the one --server names, or the local one
-when nothing does. Discoboxes are created there unless you choose otherwise, and
-it is the only one started for you.
+There is always a primary server: the one --server names, else the one
+"discobox admin remote primary" chose, else the local one. Discoboxes are
+created there unless you choose otherwise, and it is the only one started for
+you.
 
 Registered servers are listed beside it. "discobox ls" and "discobox tui" list
 every server's discoboxes, a command given a discobox ID finds it on whichever
@@ -48,6 +49,7 @@ With no subcommand, this lists the servers.`,
   discobox admin remote add discobox://box.example.com
   discobox admin remote add discobox://10.0.0.5:8443 --name lab
   discobox admin remote rename lab workstation
+  discobox admin remote primary workstation
   discobox admin remote rm workstation`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -57,6 +59,7 @@ With no subcommand, this lists the servers.`,
 	cmd.AddCommand(a.newServersListCommand())
 	cmd.AddCommand(a.newServersAddCommand())
 	cmd.AddCommand(a.newServersRenameCommand())
+	cmd.AddCommand(a.newServersPrimaryCommand())
 	cmd.AddCommand(a.newServersRemoveCommand())
 	return cmd
 }
@@ -267,12 +270,156 @@ func (a *App) newServersRemoveCommand() *cobra.Command {
 					if !ok {
 						return false, fmt.Errorf("no server named %s is registered", name)
 					}
+					// Removing the recorded primary would leave every command
+					// aimed at a server nothing lists; which one takes its place
+					// is the user's to say.
+					if reg.Primary != "" && serverKey(reg.Servers[i].Address) == serverKey(reg.Primary) {
+						return false, fmt.Errorf("%s is the primary server; make another one primary with `discobox admin remote primary` first", name)
+					}
 					reg.Servers = append(reg.Servers[:i], reg.Servers[i+1:]...)
 				}
 				return true, nil
 			})
 		},
 	}
+}
+
+func (a *App) newServersPrimaryCommand() *cobra.Command {
+	var registerCurrent bool
+	cmd := &cobra.Command{
+		Use:   "primary [NAME]",
+		Short: "Print the primary server, or make a registered server the primary",
+		Long: `Print the primary server, or make a registered server the primary.
+
+The primary is where discoboxes are created unless you choose otherwise, and
+what every command talks to when --server and DISCOBOX_SERVER name no server.
+Both still win for the command they are given to.
+
+The primary being replaced is not registered unless --register-current says
+so: a server only --server named, or the local one, is otherwise no longer
+listed until "discobox admin remote add" registers it. As with add, it has to
+answer to be registered, and nothing is changed when it does not.`,
+		Example: `  discobox admin remote primary
+  discobox admin remote primary workstation
+  discobox --server discobox://10.0.0.5:8443 admin remote primary workstation --register-current`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServerNames(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				if registerCurrent {
+					return fmt.Errorf("--register-current needs a server to make the primary")
+				}
+				return a.printPrimaryServer(cmd)
+			}
+			return a.setPrimaryServer(cmd, strings.TrimSpace(args[0]), registerCurrent)
+		},
+	}
+	cmd.Flags().BoolVar(&registerCurrent, "register-current", false, "Register the primary being replaced, under the name it offers, when it is not registered already")
+	return cmd
+}
+
+func (a *App) printPrimaryServer(cmd *cobra.Command) error {
+	set, err := a.servers()
+	if err != nil {
+		return err
+	}
+	primary := set[0]
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), serverRow{Name: primary.name, Address: primary.address, ID: primary.id, Primary: true, Registered: primary.registered})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", primary.name, primary.address)
+	return nil
+}
+
+// setPrimaryServer records the registered server name as the primary (ADR
+// 0135). registerCurrent also registers the primary it replaces — this
+// invocation's, however it was named — in the same write, when nothing
+// registered is that server; without it, one nobody registered is listed no
+// longer.
+func (a *App) setPrimaryServer(cmd *cobra.Command, name string, registerCurrent bool) error {
+	notes := printedNotes(cmd.ErrOrStderr())
+	// Checked before the current primary is asked anything, so a mistyped name
+	// is said to be one rather than waiting out a server that is down; the
+	// check under the lock below is the one that decides.
+	reg, err := loadServerRegistry()
+	if err != nil {
+		return err
+	}
+	if _, ok := reg.byName(name); !ok {
+		return fmt.Errorf("no server named %s is registered; `discobox admin remote add` registers one", name)
+	}
+	var current *server
+	var offered, peerID string
+	if registerCurrent {
+		set, err := a.servers()
+		if err != nil {
+			return err
+		}
+		if !set[0].registered {
+			current = set[0]
+			// Asked before the lock, and without being started, as add asks:
+			// what gets registered is a server that answered, and one that
+			// did not fails the command before anything is written.
+			ctx, cancel := context.WithTimeout(cmd.Context(), serverAddTimeout)
+			defer cancel()
+			baseURL, httpClient, err := a.httpClientWithAutoStart(false)
+			if err != nil {
+				return err
+			}
+			client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient))
+			if err != nil {
+				return err
+			}
+			res, err := client.ListProjects(ctx)
+			if err == nil {
+				_, err = expectResponse[apimodel.ListProjectsBody](res)
+			}
+			if err != nil {
+				return fmt.Errorf("reach %s to register it: %w", current.address, err)
+			}
+			offered = offeredName(ctx, client)
+			peerID = a.peerID(ctx)
+		}
+	}
+	var registered string
+	if err := withServerRegistry(func(reg *serverRegistry) (bool, error) {
+		i, ok := reg.byName(name)
+		if !ok {
+			return false, fmt.Errorf("no server named %s is registered; `discobox admin remote add` registers one", name)
+		}
+		changed := false
+		if current != nil {
+			if _, ok := reg.byServer(current.address, peerID); !ok {
+				registered = uniqueServerName(*reg, registrationName(offered, current.address))
+				reg.Servers = append(reg.Servers, registeredServer{Name: registered, Address: current.address, ID: peerID})
+				changed = true
+			}
+		}
+		// The local server is the primary when none is recorded, so choosing
+		// it records nothing, and a later release that moves its socket moves
+		// the primary with it.
+		primary := reg.Servers[i].Address
+		if serverKey(primary) == serverKey(endpoint.DefaultEndpoint()) {
+			primary = ""
+		}
+		if reg.Primary != primary {
+			reg.Primary = primary
+			changed = true
+		}
+		return changed, nil
+	}); err != nil {
+		return err
+	}
+	if registered != "" {
+		notes("Registered %s as %s", current.address, registered)
+	}
+	// A recorded primary is the fallback, so where --server or
+	// DISCOBOX_SERVER names a server the switch does not take, and saying
+	// nothing would look like it had.
+	if serverChosen(cmd) {
+		notes("%s is the primary wherever --server and %s name no server; here they still do", name, serverEnv)
+	}
+	return nil
 }
 
 // completeServerNames offers the registered servers' names for the first

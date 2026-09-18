@@ -113,6 +113,11 @@ type registeredServer struct {
 }
 
 type serverRegistry struct {
+	// Primary is the address of the registered server that is the primary
+	// when neither --server nor DISCOBOX_SERVER names one (ADR 0135); empty
+	// is the local server. It is an address rather than a name so a rename
+	// leaves it alone, and `admin remote rm` refuses the entry it points at.
+	Primary string             `json:"primary,omitempty"`
 	Servers []registeredServer `json:"servers"`
 }
 
@@ -307,17 +312,26 @@ func serverKey(address string) string {
 	return parsed.Scheme + " " + value
 }
 
-// resolveServerName lets --server name a registered server (ADR 0116 §3). An
-// address always has a scheme and a registered name never can, so which one
-// was written is never a guess.
-func (a *App) resolveServerName() error {
+// resolveServerName settles which server is the primary. --server and
+// DISCOBOX_SERVER name it when chosen says one of them was given, as an address
+// or a registered server's name (ADR 0116 §3); otherwise it is the primary
+// `discobox admin remote primary` recorded, and the local server when none was
+// (ADR 0135). An address always has a scheme and a registered name never can,
+// so which one was written is never a guess.
+func (a *App) resolveServerName(chosen bool) error {
 	value := strings.TrimSpace(a.serverURL)
-	if value == "" || strings.Contains(value, "://") {
+	if chosen && (value == "" || strings.Contains(value, "://")) {
 		return nil
 	}
 	reg, err := loadServerRegistry()
 	if err != nil {
 		return err
+	}
+	if !chosen {
+		if reg.Primary != "" {
+			a.serverURL = reg.Primary
+		}
+		return nil
 	}
 	i, ok := reg.byName(value)
 	if !ok {
@@ -325,6 +339,15 @@ func (a *App) resolveServerName() error {
 	}
 	a.serverURL = reg.Servers[i].Address
 	return nil
+}
+
+// serverChosen reports whether this invocation names its server itself, with
+// --server or DISCOBOX_SERVER, rather than leaving it to the recorded primary.
+func serverChosen(cmd *cobra.Command) bool {
+	if flag := cmd.Flags().Lookup("server"); flag != nil && flag.Changed {
+		return true
+	}
+	return strings.TrimSpace(os.Getenv(serverEnv)) != ""
 }
 
 // server is one server this invocation lists discoboxes from: the primary, or

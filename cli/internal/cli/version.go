@@ -60,6 +60,10 @@ func (a *App) newVersionCommand() *cobra.Command {
 // succeeds: an unreachable server is often why somebody is asking.
 func (a *App) printVersion(cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
+	// The server is whichever the root's hook would have settled on, but a
+	// registry that does not parse is not a reason to withhold the answer: the
+	// server named as it was is asked instead.
+	_ = a.resolveServerName(serverChosen(cmd))
 	// The client's line first, on a write of its own. This half was known
 	// before the process started, and holding it back for a peer that is
 	// switched off would put five seconds of silence in front of the answer

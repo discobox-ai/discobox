@@ -370,11 +370,12 @@ run's staged copy), and this user's Discobox files in the temporary directory
 
 ## Many Servers (ADR 0116)
 
-A client has one **primary** server — `--server`, `DISCOBOX_SERVER`, or the
+A client has one **primary** server — `--server`, `DISCOBOX_SERVER`, the
+registered server `discobox admin remote primary` recorded (ADR 0135), or the
 local default — and any number of **registered** ones, kept in
 `<user config dir>/discobox/servers.json` (`internal/cli/servers.go`). That file
 is configuration rather than state: it is what `discobox admin remote
-add|rename|rm` write and what a person may edit, so it sits beside the
+add|rename|rm|primary` write and what a person may edit, so it sits beside the
 server's `server.yaml` rather than under `<state>`, and one that does not parse
 is an error rather than a lost convenience.
 
@@ -392,6 +393,13 @@ is an error rather than a lost convenience.
   once there is more than one server to tell apart, and by its address until
   then. A name picks among the registered servers only, since the primary's is
   whatever it offers and may be one of theirs.
+- **The recorded primary** is `servers.json`'s `primary`, an address, applied
+  by the root's pre-run hook (`resolveServerName`) only when neither `--server`
+  nor `DISCOBOX_SERVER` was given. Recording one registers nothing unless
+  `--register-current` asks. Without it, a replaced primary nobody registered
+  drops out of the listings. With it, that primary is registered in the same
+  locked write, once it has answered, as `add` requires. `rm` refuses the
+  recorded primary.
 - **A registration records the server's peer ID** (`registeredServer.ID`),
   read the way `discobox id` reads it: off the address when that names a peer,
   a `discobox://` name resolved to one included, and from `GET /peer`

@@ -375,6 +375,164 @@ func TestServersCommandRegistersRenamesAndRemoves(t *testing.T) {
 	}
 }
 
+// Making a registered server the primary is what every command without
+// --server talks to from then on, and it registers nothing: the primary it
+// replaces, here only ever named by --server, is left unregistered (ADR 0135).
+func TestServersPrimaryIsWhatACommandWithoutServerTalksTo(t *testing.T) {
+	useTempServersFile(t)
+	t.Setenv(serverEnv, "")
+	alpha := fakeServer(t, "alpha")
+	lab := fakeServer(t, "lab")
+	beta := fakeServer(t, "beta")
+	registerForTest(t, registeredServer{Name: "alpha", Address: alpha.URL}, registeredServer{Name: "lab", Address: lab.URL})
+
+	run := func(args ...string) (string, string, error) {
+		t.Helper()
+		cmd := NewRootCommand()
+		var out, errOut strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetErr(&errOut)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		return out.String(), errOut.String(), err
+	}
+	listed := func(args ...string) []serverRow {
+		t.Helper()
+		out, _, err := run(append(args, "admin", "remote", "-o", "json")...)
+		if err != nil {
+			t.Fatalf("admin remote: %v", err)
+		}
+		var body struct {
+			Servers []serverRow `json:"servers"`
+		}
+		if err := json.Unmarshal([]byte(out), &body); err != nil {
+			t.Fatalf("admin remote -o json: %v\n%s", err, out)
+		}
+		return body.Servers
+	}
+
+	if _, _, err := run("--server", beta.URL, "admin", "remote", "primary", "nowhere"); err == nil {
+		t.Fatal("admin remote primary took a server nobody registered")
+	}
+	_, errOut, err := run("--server", beta.URL, "admin", "remote", "primary", "lab")
+	if err != nil {
+		t.Fatalf("admin remote primary lab: %v", err)
+	}
+	if !strings.Contains(errOut, "here they still do") {
+		t.Fatalf("admin remote primary said %q, want it to say --server still wins here", errOut)
+	}
+
+	want := []serverRow{
+		{Name: "lab", Address: lab.URL, Primary: true, Registered: true},
+		{Name: "alpha", Address: alpha.URL, Registered: true},
+	}
+	if got := listed(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("servers with no --server = %+v, want %+v", got, want)
+	}
+	if out, _, err := run("admin", "remote", "primary"); err != nil || out != "lab\t"+lab.URL+"\n" {
+		t.Fatalf("admin remote primary = %q, %v, want lab", out, err)
+	}
+	// --server still wins for the command it is given to, by name as well.
+	if out, _, err := run("--server", "alpha", "admin", "remote", "primary"); err != nil || !strings.HasPrefix(out, "alpha\t") {
+		t.Fatalf("--server alpha admin remote primary = %q, %v, want alpha", out, err)
+	}
+	t.Setenv(serverEnv, alpha.URL)
+	if out, _, err := run("admin", "remote", "primary"); err != nil || !strings.HasPrefix(out, "alpha\t") {
+		t.Fatalf("%s=alpha admin remote primary = %q, %v, want alpha", serverEnv, out, err)
+	}
+	t.Setenv(serverEnv, "")
+
+	if _, _, err := run("admin", "remote", "rm", "lab"); err == nil || !strings.Contains(err.Error(), "primary") {
+		t.Fatalf("admin remote rm of the primary error = %v, want a refusal", err)
+	}
+	// Renaming it keeps it the primary: what is recorded is its address.
+	if _, _, err := run("admin", "remote", "rename", "lab", "workstation"); err != nil {
+		t.Fatalf("admin remote rename: %v", err)
+	}
+	if out, _, err := run("admin", "remote", "primary"); err != nil || !strings.HasPrefix(out, "workstation\t") {
+		t.Fatalf("admin remote primary after a rename = %q, %v", out, err)
+	}
+
+	if _, errOut, err := run("admin", "remote", "primary", "alpha"); err != nil || errOut != "" {
+		t.Fatalf("admin remote primary alpha = %q, %v, want no notes", errOut, err)
+	}
+	want = []serverRow{
+		{Name: "alpha", Address: alpha.URL, Primary: true, Registered: true},
+		{Name: "workstation", Address: lab.URL, Registered: true},
+	}
+	if got := listed(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("servers after switching back = %+v, want %+v", got, want)
+	}
+	if _, _, err := run("admin", "remote", "rm", "workstation"); err != nil {
+		t.Fatalf("admin remote rm of a server no longer the primary: %v", err)
+	}
+}
+
+// --register-current registers the primary being replaced, here only ever
+// named by --server, under the name it offers; one that does not answer fails
+// the command with nothing written, as add does (ADR 0135).
+func TestServersPrimaryRegisterCurrent(t *testing.T) {
+	useTempServersFile(t)
+	t.Setenv(serverEnv, "")
+	lab := fakeServer(t, "lab")
+	beta := fakeServer(t, "beta")
+	down := deadServer(t)
+	registerForTest(t, registeredServer{Name: "lab", Address: lab.URL})
+
+	run := func(args ...string) (string, error) {
+		t.Helper()
+		cmd := NewRootCommand()
+		var errOut strings.Builder
+		cmd.SetOut(new(strings.Builder))
+		cmd.SetErr(&errOut)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		return errOut.String(), err
+	}
+	registry := func() serverRegistry {
+		t.Helper()
+		reg, err := loadServerRegistry()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reg
+	}
+
+	if _, err := run("--server", down, "--auto-start-server=false", "admin", "remote", "primary", "lab", "--register-current"); err == nil {
+		t.Fatal("admin remote primary --register-current succeeded with a primary that does not answer")
+	}
+	// A name nobody registered is said to be one, not a primary that is down.
+	if _, err := run("--server", down, "--auto-start-server=false", "admin", "remote", "primary", "nowhere", "--register-current"); err == nil || !strings.Contains(err.Error(), "no server named nowhere") {
+		t.Fatalf("admin remote primary nowhere --register-current error = %v, want it to name the unregistered server", err)
+	}
+	unchanged := serverRegistry{Servers: []registeredServer{{Name: "lab", Address: lab.URL}}}
+	if got := registry(); !reflect.DeepEqual(got, unchanged) {
+		t.Fatalf("registry after a failed --register-current = %+v, want it unchanged", got)
+	}
+	if _, err := run("admin", "remote", "primary", "--register-current"); err == nil {
+		t.Fatal("admin remote primary --register-current took no server to make the primary")
+	}
+
+	errOut, err := run("--server", beta.URL, "admin", "remote", "primary", "lab", "--register-current")
+	if err != nil {
+		t.Fatalf("admin remote primary lab --register-current: %v", err)
+	}
+	if !strings.Contains(errOut, "as beta") {
+		t.Fatalf("admin remote primary --register-current said %q, want it to say beta was registered", errOut)
+	}
+	want := serverRegistry{Primary: lab.URL, Servers: []registeredServer{{Name: "lab", Address: lab.URL}, {Name: "beta", Address: beta.URL}}}
+	if got := registry(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("registry = %+v, want %+v", got, want)
+	}
+	// Registered already, so nothing is registered twice.
+	if _, err := run("--server", "beta", "admin", "remote", "primary", "lab", "--register-current"); err != nil {
+		t.Fatalf("admin remote primary --register-current again: %v", err)
+	}
+	if got := registry(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("registry after a second --register-current = %+v, want %+v", got, want)
+	}
+}
+
 // The launcher lists every server, names each row's, and sends what is done to
 // a discobox to the server it was listed from.
 func TestLauncherListsEveryServerAndRoutesToIt(t *testing.T) {

@@ -141,7 +141,7 @@ func TestServerFlagTakesARegisteredName(t *testing.T) {
 	registerForTest(t, registeredServer{Name: "lab", Address: "discobox://10.0.0.5:8443"})
 
 	app := &App{serverURL: "lab"}
-	if err := app.resolveServerName(); err != nil {
+	if err := app.resolveServerName(true); err != nil {
 		t.Fatalf("resolveServerName() error = %v", err)
 	}
 	if app.serverURL != "discobox://10.0.0.5:8443" {
@@ -150,12 +150,12 @@ func TestServerFlagTakesARegisteredName(t *testing.T) {
 
 	// An address is left as it is: it has a scheme, and a name cannot.
 	app = &App{serverURL: "unix:///tmp/discobox/server.sock"}
-	if err := app.resolveServerName(); err != nil || app.serverURL != "unix:///tmp/discobox/server.sock" {
+	if err := app.resolveServerName(true); err != nil || app.serverURL != "unix:///tmp/discobox/server.sock" {
 		t.Fatalf("resolveServerName() on an address = %q, %v", app.serverURL, err)
 	}
 
 	app = &App{serverURL: "nowhere"}
-	if err := app.resolveServerName(); err == nil || !strings.Contains(err.Error(), "discobox admin remote") {
+	if err := app.resolveServerName(true); err == nil || !strings.Contains(err.Error(), "discobox admin remote") {
 		t.Fatalf("resolveServerName() on an unknown name error = %v, want it to say where names come from", err)
 	}
 }
