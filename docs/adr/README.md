@@ -182,3 +182,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0125](0125-tools-are-declared-in-files-the-way-services-are.md) | Tools are declared in files, the way services are | Accepted |
 | [0126](0126-remote-sandboxes-connect-out-to-their-pool.md) | Remote sandboxes connect out to their pool | Proposed |
 | [0127](0127-the-opencode-harness-runs-opencode-1.md) | The opencode harness runs opencode 1 | Accepted |
+| [0128](0128-a-private-remote-source-is-fetched-with-a-credential-the-client-lends.md) | A private remote source is fetched with a credential the client lends | Proposed |
