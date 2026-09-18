@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -27,9 +28,21 @@ func TestPrepareControlKeyIsCreatedOnceAndKept(t *testing.T) {
 	if !first.Equal(second) {
 		t.Fatal("a second call made a new key; the proxy would trust one and the agent sign with the other")
 	}
-	info, err := os.Stat(resolve(layout.ProxyControlKey(testProjectID, testPoolID)))
+	requireKeyIsPrivate(t, resolve(layout.ProxyControlKey(testProjectID, testPoolID)))
+}
+
+// The control key is a secret, and 0600 is what keeps it one. Windows has no
+// POSIX mode bits, so a file there reads back 0666 whatever Chmod asked for;
+// the pool agent only ever runs on Linux, so the mode is the one part of this
+// that is POSIX-only. The key must still be there either way.
+func requireKeyIsPrivate(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat key: %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if mode := info.Mode().Perm(); mode != 0o600 {
 		t.Fatalf("key mode = %o, want 600", mode)
@@ -117,10 +130,7 @@ func TestPrepareControlKeyReplacesAnUnusableKey(t *testing.T) {
 			if err != nil || !read.Equal(key) {
 				t.Fatalf("ReadControlKey() after repair = %v, want the replacement key", err)
 			}
-			info, err := os.Stat(path)
-			if err != nil || info.Mode().Perm() != 0o600 {
-				t.Fatalf("replacement key mode = %v, %v; want 600", info.Mode().Perm(), err)
-			}
+			requireKeyIsPrivate(t, path)
 		})
 	}
 }
