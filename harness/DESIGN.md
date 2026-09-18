@@ -437,7 +437,7 @@ there once the user leaves the session (`/exit` or Ctrl-D).
     assumed; guessing a scope the token lacks turns a clear refusal into a 401.
   - `primaryApiKey` in `~/.claude.json` — an Anthropic Console account login
     writes its long-lived managed key here. The script returns it as a plain
-    `bearer` secret (`ANTHROPIC_API_KEY`), and a later sandbox gets its sentinel
+    `token` secret (`ANTHROPIC_API_KEY`), and a later sandbox gets its sentinel
     back **in the same field it was read from**. That rendering lives in the
     image's own `.claude.json` template rather than coming back from configure:
     unlike the subscription credential there is no captured metadata to replay,
@@ -515,7 +515,7 @@ image's `unavailable` message.
   delivery both halves of the harness agree on, so the flow returns it as a
   templated harness file with the sentinel in the credential's place.
 - An **API key** sign-in leaves `{"OPENAI_API_KEY": "sk-…"}`, stored as a plain
-  `bearer` secret (`OPENAI_API_KEY`).
+  `token` secret (`OPENAI_API_KEY`).
 - A **ChatGPT** sign-in leaves `tokens.{id_token, access_token, refresh_token,
   account_id}`, stored as an `oauth` secret (`CODEX_OAUTH_TOKEN`) with OpenAI's
   fixed token endpoint and client id and the access token's own `exp`, so the

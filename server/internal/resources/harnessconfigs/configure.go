@@ -67,6 +67,36 @@ type configureSecret struct {
 	Value       json.RawMessage `json:"value,omitempty"`
 }
 
+// configureSecretType reads the type a configure command declared, which is the
+// one field of its output that is a closed vocabulary.
+//
+// A harness names a type in its own words, and this is the only writer of
+// `Secret.Type` that does not come from the API's own validated enum — so
+// without this, a harness spelling it anything at all puts that spelling in the
+// database. That is not a cosmetic problem: the API validates the enum on the
+// way *out* as well as in, so one unknown value fails to serialize and takes
+// the whole secret listing with it, in every client, for the whole project.
+// A credential nobody can list is a credential nobody can fix.
+//
+// `bearer` is accepted and renamed, the same rename `migrateSecretTypes`
+// performs at startup and for the same reason (the proxy swaps a value into
+// whatever header the sandbox put it in, so naming the type after one HTTP
+// scheme named a requirement nothing enforced). Shipped harness images still
+// emit it, and an image is not upgraded in step with a server. An empty type is
+// a token: a command that hands over a credential and says nothing about it has
+// handed over one opaque string. Anything else is refused here, where the
+// failure names the harness and the variable, rather than at a read weeks later
+// that cannot say where the row came from.
+func configureSecretType(declared string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(declared)) {
+	case "", model.SecretTypeToken, "bearer":
+		return model.SecretTypeToken, nil
+	case model.SecretTypeOAuth:
+		return model.SecretTypeOAuth, nil
+	}
+	return "", fmt.Errorf("unknown secret type %q, want %q or %q", declared, model.SecretTypeToken, model.SecretTypeOAuth)
+}
+
 // SandboxRuntime is the slice of sandbox behavior the configure flow needs: it
 // runs an ephemeral sandbox, reaches its agent, and removes it when done.
 //
@@ -368,6 +398,10 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 		if !services.HarnessConfigEnvVarNamePattern.MatchString(envName) {
 			return fmt.Errorf("configure output has invalid secret environment variable %q", secret.EnvName)
 		}
+		secretType, err := configureSecretType(secret.Type)
+		if err != nil {
+			return fmt.Errorf("configure output secret %q: %w", envName, err)
+		}
 		name := strings.TrimSpace(secret.Name)
 		if name == "" {
 			name = envName
@@ -410,7 +444,7 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			}
 			hostChanged := existing.Host != secret.Host
 			existing.Name = name
-			existing.Type = strings.TrimSpace(secret.Type)
+			existing.Type = secretType
 			existing.Host = secret.Host
 			existing.EncryptedValue = []byte(secret.Value)
 			if err := s.store.UpdateSecret(ctx, existing); err != nil {
@@ -445,7 +479,7 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			ID:        secretID,
 			ProjectID: config.ProjectID,
 			Name:      name,
-			Type:      strings.TrimSpace(secret.Type),
+			Type:      secretType,
 			Host:      secret.Host,
 			// A configure-created secret belongs to this harness (bound, granted,
 			// and deleted with it), so it must not occupy the shared

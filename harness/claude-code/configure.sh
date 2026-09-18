@@ -19,7 +19,7 @@
 #     token as it expires.
 #   - An Anthropic Console account login writes a long-lived managed key to
 #     `primaryApiKey` in ~/.claude.json. That value is stored as a plain
-#     bearer secret (ANTHROPIC_API_KEY).
+#     token secret (ANTHROPIC_API_KEY).
 # Whichever the user picked, it is verified with a non-interactive `claude -p`
 # check before being accepted.
 #
@@ -126,7 +126,7 @@ previous_env() {
 # extract_oauth_payload reads the rotating OAuth blob a subscription `/login`
 # wrote to $CREDENTIALS_FILE, writes {token,refreshToken,tokenUrl,clientId[,
 # accessTokenExpiresAt,scopes,subscriptionType]} to $OAUTH_PAYLOAD_FILE, and
-# echoes just the access token so the caller can verify it like any bearer.
+# echoes just the access token so the caller can verify it like any token.
 # Fails if no valid OAuth credential is present. $OAUTH_PAYLOAD_FILE must
 # already be set by the caller.
 #
@@ -327,7 +327,7 @@ detect_credential() {
 	fi
 	if [ -n "$detected_key" ] && [ "$detected_key" != "$SEEDED_SENTINEL" ]; then
 		ENV_NAME="$API_KEY_ENV"
-		OUTPUT_TYPE="bearer"
+		OUTPUT_TYPE="token"
 		TOKEN="$detected_key"
 		rm -f "$OAUTH_PAYLOAD_FILE"
 		OAUTH_PAYLOAD_FILE=""
@@ -338,7 +338,7 @@ detect_credential() {
 		if [ "$ENV_NAME" = "$OAUTH_ENV" ]; then
 			OUTPUT_TYPE="oauth"
 		else
-			OUTPUT_TYPE="bearer"
+			OUTPUT_TYPE="token"
 		fi
 		TOKEN="$SEEDED_SENTINEL"
 		KEEP_PREVIOUS=yes
@@ -438,7 +438,7 @@ verify_credential() {
 # snapshot of $SETTINGS_FILE as a harness file. Shapes:
 #   - keep previous:  usePrevious marker, no value (KEEP_PREVIOUS set).
 #   - oauth login:    the full rotating blob from $OAUTH_PAYLOAD_FILE, type oauth.
-#   - api key:        a plain bearer { token }.
+#   - api key:        a plain token { token }.
 write_output() {
 	write_env=$1
 	# sandbox-agent creates this directory for the sandbox user in config mode;
@@ -446,7 +446,7 @@ write_output() {
 	mkdir -p "$(dirname "$OUTPUT")"
 	CLAUDE_CONFIGURE_ENV_NAME="$write_env" \
 		CLAUDE_CONFIGURE_NAME="$(env_label "$write_env")" \
-		CLAUDE_CONFIGURE_TYPE="${OUTPUT_TYPE:-bearer}" \
+		CLAUDE_CONFIGURE_TYPE="${OUTPUT_TYPE:-token}" \
 		CLAUDE_CONFIGURE_TOKEN="${OUTPUT_TOKEN:-}" \
 		CLAUDE_CONFIGURE_KEEP_PREVIOUS="${KEEP_PREVIOUS:-}" \
 		CLAUDE_CONFIGURE_PAYLOAD_FILE="${OAUTH_PAYLOAD_FILE:-}" \
@@ -461,7 +461,7 @@ write_output() {
 		const secret = {
 			envName: process.env.CLAUDE_CONFIGURE_ENV_NAME,
 			name: process.env.CLAUDE_CONFIGURE_NAME,
-			type: process.env.CLAUDE_CONFIGURE_TYPE || 'bearer',
+			type: process.env.CLAUDE_CONFIGURE_TYPE || 'token',
 		};
 		let payload = null;
 		if (process.env.CLAUDE_CONFIGURE_KEEP_PREVIOUS) {
@@ -546,7 +546,7 @@ PREVIOUS_ENV=$(previous_env)
 
 ENV_NAME=""
 TOKEN=""
-OUTPUT_TYPE="bearer"
+OUTPUT_TYPE="token"
 KEEP_PREVIOUS=""
 SEEDED_SENTINEL=""
 
@@ -635,7 +635,7 @@ while [ -z "$ENV_NAME" ]; do
 		[ -n "$OAUTH_PAYLOAD_FILE" ] && rm -f "$OAUTH_PAYLOAD_FILE"
 		ENV_NAME=""
 		TOKEN=""
-		OUTPUT_TYPE="bearer"
+		OUTPUT_TYPE="token"
 		OAUTH_PAYLOAD_FILE=""
 		confirm_retry
 	fi

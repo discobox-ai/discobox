@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -938,5 +939,70 @@ func TestApplyConfigureOutputClearsARefusedCredential(t *testing.T) {
 	}
 	if len(rejections) != 0 {
 		t.Fatalf("rejections = %v, want none: the sign-in that replaced the credential is the remedy", rejections)
+	}
+}
+
+// The type a configure command declares is the one field of its output that is
+// a closed vocabulary, and the only writer of Secret.Type that does not come
+// from the API's validated enum. An unknown value is not cosmetic: the API
+// validates the enum on the way out too, so one bad row fails to serialize and
+// takes the whole project's secret listing with it in every client.
+func TestApplyConfigureOutputHoldsSecretsToTheTwoTypes(t *testing.T) {
+	ctx := context.Background()
+
+	// Shipped harness images still say "bearer" — claude-code and codex-cli
+	// both do for their API-key path — and an image is not upgraded in step
+	// with a server, so it is renamed rather than refused.
+	for _, declared := range []string{"bearer", "", "TOKEN"} {
+		t.Run("normalized/"+declared, func(t *testing.T) {
+			st := newTestStore(t)
+			config := &model.HarnessConfig{
+				ProjectID: "project-1", Slug: "codex", Name: "Codex",
+				Image: "img:1", RunCommand: []string{"codex"},
+			}
+			if err := st.CreateHarnessConfig(ctx, config); err != nil {
+				t.Fatalf("create config: %v", err)
+			}
+			svc := &Service{store: st, inspector: &stubInspector{}}
+			out := &configureOutput{Secrets: []configureSecret{{
+				EnvName: "OPENAI_API_KEY", Name: "key", Type: declared, Value: []byte(`{"token":"sk-real"}`),
+			}}}
+			if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
+				t.Fatalf("apply: %v", err)
+			}
+			secrets, err := st.ListSecrets(ctx, "project-1")
+			if err != nil {
+				t.Fatalf("list secrets: %v", err)
+			}
+			if len(secrets) != 1 || secrets[0].Type != model.SecretTypeToken {
+				t.Fatalf("stored types = %v, want one %q", secrets, model.SecretTypeToken)
+			}
+		})
+	}
+
+	// Anything else is refused here, where the failure can name the harness and
+	// the variable, rather than at a read weeks later that cannot say where the
+	// row came from.
+	st := newTestStore(t)
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "codex", Name: "Codex",
+		Image: "img:1", RunCommand: []string{"codex"},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "OPENAI_API_KEY", Name: "key", Type: "ssh", Value: []byte(`{"token":"sk-real"}`),
+	}}}
+	err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out)
+	if err == nil {
+		t.Fatal("an unknown secret type was stored, want the configure refused")
+	}
+	if !strings.Contains(err.Error(), "OPENAI_API_KEY") || !strings.Contains(err.Error(), "ssh") {
+		t.Fatalf("error = %v, want it to name the variable and the type", err)
+	}
+	if secrets, _ := st.ListSecrets(ctx, "project-1"); len(secrets) != 0 {
+		t.Fatalf("stored secrets = %v, want none", secrets)
 	}
 }

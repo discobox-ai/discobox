@@ -18,7 +18,7 @@
 #     token and OpenAI's fixed token endpoint and client id, so the control
 #     plane can refresh it as it expires.
 #   - An API key sign-in writes {"OPENAI_API_KEY": "sk-..."} — a long-lived key,
-#     stored as a plain `bearer` secret (OPENAI_API_KEY).
+#     stored as a plain `token` secret (OPENAI_API_KEY).
 # Whichever the user picked, it is verified with a non-interactive `codex exec`
 # before being accepted.
 #
@@ -395,7 +395,7 @@ detect_credential() {
 	fi
 	if [ -n "$detected_key" ] && [ "$detected_key" != "$SEEDED_SENTINEL" ]; then
 		ENV_NAME="$API_KEY_ENV"
-		OUTPUT_TYPE="bearer"
+		OUTPUT_TYPE="token"
 		TOKEN="$detected_key"
 		rm -f "$OAUTH_CAPTURE_FILE"
 		OAUTH_CAPTURE_FILE=""
@@ -406,7 +406,7 @@ detect_credential() {
 		if [ "$ENV_NAME" = "$OAUTH_ENV" ]; then
 			OUTPUT_TYPE="oauth"
 		else
-			OUTPUT_TYPE="bearer"
+			OUTPUT_TYPE="token"
 		fi
 		TOKEN="$SEEDED_SENTINEL"
 		KEEP_PREVIOUS=yes
@@ -500,7 +500,7 @@ verify_credential() {
 # files a sandbox needs to run codex with it. Secret shapes:
 #   - keep previous:  usePrevious marker, no value (KEEP_PREVIOUS set).
 #   - ChatGPT login:  the access token plus refresh material, type oauth.
-#   - API key:        a plain bearer { token }.
+#   - API key:        a plain token { token }.
 write_output() {
 	write_env=$1
 	# sandbox-agent creates this directory for the sandbox user in config mode;
@@ -508,7 +508,7 @@ write_output() {
 	mkdir -p "$(dirname "$OUTPUT")"
 	CODEX_CONFIGURE_ENV_NAME="$write_env" \
 		CODEX_CONFIGURE_NAME="$(env_label "$write_env")" \
-		CODEX_CONFIGURE_TYPE="${OUTPUT_TYPE:-bearer}" \
+		CODEX_CONFIGURE_TYPE="${OUTPUT_TYPE:-token}" \
 		CODEX_CONFIGURE_TOKEN="${OUTPUT_TOKEN:-}" \
 		CODEX_CONFIGURE_KEEP_PREVIOUS="${KEEP_PREVIOUS:-}" \
 		CODEX_CONFIGURE_CAPTURE_FILE="${OAUTH_CAPTURE_FILE:-}" \
@@ -524,7 +524,7 @@ write_output() {
 		const secret = {
 			envName: process.env.CODEX_CONFIGURE_ENV_NAME,
 			name: process.env.CODEX_CONFIGURE_NAME,
-			type: process.env.CODEX_CONFIGURE_TYPE || 'bearer',
+			type: process.env.CODEX_CONFIGURE_TYPE || 'token',
 		};
 		let capture = null;
 		if (process.env.CODEX_CONFIGURE_KEEP_PREVIOUS) {
@@ -688,7 +688,7 @@ ensure_workspace_trusted
 
 ENV_NAME=""
 TOKEN=""
-OUTPUT_TYPE="bearer"
+OUTPUT_TYPE="token"
 KEEP_PREVIOUS=""
 SEEDED_SENTINEL=""
 
@@ -787,7 +787,7 @@ while [ -z "$ENV_NAME" ]; do
 		[ -n "$OAUTH_CAPTURE_FILE" ] && rm -f "$OAUTH_CAPTURE_FILE"
 		ENV_NAME=""
 		TOKEN=""
-		OUTPUT_TYPE="bearer"
+		OUTPUT_TYPE="token"
 		OAUTH_CAPTURE_FILE=""
 		confirm_retry
 	fi
