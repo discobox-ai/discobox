@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -36,7 +37,11 @@ func compress(sourcePath, destinationPath string) error {
 
 	// Written to a temporary file and renamed, so an interrupted run leaves the
 	// previous artifact intact rather than a truncated one that looks valid.
-	temporary := destinationPath + ".tmp"
+	// The temporary sits beside the source, not the destination: the source is a
+	// build intermediate under an ignored directory, while the destination may be
+	// a committed one, and an interrupt skips the deferred Remove and leaves the
+	// temporary behind for git status to report.
+	temporary := filepath.Join(filepath.Dir(sourcePath), filepath.Base(destinationPath)+".tmp")
 	destination, err := os.Create(temporary)
 	if err != nil {
 		return err
