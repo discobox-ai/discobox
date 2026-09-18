@@ -667,7 +667,8 @@ get, the composer grown and the line under it drawn, and what does not fit is
 given up in order: the mark first (`compactShowsLogo`, the height counterpart to
 `minWidthForLogo`), then the small window itself, which `layout` opens out
 rather than print. A terminal inside a pane is several rows shorter than the one
-around it, so a discobox run inside a discobox is where this shows up first.
+around it, so a discobox running inside a discobox is where this shows up
+first.
 
 Nothing on that first frame suggests there is anything behind it, so it says so
 — laid into the very top border line (`titledEdge`), and only until the window

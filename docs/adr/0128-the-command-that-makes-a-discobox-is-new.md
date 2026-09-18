@@ -28,26 +28,32 @@ command a person runs many times a day.
 
 ### 1. The command is `new`, and `run` stays a spelling of it
 
-`Use: "new [flags] [PROMPT...]"`, with `Aliases: []string{"run", "n", "r"}`.
-`run` is not deprecated and prints no warning. `n` and `r` are the short forms
-of the two names; `r` predates this and stays for the same reason `run` does.
-Removing either would be its own decision, and nothing here plans one.
+The command is `new`. `run` is the same command registered a second time and
+hidden: same flags through `addRunFlags`, same body through `runPrompt`, same
+help text. It is not deprecated and prints no warning. `n` and `r` are the short
+forms of the two names; `r` predates this and stays for the same reason `run`
+does. Removing either would be its own decision, and nothing here plans one.
+
+Two registrations rather than one command with an alias, because cobra prints a
+command's aliases in its help and offers no way to keep one out — see §2.
 
 ### 2. Only `new` is taught
 
-Help text, examples, error messages, the `DESIGN.md` files, the in-box skill's
-command list, and the launcher's live command preview say `new`. In the CLI's
-own output the old name survives only in cobra's `Aliases:` line, which is
-exactly where it belongs: that is where somebody who typed `run` finds out what
-the command is called now.
+Nothing the CLI prints says `run`. Help text, examples, error messages, the
+`DESIGN.md` files, the in-box skill's command list, the launcher's options panel
+and its live command preview all say `new`; the old spelling is absent from the
+command list, from shell completion, and from `new`'s own help, which is what
+the hidden second registration in §1 buys. Somebody who types `run` is not
+corrected, because nothing they typed failed.
 
-Two strings keep the old spelling: the commit messages a create writes,
-`discobox run workspace snapshot` and `discobox run empty base`
+That includes the commit messages a create writes, which become `discobox new
+workspace snapshot` and `discobox new empty base`
 ([ADR 0083](0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md)
-§1 for the second). They are already in the history of every discobox cut from
-a dirty workspace or from a directory in no repository, and rewording them
-would spell one commit two ways across releases while gaining a reader
-nothing.
+§1 for the second). They are the one place the old name reached a person who
+never typed it — `git log` inside the discobox — and nothing reads them back, so
+changing the text costs nothing but the two spellings sitting side by side in
+the history of boxes cut before and after this. Commits already written keep
+their own text; they are history like any other commit.
 
 ### 3. Nothing behind the name changes
 

@@ -878,7 +878,7 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 	inner := max(boxWidth-dialogChromeWidth, 20)
 
 	var b strings.Builder
-	b.WriteString(st.dialogTitle.Render("Run Options"))
+	b.WriteString(st.dialogTitle.Render("New Discobox"))
 	b.WriteString("\n")
 	// The keys, as a key line like every other in the window: the panel is one
 	// of the modal surfaces, and a surface where the offers were text and

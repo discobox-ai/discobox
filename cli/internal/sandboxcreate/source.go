@@ -48,8 +48,8 @@ const (
 	wslDriveRoot = "/mnt"
 	// maxRunSourceSlugLen is the API's slug limit.
 	maxRunSourceSlugLen      = 63
-	runSnapshotCommitMessage = "discobox run workspace snapshot\n"
-	runEmptyBaseMessage      = "discobox run empty base\n"
+	runSnapshotCommitMessage = "discobox new workspace snapshot\n"
+	runEmptyBaseMessage      = "discobox new empty base\n"
 )
 
 // IncludeDirty decides whether uncommitted local work is carried into the

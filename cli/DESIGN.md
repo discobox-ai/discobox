@@ -74,18 +74,17 @@ transport helpers where OpenAPI does not model the stream.
   command output; the private copy lets the launcher's success dialog name every
   destination and local commit without parsing terminal text or reimplementing
   apply. The local terminal owns and removes that file when the pane closes.
-- **The command that makes a discobox is `new`, and `run` is still a spelling
-  of it.** The name was `run` first, so it stays an alias (with `n` and `r` as
-  the short forms), and every script, shell alias and habit written against it
-  keeps working. Only `new` is taught: the help text, the examples and the
-  launcher's command preview all say `new`, and the only place the CLI prints
-  the old name is cobra's own `Aliases:` line, where somebody who already types
-  it finds out what it is now called. The two commit messages a create writes
-  (`runSnapshotCommitMessage`, `runEmptyBaseMessage` in
-  `internal/sandboxcreate/source.go`) still read `discobox run`, and stay that
-  way: they are already in the history of every discobox cut from a dirty
-  workspace or from a directory in no repository, and a `git log` that spelled
-  the same commit two ways across releases would be the worse reading. See
+- **The command that makes a discobox is `new`, and nothing prints any other
+  name for it.** It was `run` first, so `run` is registered a second time,
+  hidden (`newRunCommand` takes the spelling), and every script, shell alias
+  and habit written against it keeps working. Do not turn the two registrations
+  back into one command with an alias: cobra prints a command's aliases in its
+  help with no way to keep one out, and the old spelling is kept working
+  without being taught. The two share their flags (`addRunFlags`), their body
+  (`runPrompt`) and their help text, so the hidden one cannot drift into a
+  second, older command. Go identifiers keep the run vocabulary — a run is what
+  the command starts — as [ADR 0119](../docs/adr/0119-registered-servers-are-admin-remote.md)
+  kept `serverRegistry` for `admin remote`. See
   [ADR 0128](../docs/adr/0128-the-command-that-makes-a-discobox-is-new.md),
   which supersedes [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md)
   §§3–4's and [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
@@ -1022,9 +1021,9 @@ Three things follow, all worth knowing before adding a command:
   Two things land there, both otherwise silent: the words a `--` hides from the
   command scan, which does not stop at one, and run's
   own flags, which are the root's *local* flags and are parsed wherever they
-  stand. `discobox -- please run the tests` would otherwise dispatch to `new`
-  through its `run` alias from the middle of a sentence, and
-  `discobox -p '…' ls` would list with the prompt dropped.
+  stand. `discobox -- please run the tests` would otherwise dispatch to a
+  command found in the middle of a sentence, and `discobox -p '…' ls` would
+  list with the prompt dropped.
 - A flag belonging to a subcommand must be written after it. Cobra's default
   accepts `discobox --wait admin server shutdown`; here the root parses that
   `--wait` and does not know it.
@@ -2658,7 +2657,7 @@ the round trip back. See
 - While the local repository still has no commits, `gitapply.AttemptRoot` lands
   them instead of `Attempt`. It cherry-picks onto an unborn HEAD of its own — a
   scratch worktree detached at the empty base, then `git checkout --orphan` — so
-  the discobox's `discobox run empty base` is replayed away and the first
+  the discobox's `discobox new empty base` is replayed away and the first
   sandbox commit becomes the repository's root, authored by whoever wrote it.
   The branch HEAD already names is then created at the applied tip and
   `git reset --hard` fills the index and working tree.

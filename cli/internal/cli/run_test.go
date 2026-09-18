@@ -453,3 +453,47 @@ func TestRunWindowRequestLeavesAutoForTheWindowToAsk(t *testing.T) {
 		}
 	}
 }
+
+// The name the command had first still makes a discobox. It is hidden rather
+// than listed (see newRunCommand), so nothing but a test and an old habit ever
+// reaches it — which is exactly why it needs a test: a spelling nothing prints
+// is a spelling nothing else would catch the loss of.
+func TestTheOldNameStillCreatesADiscobox(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
+	repo := newRunSourceTestRepo(t)
+	t.Chdir(repo)
+	var posted map[string]any
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "fix", "tests"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute the old name: %v", err)
+	}
+	if posted == nil {
+		t.Fatal("the old name posted no create")
+	}
+	// The same prompt the new name would send: one command, two spellings.
+	config := posted["config"].(map[string]any)
+	prompt, ok := config["prompt"].([]any)
+	if !ok || len(prompt) != 2 || prompt[0] != "fix" || prompt[1] != "tests" {
+		t.Fatalf("prompt = %#v, want the words after the command", config["prompt"])
+	}
+}

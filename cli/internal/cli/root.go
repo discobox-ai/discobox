@@ -126,7 +126,7 @@ func newRootCommand() (*cobra.Command, *App) {
 		Short: "Discobox command line client",
 		Long: fmt.Sprintf(`Discobox runs coding agents in isolated sandboxes on this machine.
 
-Given a prompt, or any of the flags a run takes, this is "%[1]s new": the
+Given a prompt, or any of the flags "new" takes, this is "%[1]s new": the
 command name can be left out of the thing you do most.
 
   %[1]s -p 'fix the failing tests'
@@ -135,8 +135,8 @@ command name can be left out of the thing you do most.
 The prompt is -p here, and only -p: a word on its own is still a subcommand, so
 a misspelled one says so rather than quietly becoming a prompt.
 
-With nothing at all it opens the launcher, where the same run is one prompt and
-an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
+With nothing at all it opens the launcher, where the same thing is one prompt
+and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// The flags in front of a subcommand are parsed by the command they
@@ -259,7 +259,10 @@ an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 	// and nothing else: only the bare form is a run.
 	runFlags = addRunFlags(cmd, &run)
 
-	cmd.AddCommand(app.newRunCommand())
+	cmd.AddCommand(app.newRunCommand("new", "n", false))
+	// The same command under the name it had first, hidden so that nothing
+	// lists or teaches it. See newRunCommand.
+	cmd.AddCommand(app.newRunCommand("run", "r", true))
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newRemoveCommand())
 	cmd.AddCommand(app.newShellCommand())

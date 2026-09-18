@@ -199,10 +199,18 @@ func TestRootCommandHelp(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("\n  new ")) {
 		t.Fatalf("help output = %q, want visible new command", out.String())
 	}
-	// The old name still reaches the same command, for every script and habit
-	// written before it was `new`.
-	if command, _, err := cmd.Find([]string{"run"}); err != nil || command.Name() != "new" {
-		t.Fatalf("find run alias: command=%v err=%v", command, err)
+	// The old name still reaches the command, for every script and habit written
+	// before it was `new` — and is not printed anywhere, which is the other half
+	// of keeping it (see newRunCommand).
+	old, _, err := cmd.Find([]string{"run"})
+	if err != nil || old.Name() != "run" {
+		t.Fatalf("find the old name: command=%v err=%v", old, err)
+	}
+	if !old.Hidden {
+		t.Fatal("the old name is listed in the command list")
+	}
+	if bytes.Contains(out.Bytes(), []byte("\n  run ")) {
+		t.Fatalf("help output = %q, want the old name unlisted", out.String())
 	}
 	if !bytes.Contains(out.Bytes(), []byte("\n  admin ")) {
 		t.Fatalf("help output = %q, want visible admin command", out.String())
@@ -2148,5 +2156,36 @@ func TestVersionFollowedByWordsIsAnError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `unknown command "bump"`) {
 		t.Fatalf("error = %q, want it to name the extra word", err)
+	}
+}
+
+// The old name is kept working and never taught: no command list, and no alias
+// line on the command that replaced it. Cobra prints a command's aliases with
+// no way to keep one out, which is why `run` is a second hidden registration
+// rather than an alias of `new` (see newRunCommand).
+func TestTheOldNameIsNeverPrinted(t *testing.T) {
+	for _, name := range []string{"new", "run"} {
+		t.Run(name, func(t *testing.T) {
+			cmd := NewRootCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetArgs([]string{name, "--help"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute %s --help: %v", name, err)
+			}
+			aliases := ""
+			for line := range strings.SplitSeq(out.String(), "\n") {
+				if strings.HasPrefix(line, "  new,") || strings.HasPrefix(line, "  run,") {
+					aliases = line
+				}
+			}
+			// `discobox new --help` is the one a reader reaches, and it may not
+			// name the old spelling. `discobox run --help` is reached only by
+			// somebody who already typed it, and names itself, as any command's
+			// usage does.
+			if name == "new" && strings.Contains(aliases, "run") {
+				t.Fatalf("`discobox new --help` names the old spelling: %q", aliases)
+			}
+		})
 	}
 }

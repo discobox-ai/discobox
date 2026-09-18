@@ -32,16 +32,41 @@ type runCommandOptions struct {
 	raw bool
 }
 
-func (a *App) newRunCommand() *cobra.Command {
+// newRunCommand builds the command that makes a discobox, under one of its two
+// spellings. `new` is the command; `run`, which it was called first, is the
+// same command registered a second time and hidden, so every script, shell
+// alias and habit that says `run` keeps working while nothing teaches it: it is
+// absent from the command list, and `new` carries no alias line naming it.
+//
+// Two registrations rather than one with an alias, because cobra prints a
+// command's aliases in its help and there is no way to keep one out. They share
+// everything that could drift — the flags through addRunFlags, the body through
+// runPrompt, the help text through these two constants — so the hidden spelling
+// cannot become a second, older command.
+//
+// short is the short form of each: `n` for the name, `r` for the old one, which
+// predates this and stays for the same reason.
+func (a *App) newRunCommand(name, short string, hidden bool) *cobra.Command {
 	var opts runCommandOptions
 	cmd := &cobra.Command{
-		Use: "new [flags] [PROMPT...]",
-		// The command was `run` before it was `new`, so the old name stays a
-		// spelling of it: every script, alias and habit that says `run` keeps
-		// working. `n` and `r` are the short forms of the two names.
-		Aliases: []string{"run", "n", "r"},
-		Short:   "Launch prompt in new discobox",
-		Long: `Launch a prompt in a new discobox against the current directory.
+		Use:     name + " [flags] [PROMPT...]",
+		Aliases: []string{short},
+		Hidden:  hidden,
+		Short:   runCommandShort,
+		Long:    runCommandLong,
+		Example: runCommandExample,
+		Args:    cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.runPrompt(cmd, &opts, args)
+		},
+	}
+	addRunFlags(cmd, &opts)
+	return cmd
+}
+
+const runCommandShort = "Launch prompt in new discobox"
+
+const runCommandLong = `Launch a prompt in a new discobox against the current directory.
 
 The prompt is -p, which is also how the bare "discobox" takes one — that is this
 command in every way that matters (see "discobox --help"), so "discobox -p '...'"
@@ -113,8 +138,9 @@ Each is brought in the way -i would: the ../foo you already have checked out
 when there is one, and a clone of the URL when there is not. Either way it lands
 beside the source -- at the same path when the source kept its own, under
 /workspace when it did not -- so ../foo means the same thing inside the
-discobox as it does here. --declared-sources=false leaves them out.`,
-		Example: `  discobox -p 'fix the failing tests'
+discobox as it does here. --declared-sources=false leaves them out.`
+
+const runCommandExample = `  discobox -p 'fix the failing tests'
   discobox -H codex -d -p 'fix the failing tests'
   discobox new -p 'fix the failing tests'
   discobox new --include-dirty=false -p 'fix the failing tests'
@@ -125,18 +151,10 @@ discobox as it does here. --declared-sources=false leaves them out.`,
   discobox new -d -p 'fix the failing tests'
   discobox new --raw -p 'fix the failing tests'
   discobox new fix the failing tests
-  discobox new -- prompt starting with --flag-like text`,
-		Args: cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runPrompt(cmd, &opts, args)
-		},
-	}
-	addRunFlags(cmd, &opts)
-	return cmd
-}
+  discobox new -- prompt starting with --flag-like text`
 
 // runPrompt creates the discobox a run describes. It is the body of `discobox
-// run` and of the bare `discobox` that stands in for it: the shortcut is the
+// new` and of the bare `discobox` that stands in for it: the shortcut is the
 // same command reached without its name, not a second one that has to be kept
 // in step with it.
 //

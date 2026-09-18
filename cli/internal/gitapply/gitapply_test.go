@@ -242,7 +242,7 @@ func newUnbornHostAndSandbox(t *testing.T, files map[string]string) (string, str
 	// The empty base and the snapshot of the working tree, as create writes
 	// them: objects and refs in the user's own repository, no branch moved.
 	emptyTree := run(t, host, "hash-object", "-t", "tree", "-w", "--stdin")
-	base := commitTree(t, host, emptyTree, "", "discobox run empty base")
+	base := commitTree(t, host, emptyTree, "", "discobox new empty base")
 	run(t, host, "update-ref", "refs/discobox/run/base", base)
 	wantTree := emptyTree
 	if len(files) > 0 {
