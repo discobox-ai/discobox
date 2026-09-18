@@ -16,7 +16,7 @@ import (
 // is the NAME `discobox ls` prints for the current project directory, or an ID
 // from anywhere in the project. listedName rather than configuredName because
 // the name a running discobox shows is its terminal's window title, and the
-// configured name it otherwise falls back to is generated — `run` has no
+// configured name it otherwise falls back to is generated — `new` has no
 // --name — so matching only that would mean matching a string the listing had
 // stopped printing. Every argument here is a discobox, so there is no command
 // word for a free-form title to be mistaken for.

@@ -1011,7 +1011,7 @@ than resurrecting a screen that was left. The primary session ending ends the
 workspace too: it is above all a view onto that session.
 
 **A window can be one command's own** (`Model.oneShot`): `discobox attach`
-opens it on one discobox (`WithAttach`, `Model.attach`) and `discobox run` opens
+opens it on one discobox (`WithAttach`, `Model.attach`) and `discobox new` opens
 it on one run request (`WithRun`, `Model.pendingRun`), instead of either command
 streaming a terminal of its own.
 
@@ -1676,10 +1676,10 @@ click misses.
 (`optionSet.command`). What is on screen has to be reproducible from a shell —
 a panel offering something the command cannot is the thing to avoid — and the
 spelling is the one the CLI's help leads with: the prompt as `-p`, with no
-`run` in front. That is also the truer rendering of what Enter does, since the
+`new` in front. That is also the truer rendering of what Enter does, since the
 composer holds one piece of text and sends it as one argument, which is exactly
 what `-p` is. Only a preview carrying neither a prompt nor a run flag names
-`run`, because `discobox -C dir` on its own is the launcher
+`new`, because `discobox -C dir` on its own is the launcher
 ([ADR 0100](../../../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md)).
 
 A card's text field takes a caret from a press (`hitInput`, `pressInput`) — the
@@ -1874,7 +1874,7 @@ slowest load there is, and a welcome that arrived late would arrive over a
 prompt already being typed into. It takes every key — only Enter does anything —
 so a press aimed at the introduction cannot reach a screen the user has not seen.
 
-It stands in front of `discobox run`'s window too, when the project has not
+It stands in front of `discobox new`'s window too, when the project has not
 been welcomed: the run this window was opened to make proceeds behind it the
 same way every other load does, and Enter uncovers whatever it has gotten to —
 still waiting, or already the workspace. `discobox attach` is the one window it
@@ -2202,7 +2202,7 @@ that cannot say what is local cannot say what is remote either.
 The folder is also *where Enter creates*, not just what the list is filtered to:
 `optionSet.setFolder` points the run source at it, so the header is one control
 rather than two that look alike. `request()` leaves `Source` empty when the
-folder is the session's own directory, since that is already what `discobox run`
+folder is the session's own directory, since that is already what `discobox new`
 resolves to, and the chip strip shows the source only when an override makes it
 differ from what the header says — a strip repeating the header is one you stop
 reading.
@@ -2240,7 +2240,7 @@ nobody named. Enter opens the Source row's own list instead
 answering it moves the header onto that folder: the next Enter has a place to
 cut from and asks nothing. A window whose session has not landed yet is on no
 folder for a different reason — nothing has told it which, and it has no
-directory or sources to offer — so it is left to `discobox run`'s own
+directory or sources to offer — so it is left to `discobox new`'s own
 resolution, the way a prompt submitted before the harnesses land is.
 
 **A path typed by hand is checked before the window takes it**
@@ -2446,7 +2446,7 @@ the newest one where the busy line goes.
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
 | `model.go` | the window: update, actions, run, layout, view, help |
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
-| `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
+| `options.go` | `discobox new`'s flags as a panel, the chip strip, the command preview |
 | `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
 | `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
 | `theme.go` | the palette and every style, built against the detected profile |

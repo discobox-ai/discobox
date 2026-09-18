@@ -76,7 +76,7 @@ launchers, and configure scripts.
   `command not found`; a harness image overwrites it. See ADR 0086 §3.
 - **A wrapper joins its prompt words back into one prompt.** The command is
   *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
-  `discobox run fix the failing tests` reaches `discobox-harness-run` as four
+  `discobox new fix the failing tests` reaches `discobox-harness-run` as four
   arguments, not one. A prompt given as one argument — `discobox -p 'fix the
   failing tests'`, and everything the launcher creates — arrives as one, which
   the same joining leaves alone. Every wrapper joins everything after the flags with

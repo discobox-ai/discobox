@@ -735,7 +735,7 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 
 // formatConfigured renders whether a harness has completed its configure flow.
 // Only a configured harness can be run, so this is the column that explains why
-// `discobox run -H <slug>` is refused. A failed attempt shows its reason.
+// `discobox new -H <slug>` is refused. A failed attempt shows its reason.
 func formatConfigured(harness *apimodel.HarnessConfig) string {
 	if harness.Configured {
 		return "yes"

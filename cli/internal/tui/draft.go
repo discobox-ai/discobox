@@ -83,7 +83,7 @@ func (m *Model) saveDraftNow() {
 // alternative is a window that says the same thing about the same broken disk
 // every five seconds.
 func (m *Model) draftToSave() (folder, prompt string, ok bool) {
-	// Nothing a `discobox run` or `discobox attach` window does is a prompt
+	// Nothing a `discobox new` or `discobox attach` window does is a prompt
 	// somebody typed here: the composer is never shown, and a create started
 	// from the command line empties it on the way past. Writing that would
 	// throw away the sentence the launcher was left mid-way through.

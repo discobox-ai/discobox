@@ -229,7 +229,7 @@ PID, because PIDs are reused and the pool agent differences per process.
   the exec layer that starts them (`execs.Manager.DefaultWorkdir`): the primary
   source's target when there is one, the working root when there is not. It is
   what a harness that gates work on directory trust is told to trust. It is not
-  derived from `sources`: a source-less sandbox — `discobox run` with nothing to
+  derived from `sources`: a source-less sandbox — `discobox new` with nothing to
   clone, and every configure sandbox — would then trust nothing, and its harness
   would open on a trust prompt for the directory it is already sitting in.
 - A repository's `.discobox/skills` is copied, never reconciled. It is installed
@@ -531,7 +531,7 @@ development images without a registry.
 
 - Every sandbox has a default terminal: on sandbox start the harness always
   launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
-  clients such as `discobox run` can rely on one existing and attach to it. The
+  clients such as `discobox new` can rely on one existing and attach to it. The
   first start runs the resolved harness with the manifest prompt as arguments;
   later starts run the harness's `relaunchCommand` to resume the previous session
   instead of replaying the prompt. First-vs-subsequent is decided by a durable

@@ -196,8 +196,13 @@ func TestRootCommandHelp(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("\n  run ")) {
-		t.Fatalf("help output = %q, want visible run command", out.String())
+	if !bytes.Contains(out.Bytes(), []byte("\n  new ")) {
+		t.Fatalf("help output = %q, want visible new command", out.String())
+	}
+	// The old name still reaches the same command, for every script and habit
+	// written before it was `new`.
+	if command, _, err := cmd.Find([]string{"run"}); err != nil || command.Name() != "new" {
+		t.Fatalf("find run alias: command=%v err=%v", command, err)
 	}
 	if !bytes.Contains(out.Bytes(), []byte("\n  admin ")) {
 		t.Fatalf("help output = %q, want visible admin command", out.String())
@@ -1951,7 +1956,7 @@ func TestRunFlagsInFrontOfACommandAreRefused(t *testing.T) {
 		flag string
 	}{
 		{args: []string{"-p", "fix the failing tests", "ls"}, flag: "--prompt"},
-		{args: []string{"-p", "fix the failing tests", "run"}, flag: "--prompt"},
+		{args: []string{"-p", "fix the failing tests", "new"}, flag: "--prompt"},
 		{args: []string{"-H", "codex", "tools", "ssh", "mybox"}, flag: "--harness"},
 		{args: []string{"--detach", "ls"}, flag: "--detach"},
 	} {
@@ -1980,7 +1985,7 @@ func TestRunFlagsInFrontOfACommandAreRefused(t *testing.T) {
 }
 
 // -p is the prompt the bare command takes, and it reaches the same run
-// `discobox run` does.
+// `discobox new` does.
 func TestPromptFlagIsARun(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)

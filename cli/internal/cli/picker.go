@@ -81,7 +81,7 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 		return nil, "", "", nil, err
 	}
 	picked, err := pickOne(cmd, "Select a discobox", serverSandboxPickerItems(candidates, "", several), pickerOptions{
-		empty:     "no discoboxes were started from this directory; start one with `discobox run`, or name one with --discobox-id",
+		empty:     "no discoboxes were started from this directory; start one with `discobox new`, or name one with --discobox-id",
 		ambiguous: "more than one discobox was started from this directory; pass --discobox-id",
 		// The remembered pick is per project, because the candidate list is.
 		recentKey: "sandbox:" + projectID,

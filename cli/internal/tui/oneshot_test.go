@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The windows that are one command's own: `discobox run`, which is the window
+// The windows that are one command's own: `discobox new`, which is the window
 // opened on one run request, and `discobox attach`, which is it opened on one
 // discobox. Both open on the discobox they are about rather than on the list,
 // and both close when that is left.
@@ -128,7 +128,7 @@ func TestAnAttachThatCannotOpenEndsWithTheError(t *testing.T) {
 	}
 }
 
-// openRun is the window `discobox run` opens: the launcher, opened on the
+// openRun is the window `discobox new` opens: the launcher, opened on the
 // request the command built from its flags rather than on a prompt somebody
 // types.
 func openRun(t *testing.T, ds *fakeSource, req RunRequest) (*driver, *Model) {
@@ -142,7 +142,7 @@ func openRun(t *testing.T, ds *fakeSource, req RunRequest) (*driver, *Model) {
 }
 
 // The question about uncommitted work is the window's own dialog, the one Enter
-// in the prompt puts up: `discobox run` hands its request over and the window
+// in the prompt puts up: `discobox new` hands its request over and the window
 // makes the discobox, rather than the command asking on the terminal first.
 func TestARunWindowAsksTheWindowsOwnQuestion(t *testing.T) {
 	t.Parallel()

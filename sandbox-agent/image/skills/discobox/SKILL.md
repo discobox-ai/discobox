@@ -358,7 +358,7 @@ artifact:
 
 ```
 discobox            open the launcher
-discobox run        launch a prompt in a new box
+discobox new        launch a prompt in a new box
 discobox ls         boxes started from this directory
 discobox rm         archive boxes (alias: delete)
 discobox attach     open a box's window
@@ -375,7 +375,7 @@ discobox admin      pools, projects, harness images, the server and its status
 ```
 
 A prompt at the bare command is `-p` and only `-p` — `discobox -p '...'`. After
-`run` it can be trailing words. Bare `discobox` with loose words is an unknown
+`new` it can be trailing words. Bare `discobox` with loose words is an unknown
 command, not a prompt.
 
 `discobox rm BOX...` archives boxes, by the NAME `ls` lists or by ID, and

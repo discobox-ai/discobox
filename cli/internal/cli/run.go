@@ -16,7 +16,7 @@ type runCommandOptions struct {
 	prompt sandboxcreate.PromptOptions
 	// promptFlag is -p: the prompt as one argument, and the only way to spell
 	// one to the bare `discobox`, where a word on its own is a subcommand. The
-	// words after `run` are the same prompt as the shell split it, kept because
+	// words after `new` are the same prompt as the shell split it, kept because
 	// the name in front of them says what they are.
 	promptFlag []string
 	detach     bool
@@ -35,18 +35,21 @@ type runCommandOptions struct {
 func (a *App) newRunCommand() *cobra.Command {
 	var opts runCommandOptions
 	cmd := &cobra.Command{
-		Use:     "run [flags] [PROMPT...]",
-		Aliases: []string{"r"},
+		Use: "new [flags] [PROMPT...]",
+		// The command was `run` before it was `new`, so the old name stays a
+		// spelling of it: every script, alias and habit that says `run` keeps
+		// working. `n` and `r` are the short forms of the two names.
+		Aliases: []string{"run", "n", "r"},
 		Short:   "Launch prompt in new discobox",
 		Long: `Launch a prompt in a new discobox against the current directory.
 
 The prompt is -p, which is also how the bare "discobox" takes one — that is this
 command in every way that matters (see "discobox --help"), so "discobox -p '...'"
-and "discobox run -p '...'" are the same thing. The words after this command are
+and "discobox new -p '...'" are the same thing. The words after this command are
 a prompt too, for a shell where quoting is the awkward part; use -- when they
 need to be separated from command flags explicitly.
 
-By default run opens the launcher's window and makes the discobox there: the
+By default new opens the launcher's window and makes the discobox there: the
 question about uncommitted work is asked on it, the wait is drawn on it, and
 what it lands on is the discobox itself — its default terminal (the configured
 harness, or a shell when it has none), the shells and services running beside
@@ -61,13 +64,13 @@ terminal you would rather keep as it is. The questions are asked on this
 terminal, one per source. Ctrl-A d detaches there too. If an interrupt stops
 getting through — the discobox or the server has gone quiet — Ctrl-C again says
 so, and one more quits, leaving the terminal running like a detach. Without a
-terminal to draw a window on, run is raw whether or not the flag was given.
+terminal to draw a window on, new is raw whether or not the flag was given.
 
 Pass -d to create the discobox and print it without attaching at all; there is
 no window in that either.
 
 Uncommitted changes in the source directory are carried into the discobox as a
-snapshot on top of the checked-out commit. By default run asks before doing that
+snapshot on top of the checked-out commit. By default new asks before doing that
 when there is a terminal to ask on; --include-dirty=true|false answers ahead of
 time.
 
@@ -82,7 +85,7 @@ placed that way too.
 A source directory that is not in a Git repository works too: everything in it
 is carried into the discobox as uncommitted changes on an empty first commit,
 and nothing is written to the directory itself. Because that is the whole
-directory, run asks first — with the size it would copy, counted while the
+directory, new asks first — with the size it would copy, counted while the
 question is on screen — and not copying is the default answer: the discobox is
 still created, with nothing checked out in it, exactly as --no-source does.
 --include-dirty=true|false answers this one ahead of time too.
@@ -113,16 +116,16 @@ beside the source -- at the same path when the source kept its own, under
 discobox as it does here. --declared-sources=false leaves them out.`,
 		Example: `  discobox -p 'fix the failing tests'
   discobox -H codex -d -p 'fix the failing tests'
-  discobox run -p 'fix the failing tests'
-  discobox run --include-dirty=false -p 'fix the failing tests'
-  discobox run -i ../foo -i ../bar -p 'make them share one client'
-  discobox run --no-source -p 'draft a proposal for the new pricing page'
-  discobox run -e GITHUB_TOKEN -e MODE=test -p 'fix the failing tests'
-  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> -p 'fix the failing tests'
-  discobox run -d -p 'fix the failing tests'
-  discobox run --raw -p 'fix the failing tests'
-  discobox run fix the failing tests
-  discobox run -- prompt starting with --flag-like text`,
+  discobox new -p 'fix the failing tests'
+  discobox new --include-dirty=false -p 'fix the failing tests'
+  discobox new -i ../foo -i ../bar -p 'make them share one client'
+  discobox new --no-source -p 'draft a proposal for the new pricing page'
+  discobox new -e GITHUB_TOKEN -e MODE=test -p 'fix the failing tests'
+  discobox new -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> -p 'fix the failing tests'
+  discobox new -d -p 'fix the failing tests'
+  discobox new --raw -p 'fix the failing tests'
+  discobox new fix the failing tests
+  discobox new -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runPrompt(cmd, &opts, args)
@@ -138,7 +141,7 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 // in step with it.
 //
 // args is the prompt as the shell split it, after -p, which is the same prompt
-// given as one argument. Only `run` has trailing words to pass; the bare
+// given as one argument. Only `new` has trailing words to pass; the bare
 // command's prompt is -p and nothing else, so it passes none.
 func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
 	// Creating and delivering a source are this client's own work, so
@@ -162,7 +165,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if opts.detach {
 		notes = status.print
 	}
-	// -p and the words after `run` are the same prompt, so a caller can use
+	// -p and the words after `new` are the same prompt, so a caller can use
 	// whichever the shell makes easier and both arrive as argv tokens. The flag
 	// leads because it is the one that had to be quoted.
 	prompt := append(append([]string(nil), opts.promptFlag...), args...)
@@ -237,13 +240,13 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 }
 
 // addRunFlags gives cmd everything a run takes, and hands back the set it
-// added. Both spellings of a run register them from here — `discobox run` and
+// added. Both spellings of a run register them from here — `discobox new` and
 // the bare `discobox` that stands in for it — so the two cannot drift into
 // taking different flags, and the returned set is how the bare one asks whether
 // any of them was given at all.
 func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
-	flags := pflag.NewFlagSet("run", pflag.ContinueOnError)
-	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"run\", and the only spelling the bare \"discobox\" has for a prompt")
+	flags := pflag.NewFlagSet("new", pflag.ContinueOnError)
+	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"new\", and the only spelling the bare \"discobox\" has for a prompt")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under /workspace where it cannot; either way it is named after itself, so -i ../foo is the source foo")
@@ -311,7 +314,7 @@ func confirmIncludeDirty(cmd *cobra.Command, status *statusLine) sandboxcreate.C
 // confirmCopyDirectory asks whether a source directory that is in no Git
 // repository is copied into the sandbox. Everything in such a directory is
 // uncommitted work, so the question is the whole directory — which is why it is
-// asked at all, and why not copying leads: `discobox run` in a home directory
+// asked at all, and why not copying leads: `discobox new` in a home directory
 // should not carry the home directory. Declining creates the discobox with
 // nothing checked out in it, the way --no-source does (ADR 0077 §1).
 //
@@ -430,7 +433,7 @@ func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
 	return fmt.Sprintf("%s has %d uncommitted %s (%s)", workspace.RepoRoot, len(paths), pluralize("change", len(paths)), summary)
 }
 
-// runWindowRequest is this command as the window takes it: `discobox run`'s
+// runWindowRequest is this command as the window takes it: `discobox new`'s
 // flags in the shape the launcher's own Enter produces, so what the window
 // creates is what this command describes.
 //

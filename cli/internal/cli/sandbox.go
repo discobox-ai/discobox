@@ -539,7 +539,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the discobox")
 	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the discobox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the discobox")
-	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox run`, this command infers nothing from the local environment")
+	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox new`, this command infers nothing from the local environment")
 	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the discobox")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for discobox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
@@ -597,7 +597,7 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 }
 
 // sandboxGitFromCreateOptions builds the git authorship from explicit flags
-// only. This command is the flag-driven path, so unlike `discobox run` it reads
+// only. This command is the flag-driven path, so unlike `discobox new` it reads
 // nothing from the local git config: what it creates is what was asked for.
 func sandboxGitFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxGitIdentity, bool) {
 	git := apimodel.SandboxGitIdentity{}

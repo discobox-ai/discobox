@@ -223,7 +223,7 @@ type fakeSource struct {
 }
 
 // promptText is the request's prompt as one string, which is what a test
-// asserts on: the window sends one argument, and `discobox run` sends the words
+// asserts on: the window sends one argument, and `discobox new` sends the words
 // the shell split.
 func promptText(req RunRequest) string { return strings.Join(req.Prompt, " ") }
 

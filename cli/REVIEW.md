@@ -3,7 +3,7 @@
 ## Writing to the screen
 
 - **Work that runs under a full-screen program may not choose a stream.** A
-  create runs inside the launcher's window, and `discobox run` runs one step
+  create runs inside the launcher's window, and `discobox new` runs one step
   ahead of the terminal it is about to attach. Anything either of them calls
   that has something to say takes a `noteFunc` (`statusline.go`) and reports
   through it; it never takes a `*cobra.Command` in order to reach

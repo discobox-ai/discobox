@@ -107,7 +107,7 @@ func TestFileInstallerDoesNotRenderLiteralFile(t *testing.T) {
 	}
 }
 
-// A sandbox with no source -- `discobox run` with nothing to clone, and every
+// A sandbox with no source -- `discobox new` with nothing to clone, and every
 // configure sandbox -- still has a directory its harness is launched in, and
 // that is the directory the trust rendering follows. Keying it off the primary
 // source instead left these sandboxes trusting nothing, so Claude Code opened

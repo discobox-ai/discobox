@@ -710,7 +710,7 @@ human use. Agent callers should pass an explicit sandbox ID or set
 
 ### Task convenience
 
-Because the current `discobox run` is harness/prompt-oriented, use a separate task
+Because the current `discobox new` is harness/prompt-oriented, use a separate task
 command for generic create-exec-cleanup composition:
 
 ```bash
@@ -979,7 +979,7 @@ Revisit this proposal when Discobox needs one or more of the following:
 - reliable machine-driven file and artifact transfer;
 - sandbox snapshots or forked agent work;
 - short-lived authenticated port access;
-- a generic one-shot task runner distinct from harness-oriented `discobox run`.
+- a generic one-shot task runner distinct from harness-oriented `discobox new`.
 
 At that point, verify the provider research, narrow the open questions into an
 explicit decision, and draft a Proposed ADR before implementation. Once code

@@ -90,7 +90,7 @@ func TestSourceDirectoryDropsTheRef(t *testing.T) {
 }
 
 // Run is the launcher's Enter, and it has to go through the same creation path
-// `discobox run` does rather than posting a body of its own.
+// `discobox new` does rather than posting a body of its own.
 func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
@@ -140,7 +140,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	// The launcher's create says what it is doing on the way through, in the
-	// same words `discobox run` uses, because both call the same creation path
+	// same words `discobox new` uses, because both call the same creation path
 	// (ADR 0060). A source the server can reach needs no push, so the delivery
 	// reports nothing here.
 	phases := []string{
@@ -275,7 +275,7 @@ func TestToTUISandboxCarriesBothNames(t *testing.T) {
 	}
 }
 
-// `discobox run` and `discobox attach` open the window on the discobox, but
+// `discobox new` and `discobox attach` open the window on the discobox, but
 // only where there is a terminal to draw one on: a pipe, a script or CI gets
 // the stream those commands have always been, the same rule bare `discobox`
 // follows before opening the launcher.

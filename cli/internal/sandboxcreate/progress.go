@@ -16,7 +16,7 @@ package sandboxcreate
 // nothing downstream needs it.
 //
 // The words live here rather than in each frontend, even though rendering is
-// otherwise the frontend's job: `discobox run` and the launcher perform the same
+// otherwise the frontend's job: `discobox new` and the launcher perform the same
 // steps, and two spellings of one stage is a difference users would read as a
 // difference in behavior. Where the line is drawn and when it is cleared is
 // still each frontend's own.

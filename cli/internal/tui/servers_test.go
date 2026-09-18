@@ -482,7 +482,7 @@ func TestTheHeaderServerIsWhereThePromptRuns(t *testing.T) {
 }
 
 // Every server at once is no answer to which server a create belongs on, so it
-// falls back to the primary — where `discobox run` with no --server goes
+// falls back to the primary — where `discobox new` with no --server goes
 // (ADR 0116 §5) — however the window arrived back there.
 func TestEveryServerStillCreatesOnThePrimary(t *testing.T) {
 	t.Parallel()

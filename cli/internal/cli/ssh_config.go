@@ -162,7 +162,7 @@ func (s *server) writeSSHConfig(ctx context.Context, identityFile string, notes 
 // It takes a context and a note sink rather than the command, so that what it
 // says goes where the caller is showing things rather than onto whatever stream
 // the command happens to hold. A create runs this on its way to a full-screen
-// terminal — the launcher's window, or the attach `discobox run` ends in — and
+// terminal — the launcher's window, or the attach `discobox new` ends in — and
 // neither of those has a stream to spare.
 func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Client, projectID, identityFile string, notes noteFunc) error {
 	resolvedProjectID, err := a.concreteProjectID(ctx, client, projectID)

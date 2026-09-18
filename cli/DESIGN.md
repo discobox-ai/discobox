@@ -74,15 +74,32 @@ transport helpers where OpenAPI does not model the stream.
   command output; the private copy lets the launcher's success dialog name every
   destination and local commit without parsing terminal text or reimplementing
   apply. The local terminal owns and removes that file when the pane closes.
-- Bare `discobox` given any flag `run` takes *is* `discobox run`
+- **The command that makes a discobox is `new`, and `run` is still a spelling
+  of it.** The name was `run` first, so it stays an alias (with `n` and `r` as
+  the short forms), and every script, shell alias and habit written against it
+  keeps working. Only `new` is taught: the help text, the examples and the
+  launcher's command preview all say `new`, and the only place the CLI prints
+  the old name is cobra's own `Aliases:` line, where somebody who already types
+  it finds out what it is now called. The two commit messages a create writes
+  (`runSnapshotCommitMessage`, `runEmptyBaseMessage` in
+  `internal/sandboxcreate/source.go`) still read `discobox run`, and stay that
+  way: they are already in the history of every discobox cut from a dirty
+  workspace or from a directory in no repository, and a `git log` that spelled
+  the same commit two ways across releases would be the worse reading. See
+  [ADR 0128](../docs/adr/0128-the-command-that-makes-a-discobox-is-new.md),
+  which supersedes [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md)
+  §§3–4's and [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
+  spelling of the command those two decide about — §4 being the rule these
+  examples and the preview answer to: no example may spell a form that is gone.
+- Bare `discobox` given any flag `new` takes *is* `discobox new`
   (`runRequested`, checked first in the root command's `RunE`, dispatching to
   the shared `App.runPrompt`). `addRunFlags` registers run's flags once and is
-  called for both the `run` subcommand and the root command, so the two cannot
+  called for both the `new` subcommand and the root command, so the two cannot
   drift into taking different flags. `-p`/`--prompt` is the prompt there, and
   the form the documents lead with: `discobox -p '...'`. Not every example is
   that one — an example whose point is that a shell splits the words, such as
   the wrapper convention in [`harness/DESIGN.md`](../harness/DESIGN.md), says
-  `discobox run <words>`, which is where those words still exist. What no
+  `discobox new <words>`, which is where those words still exist. What no
   example may spell is a form that is gone. `-p` is therefore not `--project`'s
   shorthand: `--project` has a long form only.
 - Otherwise, bare `discobox` runs the launcher when stdin and stdout are both
@@ -100,12 +117,12 @@ transport helpers where OpenAPI does not model the stream.
   `discobox lst` reports `unknown command "lst"` and suggests `ls`, and a word
   past a `--` is refused naming `-p`. Dropping those would put the silent
   create back — `discobox -d -- fix the failing tests` with an empty prompt —
-  by the one spelling `run`'s help teaches. Cobra's own check does not run
+  by the one spelling `new`'s help teaches. Cobra's own check does not run
   under `TraverseChildren`; see
   [Where a Global Flag Is Parsed](#where-a-global-flag-is-parsed). See
   [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
   which supersedes [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
-  trade on that point; `run` keeps its trailing prompt, where the name in front
+  trade on that point; `new` keeps its trailing prompt, where the name in front
   of the words says what they are.
 - `discobox version` is an ordinary hidden subcommand (`newVersionCommand`,
   `printVersion`), because anything driving the CLI without reading its help
@@ -128,12 +145,12 @@ transport helpers where OpenAPI does not model the stream.
 - `discobox configure` is the same launcher opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.
-- `discobox run` and `discobox attach` are the same launcher, opened on one run
+- `discobox new` and `discobox attach` are the same launcher, opened on one run
   (`tui.WithRun`) and on one discobox (`tui.WithAttach`), not a terminal stream
   on the caller's screen. What run creates is a machine with terminals,
   services and ports on it, and the workspace screen is where all of that
   already is; a second, poorer view of the same session is the thing to avoid.
-- **`discobox run` hands the window its request and the window makes the
+- **`discobox new` hands the window its request and the window makes the
   discobox** (`App.runWindowRequest` → `tui.WithRun` → `Model.runRequest`). It
   takes the path Enter in the prompt takes, so the question about uncommitted
   work is the window's own dialog and the wait is the window's own screen —
@@ -581,7 +598,7 @@ directory under the user's own state root against the user.
 Two things bound a download besides its size. A stall watchdog rides the
 progress ticker and cancels a body that has stopped arriving, because the CLI's
 root context is never canceled and the launch deadline is taken *after* staging
-runs — without it a dead connection leaves a first `discobox run` on one status
+runs — without it a dead connection leaves a first `discobox new` on one status
 line indefinitely. And each staging sweeps `*.staging-*`/`*.replaced-*`
 leftovers older than an hour, at both levels — beside the destination, where a
 temporary is created, and directly under the root, where the alphas created one.
@@ -760,7 +777,7 @@ Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
 `SandboxDisplayName`: the primary terminal's window title once something has set
 one, and the configured name only until then — and the configured name is
-generated (`randomname.Generate`; `run` has no `--name`), so it is a string the
+generated (`randomname.Generate`; `new` has no `--name`), so it is a string the
 listing has usually stopped printing.
 
 - `configuredName` matches `Config.Name` alone. It is for an argument that
@@ -1005,9 +1022,9 @@ Three things follow, all worth knowing before adding a command:
   Two things land there, both otherwise silent: the words a `--` hides from the
   command scan, which does not stop at one, and run's
   own flags, which are the root's *local* flags and are parsed wherever they
-  stand. `discobox -- please run the tests` would otherwise dispatch to `run`
-  from the middle of a sentence, and `discobox -p '…' ls` would list with the
-  prompt dropped.
+  stand. `discobox -- please run the tests` would otherwise dispatch to `new`
+  through its `run` alias from the middle of a sentence, and
+  `discobox -p '…' ls` would list with the prompt dropped.
 - A flag belonging to a subcommand must be written after it. Cobra's default
   accepts `discobox --wait admin server shutdown`; here the root parses that
   `--wait` and does not know it.
@@ -1197,7 +1214,7 @@ session, `execstream/client`.
   rejected the attach with a definitive status (`404`, `409`) its own message is
   reported verbatim instead: it knows why, and the client's inference would only
   repeat or contradict it.
-- Nothing polls for readiness before attaching, on either path. `discobox run`
+- Nothing polls for readiness before attaching, on either path. `discobox new`
   creates, delivers the source if it must be pushed, and attaches — in the
   window or as a stream; the attach itself waits, at
   each tier for what only that tier can see — the control plane for the sandbox
@@ -1591,7 +1608,7 @@ level or layering on the attach transports above.
   running `SSH_AUTH_SOCK` agent (falling back to `~/.ssh/*.pub`) and reuses
   the shared picker (`internal/cli/picker.go`) for the "which key" choice
   when there is more than one candidate — the same picker `discobox shell`'s
-  sandbox selection and `run --include-dirty`'s prompt use. This step is
+  sandbox selection and `new --include-dirty`'s prompt use. This step is
   enrollment convenience only: listing an agent's public keys proves nothing
   about possession of the private half, and the actual authorization is the
   authenticated `CreateSSHKey` API call that follows, never agent presence
@@ -1695,7 +1712,7 @@ level or layering on the attach transports above.
   populated run needs no further edit to `~/.ssh/config` and no second trip to
   re-pin the same server.
 - A successful prompt sandbox create refreshes these files after its source has
-  been delivered, from both `discobox run` and the launcher. This is the same
+  been delivered, from both `discobox new` and the launcher. This is the same
   operation as `admin ssh-config --write`, including key enrollment and WSL's
   two targets, so a newly created sandbox is immediately available to OpenSSH
   clients without a separate command.
@@ -1802,7 +1819,7 @@ level or layering on the attach transports above.
   every one of those is worth a line — but who is listening differs by caller
   and none of it may pick a screen for itself. `admin ssh-config`, a host tool
   run from `discobox tools`, `tools ssh` and `cp` pass `printedNotes(stderr)`;
-  `discobox run` passes its status line, so the lines are gone before the attach; the launcher
+  `discobox new` passes its status line, so the lines are gone before the attach; the launcher
   passes its busy line, so nothing reaches the terminal it has drawn a window
   on. Everything below `writeProjectSSHConfig` therefore takes a `context.Context`
   and a sink rather than the `*cobra.Command`, which is what makes writing to
@@ -1813,7 +1830,7 @@ level or layering on the attach transports above.
 Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
 whether the attach has a PTY — not by which command is running:
 
-- **Raw mode (any TTY attach: `run`, `admin terminal attach`, `configure`,
+- **Raw mode (any TTY attach: `new`, `admin terminal attach`, `configure`,
   `shell`/`admin exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
   Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
   0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
@@ -1891,7 +1908,7 @@ URL, and the client-side ref names.
 `CreatePromptSandbox` and `DeliverSource` both take a `sandboxcreate.Report` and
 call it as they enter each step. These steps are this process's own work, so
 nothing else can say which one is underway; the words live in `sandboxcreate`
-so `discobox run` and the launcher cannot describe the same stage differently,
+so `discobox new` and the launcher cannot describe the same stage differently,
 while where the line is drawn and when it is cleared stays each frontend's.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
@@ -1962,7 +1979,7 @@ Both front ends run the same rule, over one resolver (`App.pushSandboxSources`,
 - the **launcher's workspace**, which attaches to the discobox's terminals when
   it opens, through `DataSource.PushSources` (`internal/cli/tui_push.go`) on a
   loop guarded by the workspace generation (`internal/tui/push.go`);
-- a **raw attach** — `attach --raw`, `run --raw`, `admin terminal attach`,
+- a **raw attach** — `attach --raw`, `new --raw`, `admin terminal attach`,
   `admin terminal create --attach` — from the one choke point they share
   (`attachSandboxTerminal` → `App.autoPushWhileAttached`). The one attach there
   that is not somebody working in a discobox says so
@@ -2113,11 +2130,11 @@ ready".
 
 A dirty local workspace becomes a snapshot commit on top of the checked-out
 commit, kept under `refs/discobox/run/`, and reaches the sandbox as uncommitted
-changes on that same commit. `discobox run --include-dirty` decides whether that
+changes on that same commit. `discobox new --include-dirty` decides whether that
 happens:
 
 - `auto` (default) asks, and only when the workspace is actually dirty. Where
-  it asks depends on who is creating: `discobox run` creates in the window, so
+  it asks depends on who is creating: `discobox new` creates in the window, so
   the question is the window's own dialog (`Model.workspaceChecked`) — one
   question, whose answer is then carried to the create as `true` or `false` for
   every source it cuts from. `--raw`, `-d` and a run with no terminal create on
@@ -2147,7 +2164,7 @@ happens:
 
 ## Extra Sources
 
-`discobox run -i DIR` brings more sources into the same sandbox, repeated for more
+`discobox new -i DIR` brings more sources into the same sandbox, repeated for more
 than one. They become the create request's `sourceCodeReferences`, and the
 mechanism they use is the primary source's, not a second one:
 
@@ -2183,7 +2200,7 @@ A repository can name the others it is worked on with, in
 {"foo": "https://github.com/acme/foo"}
 ```
 
-`discobox run` and the launcher both bring them in, as source code references
+`discobox new` and the launcher both bring them in, as source code references
 resolved exactly like `--include`:
 
 - **A local checkout wins.** `foo` is looked for at the sibling of the primary
@@ -2217,7 +2234,7 @@ resolved exactly like `--include`:
   they named — or does not want a large clone on every run.
 
 `sandboxcreate` resolves them and reports through
-`PromptOptions.ReportDeclaredSource`; `discobox run` prints one line per source on
+`PromptOptions.ReportDeclaredSource`; `discobox new` prints one line per source on
 stderr. The launcher passes no reporter — it owns its screen and has no status
 line for per-source progress — so it brings the same sources in silently. See
 [ADR 0056](../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
@@ -2240,7 +2257,7 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
   implementation detail. That flag is what makes the server choose `push`: there
   is nothing at that path to clone however reachable it is.
 - The user is asked first, through `sandboxcreate.ConfirmCopyDirectoryFunc`, and
-  not copying leads: `discobox run` in a home directory must not carry the home
+  not copying leads: `discobox new` in a home directory must not carry the home
   directory. Declining is an answer, not a cancel — it resolves to no source at
   all, the request "No Source At All" below describes, and nothing is built over
   the directory to reach it. `--include-dirty` answers ahead of time, `false`
@@ -2330,7 +2347,7 @@ See [ADR 0093](../docs/adr/0093-a-local-sources-origin-is-its-git-directory.md).
 
 ## No Source At All
 
-`discobox run --no-source` (`PromptOptions.NoSource`) creates a discobox with
+`discobox new --no-source` (`PromptOptions.NoSource`) creates a discobox with
 nothing materialized in it — the shape the harness configure sandbox already
 had, reached deliberately. It is not "a source that resolved to nothing": no
 `config.source` is sent at all, and the create request carries no local source
@@ -2601,7 +2618,7 @@ it.
   The escape needs a base commit to measure the tip against: a source created
   from a URL and a *branch name* alone (`sandbox create --source-url --source-ref
   main`, which records `checkout.refName` and no `checkout.commit`, unlike
-  `discobox run`, which resolves the SHA itself) has none, and still fails until
+  `discobox new`, which resolves the SHA itself) has none, and still fails until
   it is given `--dir` — the report says that is why rather than only that a
   directory is missing.
 - A merge base that does not exist means the target repository shares no

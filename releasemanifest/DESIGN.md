@@ -52,7 +52,7 @@ Inside the Nix development shell:
 go tool task dev:released-images MANIFEST=releasemanifest/examples/v0.8.0.json
 ```
 
-In another terminal, use `./build/discobox run`. The development loop builds and
+In another terminal, use `./build/discobox new`. The development loop builds and
 hot-reloads local binaries and starts no Docker image watcher. Both binaries
 keep their development version. Image blobs are cached across rebuilds.
 Restart the development command after editing an external manifest file.

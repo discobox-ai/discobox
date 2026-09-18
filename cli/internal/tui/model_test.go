@@ -889,7 +889,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	// On the window's own directory, the run names no source at all: that is
-	// already what `discobox run` would use, and passing it would only repeat it.
+	// already what `discobox new` would use, and passing it would only repeat it.
 	if req := m.opts.request(""); req.Source != "" {
 		t.Fatalf("source = %q, want the CLI's own default", req.Source)
 	}

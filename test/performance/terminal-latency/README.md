@@ -1,7 +1,7 @@
 # Terminal latency harness
 
 This diagnostic runs a deterministic byte request/response through a real
-development stack. It is centered on the interactive path shared by `discobox run`
+development stack. It is centered on the interactive path shared by `discobox new`
 and `discobox admin terminal ... attach`:
 
 1. The transport probe, `TestTerminalLatencyE2E` in
@@ -15,10 +15,10 @@ and `discobox admin terminal ... attach`:
    tmux PTY and writes `direct-<profile>.json`. It adds the CLI's local terminal
    and raw-mode path.
 
-After `discobox run` creates the sandbox and resolves its primary terminal, it
+After `discobox new` creates the sandbox and resolves its primary terminal, it
 calls the same `attachSandboxTerminal` implementation as the direct probe.
 Consequently the direct result measures the attached, interactive hot path of
-both commands. It intentionally excludes `discobox run` source upload,
+both commands. It intentionally excludes `discobox new` source upload,
 provisioning, and initial sandbox startup.
 
 Each transport and direct path runs against three fresh sandboxes by default:
@@ -31,7 +31,7 @@ Each transport and direct path runs against three fresh sandboxes by default:
 `discobox tui` is an optional, quiet-only mode of the same driver, reported as
 `tui-quiet.json`. It measures the embedded terminal, VT parsing, Bubble Tea
 update loop, and rendering path, but it is not part of the default run because
-it is not on the `discobox run` or direct attach path.
+it is not on the `discobox new` or direct attach path.
 
 The image under `image/` is test-only. Its primary process, `probe.py`, enters
 raw mode and turns `DBXPING:00000001` into `DBXPONG:00000001`, so every input
@@ -107,7 +107,7 @@ set. The default loads can be changed with `..._SPINNER_HZ`,
   action acknowledgements, and probe replies ultimately share the downstream
   writer, so this comparison detects downstream head-of-line delay.
 - A large gap from direct to the optional TUI result implicates VT parsing, the
-  Bubble Tea loop, or rendering; that gap does not describe `discobox run`.
+  Bubble Tea loop, or rendering; that gap does not describe `discobox new`.
 
 The tmux reports (direct and TUI) include host CPU/IO/memory pressure snapshots and the
 sandbox's cgroup CPU quota, pressure, and `cpu.stat` delta. Both report types

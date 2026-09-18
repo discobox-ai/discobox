@@ -41,7 +41,7 @@ and press Enter to run it in a new one, or press Enter on an empty prompt to
 create one with nothing given to the harness. Tab moves to the list of
 discoboxes you already have, where every action is a single letter — Enter
 attaches, s opens a shell, y applies, x archives — and Shift-Tab opens
-"discobox run"'s options.
+"discobox new"'s options.
 
 Attaching or opening a shell draws the discobox's terminal in the window itself.
 Every key then goes to the discobox, Ctrl-C included: it is the program's, so
@@ -73,7 +73,7 @@ discobox terminal is up.`,
 
 // runTUI starts the launcher. It is reached five ways — `discobox tui`, `discobox`
 // with nothing to do, `discobox configure`, which is the launcher opened on its
-// harnesses screen, `discobox run`, which is the launcher opened on one run
+// harnesses screen, `discobox new`, which is the launcher opened on one run
 // (`tui.WithRun`), and `discobox attach`, which is it opened on one discobox
 // (`tui.WithAttach`) — so it lives here rather than inside any one's RunE.
 //
@@ -107,7 +107,7 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	// it is actually shown from here is the window's own call — see
 	// tui.WithAttach and tui.WithRun — since a window opened on one discobox
 	// (`discobox attach`) has no screen behind the introduction to hand over
-	// to, while one opened on one run (`discobox run`) does.
+	// to, while one opened on one run (`discobox new`) does.
 	welcomed, err := a.projectWelcomed(cmd.Context(), client, projectID)
 	if err != nil {
 		return err
@@ -125,7 +125,7 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 }
 
 // canOpenWindow reports whether this invocation can put a full-screen window
-// on the terminal it was run from, which is what `discobox run` and `discobox
+// on the terminal it was run from, which is what `discobox new` and `discobox
 // attach` do unless --raw says otherwise. It is the rule bare `discobox`
 // already uses: a pipe, a script, or CI has no terminal to draw one on, and
 // there the attach is the byte stream it always was.
@@ -1035,7 +1035,7 @@ func sourceDirectory(source string) string {
 }
 
 // Run creates the sandbox Enter asked for and delivers its source, which is
-// exactly what `discobox run` does before it attaches — including saying which of
+// exactly what `discobox new` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
 func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string), accepted func()) (tui.Sandbox, error) {
 	if d.servers == nil {
@@ -1085,7 +1085,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 		Harness:  strings.TrimSpace(req.Harness),
 		Env:      req.Env,
 		Secret:   req.Secret,
-		// Both only ever come from `discobox run`'s own request, which the
+		// Both only ever come from `discobox new`'s own request, which the
 		// window is opened on: the panel offers no way to name an extra source
 		// or to leave the declared ones out. See tui.WithRun.
 		Include:             req.Include,
@@ -1168,7 +1168,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 }
 
 // WatchProvisioning says what a discobox that is not usable yet is being made
-// to do, on the same reading of the same record `discobox run` narrates from.
+// to do, on the same reading of the same record `discobox new` narrates from.
 func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, report func(string)) {
 	d = d.at(sandboxID)
 	d.app.watchProvisioning(ctx, d.projectID, sandboxID, report)

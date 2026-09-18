@@ -119,7 +119,7 @@ func (m *Model) selectServer(choice string) tea.Cmd {
 	m.list.server = choice
 	// Where the window is listing from is where it creates. Every server at
 	// once is no answer to that, so the create falls back to the primary,
-	// which is where `discobox run` puts it with no --server at all
+	// which is where `discobox new` puts it with no --server at all
 	// (ADR 0116 §5).
 	m.opts.setServer(choice)
 	m.list.resetCursor()

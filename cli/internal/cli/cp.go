@@ -341,7 +341,7 @@ func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	}
 	if reference == "" {
 		return pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
-			empty:     "no discoboxes were started from this directory; start one with `discobox run`, or name one before the colon",
+			empty:     "no discoboxes were started from this directory; start one with `discobox new`, or name one before the colon",
 			ambiguous: "more than one discobox was started from this directory; name one before the colon",
 			recentKey: "sandbox:" + projectID,
 			expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),

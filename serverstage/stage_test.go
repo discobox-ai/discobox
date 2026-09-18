@@ -406,7 +406,7 @@ func TestStageForceDoesNotReportAnUntouchedSetAsRestaged(t *testing.T) {
 
 // A body that stops arriving has to end the download rather than hang it. The
 // CLI's root context is never canceled and the launch deadline is taken after
-// staging runs, so without this a first `discobox run` sits on one status line
+// staging runs, so without this a first `discobox new` sits on one status line
 // for as long as the terminal is open.
 func TestStageEndsADownloadThatStopsArriving(t *testing.T) {
 	// Short enough to test, long enough that the ticker gets a look in.

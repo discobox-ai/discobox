@@ -126,7 +126,7 @@ func newRootCommand() (*cobra.Command, *App) {
 		Short: "Discobox command line client",
 		Long: fmt.Sprintf(`Discobox runs coding agents in isolated sandboxes on this machine.
 
-Given a prompt, or any of the flags a run takes, this is "%[1]s run": the
+Given a prompt, or any of the flags a run takes, this is "%[1]s new": the
 command name can be left out of the thing you do most.
 
   %[1]s -p 'fix the failing tests'
@@ -136,7 +136,7 @@ The prompt is -p here, and only -p: a word on its own is still a subcommand, so
 a misspelled one says so rather than quietly becoming a prompt.
 
 With nothing at all it opens the launcher, where the same run is one prompt and
-an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
+an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// The flags in front of a subcommand are parsed by the command they
@@ -228,7 +228,7 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	// the scripts and the launcher that pass it; it just stops being offered.
 	_ = cmd.PersistentFlags().MarkHidden("project")
 	// Not a chdir: nothing about this invocation's working directory changes.
-	// It names the source this command acts on — what run puts in the discobox,
+	// It names the source this command acts on — what new puts in the discobox,
 	// and what every other command reads the current one from — and the default
 	// is the directory the command was run in.
 	//
@@ -242,7 +242,7 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 	// the -C every ADR does spell is unchanged, so nothing copied out of one
 	// breaks. --project above is the other answer to the same question — it
 	// stays because the launcher and scripts pass it.
-	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what run cuts a discobox from, and what ls lists this machine's discoboxes for")
+	cmd.PersistentFlags().StringVarP(&app.source, "clone", "C", ".", "Source directory or Git repository to act on, optionally with @REF: what new cuts a discobox from, and what ls lists this machine's discoboxes for")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
@@ -291,7 +291,7 @@ an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 // typo away from a sandbox: `discobox lst` would create a discobox prompted
 // "lst" rather than saying what was misspelled. Nothing can tell a typo from
 // the first word of a prompt — a prompt is words — so the prompt takes a flag
-// and the words are subcommands (ADR 0100). Run keeps its trailing
+// and the words are subcommands (ADR 0100). New keeps its trailing
 // prompt, where the name in front of it says what the words are.
 //
 // The word that named no command is reported here rather than by cobra, whose
@@ -359,7 +359,7 @@ func commandWords(cmd *cobra.Command) []string {
 // TraverseChildren parses them wherever they stand — and in front of a
 // subcommand they are parsed into a run that never happens. `discobox -p 'fix
 // the tests' ls` would list, silently, with the prompt dropped; `discobox -p
-// 'fix the tests' run` would create a discobox with an empty prompt, since run
+// 'fix the tests' new` would create a discobox with an empty prompt, since new
 // has its own copy of those flags and nothing was written after the name.
 // Without TraverseChildren, Cobra would reject these as unknown flags for the
 // subcommand, and this keeps that loudness.
@@ -383,7 +383,7 @@ func refuseRootOnlyArguments(cmd *cobra.Command, args []string, runFlags *pflag.
 		}
 	})
 	if given != nil {
-		return fmt.Errorf("--%s is a run's own flag and does nothing in front of %s: a run is `discobox run --%s ...`, or `discobox --%s ...` with no command name at all",
+		return fmt.Errorf("--%s is a run's own flag and does nothing in front of %s: a run is `discobox new --%s ...`, or `discobox --%s ...` with no command name at all",
 			given.Name, cmd.CommandPath(), given.Name, given.Name)
 	}
 	return nil

@@ -2985,7 +2985,7 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 // when the source finally arrives (ADR 0055) and a bind that was not made at
 // boot would never be made at all. So anything the sandbox writes at that target
 // while it parks lands in this directory. That is not hypothetical: a source
-// whose target is the sandbox's own home — `discobox run` in a directory that is
+// whose target is the sandbox's own home — `discobox new` in a directory that is
 // in no Git repository, answered "do not copy" — collects the harness credential
 // files sandbox-agent restores at startup, which is not held by the
 // source-delivery gate the way a harness launch is.

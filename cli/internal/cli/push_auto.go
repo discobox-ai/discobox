@@ -404,7 +404,7 @@ func waitSaying(stderr io.Writer, what string, wait func()) {
 // autoPushWhileAttached pushes the discobox's push-delivered sources for as
 // long as a terminal attach lasts: once at the start, and again on every beat
 // (ADR 0095 §1 on automatic push). Attaching is the trigger, so this runs for
-// `discobox attach --raw`, `discobox run --raw` and `discobox admin terminal
+// `discobox attach --raw`, `discobox new --raw` and `discobox admin terminal
 // attach` alike.
 //
 // It writes nothing while the attach runs. A raw attach is the discobox's

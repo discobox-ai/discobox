@@ -176,7 +176,7 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (app *App, p
 		}
 	}
 	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
-		empty:     "no discoboxes were started from this directory; start one with `discobox run`, or name the discobox as the first argument",
+		empty:     "no discoboxes were started from this directory; start one with `discobox new`, or name the discobox as the first argument",
 		ambiguous: "more than one discobox was started from this directory; name the discobox as the first argument",
 		recentKey: "sandbox:" + projectID,
 		expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),

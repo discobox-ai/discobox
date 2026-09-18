@@ -187,7 +187,7 @@ type Model struct {
 	// can say so. It is cleared when the card opens; see openTools.
 	copied string
 
-	// pendingRun is the run this window was opened to make — `discobox run`'s
+	// pendingRun is the run this window was opened to make — `discobox new`'s
 	// own request — held until the harness listing lands. It is started from
 	// there rather than from Init because the questions the window asks ahead
 	// of a create (a project with no default harness, a harness that has never
@@ -201,7 +201,7 @@ type Model struct {
 	oneRun bool
 
 	// attach is the discobox this window was opened as an attach on, and nil
-	// for the launcher proper. `discobox run` and `discobox attach` open the
+	// for the launcher proper. `discobox new` and `discobox attach` open the
 	// window on that discobox's workspace rather than drawing a terminal of
 	// their own, so the window is that attach: leaving the workspace —
 	// detaching, or the session ending — leaves the window, because there is
@@ -413,7 +413,7 @@ func WithHarnesses() Option {
 }
 
 // WithAttach opens the window on one discobox's workspace, which is what
-// `discobox run` and `discobox attach` are: the window is that attach rather
+// `discobox new` and `discobox attach` are: the window is that attach rather
 // than a launcher that happens to have one open. It is opened out with it — the
 // workspace is the whole of it — and leaving the workspace closes the window
 // instead of falling back to a list nobody asked for. The introduction never
@@ -423,7 +423,7 @@ func WithAttach(sandbox Sandbox) Option {
 	return func(m *Model) { m.attach = &sandbox }
 }
 
-// WithRun opens the window on one run: `discobox run` builds its request from
+// WithRun opens the window on one run: `discobox new` builds its request from
 // its flags and hands it over rather than creating the discobox itself, so the
 // question about uncommitted work is the window's own dialog, the wait is the
 // window's own screen, and what it lands on is the workspace. The window is
@@ -506,7 +506,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		// `discobox attach` opens directly on the discobox it names, and
 		// dismissing the introduction here would only uncover that exact
 		// workspace again — there is nothing behind it the introduction is
-		// standing in front of. `discobox run` is left welcoming: it opens on
+		// standing in front of. `discobox new` is left welcoming: it opens on
 		// a discobox that does not exist yet, and the introduction stands in
 		// front of the wait for it exactly as it stands in front of the list
 		// on every other first run. See WithRun.
@@ -516,7 +516,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	return m
 }
 
-// oneShot reports whether this window is one command's own — `discobox run` or
+// oneShot reports whether this window is one command's own — `discobox new` or
 // `discobox attach` — rather than the launcher. Such a window opens on the
 // discobox it is about, never shows the prompt or the list, and goes when the
 // workspace does.
@@ -2276,7 +2276,7 @@ func (m *Model) run() tea.Cmd {
 //
 // A window whose session has not landed yet is on no folder for a different
 // reason — nothing has told it which — and has no directory or sources to
-// offer. It is left to `discobox run`'s own resolution, the way a prompt
+// offer. It is left to `discobox new`'s own resolution, the way a prompt
 // submitted before the harnesses land is.
 func (m *Model) askWhereToCutFrom() bool {
 	if m.opts.folder != "" || m.session.Directory == "" {
@@ -2534,7 +2534,7 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	if !msg.workspace.Repository {
 		return m.askToCopyDirectory(msg.req, msg.workspace.Directory)
 	}
-	// Excluding leads, the way it does in `discobox run`: the default answer is
+	// Excluding leads, the way it does in `discobox new`: the default answer is
 	// the one that changes nothing about what the sandbox sees. The repository
 	// named is the one the run is cut from, which is not the window's own
 	// directory when the source option names another.
@@ -3579,7 +3579,7 @@ const hintSep = " · "
 
 // detachDescription is what the leader's d does, which depends on what the
 // window is: the launcher goes back to its list, and a window that is one
-// command's own — `discobox run`, `discobox attach` — has no list behind it and
+// command's own — `discobox new`, `discobox attach` — has no list behind it and
 // goes. Neither stops anything: what follows this in the key list is "leaving
 // every session running", which is true of both.
 func (m *Model) detachDescription() string {
@@ -4172,7 +4172,7 @@ func (m *Model) helpText() string {
 		"  overrides that.",
 		"",
 		"  The strip below the prompt always shows what is set. The panel",
-		"  shows the equivalent `discobox run` command, live.",
+		"  shows the equivalent `discobox new` command, live.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"The mouse",

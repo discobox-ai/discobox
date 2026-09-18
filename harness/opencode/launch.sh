@@ -11,7 +11,7 @@ if [ "${1-}" = "--resume" ]; then
 	set -- --continue
 elif [ "$#" -gt 0 ]; then
 	# A prompt is one prompt, however many words the shell split it into: the
-	# command is typed, so `discobox run fix the failing tests` arrives here
+	# command is typed, so `discobox new fix the failing tests` arrives here
 	# as four arguments. Joining everything after the flags back together with
 	# single spaces is the wrapper's half of the convention (ADR 0086 §3).
 	#

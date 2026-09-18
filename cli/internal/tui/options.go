@@ -7,7 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// runOptions is every flag `discobox run` takes, laid out as one editable list.
+// runOptions is every flag `discobox new` takes, laid out as one editable list.
 //
 // The panel is a picker, not a form: left and right change a value in place,
 // so the common case — swap the harness, turn dirty-carry off, cut from the
@@ -171,7 +171,7 @@ const enterSourceChoice = "enter a directory, URL, or DIR@REF…"
 // Index into optionSet.opts. The command builder reads by name, so the order
 // here is only the order they are shown in.
 //
-// These are `discobox run`'s flags and nothing else: --harness, --include-dirty,
+// These are `discobox new`'s flags and nothing else: --harness, --include-dirty,
 // --detach, -e and -s, plus -C, the source the sandbox is cut from. A launcher
 // that offers options the command does not have is a launcher you cannot
 // reproduce from a shell.
@@ -685,7 +685,7 @@ func (o *optionSet) moveTo(i int) {
 	o.cursor = min(max(i, 0), len(o.opts)-1)
 }
 
-// request is what Enter actually asks for: the options as `discobox run`'s
+// request is what Enter actually asks for: the options as `discobox new`'s
 // arguments, with the prompt from the composer.
 func (o *optionSet) request(prompt string) RunRequest {
 	req := RunRequest{
@@ -700,7 +700,7 @@ func (o *optionSet) request(prompt string) RunRequest {
 	}
 	// The folder the header is on is what the source row leads with, and naming
 	// the window's own directory would only repeat the CLI's default — so that
-	// one case emits no -C and `discobox run` resolves it the way it always does.
+	// one case emits no -C and `discobox new` resolves it the way it always does.
 	//
 	// A window opened on a repository URL has no such default to lean on: -C is
 	// a flag, not something the shell is holding, so a command previewed without
@@ -818,9 +818,9 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 // and if it is not, the panel is offering something the command cannot.
 //
 // It spells the run the way the CLI's own help leads with it — `discobox -p
-// '...'`, with no `run` in front — which is also the more faithful rendering of
+// '...'`, with no `new` in front — which is also the more faithful rendering of
 // what Enter does: the composer holds one piece of text and sends it as one
-// argument, which is exactly what -p is. The trailing words `run` still takes
+// argument, which is exactly what -p is. The trailing words `new` still takes
 // would be inventing a tokenization the user did not type.
 func (o *optionSet) command(prompt string) string {
 	req := o.request(prompt)
@@ -865,7 +865,7 @@ func (o *optionSet) command(prompt string) string {
 	// --project say nothing about which of the two this is. Only that one case
 	// has to name the command.
 	if len(run) == 0 {
-		run = []string{"run"}
+		run = []string{"new"}
 	}
 	return strings.Join(append(args, run...), " ")
 }

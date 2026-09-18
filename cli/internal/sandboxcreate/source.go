@@ -588,7 +588,7 @@ func resolveUnbornRunSource(ctx context.Context, repoRoot, absSource, ref string
 //
 // The user is asked first, because the answer is not obvious the way it is for
 // a repository: a directory in no repository is as likely to be a home
-// directory somebody ran `discobox run` in as it is to be a project, and the
+// directory somebody ran `discobox new` in as it is to be a project, and the
 // whole of it is what would be carried.
 //
 // Declining is not a cancel: it resolves to no source at all, the request
@@ -840,7 +840,7 @@ func gitRefExists(ctx context.Context, repoRoot, ref string) bool {
 // rather than a directory on this machine.
 //
 // It is exported because a frontend asking about a source's working tree has to
-// know when there is not one to ask about: `discobox run -C https://…` has no
+// know when there is not one to ask about: `discobox new -C https://…` has no
 // local checkout, so no uncommitted work, and no question to put to anybody.
 func IsRemoteGitSource(value string) bool {
 	if strings.Contains(value, "://") {

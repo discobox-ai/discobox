@@ -712,7 +712,7 @@ flowchart LR
   target from the moment the container boots — it has to be, since the resume
   does not rebuild the container — so whatever the sandbox writes there while it
   waits is in the way of the clone. A source whose target is the sandbox's home,
-  `discobox run` in a directory that is in no repository, collects the harness
+  `discobox new` in a directory that is in no repository, collects the harness
   credential files sandbox-agent restores at startup. A non-empty target is
   therefore cloned beside and adopts the repository: the files already there
   stay, as the untracked content they are, and the checkout is written over them

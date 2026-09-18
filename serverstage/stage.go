@@ -29,7 +29,7 @@ const manifestFileName = "manifest.json"
 //
 // The CLI's root context is never canceled and the launch deadline is taken
 // after staging runs, so without this a connection that dies mid-body leaves a
-// first `discobox run` spinning on one status line for as long as the terminal
+// first `discobox new` spinning on one status line for as long as the terminal
 // is open. Generous, because a slow link is not a stalled one: what is measured
 // is silence, not duration.
 //
@@ -488,7 +488,7 @@ func downloadFrom(ctx context.Context, client *http.Client, asset Asset, source,
 	// Sync before Close: the rename that installs this set is what makes it
 	// visible, and on ext4 or xfs that rename can reach the journal ahead of
 	// these data blocks. Without this a power loss just after a first
-	// `discobox run` leaves a complete-looking directory holding a truncated
+	// `discobox new` leaves a complete-looking directory holding a truncated
 	// binary — and nothing re-verifies a staged set, so the next command runs
 	// it.
 	syncErr := file.Sync()

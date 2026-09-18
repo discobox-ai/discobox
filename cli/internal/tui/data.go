@@ -309,7 +309,7 @@ type Session struct {
 	// Directory is the directory the window is running in — `-C`'s repository
 	// root, or the working directory's when -C names a repository URL — and
 	// Branch is what is checked out in it. It is where the window's prompt
-	// draft is kept, and what `discobox run` cuts a sandbox from by default
+	// draft is kept, and what `discobox new` cuts a sandbox from by default
 	// unless the window was opened on a URL.
 	Directory string
 	Branch    string
@@ -571,7 +571,7 @@ func (h Harness) displayName() string {
 	return h.ID
 }
 
-// flagName is what `discobox run --harness` takes for this harness.
+// flagName is what `discobox new --harness` takes for this harness.
 func (h Harness) flagName() string {
 	if slug := strings.TrimSpace(h.Slug); slug != "" {
 		return slug
@@ -933,13 +933,13 @@ type Listing struct {
 	Waiting []string
 }
 
-// RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
+// RunRequest is what Enter in the prompt asks for: `discobox new`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
 	// Prompt is what the harness is given to do, as the create takes it: the
 	// arguments. The composer holds one piece of text and sends it as one
 	// argument — splitting it would be inventing tokens nobody typed — while
-	// `discobox run fix the tests` sends the three words the shell split.
+	// `discobox new fix the tests` sends the three words the shell split.
 	Prompt  []string
 	Harness string // empty is the project default
 
@@ -962,7 +962,7 @@ type RunRequest struct {
 
 	// Include is `-i`: the extra sources brought into the same discobox beside
 	// the primary one. The window offers no way to name one; it carries them
-	// because `discobox run` opens the window on its own request and that
+	// because `discobox new` opens the window on its own request and that
 	// request is the whole command (WithRun).
 	Include []string
 
