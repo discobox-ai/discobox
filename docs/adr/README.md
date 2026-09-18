@@ -186,3 +186,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0129](0129-the-sandbox-agent-reads-the-tree-an-export-carries.md) | The sandbox agent reads the tree an export carries, and the image says what of it stays behind | Accepted |
 | [0130](0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md) | An audit record is read where it was written, and names its attestor | Accepted |
 | [0131](0131-the-launcher-answers-every-servers-credential-requests-and-names-the-server-its-config-screens-edit.md) | The launcher answers every server's credential requests, and names the server its config screens edit | Accepted |
+| [0132](0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md) | A credential rejected after its retry is recorded against its secret | Accepted (settles [0059](0059-a-rejected-swapped-credential-is-retried-once.md)'s unsaved case) |
