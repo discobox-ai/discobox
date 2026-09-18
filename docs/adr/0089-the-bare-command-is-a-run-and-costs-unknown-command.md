@@ -4,7 +4,7 @@
   superseded by
   [ADR 0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md); §§1–3
   stand)
-- **The `discobox run` spelling superseded by**: [0128](0128-the-command-that-makes-a-discobox-is-new.md) — the command is `discobox new`, with `run` kept as an alias. What §§1–3 decide stands.
+- **The `discobox run` spelling superseded by**: [0133](0133-the-command-that-makes-a-discobox-is-new.md) — the command is `discobox new`, with `run` kept as an alias. What §§1–3 decide stands.
 - **Date**: 2026-09-03
 
 ## Context

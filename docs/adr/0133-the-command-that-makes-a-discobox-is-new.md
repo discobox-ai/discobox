@@ -1,4 +1,4 @@
-# 0128 — The command that makes a discobox is `new`, and `run` is an alias
+# 0133 — The command that makes a discobox is `new`, and `run` is an alias
 
 - **Status**: Accepted
 - **Supersedes**: [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) §§3–4's command spelling — the command that keeps a trailing prompt is `discobox new`, and `new` is what the documents and the launcher's preview name, including §4's fallback for the one invocation that carries neither a prompt nor a run flag. What §3 and §4 decide stands: the named command takes trailing words and the bare one takes none, documents lead with `discobox -p '...'`, and no example spells a form that is gone — the rule this change obeyed. [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s `discobox run` spelling throughout; its §§1–3 stand, and this ADR is built on them.

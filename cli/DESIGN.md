@@ -85,7 +85,7 @@ transport helpers where OpenAPI does not model the stream.
   second, older command. Go identifiers keep the run vocabulary — a run is what
   the command starts — as [ADR 0119](../docs/adr/0119-registered-servers-are-admin-remote.md)
   kept `serverRegistry` for `admin remote`. See
-  [ADR 0128](../docs/adr/0128-the-command-that-makes-a-discobox-is-new.md),
+  [ADR 0133](../docs/adr/0133-the-command-that-makes-a-discobox-is-new.md),
   which supersedes [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md)
   §§3–4's and [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
   spelling of the command those two decide about — §4 being the rule these
