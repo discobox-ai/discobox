@@ -934,3 +934,40 @@ func TestReferenceDestinationKeepsAMirrorablePath(t *testing.T) {
 		t.Fatalf("reference -> %q named %q, want its own path named api", dir, name)
 	}
 }
+
+func TestExpandGitHubShorthand(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, dir := range []string{"local/repo", "github.com/local/checkout"} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct{ in, want string }{
+		{"foo/bar", "https://github.com/foo/bar.git"},
+		{"foo/bar.git", "https://github.com/foo/bar.git"},
+		{"foo/bar@main", "https://github.com/foo/bar.git@main"},
+		{"github.com/foo/bar", "https://github.com/foo/bar.git"},
+		{"github.com/foo/bar@v1.2.3", "https://github.com/foo/bar.git@v1.2.3"},
+		{"my-org/my_repo.js", "https://github.com/my-org/my_repo.js.git"},
+		// A directory that is there is the directory.
+		{"local/repo", "local/repo"},
+		{"local/repo@main", "local/repo@main"},
+		{"github.com/local/checkout", "github.com/local/checkout"},
+		// Not the shorthand.
+		{".", "."},
+		{"bar", "bar"},
+		{"./foo/bar", "./foo/bar"},
+		{"../foo", "../foo"},
+		{"foo/..", "foo/.."},
+		{"/foo/bar", "/foo/bar"},
+		{"foo/bar/baz", "foo/bar/baz"},
+		{"-foo/bar", "-foo/bar"},
+		{"gitlab.com/foo/bar", "gitlab.com/foo/bar"},
+		{"https://github.com/foo/bar", "https://github.com/foo/bar"},
+		{"git@github.com:foo/bar.git", "git@github.com:foo/bar.git"},
+	} {
+		if got := ExpandGitHubShorthand(tc.in); got != tc.want {
+			t.Errorf("ExpandGitHubShorthand(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

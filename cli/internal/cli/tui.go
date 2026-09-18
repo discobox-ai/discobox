@@ -883,6 +883,8 @@ func resolveSourceValue(source string) (string, error) {
 	if value == "" {
 		return "", fmt.Errorf("name a directory, a repository URL, or DIR@REF")
 	}
+	// The same shorthand -C takes, so the field accepts what the flag does.
+	value = sandboxcreate.ExpandGitHubShorthand(value)
 	// The ref is carried through untouched: which commit to cut from is the
 	// create path's question, and asking it of a directory that is not there
 	// answers nothing.

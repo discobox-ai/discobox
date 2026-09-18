@@ -21,6 +21,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/health"
 	"github.com/discobox-ai/discobox/imagecache"
@@ -406,6 +407,9 @@ func (a *App) validate() error {
 		return fmt.Errorf("%s: %w", keys.LeaderEnv, err)
 	}
 	a.leaderKey = leaderKey
+	// Once, here, so every command that reads the source — run, ls, the
+	// launcher — takes `-C owner/repo` for the same repository.
+	a.source = sandboxcreate.ExpandGitHubShorthand(a.source)
 	return nil
 }
 

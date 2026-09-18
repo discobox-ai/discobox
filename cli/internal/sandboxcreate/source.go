@@ -850,6 +850,65 @@ func IsRemoteGitSource(value string) bool {
 	return strings.Contains(value, "@") && strings.Contains(value, ":") && !strings.HasPrefix(value, ".")
 }
 
+// ExpandGitHubShorthand spells a GitHub repository written short — `owner/repo`
+// or `github.com/owner/repo`, either optionally with @REF — as the URL it
+// stands for, `https://github.com/owner/repo.git`. Anything else comes back as
+// given.
+//
+// A directory wins. `owner/repo` is also a perfectly ordinary relative path,
+// so the shorthand applies only when nothing is there: a source that names a
+// directory on this machine keeps naming it, whichever way it was spelled.
+func ExpandGitHubShorthand(value string) string {
+	source, ref, explicitRef := splitRunSourceRef(strings.TrimSpace(value))
+	parts := strings.Split(source, "/")
+	if len(parts) == 3 && parts[0] == "github.com" {
+		parts = parts[1:]
+	}
+	if len(parts) != 2 || !githubOwner(parts[0]) || !githubRepository(strings.TrimSuffix(parts[1], ".git")) {
+		return value
+	}
+	if _, err := os.Lstat(source); !errors.Is(err, os.ErrNotExist) {
+		return value
+	}
+	expanded := "https://github.com/" + parts[0] + "/" + strings.TrimSuffix(parts[1], ".git") + ".git"
+	if explicitRef {
+		expanded += "@" + ref
+	}
+	return expanded
+}
+
+// githubOwner reports whether name can be a GitHub user or organization:
+// letters, digits and single hyphens, never at either end.
+func githubOwner(name string) bool {
+	if name == "" || strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") || strings.Contains(name, "--") {
+		return false
+	}
+	for _, r := range name {
+		if !isASCIIAlphanumeric(r) && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// githubRepository reports whether name can be a GitHub repository: letters,
+// digits, '-', '_' and '.', but not a path's own "." or "..".
+func githubRepository(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, r := range name {
+		if !isASCIIAlphanumeric(r) && r != '-' && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCIIAlphanumeric(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
+}
+
 func splitRunSourceRef(value string) (string, string, bool) {
 	at := strings.LastIndex(value, "@")
 	if at <= 0 || at == len(value)-1 {
