@@ -22,8 +22,8 @@ github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJ
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:2QDmFSCtLohuzmqiaYuDU6R44S6UvCcftwo+Cf6Rhto=
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
-github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf h1:EJ3uHAM+tP21y8cgy6zQDy8DDPSSJaiUxErreXU35yo=
-github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
+github.com/discobox-ai/charm-x/vt v0.0.0-20260918234547-859a09c25845 h1:UajBzo3nkGw6YA/tSAuc+J/rGkGD6IMzVVRwgUxVSvM=
+github.com/discobox-ai/charm-x/vt v0.0.0-20260918234547-859a09c25845/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
 github.com/discobox-ai/x v0.0.0-20260917050848-32cef8aa6b78 h1:TTmY77R6ujhCecDQY+DjdJ3PqZxZwB8bOOTs9iUVuMg=
 github.com/discobox-ai/x v0.0.0-20260917050848-32cef8aa6b78/go.mod h1:ozoGHzU8woLHyDsmXikg5H1raf07miXC7vg51QtkQew=
 github.com/lucasb-eyer/go-colorful v1.4.1 h1:1EO+WB73+EH8EVbzlrG3KLAfEypQWVHIBqlTf+2hNss=

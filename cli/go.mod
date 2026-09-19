@@ -90,4 +90,4 @@ replace github.com/discobox-ai/discobox/termpane => ../termpane
 
 replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953
 
-replace github.com/charmbracelet/x/vt => github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf
+replace github.com/charmbracelet/x/vt => github.com/discobox-ai/charm-x/vt v0.0.0-20260918234547-859a09c25845
