@@ -1,0 +1,105 @@
+#!/bin/bash
+# discobox-shell PREFERRED FALLBACK [ARG...]
+#
+# Runs the shell a client prefers, when this sandbox has it, and FALLBACK
+# otherwise, with ARG... either way (ADR 0138). The sandbox agent runs this for
+# an interactive shell exec whose request named a preferred shell -- `discobox
+# shell` or a TUI shell pane, passing the person's DISCOBOX_SHELL, their nu, or
+# their $SHELL -- and hands it the login shell it resolved for the run user as
+# FALLBACK.
+#
+# PREFERRED is a path on the client's machine, so it is a hint: that path if it
+# is an executable here, otherwise its basename on PATH. /bin/zsh on a Mac and
+# /opt/homebrew/bin/fish both mean "that shell, wherever this sandbox keeps it".
+#
+# The lookup happens after the login profile and the starting directory's
+# .envrc have run. That is the point of doing it here rather than in the agent:
+# a shell the repository's flake provides is on PATH only once direnv has
+# loaded, and only a shell can load it.
+#
+# Deliberately not `set -u`: this sources /etc/profile and all of profile.d,
+# and one unset variable in any of them would end the launcher -- and the
+# person's pane with it -- instead of starting a shell.
+
+if [ "$#" -lt 2 ]; then
+	echo "usage: discobox-shell PREFERRED FALLBACK [ARG...]" >&2
+	exit 2
+fi
+preferred=$1
+fallback=$2
+shift 2
+
+# The login environment, which ends by exporting the starting directory's
+# .envrc (/etc/profile.d/sandbox-direnv.sh, in a shell with no prompt). The
+# override exists for the tests, which must not source the host's profile.
+profile=${DISCOBOX_SHELL_PROFILE:-/etc/profile}
+load_profile() {
+	if [ -r "$profile" ]; then
+		# shellcheck source=/dev/null
+		. "$profile"
+	fi
+}
+
+# find_shell prints the executable PREFERRED names here, or fails.
+find_shell() {
+	local want=$1
+	case $want in
+	*/*)
+		if [ -f "$want" ] && [ -x "$want" ]; then
+			printf '%s\n' "$want"
+			return 0
+		fi
+		want=${want##*/}
+		;;
+	esac
+	[ -n "$want" ] || return 1
+	type -P -- "$want"
+}
+
+# run execs SHELL with ARG..., naming the terminal after it first: a pane is
+# titled by its program until that program sets a title, and the program here
+# is this launcher, whichever shell it turns out to start.
+run() {
+	if [ -t 1 ]; then
+		printf '\033]2;%s\007' "${1##*/}"
+	fi
+	export SHELL="$1"
+	exec "$@"
+}
+
+# Looked up in a subshell, so this process has not yet taken on the login
+# environment when the answer is a shell that must not have it. Its output is
+# discarded: whichever shell starts loads the environment again, and says so
+# then. What to look for is carried past the profile as $1, for the reason
+# given below: sourced files can assign any variable here, `preferred` too.
+shell=$(
+	set -- "$preferred"
+	load_profile >/dev/null 2>&1 </dev/null
+	find_shell "$1"
+) || shell=
+
+if [ -z "$shell" ] || [ "$shell" -ef "$fallback" ]; then
+	run "$fallback" "$@"
+fi
+
+case ${shell##*/} in
+# A shell that runs /etc/profile itself starts from the environment it was
+# given, exactly as a login shell the agent started directly would. Handed the
+# loaded one instead, it would run the profile a second time -- which resets
+# PATH -- and direnv, seeing the .envrc already loaded, would not put it back.
+bash | sh | dash | ksh | mksh)
+	run "$shell" "$@"
+	;;
+esac
+
+# Any other shell -- zsh, fish, nu -- reads none of /etc/profile, so it starts
+# with the environment loaded here: the Nix PATH and the .envrc included.
+#
+# The shell moves into the positional parameters first, because sourcing hands
+# every variable here to profile.d and the .envrc to overwrite: a flake's dev
+# environment exports `shell` as its own bash. Positional parameters are the
+# one thing a file sourced inside a function cannot reach -- its `set --`
+# changes the function's.
+set -- "$shell" "$@"
+load_profile
+run "$@"

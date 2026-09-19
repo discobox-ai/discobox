@@ -35,9 +35,12 @@ A -- ends this command's own arguments: everything after it is the command,
 whatever it looks like. Before the discobox it also means no argument names one,
 so "discobox shell -- ls" runs "ls" even in a project with a discobox called ls.
 
-Without a command this starts the discobox user's login shell. Which shell that
-is is resolved inside the discobox from that user's passwd entry, so it is the
-discobox's shell, not this machine's.
+Without a command this starts a shell. In a terminal it is the one
+$DISCOBOX_SHELL names on this machine — or nu, when run from nushell, or else
+$SHELL — when the discobox has it: that path, or a shell of the same name on
+the discobox's PATH once its login profile and the directory's .envrc have
+loaded, so a shell the repository's dev environment provides counts. Otherwise
+it is the discobox user's login shell, from that user's passwd entry.
 
 Stdin is always attached, and a PTY is allocated only when this terminal is one,
 so piping and redirecting behave like a local command. Signals are forwarded to
@@ -61,9 +64,16 @@ so, and one more quits shell and leaves the command where it is.`,
 			// allocating one for a pipe would echo input back and dress output in
 			// escape sequences the consumer never asked for.
 			tty := isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout()) && isTerminalStream(cmd.ErrOrStderr())
-			// No command means the sandbox user's shell. Only the sandbox can say
-			// which shell that is, so the request asks for one rather than naming it.
-			body, err := createSandboxExecBody(sandboxExecCreateOptions{interactive: true, tty: tty, shell: len(cmdArgs) == 0}, cmdArgs)
+			// No command means a shell. Only the sandbox can say which shell its
+			// user has, so the request asks for one rather than naming it, and
+			// says which one this machine's user would rather have — for a
+			// terminal only: a shell reading a script piped into it must be the
+			// one the script was written for, not whatever $SHELL says.
+			opts := sandboxExecCreateOptions{interactive: true, tty: tty, shell: len(cmdArgs) == 0}
+			if opts.shell && tty {
+				opts.env = preferredShellEnv()
+			}
+			body, err := createSandboxExecBody(opts, cmdArgs)
 			if err != nil {
 				return err
 			}

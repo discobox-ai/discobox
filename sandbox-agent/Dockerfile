@@ -25,6 +25,7 @@ COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxmeta ./sandboxmeta
 COPY sandboxservices ./sandboxservices
+COPY sandboxshell ./sandboxshell
 COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
 COPY tarsums ./tarsums
@@ -500,6 +501,10 @@ COPY --chmod=0755 sandbox-agent/image/nix-shim /usr/local/lib/discobox/nix-shim
 # The harness-run convention's default implementation, for an image that
 # installs no agent of its own. A harness image overwrites it. See ADR 0086 §3.
 COPY --chmod=0755 sandbox-agent/image/harness-run /usr/local/bin/discobox-harness-run
+# Runs the shell a client prefers when the sandbox has it, the login shell
+# otherwise; the agent starts it for `discobox shell` and TUI shell panes.
+# See ADR 0138.
+COPY --chmod=0755 sandbox-agent/image/discobox-shell /usr/local/bin/discobox-shell
 # The pool-cached agent store (ADR 0114): `pin` chooses the version this
 # sandbox runs and keeps it across restarts, `refresh` advances the store on a
 # stamp, and `discobox-harness-upgrade` is the by-hand "now". Both are inert in

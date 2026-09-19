@@ -26,6 +26,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/sandboxshell"
 )
 
 type sandboxExecCreateOptions struct {
@@ -182,7 +183,9 @@ func (a *App) sandboxExecRequest(ctx context.Context, sandboxArg string) (string
 func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*apimodel.CreateSandboxExecRequest, error) {
 	body := &apimodel.CreateSandboxExecRequest{}
 	// Which shell to run is the sandbox's answer, not this machine's: the local
-	// $SHELL says nothing about the run user inside the sandbox. Which harness
+	// $SHELL says nothing about the run user inside the sandbox. A caller that
+	// opens a shell for a person passes preferredShellEnv, which the sandbox
+	// honors only when it has that shell (ADR 0138). Which harness
 	// a terminal runs is the sandbox's answer for the same reason, and a
 	// request that names neither a command nor a shell nor a harness is a
 	// terminal on the one it is configured with.
@@ -226,6 +229,33 @@ func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*ap
 		}
 	}
 	return body, nil
+}
+
+// preferredShellEnv is the env entry that asks the sandbox for the shell this
+// machine's user prefers, for an interactive shell a person is about to sit in
+// (ADR 0138). A local DISCOBOX_SHELL comes first — the one way to want a
+// different shell in a discobox than here — and $SHELL last. Between them, a
+// NU_VERSION means this was run from nushell: nu sets that for everything it
+// starts but leaves $SHELL naming the login shell it was launched from, so
+// $SHELL would answer for a shell the person is not using. The name alone is
+// enough; the sandbox looks it up on its PATH.
+//
+// It is read on every call and stored nowhere: it is the preference of whoever
+// is at this keyboard, and the sandbox falls back to its user's login shell when
+// it has no such shell. Empty when none is set, as on Windows usually, which
+// leaves the choice to the sandbox as before.
+func preferredShellEnv() []string {
+	shell := strings.TrimSpace(os.Getenv(sandboxshell.PreferredEnv))
+	if shell == "" && strings.TrimSpace(os.Getenv("NU_VERSION")) != "" {
+		shell = "nu"
+	}
+	if shell == "" {
+		shell = strings.TrimSpace(os.Getenv("SHELL"))
+	}
+	if shell == "" {
+		return nil
+	}
+	return []string{sandboxshell.PreferredEnv + "=" + shell}
 }
 
 func sandboxExecUserFromOptions(opts sandboxExecCreateOptions) (*apimodel.SandboxUser, error) {

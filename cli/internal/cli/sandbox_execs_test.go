@@ -1,6 +1,11 @@
 package cli
 
-import "testing"
+import (
+	"slices"
+	"testing"
+
+	"github.com/discobox-ai/discobox/sandboxshell"
+)
 
 func TestCreateSandboxExecBodyParsesUserObject(t *testing.T) {
 	body, err := createSandboxExecBody(sandboxExecCreateOptions{
@@ -107,5 +112,53 @@ func TestCreateSandboxExecBodyNumericPrimaryGroupSetsGid(t *testing.T) {
 	}
 	if len(user.AdditionalGroups) != 1 || user.AdditionalGroups[0] != "docker" {
 		t.Fatalf("additionalGroups = %#v, want [docker]", user.AdditionalGroups)
+	}
+}
+
+// With neither DISCOBOX_SHELL nor NU_VERSION set, the preferred shell is this
+// machine's $SHELL as it stands — which shell that
+// means inside the sandbox is the sandbox's call — and nothing at all when
+// $SHELL is unset, leaving the sandbox's login shell.
+func TestPreferredShellEnvForwardsLocalShell(t *testing.T) {
+	t.Setenv(sandboxshell.PreferredEnv, "")
+	t.Setenv("NU_VERSION", "")
+	t.Setenv("SHELL", "/opt/homebrew/bin/fish")
+	if got, want := preferredShellEnv(), []string{sandboxshell.PreferredEnv + "=/opt/homebrew/bin/fish"}; !slices.Equal(got, want) {
+		t.Fatalf("env = %v, want %v", got, want)
+	}
+	body, err := createSandboxExecBody(sandboxExecCreateOptions{shell: true, env: preferredShellEnv()}, nil)
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	env, _ := body.Env.Get()
+	if env[sandboxshell.PreferredEnv] != "/opt/homebrew/bin/fish" {
+		t.Fatalf("body env = %v, want the preferred shell", env)
+	}
+
+	t.Setenv("SHELL", "")
+	if got := preferredShellEnv(); got != nil {
+		t.Fatalf("env = %v, want none with $SHELL unset", got)
+	}
+}
+
+// A local DISCOBOX_SHELL is read before $SHELL, so a person can want nu in a
+// discobox while keeping zsh on their own machine.
+func TestPreferredShellEnvPrefersLocalDiscoboxShell(t *testing.T) {
+	t.Setenv("SHELL", "/bin/zsh")
+	t.Setenv("NU_VERSION", "0.115.1")
+	t.Setenv(sandboxshell.PreferredEnv, "/home/linuxbrew/.linuxbrew/bin/nu")
+	if got, want := preferredShellEnv(), []string{sandboxshell.PreferredEnv + "=/home/linuxbrew/.linuxbrew/bin/nu"}; !slices.Equal(got, want) {
+		t.Fatalf("env = %v, want %v", got, want)
+	}
+}
+
+// Run from nushell, $SHELL still names the login shell nu was started from;
+// NU_VERSION is what says the person is in nu.
+func TestPreferredShellEnvRecognizesNushell(t *testing.T) {
+	t.Setenv(sandboxshell.PreferredEnv, "")
+	t.Setenv("SHELL", "/bin/zsh")
+	t.Setenv("NU_VERSION", "0.115.1")
+	if got, want := preferredShellEnv(), []string{sandboxshell.PreferredEnv + "=nu"}; !slices.Equal(got, want) {
+		t.Fatalf("env = %v, want %v", got, want)
 	}
 }

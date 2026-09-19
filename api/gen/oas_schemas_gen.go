@@ -1050,7 +1050,10 @@ type CreateSandboxExecRequest struct {
 	// Command argv to execute in the sandbox. Mutually exclusive with harnessId and shell.
 	Command []string `json:"command"`
 	// Run the run user's login shell instead of a command. The sandbox resolves which shell that is from
-	// the user's passwd entry. Mutually exclusive with command and harnessId.
+	// the user's passwd entry. For an interactive shell (no shellCommandLine), a `DISCOBOX_SHELL` entry
+	// in env names the shell the client's user prefers, as a path or a name; the sandbox runs it instead
+	// when it has it, looked up after the login profile and the working directory's .envrc have loaded.
+	// Mutually exclusive with command and harnessId.
 	Shell OptBool `json:"shell"`
 	// When shell is set, run the resolved login shell with `-lc <shellCommandLine>` instead of an
 	// interactive login shell. Ignored unless shell is set.

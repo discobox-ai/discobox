@@ -1078,8 +1078,9 @@ func HomeDir(user *User, env map[string]string) string {
 
 // resolveCommand yields the argv the exec runs: the requested command, or the
 // run user's login shell when the request asks for a shell rather than naming
-// one. The resolved argv is what the exec record reports, so a shell exec is
-// self-describing after the fact. StartupCommand never changes this: it rides
+// one — by way of the image's shell launcher when the client named a preferred
+// shell (PreferredShellCommand). The resolved argv is what the exec record
+// reports, so a shell exec is self-describing after the fact. StartupCommand never changes this: it rides
 // along with the shell and is typed into it after start, not exec'd itself.
 func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]string, error) {
 	if len(req.StartupCommand) > 0 && !req.Shell {
@@ -1096,7 +1097,13 @@ func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]str
 			}
 			return []string{shell, "-lc", req.ShellCommandLine}, nil
 		}
-		return ShellCommand(user, env)
+		// A command typed into the shell is quoted for a POSIX shell (see
+		// QuoteShellCommand), so only a shell nothing is typed into may be one
+		// the client chose.
+		if len(req.StartupCommand) > 0 {
+			return ShellCommand(user, env)
+		}
+		return PreferredShellCommand(user, req.Env, env)
 	}
 	if len(req.Command) == 0 || strings.TrimSpace(req.Command[0]) == "" {
 		return nil, errors.New("exec command is required")

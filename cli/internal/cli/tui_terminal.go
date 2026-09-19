@@ -202,11 +202,13 @@ func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, 
 
 // NewShell creates, attaches and starts a fresh interactive shell exec — what
 // `discobox shell` with no command runs. Only the sandbox can say which shell its
-// user has, so the request asks for one rather than naming it.
+// user has, so the request asks for one rather than naming it — along with the
+// shell this machine's user prefers (preferredShellEnv), which the sandbox runs
+// instead when it has it.
 func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
 	d = d.at(sandboxID)
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
-		interactive: true, tty: true, shell: true, env: paneTerminalEnv(),
+		interactive: true, tty: true, shell: true, env: append(paneTerminalEnv(), preferredShellEnv()...),
 	}, cols, rows)
 }
 

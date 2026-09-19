@@ -2,9 +2,12 @@ package execs
 
 import (
 	"context"
+	"path"
+	"slices"
 	"testing"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandboxshell"
 )
 
 // writePasswd is now runuser's business: the passwd format is parsed in one
@@ -238,5 +241,67 @@ func TestResolveCommandShellCommandLine(t *testing.T) {
 		if command[i] != want[i] {
 			t.Fatalf("command = %v, want %v", command, want)
 		}
+	}
+}
+
+// A client's preferred shell reaches the image's launcher, with the login shell
+// the sandbox resolved on its own passed along as the fallback — so which shell
+// the run user has is still decided by ResolveShell alone.
+func TestResolveCommandHandsAPreferredShellToTheLauncher(t *testing.T) {
+	writePasswd(t, "")
+	env := map[string]string{"SHELL": "/bin/bash"}
+	login, err := ShellCommand(nil, env)
+	if err != nil {
+		t.Fatalf("login shell: %v", err)
+	}
+
+	command, err := resolveCommand(CreateRequest{
+		Shell: true,
+		Env:   map[string]string{sandboxshell.PreferredEnv: "/opt/homebrew/bin/fish"},
+	}, nil, env)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	want := append([]string{shellLauncher, "/opt/homebrew/bin/fish"}, login...)
+	if !slices.Equal(command, want) {
+		t.Fatalf("command = %v, want %v", command, want)
+	}
+}
+
+// Only a shell nothing is typed into, and that runs no command line, may be one
+// the client chose: both of those are written for the sandbox's own shell. The
+// preference is the request's, so the same variable arriving from the image or
+// manifest env changes nothing. And a preference for the login shell, by any
+// path, is just the login shell, recorded as itself rather than the launcher.
+func TestResolveCommandIgnoresAPreferenceItCannotHonor(t *testing.T) {
+	writePasswd(t, "")
+	preferred := map[string]string{sandboxshell.PreferredEnv: "/usr/bin/fish"}
+	env := map[string]string{"SHELL": "/bin/bash", sandboxshell.PreferredEnv: "/usr/bin/fish"}
+	login, err := ShellCommand(nil, env)
+	if err != nil {
+		t.Fatalf("login shell: %v", err)
+	}
+
+	for name, req := range map[string]CreateRequest{
+		"startup command": {Shell: true, Env: preferred, StartupCommand: []string{"claude"}},
+		"merged env only": {Shell: true},
+		"blank":           {Shell: true, Env: map[string]string{sandboxshell.PreferredEnv: "  "}},
+		"the login shell": {Shell: true, Env: map[string]string{sandboxshell.PreferredEnv: "/opt/homebrew/bin/" + path.Base(login[0])}},
+	} {
+		command, err := resolveCommand(req, nil, env)
+		if err != nil {
+			t.Fatalf("%s: resolve: %v", name, err)
+		}
+		if !slices.Equal(command, login) {
+			t.Fatalf("%s: command = %v, want the login shell %v", name, command, login)
+		}
+	}
+
+	command, err := resolveCommand(CreateRequest{Shell: true, Env: preferred, ShellCommandLine: "ls"}, nil, env)
+	if err != nil {
+		t.Fatalf("command line: resolve: %v", err)
+	}
+	if want := []string{login[0], "-lc", "ls"}; !slices.Equal(command, want) {
+		t.Fatalf("command line: command = %v, want %v", command, want)
 	}
 }

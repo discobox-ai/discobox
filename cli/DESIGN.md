@@ -838,12 +838,17 @@ match — including no arguments at all — means every argument is CMD, and the
 sandbox falls back to the same picker `discobox apply` uses when DISCOBOX_ID is
 omitted.
 
-`discobox shell` with no command runs the sandbox user's login shell. The CLI
-never names that shell: it sets `shell: true` on the exec create request and
-the sandbox resolves the run user's shell from its own passwd database,
-because the local `$SHELL` describes this machine and says nothing about the
-identity the exec runs as. `admin exec create --shell` is the same request in
-raw form.
+`discobox shell` with no command runs a shell. The CLI never names the run
+user's shell: it sets `shell: true` on the exec create request and the sandbox
+resolves it from its own passwd database, because the local `$SHELL` describes
+this machine and says nothing about the identity the exec runs as. What `$SHELL`
+does describe is the person, so when the streams are a terminal it — or a local
+`DISCOBOX_SHELL`, read first, or `nu` when `NU_VERSION` says the CLI was run
+from nushell, which leaves `$SHELL` naming the login shell — rides along as `DISCOBOX_SHELL` in the request env and the sandbox runs that shell instead
+if it has one ([ADR 0138](../docs/adr/0138-a-shell-opened-for-a-person-is-their-own-shell-when-the-sandbox-has-it.md));
+the TUI's shell pane does the same. It is read per request and stored nowhere.
+`admin exec create --shell` is the same request in raw form, without the
+preference.
 
 `discobox tools` groups the everyday development tools run *against* a sandbox —
 `git`, `ssh`, `vscode`, and `zed`. Which sandbox is the one thing every

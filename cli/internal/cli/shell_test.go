@@ -12,6 +12,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/sandboxshell"
 )
 
 func testSandboxWithID(id string) apimodel.Sandbox {
@@ -253,6 +254,7 @@ func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell"})
+	t.Setenv("SHELL", "/bin/zsh")
 
 	err := cmd.Execute()
 	if err == nil {
@@ -266,6 +268,11 @@ func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	}
 	if _, ok := createBody["command"]; ok {
 		t.Fatalf("create body command = %v, want unset alongside --shell", createBody["command"])
+	}
+	// Not a terminal here, so whatever reads the piped stdin must be the
+	// sandbox's own shell, not the one this machine's $SHELL names.
+	if env, _ := createBody["env"].(map[string]any); env[sandboxshell.PreferredEnv] != nil {
+		t.Fatalf("create body env = %v, want no preferred shell without a terminal", env)
 	}
 }
 
