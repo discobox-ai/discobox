@@ -53,6 +53,7 @@ type terminalStore interface {
 	ListHarnessHooks(context.Context, store.HarnessHookFilter) ([]store.HarnessHookRecord, error)
 	FirstHarnessHookSince(context.Context, string, time.Time, []string) (*store.HarnessHookRecord, error)
 	HarnessHookSignal() <-chan struct{}
+	HarnessHookResumePoint() time.Time
 }
 
 func (h *handler) AttachSandboxExec(context.Context, sandboxapi.AttachSandboxExecParams) (*sandboxapi.AttachSandboxExecSwitchingProtocols, error) {

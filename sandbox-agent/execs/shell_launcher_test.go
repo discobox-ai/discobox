@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,11 @@ const flakeShell = "discobox-test-flake-shell"
 
 func newLauncherBox(t *testing.T) *launcherBox {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		// The launcher runs in the Linux image: it joins PATH with ':' and
+		// reads its arguments as POSIX paths, which a Windows host's are not.
+		t.Skip("the shell launcher is a Linux image script")
+	}
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skipf("no bash to run the launcher with: %v", err)
 	}

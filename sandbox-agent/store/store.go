@@ -34,6 +34,10 @@ type Store struct {
 	// not a poll of the table.
 	hookMu     sync.Mutex
 	hookSignal chan struct{}
+	// hookClock is the last time handed out on the hook clock: every hook
+	// stamp and resume point comes after it, so a point names one instant no
+	// hook shares, however coarse the wall clock is.
+	hookClock time.Time
 }
 
 type Event struct {
@@ -517,7 +521,12 @@ func (s *Store) RecordHarnessHook(ctx context.Context, record HarnessHookRecord)
 	}
 	record.ID = id
 	record.TerminalID = strings.TrimSpace(record.TerminalID)
-	record.CreatedAt = time.Now().UTC()
+	// Stamped and written under the lock, so hooks reach the table in the
+	// order of their stamps and a wait resuming past one cannot miss an
+	// earlier-stamped hook written after it.
+	s.hookMu.Lock()
+	defer s.hookMu.Unlock()
+	record.CreatedAt = s.tickHookClock()
 	row := HarnessHookLog{
 		ID:         record.ID,
 		TerminalID: record.TerminalID,
@@ -529,13 +538,35 @@ func (s *Store) RecordHarnessHook(ctx context.Context, record HarnessHookRecord)
 	if err := s.write.WithContext(ctx).Create(&row).Error; err != nil {
 		return HarnessHookRecord{}, err
 	}
-	s.hookMu.Lock()
 	if s.hookSignal != nil {
 		close(s.hookSignal)
 		s.hookSignal = nil
 	}
-	s.hookMu.Unlock()
 	return record, nil
+}
+
+// HarnessHookResumePoint is a point on the hook clock: every hook recorded
+// after the call is stamped after it, so a wait counting from it finds a hook
+// however soon that hook follows. Without a store it is the wall clock.
+func (s *Store) HarnessHookResumePoint() time.Time {
+	if s == nil {
+		return time.Now().UTC()
+	}
+	s.hookMu.Lock()
+	defer s.hookMu.Unlock()
+	return s.tickHookClock()
+}
+
+// tickHookClock advances the hook clock and returns its new time: now, or a
+// nanosecond past the last time handed out when the wall clock has not moved
+// past it. Call it holding hookMu.
+func (s *Store) tickHookClock() time.Time {
+	now := time.Now().UTC()
+	if !now.After(s.hookClock) {
+		now = s.hookClock.Add(time.Nanosecond)
+	}
+	s.hookClock = now
+	return now
 }
 
 // HarnessHookSignal returns a channel closed by the next harness hook recorded.

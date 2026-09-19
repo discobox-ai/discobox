@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -83,7 +84,8 @@ func TestUpdateMergesIntoTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o644 {
+	// Windows keeps no POSIX mode to read back; the sandbox's own file is on Linux.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 		t.Fatalf("file mode = %v, want 0644", info.Mode().Perm())
 	}
 	if leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(file.Path()), ".meta-*")); len(leftovers) != 0 {

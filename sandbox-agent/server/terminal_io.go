@@ -59,7 +59,7 @@ func (h *handler) SendSandboxExecInput(ctx context.Context, req *sandboxapi.Sand
 	}
 	// Taken before the input is delivered, so a wait resuming from it finds a
 	// hook the input causes however soon after it is recorded.
-	resumeAfter := time.Now().UTC()
+	resumeAfter := h.store.HarnessHookResumePoint()
 	if err := h.execs.Input(ctx, execID, parts); err != nil {
 		return nil, terminalError(err)
 	}
@@ -89,7 +89,7 @@ func (h *handler) WaitSandboxExec(ctx context.Context, req *sandboxapi.SandboxEx
 	// or the start of this one. A wait that ends on anything but a hook answers
 	// with this same point, so the next resumes where this one began and a hook
 	// recorded while it returned is not lost between them.
-	since := time.Now().UTC()
+	since := h.store.HarnessHookResumePoint()
 	if after := until.After.Or(""); after != "" {
 		if since, err = parseResumePoint(after); err != nil {
 			return nil, statusError{status: http.StatusBadRequest, message: "after is not a resume point this agent answered with"}

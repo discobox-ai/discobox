@@ -696,7 +696,9 @@ development images without a registry.
   end is found behind any number of tool-call hooks), and the first to hold
   answers. A wait is bounded at 60s and is `exec:read`. Every answer, and
   every input, carries a resume point (`resumeAfter`, an opaque nanosecond
-  timestamp, since an API date-time is whole seconds): just past the hook a
+  timestamp, since an API date-time is whole seconds). Points and hook stamps
+  come from one store clock that never repeats (`HarnessHookResumePoint`), so a
+  hook in the same wall-clock tick as a point still falls after it: just past the hook a
   wait ended on, or the point it counted from, or just before the input was
   delivered. A caller waiting longer passes it back as `after`, so nothing
   between two calls is missed. The pool serves a screen or a wait only while

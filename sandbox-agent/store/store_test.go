@@ -482,6 +482,36 @@ func TestFirstHarnessHookSinceAndSignal(t *testing.T) {
 	}
 }
 
+// Resume points and hook stamps share one clock that never repeats, so a hook
+// recorded in the same wall-clock tick as the point, or as the hook before it,
+// still comes after it. Windows' clock ticks coarsely enough for both.
+func TestHarnessHookClockNeverRepeats(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "clock.db"))
+	since := st.HarnessHookResumePoint()
+	var last time.Time
+	for i := range 50 {
+		hook, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "exec_1", Provider: "claude", Event: "Stop"})
+		if err != nil {
+			t.Fatalf("record hook: %v", err)
+		}
+		got, err := st.FirstHarnessHookSince(ctx, "exec_1", since, []string{"Stop"})
+		if err != nil {
+			t.Fatalf("first hook since: %v", err)
+		}
+		if got == nil || got.ID != hook.ID {
+			t.Fatalf("hook %d after the last resume point = %+v, want %s", i, got, hook.ID)
+		}
+		if !hook.CreatedAt.After(last) {
+			t.Fatalf("hook %d stamped %v, not after %v", i, hook.CreatedAt, last)
+		}
+		last, since = hook.CreatedAt, hook.CreatedAt
+	}
+	if point := st.HarnessHookResumePoint(); !point.After(last) {
+		t.Fatalf("resume point %v, not after the last hook %v", point, last)
+	}
+}
+
 func TestListHarnessHooksFiltersAndReadsForward(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(ctx, t, filepath.Join(t.TempDir(), "hooks.db"))
