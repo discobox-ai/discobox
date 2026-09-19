@@ -191,3 +191,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md) | A tool put away is a tab after the shells | Accepted |
 | [0135](0135-the-primary-server-is-recorded-by-admin-remote-primary.md) | The primary server is recorded by `admin remote primary` | Accepted (supersedes [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md) §3's primary sources) |
 | [0136](0136-a-sandboxs-meta-lives-in-the-sandbox-and-the-server-caches-it.md) | A sandbox's meta lives in the sandbox, and the server caches it | Accepted |
+| [0137](0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md) | A terminal can be read, typed into, and waited on without attaching | Accepted |
