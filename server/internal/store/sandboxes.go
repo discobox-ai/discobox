@@ -214,7 +214,7 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 		Preload("Project").
 		Preload("Pool").
 		Preload("Pool.ProviderInstance").
-		Preload("HarnessConfig").
+		Preload("HarnessConfig", withBoundSecrets).
 		Where("project_id = ?", projectID)
 	if sourceRoot != "" {
 		query = query.Where("source_root = ?", sourceRoot)
@@ -272,7 +272,7 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 		Preload("Project").
 		Preload("Pool").
 		Preload("Pool.ProviderInstance").
-		Preload("HarnessConfig").
+		Preload("HarnessConfig", withBoundSecrets).
 		Where("project_id = ?", projectID)
 	if opts.generation != nil {
 		sandbox, err := firstByID[model.Sandbox](query, "id", sandboxID)
@@ -301,7 +301,7 @@ func (s *Store) FindSandboxByIDPrefix(ctx context.Context, idOrPrefix string) (*
 		Preload("Project").
 		Preload("Pool").
 		Preload("Pool.ProviderInstance").
-		Preload("HarnessConfig")
+		Preload("HarnessConfig", withBoundSecrets)
 	return firstByID[model.Sandbox](query, "id", idOrPrefix)
 }
 

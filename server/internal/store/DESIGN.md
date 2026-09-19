@@ -90,6 +90,12 @@ save silently replays a stale value.
 When a new field gains a second writer, narrow the write rather than relying on
 callers to be careful.
 
+`HarnessConfig.BoundSecrets` is the other way round: no writer at all. It is a
+read-only, unmigrated field that `withBoundSecrets` counts from the bindings on
+every read that returns a harness config, the `HarnessConfig` a sandbox preloads
+included. A new read of either must apply it, or it reports a harness with
+credentials as having none.
+
 ## Resource Scope
 
 Every resource query must use the store-owned GORM handles rather than opening or

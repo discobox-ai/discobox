@@ -342,10 +342,15 @@ type HarnessConfig struct {
 	// ConfigureSandboxID names the in-flight configure sandbox. It is the durable
 	// handle the harness-config reconciler watches, so a configure that is running
 	// when the server restarts is still picked up and finished.
-	ConfigureSandboxID string    `gorm:"column:configure_sandbox_id;type:text;default:''" json:"configureSandboxId,omitempty" doc:"Sandbox running the configure flow, while one is in flight."`
-	ConfigureError     string    `gorm:"column:configure_error;type:text;default:''" json:"configureError,omitempty" doc:"Why the last configure attempt failed. Cleared when a configure starts or succeeds."`
-	CreatedAt          time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt          time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ConfigureSandboxID string `gorm:"column:configure_sandbox_id;type:text;default:''" json:"configureSandboxId,omitempty" doc:"Sandbox running the configure flow, while one is in flight."`
+	ConfigureError     string `gorm:"column:configure_error;type:text;default:''" json:"configureError,omitempty" doc:"Why the last configure attempt failed. Cleared when a configure starts or succeeds."`
+	// BoundSecrets is not a column: the store counts the config's secret
+	// bindings into it on every read (store.withBoundSecrets), so a client can
+	// tell a harness that runs with no credentials at all from one that has
+	// them without a request per harness.
+	BoundSecrets int       `gorm:"column:bound_secrets;->;-:migration" json:"boundSecrets" doc:"How many of the harness's environment variables have a project secret bound. Zero on a harness with a configure command means every discobox on it runs without credentials until it is configured."`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
 	Sandboxes []Sandbox `gorm:"foreignKey:HarnessConfigID" json:"-"`

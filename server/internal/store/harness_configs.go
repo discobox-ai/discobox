@@ -8,6 +8,16 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
+// withBoundSecrets counts each harness config's secret bindings into
+// HarnessConfig.BoundSecrets. Every read that returns a harness config applies
+// it — including the one a sandbox preloads — because the field is not a
+// column, and a read that skipped it would report a harness with credentials
+// as having none.
+func withBoundSecrets(db *gorm.DB) *gorm.DB {
+	return db.Select("harness_configs.*, " +
+		"(SELECT COUNT(*) FROM harness_config_secret_bindings b WHERE b.harness_config_id = harness_configs.id) AS bound_secrets")
+}
+
 func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
@@ -15,6 +25,7 @@ func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]mod
 	}
 	var configs []model.HarnessConfig
 	err = read.
+		Scopes(withBoundSecrets).
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
 		Find(&configs).Error
@@ -34,7 +45,7 @@ func (s *Store) GetHarnessConfig(ctx context.Context, projectID, configID string
 	if err != nil {
 		return nil, err
 	}
-	return firstByID[model.HarnessConfig](read.Where("project_id = ?", projectID), "id", configID)
+	return firstByID[model.HarnessConfig](read.Scopes(withBoundSecrets).Where("project_id = ?", projectID), "id", configID)
 }
 
 // GetHarnessConfigByID looks a harness config up by ID alone, for reconcilers
@@ -44,7 +55,7 @@ func (s *Store) GetHarnessConfigByID(ctx context.Context, configID string) (*mod
 	if err != nil {
 		return nil, err
 	}
-	return firstByID[model.HarnessConfig](read, "id", configID)
+	return firstByID[model.HarnessConfig](read.Scopes(withBoundSecrets), "id", configID)
 }
 
 func (s *Store) GetHarnessConfigByName(ctx context.Context, projectID, name string) (*model.HarnessConfig, error) {
@@ -53,7 +64,7 @@ func (s *Store) GetHarnessConfigByName(ctx context.Context, projectID, name stri
 		return nil, err
 	}
 	var config model.HarnessConfig
-	if err := read.Where("project_id = ? AND name = ?", projectID, name).First(&config).Error; err != nil {
+	if err := read.Scopes(withBoundSecrets).Where("project_id = ? AND name = ?", projectID, name).First(&config).Error; err != nil {
 		return nil, mapNotFound(err)
 	}
 	return &config, nil
@@ -65,7 +76,7 @@ func (s *Store) GetHarnessConfigBySlug(ctx context.Context, projectID, slug stri
 		return nil, err
 	}
 	var config model.HarnessConfig
-	if err := read.Where("project_id = ? AND slug = ?", projectID, slug).First(&config).Error; err != nil {
+	if err := read.Scopes(withBoundSecrets).Where("project_id = ? AND slug = ?", projectID, slug).First(&config).Error; err != nil {
 		return nil, mapNotFound(err)
 	}
 	return &config, nil

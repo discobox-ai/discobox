@@ -3328,6 +3328,10 @@ type HarnessConfig struct {
 	// Supplementary OS groups (already present in the image, e.g. "docker") the sandbox user is added to
 	// at boot, declared by the registered image label.
 	AdditionalGroups OptNilStringArray `json:"additionalGroups"`
+	// How many of the harness's environment variables have a project secret bound. Zero on a harness
+	// with a configure command means every discobox on it runs without credentials until it is
+	// configured. Absent from servers that predate it.
+	BoundSecrets OptInt64 `json:"boundSecrets"`
 	// True for the included harnesses seeded by the server. Built-in configs track their image and
 	// cannot be deleted.
 	BuiltIn bool `json:"builtIn"`
@@ -3389,6 +3393,11 @@ func (s *HarnessConfig) GetSchema() OptURI {
 // GetAdditionalGroups returns the value of AdditionalGroups.
 func (s *HarnessConfig) GetAdditionalGroups() OptNilStringArray {
 	return s.AdditionalGroups
+}
+
+// GetBoundSecrets returns the value of BoundSecrets.
+func (s *HarnessConfig) GetBoundSecrets() OptInt64 {
+	return s.BoundSecrets
 }
 
 // GetBuiltIn returns the value of BuiltIn.
@@ -3509,6 +3518,11 @@ func (s *HarnessConfig) SetSchema(val OptURI) {
 // SetAdditionalGroups sets the value of AdditionalGroups.
 func (s *HarnessConfig) SetAdditionalGroups(val OptNilStringArray) {
 	s.AdditionalGroups = val
+}
+
+// SetBoundSecrets sets the value of BoundSecrets.
+func (s *HarnessConfig) SetBoundSecrets(val OptInt64) {
+	s.BoundSecrets = val
 }
 
 // SetBuiltIn sets the value of BuiltIn.

@@ -15,6 +15,11 @@ components:
                         type: string
                     nullable: true
                     type: array
+                boundSecrets:
+                    description: How many of the harness's environment variables have a project secret bound. Zero on a harness with a configure command means every discobox on it runs without credentials until it is configured. Absent from servers that predate it.
+                    format: int64
+                    readOnly: true
+                    type: integer
                 builtIn:
                     description: True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted.
                     type: boolean

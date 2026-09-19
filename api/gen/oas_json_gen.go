@@ -6342,6 +6342,12 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.BoundSecrets.Set {
+			e.FieldStart("boundSecrets")
+			s.BoundSecrets.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("builtIn")
 		e.Bool(s.BuiltIn)
 	}
@@ -6463,31 +6469,32 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfig = [24]string{
+var jsonFieldsNameOfHarnessConfig = [25]string{
 	0:  "$schema",
 	1:  "additionalGroups",
-	2:  "builtIn",
-	3:  "configCommand",
-	4:  "configReminder",
-	5:  "configPorts",
-	6:  "configureError",
-	7:  "configureSandboxId",
-	8:  "configured",
-	9:  "configuredFiles",
-	10: "createdAt",
-	11: "env",
-	12: "files",
-	13: "id",
-	14: "image",
-	15: "imageDigest",
-	16: "name",
-	17: "projectId",
-	18: "relaunchCommand",
-	19: "runCommand",
-	20: "secrets",
-	21: "slug",
-	22: "updatedAt",
-	23: "volumes",
+	2:  "boundSecrets",
+	3:  "builtIn",
+	4:  "configCommand",
+	5:  "configReminder",
+	6:  "configPorts",
+	7:  "configureError",
+	8:  "configureSandboxId",
+	9:  "configured",
+	10: "configuredFiles",
+	11: "createdAt",
+	12: "env",
+	13: "files",
+	14: "id",
+	15: "image",
+	16: "imageDigest",
+	17: "name",
+	18: "projectId",
+	19: "relaunchCommand",
+	20: "runCommand",
+	21: "secrets",
+	22: "slug",
+	23: "updatedAt",
+	24: "volumes",
 }
 
 // Decode decodes HarnessConfig from json.
@@ -6495,7 +6502,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode HarnessConfig to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -6519,8 +6526,18 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"additionalGroups\"")
 			}
+		case "boundSecrets":
+			if err := func() error {
+				s.BoundSecrets.Reset()
+				if err := s.BoundSecrets.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"boundSecrets\"")
+			}
 		case "builtIn":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.BuiltIn = bool(v)
@@ -6582,7 +6599,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"configureSandboxId\"")
 			}
 		case "configured":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Bool()
 				s.Configured = bool(v)
@@ -6604,7 +6621,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"configuredFiles\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -6636,7 +6653,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"files\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -6668,7 +6685,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -6680,7 +6697,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -6731,7 +6748,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secrets\"")
 			}
 		case "slug":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -6743,7 +6760,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -6773,10 +6790,11 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
-		0b00000100,
-		0b00100101,
-		0b01100011,
+	for i, mask := range [4]uint8{
+		0b00001000,
+		0b01001010,
+		0b11000110,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
