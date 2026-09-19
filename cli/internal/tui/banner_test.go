@@ -32,8 +32,8 @@ func TestTheBandCentresItsCallToAction(t *testing.T) {
 		t.Fatalf("the call is centered on cell %d of %d: %q", middle, width, row)
 	}
 	// The key is still pinned to the end, which is the half of the bar a
-	// keyboard reads.
-	if !strings.HasSuffix(strings.TrimRight(row, " "), "ctrl+a y") {
+	// keyboard reads, with only the dismiss button after it.
+	if !strings.HasSuffix(strings.TrimRight(row, " "), "ctrl+a y  ✕") {
 		t.Fatalf("band = %q, want the key pinned to the right", row)
 	}
 }
@@ -80,7 +80,7 @@ func TestACutSubjectKeepsItsDistanceFromTheCall(t *testing.T) {
 	if !strings.Contains(row, "…  click to answer") {
 		t.Fatalf("band = %q, want the cut subject two cells short of the call", row)
 	}
-	if !strings.HasSuffix(strings.TrimRight(row, " "), "or  ctrl+a g") {
+	if !strings.HasSuffix(strings.TrimRight(row, " "), "or  ctrl+a g  ✕") {
 		t.Fatalf("band = %q, want the key pinned to the right", row)
 	}
 }

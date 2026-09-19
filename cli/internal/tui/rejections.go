@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"slices"
 	"sort"
 	"strings"
 
@@ -31,7 +33,9 @@ import (
 
 // rejectedKey is the band's key behind the leader: k, for the key that is not
 // working. The letters this window already spends are elsewhere — g is the
-// credential request, y the apply offer — and this is neither of those.
+// credential request, y the apply offer — and this is neither of those. The
+// signed-out harness's band (uncredentialed.go) answers to it too: a key that
+// is not there is a key that is not working.
 const rejectedKey = "k"
 
 // openRejectedMsg is the leader plus that key inside a pane.
@@ -75,6 +79,7 @@ func (m *Model) setSecretRejections(rejections []SecretRejection) {
 	// read: one poll answers the band and the rows, the way the credential
 	// inbox already does.
 	m.secrets.setRefused(rejections)
+	m.pruneDismissed()
 	// The band takes a row from the panes rather than adding one to the frame,
 	// so a credential dying — or being replaced — resizes them.
 	if m.bannerCost() != had {
@@ -84,31 +89,50 @@ func (m *Model) setSecretRejections(rejections []SecretRejection) {
 
 // hasRejection reports whether this discobox is affected by one.
 func (m *Model) hasRejection(box Sandbox) bool {
-	_, ok := m.rejectionFor(box)
-	return ok
+	return len(m.rejectionsFor(box)) > 0
 }
 
-// rejectionFor is the refused credential this discobox is affected by, if any.
+// shownRejection is the refusal the band is about: the oldest one a dismissal
+// has not covered. A band back up for a second refusal is about that one — its
+// name, its host, its remedy — and not the first, which somebody already
+// dismissed; dismissing the band again then dismisses what it showed. With
+// nothing dismissed, or everything (the key reaches a band that is not drawn),
+// it is the oldest.
+func (m *Model) shownRejection(box Sandbox) (SecretRejection, bool) {
+	all := m.rejectionsFor(box)
+	if len(all) == 0 {
+		return SecretRejection{}, false
+	}
+	dismissed := m.dismissed[m.dismissalFor(bannerRejected, box)]
+	for _, rejection := range all {
+		if !slices.Contains(dismissed, rejection.occurrence()) {
+			return rejection, true
+		}
+	}
+	return all[0], true
+}
+
+// rejectionsFor is every refused credential this discobox is affected by,
+// oldest first. Which of them the band is about is shownRejection's to say.
 //
 // A harness's credential is refused for every discobox running that harness at
 // once, so it matches by harness rather than by where it happened to be seen.
 // Anything else matches the discobox that ran into it: a project secret that
 // failed in one box says nothing about a box that has never used it.
-func (m *Model) rejectionFor(box Sandbox) (SecretRejection, bool) {
+func (m *Model) rejectionsFor(box Sandbox) []SecretRejection {
+	var out []SecretRejection
 	for _, rejection := range m.rejections {
 		// A credential belongs to one server, and IDs are only unique within
 		// one: a box on another server is running something else entirely.
 		if m.serverName(rejection.Server) != m.serverName(box.Server) {
 			continue
 		}
-		if rejection.harnessOwned() && box.HarnessID != "" && rejection.HarnessConfigID == box.HarnessID {
-			return rejection, true
-		}
-		if !rejection.harnessOwned() && rejection.SandboxID == box.ID && box.ID != "" {
-			return rejection, true
+		if rejection.harnessOwned() && box.HarnessID != "" && rejection.HarnessConfigID == box.HarnessID ||
+			!rejection.harnessOwned() && rejection.SandboxID == box.ID && box.ID != "" {
+			out = append(out, rejection)
 		}
 	}
-	return SecretRejection{}, false
+	return out
 }
 
 // viewRejectedBanner is the workspace's line about a credential that does not
@@ -119,7 +143,11 @@ func (m *Model) rejectionFor(box Sandbox) (SecretRejection, bool) {
 // credential that has been dead for a while and will still be dead in a minute,
 // and a second moving bar would spend the attention the first one is for.
 func (m *Model) viewRejectedBanner(width int) string {
-	rejection, ok := m.rejectionFor(m.paneBox)
+	// The listing's row, as bannerShowing reads it: the band that is chosen
+	// and the band that is drawn must be about the same row, or the panes give
+	// up two rows to a band that draws nothing.
+	box := m.currentBox()
+	rejection, ok := m.shownRejection(box)
 	if !ok {
 		return ""
 	}
@@ -134,7 +162,7 @@ func (m *Model) viewRejectedBanner(width int) string {
 	// would leave the dead credential bound to the harness and the new one
 	// belonging to nobody. It is last in the sentence because it is the first
 	// thing a narrow window should drop.
-	if waiting := len(m.requests[m.paneBox.ID]); waiting > 0 {
+	if waiting := len(m.requests[box.ID]); waiting > 0 {
 		subject += st.attentionHint.Render("  ·  " + plural(waiting, "request", "requests") + " waiting behind it")
 	}
 	call := bannerChip(st, rejectionCall(rejection), colChipLight, colAlertChip)
@@ -181,7 +209,7 @@ func rejectionCall(rejection SecretRejection) string {
 // this: the fix is out here, it takes a minute, and the session you were in the
 // middle of is still there when it is done.
 func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
-	rejection, ok := m.rejectionFor(box)
+	rejection, ok := m.shownRejection(box)
 	if !ok {
 		return m.report(false, "nothing refused on this discobox")
 	}
@@ -191,16 +219,8 @@ func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
 	ctx, ds, server := m.ctx, m.ds, m.serverName(rejection.Server)
 	return func() tea.Msg {
 		if rejection.harnessOwned() {
-			harnesses, err := ds.Harnesses(ctx, server)
-			if err != nil {
-				return rejectionRemedyMsg{rejection: rejection, err: err}
-			}
-			for _, harness := range harnesses {
-				if harness.ID == rejection.HarnessConfigID {
-					return rejectionRemedyMsg{rejection: rejection, harness: &harness}
-				}
-			}
-			return rejectionRemedyMsg{rejection: rejection, err: errNoHarness}
+			harness, err := findHarness(ctx, ds, server, rejection.HarnessConfigID)
+			return rejectionRemedyMsg{rejection: rejection, harness: harness, err: err}
 		}
 		secrets, err := ds.Secrets(ctx, server)
 		if err != nil {
@@ -213,6 +233,21 @@ func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
 		}
 		return rejectionRemedyMsg{rejection: rejection, err: errNoSecret}
 	}
+}
+
+// findHarness reads one harness off its server's listing, which is what the
+// configure flow is opened with.
+func findHarness(ctx context.Context, ds DataSource, server, id string) (*Harness, error) {
+	harnesses, err := ds.Harnesses(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	for _, harness := range harnesses {
+		if harness.ID == id {
+			return &harness, nil
+		}
+	}
+	return nil, errNoHarness
 }
 
 // rejectionRemedy opens whichever remedy came back.

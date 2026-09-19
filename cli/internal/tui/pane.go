@@ -616,10 +616,14 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	// says there is one, and an affordance that names a key the pane swallows
 	// is not one.
 	opts = append(opts, termpane.WithPrefixBinding(credentialsLeaderKey, openCredentialsMsg{}))
-	// The credential the header is telling you does not work, for the same
-	// reason: the band names this key, and a key the pane swallowed would make
-	// the band a sentence rather than a button. See rejections.go.
+	// The credential the header is telling you does not work — refused, or not
+	// there at all — for the same reason: the band names this key, and a key
+	// the pane swallowed would make the band a sentence rather than a button.
+	// See rejections.go and uncredentialed.go.
 	opts = append(opts, termpane.WithPrefixBinding(rejectedKey, openRejectedMsg{}))
+	// And the band's own dismissal, for the same reason again: the band draws
+	// a button for it, and the key is the button from the keyboard.
+	opts = append(opts, termpane.WithPrefixBinding(bannerDismissKey, dismissBannerMsg{}))
 	// Every command the list offers, on the key it has there. One key map for
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
@@ -1359,6 +1363,10 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 	// is asking to be pressed. It owns the gesture rather than falling through
 	// to the chrome's selection — a bar you click to answer a question must
 	// not also start a drag-select of its own text.
+	// Its dismiss button first, since it is inside the band.
+	if m.bannerCloseAt(x, y) {
+		return m.dismissBanner(), true
+	}
 	if m.bannerAt(x, y) {
 		return m.pressBanner(), true
 	}
@@ -1585,8 +1593,12 @@ func (m *Model) viewPaneWindow() string {
 	// to say, so nothing is spent on either the rest of the time. See
 	// banner.go.
 	banner := m.viewBanner(headerW)
+	// The band's rows start with this, and the dismiss button's cells are
+	// measured from where the band starts; the hit test adds the one to the
+	// other rather than restating the layout.
+	bannerIndent := " " + pad
 	if banner != "" {
-		rows = append(rows, " "+pad+banner+pad+" ")
+		rows = append(rows, bannerIndent+banner+pad+" ")
 	}
 
 	// The overlay has the screen while it is up. What is under it is not drawn
@@ -1615,7 +1627,7 @@ func (m *Model) viewPaneWindow() string {
 	}
 	rows = append(rows, strings.Split(body, "\n")...)
 	if banner != "" {
-		rows = append(rows, " "+pad+banner+pad+" ")
+		rows = append(rows, bannerIndent+banner+pad+" ")
 		// The whole band is the target, not the words in it: a bar this size
 		// that only answered on its text would be a bar that mostly does
 		// nothing. Both rows are recorded here, as they are drawn, rather than
@@ -1625,6 +1637,8 @@ func (m *Model) viewPaneWindow() string {
 		// where it landed.
 		m.banner.rows = []int{1, len(rows) - 1}
 		m.banner.start, m.banner.end = 0, max(m.width-1, 0)
+		m.banner.closeStart += lipgloss.Width(bannerIndent)
+		m.banner.closeEnd += lipgloss.Width(bannerIndent)
 		m.banner.live = true
 	}
 	room := max(inner-2*boxPad, 1)

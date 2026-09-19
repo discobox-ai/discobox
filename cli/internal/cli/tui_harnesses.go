@@ -118,6 +118,25 @@ func harnessState(cfg apimodel.HarnessConfig) tui.HarnessState {
 	}
 }
 
+// harnessUncredentialed is a harness that runs signed out: it has a configure
+// flow to collect credentials, and nothing is bound. The image's declared
+// secrets are not the test — opencode declares none and binds one per provider
+// its flow connects (OPENCODE_<PROVIDER>_CREDENTIAL). A harness with no flow,
+// `shell`, has nothing to collect and no remedy the window could offer.
+//
+// Nor is whether it can run without any: opencode works out of the box on its
+// free tier, and is flagged anyway, on purpose. Working by default is exactly
+// why nobody would otherwise learn it is meant to be configured, so the band is
+// what tells them. A sandbox with nothing bound is still allowed; this only
+// says so.
+//
+// A server that predates the count does not send it, and absent is not zero:
+// it says nothing rather than claiming every harness is signed out.
+func harnessUncredentialed(cfg apimodel.HarnessConfig) bool {
+	bound, ok := cfg.BoundSecrets.Get()
+	return ok && bound == 0 && len(cfg.ConfigCommand.Or(nil)) > 0
+}
+
 // HarnessSecrets is what actually answers each environment variable the harness
 // needs: the image's declarations resolved against the project's secret
 // bindings, plus the bindings the image never declared, which are the ones

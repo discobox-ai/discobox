@@ -34,6 +34,36 @@ func TestToTUIHarnessState(t *testing.T) {
 	}
 }
 
+// A harness runs signed out when it has a configure flow to collect
+// credentials and none are bound, whatever its image declares or requires:
+// opencode declares nothing and runs on its free tier with nothing bound, and
+// is flagged on purpose, since that default is why nobody would otherwise know
+// to configure it. Every other case says nothing: a harness with no flow
+// (`shell`) has no remedy to offer, and a server that predates the count has
+// not said zero.
+func TestHarnessUncredentialed(t *testing.T) {
+	secrets := apiclientgen.NewOptNilHarnessConfigSecretArray([]apimodel.HarnessConfigSecret{{Name: "ANTHROPIC_API_KEY"}})
+	configure := apiclientgen.NewOptNilStringArray([]string{"claude-configure"})
+	cases := []struct {
+		name string
+		cfg  apimodel.HarnessConfig
+		want bool
+	}{
+		{"nothing bound", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(0), Secrets: secrets, ConfigCommand: configure}, true},
+		{"one bound", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(1), Secrets: secrets, ConfigCommand: configure}, false},
+		{"older server", apimodel.HarnessConfig{Secrets: secrets, ConfigCommand: configure}, false},
+		{"declares none, like opencode", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(0), ConfigCommand: configure}, true},
+		{"no configure flow", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(0), Secrets: secrets}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := harnessUncredentialed(tc.cfg); got != tc.want {
+				t.Fatalf("harnessUncredentialed = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // A harness config becomes a harness row: its identity, whether it is the
 // project default, and its files with the ones its configure flow wrote first,
 // since those overlay the image-declared file of the same path.

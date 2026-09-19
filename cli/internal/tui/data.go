@@ -237,6 +237,13 @@ type Sandbox struct {
 	// shows; this is what matches a credential the window has been told is
 	// refused, and what its configure flow is opened by.
 	HarnessID string
+	// HarnessName is that harness's name as a person reads it, which is what
+	// a band about the harness calls it.
+	HarnessName string
+	// HarnessUncredentialed is a harness with a configure flow and no
+	// credentials bound to it: every session on it runs signed out until it is
+	// configured. See uncredentialed.go.
+	HarnessUncredentialed bool
 
 	// OriginKey is where the discobox is filed on the client that created it
 	// (ADR 0111): that host and where its source came from, or the host alone
@@ -410,6 +417,13 @@ type SecretRejection struct {
 
 	FirstSeen time.Time
 	LastSeen  time.Time
+}
+
+// occurrence names this refusal among others: the credential, where it was
+// refused, and when that was first seen — a refusal cleared and seen again is
+// a new one. It is what a dismissal of the band remembers.
+func (r SecretRejection) occurrence() string {
+	return r.SecretID + "\x00" + r.Host + "\x00" + r.FirstSeen.UTC().Format(time.RFC3339Nano)
 }
 
 // harnessOwned reports whether configuring a harness again is the remedy.

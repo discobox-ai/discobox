@@ -124,7 +124,7 @@ func TestClickingTheApplyBandAsksFirst(t *testing.T) {
 	d.wait("the band drawn", func() bool { return m.banner.live })
 
 	span := m.banner
-	x := span.end - 2
+	x := span.start + 1
 	d.dispatch(tea.MouseClickMsg{X: x, Y: span.rows[1], Button: tea.MouseLeft})
 	d.dispatch(tea.MouseReleaseMsg{X: x, Y: span.rows[1], Button: tea.MouseLeft})
 	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgConfirm })
@@ -159,8 +159,8 @@ func TestDecliningTheApplyQuestionAppliesNothing(t *testing.T) {
 	d.wait("the band drawn", func() bool { return m.banner.live })
 
 	span := m.banner
-	d.dispatch(tea.MouseClickMsg{X: span.end - 2, Y: span.rows[0], Button: tea.MouseLeft})
-	d.dispatch(tea.MouseReleaseMsg{X: span.end - 2, Y: span.rows[0], Button: tea.MouseLeft})
+	d.dispatch(tea.MouseClickMsg{X: span.start + 1, Y: span.rows[0], Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: span.start + 1, Y: span.rows[0], Button: tea.MouseLeft})
 	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgConfirm })
 
 	d.key("n")

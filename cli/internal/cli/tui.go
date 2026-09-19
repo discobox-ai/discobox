@@ -823,6 +823,8 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 			row.Harness = cfg.Name
 		}
 		row.HarnessID = cfg.ID
+		row.HarnessName = strings.TrimSpace(cfg.Name)
+		row.HarnessUncredentialed = harnessUncredentialed(cfg)
 	}
 	if upgrade, ok := sb.Runtime.Upgrade.Get(); ok {
 		row.Upgrade = upgrade.Available

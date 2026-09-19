@@ -105,9 +105,9 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 		EnvName: "ANTHROPIC_API_KEY", FirstSeen: time.Now().Add(-time.Hour),
 	}}
 	m := newTestModel(t, ds)
+	ready[0].HarnessID = "harness_claude"
 	m.list.setAll(ready)
 	box := ready[0]
-	box.HarnessID = "harness_claude"
 	m.paneBox = box
 	m.toolShown = &pane{tool: "diff"}
 	m.setSecretRejections(ds.rejections)
@@ -282,10 +282,11 @@ func workspaceWithRejection(t *testing.T, rejection SecretRejection) (*Model, *f
 	ds := newFakeSource(boxes...)
 	ds.rejections = []SecretRejection{rejection}
 	m := newTestModel(t, ds)
+	// The band reads the listing's row, which carries the harness as the
+	// workspace's does.
+	boxes[0].HarnessID = "harness_claude"
 	m.list.setAll(boxes)
-	box := boxes[0]
-	box.HarnessID = "harness_claude"
-	m.paneBox = box
+	m.paneBox = boxes[0]
 	// A tool window is a workspace as far as the band is concerned: the bar is
 	// drawn over whatever the screen is showing.
 	m.toolShown = &pane{tool: "diff"}

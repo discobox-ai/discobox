@@ -840,9 +840,10 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 			span.rows[1], len(frame(m)))
 	}
 
-	// Far from the words, still on the band — and the lower one answers as the
-	// upper one does.
-	x := span.end - 2
+	// Far from the words, still on the band — its left end, since its right
+	// end is the dismiss button — and the lower one answers as the upper one
+	// does.
+	x := span.start + 1
 	for _, row := range span.rows {
 		if !m.bannerAt(x, row) {
 			t.Fatalf("row %d does not answer as the band", row)

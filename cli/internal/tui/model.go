@@ -115,8 +115,12 @@ type Model struct {
 
 	// rejections is every credential in the project an upstream has refused
 	// and the server cannot renew (ADR 0132). Read on its own beat beside the
-	// inbox, and drawn as the workspace's third band. See rejections.go.
+	// inbox, and drawn as the workspace's first band. See rejections.go.
 	rejections []SecretRejection
+
+	// dismissed is the bands somebody has dismissed, per discobox, each with
+	// the occurrence it was dismissed on. See banner.go.
+	dismissed map[dismissal][]string
 
 	// harnesses is the project's harnesses: the screen that manages them, and
 	// the listing the run options' harness choices are built from. It is read
@@ -852,6 +856,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return tea.Batch(again, m.report(true, "cannot list discoboxes: %v", msg.err))
 		}
 		m.list.setAll(msg.listing.Sandboxes)
+		// Before the layout below: a dismissal whose occurrence the listing
+		// shows is over goes, and its band — if it has happened again — is
+		// drawn at the right size.
+		m.pruneDismissed()
 		// The servers that did not answer, so their sections say so rather
 		// than their rows simply being missing.
 		m.list.setUnreachable(msg.listing.Unreachable)
@@ -905,10 +913,16 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case openRejectedMsg:
-		return m.openRejectedRemedy(m.paneBox)
+		return m.openCredentialRemedy(m.currentBox())
 
 	case rejectionRemedyMsg:
 		return m.rejectionRemedy(msg)
+
+	case uncredentialedRemedyMsg:
+		return m.uncredentialedRemedy(msg)
+
+	case dismissBannerMsg:
+		return m.dismissBanner()
 
 	case secretsLoadedMsg:
 		if msg.err != nil {
@@ -4098,6 +4112,8 @@ func (m *Model) helpText() string {
 		"                   stop and restart for each",
 		"    " + leader + " " + toolsKey + "       the tools, as a picker",
 		"    " + leader + " " + credentialsLeaderKey + "       answer the credential request in the banner",
+		"    " + leader + " " + bannerDismissKey + "       dismiss the banner, like its ✕; it comes back",
+		"                   when what it says happens again",
 		"    " + leader + " " + paneZoomKey + "       give the focused column the whole window, or",
 		"                   give the window back. Same as the [+] / [-]",
 		"                   button on its top border. What is hidden stays",

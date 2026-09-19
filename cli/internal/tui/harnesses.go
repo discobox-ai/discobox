@@ -654,7 +654,10 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 		// the default, not on the setup that earned it.
 		return m.runHarnessVerb(HarnessSetDefault, *msg.andDefault, msg.resume)
 	}
-	done := tea.Batch(m.loadHarnesses(), m.report(false, "%s", msg.text))
+	// The listing too: it carries whether each discobox's harness has
+	// credentials, and a setup that just bound some should take the band
+	// that asked for it down now rather than a poll from now.
+	done := tea.Batch(m.loadHarnesses(), m.refresh(), m.report(false, "%s", msg.text))
 	if msg.resume == nil {
 		return done
 	}

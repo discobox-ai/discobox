@@ -114,6 +114,7 @@ func (m *Model) setCredentialRequests(requests []CredentialRequest) {
 	m.requests = byBox
 	m.list.setPending(byBox)
 	m.syncRequestRows()
+	m.pruneDismissed()
 	// The band takes a row from the panes rather than adding one to the
 	// frame, so a request arriving — or being answered — resizes them.
 	if m.bannerCost() != had {

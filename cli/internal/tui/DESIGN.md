@@ -348,10 +348,11 @@ window, drawn **twice** — under the header and again above the keys — so tha
 whichever end of a full screen of output you are reading, the same thing is in
 reach. `banner.go` owns it; each band supplies only its own sentence.
 
-There are three, in this order of precedence, and **only one is ever on screen**
+There are four, in this order of precedence, and **only one is ever on screen**
 (`bannerShowing`): a credential an upstream has refused (`rejections.go`), then
-a credential request waiting on this discobox (`credentials.go`), then work on it
-that is ready to apply (`apply.go`). A screen carrying two exception bars has a
+a harness with no credentials bound (`uncredentialed.go`), then a credential
+request waiting on this discobox (`credentials.go`), then work on it that is
+ready to apply (`apply.go`). A screen carrying two exception bars has a
 second header rather than an exception.
 
 **The refusal outranks the request** — which is the opposite of what it looks
@@ -377,6 +378,21 @@ the subject is what gives way when the window narrows: a bar that says a
 credential is waiting, or that a discobox is ready, but not what to press about
 it has said the less useful half.
 
+**Any band can be dismissed** — its `✕`, pinned after the key, or leader+`b`
+— and **a dismissal is of one occurrence, never of the band** (`banner.go`).
+Each band names what it is about (`bannerInstance`): the refusal by credential,
+host and when it was first seen; the signed-out harness by the harness; the
+request by the requests waiting (a set: answering one leaves the rest
+dismissed, a new one shows); the offer by the commit it would apply. A
+dismissal holds its band down only while it covers everything the band would
+say, and every read that feeds a band — the listing, the refusals, the inbox —
+forgets what it shows is over (`pruneDismissed`), so something fixed and broken
+again is shown again even when nothing distinguishes the two. A band back up
+for something new is about the new thing (`shownRejection`), not what was
+dismissed. Dismissing shows
+the band queued behind it. Dismissals are per discobox and the window's own:
+nothing reaches the server, and a new window shows whatever still applies.
+
 **The call is a chip, centered in the row itself** (`bannerChip`,
 `spreadCenterPin`): the one thing on the bar that is not a statement, drawn as
 its own field inside the band's, in the middle of the window rather than at the
@@ -397,6 +413,27 @@ an invitation to sign in *inside* the box: that cannot work and cannot stick,
 since the sandbox agent restores the delivered sentinel within 30 seconds
 (ADR 0059). The rejections it draws from are polled beside the credential inbox
 and also mark the secrets screen's rows, so one read answers both.
+
+**The signed-out harness's band** (`uncredentialed.go`) says the harness has a
+configure flow and no credentials bound — it was configured without signing in,
+or what it signed in with was deleted. It is about the harness not being set up,
+not about anything failing, and it means one of two things. For a harness that
+needs a credential (Claude Code, Codex) what it sends goes out bare and fails,
+from inside the box, exactly like a refusal — the same problem one step
+earlier. For one with a free tier (opencode) nothing fails: it runs, just not
+on anything the user chose, and is flagged on purpose, because working by
+default is why nobody would otherwise know it is meant to be configured. Not a
+false positive to fix. A discobox with nothing bound is allowed; the band only
+says so.
+It shares the refusal's paint, its key (`rejectedKey`, which answers whichever
+of the two is up), its remedy (the harness's setup, on the discobox's own
+server) and its rule against pointing inside the box. It sits under the refusal,
+which is the more specific sentence, and over the request, which is the symptom.
+It costs no poll: the listing carries each harness's bound-secret count
+(`HarnessConfig.boundSecrets`), so the band reads the listing's row rather than
+the one the workspace was opened from, and a configure that binds something
+takes it down on the refresh its completion asks for. It steps aside while that
+harness's own setup is the screen.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to
 answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,
