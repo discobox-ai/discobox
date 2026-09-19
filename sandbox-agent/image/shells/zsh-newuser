@@ -1,0 +1,10 @@
+# Installed as /usr/share/zsh/scripts/newuser, the site-wide script zsh's
+# newuser module prefers over its own. zsh sources it when the user has no zsh
+# startup files at all; the stock one starts zsh-newuser-install, a full-screen
+# questionnaire -- the first thing a person would meet in a fresh sandbox, and
+# on every shell until they answered it.
+#
+# Seed Debian's recommended .zshrc instead, which is one of the choices that
+# questionnaire offers. zsh reads ~/.zshrc after this runs, so this very shell
+# starts with it.
+cp /etc/zsh/newuser.zshrc.recommended "${ZDOTDIR:-$HOME}/.zshrc" 2>/dev/null || :

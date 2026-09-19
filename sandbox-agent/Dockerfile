@@ -183,6 +183,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         xterm \
         xvfb \
         xz-utils \
+        zsh \
     && rm -rf /var/lib/apt/lists/*
 
 # Neovim's official stable build. Debian stable intentionally holds an older
@@ -211,6 +212,36 @@ RUN set -eux \
     && tar -xzf "/tmp/${archive}" -C /usr/local --strip-components=1 \
     && rm -f "/tmp/${archive}" \
     && nvim --version
+
+# Nushell's official release build, for the people whose $SHELL it is (ADR
+# 0138): Debian does not package it. The static musl tarball is one binary with
+# no runtime, the same on every base; only `nu` is installed, not the example
+# and dataframe plugins beside it. Version and upstream-published checksums
+# move together, so a bump is explicit and reproducible.
+ARG NUSHELL_VERSION=0.115.1
+ARG NUSHELL_AMD64_SHA256=8a9722177ddd421eba927b4baae4ae341a4d1c3434504be7b1b17d998bafdd87
+ARG NUSHELL_ARM64_SHA256=86a869f44c2abd37f4a4c215af78c8da058812b76fa131476d28e62fc0262a91
+RUN set -eux \
+    && case "$(dpkg --print-architecture)" in \
+        amd64) \
+            nushell_target=x86_64-unknown-linux-musl; \
+            nushell_sha256="$NUSHELL_AMD64_SHA256" \
+            ;; \
+        arm64) \
+            nushell_target=aarch64-unknown-linux-musl; \
+            nushell_sha256="$NUSHELL_ARM64_SHA256" \
+            ;; \
+        *) echo "no Nushell build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && dir="nu-${NUSHELL_VERSION}-${nushell_target}" \
+    && curl -fsSL -o "/tmp/${dir}.tar.gz" \
+        "https://github.com/nushell/nushell/releases/download/${NUSHELL_VERSION}/${dir}.tar.gz" \
+    && echo "${nushell_sha256}  /tmp/${dir}.tar.gz" | sha256sum -c - \
+    && tar -xzf "/tmp/${dir}.tar.gz" -C /tmp "${dir}/nu" \
+    && install -m 0755 "/tmp/${dir}/nu" /usr/local/bin/nu \
+    && rm -rf "/tmp/${dir}.tar.gz" "/tmp/${dir}" \
+    && echo /usr/local/bin/nu >> /etc/shells \
+    && nu --version
 
 # Nix, and the second-largest layer. Its own step so the tool groups below can
 # change without repulling it.
@@ -396,6 +427,10 @@ COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-d
 COPY sandbox-agent/image/profile.d/sandbox-direnv.sh /etc/profile.d/sandbox-direnv.sh
 COPY sandbox-agent/image/profile.d/sandbox-desktop-scale.sh /etc/profile.d/sandbox-desktop-scale.sh
 COPY sandbox-agent/image/profile.d/sandbox-agent-store.sh /etc/profile.d/sandbox-agent-store.sh
+# zsh and nu get what bash gets from profile.d and bash.bashrc: a first shell
+# that is usable as it is, and direnv on every `cd` (ADR 0138).
+COPY sandbox-agent/image/shells/zsh-newuser /usr/share/zsh/scripts/newuser
+COPY sandbox-agent/image/shells/nushell-direnv.nu /usr/local/share/nushell/vendor/autoload/discobox-direnv.nu
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
@@ -562,6 +597,10 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     # inherits the environment direnv already exported and would otherwise never
     # reload it on a `cd`, so hook it from the system-wide interactive rc too.
     && printf '\n# Discobox: direnv in the interactive shells /etc/profile does not reach.\nif [ -r /etc/profile.d/sandbox-direnv.sh ]; then\n  . /etc/profile.d/sandbox-direnv.sh\nfi\n' >> /etc/bash.bashrc \
+    # zsh reads none of /etc/profile, so its hook goes in its own system-wide
+    # interactive rc. The environment it starts with was already exported by
+    # discobox-shell; this is what reloads it on a `cd`.
+    && printf '\n# Discobox: direnv on every cd.\nif command -v direnv >/dev/null 2>&1; then\n  eval "$(direnv hook zsh)"\nfi\n' >> /etc/zsh/zshrc \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
     && systemctl enable \
         discobox-sandbox-agent.service \
