@@ -216,9 +216,10 @@ Proxy handlers must request the narrow pool-agent token scopes
 HTTP is method- and service-specific. The sandbox HTTP port proxy requests only
 `sandbox:http`; pool-agent support for this route must require that scope
 rather than accepting the broader sandbox read/write scopes. The exec proxy
-requests `exec:read` for reads (execs, services, harness hooks) and `exec:write`
-for create, delete, start, stop, and restart; attach requests both, because
-attach streams carry input, resize, and signal frames. The TCP tunnel proxy
+requests `exec:read` for reads (execs, services, harness hooks, a terminal's
+screen, and a terminal wait, a POST only for its body) and `exec:write` for
+create, delete, start, stop, restart, and terminal input; attach requests both,
+because attach streams carry input, resize, and signal frames. The TCP tunnel proxy
 requests only `tcp:connect`, the scope ADR 0024 §3 defines for it, and the UDP
 tunnel proxy only `udp:connect` (ADR 0109).
 

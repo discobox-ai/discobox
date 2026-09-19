@@ -22,6 +22,9 @@ func registerSandboxAgentTerminalRoutes(router chi.Router, service services.Sand
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodDelete, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start", sandboxAgentTerminalProxyHandler(service))
@@ -134,6 +137,10 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	if strings.Contains(r.URL.Path, "/execs") {
 		if strings.HasSuffix(r.URL.Path, "/attach") {
 			return []string{poolagentauth.ScopeExecWrite, poolagentauth.ScopeExecRead}
+		}
+		// A wait is a POST only because it carries a body; it reads (ADR 0137).
+		if strings.HasSuffix(r.URL.Path, "/wait") {
+			return []string{poolagentauth.ScopeExecRead}
 		}
 		switch r.Method {
 		case http.MethodGet:

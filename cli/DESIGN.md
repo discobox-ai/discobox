@@ -1496,6 +1496,27 @@ tool rather than only as a screenful:
   every boot the pool has ever had, and the operator running this almost always
   means the most recent one; `--tail 0` asks for the whole thing.
 
+## Terminal I/O (`discobox admin terminal screen|input|wait`)
+
+The terminal routes of [ADR 0137](../docs/adr/0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md),
+raw, one API call each (`internal/cli/sandbox_terminal_io.go`), under
+`admin terminal` beside `attach` and `logs` and taking the same
+`--discobox-id` and `TERMINAL_ID` (`primary` for the harness terminal):
+
+- `screen` prints the rendered screen as text, optionally with scrollback.
+- `input` reads its arguments as tmux `send-keys` does — a named key is that
+  key, anything else text, `--literal` all text.
+- `wait` is one wait call, held at most 60s. It prints the reason (with the
+  hook's event and ID) and, last, the resume point; it exits 124 on timeout.
+  `input` prints a resume point too. A longer wait is a series of calls, each
+  passing the last resume point as `--after`, so nothing between them is
+  missed.
+
+What a caller builds from these — sending a message and waiting for the
+agent's turn to end — needs to know which hook events end a turn for which
+harness, and is left to a tool above this one. Hooks are listed by
+`admin audit hooks`.
+
 ## Audit Reads (`discobox admin audit`)
 
 The audit commands read what a discobox left behind (ADR 0130), under `admin`

@@ -736,6 +736,67 @@ func TestSandboxExecAttachRouteUsesExecWriteScope(t *testing.T) {
 	}
 }
 
+// A terminal is read, typed into, and waited on without attaching (ADR 0137).
+// A wait is a POST only because it carries a body, so it reads.
+func TestSandboxExecTerminalRoutesUseExecScopes(t *testing.T) {
+	for _, tc := range []struct {
+		method string
+		suffix string
+		want   []string
+	}{
+		{http.MethodGet, "screen", []string{poolagentauth.ScopeExecRead}},
+		{http.MethodPost, "input", []string{poolagentauth.ScopeExecWrite}},
+		{http.MethodPost, "wait", []string{poolagentauth.ScopeExecRead}},
+	} {
+		t.Run(tc.suffix, func(t *testing.T) {
+			ctx := context.Background()
+			stubs := newRouterTestServices()
+			stubs.sandboxes["sandbox-1"] = model.Sandbox{
+				ID:              "sandbox-1",
+				ProjectID:       testDefaultProjectID,
+				CreatedByUserID: service.DefaultUserID,
+				Name:            "sandbox",
+				PoolID:          "pool-1",
+			}
+			projectID := testDefaultProjectID
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/execs/exec-1/" + tc.suffix
+				if r.URL.Path != wantPath || r.Method != tc.method {
+					t.Errorf("upstream = %s %q, want %s %q", r.Method, r.URL.Path, tc.method, wantPath)
+				}
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			t.Cleanup(upstream.Close)
+			stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", nil)
+			stubs.sandboxLease.ForwardAuthTokenProvider = func(context.Context) (string, error) {
+				return "sandbox-agent-token", nil
+			}
+
+			router, err := NewRouter(services.Services{
+				Projects:       stubs,
+				HarnessConfigs: stubs,
+				Sandboxes:      stubs,
+				Providers:      stubs,
+				Pools:          stubs,
+				Jobs:           stubs,
+			})
+			if err != nil {
+				t.Fatalf("new router: %v", err)
+			}
+			resp := httptest.NewRecorder()
+			req := scopedUserRequest(ctx, tc.method, "/api/projects/"+projectID+"/sandboxes/sandbox-1/execs/exec-1/"+tc.suffix, nil, tc.want...)
+			router.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusOK {
+				t.Fatalf("%s %s status = %d, body = %s", tc.method, tc.suffix, resp.Code, resp.Body.String())
+			}
+			if !slices.Equal(stubs.sandboxScopes, tc.want) {
+				t.Fatalf("sandbox HTTP scopes = %#v, want %#v", stubs.sandboxScopes, tc.want)
+			}
+		})
+	}
+}
+
 func TestNewAppStartsWithDefaults(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()

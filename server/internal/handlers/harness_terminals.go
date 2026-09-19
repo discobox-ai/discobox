@@ -32,6 +32,10 @@ func (h *Handler) GetSandboxExec(context.Context, serverapi.GetSandboxExecParams
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+func (h *Handler) GetSandboxExecScreen(context.Context, serverapi.GetSandboxExecScreenParams) (serverapi.GetSandboxExecScreenRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) GetSandboxExecResources(context.Context, serverapi.GetSandboxExecResourcesParams) (serverapi.GetSandboxExecResourcesRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
@@ -103,11 +107,19 @@ func (h *Handler) RestartSandboxService(context.Context, serverapi.RestartSandbo
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+func (h *Handler) SendSandboxExecInput(context.Context, *serverapi.SandboxExecInputBody, serverapi.SendSandboxExecInputParams) (serverapi.SendSandboxExecInputRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) StartSandboxExec(context.Context, serverapi.StartSandboxExecParams) (serverapi.StartSandboxExecRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
 func (h *Handler) StreamSandboxExecResources(context.Context, serverapi.StreamSandboxExecResourcesParams) (serverapi.StreamSandboxExecResourcesRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) WaitSandboxExec(context.Context, *serverapi.SandboxExecWaitBody, serverapi.WaitSandboxExecParams) (serverapi.WaitSandboxExecRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 

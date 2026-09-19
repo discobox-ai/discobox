@@ -709,6 +709,52 @@ func (o OptFloat64) Or(d float64) float64 {
 	return d
 }
 
+// NewOptHarnessHookLog returns new OptHarnessHookLog with value set to v.
+func NewOptHarnessHookLog(v HarnessHookLog) OptHarnessHookLog {
+	return OptHarnessHookLog{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessHookLog is optional HarnessHookLog.
+type OptHarnessHookLog struct {
+	Value HarnessHookLog
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessHookLog was set.
+func (o OptHarnessHookLog) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessHookLog) Reset() {
+	var v HarnessHookLog
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessHookLog) SetTo(v HarnessHookLog) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessHookLog) Get() (v HarnessHookLog, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessHookLog) Or(d HarnessHookLog) HarnessHookLog {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptInt returns new OptInt with value set to v.
 func NewOptInt(v int) OptInt {
 	return OptInt{
@@ -2695,6 +2741,69 @@ func (s *SandboxExecEventsResponse) SetEvents(val []SandboxExecEvent) {
 	s.Events = val
 }
 
+// Ref: #/components/schemas/SandboxExecInputBody
+type SandboxExecInputBody struct {
+	// Parts written in order.
+	Input []SandboxExecInputPart `json:"input"`
+}
+
+// GetInput returns the value of Input.
+func (s *SandboxExecInputBody) GetInput() []SandboxExecInputPart {
+	return s.Input
+}
+
+// SetInput sets the value of Input.
+func (s *SandboxExecInputBody) SetInput(val []SandboxExecInputPart) {
+	s.Input = val
+}
+
+// One piece of input, naming exactly one of text or key.
+// Ref: #/components/schemas/SandboxExecInputPart
+type SandboxExecInputPart struct {
+	// One named key: Enter, Tab, Escape, Backspace, Delete, Up, Down, Left, Right, Home, End, PageUp,
+	// PageDown, or C-a through C-z.
+	Key OptString `json:"key"`
+	// Text, delivered as a bracketed paste when the program enabled one.
+	Text OptString `json:"text"`
+}
+
+// GetKey returns the value of Key.
+func (s *SandboxExecInputPart) GetKey() OptString {
+	return s.Key
+}
+
+// GetText returns the value of Text.
+func (s *SandboxExecInputPart) GetText() OptString {
+	return s.Text
+}
+
+// SetKey sets the value of Key.
+func (s *SandboxExecInputPart) SetKey(val OptString) {
+	s.Key = val
+}
+
+// SetText sets the value of Text.
+func (s *SandboxExecInputPart) SetText(val OptString) {
+	s.Text = val
+}
+
+// Ref: #/components/schemas/SandboxExecInputResult
+type SandboxExecInputResult struct {
+	// The point just before the input was delivered, for a wait on what it causes to pass as until.after
+	// exactly as given.
+	ResumeAfter string `json:"resumeAfter"`
+}
+
+// GetResumeAfter returns the value of ResumeAfter.
+func (s *SandboxExecInputResult) GetResumeAfter() string {
+	return s.ResumeAfter
+}
+
+// SetResumeAfter sets the value of ResumeAfter.
+func (s *SandboxExecInputResult) SetResumeAfter(val string) {
+	s.ResumeAfter = val
+}
+
 // Ref: #/components/schemas/SandboxExecLogEntry
 type SandboxExecLogEntry struct {
 	// Base64-encoded raw stream bytes.
@@ -2813,6 +2922,141 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 	return m
 }
 
+// A terminal's screen as a person looking at it would read it (ADR 0137 §1).
+// Ref: #/components/schemas/SandboxExecScreen
+type SandboxExecScreen struct {
+	// Whether the program is on the alternate screen, which has no scrollback.
+	AltScreen bool  `json:"altScreen"`
+	Cols      int64 `json:"cols"`
+	// Zero-based cursor column.
+	CursorCol int64 `json:"cursorCol"`
+	// Zero-based cursor row.
+	CursorRow     int64 `json:"cursorRow"`
+	CursorVisible bool  `json:"cursorVisible"`
+	// Whether the program has exited. Its last screen stays readable while the terminal lingers after
+	// exit.
+	Exited bool `json:"exited"`
+	// The visible screen, one string per row, trailing blanks trimmed.
+	Lines []string `json:"lines"`
+	// When the program last wrote output.
+	OutputAt OptDateTime `json:"outputAt"`
+	Rows     int64       `json:"rows"`
+	// Lines above the screen, oldest first.
+	Scrollback []string `json:"scrollback"`
+	// The window title the program last set.
+	Title OptString `json:"title"`
+}
+
+// GetAltScreen returns the value of AltScreen.
+func (s *SandboxExecScreen) GetAltScreen() bool {
+	return s.AltScreen
+}
+
+// GetCols returns the value of Cols.
+func (s *SandboxExecScreen) GetCols() int64 {
+	return s.Cols
+}
+
+// GetCursorCol returns the value of CursorCol.
+func (s *SandboxExecScreen) GetCursorCol() int64 {
+	return s.CursorCol
+}
+
+// GetCursorRow returns the value of CursorRow.
+func (s *SandboxExecScreen) GetCursorRow() int64 {
+	return s.CursorRow
+}
+
+// GetCursorVisible returns the value of CursorVisible.
+func (s *SandboxExecScreen) GetCursorVisible() bool {
+	return s.CursorVisible
+}
+
+// GetExited returns the value of Exited.
+func (s *SandboxExecScreen) GetExited() bool {
+	return s.Exited
+}
+
+// GetLines returns the value of Lines.
+func (s *SandboxExecScreen) GetLines() []string {
+	return s.Lines
+}
+
+// GetOutputAt returns the value of OutputAt.
+func (s *SandboxExecScreen) GetOutputAt() OptDateTime {
+	return s.OutputAt
+}
+
+// GetRows returns the value of Rows.
+func (s *SandboxExecScreen) GetRows() int64 {
+	return s.Rows
+}
+
+// GetScrollback returns the value of Scrollback.
+func (s *SandboxExecScreen) GetScrollback() []string {
+	return s.Scrollback
+}
+
+// GetTitle returns the value of Title.
+func (s *SandboxExecScreen) GetTitle() OptString {
+	return s.Title
+}
+
+// SetAltScreen sets the value of AltScreen.
+func (s *SandboxExecScreen) SetAltScreen(val bool) {
+	s.AltScreen = val
+}
+
+// SetCols sets the value of Cols.
+func (s *SandboxExecScreen) SetCols(val int64) {
+	s.Cols = val
+}
+
+// SetCursorCol sets the value of CursorCol.
+func (s *SandboxExecScreen) SetCursorCol(val int64) {
+	s.CursorCol = val
+}
+
+// SetCursorRow sets the value of CursorRow.
+func (s *SandboxExecScreen) SetCursorRow(val int64) {
+	s.CursorRow = val
+}
+
+// SetCursorVisible sets the value of CursorVisible.
+func (s *SandboxExecScreen) SetCursorVisible(val bool) {
+	s.CursorVisible = val
+}
+
+// SetExited sets the value of Exited.
+func (s *SandboxExecScreen) SetExited(val bool) {
+	s.Exited = val
+}
+
+// SetLines sets the value of Lines.
+func (s *SandboxExecScreen) SetLines(val []string) {
+	s.Lines = val
+}
+
+// SetOutputAt sets the value of OutputAt.
+func (s *SandboxExecScreen) SetOutputAt(val OptDateTime) {
+	s.OutputAt = val
+}
+
+// SetRows sets the value of Rows.
+func (s *SandboxExecScreen) SetRows(val int64) {
+	s.Rows = val
+}
+
+// SetScrollback sets the value of Scrollback.
+func (s *SandboxExecScreen) SetScrollback(val []string) {
+	s.Scrollback = val
+}
+
+// SetTitle sets the value of Title.
+func (s *SandboxExecScreen) SetTitle(val OptString) {
+	s.Title = val
+}
+
 // Current observed exec runtime status. installing is a terminal-layer
 // phase: the exec record exists and its hooks/files are still being
 // prepared, before the harness process is launched (starting -> running).
@@ -2883,6 +3127,197 @@ func (s *SandboxExecStatus) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/SandboxExecWaitBody
+type SandboxExecWaitBody struct {
+	// How long to wait, at most 60 seconds.
+	TimeoutSeconds int64                `json:"timeoutSeconds"`
+	Until          SandboxExecWaitUntil `json:"until"`
+}
+
+// GetTimeoutSeconds returns the value of TimeoutSeconds.
+func (s *SandboxExecWaitBody) GetTimeoutSeconds() int64 {
+	return s.TimeoutSeconds
+}
+
+// GetUntil returns the value of Until.
+func (s *SandboxExecWaitBody) GetUntil() SandboxExecWaitUntil {
+	return s.Until
+}
+
+// SetTimeoutSeconds sets the value of TimeoutSeconds.
+func (s *SandboxExecWaitBody) SetTimeoutSeconds(val int64) {
+	s.TimeoutSeconds = val
+}
+
+// SetUntil sets the value of Until.
+func (s *SandboxExecWaitBody) SetUntil(val SandboxExecWaitUntil) {
+	s.Until = val
+}
+
+// Ref: #/components/schemas/SandboxExecWaitResult
+type SandboxExecWaitResult struct {
+	// The hook that ended the wait, when one did.
+	Hook OptHarnessHookLog `json:"hook"`
+	// When the program last wrote output.
+	OutputAt OptDateTime                 `json:"outputAt"`
+	Reason   SandboxExecWaitResultReason `json:"reason"`
+	// Where the next wait resumes, to pass as until.after exactly as given. After a hook, just past that
+	// hook; otherwise the point this wait counted from, so a hook recorded while it returned is still
+	// found.
+	ResumeAfter string `json:"resumeAfter"`
+}
+
+// GetHook returns the value of Hook.
+func (s *SandboxExecWaitResult) GetHook() OptHarnessHookLog {
+	return s.Hook
+}
+
+// GetOutputAt returns the value of OutputAt.
+func (s *SandboxExecWaitResult) GetOutputAt() OptDateTime {
+	return s.OutputAt
+}
+
+// GetReason returns the value of Reason.
+func (s *SandboxExecWaitResult) GetReason() SandboxExecWaitResultReason {
+	return s.Reason
+}
+
+// GetResumeAfter returns the value of ResumeAfter.
+func (s *SandboxExecWaitResult) GetResumeAfter() string {
+	return s.ResumeAfter
+}
+
+// SetHook sets the value of Hook.
+func (s *SandboxExecWaitResult) SetHook(val OptHarnessHookLog) {
+	s.Hook = val
+}
+
+// SetOutputAt sets the value of OutputAt.
+func (s *SandboxExecWaitResult) SetOutputAt(val OptDateTime) {
+	s.OutputAt = val
+}
+
+// SetReason sets the value of Reason.
+func (s *SandboxExecWaitResult) SetReason(val SandboxExecWaitResultReason) {
+	s.Reason = val
+}
+
+// SetResumeAfter sets the value of ResumeAfter.
+func (s *SandboxExecWaitResult) SetResumeAfter(val string) {
+	s.ResumeAfter = val
+}
+
+type SandboxExecWaitResultReason string
+
+const (
+	SandboxExecWaitResultReasonHook    SandboxExecWaitResultReason = "hook"
+	SandboxExecWaitResultReasonQuiet   SandboxExecWaitResultReason = "quiet"
+	SandboxExecWaitResultReasonExit    SandboxExecWaitResultReason = "exit"
+	SandboxExecWaitResultReasonTimeout SandboxExecWaitResultReason = "timeout"
+)
+
+// AllValues returns all SandboxExecWaitResultReason values.
+func (SandboxExecWaitResultReason) AllValues() []SandboxExecWaitResultReason {
+	return []SandboxExecWaitResultReason{
+		SandboxExecWaitResultReasonHook,
+		SandboxExecWaitResultReasonQuiet,
+		SandboxExecWaitResultReasonExit,
+		SandboxExecWaitResultReasonTimeout,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxExecWaitResultReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxExecWaitResultReasonHook:
+		return []byte(s), nil
+	case SandboxExecWaitResultReasonQuiet:
+		return []byte(s), nil
+	case SandboxExecWaitResultReasonExit:
+		return []byte(s), nil
+	case SandboxExecWaitResultReasonTimeout:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxExecWaitResultReason) UnmarshalText(data []byte) error {
+	switch SandboxExecWaitResultReason(data) {
+	case SandboxExecWaitResultReasonHook:
+		*s = SandboxExecWaitResultReasonHook
+		return nil
+	case SandboxExecWaitResultReasonQuiet:
+		*s = SandboxExecWaitResultReasonQuiet
+		return nil
+	case SandboxExecWaitResultReasonExit:
+		*s = SandboxExecWaitResultReasonExit
+		return nil
+	case SandboxExecWaitResultReasonTimeout:
+		*s = SandboxExecWaitResultReasonTimeout
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The conditions a wait ends on; the first to hold ends it.
+// Ref: #/components/schemas/SandboxExecWaitUntil
+type SandboxExecWaitUntil struct {
+	// Only hooks recorded after this point count — the resumeAfter a previous wait or input answered
+	// with, passed back as given, so nothing recorded between two calls is missed. Absent, only hooks
+	// recorded after the wait began.
+	After OptString `json:"after"`
+	// The exec has ended.
+	Exit OptBool `json:"exit"`
+	// Harness hook event names from this terminal, such as Claude Code's Stop and Notification. The
+	// caller names them; the server holds no mapping of events to meanings.
+	HookEvents []string `json:"hookEvents"`
+	// Neither output nor input for this many seconds, counted from no earlier than the start of the wait.
+	QuietSeconds OptInt64 `json:"quietSeconds"`
+}
+
+// GetAfter returns the value of After.
+func (s *SandboxExecWaitUntil) GetAfter() OptString {
+	return s.After
+}
+
+// GetExit returns the value of Exit.
+func (s *SandboxExecWaitUntil) GetExit() OptBool {
+	return s.Exit
+}
+
+// GetHookEvents returns the value of HookEvents.
+func (s *SandboxExecWaitUntil) GetHookEvents() []string {
+	return s.HookEvents
+}
+
+// GetQuietSeconds returns the value of QuietSeconds.
+func (s *SandboxExecWaitUntil) GetQuietSeconds() OptInt64 {
+	return s.QuietSeconds
+}
+
+// SetAfter sets the value of After.
+func (s *SandboxExecWaitUntil) SetAfter(val OptString) {
+	s.After = val
+}
+
+// SetExit sets the value of Exit.
+func (s *SandboxExecWaitUntil) SetExit(val OptBool) {
+	s.Exit = val
+}
+
+// SetHookEvents sets the value of HookEvents.
+func (s *SandboxExecWaitUntil) SetHookEvents(val []string) {
+	s.HookEvents = val
+}
+
+// SetQuietSeconds sets the value of QuietSeconds.
+func (s *SandboxExecWaitUntil) SetQuietSeconds(val OptInt64) {
+	s.QuietSeconds = val
 }
 
 // Ref: #/components/schemas/SandboxExecsResponse

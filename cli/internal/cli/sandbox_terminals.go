@@ -49,6 +49,9 @@ func (a *App) newSandboxTerminalsCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxTerminalCreateCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalAttachCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalLogsCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalScreenCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalInputCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalWaitCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalDeleteCommand(&sandboxID))
 	return cmd
 }

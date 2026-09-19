@@ -337,6 +337,14 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
 	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (GetSandboxExecResourcesRes, error)
+	// GetSandboxExecScreen invokes get-sandbox-exec-screen operation.
+	//
+	// The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent
+	// scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR
+	// 0137 §1). 409 for an exec with no terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error)
 	// GetSandboxProviderInstance invokes get-sandbox-provider-instance operation.
 	//
 	// Get a sandbox provider instance.
@@ -654,6 +662,14 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/secret-grants/{grantId}
 	RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (RevokeSecretGrantRes, error)
+	// SendSandboxExecInput invokes send-sandbox-exec-input operation.
+	//
+	// Writes text and named keys to the terminal, in order, the way typing into an attach does, and
+	// counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program
+	// enabled one. 409 for an exec with no terminal or closed input.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+	SendSandboxExecInput(ctx context.Context, request *SandboxExecInputBody, params SendSandboxExecInputParams) (SendSandboxExecInputRes, error)
 	// SetDefaultHarnessConfig invokes set-default-harness-config operation.
 	//
 	// Set the project default harness config.
@@ -802,6 +818,15 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
 	UpgradeSandbox(ctx context.Context, request *UpgradeSandboxBody, params UpgradeSandboxParams) (UpgradeSandboxRes, error)
+	// WaitSandboxExec invokes wait-sandbox-exec operation.
+	//
+	// Blocks until one of the given conditions holds — a named harness hook event from this terminal,
+	// no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137
+	// §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after,
+	// so nothing recorded between two calls is missed.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+	WaitSandboxExec(ctx context.Context, request *SandboxExecWaitBody, params WaitSandboxExecParams) (WaitSandboxExecRes, error)
 }
 
 // Client implements OAS client.
@@ -5885,6 +5910,160 @@ func (c *Client) sendGetSandboxExecResources(ctx context.Context, params GetSand
 
 	stage = "DecodeResponse"
 	result, err := decodeGetSandboxExecResourcesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetSandboxExecScreen invokes get-sandbox-exec-screen operation.
+//
+// The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent
+// scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR
+// 0137 §1). 409 for an exec with no terminal.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+func (c *Client) GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error) {
+	res, err := c.sendGetSandboxExecScreen(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (res GetSandboxExecScreenRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-sandbox-exec-screen"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSandboxExecScreenOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/execs/"
+	{
+		// Encode "execId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "execId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ExecId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/screen"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "scrollback" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "scrollback",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Scrollback.Get(); ok {
+				return e.EncodeValue(conv.Int64ToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSandboxExecScreenResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -11571,6 +11750,142 @@ func (c *Client) sendRevokeSecretGrant(ctx context.Context, params RevokeSecretG
 	return result, nil
 }
 
+// SendSandboxExecInput invokes send-sandbox-exec-input operation.
+//
+// Writes text and named keys to the terminal, in order, the way typing into an attach does, and
+// counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program
+// enabled one. 409 for an exec with no terminal or closed input.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+func (c *Client) SendSandboxExecInput(ctx context.Context, request *SandboxExecInputBody, params SendSandboxExecInputParams) (SendSandboxExecInputRes, error) {
+	res, err := c.sendSendSandboxExecInput(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendSendSandboxExecInput(ctx context.Context, request *SandboxExecInputBody, params SendSandboxExecInputParams) (res SendSandboxExecInputRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("send-sandbox-exec-input"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SendSandboxExecInputOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/execs/"
+	{
+		// Encode "execId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "execId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ExecId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/input"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeSendSandboxExecInputRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSendSandboxExecInputResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // SetDefaultHarnessConfig invokes set-default-harness-config operation.
 //
 // Set the project default harness config.
@@ -14220,6 +14535,143 @@ func (c *Client) sendUpgradeSandbox(ctx context.Context, request *UpgradeSandbox
 
 	stage = "DecodeResponse"
 	result, err := decodeUpgradeSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// WaitSandboxExec invokes wait-sandbox-exec operation.
+//
+// Blocks until one of the given conditions holds — a named harness hook event from this terminal,
+// no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137
+// §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after,
+// so nothing recorded between two calls is missed.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+func (c *Client) WaitSandboxExec(ctx context.Context, request *SandboxExecWaitBody, params WaitSandboxExecParams) (WaitSandboxExecRes, error) {
+	res, err := c.sendWaitSandboxExec(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendWaitSandboxExec(ctx context.Context, request *SandboxExecWaitBody, params WaitSandboxExecParams) (res WaitSandboxExecRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("wait-sandbox-exec"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, WaitSandboxExecOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/execs/"
+	{
+		// Encode "execId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "execId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ExecId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/wait"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeWaitSandboxExecRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeWaitSandboxExecResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

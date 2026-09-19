@@ -52,6 +52,7 @@ const (
 	GetSandboxCredentialRequestOperation      OperationName = "GetSandboxCredentialRequest"
 	GetSandboxExecOperation                   OperationName = "GetSandboxExec"
 	GetSandboxExecResourcesOperation          OperationName = "GetSandboxExecResources"
+	GetSandboxExecScreenOperation             OperationName = "GetSandboxExecScreen"
 	GetSandboxProviderInstanceOperation       OperationName = "GetSandboxProviderInstance"
 	GetSandboxServiceOperation                OperationName = "GetSandboxService"
 	GetSecretOperation                        OperationName = "GetSecret"
@@ -100,6 +101,7 @@ const (
 	RestartSandboxOperation                   OperationName = "RestartSandbox"
 	RestartSandboxServiceOperation            OperationName = "RestartSandboxService"
 	RevokeSecretGrantOperation                OperationName = "RevokeSecretGrant"
+	SendSandboxExecInputOperation             OperationName = "SendSandboxExecInput"
 	SetDefaultHarnessConfigOperation          OperationName = "SetDefaultHarnessConfig"
 	SetDefaultPoolOperation                   OperationName = "SetDefaultPool"
 	SetDefaultProjectOperation                OperationName = "SetDefaultProject"
@@ -123,4 +125,5 @@ const (
 	UpdateSandboxProviderInstanceOperation    OperationName = "UpdateSandboxProviderInstance"
 	UpdateSecretOperation                     OperationName = "UpdateSecret"
 	UpgradeSandboxOperation                   OperationName = "UpgradeSandbox"
+	WaitSandboxExecOperation                  OperationName = "WaitSandboxExec"
 )

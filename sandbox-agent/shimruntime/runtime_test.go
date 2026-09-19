@@ -160,7 +160,7 @@ func TestScreenPanicDropsScreenAndKeepsStreaming(t *testing.T) {
 	r.runScreenLocked(func(*screenBuffer) { panic("emulator bug") })
 	r.mu.Unlock()
 
-	if r.hasScreen() {
+	if r.HasScreen() {
 		t.Fatal("screen should be dropped after an emulator panic")
 	}
 	if !r.hasTTY() {

@@ -23,11 +23,17 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	// starts one (requireRunning).
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.requireRunning(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/exec-events", service.requireRunning(service.sandboxAgentProxyHandler()))
+	// Reading a terminal's screen, or waiting on it, is not use (ADR 0137 §2):
+	// an orchestrator polling its workers must not start one idle stop put
+	// down, or keep one from ever stopping. Typing into it is use, and does.
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/screen", service.requireRunning(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/wait", service.requireRunning(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodDelete, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/logs", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/input", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(awaitContainer, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(awaitContainer, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/start", service.autoStart(failFast, service.sandboxAgentProxyHandler()))
@@ -184,6 +190,10 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 	if strings.Contains(r.URL.Path, "/execs") {
 		if strings.HasSuffix(r.URL.Path, "/attach") {
 			return ScopeExecWrite
+		}
+		// A wait is a POST only because it carries a body; it reads (ADR 0137).
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wait") {
+			return ScopeExecRead
 		}
 		switch r.Method {
 		case http.MethodGet:

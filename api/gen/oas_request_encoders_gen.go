@@ -370,6 +370,20 @@ func encodeRestartSandboxRequest(
 	return nil
 }
 
+func encodeSendSandboxExecInputRequest(
+	req *SandboxExecInputBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeSetHarnessConfigSecretBindingRequest(
 	req *SetHarnessConfigSecretBindingBody,
 	r *http.Request,
@@ -540,6 +554,20 @@ func encodeUpdateSecretRequest(
 
 func encodeUpgradeSandboxRequest(
 	req *UpgradeSandboxBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeWaitSandboxExecRequest(
+	req *SandboxExecWaitBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

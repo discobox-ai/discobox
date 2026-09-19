@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -85,6 +86,68 @@ func StartJSON[T any](ctx context.Context, socketPath string) (T, error) {
 		return zero, fmt.Errorf("start shim: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 	var out T
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return zero, err
+	}
+	return out, nil
+}
+
+// ShimError is a shim answering a call with an error status.
+type ShimError struct {
+	Status  int
+	Message string
+}
+
+func (e *ShimError) Error() string {
+	return fmt.Sprintf("shim: %s: %s", http.StatusText(e.Status), e.Message)
+}
+
+// CallJSON makes one request of a shim's socket with an optional JSON body and
+// decodes a JSON answer into T. A 204 decodes nothing. An error status comes
+// back as a *ShimError, so a caller can tell a refusal from a shim that is gone.
+func CallJSON[T any](ctx context.Context, socketPath, method, path string, body any) (T, error) {
+	var zero T
+	shimConn, err := Dial(ctx, socketPath, defaultDialTimeout)
+	if err != nil {
+		return zero, err
+	}
+	defer shimConn.Close()
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return zero, err
+		}
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, "http://unix"+path, reader)
+	if err != nil {
+		return zero, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	// The dial's deadline covers connecting; a wait holds the connection far
+	// longer, and ctx is what bounds it.
+	_ = shimConn.SetDeadline(time.Time{})
+	stop := context.AfterFunc(ctx, func() { _ = shimConn.Close() })
+	defer stop()
+	if err := req.Write(shimConn); err != nil {
+		return zero, err
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(shimConn), req)
+	if err != nil {
+		return zero, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		return zero, &ShimError{Status: resp.StatusCode, Message: strings.TrimSpace(string(message))}
+	}
+	var out T
+	if resp.StatusCode == http.StatusNoContent {
+		return out, nil
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return zero, err
 	}

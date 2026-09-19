@@ -206,6 +206,10 @@ func requiredRequestScope(r *http.Request) string {
 		if strings.HasSuffix(r.URL.Path, "/attach") {
 			return ScopeExecWrite
 		}
+		// A wait is a POST only because it carries a body; it reads (ADR 0137).
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wait") {
+			return ScopeExecRead
+		}
 		switch r.Method {
 		case http.MethodGet:
 			return ScopeExecRead

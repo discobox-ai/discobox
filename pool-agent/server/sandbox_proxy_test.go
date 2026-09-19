@@ -98,6 +98,49 @@ func TestSandboxHarnessHookProxyRequiresExecReadScope(t *testing.T) {
 	}
 }
 
+// A terminal's screen, input, and wait are forwarded (ADR 0137): screen and
+// wait on exec:read, a wait being a POST only for its body, input on exec:write.
+func TestSandboxTerminalProxyScopes(t *testing.T) {
+	projectID := "project-1"
+	poolID := "pool-1"
+	sandboxID := "sandbox-1"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(upstream.Close)
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, sign := testPoolTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, PoolID: poolID},
+		Runtime:               proxyTestRuntime{MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(), baseURL: baseURL},
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	for _, tc := range []struct {
+		method, suffix, scope string
+		want                  int
+	}{
+		{http.MethodGet, "screen", ScopeExecRead, http.StatusOK},
+		{http.MethodPost, "wait", ScopeExecRead, http.StatusOK},
+		{http.MethodPost, "input", ScopeExecRead, http.StatusForbidden},
+		{http.MethodPost, "input", ScopeExecWrite, http.StatusOK},
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), tc.method, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/execs/exec-1/"+tc.suffix, strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer "+sign(projectID, poolID, sandboxID, tc.scope))
+		req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		if resp.Code != tc.want {
+			t.Errorf("%s %s with %s = %d, want %d; body = %s", tc.method, tc.suffix, tc.scope, resp.Code, tc.want, resp.Body.String())
+		}
+	}
+}
+
 func TestSandboxExecProxyRequiresExecScope(t *testing.T) {
 	projectID := "project-1"
 	poolID := "pool-1"

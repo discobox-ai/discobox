@@ -441,6 +441,47 @@ func restamp(ctx context.Context, t *testing.T, st *Store, table string, out ...
 	}
 }
 
+// A terminal wait finds the first hook it named that was recorded after a
+// point, behind any number it did not name, and is woken when one is recorded
+// (ADR 0137 §3).
+func TestFirstHarnessHookSinceAndSignal(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "harness.db"))
+	record := func(terminalID, event string) HarnessHookRecord {
+		t.Helper()
+		signal := st.HarnessHookSignal()
+		hook, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: terminalID, Provider: "claude", Event: event})
+		if err != nil {
+			t.Fatalf("record hook: %v", err)
+		}
+		select {
+		case <-signal:
+		default:
+			t.Fatalf("recording %s did not signal", event)
+		}
+		return hook
+	}
+	first := record("exec_1", "UserPromptSubmit")
+	record("exec_2", "Stop")
+	// More hooks it did not name than any page would hold.
+	for range 600 {
+		record("exec_1", "PreToolUse")
+	}
+	stop := record("exec_1", "Stop")
+	record("exec_1", "Stop")
+
+	got, err := st.FirstHarnessHookSince(ctx, "exec_1", first.CreatedAt, []string{"Stop", "Notification"})
+	if err != nil {
+		t.Fatalf("first hook since: %v", err)
+	}
+	if got == nil || got.ID != stop.ID {
+		t.Fatalf("hook = %+v, want this terminal's first Stop after the prompt, behind the tool calls", got)
+	}
+	if none, err := st.FirstHarnessHookSince(ctx, "exec_1", first.CreatedAt, []string{"SessionEnd"}); err != nil || none != nil {
+		t.Fatalf("hook = %+v, %v; want none for an event never recorded", none, err)
+	}
+}
+
 func TestListHarnessHooksFiltersAndReadsForward(t *testing.T) {
 	ctx := context.Background()
 	st := openStore(ctx, t, filepath.Join(t.TempDir(), "hooks.db"))

@@ -17,7 +17,13 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn33AllowedHeaders = map[string]string{
+	rn28AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn37AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn36AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
 )
@@ -306,6 +312,35 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											return
 										}
 
+									case 'i': // Prefix: "input"
+
+										if l := len("input"); len(elem) >= l && elem[0:l] == "input" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch r.Method {
+											case "POST":
+												s.handleSendSandboxExecInputRequest([3]string{
+													args[0],
+													args[1],
+													args[2],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "POST",
+													allowedHeaders: rn28AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+
 									case 'l': // Prefix: "logs"
 
 										if l := len("logs"); len(elem) >= l && elem[0:l] == "logs" {
@@ -437,9 +472,81 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 										}
 
-									case 's': // Prefix: "start"
+									case 's': // Prefix: "s"
 
-										if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+										if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case 'c': // Prefix: "creen"
+
+											if l := len("creen"); len(elem) >= l && elem[0:l] == "creen" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "GET":
+													s.handleGetSandboxExecScreenRequest([3]string{
+														args[0],
+														args[1],
+														args[2],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "GET",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
+										case 't': // Prefix: "tart"
+
+											if l := len("tart"); len(elem) >= l && elem[0:l] == "tart" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "POST":
+													s.handleStartSandboxExecRequest([3]string{
+														args[0],
+														args[1],
+														args[2],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "POST",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
+										}
+
+									case 'w': // Prefix: "wait"
+
+										if l := len("wait"); len(elem) >= l && elem[0:l] == "wait" {
 											elem = elem[l:]
 										} else {
 											break
@@ -449,7 +556,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											// Leaf node.
 											switch r.Method {
 											case "POST":
-												s.handleStartSandboxExecRequest([3]string{
+												s.handleWaitSandboxExecRequest([3]string{
 													args[0],
 													args[1],
 													args[2],
@@ -457,8 +564,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: nil,
-													acceptPost:     "",
+													allowedHeaders: rn37AllowedHeaders,
+													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
 											}
@@ -521,7 +628,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "PATCH",
-									allowedHeaders: rn33AllowedHeaders,
+									allowedHeaders: rn36AllowedHeaders,
 									acceptPost:     "",
 									acceptPatch:    "application/json",
 								})
@@ -1141,6 +1248,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											}
 										}
 
+									case 'i': // Prefix: "input"
+
+										if l := len("input"); len(elem) >= l && elem[0:l] == "input" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch method {
+											case "POST":
+												r.name = SendSandboxExecInputOperation
+												r.summary = "Type into a terminal."
+												r.operationID = "send-sandbox-exec-input"
+												r.operationGroup = ""
+												r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input"
+												r.args = args
+												r.count = 3
+												return r, true
+											default:
+												return
+											}
+										}
+
 									case 'l': // Prefix: "logs"
 
 										if l := len("logs"); len(elem) >= l && elem[0:l] == "logs" {
@@ -1256,9 +1388,73 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 										}
 
-									case 's': // Prefix: "start"
+									case 's': // Prefix: "s"
 
-										if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+										if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case 'c': // Prefix: "creen"
+
+											if l := len("creen"); len(elem) >= l && elem[0:l] == "creen" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "GET":
+													r.name = GetSandboxExecScreenOperation
+													r.summary = "Read a terminal's screen as text."
+													r.operationID = "get-sandbox-exec-screen"
+													r.operationGroup = ""
+													r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen"
+													r.args = args
+													r.count = 3
+													return r, true
+												default:
+													return
+												}
+											}
+
+										case 't': // Prefix: "tart"
+
+											if l := len("tart"); len(elem) >= l && elem[0:l] == "tart" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "POST":
+													r.name = StartSandboxExecOperation
+													r.summary = "Start a prepared sandbox exec."
+													r.operationID = "start-sandbox-exec"
+													r.operationGroup = ""
+													r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start"
+													r.args = args
+													r.count = 3
+													return r, true
+												default:
+													return
+												}
+											}
+
+										}
+
+									case 'w': // Prefix: "wait"
+
+										if l := len("wait"); len(elem) >= l && elem[0:l] == "wait" {
 											elem = elem[l:]
 										} else {
 											break
@@ -1268,11 +1464,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											// Leaf node.
 											switch method {
 											case "POST":
-												r.name = StartSandboxExecOperation
-												r.summary = "Start a prepared sandbox exec."
-												r.operationID = "start-sandbox-exec"
+												r.name = WaitSandboxExecOperation
+												r.summary = "Wait for something to happen in a terminal."
+												r.operationID = "wait-sandbox-exec"
 												r.operationGroup = ""
-												r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start"
+												r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait"
 												r.args = args
 												r.count = 3
 												return r, true

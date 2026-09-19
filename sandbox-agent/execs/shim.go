@@ -46,13 +46,16 @@ type ShimConfig struct {
 }
 
 type shimRuntime struct {
-	cfg       ShimConfig
-	proc      *procio.Process
-	logger    *AsyncLogger
-	server    *http.Server
-	listener  net.Listener
-	done      chan struct{}
-	doneOnce  sync.Once
+	cfg      ShimConfig
+	proc     *procio.Process
+	logger   *AsyncLogger
+	server   *http.Server
+	listener net.Listener
+	done     chan struct{}
+	doneOnce sync.Once
+	// exited closes once the process has exited and its output is all read,
+	// which is well before done: the shim lingers after exit for late attachers.
+	exited    chan struct{}
 	closeOnce sync.Once
 	outputWG  sync.WaitGroup
 	startMu   sync.Mutex
@@ -76,7 +79,7 @@ func (r *shimRuntime) touchAccess() {
 }
 
 func RunShim(ctx context.Context, cfg ShimConfig) error {
-	r := &shimRuntime{cfg: cfg, done: make(chan struct{})}
+	r := &shimRuntime{cfg: cfg, done: make(chan struct{}), exited: make(chan struct{})}
 	r.stream = shimruntime.New("discobox-sandbox-exec", r.done, r.handleAttachFrame)
 	if err := r.start(ctx); err != nil {
 		return err
@@ -138,8 +141,8 @@ func (r *shimRuntime) start(ctx context.Context) error {
 	r.server = &http.Server{
 		Handler:           r.handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       shimWriteTimeout,
+		WriteTimeout:      shimWriteTimeout,
 		IdleTimeout:       120 * time.Second,
 	}
 	return nil
@@ -187,8 +190,117 @@ func (r *shimRuntime) handler() http.Handler {
 	mux.HandleFunc("GET /status", r.handleStatus)
 	mux.HandleFunc("POST /attach", r.handleAttach)
 	mux.HandleFunc("POST /start", r.handleStart)
+	// A terminal read, typed into, and waited on without attaching (ADR 0137).
+	mux.HandleFunc("GET /screen", r.handleScreen)
+	mux.HandleFunc("POST /input", r.handleInput)
+	mux.HandleFunc("POST /wait", r.handleWait)
 	return mux
 }
+
+// ShimInput is the body of a shim's POST /input.
+type ShimInput struct {
+	Input []shimruntime.InputPart `json:"input"`
+}
+
+// ShimWait is the body of a shim's POST /wait: what to wait for, and for how
+// long. The shim answers quiet and exit; hook events are the agent's to watch.
+type ShimWait struct {
+	QuietSeconds   int  `json:"quietSeconds,omitempty"`
+	Exit           bool `json:"exit,omitempty"`
+	TimeoutSeconds int  `json:"timeoutSeconds"`
+}
+
+// ShimWaitResult is what a shim's wait ended on.
+type ShimWaitResult struct {
+	Reason   string     `json:"reason"`
+	OutputAt *time.Time `json:"outputAt,omitempty"`
+}
+
+func (r *shimRuntime) handleScreen(w http.ResponseWriter, req *http.Request) {
+	scrollback, _ := strconv.Atoi(req.URL.Query().Get("scrollback"))
+	screen, err := r.stream.ScreenText(max(scrollback, 0))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	select {
+	case <-r.exited:
+		screen.Exited = true
+	default:
+	}
+	writeJSON(w, screen)
+}
+
+// handleInput writes input to the terminal the way an attach's input frames
+// are written, and counts as access for the same reason typing does.
+func (r *shimRuntime) handleInput(w http.ResponseWriter, req *http.Request) {
+	var body ShimInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, req.Body, maxShimInputBytes)).Decode(&body); err != nil {
+		http.Error(w, "input body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	payload, err := r.stream.EncodeInput(body.Input)
+	switch {
+	case errors.Is(err, shimruntime.ErrNoScreen):
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	r.touchAccess()
+	if err := r.writeInput(payload); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxShimInputBytes bounds one input call. It is a message to an agent, not a
+// file transfer; a file goes in over an attach.
+const maxShimInputBytes = 1 << 20
+
+func (r *shimRuntime) handleWait(w http.ResponseWriter, req *http.Request) {
+	var body ShimWait
+	if err := json.NewDecoder(http.MaxBytesReader(w, req.Body, 4096)).Decode(&body); err != nil {
+		http.Error(w, "wait body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !r.stream.HasScreen() {
+		http.Error(w, shimruntime.ErrNoScreen.Error(), http.StatusConflict)
+		return
+	}
+	timeout := time.Duration(min(max(body.TimeoutSeconds, 0), maxWaitSeconds)) * time.Second
+	// This server bounds a response at shimWriteTimeout, which is shorter than
+	// a wait may hold (ADR 0137 §3): without its own deadline a wait that
+	// outlasts it answers nothing, and the caller reads the connection closing
+	// as an unexpected EOF. Every other route answers at once and keeps the
+	// server's own bound.
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout + shimWriteTimeout)); err != nil {
+		http.Error(w, "wait: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ctx, cancel := context.WithTimeout(req.Context(), timeout)
+	defer cancel()
+	var done <-chan struct{}
+	if body.Exit {
+		done = r.exited
+	}
+	reason := r.stream.AwaitQuiet(ctx, time.Duration(max(body.QuietSeconds, 0))*time.Second, done)
+	result := ShimWaitResult{Reason: reason}
+	if screen, err := r.stream.ScreenText(0); err == nil {
+		result.OutputAt = screen.OutputAt
+	}
+	writeJSON(w, result)
+}
+
+// maxWaitSeconds bounds one wait (ADR 0137 §3): a caller waiting longer asks
+// again.
+const maxWaitSeconds = 60
+
+// shimWriteTimeout bounds a response on this socket. A wait holds the longest
+// of any route and sets its own deadline on top of this one.
+const shimWriteTimeout = 30 * time.Second
 
 func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	r.mu.Lock()
@@ -416,6 +528,7 @@ func (r *shimRuntime) writeInput(payload []byte) error {
 	if _, err := proc.WriteInput(payload); err != nil {
 		return err
 	}
+	r.stream.NoteInput()
 	r.logger.Record(LogStreamInput, payload)
 	return nil
 }
@@ -463,6 +576,7 @@ func (r *shimRuntime) wait() {
 	// Retain the exit frame so a client attaching after this point still receives
 	// the final screen replay and exit code, then notify current attachers.
 	r.stream.MarkExited(payload)
+	close(r.exited)
 	for _, attach := range attachers {
 		_ = attach.WriteFrame(frame.Exit, payload)
 		attach.Close()

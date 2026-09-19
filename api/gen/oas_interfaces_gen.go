@@ -181,6 +181,10 @@ type GetSandboxExecResourcesRes interface {
 	getSandboxExecResourcesRes()
 }
 
+type GetSandboxExecScreenRes interface {
+	getSandboxExecScreenRes()
+}
+
 type GetSandboxProviderInstanceRes interface {
 	getSandboxProviderInstanceRes()
 }
@@ -377,6 +381,10 @@ type RevokeSecretGrantRes interface {
 	revokeSecretGrantRes()
 }
 
+type SendSandboxExecInputRes interface {
+	sendSandboxExecInputRes()
+}
+
 type SetDefaultHarnessConfigRes interface {
 	setDefaultHarnessConfigRes()
 }
@@ -467,4 +475,8 @@ type UpdateSecretRes interface {
 
 type UpgradeSandboxRes interface {
 	upgradeSandboxRes()
+}
+
+type WaitSandboxExecRes interface {
+	waitSandboxExecRes()
 }

@@ -79,6 +79,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxService.status":              "service state is derived by the sandbox-agent from the exec running a repository-declared service (ADR 0070); the server stores nothing about services",
 	"SandboxAgentListeningPort.protocol": "what a listening port speaks is established by sandbox-agent probing it (ADR 0046); the server stores AgentStatus as opaque JSON",
 	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",
+	"SandboxExecWaitResult.reason":       "what ended a terminal wait, reported by the sandbox-agent (ADR 0137); nothing on a model stores it",
 	"HarnessVolume.volume":               "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
 	"HarnessVolume.scope":                "value set is owned by harness.VolumeScope in the root module, not a server/internal/model enum tag (ADR 0094 §3)",
 	"SandboxUpgrade.reason":              "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",

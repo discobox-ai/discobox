@@ -523,6 +523,151 @@ components:
                 - payload
                 - createdAt
             type: object
+        SandboxExecScreen:
+            additionalProperties: false
+            description: A terminal's screen as a person looking at it would read it (ADR 0137 §1).
+            properties:
+                rows:
+                    format: int64
+                    type: integer
+                cols:
+                    format: int64
+                    type: integer
+                cursorRow:
+                    description: Zero-based cursor row.
+                    format: int64
+                    type: integer
+                cursorCol:
+                    description: Zero-based cursor column.
+                    format: int64
+                    type: integer
+                cursorVisible:
+                    type: boolean
+                title:
+                    description: The window title the program last set.
+                    type: string
+                altScreen:
+                    description: Whether the program is on the alternate screen, which has no scrollback.
+                    type: boolean
+                lines:
+                    description: The visible screen, one string per row, trailing blanks trimmed.
+                    items:
+                        type: string
+                    type: array
+                scrollback:
+                    description: Lines above the screen, oldest first.
+                    items:
+                        type: string
+                    type: array
+                outputAt:
+                    description: When the program last wrote output.
+                    format: date-time
+                    type: string
+                exited:
+                    description: Whether the program has exited. Its last screen stays readable while the terminal lingers after exit.
+                    type: boolean
+            required:
+                - rows
+                - cols
+                - cursorRow
+                - cursorCol
+                - cursorVisible
+                - altScreen
+                - lines
+                - exited
+            type: object
+        SandboxExecInputBody:
+            additionalProperties: false
+            properties:
+                input:
+                    description: Parts written in order.
+                    items:
+                        $ref: '#/components/schemas/SandboxExecInputPart'
+                    minItems: 1
+                    type: array
+            required:
+                - input
+            type: object
+        SandboxExecInputPart:
+            additionalProperties: false
+            description: One piece of input, naming exactly one of text or key.
+            properties:
+                text:
+                    description: Text, delivered as a bracketed paste when the program enabled one.
+                    type: string
+                key:
+                    description: 'One named key: Enter, Tab, Escape, Backspace, Delete, Up, Down, Left, Right, Home, End, PageUp, PageDown, or C-a through C-z.'
+                    type: string
+            type: object
+        SandboxExecWaitBody:
+            additionalProperties: false
+            properties:
+                until:
+                    $ref: '#/components/schemas/SandboxExecWaitUntil'
+                timeoutSeconds:
+                    description: How long to wait, at most 60 seconds.
+                    format: int64
+                    maximum: 60
+                    minimum: 1
+                    type: integer
+            required:
+                - until
+                - timeoutSeconds
+            type: object
+        SandboxExecWaitUntil:
+            additionalProperties: false
+            description: The conditions a wait ends on; the first to hold ends it.
+            properties:
+                hookEvents:
+                    description: Harness hook event names from this terminal, such as Claude Code's Stop and Notification. The caller names them; the server holds no mapping of events to meanings.
+                    items:
+                        type: string
+                    type: array
+                after:
+                    description: Only hooks recorded after this point count — the resumeAfter a previous wait or input answered with, passed back as given, so nothing recorded between two calls is missed. Absent, only hooks recorded after the wait began.
+                    type: string
+                quietSeconds:
+                    description: Neither output nor input for this many seconds, counted from no earlier than the start of the wait.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                exit:
+                    description: The exec has ended.
+                    type: boolean
+            type: object
+        SandboxExecWaitResult:
+            additionalProperties: false
+            properties:
+                reason:
+                    enum:
+                        - hook
+                        - quiet
+                        - exit
+                        - timeout
+                    type: string
+                hook:
+                    $ref: '#/components/schemas/HarnessHookLog'
+                    description: The hook that ended the wait, when one did.
+                outputAt:
+                    description: When the program last wrote output.
+                    format: date-time
+                    type: string
+                resumeAfter:
+                    description: Where the next wait resumes, to pass as until.after exactly as given. After a hook, just past that hook; otherwise the point this wait counted from, so a hook recorded while it returned is still found.
+                    type: string
+            required:
+                - reason
+                - resumeAfter
+            type: object
+        SandboxExecInputResult:
+            additionalProperties: false
+            properties:
+                resumeAfter:
+                    description: The point just before the input was delivered, for a wait on what it causes to pass as until.after exactly as given.
+                    type: string
+            required:
+                - resumeAfter
+            type: object
         HarnessHookLogsResponse:
             additionalProperties: false
             properties:
@@ -8242,6 +8387,145 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: List logs for a sandbox exec.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen:
+        get:
+            description: The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR 0137 §1). 409 for an exec with no terminal.
+            operationId: get-sandbox-exec-screen
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+                - description: Lines of scrollback above the screen to include, up to what the terminal keeps.
+                  in: query
+                  name: scrollback
+                  schema:
+                    format: int64
+                    minimum: 0
+                    type: integer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxExecScreen'
+                    description: The terminal's screen.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Read a terminal's screen as text.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input:
+        post:
+            description: Writes text and named keys to the terminal, in order, the way typing into an attach does, and counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program enabled one. 409 for an exec with no terminal or closed input.
+            operationId: send-sandbox-exec-input
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxExecInputBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxExecInputResult'
+                    description: Input written.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Type into a terminal.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait:
+        post:
+            description: Blocks until one of the given conditions holds — a named harness hook event from this terminal, no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137 §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing recorded between two calls is missed.
+            operationId: wait-sandbox-exec
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxExecWaitBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxExecWaitResult'
+                    description: What the wait ended on.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Wait for something to happen in a terminal.
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true

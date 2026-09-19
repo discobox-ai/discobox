@@ -43,6 +43,14 @@ type Runtime struct {
 	// redraw jiggle. It outlives the screen: an emulator panic drops screen but
 	// keeps tty, so attach still forces a program redraw.
 	tty *os.File
+	// outputAt is when the program last wrote output and inputAt when it was
+	// last written to; activitySignal is closed by the next of either, for a
+	// caller waiting for the terminal to go quiet (ADR 0137 §3). Output is
+	// tracked here because every byte of TTY output passes through Observe on
+	// its way to the screen and the attachers.
+	outputAt       time.Time
+	inputAt        time.Time
+	activitySignal chan struct{}
 }
 
 func New(protocol string, done <-chan struct{}, onFrame func(frame.Frame) error) *Runtime {
@@ -104,6 +112,7 @@ func (r *Runtime) ScreenChangedAt() time.Time {
 func (r *Runtime) Observe(payload []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.noteOutputLocked()
 	if r.screen == nil {
 		return
 	}
@@ -345,8 +354,9 @@ func (r *Runtime) ApplyResize(resize frame.ResizePayload) {
 	}
 }
 
-// hasScreen reports whether repaint-on-attach is still available.
-func (r *Runtime) hasScreen() bool {
+// HasScreen reports whether the exec has a terminal screen: repaint on attach,
+// and the screen, input, and wait of ADR 0137.
+func (r *Runtime) HasScreen() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.screen != nil

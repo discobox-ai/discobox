@@ -60,6 +60,14 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
 	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (*ResourceSnapshot, error)
+	// GetSandboxExecScreen implements get-sandbox-exec-screen operation.
+	//
+	// The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent
+	// scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR
+	// 0137 §1). 409 for an exec with no terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
+	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (*SandboxExecScreen, error)
 	// GetSandboxService implements get-sandbox-service operation.
 	//
 	// Get a declared service in a sandbox.
@@ -133,6 +141,14 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
 	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (*SandboxService, error)
+	// SendSandboxExecInput implements send-sandbox-exec-input operation.
+	//
+	// Writes text and named keys to the terminal, in order, the way typing into an attach does, and
+	// counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program
+	// enabled one. 409 for an exec with no terminal or closed input.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
+	SendSandboxExecInput(ctx context.Context, req *SandboxExecInputBody, params SendSandboxExecInputParams) (*SandboxExecInputResult, error)
 	// StartSandboxExec implements start-sandbox-exec operation.
 	//
 	// Starts a prepared sandbox exec after any desired attach stream has connected.
@@ -168,6 +184,15 @@ type Handler interface {
 	//
 	// PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
 	UpdateSandboxAgentMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (*SandboxAgentMeta, error)
+	// WaitSandboxExec implements wait-sandbox-exec operation.
+	//
+	// Blocks until one of the given conditions holds — a named harness hook event from this terminal,
+	// no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137
+	// §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after,
+	// so nothing recorded between two calls is missed.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
+	WaitSandboxExec(ctx context.Context, req *SandboxExecWaitBody, params WaitSandboxExecParams) (*SandboxExecWaitResult, error)
 	// NewError creates *ErrorResponseStatusCode from error returned by handler.
 	//
 	// Used for common default response.

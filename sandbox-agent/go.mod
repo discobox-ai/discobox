@@ -6,6 +6,7 @@ replace github.com/discobox-ai/discobox => ..
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
+	github.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7
 	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b
 	github.com/coder/websocket v1.8.14
 	github.com/coreos/go-systemd/v22 v22.5.0
@@ -27,7 +28,6 @@ require (
 	aidanwoods.dev/go-result v0.3.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7 // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect

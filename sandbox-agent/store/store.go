@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -28,6 +29,11 @@ type Store struct {
 	pools *gormdb.Pools
 	write *gorm.DB
 	read  *gorm.DB
+	// hookSignal is closed by the next harness hook recorded, for a caller
+	// waiting on one (ADR 0137 §3): the collector's writes are the notification,
+	// not a poll of the table.
+	hookMu     sync.Mutex
+	hookSignal chan struct{}
 }
 
 type Event struct {
@@ -520,7 +526,58 @@ func (s *Store) RecordHarnessHook(ctx context.Context, record HarnessHookRecord)
 		Payload:    append([]byte{}, record.Payload...),
 		CreatedAt:  record.CreatedAt,
 	}
-	return record, s.write.WithContext(ctx).Create(&row).Error
+	if err := s.write.WithContext(ctx).Create(&row).Error; err != nil {
+		return HarnessHookRecord{}, err
+	}
+	s.hookMu.Lock()
+	if s.hookSignal != nil {
+		close(s.hookSignal)
+		s.hookSignal = nil
+	}
+	s.hookMu.Unlock()
+	return record, nil
+}
+
+// HarnessHookSignal returns a channel closed by the next harness hook recorded.
+// Take it before reading the records a wait is looking for, so a hook recorded
+// between the read and the wait still wakes it.
+func (s *Store) HarnessHookSignal() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	s.hookMu.Lock()
+	defer s.hookMu.Unlock()
+	if s.hookSignal == nil {
+		s.hookSignal = make(chan struct{})
+	}
+	return s.hookSignal
+}
+
+// FirstHarnessHookSince returns the oldest of a terminal's harness hooks that
+// was recorded after since and is one of events, or nil when none is.
+//
+// The events are matched in the query, not after it: a terminal records every
+// tool call, and a wait for the one hook that ends a turn must find it behind
+// any number of hooks it did not name.
+func (s *Store) FirstHarnessHookSince(ctx context.Context, terminalID string, since time.Time, events []string) (*HarnessHookRecord, error) {
+	if s == nil || len(events) == 0 {
+		return nil, nil
+	}
+	var rows []HarnessHookLog
+	// Hooks are recorded in UTC and SQLite compares times as text carrying
+	// their offset, so the bound is compared in UTC.
+	if err := s.read.WithContext(ctx).
+		Where("terminal_id = ? AND created_at > ? AND event IN ?", strings.TrimSpace(terminalID), since.UTC(), events).
+		Order("created_at ASC").
+		Limit(1).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	record := hookRecord(rows[0])
+	return &record, nil
 }
 
 // HarnessHookFilter narrows ListHarnessHooks. A zero field matches everything.
@@ -579,20 +636,24 @@ func (s *Store) ListHarnessHooks(ctx context.Context, filter HarnessHookFilter) 
 	}
 	out := make([]HarnessHookRecord, 0, len(rows))
 	for _, row := range rows {
-		payload := json.RawMessage(append([]byte{}, row.Payload...))
-		if len(payload) == 0 || !json.Valid(payload) {
-			payload = json.RawMessage(`{}`)
-		}
-		out = append(out, HarnessHookRecord{
-			ID:         row.ID,
-			TerminalID: row.TerminalID,
-			Provider:   row.Provider,
-			Event:      row.Event,
-			Payload:    payload,
-			CreatedAt:  row.CreatedAt,
-		})
+		out = append(out, hookRecord(row))
 	}
 	return out, nil
+}
+
+func hookRecord(row HarnessHookLog) HarnessHookRecord {
+	payload := json.RawMessage(append([]byte{}, row.Payload...))
+	if len(payload) == 0 || !json.Valid(payload) {
+		payload = json.RawMessage(`{}`)
+	}
+	return HarnessHookRecord{
+		ID:         row.ID,
+		TerminalID: row.TerminalID,
+		Provider:   row.Provider,
+		Event:      row.Event,
+		Payload:    payload,
+		CreatedAt:  row.CreatedAt,
+	}
 }
 
 // AppendExecLogChunk durably persists one compressed transcript batch for an

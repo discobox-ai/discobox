@@ -51,6 +51,8 @@ type terminalStore interface {
 	RecordResourceSample(context.Context, store.ResourceSample, int) (store.ResourceSample, error)
 	ListResourceSamples(context.Context, string, int) ([]store.ResourceSample, error)
 	ListHarnessHooks(context.Context, store.HarnessHookFilter) ([]store.HarnessHookRecord, error)
+	FirstHarnessHookSince(context.Context, string, time.Time, []string) (*store.HarnessHookRecord, error)
+	HarnessHookSignal() <-chan struct{}
 }
 
 func (h *handler) AttachSandboxExec(context.Context, sandboxapi.AttachSandboxExecParams) (*sandboxapi.AttachSandboxExecSwitchingProtocols, error) {

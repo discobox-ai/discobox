@@ -252,10 +252,17 @@ func TestPoolHTTPAuditArtifactAuthorization(t *testing.T) {
 	}
 }
 
-// A discobox's own audit data is read only while it runs. Reading it must not
-// start a stopped one — that would undo the stop being read about.
-func TestSandboxAuditReadsNeverStartAStoppedSandbox(t *testing.T) {
-	for _, route := range []string{"/harness-hooks", "/exec-events"} {
+// A discobox's own audit data is read only while it runs, and so is its
+// terminal's screen or a wait on it (ADR 0137 §2). Reading must not start a
+// stopped one — that would undo the stop being read about.
+func TestSandboxReadsNeverStartAStoppedSandbox(t *testing.T) {
+	for _, tc := range []struct{ method, route string }{
+		{http.MethodGet, "/harness-hooks"},
+		{http.MethodGet, "/exec-events"},
+		{http.MethodGet, "/execs/exec-1/screen"},
+		{http.MethodPost, "/execs/exec-1/wait"},
+	} {
+		route := tc.route
 		t.Run(route, func(t *testing.T) {
 			var reached int
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -285,7 +292,7 @@ func TestSandboxAuditReadsNeverStartAStoppedSandbox(t *testing.T) {
 				t.Fatal(err)
 			}
 			call := func() *httptest.ResponseRecorder {
-				req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1"+route, nil)
+				req := httptest.NewRequestWithContext(ctx, tc.method, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1"+route, strings.NewReader(`{}`))
 				req.Header.Set("Authorization", "Bearer "+sign("project-1", "pool-1", "sandbox-1", ScopeExecRead))
 				req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
 				resp := httptest.NewRecorder()
