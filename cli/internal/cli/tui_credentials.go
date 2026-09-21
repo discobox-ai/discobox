@@ -177,6 +177,7 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		Type:          string(r.Type),
 		Justification: strings.TrimSpace(r.Justification.Or("")),
 		GrantTTL:      lifetime.FromRequest(r.GrantTTLSeconds.Or(0)),
+		WellKnownID:   strings.TrimSpace(r.WellKnownId.Or("")),
 		Created:       r.CreatedAt,
 	}
 	if uses, ok := r.Uses.Get(); ok {
@@ -207,13 +208,14 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 	out := make([]tui.Secret, 0, len(secrets))
 	for _, s := range secrets {
 		row := tui.Secret{
-			ID:      s.ID,
-			Name:    s.Name,
-			Type:    string(s.Type),
-			Host:    strings.TrimSpace(s.Host.Or("")),
-			MaxTTL:  time.Duration(s.MaxGrantTTLSeconds) * time.Second,
-			Created: s.CreatedAt,
-			Updated: s.UpdatedAt,
+			ID:          s.ID,
+			Name:        s.Name,
+			Type:        string(s.Type),
+			Host:        strings.TrimSpace(s.Host.Or("")),
+			MaxTTL:      time.Duration(s.MaxGrantTTLSeconds) * time.Second,
+			WellKnownID: strings.TrimSpace(s.WellKnownId.Or("")),
+			Created:     s.CreatedAt,
+			Updated:     s.UpdatedAt,
 		}
 		if oauth, ok := s.OAuth.Get(); ok {
 			row.OAuth = &tui.SecretOAuth{
@@ -338,7 +340,7 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// expires, and leaving it out would ask the server for the secret's own
 	// limit instead — a different grant from the one the window said it was
 	// minting.
-	body := &apimodel.ApproveSecretRequestBody{SecretId: approval.SecretID}
+	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
 	body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,

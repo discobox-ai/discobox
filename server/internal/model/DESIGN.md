@@ -20,8 +20,8 @@ Public REST API schema types live under the root `api/model` package.
 | `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Embeds its spec as `PoolManifest` (name, immutable provider instance, and the pool's size: CPU, memory, storage); carries the runtime lifecycle, agent identity and public key, `ready`/`schedulable`/`degraded` flags, reported capacity, image staging, resources, and heartbeat. Sandboxes in one pool share a cache, the pool's CPU and memory, and a kernel/host. |
 | `PoolBootstrapToken` | Short-lived, one-time token used by a starting pool agent to register its public key. |
 | `SandboxAccessIssuerKey` | Per-project, per-user issuer key used by the control plane to sign sandbox access tokens. `ProjectUserKey` is a type alias for it. |
-| `Secret` | Project-scoped encrypted credential (`token` or `oauth`). |
-| `SecretRequest` | Approval-inbox item for a secret use with no covering grant (reactive or agent-protocol originated). |
+| `Secret` | Project-scoped encrypted credential (`token` or `oauth`). `WellKnownID` marks the secret that answers a well-known credential. |
+| `SecretRequest` | Approval-inbox item for a secret use with no covering grant (reactive or agent-protocol originated). `WellKnownID` is the well-known credential an agent asked for by ID. |
 | `SecretGrant` | Standing authorization to use a secret, scoped to a sandbox, harness config, or project; optionally carries approved uses. |
 | `SandboxSecret` | Binds a sandbox env var to a secret through a sentinel placeholder. |
 | `CredentialVerdict` | One judge decision about a command run under an agent credential use (ADR 0091). |

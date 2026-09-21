@@ -65,6 +65,24 @@ EOF
 - `wait: true` blocks until a human answers. Without it you get a request ID
   back and the request sits pending — poll by asking again with `wait`.
 
+### Well-known credentials
+
+Some credentials Discobox already knows the shape of. Ask for one of these by
+its ID, and leave out `name`, `envVar`, and `host` — the ID says them, and
+getting them wrong is then impossible:
+
+| ID | What it is for | Delivered in | Sent to |
+| --- | --- | --- | --- |
+| `com.github.api` | GitHub: repositories over HTTPS, and the REST and GraphQL API as `gh` uses it | `GH_TOKEN` | `github.com`, and the hosts beneath it such as `api.github.com` |
+
+```bash
+discobox-access request com.github.api --use "Open a pull request against the current repo" --why "the task asks for a PR"
+```
+
+or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,
+`justification`, `grantTTLSeconds`, `wait` — is asked for exactly as above.
+For anything not in this table, spell out `name`, `envVar`, and `host`.
+
 Use `--json` with a heredoc rather than flags: your justification will contain
 apostrophes and quotes, and the shell would eat them. Unknown JSON fields are
 rejected, so a misspelled key fails loudly instead of being dropped.

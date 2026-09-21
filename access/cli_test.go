@@ -187,6 +187,52 @@ func TestRequestCarriesTheLifetimeAskedFor(t *testing.T) {
 	}
 }
 
+// A well-known credential is asked for by its ID, which names what an agent
+// would otherwise have to spell out and could spell wrong.
+func TestRequestNamesAWellKnownCredentialByID(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+
+	args := []string{"request", "com.github.api", "--use", "Open a pull request against the current repo"}
+	if _, stderr, code := capture(t, "", func() int { return Run(args) }); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if svc.gotRequest.ID != "com.github.api" || len(svc.gotRequest.Uses) != 1 || svc.gotRequest.Name != "" {
+		t.Fatalf("request = %#v, want the ID and the use, and nothing the ID names", svc.gotRequest)
+	}
+
+	// Wherever it falls: an agent writing the flags first is asking for the
+	// same thing, and dropping the ID there would answer a different ask.
+	svc.gotRequest = agentcreds.RequestBody{}
+	args = []string{"request", "--use", "Open a pull request", "com.github.api", "--why", "the fix is ready"}
+	if _, stderr, code := capture(t, "", func() int { return Run(args) }); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if svc.gotRequest.ID != "com.github.api" || len(svc.gotRequest.Uses) != 1 || svc.gotRequest.Justification != "the fix is ready" {
+		t.Fatalf("request = %#v, want the ID and the flags on both sides of it", svc.gotRequest)
+	}
+
+	if _, _, code := capture(t, "", func() int {
+		return Run([]string{"request", "com.github.api", "com.example.other", "--use", "x"})
+	}); code != exitUsage {
+		t.Fatalf("exit = %d, want a second credential refused", code)
+	}
+
+	svc.gotRequest = agentcreds.RequestBody{}
+	body := `{"id":"com.github.api","uses":[{"description":"Open a PR"}]}`
+	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if svc.gotRequest.ID != "com.github.api" {
+		t.Fatalf("request = %#v, want the JSON's id", svc.gotRequest)
+	}
+	// Two places for one field is a silent-precedence bug; the JSON is the
+	// whole request.
+	if _, _, code := capture(t, body, func() int { return Run([]string{"request", "com.github.api", "--json"}) }); code != exitUsage {
+		t.Fatalf("exit = %d, want an ID beside --json refused", code)
+	}
+}
+
 // A misspelled key must fail loudly. Silently dropping it would surface much
 // later as a human asking why the request had no justification.
 func TestRequestJSONRejectsUnknownFields(t *testing.T) {

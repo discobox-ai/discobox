@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -303,13 +304,20 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
 	}
 
-	secretID := strings.TrimSpace(input.SecretId)
-	if secretID == "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
-	}
-	secret, err := s.store.GetSecret(ctx, projectID, secretID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "secret not found")
+	secretID := strings.TrimSpace(input.SecretId.Or(""))
+	var secret *model.Secret
+	if req.WellKnownID != "" {
+		// A well-known credential knows which secret answers it.
+		if secret, err = s.wellKnownSecret(ctx, projectID, req.WellKnownID, secretID); err != nil {
+			return nil, err
+		}
+	} else {
+		if secretID == "" {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
+		}
+		if secret, err = s.store.GetSecret(ctx, projectID, secretID); err != nil {
+			return nil, apperrors.NotFound(err, "secret not found")
+		}
 	}
 
 	scope := strings.TrimSpace(string(input.Scope.Or("")))
@@ -390,6 +398,22 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 			return nil, apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
 		}
 		return nil, err
+	}
+	// The first approval of a well-known credential marks the secret it bound
+	// as the one that answers the ID, so nobody is asked again. Only now, once
+	// the approval has gone through: a secret whose approval failed (a host
+	// binding that cannot cover the ask, say) must not become what every later
+	// approval falls back on. A project that already has a mark keeps it; a
+	// later approval naming another secret answers its one request.
+	//
+	// Failing to write it does not fail the approval, which has already
+	// happened: the grant is live and the agent holds its credential. The next
+	// approval asks which secret answers the ID and marks it then.
+	if req.WellKnownID != "" {
+		if err := s.store.MarkSecretWellKnown(ctx, projectID, secret.ID, req.WellKnownID); err != nil {
+			slog.WarnContext(ctx, "failed to mark the secret fulfilling a well-known credential",
+				"projectId", projectID, "secretId", secret.ID, "wellKnownId", req.WellKnownID, "error", err)
+		}
 	}
 	return req, nil
 }

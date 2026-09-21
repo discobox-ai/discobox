@@ -189,11 +189,15 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 	// one secret that plainly answers the request unpickable while an unrelated
 	// one is offered. Choosing it asks about the binding instead — the remedy
 	// the server names when it refuses the grant.
-	for _, secret := range secretsForRequest(secrets, req.Host) {
+	for _, secret := range secretsForRequest(secrets, req) {
+		detail := secretDetail(secret, req.Host)
+		if req.WellKnownID != "" && secret.WellKnownID == req.WellKnownID {
+			detail = "answers " + req.WellKnownID + " · " + detail
+		}
 		items = append(items, action{
 			key:     "secret:" + secret.ID,
 			label:   secret.Name,
-			detail:  secretDetail(secret, req.Host),
+			detail:  detail,
 			enabled: true,
 		})
 	}
@@ -453,13 +457,22 @@ func credentialName(req CredentialRequest) string {
 }
 
 // secretsForRequest orders the secrets by how likely each is to be the answer:
-// the host asked for, then a host of the same site, then the unbound ones,
-// then the rest. Order is the whole of the opinion here — every one of them
-// can be chosen.
-func secretsForRequest(secrets []Secret, host string) []Secret {
+// the one marked as answering the well-known credential asked for, then the
+// host asked for, then a host of the same site, then the unbound ones, then the
+// rest. Order is the whole of the opinion here — every one of them can be
+// chosen.
+func secretsForRequest(secrets []Secret, req CredentialRequest) []Secret {
 	out := append([]Secret(nil), secrets...)
+	answers := func(secret Secret) bool {
+		return req.WellKnownID != "" && secret.WellKnownID == req.WellKnownID
+	}
 	sort.SliceStable(out, func(i, j int) bool {
-		return hostRank(out[i].Host, host) < hostRank(out[j].Host, host)
+		// The secret marked as answering a well-known credential is the answer
+		// the last approval already gave.
+		if answers(out[i]) != answers(out[j]) {
+			return answers(out[i])
+		}
+		return hostRank(out[i].Host, req.Host) < hostRank(out[j].Host, req.Host)
 	})
 	return out
 }

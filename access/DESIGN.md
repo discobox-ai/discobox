@@ -42,7 +42,7 @@ shape, so they deliberately do not get the same interface.
 | Operation | Input | Why |
 | --- | --- | --- |
 | `run` | argv after `--` | The declared command **is** the argv executed. Encoding it as JSON inserts a translation step between what the model wrote and what runs, and costs the child's exit status. |
-| `request` | JSON on stdin (`--json`), or flags | Nested, and carries free text — a justification and use descriptions — through a shell that reads quotes and apostrophes as syntax. |
+| `request` | JSON on stdin (`--json`), or flags, after an optional well-known ID | Nested, and carries free text — a justification and use descriptions — through a shell that reads quotes and apostrophes as syntax. A well-known ID (`com.github.api`) stands in for the name, variable, and host, which the implementation fills from the root `wellknown` registry. |
 | `list` | nothing | — |
 
 There is no command that takes a use id and prints the bare value

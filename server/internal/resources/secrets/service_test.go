@@ -61,7 +61,7 @@ func TestApproveSecretRequestUsesSelectedSecretID(t *testing.T) {
 	}
 
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: selected.ID,
+		SecretId: serverapi.NewOptString(selected.ID),
 	})
 	if err != nil {
 		t.Fatalf("approve secret request: %v", err)
@@ -788,13 +788,13 @@ func TestApprovalTakesTheSecretsLimitAndIsBoundByIt(t *testing.T) {
 		t.Fatalf("create request: %v", err)
 	}
 	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId:        secret.ID,
+		SecretId:        serverapi.NewOptString(secret.ID),
 		GrantTTLSeconds: serverapi.NewOptInt64(86400),
 	}); err == nil {
 		t.Fatal("an approval outlived the secret's limit")
 	}
 
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: secret.ID})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}

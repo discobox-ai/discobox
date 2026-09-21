@@ -100,6 +100,26 @@ the sandbox is already provisioned with, which anything in the sandbox can
 read. An environment variable without uses is refused rather than ignored:
 there is no delivery to name.
 
+## Well-known credentials
+
+A request may name a well-known credential by ID, from the root `wellknown`
+registry. `wellknown.go` owns it.
+
+- **An ask by ID** carries the name, variable, and host the ID names
+  (`wellKnownAsk`); an ask that spells out something the ID contradicts is
+  refused. The ID's host is the site, and an ask may name a host beneath it —
+  `api.github.com` under `github.com` — which is the narrower ask, not a
+  contradiction. The request keeps `WellKnownID`, which is part of the key an open
+  ask is reused under: a plain ask for the same variable and host binds
+  differently, so it is a different ask.
+- **Approval binds by ID** (`wellKnownSecret`). The ID resolves to the project
+  secret marked with it (`Secret.WellKnownID`); an approval that names no
+  secret and finds no mark is refused. The first approval that goes through
+  marks the secret it bound, so nobody is asked again which secret answers the
+  ID — written last, once the grant is minted and bound, so a secret whose
+  approval failed never becomes the answer. A later approval may still name
+  another secret, which answers that one request and marks nothing.
+
 ## The agent credentials broker
 
 `agentcredentials.go` is the control-plane half of ADR 0031. A pool agent calls

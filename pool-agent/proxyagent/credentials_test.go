@@ -23,6 +23,7 @@ type fakeControlPlane struct {
 	credentials  []credentialDoc
 	verdictCalls []recordCredentialVerdictDoc
 	verdictErr   error
+	requests     []createCredentialRequestDoc
 }
 
 func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPlaneCredentials, *fakeControlPlane) {
@@ -33,6 +34,13 @@ func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPla
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sandbox-credentials"):
 			_ = json.NewEncoder(w).Encode(listCredentialsDoc{Credentials: fake.credentials})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sandbox-credential-requests"):
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			var body createCredentialRequestDoc
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			fake.requests = append(fake.requests, body)
+			_ = json.NewEncoder(w).Encode(credentialRequestStatusDoc{RequestID: "req-1", Status: agentcreds.StatusPending})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sandbox-credential-verdicts"):
 			fake.mu.Lock()
 			defer fake.mu.Unlock()
@@ -147,5 +155,32 @@ func TestReportDenialRecordsAVolunteeredVerdict(t *testing.T) {
 	}
 	if len(fake.verdictCalls) != 1 || !fake.verdictCalls[0].Volunteered {
 		t.Fatalf("verdict calls = %#v, want exactly one, volunteered", fake.verdictCalls)
+	}
+}
+
+// A request by well-known ID goes out carrying the name, variable, and host the
+// ID names, beside the ID the control plane checks them against; an ID the
+// registry does not know is refused before anything is asked.
+// The broker passes a well-known ask on as the agent sent it: the control
+// plane fills in what the ID names and refuses what contradicts it, which it
+// can only do if what the agent said reaches it unaltered.
+func TestRequestPassesAWellKnownIDOnAsSent(t *testing.T) {
+	broker, fake := newFakeControlPlane(t, nil)
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: broker, activations: newActivations()}
+
+	if _, err := b.Request(context.Background(), agentcreds.RequestBody{ID: "com.github.api", EnvVar: "GITHUB_TOKEN", Uses: []agentcreds.RequestedUse{{Description: "open a PR"}}}); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if len(fake.requests) != 1 {
+		t.Fatalf("requests = %d, want one", len(fake.requests))
+	}
+	got := fake.requests[0]
+	if got.ID != "com.github.api" || got.Name != "" || got.EnvVar != "GITHUB_TOKEN" || got.Host != "" {
+		t.Fatalf("request = %+v, want the ask as the agent sent it", got)
+	}
+
+	_, err := b.Request(context.Background(), agentcreds.RequestBody{ID: "com.example.nothing", Uses: []agentcreds.RequestedUse{{Description: "x"}}})
+	if !errors.Is(err, agentcreds.ErrInvalid) || len(fake.requests) != 1 {
+		t.Fatalf("err = %v, requests = %d; want an unknown ID refused as invalid before it is sent", err, len(fake.requests))
 	}
 }

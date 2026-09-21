@@ -180,8 +180,10 @@ type ApproveSecretRequestBody struct {
 	// How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
 	// otherwise project.
 	Scope OptApproveSecretRequestBodyScope `json:"scope"`
-	// Secret ID selected by the approver.
-	SecretId string `json:"secretId"`
+	// Secret ID selected by the approver. Required unless the request names a well-known credential
+	// whose secret is already marked; naming one for it the first time marks it as the one that answers
+	// every later request for that ID.
+	SecretId OptString `json:"secretId"`
 	// Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to
 	// approve the requested uses as written. Use IDs are always minted here and any supplied ones are
 	// ignored.
@@ -209,7 +211,7 @@ func (s *ApproveSecretRequestBody) GetScope() OptApproveSecretRequestBodyScope {
 }
 
 // GetSecretId returns the value of SecretId.
-func (s *ApproveSecretRequestBody) GetSecretId() string {
+func (s *ApproveSecretRequestBody) GetSecretId() OptString {
 	return s.SecretId
 }
 
@@ -239,7 +241,7 @@ func (s *ApproveSecretRequestBody) SetScope(val OptApproveSecretRequestBodyScope
 }
 
 // SetSecretId sets the value of SecretId.
-func (s *ApproveSecretRequestBody) SetSecretId(val string) {
+func (s *ApproveSecretRequestBody) SetSecretId(val OptString) {
 	s.SecretId = val
 }
 
@@ -953,6 +955,9 @@ type CreateSandboxCredentialRequestBody struct {
 	// Destination host the credential will be sent to. Required, because approving this request may not
 	// mint a host-unscoped grant.
 	Host string `json:"host"`
+	// The well-known credential asked for, such as com.github.api. The name, variable, and host must
+	// then be the ones the ID names.
+	ID OptString `json:"id"`
 	// Why the agent says it needs the credential.
 	Justification OptString `json:"justification"`
 	// Credential name the agent asked for.
@@ -981,6 +986,11 @@ func (s *CreateSandboxCredentialRequestBody) GetGrantTTLSeconds() OptInt64 {
 // GetHost returns the value of Host.
 func (s *CreateSandboxCredentialRequestBody) GetHost() string {
 	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *CreateSandboxCredentialRequestBody) GetID() OptString {
+	return s.ID
 }
 
 // GetJustification returns the value of Justification.
@@ -1021,6 +1031,11 @@ func (s *CreateSandboxCredentialRequestBody) SetGrantTTLSeconds(val OptInt64) {
 // SetHost sets the value of Host.
 func (s *CreateSandboxCredentialRequestBody) SetHost(val string) {
 	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *CreateSandboxCredentialRequestBody) SetID(val OptString) {
+	s.ID = val
 }
 
 // SetJustification sets the value of Justification.
@@ -18381,6 +18396,9 @@ type Secret struct {
 	ProjectId string `json:"projectId"`
 	// Secret type.
 	Type SecretType `json:"type"`
+	// The well-known credential this secret fulfills, such as com.github.api. A request for that ID
+	// resolves to this secret. Absent on a secret nothing asks for by ID.
+	WellKnownId OptString `json:"wellKnownId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -18438,6 +18456,11 @@ func (s *Secret) GetProjectId() string {
 // GetType returns the value of Type.
 func (s *Secret) GetType() SecretType {
 	return s.Type
+}
+
+// GetWellKnownId returns the value of WellKnownId.
+func (s *Secret) GetWellKnownId() OptString {
+	return s.WellKnownId
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -18498,6 +18521,11 @@ func (s *Secret) SetProjectId(val string) {
 // SetType sets the value of Type.
 func (s *Secret) SetType(val SecretType) {
 	s.Type = val
+}
+
+// SetWellKnownId sets the value of WellKnownId.
+func (s *Secret) SetWellKnownId(val OptString) {
+	s.WellKnownId = val
 }
 
 // SetUpdatedAt sets the value of UpdatedAt.
@@ -19124,6 +19152,9 @@ type SecretRequest struct {
 	Status SecretRequestStatus `json:"status"`
 	// Secret type requested.
 	Type SecretRequestType `json:"type"`
+	// The well-known credential the agent asked for by ID. Approving it binds the secret that fulfills
+	// that ID.
+	WellKnownId OptString `json:"wellKnownId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -19206,6 +19237,11 @@ func (s *SecretRequest) GetStatus() SecretRequestStatus {
 // GetType returns the value of Type.
 func (s *SecretRequest) GetType() SecretRequestType {
 	return s.Type
+}
+
+// GetWellKnownId returns the value of WellKnownId.
+func (s *SecretRequest) GetWellKnownId() OptString {
+	return s.WellKnownId
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -19291,6 +19327,11 @@ func (s *SecretRequest) SetStatus(val SecretRequestStatus) {
 // SetType sets the value of Type.
 func (s *SecretRequest) SetType(val SecretRequestType) {
 	s.Type = val
+}
+
+// SetWellKnownId sets the value of WellKnownId.
+func (s *SecretRequest) SetWellKnownId(val OptString) {
+	s.WellKnownId = val
 }
 
 // SetUpdatedAt sets the value of UpdatedAt.

@@ -120,7 +120,7 @@ func TestApprovingAnAgentRequestMintsUsesAndAnUninjectedBinding(t *testing.T) {
 	req := createAgentRequest(ctx, t, svc)
 
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: secret.ID,
+		SecretId: serverapi.NewOptString(secret.ID),
 	})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
@@ -166,7 +166,7 @@ func TestRecordCredentialVerdictResolvesTheGrantFromTheUseID(t *testing.T) {
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	req := createAgentRequest(ctx, t, svc)
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: secret.ID})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestApprovingAnAgentRequestRefusesABroaderScope(t *testing.T) {
 	req := createAgentRequest(ctx, t, svc)
 
 	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: secret.ID,
+		SecretId: serverapi.NewOptString(secret.ID),
 		Scope:    serverapi.NewOptApproveSecretRequestBodyScope(serverapi.ApproveSecretRequestBodyScopeProject),
 	})
 	if err == nil {
@@ -286,7 +286,7 @@ func TestApproverCanRewriteTheDeclaredUses(t *testing.T) {
 	req := createAgentRequest(ctx, t, svc)
 
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: secret.ID,
+		SecretId: serverapi.NewOptString(secret.ID),
 		Uses: serverapi.NewOptNilSecretUseArray([]apimodel.SecretUse{
 			{Description: "open a PR against this repository only", UseId: serverapi.NewOptString("use_forged")},
 		}),
@@ -311,7 +311,7 @@ func TestGrantedCredentialIsListedForItsSandbox(t *testing.T) {
 	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	req := createAgentRequest(ctx, t, svc)
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: secret.ID}); err != nil {
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 
@@ -362,7 +362,7 @@ func TestPollingReportsGrantedOnceApproved(t *testing.T) {
 		t.Fatalf("status = %q, want pending", status)
 	}
 
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: secret.ID}); err != nil {
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	settled, grant, err := svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
@@ -384,7 +384,7 @@ func TestPollingReportsDeniedAfterTheGrantIsRevoked(t *testing.T) {
 	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	req := createAgentRequest(ctx, t, svc)
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: secret.ID})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestApprovedHostIsNormalizedToWhatTheProxyReports(t *testing.T) {
 			req := createAgentRequest(ctx, t, svc)
 
 			approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-				SecretId: secret.ID,
+				SecretId: serverapi.NewOptString(secret.ID),
 				Host:     serverapi.NewOptString(tc.approved),
 			})
 			if err != nil {

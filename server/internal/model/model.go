@@ -955,7 +955,7 @@ const (
 // Secret is a project-scoped encrypted credential that can be requested by sandboxes.
 type Secret struct {
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
-	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1;uniqueIndex:idx_secret_project_well_known,priority:1" json:"projectId" doc:"Project ID"`
 	// Name is part of the uniqueness domain. Without it a project could hold
 	// only one secret per (type, host) — and since nothing infers a host any
 	// more, that collapsed to one unbound token per project: a GitHub token and
@@ -987,10 +987,14 @@ type Secret struct {
 	// here: GORM omits a zero-valued field from an INSERT when the column has
 	// one, so a default would quietly turn "no limit" into an hour. The
 	// service owns the default a creator who names none receives.
-	MaxGrantTTL    int64     `gorm:"column:max_grant_ttl_seconds;not null" json:"maxGrantTTLSeconds" doc:"Longest a grant on this secret may live, in seconds; 0 allows grants that never expire"`
-	EncryptedValue []byte    `gorm:"column:encrypted_value" json:"-"`
-	CreatedAt      time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt      time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	MaxGrantTTL    int64  `gorm:"column:max_grant_ttl_seconds;not null" json:"maxGrantTTLSeconds" doc:"Longest a grant on this secret may live, in seconds; 0 allows grants that never expire"`
+	EncryptedValue []byte `gorm:"column:encrypted_value" json:"-"`
+	// WellKnownID is the well-known credential this secret fulfills: a
+	// request for that ID resolves to it. At most one secret in a project
+	// carries a given ID, which the partial unique index holds.
+	WellKnownID string    `gorm:"column:well_known_id;not null;type:text;default:'';uniqueIndex:idx_secret_project_well_known,priority:2,where:well_known_id <> ''" json:"wellKnownId,omitempty" doc:"Well-known credential this secret fulfills"`
+	CreatedAt   time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt   time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -1094,12 +1098,15 @@ type SecretRequest struct {
 	// what an approval starts from, never what it is held to: the approver
 	// chooses the lifetime. Zero is "nothing in particular", not forever — an
 	// agent cannot ask for a grant that never lapses.
-	GrantTTL  int64     `gorm:"column:grant_ttl_seconds;not null;default:0" json:"grantTTLSeconds,omitempty" doc:"Grant lifetime the agent asked for, in seconds; absent when it named none"`
-	SecretID  string    `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
-	Status    string    `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
-	GrantID   string    `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
-	CreatedAt time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	GrantTTL int64  `gorm:"column:grant_ttl_seconds;not null;default:0" json:"grantTTLSeconds,omitempty" doc:"Grant lifetime the agent asked for, in seconds; absent when it named none"`
+	SecretID string `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
+	Status   string `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
+	GrantID  string `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
+	// WellKnownID is the well-known credential the agent asked for by ID;
+	// approving the request binds the secret that fulfills it.
+	WellKnownID string    `gorm:"column:well_known_id;not null;type:text;default:''" json:"wellKnownId,omitempty" doc:"Well-known credential the agent asked for by ID"`
+	CreatedAt   time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt   time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }

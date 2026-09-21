@@ -1202,7 +1202,10 @@ type CredentialRequest struct {
 	// GrantTTL is how long the agent asked to keep the credential, and the
 	// lifetime the approval opens on. Zero is no ask, never forever.
 	GrantTTL time.Duration
-	Created  time.Time
+	// WellKnownID is the well-known credential asked for by ID, which knows
+	// which secret answers it once one is marked.
+	WellKnownID string
+	Created     time.Time
 }
 
 // FromAgent reports whether a person is being asked a question with reasons
@@ -1223,6 +1226,9 @@ type Secret struct {
 	// takes when nobody names one. Zero is no limit: grants on this credential
 	// may then live forever.
 	MaxTTL time.Duration
+	// WellKnownID is the well-known credential this secret answers, empty for
+	// one nothing asks for by ID.
+	WellKnownID string
 	// Grants is how many live grants stand on it, filled in by the screen from
 	// the project's grant listing rather than read per row.
 	Grants  int

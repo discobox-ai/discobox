@@ -117,9 +117,12 @@ func usage(w io.Writer) {
       a model reached through %[5]s. A command broader than the
       approved use is refused with code "denied" and never started.
 
-  %[1]s request [--json] [flags]
+  %[1]s request [ID] [--json] [flags]
       Ask a human for a credential. Returns a request id immediately unless
       you wait for an answer.
+
+      ID names a well-known credential (com.github.api), which says its own
+      name, variable, and host; give only --use and --why.
 
       With --json, the request is read from stdin, which keeps quotes and
       apostrophes in your justification out of the shell's hands:

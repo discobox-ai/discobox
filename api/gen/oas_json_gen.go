@@ -409,8 +409,10 @@ func (s *ApproveSecretRequestBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("secretId")
-		e.Str(s.SecretId)
+		if s.SecretId.Set {
+			e.FieldStart("secretId")
+			s.SecretId.Encode(e)
+		}
 	}
 	{
 		if s.Uses.Set {
@@ -434,7 +436,6 @@ func (s *ApproveSecretRequestBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode ApproveSecretRequestBody to nil")
 	}
-	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -479,11 +480,9 @@ func (s *ApproveSecretRequestBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"scope\"")
 			}
 		case "secretId":
-			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
-				v, err := d.Str()
-				s.SecretId = string(v)
-				if err != nil {
+				s.SecretId.Reset()
+				if err := s.SecretId.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -506,38 +505,6 @@ func (s *ApproveSecretRequestBody) Decode(d *jx.Decoder) error {
 		return nil
 	}); err != nil {
 		return errors.Wrap(err, "decode ApproveSecretRequestBody")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00010000,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfApproveSecretRequestBody) {
-					name = jsonFieldsNameOfApproveSecretRequestBody[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
 	}
 
 	return nil
@@ -2170,6 +2137,12 @@ func (s *CreateSandboxCredentialRequestBody) encodeFields(e *jx.Encoder) {
 		e.Str(s.Host)
 	}
 	{
+		if s.ID.Set {
+			e.FieldStart("id")
+			s.ID.Encode(e)
+		}
+	}
+	{
 		if s.Justification.Set {
 			e.FieldStart("justification")
 			s.Justification.Encode(e)
@@ -2193,15 +2166,16 @@ func (s *CreateSandboxCredentialRequestBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSandboxCredentialRequestBody = [8]string{
+var jsonFieldsNameOfCreateSandboxCredentialRequestBody = [9]string{
 	0: "$schema",
 	1: "envVar",
 	2: "grantTTLSeconds",
 	3: "host",
-	4: "justification",
-	5: "name",
-	6: "sandboxId",
-	7: "uses",
+	4: "id",
+	5: "justification",
+	6: "name",
+	7: "sandboxId",
+	8: "uses",
 }
 
 // Decode decodes CreateSandboxCredentialRequestBody from json.
@@ -2209,7 +2183,7 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CreateSandboxCredentialRequestBody to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -2257,6 +2231,16 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"host\"")
 			}
+		case "id":
+			if err := func() error {
+				s.ID.Reset()
+				if err := s.ID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"id\"")
+			}
 		case "justification":
 			if err := func() error {
 				s.Justification.Reset()
@@ -2268,7 +2252,7 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"justification\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -2280,7 +2264,7 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -2292,7 +2276,7 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
 		case "uses":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				s.Uses = make([]SecretUse, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -2318,8 +2302,9 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b11101010,
+	for i, mask := range [2]uint8{
+		0b11001010,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -32510,12 +32495,18 @@ func (s *Secret) encodeFields(e *jx.Encoder) {
 		s.Type.Encode(e)
 	}
 	{
+		if s.WellKnownId.Set {
+			e.FieldStart("wellKnownId")
+			s.WellKnownId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("updatedAt")
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
 }
 
-var jsonFieldsNameOfSecret = [12]string{
+var jsonFieldsNameOfSecret = [13]string{
 	0:  "$schema",
 	1:  "anonymous",
 	2:  "createdAt",
@@ -32527,7 +32518,8 @@ var jsonFieldsNameOfSecret = [12]string{
 	8:  "name",
 	9:  "projectId",
 	10: "type",
-	11: "updatedAt",
+	11: "wellKnownId",
+	12: "updatedAt",
 }
 
 // Decode decodes Secret from json.
@@ -32659,8 +32651,18 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
+		case "wellKnownId":
+			if err := func() error {
+				s.WellKnownId.Reset()
+				if err := s.WellKnownId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wellKnownId\"")
+			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -32682,7 +32684,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b01001100,
-		0b00001111,
+		0b00010111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -33743,12 +33745,18 @@ func (s *SecretRequest) encodeFields(e *jx.Encoder) {
 		s.Type.Encode(e)
 	}
 	{
+		if s.WellKnownId.Set {
+			e.FieldStart("wellKnownId")
+			s.WellKnownId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("updatedAt")
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
 }
 
-var jsonFieldsNameOfSecretRequest = [17]string{
+var jsonFieldsNameOfSecretRequest = [18]string{
 	0:  "$schema",
 	1:  "createdAt",
 	2:  "envName",
@@ -33765,7 +33773,8 @@ var jsonFieldsNameOfSecretRequest = [17]string{
 	13: "secretId",
 	14: "status",
 	15: "type",
-	16: "updatedAt",
+	16: "wellKnownId",
+	17: "updatedAt",
 }
 
 // Decode decodes SecretRequest from json.
@@ -33945,8 +33954,18 @@ func (s *SecretRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
+		case "wellKnownId":
+			if err := func() error {
+				s.WellKnownId.Reset()
+				if err := s.WellKnownId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wellKnownId\"")
+			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -33969,7 +33988,7 @@ func (s *SecretRequest) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b01000010,
 		0b11001100,
-		0b00000001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

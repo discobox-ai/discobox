@@ -131,6 +131,11 @@ const MaxGrantTTLSeconds = 30 * 24 * 60 * 60
 // human may still grant it, but the one answer that never comes back to be
 // asked again is never the default.
 type RequestBody struct {
+	// ID names a well-known credential — a reverse-DNS ID such as
+	// "com.github.api" — in place of Name, EnvVar, and Host, which an
+	// implementation fills from what it knows the ID to mean. An
+	// implementation that knows no such ID refuses the request as invalid.
+	ID              string         `json:"id,omitempty"`
 	Name            string         `json:"name"`
 	EnvVar          string         `json:"envVar"`
 	Host            string         `json:"host"`

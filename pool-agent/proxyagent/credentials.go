@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/wellknown"
 )
 
 // The pool half of the agent credentials protocol (ADR 0031).
@@ -81,6 +82,7 @@ type recordCredentialVerdictDoc struct {
 
 type createCredentialRequestDoc struct {
 	SandboxID       string             `json:"sandboxId"`
+	ID              string             `json:"id,omitempty"`
 	Name            string             `json:"name"`
 	EnvVar          string             `json:"envVar"`
 	Host            string             `json:"host"`
@@ -250,8 +252,16 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 	for _, use := range body.Uses {
 		uses = append(uses, credentialUseDoc{Description: use.Description})
 	}
+	// A well-known credential says its own name, variable, and host. What
+	// the agent spelled out is passed on as it was sent, not replaced: the
+	// control plane fills what was left out and refuses what contradicts the
+	// ID, and it can only refuse what it is shown.
+	if _, ok := wellknown.Lookup(body.ID); body.ID != "" && !ok {
+		return agentcreds.RequestStatus{}, fmt.Errorf("%w: %q is not a well-known credential", agentcreds.ErrInvalid, body.ID)
+	}
 	doc, err := b.controlPlan.createRequest(ctx, createCredentialRequestDoc{
 		SandboxID:       b.sandboxID,
+		ID:              body.ID,
 		Name:            body.Name,
 		EnvVar:          body.EnvVar,
 		Host:            body.Host,

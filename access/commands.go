@@ -35,6 +35,7 @@ func runList(ctx context.Context, args []string) int {
 		if len(credentials) == 0 {
 			fmt.Fprintln(w, "No credentials are granted to this sandbox.")
 			fmt.Fprintf(w, "Ask for one with: %s request --name NAME --env-var VAR --host HOST --use \"what for\"\n", Name)
+			fmt.Fprintf(w, "or, for a well-known credential: %s request ID --use \"what for\"\n", Name)
 			return
 		}
 		for _, credential := range credentials {
@@ -59,6 +60,7 @@ func runList(ctx context.Context, args []string) int {
 // things: the first is how long the agent asks to keep the credential, the
 // second how long this process waits for somebody to answer.
 type requestInput struct {
+	ID              string                    `json:"id,omitempty"`
 	Name            string                    `json:"name"`
 	EnvVar          string                    `json:"envVar"`
 	Host            string                    `json:"host"`
@@ -77,6 +79,14 @@ func runRequest(ctx context.Context, args []string) int {
 		timeout    time.Duration
 		grantTTL   time.Duration
 	)
+	// A well-known credential is named as an argument, wherever it falls:
+	// `request com.github.api --use ...` or `request --use ... com.github.api`.
+	// The flag package stops at the first argument that is not a flag, so one
+	// leading is taken off before parsing and one in the middle is taken off
+	// after, and what followed it is parsed as flags.
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		input.ID, args = args[0], args[1:]
+	}
 	flags := flag.NewFlagSet(Name+" request", flag.ContinueOnError)
 	flags.BoolVar(&structured, "json", false, "read the request as JSON on stdin and emit JSON")
 	flags.StringVar(&input.Name, "name", "", "credential name (e.g. github)")
@@ -90,6 +100,18 @@ func runRequest(ctx context.Context, args []string) int {
 	if !parse(flags, args) {
 		return exitUsage
 	}
+	if rest := flags.Args(); len(rest) > 0 {
+		if input.ID != "" {
+			return usageError(newEmitter(structured), "unexpected argument %q: a request names at most one well-known credential", rest[0])
+		}
+		input.ID = rest[0]
+		if !parse(flags, rest[1:]) {
+			return exitUsage
+		}
+		if rest := flags.Args(); len(rest) > 0 {
+			return usageError(newEmitter(structured), "unexpected argument %q: a request names at most one well-known credential", rest[0])
+		}
+	}
 	out := newEmitter(structured)
 
 	if structured {
@@ -99,6 +121,9 @@ func runRequest(ctx context.Context, args []string) int {
 		decoded, err := readRequestBody(os.Stdin)
 		if err != nil {
 			return usageError(out, "%v", err)
+		}
+		if input.ID != "" {
+			return usageError(out, "--json reads the whole request from stdin; put the well-known ID in it as \"id\"")
 		}
 		input = decoded
 		if input.TimeoutSeconds > 0 {
@@ -124,6 +149,7 @@ func runRequest(ctx context.Context, args []string) int {
 
 	client := newClient()
 	status, err := client.Request(ctx, agentcreds.RequestBody{
+		ID:              input.ID,
 		Name:            input.Name,
 		EnvVar:          input.EnvVar,
 		Host:            input.Host,

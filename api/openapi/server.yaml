@@ -3091,6 +3091,9 @@ components:
                 host:
                     description: Destination host the credential will be sent to. Required, because approving this request may not mint a host-unscoped grant.
                     type: string
+                id:
+                    description: The well-known credential asked for, such as com.github.api. The name, variable, and host must then be the ones the ID names.
+                    type: string
                 justification:
                     description: Why the agent says it needs the credential
                     type: string
@@ -4051,7 +4054,7 @@ components:
                         - project
                     type: string
                 secretId:
-                    description: Secret ID selected by the approver
+                    description: Secret ID selected by the approver. Required unless the request names a well-known credential whose secret is already marked; naming one for it the first time marks it as the one that answers every later request for that ID.
                     type: string
                 uses:
                     description: Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to approve the requested uses as written. Use IDs are always minted here and any supplied ones are ignored.
@@ -4059,8 +4062,6 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
-            required:
-                - secretId
             type: object
         CreateSecretBody:
             additionalProperties: false
@@ -4320,6 +4321,10 @@ components:
                         - token
                         - oauth
                     type: string
+                wellKnownId:
+                    description: The well-known credential this secret fulfills, such as com.github.api. A request for that ID resolves to this secret. Absent on a secret nothing asks for by ID.
+                    readOnly: true
+                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
@@ -4496,6 +4501,10 @@ components:
                     enum:
                         - token
                         - oauth
+                    type: string
+                wellKnownId:
+                    description: The well-known credential the agent asked for by ID. Approving it binds the secret that fulfills that ID.
+                    readOnly: true
                     type: string
                 updatedAt:
                     description: Last update timestamp

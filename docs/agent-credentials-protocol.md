@@ -128,8 +128,25 @@ lands back near zero, which reads as forever.
 Discobox implementation, which refuses to mint a host-unscoped approval through
 this flow. Discobox also requires `name`, a valid `envVar`, and at least one use
 with a description, and answers `invalid` without them. A second ask for the
-same `envVar` and `host` while one is still pending returns that pending
-request rather than a new one.
+same `id`, `envVar`, and `host` while one is still pending returns that
+pending request rather than a new one.
+
+`id` is optional: a well-known credential's reverse-DNS ID, such as
+`com.github.api`, in place of `name`, `envVar`, and `host`, which an
+implementation fills from what it knows the ID to mean. What the ask does spell
+out is passed on as it was sent, so the implementation that knows the ID is the
+one that checks it. An implementation that
+knows no such ID answers `invalid`, and so does one given an ID beside a `name`,
+`envVar`, or `host` the ID does not name. Discobox's registry is the root
+`wellknown` package.
+
+```json
+{
+  "id": "com.github.api",
+  "justification": "The task asks me to open a PR with the fix.",
+  "uses": [{ "description": "Open a pull request against the current repository" }]
+}
+```
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
 `202 Accepted` immediately and the client polls.

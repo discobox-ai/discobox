@@ -88,6 +88,49 @@ func (s *Store) GetSecret(ctx context.Context, projectID, secretID string) (*mod
 	return firstByID[model.Secret](read.Where("project_id = ?", projectID), "id", secretID)
 }
 
+// FindSecretByWellKnownID returns the project's secret marked as fulfilling a
+// well-known credential, or ErrNotFound.
+func (s *Store) FindSecretByWellKnownID(ctx context.Context, projectID, wellKnownID string) (*model.Secret, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.Secret
+	if err := read.Where("project_id = ? AND well_known_id = ?", projectID, wellKnownID).Limit(1).Find(&out).Error; err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, ErrNotFound
+	}
+	return &out[0], nil
+}
+
+// MarkSecretWellKnown marks a secret as fulfilling a well-known credential
+// unless the project already has a secret marked with it, or the secret
+// carries another ID; either way it leaves the marks as they are. It writes that one column and nothing else: the row a
+// caller read may already be stale (an OAuth refresh rotates the value), and
+// the mark is not a change to the credential (ADR 0132 §4).
+func (s *Store) MarkSecretWellKnown(ctx context.Context, projectID, secretID, wellKnownID string) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	taken := write.Model(&model.Secret{}).Select("1").Where("project_id = ? AND well_known_id = ?", projectID, wellKnownID)
+	res := write.Model(&model.Secret{}).
+		Where("project_id = ? AND id = ? AND well_known_id = ''", projectID, secretID).
+		Where("NOT EXISTS (?)", taken).
+		UpdateColumn("well_known_id", wellKnownID)
+	if res.Error != nil {
+		// Two first approvals racing past NOT EXISTS: the partial unique
+		// index refuses the second, and the first one's mark stands.
+		if _, findErr := s.FindSecretByWellKnownID(ctx, projectID, wellKnownID); findErr == nil {
+			return nil
+		}
+		return res.Error
+	}
+	return nil
+}
+
 func (s *Store) ListSecrets(ctx context.Context, projectID string) ([]model.Secret, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
@@ -290,21 +333,22 @@ func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretI
 }
 
 // FindPendingAgentCredentialRequest returns the open protocol-originated
-// request for a sandbox's environment variable and destination host, or
-// ErrNotFound.
+// request for a sandbox's environment variable, destination host, and
+// well-known ID (empty for an ask that names none), or ErrNotFound. The ID is
+// part of the key because it changes what approving the request binds.
 //
 // It keys on (sandbox, env, host) rather than on the secret the way the
 // reactive path does, because a protocol request names no secret: choosing one
 // is part of the approval. An agent that retries its ask therefore reuses its
 // open request instead of adding another line to the approval inbox.
-func (s *Store) FindPendingAgentCredentialRequest(ctx context.Context, projectID, sandboxID, envName, host string) (*model.SecretRequest, error) {
+func (s *Store) FindPendingAgentCredentialRequest(ctx context.Context, projectID, sandboxID, envName, host, wellKnownID string) (*model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []model.SecretRequest
-	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND host = ? AND status = ?",
-		projectID, sandboxID, envName, host, model.SecretRequestStatusPending).
+	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND host = ? AND well_known_id = ? AND status = ?",
+		projectID, sandboxID, envName, host, wellKnownID, model.SecretRequestStatusPending).
 		Order("created_at DESC").Find(&out).Error
 	if err != nil {
 		return nil, err

@@ -431,7 +431,7 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var secretID, scope, host, ttl string
 	var uses []string
-	cmd := &cobra.Command{Use: "approve REQUEST_ID --secret-id SECRET_ID", Short: "Approve a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret-id SECRET_ID]", Short: "Approve a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -444,11 +444,17 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		selectedSecretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretID)
-		if err != nil {
-			return err
+		body := &apimodel.ApproveSecretRequestBody{}
+		// A request for a well-known credential whose secret is marked knows
+		// which secret answers it, so the secret is named only when there is a
+		// choice to make.
+		if strings.TrimSpace(secretID) != "" {
+			selectedSecretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretID)
+			if err != nil {
+				return err
+			}
+			body.SetSecretId(apiclientgen.NewOptString(selectedSecretID))
 		}
-		body := &apimodel.ApproveSecretRequestBody{SecretId: selectedSecretID}
 		// The lifetime is always sent. Left out, the server would take the
 		// secret's own limit — forever, for a credential nobody capped — and
 		// approving here would mint a different grant from approving the same

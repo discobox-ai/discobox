@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/wellknown"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -282,6 +283,21 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	// guessed at, so the row follows the server.
 	if len(m.requests["sbx_one"]) != 0 {
 		t.Fatalf("requests = %#v, want the answered one gone", m.requests)
+	}
+}
+
+// A well-known credential's marked secret is the answer the last approval
+// gave, so it is offered first whatever its host.
+func TestTheSecretAnsweringAWellKnownCredentialIsOfferedFirst(t *testing.T) {
+	t.Parallel()
+	req := waitingRequest()
+	req.WellKnownID = wellknown.GitHubAPI
+	ordered := secretsForRequest([]Secret{
+		{ID: "sec_exact", Host: "api.github.com"},
+		{ID: "sec_marked", Host: "", WellKnownID: wellknown.GitHubAPI},
+	}, req)
+	if ordered[0].ID != "sec_marked" {
+		t.Fatalf("order = %v, want the marked secret first", ordered)
 	}
 }
 

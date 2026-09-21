@@ -66,10 +66,19 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		return nil, err
 	}
 	name := strings.TrimSpace(input.Name)
+	envName := strings.TrimSpace(input.EnvVar)
+	host := normalizeHost(input.Host)
+	// A well-known credential names its own name, variable, and host, which an
+	// ask must agree with (see wellknown.go).
+	wellKnownID := strings.TrimSpace(input.ID.Or(""))
+	if wellKnownID != "" {
+		if name, envName, host, err = wellKnownAsk(wellKnownID, name, envName, host); err != nil {
+			return nil, err
+		}
+	}
 	if name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential name is required")
 	}
-	envName := strings.TrimSpace(input.EnvVar)
 	if envName == "" || strings.ContainsAny(envName, "=\x00") {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a valid environment variable name")
 	}
@@ -77,7 +86,6 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	// a grant, and a grant minted by this flow may not be host-unscoped
 	// (ADR 0031 §5). Refusing at the ask is better than discovering it at the
 	// approval, where a human has already decided to say yes.
-	host := normalizeHost(input.Host)
 	if host == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination host")
 	}
@@ -103,7 +111,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	}
 
 	requestedBy := agentRequesterID(sandbox.ID)
-	existing, err := s.store.FindPendingAgentCredentialRequest(ctx, sandbox.ProjectID, sandbox.ID, envName, host)
+	existing, err := s.store.FindPendingAgentCredentialRequest(ctx, sandbox.ProjectID, sandbox.ID, envName, host, wellKnownID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
@@ -125,6 +133,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		Justification: strings.TrimSpace(input.Justification.Or("")),
 		Uses:          uses,
 		GrantTTL:      grantTTL,
+		WellKnownID:   wellKnownID,
 		Status:        model.SecretRequestStatusPending,
 	}
 	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
