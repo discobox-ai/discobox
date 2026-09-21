@@ -319,11 +319,20 @@ a row's identity is its second count, and one that shared forever's count would
 otherwise take the cursor.
 
 The steps run: request → binding question, only when the secret is bound
-elsewhere → lifetime → limit question, only when the lifetime is over the
-secret's cap → approve. A new credential takes its lifetime *before* its token,
-so going back never has to hold a token that was already typed. **Esc, or No,
-goes back exactly one step**: from the lifetime to the binding question if one
-was asked, else to the request; from a typed lifetime to the presets; from the
+elsewhere → name question, only when a new credential's name is taken →
+lifetime → limit question, only when the lifetime is over the secret's cap →
+approve. A new credential takes its lifetime *before* its token, so going back
+never has to hold a token that was already typed.
+
+**A new credential is named only when it has to be** (`startNewCredential`,
+`askStoredAs`). It is stored as what the agent asked for, and the project's
+uniqueness is (name, type, host), so the collision is visible here before the
+token is typed: the step opens with the first free name (`freeSecretName`,
+"github-2") to type over, and a name that is taken too is refused on the spot
+rather than by the server after a token has been typed. Without it the server's
+"pick another name" is advice this screen gives no way to follow. **Esc, or No,
+goes back exactly one step**: from the lifetime to the name question if one was
+asked, else to the binding question if one was, else to the request; from a typed lifetime to the presets; from the
 limit question to wherever the lifetime was chosen; from the token to the
 lifetime. The answers so far travel as one `approval` value, copied rather than
 changed at each step, so the dialog before is rebuilt from the approval as it

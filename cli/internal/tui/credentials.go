@@ -213,7 +213,7 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 			return m.denyCredential(req)
 		case result == "new":
 			a.fresh = true
-			return m.askLifetime(a, m.toRequest(a))
+			return m.startNewCredential(a)
 		case strings.HasPrefix(result, "secret:"):
 			return m.chooseSecret(a, strings.TrimPrefix(result, "secret:"))
 		}
@@ -368,7 +368,7 @@ func (m *Model) askCustomLifetime(a approval, back func() tea.Cmd, refused strin
 func grantSection(a approval) section {
 	answered := a.secret.Name
 	if a.fresh {
-		answered = "a new credential, stored as " + credentialName(a.req)
+		answered = "a new credential, stored as " + a.storedAs()
 	}
 	fields := []field{
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
@@ -456,6 +456,53 @@ func credentialName(req CredentialRequest) string {
 	return "a credential"
 }
 
+// secretType is what a new credential answering the request is stored as. The
+// data source defaults an unset type the same way, so the check for a name
+// already taken compares what the server will actually be sent.
+func secretType(req CredentialRequest) string {
+	if t := strings.TrimSpace(req.Type); t != "" {
+		return t
+	}
+	return "token"
+}
+
+// secretNameTaken reports whether the project already holds a secret a new one
+// stored under this name would collide with. The server's uniqueness is
+// (name, type, host, unique_key), and the comparison here is exact because the
+// database's is: names are trimmed and hosts normalized on both sides.
+//
+// The last column is one the API does not carry, so this reads the first
+// three. A secret holding a unique key of its own — one the harness configure
+// flow made — sits outside the shared slot and would not have collided, and is
+// counted here as though it had. That asks a question nobody needed rather
+// than letting a create fail, which is the side to be wrong on.
+func secretNameTaken(secrets []Secret, name, kind, host string) bool {
+	name, host = strings.TrimSpace(name), normalizeHostName(host)
+	for _, secret := range secrets {
+		if strings.TrimSpace(secret.Name) == name && secret.Type == kind && normalizeHostName(secret.Host) == host {
+			return true
+		}
+	}
+	return false
+}
+
+// freeSecretName is name, or the first of name-2, name-3… the project does not
+// hold. It is a suggestion to type over, not a name anything is stored under
+// without being seen: one more collision than there are secrets is impossible,
+// which is where the count stops.
+func freeSecretName(secrets []Secret, name, kind, host string) string {
+	if !secretNameTaken(secrets, name, kind, host) {
+		return name
+	}
+	for n := 2; n <= len(secrets)+2; n++ {
+		candidate := fmt.Sprintf("%s-%d", name, n)
+		if !secretNameTaken(secrets, candidate, kind, host) {
+			return candidate
+		}
+	}
+	return name
+}
+
 // secretsForRequest orders the secrets by how likely each is to be the answer:
 // the one marked as answering the well-known credential asked for, then the
 // host asked for, then a host of the same site, then the unbound ones, then the
@@ -515,6 +562,60 @@ func secretDetail(secret Secret, host string) string {
 	return detail
 }
 
+// startNewCredential is the way into storing a credential the project does not
+// have: the lifetime, then the value. The name is asked for first only when the
+// credential the agent named is one the project already has under that name,
+// type, and host — the collision the server refuses the create for, which is
+// advice ("pick another name") nothing here could otherwise follow.
+func (m *Model) startNewCredential(a approval) tea.Cmd {
+	if secretNameTaken(a.secrets, credentialName(a.req), secretType(a.req), a.req.Host) {
+		return m.askStoredAs(a, "", m.toRequest(a))
+	}
+	return m.askLifetime(a, m.toRequest(a))
+}
+
+// askStoredAs asks what to store the new credential as, offering the first free
+// name so that accepting is one keystroke. note is what is wrong with the name
+// that was tried, on the way back round.
+func (m *Model) askStoredAs(a approval, note string, back func() tea.Cmd) tea.Cmd {
+	taken := credentialName(a.req)
+	suggestion := a.name
+	if suggestion == "" {
+		suggestion = freeSecretName(a.secrets, taken, secretType(a.req), a.req.Host)
+	}
+	where := "with no host"
+	if a.req.Host != "" {
+		where = "for " + a.req.Host
+	}
+	body := note
+	if body == "" {
+		body = fmt.Sprintf("this project already has a %s secret named %q %s", secretType(a.req), taken, where)
+	}
+	d := inputDialog("Name the credential", body, "name", suggestion, func(value string) tea.Cmd {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return m.askStoredAs(a, "a credential is stored under a name; the request is still waiting", back)
+		}
+		if secretNameTaken(a.secrets, value, secretType(a.req), a.req.Host) {
+			return m.askStoredAs(a, fmt.Sprintf("%q is taken %s too; pick another", value, where), back)
+		}
+		next := a
+		next.name = value
+		return m.askLifetime(next, func() tea.Cmd { return m.askStoredAs(next, "", back) })
+	})
+	fields := []field{{label: "answers", value: taken, tone: toneAccent}}
+	if a.req.Host != "" {
+		fields = append(fields, field{label: "bound to", value: a.req.Host, tone: toneAccent})
+	}
+	d.sections = []section{{label: "the new project secret", fields: fields}}
+	d.answerLabel = "store it as"
+	d.footer = "the name is this project's own; the agent never sees it"
+	d.keys = []hint{pressing("Enter accepts", "enter"), pressing("Esc goes back", "esc")}
+	d.onCancel = back
+	m.dialog = d
+	return nil
+}
+
 // askForNewCredential collects a credential the project does not have yet. The
 // value is typed masked, and goes straight to the server: this window never
 // writes it anywhere, and the dialog holding it is replaced the moment it is
@@ -525,7 +626,7 @@ func secretDetail(secret Secret, host string) string {
 // and nothing typed survives it.
 func (m *Model) askForNewCredential(a approval, back func() tea.Cmd) tea.Cmd {
 	req := a.req
-	fields := []field{{label: "stored as", value: credentialName(req), tone: toneAccent}}
+	fields := []field{{label: "stored as", value: a.storedAs(), tone: toneAccent}}
 	if req.Host != "" {
 		fields = append(fields, field{label: "bound to", value: req.Host, tone: toneAccent})
 	}
@@ -556,7 +657,7 @@ func (m *Model) createAndApprove(a approval, value string) tea.Cmd {
 	m.dialog = statusDialog("Credential request", "storing the credential…")
 	return func() tea.Msg {
 		secret, err := m.ds.CreateSecret(m.ctx, req.Server, NewSecret{
-			Name:  credentialName(req),
+			Name:  a.storedAs(),
 			Type:  req.Type,
 			Host:  req.Host,
 			Value: SecretValue{Token: value},
@@ -591,7 +692,11 @@ type approval struct {
 	// fresh is an answer typed in on the spot rather than a secret the project
 	// holds: secret is empty, and the value is asked for after the lifetime.
 	fresh bool
-	ttl   time.Duration
+	// name is what the new credential is stored under, when the approver was
+	// asked for one because the request's own name is taken. Empty is the
+	// request's name, which is the usual case.
+	name string
+	ttl  time.Duration
 	// update is what must change on the secret before the grant can be minted.
 	// One update, not one per question: a card whose rows were saved by a call
 	// each half-applies when the second fails.
@@ -599,6 +704,16 @@ type approval struct {
 	// changes is what that update does, in the words the status dialog says
 	// while it happens.
 	changes []string
+}
+
+// storedAs is the project secret name a new credential takes: the credential
+// the agent asked for, unless the approver renamed it because that name was
+// already in use.
+func (a approval) storedAs() string {
+	if a.name != "" {
+		return a.name
+	}
+	return credentialName(a.req)
 }
 
 // toRequest is the way back to the request card: where Esc goes from the first

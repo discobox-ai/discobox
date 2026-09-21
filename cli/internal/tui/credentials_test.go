@@ -723,6 +723,90 @@ func TestANewCredentialIsStoredThenApproved(t *testing.T) {
 	}
 }
 
+// A project that already holds a secret under the name the agent asked for is
+// the case the server refuses the create for, with advice — "pick another
+// name" — that nothing on this screen could follow.
+func TestANameTheProjectAlreadyHoldsIsAskedAboutFirst(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.projectSecrets = append(ds.projectSecrets,
+		Secret{ID: "sec_dupe", Name: "github", Type: "bearer", Host: "api.github.com"})
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("new"), 0)
+
+	if m.dialog == nil || m.dialog.kind != dlgInput || m.dialog.title != "Name the credential" {
+		t.Fatalf("dialog = %s, want the name asked for before anything else", describe(m.dialog))
+	}
+	// Offered a free name, so accepting it is one keystroke.
+	if got := m.dialog.input.Value(); got != "github-2" {
+		t.Fatalf("suggestion = %q, want the first free name", got)
+	}
+	if text := dialogText(m); !strings.Contains(text, "github") || !strings.Contains(text, "api.github.com") {
+		t.Fatalf("card = %q, want it to say which name is taken and where", text)
+	}
+
+	// A name that is taken too is refused here, not by the server after the
+	// token has been typed.
+	drain(t, m, m.dialog.action("github"), 0)
+	if m.dialog == nil || m.dialog.kind != dlgInput || !strings.Contains(dialogText(m), "taken") {
+		t.Fatalf("dialog = %s, want the taken name refused on the spot", describe(m.dialog))
+	}
+
+	drain(t, m, m.dialog.action("github-ci"), 0)
+	grantFor(t, m, lifetime.Day)
+	if !strings.Contains(dialogText(m), "github-ci") {
+		t.Fatalf("card = %q, want the token step to say what it is stored as", dialogText(m))
+	}
+
+	// Esc walks back through the step that was added, which holds the name
+	// that was chosen rather than offering the suggestion again.
+	send(t, m, keyPress("esc"))
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the lifetime back", describe(m.dialog))
+	}
+	send(t, m, keyPress("esc"))
+	if m.dialog == nil || m.dialog.kind != dlgInput || m.dialog.input.Value() != "github-ci" {
+		t.Fatalf("dialog = %s, want the name back as it was typed", describe(m.dialog))
+	}
+	send(t, m, keyPress("esc"))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request back", describe(m.dialog))
+	}
+	drain(t, m, m.dialog.action("new"), 0)
+	drain(t, m, m.dialog.action("github-ci"), 0)
+	grantFor(t, m, lifetime.Day)
+	drain(t, m, m.dialog.action("ghp_typedbyahuman"), 0)
+
+	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Name != "github-ci" {
+		t.Fatalf("created = %#v, want it stored under the name that was chosen", ds.createdSecrets)
+	}
+	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_new" {
+		t.Fatalf("approvals = %#v, want the request approved with it", ds.approvals)
+	}
+}
+
+// The name is asked about only when it is taken: a secret of the same name
+// bound elsewhere is not a collision, and the step nobody needs is not shown.
+func TestAFreeNameIsNotAskedAbout(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.projectSecrets = append(ds.projectSecrets,
+		Secret{ID: "sec_elsewhere", Name: "github", Type: "bearer", Host: "gitlab.example"})
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("new"), 0)
+
+	if !onLifetimeStep(m) {
+		t.Fatalf("dialog = %s, want the lifetime, with no name to settle", describe(m.dialog))
+	}
+	grantFor(t, m, lifetime.Day)
+	drain(t, m, m.dialog.action("ghp_typedbyahuman"), 0)
+	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Name != "github" {
+		t.Fatalf("created = %#v, want the name the agent asked for", ds.createdSecrets)
+	}
+}
+
 func TestAnEmptyTokenLeavesTheRequestWaiting(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
