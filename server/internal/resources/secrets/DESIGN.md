@@ -120,6 +120,22 @@ registry. `wellknown.go` owns it.
   approval failed never becomes the answer. A later approval may still name
   another secret, which answers that one request and marks nothing.
 
+## Delegation grants
+
+A grant's `Purpose` is what it authorizes its holder to do: `use` the
+credential, or `delegate` it to other discoboxes.
+One or the other, never both: a person approving a grant agrees to one thing,
+and a discobox that needs both holds two grants.
+
+- **A delegation grant authorizes nothing its holder sends.** It binds no
+  sentinel, is offered by no broker listing, and is skipped by every lookup
+  that hands a credential out (`FindLiveGrant`, `ListLiveAgentGrants`;
+  `SecretGrant.MayUse`).
+- **It is one discobox's, with uses** (`guardPurpose`, in `mintGrantAs`
+  beside the host and lifetime guards): a grant wider than a discobox has
+  nobody in particular to delegate it, and one without uses has nothing a
+  delegation could name.
+
 ## The agent credentials broker
 
 `agentcredentials.go` is the control-plane half of ADR 0031. A pool agent calls

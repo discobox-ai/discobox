@@ -84,6 +84,7 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 	var secretRef, scope, scopeKey, host, envVar, ttl string
 	var uses []string
+	var delegate bool
 	cmd := &cobra.Command{Use: "create --secret SECRET_ID --scope SCOPE", Short: "Create a standing grant (pre-approval)", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -128,6 +129,9 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 		if strings.TrimSpace(envVar) != "" {
 			body.SetEnvVar(apiclientgen.NewOptString(strings.TrimSpace(envVar)))
 		}
+		if delegate {
+			body.SetPurpose(apiclientgen.NewOptCreateSecretGrantBodyPurpose(apiclientgen.CreateSecretGrantBodyPurposeDelegate))
+		}
 		res, err := client.CreateSecretGrant(cmd.Context(), body, apiclientgen.CreateSecretGrantParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -145,6 +149,7 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLCreateFlagUsage)
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "What the credential may be used for (repeatable). With uses the credential is never injected into the discobox: only `discobox-access` can take it, one use at a time. Sandbox scope and a host are required")
 	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable an agent receives the credential in; required with --use")
+	cmd.Flags().BoolVar(&delegate, "delegate", false, "Make this a delegation grant: the discobox may delegate the credential to other discoboxes, and may not use it itself. Sandbox scope and --use are required")
 	return cmd
 }
 

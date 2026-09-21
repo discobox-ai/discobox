@@ -3250,9 +3250,15 @@ func (s *CreateSecretGrantBody) encodeFields(e *jx.Encoder) {
 			s.Uses.Encode(e)
 		}
 	}
+	{
+		if s.Purpose.Set {
+			e.FieldStart("purpose")
+			s.Purpose.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfCreateSecretGrantBody = [8]string{
+var jsonFieldsNameOfCreateSecretGrantBody = [9]string{
 	0: "$schema",
 	1: "grantTTLSeconds",
 	2: "host",
@@ -3261,6 +3267,7 @@ var jsonFieldsNameOfCreateSecretGrantBody = [8]string{
 	5: "secretId",
 	6: "envVar",
 	7: "uses",
+	8: "purpose",
 }
 
 // Decode decodes CreateSecretGrantBody from json.
@@ -3268,7 +3275,7 @@ func (s *CreateSecretGrantBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CreateSecretGrantBody to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -3354,6 +3361,16 @@ func (s *CreateSecretGrantBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"uses\"")
 			}
+		case "purpose":
+			if err := func() error {
+				s.Purpose.Reset()
+				if err := s.Purpose.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"purpose\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -3363,8 +3380,9 @@ func (s *CreateSecretGrantBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
+	for i, mask := range [2]uint8{
 		0b00101000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -3406,6 +3424,46 @@ func (s *CreateSecretGrantBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CreateSecretGrantBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CreateSecretGrantBodyPurpose as json.
+func (s CreateSecretGrantBodyPurpose) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes CreateSecretGrantBodyPurpose from json.
+func (s *CreateSecretGrantBodyPurpose) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateSecretGrantBodyPurpose to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch CreateSecretGrantBodyPurpose(v) {
+	case CreateSecretGrantBodyPurposeUse:
+		*s = CreateSecretGrantBodyPurposeUse
+	case CreateSecretGrantBodyPurposeDelegate:
+		*s = CreateSecretGrantBodyPurposeDelegate
+	default:
+		*s = CreateSecretGrantBodyPurpose(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s CreateSecretGrantBodyPurpose) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateSecretGrantBodyPurpose) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -11229,6 +11287,39 @@ func (s OptCreateSandboxExecRequestMetadata) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptCreateSandboxExecRequestMetadata) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CreateSecretGrantBodyPurpose as json.
+func (o OptCreateSecretGrantBodyPurpose) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes CreateSecretGrantBodyPurpose from json.
+func (o *OptCreateSecretGrantBodyPurpose) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptCreateSecretGrantBodyPurpose to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptCreateSecretGrantBodyPurpose) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptCreateSecretGrantBodyPurpose) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -32758,6 +32849,10 @@ func (s *SecretGrant) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		e.FieldStart("purpose")
+		s.Purpose.Encode(e)
+	}
+	{
 		e.FieldStart("createdAt")
 		json.EncodeDateTime(e, s.CreatedAt)
 	}
@@ -32809,21 +32904,22 @@ func (s *SecretGrant) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretGrant = [14]string{
+var jsonFieldsNameOfSecretGrant = [15]string{
 	0:  "$schema",
 	1:  "envName",
 	2:  "uses",
-	3:  "createdAt",
-	4:  "expiresAt",
-	5:  "grantedAt",
-	6:  "grantedBy",
-	7:  "host",
-	8:  "id",
-	9:  "projectId",
-	10: "scope",
-	11: "scopeKey",
-	12: "secretId",
-	13: "updatedAt",
+	3:  "purpose",
+	4:  "createdAt",
+	5:  "expiresAt",
+	6:  "grantedAt",
+	7:  "grantedBy",
+	8:  "host",
+	9:  "id",
+	10: "projectId",
+	11: "scope",
+	12: "scopeKey",
+	13: "secretId",
+	14: "updatedAt",
 }
 
 // Decode decodes SecretGrant from json.
@@ -32865,8 +32961,18 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"uses\"")
 			}
-		case "createdAt":
+		case "purpose":
 			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Purpose.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"purpose\"")
+			}
+		case "createdAt":
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -32888,7 +32994,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"expiresAt\"")
 			}
 		case "grantedAt":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.GrantedAt = v
@@ -32920,7 +33026,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"host\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -32932,7 +33038,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -32944,7 +33050,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"projectId\"")
 			}
 		case "scope":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				if err := s.Scope.Decode(d); err != nil {
 					return err
@@ -32954,7 +33060,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"scope\"")
 			}
 		case "scopeKey":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ScopeKey = string(v)
@@ -32966,7 +33072,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"scopeKey\"")
 			}
 		case "secretId":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.SecretId = string(v)
@@ -32978,7 +33084,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secretId\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -32999,8 +33105,8 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00101000,
-		0b00111111,
+		0b01011000,
+		0b01111110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -33042,6 +33148,46 @@ func (s *SecretGrant) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SecretGrant) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretGrantPurpose as json.
+func (s SecretGrantPurpose) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SecretGrantPurpose from json.
+func (s *SecretGrantPurpose) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretGrantPurpose to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SecretGrantPurpose(v) {
+	case SecretGrantPurposeUse:
+		*s = SecretGrantPurposeUse
+	case SecretGrantPurposeDelegate:
+		*s = SecretGrantPurposeDelegate
+	default:
+		*s = SecretGrantPurpose(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SecretGrantPurpose) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretGrantPurpose) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -1288,7 +1288,11 @@ type Grant struct {
 	// plain standing grant. The ID travels with the description because it is
 	// what an agent presents to `discobox-access run --use`, and reviewing a
 	// grant is where somebody reads it.
-	Uses      []GrantUse
+	Uses []GrantUse
+	// Delegate is a delegation grant: its discobox may hand the credential to
+	// other discoboxes and may not use it. A grant is one or the other, so
+	// false is a grant its discobox uses.
+	Delegate  bool
 	GrantedBy string
 	Granted   time.Time
 	// Expires is when the authorization lapses; zero never does.

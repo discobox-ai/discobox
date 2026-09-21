@@ -125,6 +125,42 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 	}
 }
 
+// A delegation grant reads the same as one its discobox uses in every field
+// but one, so that one is said wherever the grant is: its row, its card, and
+// the question before it is withdrawn.
+func TestADelegationGrantSaysWhatItIs(t *testing.T) {
+	t.Parallel()
+	m, ds := secretsFixture(t)
+	ds.projectGrants[0].Delegate = true
+	send(t, m, keyPress(secretsKey), keyPress(secretsKey))
+
+	send(t, m, keyPress("enter"))
+	if m.dialog == nil || m.dialog.kind != dlgActions {
+		t.Fatal("enter did not list the grants standing on the secret")
+	}
+	if detail := m.dialog.items[1].detail; !strings.HasPrefix(detail, "delegates") {
+		t.Fatalf("row = %q, want it to lead with what the grant is for", detail)
+	}
+
+	drain(t, m, m.dialog.action("grant_1"), 0)
+	for _, want := range []string{"held by", "never uses it", "uses it may delegate", "cannot run with them"} {
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("review = %q, want it to carry %q", dialogText(m), want)
+		}
+	}
+	for _, wrong := range []string{"usable by", "discobox-access run"} {
+		if strings.Contains(dialogText(m), wrong) {
+			t.Fatalf("review = %q, want no claim that its discobox may use it (%q)", dialogText(m), wrong)
+		}
+	}
+
+	send(t, m, keyPress("esc"))
+	drain(t, m, m.dialog.alt("grant_1"), 0)
+	if !strings.Contains(dialogText(m), "can no longer delegate") || strings.Contains(dialogText(m), "stops resolving") {
+		t.Fatalf("revoke = %q, want it to say what revoking a delegation grant stops", dialogText(m))
+	}
+}
+
 func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)

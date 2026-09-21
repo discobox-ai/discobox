@@ -2189,3 +2189,41 @@ func TestTheOldNameIsNeverPrinted(t *testing.T) {
 		})
 	}
 }
+
+// A person makes a delegation grant from the command line, and the grant it
+// gets back says what that means, since it is not what a reader assumes.
+func TestSecretGrantCreateMakesADelegationGrant(t *testing.T) {
+	const secretID = "secret-1"
+	var created map[string]any
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-grants":
+			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
+				t.Fatalf("decode grant body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"grant-1","projectId":"project-1","secretId":"` + secretID + `","scope":"sandbox","scopeKey":"sbx-1","host":"github.com","envName":"GH_TOKEN","uses":[{"useId":"use_1","description":"push a branch"}],"purpose":"delegate","grantedAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"github","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		default:
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "grant", "create",
+		"--secret", secretID, "--scope", "sandbox", "--scope-key", "sbx-1", "--host", "github.com",
+		"--env-var", "GH_TOKEN", "--use", "push a branch", "--delegate"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret grant create: %v", err)
+	}
+	if created["purpose"] != "delegate" {
+		t.Fatalf("grant body = %#v, want a delegation grant asked for", created)
+	}
+	if output := out.String(); !strings.Contains(output, "may delegate the credential to other discoboxes, and may not use it") {
+		t.Fatalf("output = %q, want the grant to say what its holder may do", output)
+	}
+}

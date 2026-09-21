@@ -128,6 +128,10 @@ func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host str
 		if !hostscope.Covers(c.Host, host) {
 			continue
 		}
+		// A grant its holder may only delegate authorizes nothing it sends.
+		if !c.MayUse() {
+			continue
+		}
 		if best == nil || isMoreSpecificGrant(c, best, scopeRank, host) {
 			best = c
 		}
@@ -168,7 +172,7 @@ func (s *Store) ListLiveAgentGrants(ctx context.Context, projectID string, scope
 	}
 	var out []model.SecretGrant
 	for i := range candidates {
-		if len(candidates[i].Uses) == 0 {
+		if len(candidates[i].Uses) == 0 || !candidates[i].MayUse() {
 			continue
 		}
 		if _, ok := allowed[GrantScope{Scope: candidates[i].Scope, ScopeKey: candidates[i].ScopeKey}]; !ok {

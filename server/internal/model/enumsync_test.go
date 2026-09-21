@@ -38,6 +38,7 @@ var yamlEnumAliases = map[string]string{
 	"CreateSecretBody.type":               "Secret.type",
 	"CreateSecretRequestBody.type":        "SecretRequest.type",
 	"CreateSecretGrantBody.scope":         "SecretGrant.scope",
+	"CreateSecretGrantBody.purpose":       "SecretGrant.purpose",
 	"ApproveSecretRequestBody.scope":      "SecretGrant.scope",
 	"ResolveSandboxSecretResponse.status": "SecretRequest.status",
 	// The sandbox owns the full existence vocabulary, so the tag on the embedded

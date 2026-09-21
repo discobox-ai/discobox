@@ -768,9 +768,13 @@ func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
 	}
 	covers := section{label: "the grant", fields: []field{
 		{label: "secret", value: secretName, tone: toneAccent},
-		{label: "usable by", value: scope},
+		{label: grantHolderLabel(*grant), value: scope},
 		{label: "may go to", value: where, tone: tone},
 	}}
+	if grant.Delegate {
+		covers.fields = append(covers.fields, field{label: "purpose",
+			value: "delegation — may delegate it, never uses it", tone: toneAccent})
+	}
 	if grant.GrantedBy != "" {
 		covers.fields = append(covers.fields, field{label: "granted by", value: grant.GrantedBy})
 	}
@@ -784,7 +788,14 @@ func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
 		uses.fields = append(uses.fields,
 			field{label: use.ID, value: use.Description})
 	}
-	if len(grant.Uses) > 0 {
+	switch {
+	case len(grant.Uses) > 0 && grant.Delegate:
+		uses.label = "uses it may delegate"
+		uses.lines = append(uses.lines, line{
+			text: "the discobox holding this grant may delegate these; it cannot run with them itself",
+			tone: toneDim,
+		})
+	case len(grant.Uses) > 0:
 		uses.lines = append(uses.lines, line{
 			text: "an agent takes a value under one of those IDs: discobox-access run --use <id> -- <command>",
 			tone: toneDim,
@@ -812,15 +823,19 @@ func (m *Model) confirmRevokeGrant(secretName, grantID string) tea.Cmd {
 	}
 	d := confirmDialog("Revoke grant", "", func(string) tea.Cmd { return m.revokeGrant(grantID) })
 	d.titleRight = grantID
+	stops := line{text: "the credential stops resolving at once, wherever it is being used", tone: toneAlert}
+	if grant.Delegate {
+		stops = line{text: "this discobox can no longer delegate the credential", tone: toneAlert}
+	}
 	d.sections = []section{{
 		label: "what goes",
 		fields: []field{
 			{label: "secret", value: secretName, tone: toneAccent},
-			{label: "usable by", value: strings.TrimSpace(scopeLabel(grant.Scope) + " " + grant.ScopeKey)},
+			{label: grantHolderLabel(grant), value: strings.TrimSpace(scopeLabel(grant.Scope) + " " + grant.ScopeKey)},
 			{label: "may go to", value: grantHost(grant)},
 		},
 		lines: []line{
-			{text: "the credential stops resolving at once, wherever it is being used", tone: toneAlert},
+			stops,
 			{text: "the request that produced it stays approved, because it is history", tone: toneDim},
 		},
 	}}
@@ -844,14 +859,29 @@ func grantHost(g Grant) string {
 	return g.Host
 }
 
+// grantHolderLabel names who a grant is for, which for a delegation grant is
+// not somebody who may use it. It is "held by" rather than anything about
+// delegating: whether the holder has delegated anything is not what the grant
+// says, only that it may.
+func grantHolderLabel(g Grant) string {
+	if g.Delegate {
+		return "held by"
+	}
+	return "usable by"
+}
+
 // grantDetail is the rest of the row: who may use it, how much it may do, and
-// how long it has left.
+// how long it has left. A delegation grant says so first, since the rest reads
+// the same as a grant its discobox uses.
 func grantDetail(g Grant, now time.Time) string {
 	who := scopeLabel(g.Scope)
 	if g.ScopeKey != "" {
 		who += " " + g.ScopeKey
 	}
 	parts := []string{who}
+	if g.Delegate {
+		parts = []string{"delegates", who}
+	}
 	if len(g.Uses) > 0 {
 		parts = append(parts, plural(len(g.Uses), "approved use", "approved uses"))
 	}

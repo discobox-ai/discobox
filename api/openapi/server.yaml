@@ -4134,6 +4134,12 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                purpose:
+                    description: What the grant authorizes its holder to do, one or the other and never both. use (the default) lets it use the credential. delegate lets it delegate the credential to other discoboxes and authorizes nothing it sends itself; sandbox scope, with uses, only.
+                    enum:
+                        - use
+                        - delegate
+                    type: string
             required:
                 - secretId
                 - scope
@@ -4369,6 +4375,12 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                purpose:
+                    description: What the grant authorizes its holder to do -- use the credential, or delegate it to other discoboxes. Never both.
+                    enum:
+                        - use
+                        - delegate
+                    type: string
                 createdAt:
                     description: Creation timestamp
                     format: date-time
@@ -4416,6 +4428,7 @@ components:
                 - secretId
                 - scope
                 - scopeKey
+                - purpose
                 - grantedAt
                 - createdAt
                 - updatedAt

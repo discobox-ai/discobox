@@ -917,6 +917,13 @@ const (
 	SecretGrantScopeHarnessConfig = "harnessConfig"
 	SecretGrantScopeProject       = "project"
 
+	// SecretGrantPurposeUse and SecretGrantPurposeDelegate are what a grant
+	// authorizes its holder to do with the credential: use it, or hand it to
+	// other discoboxes. A grant is one or the other, never both, so a person
+	// approving one is agreeing to one thing.
+	SecretGrantPurposeUse      = "use"
+	SecretGrantPurposeDelegate = "delegate"
+
 	// SecretRejectionReasonUnrefreshable and its siblings are why a credential
 	// an upstream refused needs a person rather than another attempt
 	// (ADR 0132 §3). They are the control plane's judgment, not the proxy's
@@ -1155,12 +1162,23 @@ type SecretGrant struct {
 	// a grant wider than one sandbox has no binding yet: the binding is minted
 	// for each discobox the first time its agent asks what it may use, and this
 	// is what names it.
-	EnvName   string    `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable an agent receives the credential in; set on a grant with uses"`
+	EnvName string `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable an agent receives the credential in; set on a grant with uses"`
+	// Purpose is what the grant authorizes its holder to do: use the
+	// credential, or delegate it to other discoboxes — never both, so a person
+	// approving a grant agrees to one thing. A delegation grant authorizes
+	// nothing its holder sends. Every grant written before delegation existed
+	// is a use grant, which the column's default gives it.
+	Purpose   string    `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose" doc:"What the grant authorizes its holder to do: use the credential, or delegate it to other discoboxes" enum:"use,delegate"`
 	CreatedAt time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
+
+// MayUse reports whether the holder may use the credential itself. Only a
+// delegation grant withholds it; an empty purpose is a row read before the
+// column existed, which is a use grant.
+func (g *SecretGrant) MayUse() bool { return g.Purpose != SecretGrantPurposeDelegate }
 
 // FindUse returns the approved use with the given ID.
 func (g *SecretGrant) FindUse(useID string) (SecretUse, bool) {

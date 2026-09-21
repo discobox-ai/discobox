@@ -405,6 +405,7 @@ func (d *apiDataSource) Grants(ctx context.Context, server, secretID string) ([]
 			Scope:     string(g.Scope),
 			ScopeKey:  strings.TrimSpace(g.ScopeKey),
 			Host:      strings.TrimSpace(g.Host.Or("")),
+			Delegate:  g.Purpose == apiclientgen.SecretGrantPurposeDelegate,
 			GrantedBy: strings.TrimSpace(g.GrantedBy.Or("")),
 			Granted:   g.GrantedAt,
 		}

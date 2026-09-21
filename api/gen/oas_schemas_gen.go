@@ -1448,6 +1448,10 @@ type CreateSecretGrantBody struct {
 	//  Sandbox scope only, a concrete host required, and use IDs are minted here -- a supplied one is
 	// ignored.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// What the grant authorizes its holder to do, one or the other and never both. use (the default)
+	// lets it use the credential. delegate lets it delegate the credential to other discoboxes and
+	// authorizes nothing it sends itself; sandbox scope, with uses, only.
+	Purpose OptCreateSecretGrantBodyPurpose `json:"purpose"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1490,6 +1494,11 @@ func (s *CreateSecretGrantBody) GetUses() OptNilSecretUseArray {
 	return s.Uses
 }
 
+// GetPurpose returns the value of Purpose.
+func (s *CreateSecretGrantBody) GetPurpose() OptCreateSecretGrantBodyPurpose {
+	return s.Purpose
+}
+
 // SetSchema sets the value of Schema.
 func (s *CreateSecretGrantBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -1528,6 +1537,55 @@ func (s *CreateSecretGrantBody) SetEnvVar(val OptString) {
 // SetUses sets the value of Uses.
 func (s *CreateSecretGrantBody) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *CreateSecretGrantBody) SetPurpose(val OptCreateSecretGrantBodyPurpose) {
+	s.Purpose = val
+}
+
+// What the grant authorizes its holder to do, one or the other and never both. use (the default)
+// lets it use the credential. delegate lets it delegate the credential to other discoboxes and
+// authorizes nothing it sends itself; sandbox scope, with uses, only.
+type CreateSecretGrantBodyPurpose string
+
+const (
+	CreateSecretGrantBodyPurposeUse      CreateSecretGrantBodyPurpose = "use"
+	CreateSecretGrantBodyPurposeDelegate CreateSecretGrantBodyPurpose = "delegate"
+)
+
+// AllValues returns all CreateSecretGrantBodyPurpose values.
+func (CreateSecretGrantBodyPurpose) AllValues() []CreateSecretGrantBodyPurpose {
+	return []CreateSecretGrantBodyPurpose{
+		CreateSecretGrantBodyPurposeUse,
+		CreateSecretGrantBodyPurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSecretGrantBodyPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSecretGrantBodyPurposeUse:
+		return []byte(s), nil
+	case CreateSecretGrantBodyPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSecretGrantBodyPurpose) UnmarshalText(data []byte) error {
+	switch CreateSecretGrantBodyPurpose(data) {
+	case CreateSecretGrantBodyPurposeUse:
+		*s = CreateSecretGrantBodyPurposeUse
+		return nil
+	case CreateSecretGrantBodyPurposeDelegate:
+		*s = CreateSecretGrantBodyPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // How widely the grant applies.
@@ -5524,6 +5582,52 @@ func (o OptCreateSandboxExecRequestMetadata) Get() (v CreateSandboxExecRequestMe
 
 // Or returns value if set, or given parameter if does not.
 func (o OptCreateSandboxExecRequestMetadata) Or(d CreateSandboxExecRequestMetadata) CreateSandboxExecRequestMetadata {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptCreateSecretGrantBodyPurpose returns new OptCreateSecretGrantBodyPurpose with value set to v.
+func NewOptCreateSecretGrantBodyPurpose(v CreateSecretGrantBodyPurpose) OptCreateSecretGrantBodyPurpose {
+	return OptCreateSecretGrantBodyPurpose{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSecretGrantBodyPurpose is optional CreateSecretGrantBodyPurpose.
+type OptCreateSecretGrantBodyPurpose struct {
+	Value CreateSecretGrantBodyPurpose
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSecretGrantBodyPurpose was set.
+func (o OptCreateSecretGrantBodyPurpose) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSecretGrantBodyPurpose) Reset() {
+	var v CreateSecretGrantBodyPurpose
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSecretGrantBodyPurpose) SetTo(v CreateSecretGrantBodyPurpose) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSecretGrantBodyPurpose) Get() (v CreateSecretGrantBodyPurpose, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSecretGrantBodyPurpose) Or(d CreateSecretGrantBodyPurpose) CreateSecretGrantBodyPurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -18546,6 +18650,9 @@ type SecretGrant struct {
 	// Approved uses, confirmed or edited at approval time. Present on grants minted through the agent
 	// credentials flow.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
+	// discoboxes. Never both.
+	Purpose SecretGrantPurpose `json:"purpose"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Expiry time; empty never expires.
@@ -18583,6 +18690,11 @@ func (s *SecretGrant) GetEnvName() OptString {
 // GetUses returns the value of Uses.
 func (s *SecretGrant) GetUses() OptNilSecretUseArray {
 	return s.Uses
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *SecretGrant) GetPurpose() SecretGrantPurpose {
+	return s.Purpose
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -18655,6 +18767,11 @@ func (s *SecretGrant) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
 }
 
+// SetPurpose sets the value of Purpose.
+func (s *SecretGrant) SetPurpose(val SecretGrantPurpose) {
+	s.Purpose = val
+}
+
 // SetCreatedAt sets the value of CreatedAt.
 func (s *SecretGrant) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
@@ -18711,6 +18828,49 @@ func (s *SecretGrant) SetUpdatedAt(val time.Time) {
 }
 
 func (*SecretGrant) createSecretGrantRes() {}
+
+// What the grant authorizes its holder to do -- use the credential, or delegate it to other
+// discoboxes. Never both.
+type SecretGrantPurpose string
+
+const (
+	SecretGrantPurposeUse      SecretGrantPurpose = "use"
+	SecretGrantPurposeDelegate SecretGrantPurpose = "delegate"
+)
+
+// AllValues returns all SecretGrantPurpose values.
+func (SecretGrantPurpose) AllValues() []SecretGrantPurpose {
+	return []SecretGrantPurpose{
+		SecretGrantPurposeUse,
+		SecretGrantPurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretGrantPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretGrantPurposeUse:
+		return []byte(s), nil
+	case SecretGrantPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretGrantPurpose) UnmarshalText(data []byte) error {
+	switch SecretGrantPurpose(data) {
+	case SecretGrantPurposeUse:
+		*s = SecretGrantPurposeUse
+		return nil
+	case SecretGrantPurposeDelegate:
+		*s = SecretGrantPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // How widely the grant applies.
 type SecretGrantScope string

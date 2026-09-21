@@ -608,9 +608,19 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 			fmt.Fprintf(tw, "%s\t%s (%s)\n", label, use.Description, use.UseId.Or(""))
 		}
 	}
+	fmt.Fprintf(tw, "PURPOSE\t%s\n", grantPurposeText(grant.Purpose))
 	fmt.Fprintf(tw, "EXPIRES\t%s\n", formatGrantExpiry(grant))
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(grant.CreatedAt))
 	return tw.Flush()
+}
+
+// grantPurposeText says what a grant lets its discobox do with the credential,
+// which for a delegation grant is not the thing a reader would assume.
+func grantPurposeText(purpose apiclientgen.SecretGrantPurpose) string {
+	if purpose == apiclientgen.SecretGrantPurposeDelegate {
+		return "delegate: may delegate the credential to other discoboxes, and may not use it"
+	}
+	return string(purpose)
 }
 
 func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGrant) error {
@@ -622,14 +632,15 @@ func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGran
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretGrants": grants})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSECRET\tSCOPE\tSCOPE KEY\tHOST\tEXPIRES")
+	fmt.Fprintln(tw, "ID\tSECRET\tSCOPE\tSCOPE KEY\tHOST\tPURPOSE\tEXPIRES")
 	for _, grant := range grants {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			grant.ID,
 			grant.SecretId,
 			grant.Scope,
 			grant.ScopeKey,
 			grant.Host.Or("(any)"),
+			grant.Purpose,
 			formatGrantExpiry(&grant),
 		)
 	}

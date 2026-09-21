@@ -372,7 +372,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	if v, ok := input.GrantTTLSeconds.Get(); ok {
 		ttl = v
 	}
-	grant, err := s.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, req.EnvName, ttl, approvedUses)
+	grant, err := s.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, req.EnvName, ttl, approvedUses, model.SecretGrantPurposeUse)
 	if err != nil {
 		return nil, err
 	}
@@ -591,15 +591,20 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 			"an environment variable is only meaningful with uses: without them the grant authorizes the sentinel the sandbox already holds")
 	}
 
-	grant, err := s.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, envVar, ttl, uses)
+	purpose, err := grantPurpose(string(input.Purpose.Or("")))
+	if err != nil {
+		return nil, err
+	}
+	grant, err := s.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, envVar, ttl, uses, purpose)
 	if err != nil {
 		return nil, err
 	}
 	// A grant on one discobox binds now, because there is a discobox to bind
 	// to and a failure is worth reporting to whoever is granting it. A wider
 	// one binds per discobox the first time that discobox's agent asks: the
-	// boxes it covers may not exist yet.
-	if len(uses) > 0 && scope == model.SecretGrantScopeSandbox {
+	// boxes it covers may not exist yet. A delegation grant binds nothing:
+	// there is nothing for its holder to take.
+	if len(uses) > 0 && scope == model.SecretGrantScopeSandbox && grant.MayUse() {
 		if err := s.bindAgentSecret(ctx, projectID, scopeKey, envVar, secret); err != nil {
 			// Leave no live authorization behind for a binding that never
 			// happened, exactly as approving one does.
@@ -729,12 +734,18 @@ func formatTTL(seconds int64) string {
 // It takes the secret rather than its ID because it is the one place every
 // grant passes through, which makes it the place to check the grant against the
 // credential it hands out.
-func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *model.Secret, scope, scopeKey, host, envName string, ttlSeconds int64, uses []model.SecretUse) (*model.SecretGrant, error) {
+//
+// purpose is what the grant authorizes — using the credential, or delegating
+// it — and is checked here with the rest.
+func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *model.Secret, scope, scopeKey, host, envName string, ttlSeconds int64, uses []model.SecretUse, purpose string) (*model.SecretGrant, error) {
 	host = normalizeHost(host)
 	if err := guardGrantHost(secret, host); err != nil {
 		return nil, err
 	}
 	if err := guardGrantTTL(secret, ttlSeconds); err != nil {
+		return nil, err
+	}
+	if err := s.guardPurpose(ctx, projectID, scope, scopeKey, uses, purpose); err != nil {
 		return nil, err
 	}
 	principal, _ := auth.PrincipalFromContext(ctx)
@@ -751,6 +762,7 @@ func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *mod
 		GrantedBy: grantedBy,
 		Uses:      uses,
 		EnvName:   strings.TrimSpace(envName),
+		Purpose:   purpose,
 	}
 	if ttlSeconds > 0 {
 		exp := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
