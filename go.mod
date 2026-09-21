@@ -180,7 +180,6 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
-	github.com/ibuildthecloud/watchnbuild v0.1.1-0.20260819054443-e7f48d7c428a // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jgautheron/goconst v1.10.0 // indirect
 	github.com/jjti/go-spancheck v0.6.5 // indirect
@@ -339,6 +338,7 @@ require (
 	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0 // indirect
+	github.com/discobox-ai/watchnbuild v0.1.1-0.20260919045642-dfdfac09bda9 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c // indirect
@@ -374,9 +374,9 @@ require (
 
 tool (
 	github.com/discobox-ai/hooks/cmd/discobox-hooks
+	github.com/discobox-ai/watchnbuild
 	github.com/go-task/task/v3/cmd/task
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-	github.com/ibuildthecloud/watchnbuild
 	github.com/ogen-go/ogen/cmd/ogen
 	golang.org/x/tools/gopls
 )

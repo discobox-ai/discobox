@@ -51,7 +51,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # this binary's interface from another repository and is installed further
 # down: re-read `sandbox-agent/image/skills/discobox-review/SKILL.md` against
 # the version you move to. Nothing else in the build will notice.
-ARG REVIEW_VERSION=v0.0.0-20260910233952-07aea70c5692
+ARG REVIEW_VERSION=v0.0.0-20260919051809-2b21e735f114
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     set -eux \
