@@ -17,11 +17,26 @@ active development.
 
 ## Getting started
 
-Install with Homebrew:
+Install with Homebrew, on macOS or Linux:
 
 ```bash
 brew install discobox-ai/tap/discobox
 ```
+
+Or with the install script:
+
+```bash
+curl -sSfL https://discobox.ai | sh
+```
+
+On Windows, from PowerShell:
+
+```powershell
+irm https://discobox.ai/install.ps1 | iex
+```
+
+Each of those installs the stable channel. [Release channels](#release-channels)
+covers the newer ones and how to pin a version.
 
 Open the launcher from your repository to create a box:
 
@@ -150,6 +165,74 @@ security boundary against a compromised agent.
 
 See [discobox.ai](https://discobox.ai) for the full overview and
 [architecture](https://discobox.ai/architecture).
+
+## Release channels
+
+Every release is published as a prerelease and marked stable by hand later, once
+it has been in use for a while. That gives three channels, each newer and less
+proven than the one before:
+
+- **stable** — the newest release marked stable. This is what you get when you
+  ask for nothing in particular.
+- **latest** — the newest `vX.Y.Z` release, stable or not. A release joins it
+  the moment it is cut.
+- **edge** — the newest release of any kind, including the `-alpha`, `-beta`,
+  and `-rc` builds cut to try a change before it becomes a release.
+
+### Homebrew
+
+The tap carries stable and latest as two formulae. `discobox-dev` installs
+beside `discobox` and runs under its own name, so you can keep both:
+
+```bash
+brew install discobox-ai/tap/discobox      # stable, runs as discobox
+brew install discobox-ai/tap/discobox-dev  # latest, runs as discobox-dev
+```
+
+The two share one state directory, one configuration, and one downloaded server,
+so their servers cannot run at the same time; stop one before starting the
+other. There is no edge formula — use the install script for that.
+
+### Install script
+
+```bash
+curl -sSfL https://discobox.ai | sh                         # stable
+curl -sSfL https://discobox.ai | sh -s -- --channel latest  # latest
+curl -sSfL https://edge.discobox.ai | sh                    # edge
+```
+
+```powershell
+irm https://discobox.ai/install.ps1 | iex                   # stable
+irm https://edge.discobox.ai/install.ps1 | iex              # edge
+$env:DISCOBOX_CHANNEL = 'latest'; irm https://discobox.ai/install.ps1 | iex
+```
+
+Unlike the tap, the script installs whichever channel you ask for as `discobox`,
+over whatever is already there. Pass `--dir` or `-InstallDir` to keep two of
+them side by side.
+
+Pin one release instead of a channel:
+
+```bash
+curl -sSfL https://discobox.ai | sh -s -- --version v0.10.1
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://discobox.ai/install.ps1))) -Version v0.10.1
+```
+
+Both scripts take `--channel`, `--version`, `--dir`, and `--stage` — `-Channel`,
+`-Version`, `-InstallDir`, `-Stage`, and `-NoModifyPath` in PowerShell — and
+read `DISCOBOX_CHANNEL`, `DISCOBOX_VERSION`, `DISCOBOX_INSTALL_DIR`, and
+`DISCOBOX_INSTALL_STAGE` from the environment, which is the only way to pass an
+option through `iex`. A flag beats the environment, and a version beats a
+channel. `install.sh --help` lists the rest; `install.ps1` documents them in
+its header comment.
+
+Either way you install the client only. The Discobox server is a separate
+program, downloaded the first time something needs one locally and checked
+against the digests the client carries; `--stage` fetches it during the install
+instead of on first use.
 
 ## Uninstalling
 
