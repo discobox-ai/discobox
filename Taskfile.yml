@@ -732,6 +732,13 @@ tasks:
     cmds:
       - go tool discobox-hooks run all
 
+  check:dev-build:
+    desc: Print watchnbuild's failure reports from `task dev`, and fail if there are any
+    # The rule is not here: scripts/wnb-failure-reports.sh owns it, so this and
+    # the hook of the same name run the same check (ADR 0066 §1).
+    cmds:
+      - scripts/wnb-failure-reports.sh
+
   check:dockerfile-builds:
     desc: Test-build every Dockerfile (or just the ones passed as CLI arguments)
     # The build rules are not here: each image's own build target owns them, and
