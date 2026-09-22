@@ -153,20 +153,33 @@ func searchable() *dialog {
 // wrapped to the window, so how many lines hold a word is only known here.
 func draw(d *dialog) string { return d.view(newStyles(false), &zones{}, 100, 24) }
 
-func TestSingleLineDialogBodyEllipsizesInsteadOfWrapping(t *testing.T) {
+// A subject too long for the card is cut on its own row rather than wrapped,
+// and the question under it wraps in full: a card that cut the question off
+// mid-sentence asked something nobody could read to the end (issue #37).
+func TestDialogSubjectEllipsizesAndItsBodyWraps(t *testing.T) {
 	t.Parallel()
-	d := actionsDialog("Uncommitted changes", "/home/darren/src/disco2 has 7 uncommitted changes (cli/internal/cli/cp.go, cli/internal/cli/picker.go, cli/internal/cli/picker_test.go and 4 more)", []action{
-		{key: "false", label: "Start from the last commit", enabled: true},
-		{key: "true", label: "Include uncommitted changes", enabled: true},
+	dir := "/Users/somebody/projects/" + strings.Repeat("nested/", 20) + "leaf-directory"
+	d := actionsDialog("Copy this directory?", copyDirectoryBody, []action{
+		{key: "false", label: "Do not copy the directory", enabled: true},
+		{key: "true", label: "Copy the directory in", enabled: true},
 	}, nil)
-	d.singleLineBody = true
+	d.subject = dir
 
 	got := draw(d)
-	if !strings.Contains(got, "…") {
-		t.Fatalf("dialog did not ellipsize its body:\n%s", got)
+	var rows []string
+	for _, row := range strings.Split(got, "\n") {
+		if strings.Contains(row, "/Users/somebody") || strings.Contains(row, "leaf-directory") {
+			rows = append(rows, row)
+		}
 	}
-	if strings.Contains(got, "picker_test.go") {
-		t.Fatalf("dialog wrapped the clipped tail onto another row:\n%s", got)
+	if len(rows) != 1 || !strings.Contains(rows[0], "/Users/somebody") || !strings.Contains(rows[0], "leaf-directory") {
+		t.Fatalf("the subject is not on one row with both its ends:\n%s", got)
+	}
+	if !strings.Contains(rows[0], "…") || strings.Count(got, "nested/") >= 20 {
+		t.Fatalf("the subject was not cut from the middle:\n%s", got)
+	}
+	if !strings.Contains(got, "nothing checked out in it.") {
+		t.Fatalf("the body was cut off before its end:\n%s", got)
 	}
 }
 

@@ -2560,21 +2560,21 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	// the one that changes nothing about what the sandbox sees. The repository
 	// named is the one the run is cut from, which is not the window's own
 	// directory when the source option names another.
-	m.dialog = m.includeDirtyDialog("Uncommitted changes", dirtyWorkspaceBody(msg.workspace), true, msg.req)
+	m.dialog = m.includeDirtyDialog("Uncommitted changes", msg.workspace.Directory, dirtyWorkspaceBody(msg.workspace), true, msg.req)
 	return nil
 }
 
-// dirtyWorkspaceBody says what the question is about: the directory, how many
-// paths differ from the checked-out commit, and enough of them to recognize the
-// change by. A listing that reported no paths still asks the question — what it
-// is about is the working tree, not the count.
+// dirtyWorkspaceBody says what the question is about under the directory it
+// names: how many paths differ from the checked-out commit, and enough of them
+// to recognize the change by. A listing that reported no paths still asks the
+// question — what it is about is the working tree, not the count.
 func dirtyWorkspaceBody(workspace SourceWorkspace) string {
-	subject := workspace.Directory + " has uncommitted changes"
+	changes := "It has uncommitted changes"
 	if n := len(workspace.Changes); n > 0 {
-		subject = fmt.Sprintf("%s has %s (%s)",
-			workspace.Directory, plural(n, "uncommitted change", "uncommitted changes"), summarizePaths(workspace.Changes))
+		changes = fmt.Sprintf("It has %s (%s)",
+			plural(n, "uncommitted change", "uncommitted changes"), summarizePaths(workspace.Changes))
 	}
-	return subject + ". Carry them into the discobox as a snapshot on top of the checked-out commit?"
+	return changes + ". Carry them into the discobox as a snapshot on top of the checked-out commit?"
 }
 
 // summarizePaths is a few of the paths and then how many more there are: enough
@@ -2600,7 +2600,7 @@ func summarizePaths(paths []string) string {
 func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 	total, stop := m.ds.MeasureDirectory(m.ctx, dir)
 	m.copySize, m.copyStop, m.copyDir = total, stop, dir
-	m.dialog = m.includeDirtyDialog("Copy this directory?", copyDirectoryBody(dir), false, req)
+	m.dialog = m.includeDirtyDialog("Copy this directory?", dir, copyDirectoryBody, false, req)
 	m.dialog.emphasis = directoryCopySize(total())
 	m.copyDialog = m.dialog
 	return m.pollDirectorySize()
@@ -2610,7 +2610,8 @@ func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 // reaches the discobox. It uses the same two descriptive rows as the standalone
 // run prompt, with the excluding answer first so Enter means no. Both answers
 // are answers — the discobox is created either way — so cancel is heard as no.
-func (m *Model) includeDirtyDialog(title, body string, repository bool, req RunRequest) *dialog {
+// The directory is the dialog's subject, on a row of its own above the body.
+func (m *Model) includeDirtyDialog(title, dir, body string, repository bool, req RunRequest) *dialog {
 	answer := func(includeDirty string) tea.Cmd {
 		req := req
 		req.IncludeDirty = includeDirty
@@ -2627,7 +2628,7 @@ func (m *Model) includeDirtyDialog(title, body string, repository bool, req RunR
 		}
 	}
 	d := actionsDialog(title, body, items, answer)
-	d.singleLineBody = true
+	d.subject = dir
 	d.onCancel = func() tea.Cmd { return answer("false") }
 	return d
 }
@@ -2666,13 +2667,12 @@ func (m *Model) endDirectorySize() {
 // enough that the number is visibly climbing, and no more than that.
 const directorySizeInterval = 200 * time.Millisecond
 
-// copyDirectoryBody is the copy question. What it would cost is not in here:
-// it is the dialog's emphasis, on a line of its own under this one, because it
-// is the whole of what the answer turns on and it is still arriving.
-func copyDirectoryBody(dir string) string {
-	return dir + " is not a Git repository, so copying it into the discobox means copying all of it. " +
-		"Answering no creates the discobox anyway, with nothing checked out in it."
-}
+// copyDirectoryBody is the copy question, under the directory it names. What it
+// would cost is not in here: it is the dialog's emphasis, on a line of its own
+// under this one, because it is the whole of what the answer turns on and it is
+// still arriving.
+const copyDirectoryBody = "It is not a Git repository, so copying it into the discobox means copying all of it. " +
+	"Answering no creates the discobox anyway, with nothing checked out in it."
 
 // directoryCopySize is that line, with as much of the count as the walk behind
 // the question has reached. Nothing counted yet says so rather than reporting a

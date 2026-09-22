@@ -263,8 +263,8 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		}
 		// The repository asked about is the one the run is cut from, which the
 		// source option can point somewhere other than this window's directory.
-		if !strings.Contains(m.dialog.body, "/home/ada/src/web") {
-			t.Fatalf("%s: dialog body = %q, want the repository named", tc.answer, m.dialog.body)
+		if m.dialog.subject != "/home/ada/src/web" {
+			t.Fatalf("%s: dialog subject = %q, want the repository named", tc.answer, m.dialog.subject)
 		}
 		send(t, m, keyPress(tc.answer))
 		if len(ds.runs) != 1 {
@@ -298,8 +298,8 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		if m.dialog == nil {
 			t.Fatalf("%s: a directory with no repository should be asked about", tc.answer)
 		}
-		if !strings.Contains(m.dialog.body, "/home/ada/notes") || !strings.Contains(m.dialog.body, "not a Git repository") {
-			t.Fatalf("%s: dialog body = %q, want the directory named", tc.answer, m.dialog.body)
+		if m.dialog.subject != "/home/ada/notes" || !strings.Contains(m.dialog.body, "not a Git repository") {
+			t.Fatalf("%s: dialog subject = %q, body = %q, want the directory named", tc.answer, m.dialog.subject, m.dialog.body)
 		}
 		if m.dialog.emphasis == "" {
 			t.Fatalf("%s: the question should lead with what copying would cost", tc.answer)
