@@ -784,6 +784,23 @@ flowchart LR
   a resolve would refuse it: the use window is an authorization, and a rejection
   is a fact about the credential behind it that the window's ending does not
   change.
+- The same resolver is the proxy's gate (`Gate`, `gate.go`) for the discobox
+  API's host, `api.discobox.internal`, which it names to the proxy as
+  `Secrets.GateHost`
+  ([ADR 0140](../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) §2).
+  It admits a call carrying the sentinel of a live activation of
+  `ai.discobox.sandbox` minted for the calling sandbox for exactly that host,
+  that the judge allows; removes the sentinel and any identity the sandbox
+  claimed; and forwards the call to the control plane with this pool's
+  assertion — which carries `poolauth.ScopeSandboxForward` — and the sandbox's
+  ID, which is what the control plane takes as the caller. Every sandbox is
+  given `DISCOBOX_API_URL` and `DISCOBOX_SERVER` for that host with its proxy
+  environment, so the `discobox` CLI in the image calls it.
+- The same resolver is the proxy's judge (`Judge`): asked, per request and
+  after the swap, whether the request may leave carrying those credentials
+  (see [`proxy/DESIGN.md`](../proxy/DESIGN.md#sentinel-secret-swapping)). It
+  allows every request today. What is enforced is the destination host, which
+  `activation` holds an activation to before a value is ever resolved.
 
 ## Agent Credentials
 

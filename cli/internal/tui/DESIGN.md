@@ -324,6 +324,14 @@ lifetime → limit question, only when the lifetime is over the secret's cap →
 approve. A new credential takes its lifetime *before* its token, so going back
 never has to hold a token that was already typed.
 
+**A gate is let in, not answered** (`askAboutGate`). A request for a
+credential with nothing behind it — the discobox API, `ai.discobox.sandbox` —
+has no secret to choose and no value to type, so its card offers Approve and
+Deny alone, then the lifetime, and the approval names no secret. It says what
+approving gives the discobox — the power to give any project secret onward and
+answer any request — because the ordinary card describes one credential, and
+this is every one of them.
+
 **A new credential is named only when it has to be** (`startNewCredential`,
 `askStoredAs`). It is stored as what the agent asked for, and the project's
 uniqueness is (name, type, host), so the collision is visible here before the

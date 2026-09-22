@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/x/id"
 
@@ -161,9 +162,18 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("a sandbox named %q already exists in this project", config.Name))
 	}
+	// A discobox a sandbox creates is created as the user who created that
+	// sandbox (ADR 0140 §4).
 	userID := s.defaultUserID
-	if authenticatedUserID, err := auth.UserID(ctx); err == nil {
-		userID = authenticatedUserID
+	if actingUserID, err := auth.ActingUserID(ctx); err == nil {
+		userID = actingUserID
+	}
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox && len(config.Secrets) > 0 {
+		// Inline secrets put a value inside the new discobox where anything
+		// in it can read it. A sandbox gives another discobox uses of a
+		// credential, which only discobox-access can take (grants, below).
+		return nil, apperrors.NewStatusError(http.StatusForbidden,
+			"a discobox gives a new discobox uses of a secret, through grants, never its value")
 	}
 	sandboxID, err := id.New(id.PrefixSandbox)
 	if err != nil {
@@ -291,7 +301,19 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			assignments = append(assignments, harnessAssignments...)
 		}
 	}
-	return s.createSandboxIntent(ctx, sandbox, assignments)
+	grants, err := resourcesecrets.PrepareSandboxGrants(ctx, s.store, projectID, sandbox.ID, input.Grants)
+	if err != nil {
+		return nil, err
+	}
+	for _, binding := range grants.Bindings {
+		for _, assignment := range assignments {
+			if assignment.EnvName == binding.EnvName {
+				return nil, apperrors.NewStatusError(http.StatusBadRequest,
+					fmt.Sprintf("%s is already delivered to the new discobox another way; give its grant another variable", binding.EnvName))
+			}
+		}
+	}
+	return s.createSandboxIntent(ctx, sandbox, append(assignments, grants.Bindings...), grants.Grants)
 }
 
 // resolveHarnessConfigID is which harness a sandbox runs: what the request

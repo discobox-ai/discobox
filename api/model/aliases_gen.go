@@ -131,6 +131,7 @@ type SandboxExecWaitResult = apigen.SandboxExecWaitResult
 type SandboxExecWaitUntil = apigen.SandboxExecWaitUntil
 type SandboxExecsResponse = apigen.SandboxExecsResponse
 type SandboxGitIdentity = apigen.SandboxGitIdentity
+type SandboxGrant = apigen.SandboxGrant
 type SandboxHarnessSecretsResponse = apigen.SandboxHarnessSecretsResponse
 type SandboxMemoryConsumption = apigen.SandboxMemoryConsumption
 type SandboxMeta = apigen.SandboxMeta

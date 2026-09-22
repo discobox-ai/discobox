@@ -204,9 +204,10 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, bootstrap Boo
 // writes it, with the control-plane URL, to this pool's own resolve-context
 // file, refreshing it before expiry.
 //
-// It carries two scopes because the proxy unit does two things on a sandbox's
-// behalf: resolve sentinels it sees in traffic, and broker agent credential
-// requests (ADR 0031). They stay separate scopes so a future split of those
+// It carries three scopes because the proxy unit does three things on a
+// sandbox's behalf: resolve sentinels it sees in traffic, broker agent
+// credential requests (ADR 0031), and forward the sandbox's calls to the
+// discobox API (ADR 0140). They stay separate scopes so a future split of those
 // roles across processes is a change of who holds which token, not a change of
 // what a token means.
 func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration) {
@@ -214,7 +215,7 @@ func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, bootst
 		token, err := poolauth.CreateTokenWithTTL(registration.PrivateKey, poolauth.Claims{
 			ProjectID: bootstrap.ProjectID,
 			PoolID:    bootstrap.PoolID,
-			Scopes:    []string{poolauth.ScopeSecretResolve, poolauth.ScopeCredentialBroker},
+			Scopes:    []string{poolauth.ScopeSecretResolve, poolauth.ScopeCredentialBroker, poolauth.ScopeSandboxForward},
 		}, resolveTokenTTL)
 		if err != nil {
 			return err

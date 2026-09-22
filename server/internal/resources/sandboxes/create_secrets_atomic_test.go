@@ -52,7 +52,7 @@ func TestCreateSandboxIntentPersistsSecretsWithSandbox(t *testing.T) {
 	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}
 	created, err := svc.createSandboxIntent(ctx, sandbox, []*model.SandboxSecret{
 		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-1", EnvName: "TOKEN", Sentinel: "sentinel-1"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("create intent: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestCreateSandboxIntentRollsBackSandboxOnSecretFailure(t *testing.T) {
 	_, err := svc.createSandboxIntent(ctx, sandbox, []*model.SandboxSecret{
 		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-1", EnvName: "TOKEN", Sentinel: "sentinel-1"},
 		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-2", EnvName: "TOKEN", Sentinel: "sentinel-2"},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("create intent succeeded, want a failed secret insert to fail the create")
 	}

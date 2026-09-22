@@ -248,6 +248,11 @@ func httpAuditRecord(e apimodel.HTTPAuditExchange) auditRecord {
 	if len(e.SwappedUseIds) > 0 {
 		summary += " uses=" + terminalSafe(strings.Join(e.SwappedUseIds, ","))
 	}
+	if e.Blocked {
+		// What refused it, and why: a timeline that says only "blocked" leaves
+		// the one question worth asking to another command.
+		summary += " refused: " + truncateTableValue(terminalSafe(e.BlockedReason.Or(httpAuditRefuser(true, ""))), 80)
+	}
 	return auditRecord{ID: e.ID, Attestor: auditAttestorPool, DiscoboxID: e.SandboxId, Record: &e, summary: summary}
 }
 

@@ -43,11 +43,16 @@ type httpProxy struct {
 }
 
 type requestMeta struct {
-	ctx                  context.Context
-	span                 trace.Span
-	start                time.Time
-	client               clientIdentity
-	cacheHit             bool
+	ctx      context.Context
+	span     trace.Span
+	start    time.Time
+	client   clientIdentity
+	cacheHit bool
+	// answered is a request the proxy refused and answered itself, and has
+	// already recorded as blocked. Its response is the proxy's own, so the
+	// response path neither records it again nor treats it as the upstream's
+	// word on a credential.
+	answered             bool
 	cacheKey             string
 	cacheError           string
 	appliedRuleID        string
@@ -198,6 +203,11 @@ func (h *httpProxy) setupHandlers() {
 		}
 		client := h.clientIdentity(req)
 		flt, _ := h.policy()
+		// The gate host is intercepted whatever the allowlist says: it never
+		// reaches the internet, and what may reach it is the gate's to decide.
+		if h.secretSwapper().IsGate(host) {
+			return h.mitmConnect, host
+		}
 		if !flt.AllowHostForClient(host, client.ID) {
 			span.SetAttributes(append(clientAttrs(client), attribute.Bool("proxy.blocked", true))...)
 			h.audit.RecordHTTP(audit.HTTPEvent{
@@ -231,8 +241,13 @@ func (h *httpProxy) setupHandlers() {
 		meta := &requestMeta{ctx: traceCtx, span: span, start: time.Now(), client: client}
 		ctx.UserData = meta
 
+		if swapper := h.secretSwapper(); swapper.IsGate(req.Host) {
+			return req, h.serveGate(req, meta, client, swapper)
+		}
+
 		flt, rewriter := h.policy()
 		if !flt.AllowHostForClient(req.Host, client.ID) {
+			meta.answered = true
 			span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", http.StatusForbidden))
 			h.audit.RecordHTTP(audit.HTTPEvent{
 				Context:        traceCtx,
@@ -308,7 +323,10 @@ func (h *httpProxy) setupHandlers() {
 			rewriteSpan.SetAttributes(attribute.Bool("proxy.header_rewrite.matched", false))
 		}
 		rewriteSpan.End()
-		h.swapSecrets(req, meta, client)
+		if refused := h.swapSecrets(req, meta, client); refused != nil {
+			span.End()
+			return req, refused
+		}
 		h.bufferRetryBody(req, meta)
 		h.captureRequestBody(req, meta)
 		return req, nil
@@ -323,7 +341,7 @@ func (h *httpProxy) setupHandlers() {
 			traceCtx, span := proxyTracer().Start(ctx.Req.Context(), "proxy.http.request", trace.WithSpanKind(trace.SpanKindServer))
 			meta = &requestMeta{ctx: traceCtx, span: span, start: time.Now(), client: clientIdentityFromRequest(ctx.Req)}
 		}
-		if meta.cacheHit {
+		if meta.cacheHit || meta.answered {
 			return resp
 		}
 		if retried := h.retryRejectedSwap(resp, ctx, meta); retried != nil {
@@ -456,10 +474,14 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 // swapSecrets substitutes sentinel placeholder credentials in req for their
 // resolved real values and records which header names and URL were affected so
 // the audit trail redacts them. The real value is never written to audit.
-func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client clientIdentity) {
+//
+// A request that came out of the swap carrying credentials is judged before it
+// leaves, and one the judge does not allow is answered here, with the response
+// swapSecrets returns, and never sent.
+func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client clientIdentity) *http.Response {
 	swapper := h.secretSwapper()
 	if !swapper.Active(client.ID) {
-		return
+		return nil
 	}
 	preURL := requestURL(req)
 	_, span := proxyTracer().Start(meta.ctx, "proxy.secret_swap")
@@ -471,7 +493,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		if len(result.Errors) > 0 {
 			span.SetAttributes(attribute.Int("proxy.secret_swap.errors", len(result.Errors)))
 		}
-		return
+		return nil
 	}
 	meta.swappedHeaders = result.Headers
 	meta.swappedUseIDs = result.UseIDs
@@ -491,6 +513,105 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		attribute.Int("proxy.secret_swap.query_params", len(result.QueryParams)),
 		attribute.Bool("proxy.secret_swap.encoded", result.Encoded),
 	)
+	return h.judgeSwap(req, meta, client, preURL, preSwapHeader, result)
+}
+
+// serveGate answers a request for the gate host, which is never sent to the
+// internet (ADR 0140 §2). What the resolver admits is answered by the upstream
+// behind the gate and recorded like any exchange, a 502 included when the gate
+// fails after letting it in; what it refuses is answered here with a 403 and
+// recorded once, as blocked. Nothing is swapped on
+// the way: the sentinel is the resolver's to recognize and remove.
+func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clientIdentity, swapper *secrets.Swapper) *http.Response {
+	admitted, err := swapper.Gate(meta.ctx, secrets.GateRequest{ClientID: client.ID, Request: req})
+	var refusal *secrets.GateRefusal
+	if err == nil || !errors.As(err, &refusal) {
+		// Let in. The use it was let in under is recorded on its row, as a
+		// swapped credential's is: it is what joins the request to the
+		// approval that allowed it.
+		if admitted.UseID != "" {
+			meta.swappedUseIDs = []string{admitted.UseID}
+		}
+		if err == nil {
+			return admitted.Response
+		}
+		// Let in, and then the gate failed: the upstream was unreachable, or
+		// went quiet after the request went out, and may have acted on it.
+		// That is not a refusal, so it is recorded as an ordinary exchange
+		// the upstream failed — a 502, by the response path, like any
+		// other — and never as a request the proxy refused and did not send.
+		return goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusBadGateway, "discobox API unreachable: "+err.Error())
+	}
+	var useIDs []string
+	if refusal.UseID != "" {
+		useIDs = []string{refusal.UseID}
+	}
+	status := http.StatusForbidden
+	meta.answered = true
+	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", status))
+	h.audit.RecordHTTP(audit.HTTPEvent{
+		Context:        meta.ctx,
+		Time:           time.Now().UTC(),
+		ClientID:       client.ID,
+		ClientSubject:  client.Subject,
+		ClientSerial:   client.Serial,
+		Method:         req.Method,
+		URL:            requestURL(req),
+		Host:           req.Host,
+		Status:         status,
+		Blocked:        true,
+		BlockedReason:  "gate: " + err.Error(),
+		SwappedUseIDs:  useIDs,
+		RequestHeaders: req.Header,
+	})
+	meta.span.End()
+	return goproxy.NewResponse(req, goproxy.ContentTypeText, status, "blocked by proxy: "+err.Error())
+}
+
+// judgeSwap asks whether a request may leave with the credentials just swapped
+// into it, and answers it here when it may not. The judge is shown the request
+// as the sandbox sent it — the URL and headers from before the swap — so it
+// reads sentinels and never a credential, and the refusal is audited the same
+// way. A judge that cannot answer refuses: a credential goes out only on a
+// request something agreed to.
+func (h *httpProxy) judgeSwap(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, result secrets.Result) *http.Response {
+	verdict, err := h.secretSwapper().Judge(meta.ctx, secrets.JudgeRequest{
+		ClientID:  client.ID,
+		UseIDs:    result.UseIDs,
+		Sentinels: result.Sentinels,
+		Method:    req.Method,
+		Host:      req.Host,
+		URL:       preURL,
+		Header:    preSwapHeader,
+	})
+	if err == nil && verdict.Allow {
+		return nil
+	}
+	reason := verdict.Reason
+	if err != nil {
+		reason = "the judge could not decide: " + err.Error()
+	}
+	if reason == "" {
+		reason = "not an approved use of this credential"
+	}
+	meta.answered = true
+	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", http.StatusForbidden))
+	h.audit.RecordHTTP(audit.HTTPEvent{
+		Context:        meta.ctx,
+		Time:           time.Now().UTC(),
+		ClientID:       client.ID,
+		ClientSubject:  client.Subject,
+		ClientSerial:   client.Serial,
+		Method:         req.Method,
+		URL:            preURL,
+		Host:           req.Host,
+		Status:         http.StatusForbidden,
+		Blocked:        true,
+		BlockedReason:  "judge: " + reason,
+		SwappedUseIDs:  result.UseIDs,
+		RequestHeaders: preSwapHeader,
+	})
+	return goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "blocked by proxy: "+reason)
 }
 
 // unauthorizedRetryMaxBody bounds what a retryable request holds in memory. A

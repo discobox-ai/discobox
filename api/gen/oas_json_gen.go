@@ -1982,14 +1982,25 @@ func (s *CreateSandboxBody) encodeFields(e *jx.Encoder) {
 			s.PoolId.Encode(e)
 		}
 	}
+	{
+		if s.Grants != nil {
+			e.FieldStart("grants")
+			e.ArrStart()
+			for _, elem := range s.Grants {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
 }
 
-var jsonFieldsNameOfCreateSandboxBody = [5]string{
+var jsonFieldsNameOfCreateSandboxBody = [6]string{
 	0: "$schema",
 	1: "harnessName",
 	2: "config",
 	3: "origin",
 	4: "poolId",
+	5: "grants",
 }
 
 // Decode decodes CreateSandboxBody from json.
@@ -2050,6 +2061,23 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"poolId\"")
+			}
+		case "grants":
+			if err := func() error {
+				s.Grants = make([]SandboxGrant, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SandboxGrant
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Grants = append(s.Grants, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"grants\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -28017,6 +28045,197 @@ func (s *SandboxGitIdentity) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxGitIdentity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxGrant) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxGrant) encodeFields(e *jx.Encoder) {
+	{
+		if s.WellKnownId.Set {
+			e.FieldStart("wellKnownId")
+			s.WellKnownId.Encode(e)
+		}
+	}
+	{
+		if s.SecretId.Set {
+			e.FieldStart("secretId")
+			s.SecretId.Encode(e)
+		}
+	}
+	{
+		if s.EnvVar.Set {
+			e.FieldStart("envVar")
+			s.EnvVar.Encode(e)
+		}
+	}
+	{
+		if s.Host.Set {
+			e.FieldStart("host")
+			s.Host.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("uses")
+		e.ArrStart()
+		for _, elem := range s.Uses {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.GrantTTLSeconds.Set {
+			e.FieldStart("grantTTLSeconds")
+			s.GrantTTLSeconds.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxGrant = [6]string{
+	0: "wellKnownId",
+	1: "secretId",
+	2: "envVar",
+	3: "host",
+	4: "uses",
+	5: "grantTTLSeconds",
+}
+
+// Decode decodes SandboxGrant from json.
+func (s *SandboxGrant) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxGrant to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "wellKnownId":
+			if err := func() error {
+				s.WellKnownId.Reset()
+				if err := s.WellKnownId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"wellKnownId\"")
+			}
+		case "secretId":
+			if err := func() error {
+				s.SecretId.Reset()
+				if err := s.SecretId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretId\"")
+			}
+		case "envVar":
+			if err := func() error {
+				s.EnvVar.Reset()
+				if err := s.EnvVar.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"envVar\"")
+			}
+		case "host":
+			if err := func() error {
+				s.Host.Reset()
+				if err := s.Host.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"host\"")
+			}
+		case "uses":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				s.Uses = make([]SecretUse, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SecretUse
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Uses = append(s.Uses, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"uses\"")
+			}
+		case "grantTTLSeconds":
+			if err := func() error {
+				s.GrantTTLSeconds.Reset()
+				if err := s.GrantTTLSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"grantTTLSeconds\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxGrant")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00010000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxGrant) {
+					name = jsonFieldsNameOfSandboxGrant[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxGrant) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxGrant) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -28,6 +28,7 @@ type sandboxCreateOptions struct {
 	prompt               []string
 	env                  []string
 	secret               []string
+	grant                []string
 	sourceURL            string
 	sourceRef            string
 	sourceRefType        string
@@ -161,6 +162,17 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			body, err := createSandboxBody(opts)
 			if err != nil {
 				return err
+			}
+			for i := range body.Grants {
+				ref, named := body.Grants[i].SecretId.Get()
+				if !named {
+					continue // A well-known ID, whose secret the server knows.
+				}
+				secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, ref)
+				if err != nil {
+					return err
+				}
+				body.Grants[i].SetSecretId(apiclientgen.NewOptString(secretID))
 			}
 			sandboxRes, err := client.CreateSandbox(cmd.Context(), body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 			if err != nil {
@@ -528,6 +540,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.modelReasoningLevel, "model-reasoning-level", "", "Model reasoning level the harness should use")
 	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the harness should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
+	cmd.Flags().StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST]:ENV_VAR=USE, or ID[@HOST]=USE for a well-known credential such as com.github.api, which answers with the secret marked for it and its own variable; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, and nothing in the discobox can read it. HOST defaults to the secret's host, or the ID's, and may only narrow the ID's")
 	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
@@ -573,6 +586,11 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if len(secrets) > 0 {
 		config.SetSecrets(secrets)
 	}
+	grants, err := sandboxGrants(opts.grant)
+	if err != nil {
+		return nil, err
+	}
+	body.Grants = grants
 	source, err := gitSourceFromCreateOptions(opts)
 	if err != nil {
 		return nil, err
@@ -755,4 +773,44 @@ func sourceCodeReferences(value string) (apiclientgen.SandboxCreateConfigSourceC
 		return nil, fmt.Errorf("source code references must be valid JSON: %w", err)
 	}
 	return refs, nil
+}
+
+// sandboxGrants reads --grant values into the grants a create gives the new
+// discobox. A value is SECRET[@HOST]:ENV_VAR=USE, or ID[@HOST]=USE for a
+// well-known credential, whose ID carries its secret and variable; the first
+// has a ":" before the "=" and the second does not. Values naming the same
+// credential, host, and variable are one grant with several uses, in the order
+// given. A secret is left as written, for the caller to resolve to an ID.
+func sandboxGrants(values []string) ([]apimodel.SandboxGrant, error) {
+	var grants []apimodel.SandboxGrant
+	index := map[string]int{}
+	for _, value := range values {
+		spec, use, ok := strings.Cut(value, "=")
+		use = strings.TrimSpace(use)
+		target, envVar, named := strings.Cut(spec, ":")
+		credential, host, _ := strings.Cut(target, "@")
+		credential, host, envVar = strings.TrimSpace(credential), strings.TrimSpace(host), strings.TrimSpace(envVar)
+		if !ok || credential == "" || use == "" || (named && envVar == "") {
+			return nil, fmt.Errorf("--grant %q: want SECRET[@HOST]:ENV_VAR=USE, such as github@github.com:GH_TOKEN=\"push a branch to org/repo\", or ID[@HOST]=USE for a well-known credential, such as com.github.api=\"push a branch to org/repo\"", value)
+		}
+		key := credential + "@" + host + ":" + envVar
+		i, seen := index[key]
+		if !seen {
+			var grant apimodel.SandboxGrant
+			if named {
+				grant.SetSecretId(apiclientgen.NewOptString(credential))
+				grant.SetEnvVar(apiclientgen.NewOptString(envVar))
+			} else {
+				grant.SetWellKnownId(apiclientgen.NewOptString(credential))
+			}
+			if host != "" {
+				grant.SetHost(apiclientgen.NewOptString(host))
+			}
+			grants = append(grants, grant)
+			i = len(grants) - 1
+			index[key] = i
+		}
+		grants[i].Uses = append(grants[i].Uses, apimodel.SecretUse{Description: use})
+	}
+	return grants, nil
 }

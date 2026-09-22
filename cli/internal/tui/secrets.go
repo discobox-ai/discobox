@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/wellknown"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -213,7 +214,12 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 	// reads as "not loaded", and this is a fact about the secret.
 	host := s.Host
 	hostStyle := st.name
-	if host == "" {
+	switch known, ok := wellknown.Lookup(s.WellKnownID); {
+	case ok && known.Gate:
+		// Not a credential: the gate to the discobox API, which is taken
+		// back by revoking its grants, never edited.
+		host, hostStyle = "gate: "+known.Name+" API", st.dimText
+	case host == "":
 		host, hostStyle = "any host", st.dimText
 	}
 	addCol(hostStyle.Render(pad(host, 22)), 23)
@@ -229,7 +235,7 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 		grants, grantStyle = "refused", st.statusER
 	}
 	addCol("  "+grantStyle.Render(pad(grants, 9)), 12)
-	addCol(st.dimText.Render(pad(secretAge(s, l.now()), 7)), 8)
+	addCol(st.dimText.Render(pad(secretAge(s, l.now()), 8)), 9)
 
 	marker := "  "
 	if atCursor {
@@ -249,11 +255,7 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 
 // secretAge is the age column, the same shape the other screens use.
 func secretAge(s Secret, now time.Time) string {
-	age := since(s.Updated, now)
-	if age == "" {
-		return ""
-	}
-	return age + " ago"
+	return ago(s.Updated, now)
 }
 
 // grantLimit is a secret's ceiling on grant lifetimes, said in the words it was
@@ -720,7 +722,7 @@ func describeSecret(secret Secret, now time.Time) []section {
 // is ordinary rather than broken.
 func accessTokenExpiry(at, now time.Time) string {
 	if at.Before(now) {
-		return "expired " + since(at, now) + " ago, renewed on next use"
+		return "expired " + ago(at, now) + ", renewed on next use"
 	}
 	return "in " + shortDuration(at.Sub(now).Round(time.Minute))
 }

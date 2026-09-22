@@ -178,7 +178,9 @@ flowchart LR
     scan -->|match| resolve["Resolver.Resolve(sentinel, host, clientID)"]
     resolve -->|approved| swap["substitute real value + redact from audit"]
     resolve -->|denied / pending / error| leave["leave sentinel in place → upstream 401"]
-    swap --> fwd
+    swap --> judge["Resolver.Judge(request as sent, use IDs)"]
+    judge -->|allow| fwd
+    judge -->|deny / error| refuse["403 from the proxy, audited once as blocked"]
     leave --> fwd
 ```
 
@@ -200,6 +202,34 @@ Key properties:
 - **Fail-closed on the secret, fail-open on the request.** On denial, pending
   approval, or resolver error, the sentinel is left in place; the upstream
   receives the placeholder and rejects it. The real value is never leaked.
+- **A request carrying swapped credentials is judged before it leaves**
+  (`Resolver.Judge`). Resolution decides whether a credential may go to a host
+  and is cached; the judge decides whether *this* request may carry it, so it
+  runs per request, after the swap. It is shown the request as the sandbox sent
+  it — the pre-swap URL and headers, sentinels and never credentials — with the
+  use IDs the values were taken under. A request it does not allow, or cannot
+  answer for, is refused by the proxy with a 403, never sent, and audited once
+  as blocked (`judge: <reason>`). The pool agent's judge allows every request
+  today; the destination host is held at resolve time either way.
+- **The gate host never reaches the internet** (`Secrets.GateHost`,
+  `Resolver.Gate`; [ADR 0140](../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) §2).
+  A CONNECT to it is intercepted whatever the allowlist says, and a request for
+  it is handed to the resolver's `Gate` before the allowlist and before any
+  swap. The resolver admits it — answering it from the upstream behind the
+  gate — or refuses it with a `GateRefusal`, which the proxy answers with a
+  403 carrying the refusal's reason alone, and audits once as blocked
+  (`gate: <reason>`): refused, never sent. A gate that fails after letting a
+  call in — the control plane unreachable, or gone quiet after the request went
+  out — is not a refusal: it is answered 502 and recorded as an ordinary
+  exchange, since the call may have been acted on. Every row carries the use
+  the call was let in or refused under, where there was one
+  (`GateAdmission.UseID`, `GateRefusal.UseID`), as a swapped request's does,
+  so `discobox admin audit http --use-id` finds a discobox's API calls by the
+  use it made them under. Every other host is sent the
+  placeholder when a credential does not resolve; this one fails closed.
+- **A request the proxy refuses is its own answer** (`requestMeta.answered`):
+  it is audited once, as blocked, and the response path neither records it
+  again nor reads it as the upstream's word on a credential.
 - **Scope is headers, plus query parameters when `Secrets.ScanQuery` is set**
   (pool-agent leaves it off). Request bodies are not scanned because the
   request-body audit spool would capture the swapped value. When a value is

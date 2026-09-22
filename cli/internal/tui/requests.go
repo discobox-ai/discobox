@@ -192,9 +192,5 @@ func shortID(id string) string {
 }
 
 func requestAge(r CredentialRequest, now time.Time) string {
-	age := since(r.Created, now)
-	if age == "" {
-		return ""
-	}
-	return age + " ago"
+	return ago(r.Created, now)
 }

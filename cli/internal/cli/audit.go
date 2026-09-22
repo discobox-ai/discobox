@@ -226,7 +226,7 @@ with non-printing characters escaped.`,
 	cmd.Flags().StringVar(&host, "host", "", "Only requests to this host")
 	cmd.Flags().StringVar(&useID, "use-id", "", "Only requests that spent this approved credential use")
 	cmd.Flags().StringVar(&status, "status", "", "Only responses with this status: 404, a class such as 5xx, or a range such as 400-499")
-	cmd.Flags().BoolVar(&blocked, "blocked", false, "Only requests the proxy's policy refused")
+	cmd.Flags().BoolVar(&blocked, "blocked", false, "Only requests the proxy refused and never sent: by its host policy, the credential judge, or the discobox API's gate")
 	cmd.Flags().StringVar(&since, "since", "", "Only requests from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of requests to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing requests as they are recorded")
@@ -243,7 +243,7 @@ func httpAuditTable(follow bool) auditTable[apimodel.HTTPAuditExchange] {
 		columns: []auditColumn{
 			{name: "TIME", width: 12}, {name: "POOL", width: 22}, {name: "ID", width: 12},
 			{name: "DISCOBOX", width: 22}, {name: "METHOD", width: 7}, {name: "STATUS", width: 7},
-			{name: "USES", width: 22}, {name: "URL"},
+			{name: "REFUSED BY", width: 10}, {name: "USES", width: 22}, {name: "URL"},
 		},
 		row: func(e apimodel.HTTPAuditExchange) []string {
 			return []string{
@@ -253,6 +253,7 @@ func httpAuditTable(follow bool) auditTable[apimodel.HTTPAuditExchange] {
 				terminalSafe(e.SandboxId),
 				terminalSafe(e.Method),
 				httpAuditStatus(e),
+				httpAuditRefuser(e.Blocked, e.BlockedReason.Or("")),
 				terminalSafe(strings.Join(e.SwappedUseIds, ",")),
 				truncateTableValue(terminalSafe(e.URL), 100),
 			}
@@ -293,6 +294,24 @@ func httpAuditStatus(e apimodel.HTTPAuditExchange) string {
 	default:
 		return strconv.Itoa(e.Status)
 	}
+}
+
+// httpAuditRefuser is what refused a request the proxy never sent, read from
+// the start of its reason: the destination policy ("host denied"), the
+// credential judge ("judge: …"), or the discobox API's gate ("gate: …").
+// Empty for a request the proxy sent.
+func httpAuditRefuser(blocked bool, reason string) string {
+	switch {
+	case !blocked:
+		return ""
+	case strings.HasPrefix(reason, "gate:"):
+		return "gate"
+	case strings.HasPrefix(reason, "judge:"):
+		return "judge"
+	case strings.HasPrefix(reason, "host"):
+		return "host"
+	}
+	return "policy"
 }
 
 // writeUnavailableAuditPools says which pools' requests are missing. It goes to

@@ -73,6 +73,16 @@ func waitForReports(t *testing.T, log *reportLog, want int) []secrets.ReportRequ
 	}
 }
 
+// Judge allows every request: these tests are about what an upstream makes of a
+// credential, which only a request that was sent can show.
+func (r *rotatingResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
+	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
+}
+
+func (r *rotatingResolver) Judge(context.Context, secrets.JudgeRequest) (secrets.Verdict, error) {
+	return secrets.Verdict{Allow: true}, nil
+}
+
 func (r *rotatingResolver) Resolve(context.Context, secrets.ResolveRequest) (secrets.ResolveResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -287,6 +297,16 @@ func (r *settableResolver) set(value string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.value = value
+}
+
+// Judge allows every request: these tests are about what an upstream makes of a
+// credential, which only a request that was sent can show.
+func (r *settableResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
+	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
+}
+
+func (r *settableResolver) Judge(context.Context, secrets.JudgeRequest) (secrets.Verdict, error) {
+	return secrets.Verdict{Allow: true}, nil
 }
 
 func (r *settableResolver) Resolve(context.Context, secrets.ResolveRequest) (secrets.ResolveResult, error) {

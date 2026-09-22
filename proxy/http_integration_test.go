@@ -38,6 +38,10 @@ type stubResolver struct {
 	// reports is where this resolver is told what the upstream made of its
 	// value, for the tests that assert on it. Nil discards.
 	reports *reportLog
+	// deny, when set, is the reason every request is refused with; empty
+	// allows them all. judged, when set, collects what the judge was shown.
+	deny   string
+	judged *[]secrets.JudgeRequest
 }
 
 func TestMergeResponseBodyErrorRecordsUnexpectedEOF(t *testing.T) {
@@ -59,6 +63,18 @@ func (r stubResolver) Report(_ context.Context, req secrets.ReportRequest) error
 		return r.reports.Report(context.Background(), req)
 	}
 	return nil
+}
+
+// Gate admits nothing: these tests have no gate host.
+func (stubResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
+	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
+}
+
+func (r stubResolver) Judge(_ context.Context, req secrets.JudgeRequest) (secrets.Verdict, error) {
+	if r.judged != nil {
+		*r.judged = append(*r.judged, req)
+	}
+	return secrets.Verdict{Allow: r.deny == "", Reason: r.deny}, nil
 }
 
 func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (secrets.ResolveResult, error) {
@@ -337,6 +353,208 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 	}
 	if strings.Contains(exchange.SwappedUseIDs, sentinel) {
 		t.Fatalf("audit recorded a sentinel in the use ID column: %s", exchange.SwappedUseIDs)
+	}
+}
+
+// A request the judge does not allow is answered by the proxy and never sent,
+// with the credential it would have carried going nowhere: not upstream, not
+// into the judge's view of the request, and not into the audit row that
+// records the refusal.
+func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
+	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
+	const reason = "deleting a repository is not what use_abc was approved for"
+
+	reached := false
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		_, _ = io.WriteString(w, "ok")
+	})
+	defer origin.Close()
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	var judged []secrets.JudgeRequest
+	dbPath := filepath.Join(dir, "audit.db")
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   dbPath,
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		Secrets: SecretsConfig{Clients: []SecretClient{{
+			ClientID:  "sandbox-1",
+			Sentinels: []string{sentinel},
+		}}},
+	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname(), useID: "use_abc", deny: reason, judged: &judged})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	var closeOnce sync.Once
+	closeServer := func() {
+		closeOnce.Do(func() {
+			if err := server.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
+			}
+			select {
+			case err := <-errCh:
+				if err != nil {
+					t.Fatalf("ListenAndServe() error = %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for proxy shutdown")
+			}
+		})
+	}
+	t.Cleanup(closeServer)
+	addr := waitForAddr(t, server)
+
+	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, origin.URL+"/repos/org/repo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), reason) {
+		t.Fatalf("response = %d %q, want 403 carrying the judge's reason", resp.StatusCode, body)
+	}
+	if reached {
+		t.Fatal("a request the judge refused reached the upstream")
+	}
+
+	if len(judged) != 1 {
+		t.Fatalf("judged %d requests, want 1", len(judged))
+	}
+	shown := judged[0]
+	if shown.ClientID != "sandbox-1" || shown.Method != http.MethodDelete || len(shown.UseIDs) != 1 || shown.UseIDs[0] != "use_abc" {
+		t.Fatalf("judge was shown %+v, want the sandbox, the method, and the use", shown)
+	}
+	if got := shown.Header.Get("Authorization"); got != "Bearer "+sentinel {
+		t.Fatalf("judge saw Authorization %q, want the sentinel and never the credential", got)
+	}
+
+	closeServer()
+	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	t.Cleanup(func() { _ = pools.Close() })
+	var exchanges []audit.HTTPExchange
+	if err := pools.Read.Where("client_id = ?", "sandbox-1").Find(&exchanges).Error; err != nil {
+		t.Fatalf("read audit exchanges: %v", err)
+	}
+	blocked := 0
+	for _, exchange := range exchanges {
+		row, err := json.Marshal(exchange)
+		if err != nil {
+			t.Fatalf("marshal audit row: %v", err)
+		}
+		if strings.Contains(string(row), realValue) {
+			t.Fatalf("audit leaked the real secret value: %s", row)
+		}
+		if exchange.Blocked {
+			blocked++
+			if exchange.BlockedReason != "judge: "+reason || exchange.Status != http.StatusForbidden {
+				t.Fatalf("blocked row = %+v, want the judge's reason and a 403", exchange)
+			}
+		}
+	}
+	if len(exchanges) != 1 || blocked != 1 {
+		t.Fatalf("audit rows = %d (%d blocked), want the refusal recorded once", len(exchanges), blocked)
+	}
+}
+
+// A request the proxy refuses is its own answer, recorded once as blocked. The
+// response path must not record it a second time as an ordinary 403, which
+// would read as the upstream having refused it.
+func TestHTTPProxyRecordsAHostItRefusesOnce(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reached := false
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		_, _ = io.WriteString(w, "ok")
+	})
+	defer origin.Close()
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	dbPath := filepath.Join(dir, "audit.db")
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   dbPath,
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		Allowlist:     AllowlistConfig{Enabled: true, Domains: []string{"only.allowed.example.com"}},
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	addr := waitForAddr(t, server)
+
+	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden || reached {
+		t.Fatalf("status = %d, reached = %v; want the proxy to refuse it", resp.StatusCode, reached)
+	}
+	if err := server.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("ListenAndServe() error = %v", err)
+	}
+
+	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	t.Cleanup(func() { _ = pools.Close() })
+	var exchanges []audit.HTTPExchange
+	if err := pools.Read.Where("client_id = ?", "sandbox-1").Find(&exchanges).Error; err != nil {
+		t.Fatalf("read audit exchanges: %v", err)
+	}
+	if len(exchanges) != 1 || !exchanges[0].Blocked || exchanges[0].BlockedReason != "host denied" {
+		t.Fatalf("audit rows = %+v, want the refusal recorded once, as blocked", exchanges)
 	}
 }
 

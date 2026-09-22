@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/sandboxmeta"
+	"github.com/discobox-ai/discobox/wellknown"
 )
 
 func writeJSON(w io.Writer, value any) error {
@@ -503,18 +504,33 @@ func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error 
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": secrets})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tMAX GRANT TTL\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tANSWERS\tMAX GRANT TTL\tUPDATED")
 	for _, secret := range secrets {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			secret.ID,
 			secret.Name,
 			secret.Type,
 			secret.Host.Or(""),
+			secretAnswers(secret.WellKnownId.Or("")),
 			formatGrantLimit(secret.MaxGrantTTLSeconds),
 			formatTime(secret.UpdatedAt),
 		)
 	}
 	return tw.Flush()
+}
+
+// secretAnswers says which well-known credential a secret answers, if any, and
+// for a gate that it is one: a secret with no credential behind it, which
+// stands for access to the discobox API and is not edited.
+func secretAnswers(wellKnownID string) string {
+	known, ok := wellknown.Lookup(wellKnownID)
+	switch {
+	case !ok:
+		return "-"
+	case known.Gate:
+		return wellKnownID + " (gate, no value)"
+	}
+	return wellKnownID
 }
 
 func (a *App) writeSSHKey(cmd *cobra.Command, key *apimodel.SSHKey) error {

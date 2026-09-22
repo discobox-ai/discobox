@@ -89,6 +89,9 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if host == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination host")
 	}
+	if err := reservedHostAsk(wellKnownID, host); err != nil {
+		return nil, err
+	}
 	uses, err := requestedUses(input.Uses)
 	if err != nil {
 		return nil, err
@@ -268,18 +271,28 @@ func (s *Service) bindAgentSecret(ctx context.Context, projectID, sandboxID, env
 		return apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("sandbox already has an agent credential bound to %s from a different secret; revoke that grant first", envName))
 	}
-	sentinel, err := secretformat.MintSentinel(secret.Format)
+	binding, err := newAgentBinding(projectID, sandboxID, envName, secret)
 	if err != nil {
 		return err
 	}
-	return s.store.CreateSandboxSecret(ctx, &model.SandboxSecret{
+	return s.store.CreateSandboxSecret(ctx, binding)
+}
+
+// newAgentBinding is an agent credential's binding: the stable sentinel the
+// pool translates a use's ephemeral one to, never injected into the sandbox.
+func newAgentBinding(projectID, sandboxID, envName string, secret *model.Secret) (*model.SandboxSecret, error) {
+	sentinel, err := secretformat.MintSentinel(secret.Format)
+	if err != nil {
+		return nil, err
+	}
+	return &model.SandboxSecret{
 		ProjectID:      projectID,
 		SandboxID:      sandboxID,
 		SecretID:       secret.ID,
 		EnvName:        envName,
 		Sentinel:       sentinel,
 		AgentRequested: true,
-	})
+	}, nil
 }
 
 // requestedUses validates and normalizes the uses an agent asked for. Supplied

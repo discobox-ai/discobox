@@ -238,9 +238,13 @@ func (a *App) resolvePoolID(ctx context.Context, client *apiclientgen.Client, pr
 	return resolveShortID(id, "pool ID", ids)
 }
 
+// resolveSecretID accepts a secret's name, its ID, or a short ID. A name is
+// what somebody reaches for, and it is how the secret is shown everywhere; it
+// is unique only with the secret's type and host, so a name two secrets share
+// is refused as ambiguous rather than answered with one of them.
 func (a *App) resolveSecretID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "secret ID")
-	if err != nil || !isResolvableShortID(id) {
+	if err != nil || idpkg.IsGenerated(id) {
 		return id, err
 	}
 	res, err := client.ListSecrets(ctx, apiclientgen.ListSecretsParams{ProjectId: projectID})
@@ -251,8 +255,25 @@ func (a *App) resolveSecretID(ctx context.Context, client *apiclientgen.Client, 
 	if err != nil {
 		return "", err
 	}
-	ids := make([]string, 0, len(body.GetSecrets()))
-	for _, secret := range body.GetSecrets() {
+	secrets := body.GetSecrets()
+	var named []string
+	for _, secret := range secrets {
+		if secret.Name == value {
+			named = append(named, secret.ID)
+		}
+	}
+	switch len(named) {
+	case 1:
+		return named[0], nil
+	case 0:
+	default:
+		return "", fmt.Errorf("more than one secret is named %q (%s); give its ID", value, strings.Join(named, ", "))
+	}
+	if !isResolvableShortID(id) {
+		return id, nil
+	}
+	ids := make([]string, 0, len(secrets))
+	for _, secret := range secrets {
 		ids = append(ids, secret.ID)
 	}
 	return resolveShortID(id, "secret ID", ids)

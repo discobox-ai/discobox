@@ -304,6 +304,9 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	// (ADR 0130 §4). The agent prepared its key before systemd started this
 	// unit; this only reads it.
 	cfg.Control = proxyControlConfig(projectID, poolID, logger)
+	// The discobox API's host, which this proxy never sends to the internet:
+	// the resolver's gate answers it from the control plane (ADR 0140 §2).
+	cfg.Secrets.GateHost = GateHost()
 
 	// Agent-credential activations live in this process, alongside the sentinel
 	// registry and the resolver they act on (ADR 0031 §3). The resolver
@@ -671,6 +674,12 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 		"SSL_CERT_FILE":       SystemCABundle,
 		"REQUESTS_CA_BUNDLE":  SystemCABundle,
 		"PIP_CERT":            SystemCABundle,
+		// The discobox API, at the host this pool's proxy answers for itself
+		// (ADR 0140 §2). The discobox CLI in the image reads DISCOBOX_SERVER;
+		// DISCOBOX_API_URL is the same address for anything else. Reaching it
+		// still takes a live use of ai.discobox.sandbox.
+		"DISCOBOX_API_URL": "https://" + GateHost(),
+		"DISCOBOX_SERVER":  "https://" + GateHost(),
 	}
 	// curl, git, wget, and the OpenSSL CLI read the system bundle directly, so
 	// the boot-time update-ca-certificates step covers them without env vars

@@ -18,6 +18,24 @@ type SecretResolveResult = secrets.ResolveResult
 // permitted for the requested host. The proxy leaves the sentinel in place.
 var ErrSecretResolveDenied = secrets.ErrDenied
 
+// SecretGateRequest is a request for the gate host, as a SecretResolver
+// answers it.
+type SecretGateRequest = secrets.GateRequest
+
+// SecretGateAdmission is a request a SecretResolver's gate let in, and the use
+// it was let in under.
+type SecretGateAdmission = secrets.GateAdmission
+
+// SecretGateRefusal is a SecretResolver's gate declining a request, and why.
+type SecretGateRefusal = secrets.GateRefusal
+
+// SecretJudgeRequest is a request about to leave carrying swapped credentials,
+// as a SecretResolver judges it.
+type SecretJudgeRequest = secrets.JudgeRequest
+
+// SecretVerdict is a SecretResolver's answer to a SecretJudgeRequest.
+type SecretVerdict = secrets.Verdict
+
 // SecretReportRequest tells a SecretResolver what an upstream made of a value
 // it resolved: the sentinel, the destination, and the verdict. It never carries
 // the credential (ADR 0132 §1).

@@ -364,6 +364,18 @@ server-to-server copy; the CLI holds both credentials and the reachability
 (ADR 0123 §6). A completed move archives the source (ADR 0022 §2), so it is
 recoverable and collected by the project's ordinary retention.
 
+## Created by a discobox
+
+A discobox may create discoboxes through the discobox API, in the sandbox role
+([ADR 0140](../../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)).
+What it creates is created as the user who created it (`auth.ActingUserID`),
+and it may give the new discobox uses of project secrets — grants minted in
+the create's own transaction (see the secrets package's
+[DESIGN.md](../secrets/DESIGN.md#a-discobox-created-with-uses)). It may not give
+inline secrets, which put a value inside the new discobox where anything in it
+could read it. Nothing about the discobox records which discobox created it,
+and nothing is authorized or cascades by it.
+
 ## Display name
 
 `Sandbox.displayName` is what a listing calls a sandbox, computed on the server

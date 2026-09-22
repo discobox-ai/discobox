@@ -22,6 +22,14 @@ func (f *fakeResolver) Report(_ context.Context, req ReportRequest) error {
 	return nil
 }
 
+func (f *fakeResolver) Gate(context.Context, GateRequest) (GateAdmission, error) {
+	return GateAdmission{}, &GateRefusal{Reason: "no gate here"}
+}
+
+func (f *fakeResolver) Judge(context.Context, JudgeRequest) (Verdict, error) {
+	return Verdict{Allow: true}, nil
+}
+
 func (f *fakeResolver) Resolve(_ context.Context, req ResolveRequest) (ResolveResult, error) {
 	f.calls.Add(1)
 	f.lastReq = req

@@ -96,6 +96,49 @@ RUN set -eux \
     && mv "/tmp/fresh-editor-${fresh_target}/fresh" /out/fresh \
     && rm -rf /tmp/fresh.tar.gz "/tmp/fresh-editor-${fresh_target}"
 
+# The discobox CLI, which a discobox calls the discobox API with through its
+# pool (ADR 0140). Its own stage: the CLI reaches much more of the root module
+# than the sandbox agent does, and building it beside the agent would rebuild
+# the agent whenever any of that changed. The directories are the root-module
+# packages it imports (go list -deps ./cli/cmd/discobox), then its own module
+# and termpane, which its go.mod replaces with the paths beside it.
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.26-trixie AS discobox-cli-builder
+ARG TARGETOS TARGETARCH
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+COPY agentcreds ./agentcreds
+COPY api ./api
+COPY auditid ./auditid
+COPY controlplane ./controlplane
+COPY declared ./declared
+COPY endpoint ./endpoint
+COPY execstream ./execstream
+COPY fsdurable ./fsdurable
+COPY harness ./harness
+COPY health ./health
+COPY hostscope ./hostscope
+COPY imagecache ./imagecache
+COPY internal ./internal
+COPY randomname ./randomname
+COPY releasemanifest ./releasemanifest
+COPY sandboxconfig ./sandboxconfig
+COPY sandboxmeta ./sandboxmeta
+COPY sandboxservices ./sandboxservices
+COPY sandboxshell ./sandboxshell
+COPY sandboxuser ./sandboxuser
+COPY serverstage ./serverstage
+COPY tools ./tools
+COPY version ./version
+COPY wellknown ./wellknown
+COPY termpane ./termpane
+COPY cli ./cli
+
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C cli build -trimpath -ldflags="-s -w" -o /out/discobox ./cmd/discobox
+
 # Debian, Docker, and the trimmed systemd unit set come from the shared base
 # image, which the pool image is also built FROM so a pool host that pulls both
 # pulls those layers once. See base-image/Dockerfile.
@@ -557,6 +600,9 @@ COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobo
 # client of a portable protocol and is meant to be liftable into another
 # repository, so it must not be welded to this image's runtime (ADR 0031).
 COPY --from=sandbox-agent-builder /out/discobox-access /usr/local/bin/discobox-access
+# The discobox CLI, pointed at the discobox API through this discobox's pool by
+# DISCOBOX_SERVER, which the pool sets (ADR 0140 §2).
+COPY --from=discobox-cli-builder /out/discobox /usr/local/bin/discobox
 # And the skill that tells an agent the CLI is there. The image ships the
 # skills for what the image installs, and the sandbox agent copies them into
 # the harness's skill directories on the first primary launch, beside whatever

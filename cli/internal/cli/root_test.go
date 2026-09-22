@@ -2227,3 +2227,51 @@ func TestSecretGrantCreateMakesADelegationGrant(t *testing.T) {
 		t.Fatalf("output = %q, want the grant to say what its holder may do", output)
 	}
 }
+
+// A secret is named the way it is shown: by its name, which is what an agent
+// or a person reaches for. A name two secrets share is refused, naming both,
+// rather than answered with one of them.
+func TestASecretIsNamedByItsName(t *testing.T) {
+	const requestID = "request-1"
+	var approved map[string]any
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
+			approved = nil
+			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
+				t.Fatalf("decode approve body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"token","status":"approved","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[` +
+				`{"id":"sec_1github","projectId":"project-1","name":"github","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"sec_2twin","projectId":"project-1","name":"twin","type":"token","host":"a.example","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"sec_3twin","projectId":"project-1","name":"twin","type":"token","host":"b.example","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		default:
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+	approve := func(secret string) error {
+		cmd := NewRootCommand()
+		cmd.SetOut(new(bytes.Buffer))
+		cmd.SetErr(new(bytes.Buffer))
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secret, "--grant-ttl", "600"})
+		return cmd.Execute()
+	}
+
+	if err := approve("github"); err != nil {
+		t.Fatalf("approve by name: %v", err)
+	}
+	if approved["secretId"] != "sec_1github" {
+		t.Fatalf("approve body = %#v, want the named secret's ID", approved)
+	}
+	if err := approve("sec_1"); err != nil || approved["secretId"] != "sec_1github" {
+		t.Fatalf("approve by short ID = %v, body %#v; want it still resolved", err, approved)
+	}
+	err := approve("twin")
+	if err == nil || !strings.Contains(err.Error(), "sec_2twin") || !strings.Contains(err.Error(), "sec_3twin") {
+		t.Fatalf("approve by a shared name = %v, want it refused naming both", err)
+	}
+}

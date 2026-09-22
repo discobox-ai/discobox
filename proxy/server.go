@@ -165,6 +165,7 @@ func buildSwapper(cfg Config, resolver secrets.Resolver) *secrets.Swapper {
 		PositiveTTL:     time.Duration(cfg.Secrets.PositiveTTLSeconds) * time.Second,
 		NegativeTTL:     time.Duration(cfg.Secrets.NegativeTTLSeconds) * time.Second,
 		RefreshInterval: time.Duration(cfg.Secrets.RefreshIntervalSeconds) * time.Second,
+		GateHost:        cfg.Secrets.GateHost,
 	})
 }
 

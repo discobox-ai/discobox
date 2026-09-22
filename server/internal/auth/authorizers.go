@@ -55,6 +55,92 @@ func (a ProjectAuthorizer) Authorize(r *http.Request) (bool, error) {
 	return true, nil
 }
 
+// SandboxRoleAuthorizer authorizes a sandbox's own calls against the sandbox
+// role (ADR 0140 §4): a fixed list of routes, in the sandbox's own project, and
+// nothing else. It is decided by the route alone. No grant, and no use's text,
+// is read here: what a call is for is the judge's question, asked in the pool.
+//
+// It answers every request a sandbox principal makes, refusing what the role
+// does not list, rather than stepping aside. The authorizers after it answer
+// any authenticated principal on some routes — enrolling peers, registering a
+// pool — which a sandbox must never reach by being authenticated.
+type SandboxRoleAuthorizer struct{}
+
+// sandboxRoleRoute is one route the sandbox role allows: a method, and the
+// path under /projects/{projectId}/ with "*" standing for one ID segment.
+type sandboxRoleRoute struct {
+	method string
+	path   string
+}
+
+// sandboxRole is the sandbox role. Adding a route here is widening what every
+// sandbox holding the discobox credential may do; ADR 0140 §4 lists it, and
+// its Deferred section says what is left out and when to revisit it.
+var sandboxRole = []sandboxRoleRoute{
+	{http.MethodGet, "sandboxes"},
+	{http.MethodPost, "sandboxes"},
+	{http.MethodGet, "sandboxes/*"},
+	// Secrets are listed so a request can be answered with one, or a new
+	// discobox given one: the listing carries names and bindings, never a
+	// value, and nothing in the role changes a secret.
+	{http.MethodGet, "secrets"},
+	{http.MethodGet, "secret-requests"},
+	{http.MethodGet, "secret-requests/*"},
+	{http.MethodPost, "secret-requests/*/approve"},
+	{http.MethodPost, "secret-requests/*/deny"},
+}
+
+func (SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
+	principal, ok := PrincipalFromContext(r.Context())
+	if !ok || principal.Type != PrincipalTypeSandbox {
+		return false, nil
+	}
+	denied := authorizationError{status: http.StatusForbidden, err: errors.New("not in the sandbox role")}
+	projectID, rest, ok := projectRoute(r.URL.Path)
+	if !ok {
+		return false, denied
+	}
+	switch projectID {
+	case principal.ProjectID:
+	case "default":
+		// A sandbox's default project is its own.
+		*r = *r.WithContext(context.WithValue(r.Context(), defaultProjectIDContextKey{}, principal.ProjectID))
+	default:
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a sandbox may only act in its own project")}
+	}
+	for _, route := range sandboxRole {
+		if route.method == r.Method && matchRolePath(route.path, rest) {
+			return true, nil
+		}
+	}
+	return false, denied
+}
+
+// projectRoute splits a project-scoped path into its project and the rest.
+func projectRoute(path string) (string, string, bool) {
+	projectID, ok := projectIDFromPath(path)
+	if !ok {
+		return "", "", false
+	}
+	path = strings.TrimPrefix(path, "/api")
+	rest := strings.TrimPrefix(path, "/projects/"+projectID)
+	return projectID, strings.Trim(rest, "/"), true
+}
+
+// matchRolePath matches a role route's path, where "*" is exactly one segment.
+func matchRolePath(pattern, path string) bool {
+	want, got := strings.Split(pattern, "/"), strings.Split(path, "/")
+	if len(want) != len(got) {
+		return false
+	}
+	for i := range want {
+		if got[i] == "" || (want[i] != "*" && want[i] != got[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // PoolRouteAuthorizer authorizes authenticated pool agents for pool-scoped
 // API routes. Operation-specific handlers still verify resource identity, such
 // as matching the authenticated pool principal to a path pool ID.

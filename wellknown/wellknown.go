@@ -19,6 +19,10 @@ import (
 // and GraphQL API beneath it.
 const GitHubAPI = "com.github.api"
 
+// DiscoboxSandbox is the discobox API, as a discobox calls it through its pool
+// (ADR 0140).
+const DiscoboxSandbox = "ai.discobox.sandbox"
+
 // Credential is one entry in the registry. A request for it is fulfilled by the
 // project secret marked with its ID, which a person chooses the first time
 // they approve a request for it.
@@ -35,6 +39,10 @@ type Credential struct {
 	Hosts []string
 	// EnvVar is the variable it is delivered in.
 	EnvVar string
+	// Gate is a credential with nothing behind its sentinel: the pool admits
+	// a request carrying a live use of it to its host, and never swaps a
+	// value in. Approving a request for one chooses no secret.
+	Gate bool
 }
 
 // Host is the host a request for the credential names.
@@ -54,6 +62,14 @@ var registry = []Credential{
 		Description: "GitHub: repositories over HTTPS as git pushes and pulls them, and the REST and GraphQL API beneath the same site, as gh uses it.",
 		Hosts:       []string{"github.com"},
 		EnvVar:      "GH_TOKEN",
+	},
+	{
+		ID:          DiscoboxSandbox,
+		Name:        "discobox",
+		Description: "The discobox API, reached through this discobox's pool: create, list, and get discoboxes, give a new one uses of project secrets, and answer credential requests.",
+		Hosts:       []string{"api.discobox.internal"},
+		EnvVar:      "DISCOBOX_TOKEN",
+		Gate:        true,
 	},
 }
 

@@ -119,6 +119,8 @@ func writeJSONAtomic(path string, value any) error {
 type secretResolver struct {
 	contextPath string
 	client      *http.Client
+	// gateClient carries a sandbox's calls to the discobox API (gate.go).
+	gateClient *http.Client
 	// activations translates an ephemeral sentinel back to the stable one the
 	// control plane knows. Nil disables the agent credentials path entirely,
 	// which is what a resolver built without a broker gets.
@@ -129,6 +131,7 @@ func newSecretResolver(projectID, poolID string, live *activations) *secretResol
 	return &secretResolver{
 		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
 		client:      controlPlaneHTTPClient(),
+		gateClient:  gateHTTPClient(),
 		activations: live,
 	}
 }
@@ -315,6 +318,20 @@ func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
 		return activation{}, false
 	}
 	return r.activations.lookupAny(sentinel)
+}
+
+// Judge decides whether a request may leave carrying the credentials the proxy
+// just swapped into it. It is where the pool judge will read the request
+// against the uses those credentials were approved for; until then every
+// request that reaches it is allowed.
+//
+// It is not the only check a credential passes. By the time a request is
+// judged, its destination has already been held to the host the credential was
+// approved for — an activation's here (activation, below), any other
+// sentinel's by the control plane's grant match — so the host is enforced
+// whatever this answers.
+func (r *secretResolver) Judge(context.Context, proxy.SecretJudgeRequest) (proxy.SecretVerdict, error) {
+	return proxy.SecretVerdict{Allow: true}, nil
 }
 
 // activation returns the live activation for a resolve request, if the sentinel

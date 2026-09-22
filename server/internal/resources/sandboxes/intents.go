@@ -23,7 +23,7 @@ import (
 // reconciler that can observe the sandbox without its assignments launches it
 // with no secrets — the miss is permanent, because assignments are not part of
 // the spec fingerprint and nothing re-pushes them to a running sandbox.
-func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox, secrets []*model.SandboxSecret) (*model.Sandbox, error) {
+func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox, secrets []*model.SandboxSecret, grants []*model.SecretGrant) (*model.Sandbox, error) {
 	if s.engine == nil {
 		return nil, errors.New("reconcile engine is required")
 	}
@@ -35,6 +35,13 @@ func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbo
 		}
 		for _, secret := range secrets {
 			if err := txStore.CreateSandboxSecret(ctx, secret); err != nil {
+				return err
+			}
+		}
+		// The grants a create gives the new discobox, stored with it or not at
+		// all (ADR 0140 §4).
+		for _, grant := range grants {
+			if err := txStore.CreateSecretGrant(ctx, grant); err != nil {
 				return err
 			}
 		}

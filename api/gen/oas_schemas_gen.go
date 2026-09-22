@@ -889,6 +889,10 @@ type CreateSandboxBody struct {
 	Origin OptOrigin `json:"origin"`
 	// Pool to schedule the sandbox into. Defaults to the project's default pool.
 	PoolId OptString `json:"poolId"`
+	// Uses of project secrets to give the new discobox, minted as grants for it in the same transaction
+	// that creates it, so a create that cannot mint one creates nothing. Its agent takes each with
+	// discobox-access, one use at a time; nothing in the discobox can read the credential.
+	Grants []SandboxGrant `json:"grants"`
 }
 
 // GetSchema returns the value of Schema.
@@ -916,6 +920,11 @@ func (s *CreateSandboxBody) GetPoolId() OptString {
 	return s.PoolId
 }
 
+// GetGrants returns the value of Grants.
+func (s *CreateSandboxBody) GetGrants() []SandboxGrant {
+	return s.Grants
+}
+
 // SetSchema sets the value of Schema.
 func (s *CreateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -939,6 +948,11 @@ func (s *CreateSandboxBody) SetOrigin(val OptOrigin) {
 // SetPoolId sets the value of PoolId.
 func (s *CreateSandboxBody) SetPoolId(val OptString) {
 	s.PoolId = val
+}
+
+// SetGrants sets the value of Grants.
+func (s *CreateSandboxBody) SetGrants(val []SandboxGrant) {
+	s.Grants = val
 }
 
 // An agent's ask, relayed by the pool agent on behalf of one of its sandboxes.
@@ -2655,9 +2669,11 @@ func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
 type HTTPAuditExchange struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// True when the proxy's destination policy refused the request.
+	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
+	// the credential judge, or at the discobox API's gate. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
-	// Why the request was refused.
+	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
+	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// True when the response came from the pool's response cache.
 	CacheHit OptBool `json:"cacheHit"`
@@ -2887,9 +2903,11 @@ type HTTPAuditExchangeDetail struct {
 	AppliedPattern OptString `json:"appliedPattern"`
 	// The proxy rewrite rule that applied.
 	AppliedRuleId OptString `json:"appliedRuleId"`
-	// True when the proxy's destination policy refused the request.
+	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
+	// the credential judge, or at the discobox API's gate. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
-	// Why the request was refused.
+	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
+	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// Why the response cache could not be used.
 	CacheError OptString `json:"cacheError"`
@@ -16161,6 +16179,87 @@ func (s *SandboxGitIdentity) SetUserEmail(val OptString) {
 // SetUserName sets the value of UserName.
 func (s *SandboxGitIdentity) SetUserName(val OptString) {
 	s.UserName = val
+}
+
+// Uses of one credential for a new discobox, named either by a well-known ID or by a secret and a
+// variable, never both.
+// Ref: #/components/schemas/SandboxGrant
+type SandboxGrant struct {
+	// A well-known credential, such as com.github.api. Its secret is the project secret marked with the
+	// ID, its variable and host are the ID's, and host may only narrow it. A gate, such as ai.discobox.
+	// sandbox, is not given this way.
+	WellKnownId OptString `json:"wellKnownId"`
+	// The project secret the uses are of. Required without wellKnownId.
+	SecretId OptString `json:"secretId"`
+	// Environment variable the discobox's agent receives the credential in. Required without wellKnownId.
+	EnvVar OptString `json:"envVar"`
+	// Host the credential may be sent to. Defaults to the secret's host, or the well-known credential's;
+	// one is required.
+	Host OptString `json:"host"`
+	// What the credential may be used for. Use IDs are minted here; a supplied one is ignored.
+	Uses []SecretUse `json:"uses"`
+	// How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
+	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
+}
+
+// GetWellKnownId returns the value of WellKnownId.
+func (s *SandboxGrant) GetWellKnownId() OptString {
+	return s.WellKnownId
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SandboxGrant) GetSecretId() OptString {
+	return s.SecretId
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *SandboxGrant) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetHost returns the value of Host.
+func (s *SandboxGrant) GetHost() OptString {
+	return s.Host
+}
+
+// GetUses returns the value of Uses.
+func (s *SandboxGrant) GetUses() []SecretUse {
+	return s.Uses
+}
+
+// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
+func (s *SandboxGrant) GetGrantTTLSeconds() OptInt64 {
+	return s.GrantTTLSeconds
+}
+
+// SetWellKnownId sets the value of WellKnownId.
+func (s *SandboxGrant) SetWellKnownId(val OptString) {
+	s.WellKnownId = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SandboxGrant) SetSecretId(val OptString) {
+	s.SecretId = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *SandboxGrant) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetHost sets the value of Host.
+func (s *SandboxGrant) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetUses sets the value of Uses.
+func (s *SandboxGrant) SetUses(val []SecretUse) {
+	s.Uses = val
+}
+
+// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
+func (s *SandboxGrant) SetGrantTTLSeconds(val OptInt64) {
+	s.GrantTTLSeconds = val
 }
 
 // Ref: #/components/schemas/SandboxHarnessSecretsResponse

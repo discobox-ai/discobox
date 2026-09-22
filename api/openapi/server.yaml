@@ -419,8 +419,41 @@ components:
                 poolId:
                     description: Pool to schedule the sandbox into. Defaults to the project's default pool.
                     type: string
+                grants:
+                    description: Uses of project secrets to give the new discobox, minted as grants for it in the same transaction that creates it, so a create that cannot mint one creates nothing. Its agent takes each with discobox-access, one use at a time; nothing in the discobox can read the credential.
+                    items:
+                        $ref: '#/components/schemas/SandboxGrant'
+                    type: array
             required:
                 - config
+            type: object
+        SandboxGrant:
+            additionalProperties: false
+            description: Uses of one credential for a new discobox, named either by a well-known ID or by a secret and a variable, never both.
+            properties:
+                wellKnownId:
+                    description: A well-known credential, such as com.github.api. Its secret is the project secret marked with the ID, its variable and host are the ID's, and host may only narrow it. A gate, such as ai.discobox.sandbox, is not given this way.
+                    type: string
+                secretId:
+                    description: The project secret the uses are of. Required without wellKnownId.
+                    type: string
+                envVar:
+                    description: Environment variable the discobox's agent receives the credential in. Required without wellKnownId.
+                    type: string
+                host:
+                    description: Host the credential may be sent to. Defaults to the secret's host, or the well-known credential's; one is required.
+                    type: string
+                uses:
+                    description: What the credential may be used for. Use IDs are minted here; a supplied one is ignored.
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    type: array
+                grantTTLSeconds:
+                    description: How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
+                    format: int64
+                    type: integer
+            required:
+                - uses
             type: object
         CreateSandboxProviderInstanceBody:
             additionalProperties: false
@@ -3297,10 +3330,10 @@ components:
                     readOnly: true
                     type: string
                 blocked:
-                    description: True when the proxy's destination policy refused the request
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, or at the discobox API's gate. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
                     type: string
                 cacheHit:
                     description: True when the response came from the pool's response cache
@@ -3388,10 +3421,10 @@ components:
                     description: The proxy rewrite rule that applied
                     type: string
                 blocked:
-                    description: True when the proxy's destination policy refused the request
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, or at the discobox API's gate. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
                     type: string
                 cacheError:
                     description: Why the response cache could not be used

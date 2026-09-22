@@ -20,8 +20,8 @@ flowchart LR
 `internal/server`'s `NewApp` installs both as chi middleware on the one router
 that serves every listener, in this order:
 
-- `Authentication(PoolAuthenticator, DefaultUserAuthenticator)`
-- `Authorization(ProjectAuthorizer, PoolRouteAuthorizer, AuthenticatedAuthorizer)`
+- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DefaultUserAuthenticator)`
+- `Authorization(SandboxRoleAuthorizer, ProjectAuthorizer, PoolRouteAuthorizer, AuthenticatedAuthorizer)`
 
 Paths matched by `IsPublicPath` bypass both phases: `/healthz`,
 `/openapi.yaml`, `/docs`, `/docs/*`, `/ssh` (the SSH endpoint discovery
@@ -46,6 +46,19 @@ request is rejected with 401.
 
 Current authenticators:
 
+- `SandboxForwardAuthenticator` applies to a request naming a forwarded
+  sandbox (`poolauth.ForwardedSandboxHeader`): a sandbox's own call to the
+  discobox API, which the pool hosting it forwarded from the reserved host
+  ([ADR 0140](../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
+  §3). It takes the pool's word for which sandbox is calling, and checks what
+  makes that word good: the pool named by `poolauth.ForwardingPoolHeader` is
+  not revoked, its bearer assertion verifies against that pool's key and
+  carries `poolauth.ScopeSandboxForward`, and the sandbox is one the control
+  plane placed on that pool. The principal is `PrincipalTypeSandbox`, with the
+  sandbox, its project, its pool, and as `UserID` the user who created it. It
+  runs first and **fails rather than stepping aside** once a request names a
+  forwarded sandbox: the authenticator after the next answers every request as
+  the default user.
 - `PoolAuthenticator` applies only to pool agent runtime routes:
   `/api/pools/{poolId}/{action}` where `action` is in the `poolRuntimeActions`
   allow-list, plus a trailing resource ID only for actions marked as taking
@@ -70,6 +83,15 @@ with the error's `StatusCode()` if it has one, 404 for `store.ErrNotFound`, and
 
 Current authorizers:
 
+- `SandboxRoleAuthorizer` answers every request a sandbox principal makes, and
+  only those: it allows the routes of the sandbox role (`sandboxRole`: discobox
+  create, list, and get; secret requests list, get, approve, and deny; secrets
+  list) in the sandbox's own project, resolving `default` to it, and refuses
+  everything else — including the any-authenticated routes below, which is
+  why it runs first. It is decided by the route alone; no grant or use text is
+  read ([ADR 0140](../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
+  §§4–5). `ActingUserID` is the user such a call acts as: the sandbox's
+  creator.
 - `ProjectAuthorizer` authorizes `/projects/{projectId}/...` and
   `/api/projects/{projectId}/...` routes by user principal and project
   membership. It resolves `/projects/default` and `/api/projects/default` to the

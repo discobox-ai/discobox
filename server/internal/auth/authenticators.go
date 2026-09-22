@@ -70,6 +70,63 @@ func (a PoolAuthenticator) Authenticate(r *http.Request) (Principal, bool, error
 	return Principal{Type: PrincipalTypePool, PoolID: claims.PoolID, Scopes: claims.Scopes}, true, nil
 }
 
+// SandboxForwardAuthenticator authenticates a sandbox's own call to the
+// discobox API, which the pool hosting it forwarded from the reserved host
+// (ADR 0140 §§2–3). It takes the pool's word for which sandbox is calling, and
+// checks only what makes that word good: the pool's assertion verifies, carries
+// the forwarding scope, comes from a pool that is not revoked, and names a
+// sandbox the control plane placed on that pool.
+//
+// It fails rather than stepping aside once a request names a forwarded
+// sandbox. A forwarded call that fell through would be answered by the next
+// authenticator, and the next one answers every request as the default user.
+type SandboxForwardAuthenticator struct {
+	Store *store.Store
+}
+
+func (a SandboxForwardAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
+	sandboxID := strings.TrimSpace(r.Header.Get(poolauth.ForwardedSandboxHeader))
+	if sandboxID == "" {
+		return Principal{}, false, nil
+	}
+	refuse := func(reason string) (Principal, bool, error) {
+		return Principal{}, false, errors.New("forwarded sandbox call refused: " + reason)
+	}
+	token := bearerToken(r.Header.Get("Authorization"))
+	poolID := strings.TrimSpace(r.Header.Get(poolauth.ForwardingPoolHeader))
+	if token == "" || poolID == "" {
+		return refuse("its pool's assertion is required")
+	}
+	pool, err := a.Store.GetPoolByID(r.Context(), poolID)
+	if err != nil {
+		return refuse("pool not found")
+	}
+	if pool.RevokedAt != nil {
+		return refuse("pool is revoked")
+	}
+	if pool.KeyType != poolauth.KeyType {
+		return refuse("unsupported pool key type")
+	}
+	claims, err := poolauth.VerifyToken(pool.PublicKey, token)
+	if err != nil {
+		return refuse("invalid pool assertion: " + err.Error())
+	}
+	if claims.PoolID != pool.ID || claims.ProjectID != pool.ProjectID || !claims.HasScope(poolauth.ScopeSandboxForward) {
+		return refuse("the pool's assertion does not allow forwarding")
+	}
+	sandbox, err := a.Store.GetSandboxByID(r.Context(), sandboxID)
+	if err != nil || sandbox.PoolID != pool.ID || sandbox.ProjectID != pool.ProjectID {
+		return refuse("the pool does not host that sandbox")
+	}
+	return Principal{
+		Type:      PrincipalTypeSandbox,
+		SandboxID: sandbox.ID,
+		ProjectID: sandbox.ProjectID,
+		PoolID:    pool.ID,
+		UserID:    sandbox.CreatedByUserID,
+	}, true, nil
+}
+
 // DefaultUserAuthenticator authenticates every request as the configured user.
 type DefaultUserAuthenticator struct {
 	UserID string

@@ -57,3 +57,15 @@ func TestAHostCoversTheHostsBeneathIt(t *testing.T) {
 		}
 	}
 }
+
+// The discobox API is reached at a host that is never resolved, and nothing
+// stands behind its sentinel.
+func TestTheDiscoboxAPIIsAGate(t *testing.T) {
+	c, ok := Lookup(DiscoboxSandbox)
+	if !ok || !c.Gate || c.Host() != "api.discobox.internal" || c.EnvVar != "DISCOBOX_TOKEN" {
+		t.Fatalf("ai.discobox.sandbox is %+v", c)
+	}
+	if github, _ := Lookup(GitHubAPI); github.Gate {
+		t.Fatal("com.github.api is a gate, want a credential with a value behind it")
+	}
+}

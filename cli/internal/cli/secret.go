@@ -142,7 +142,7 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 		}
 		return a.writeSecretGrant(cmd, grant)
 	}}
-	cmd.Flags().StringVar(&secretRef, "secret", "", "Secret ID to grant")
+	cmd.Flags().StringVar(&secretRef, "secret", "", "Secret to grant, by name or ID")
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project")
 	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Discobox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
 	cmd.Flags().StringVar(&host, "host", "", "Limit the grant to a host; defaults to the secret's host")
@@ -505,7 +505,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		}
 		return a.writeSecretRequest(cmd, request)
 	}}
-	cmd.Flags().StringVar(&secretID, "secret-id", "", "Secret ID to grant")
+	cmd.Flags().StringVar(&secretID, "secret-id", "", "Secret to grant, by name or ID")
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project (defaults to sandbox for sandbox requests, else project)")
 	cmd.Flags().StringVar(&host, "host", "", "Host the grant is limited to (defaults to the host the request named)")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")

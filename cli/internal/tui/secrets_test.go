@@ -7,6 +7,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/discobox-ai/discobox/wellknown"
 )
 
 // The secrets screen is the operator's side of the credential inbox: what the
@@ -1330,4 +1332,18 @@ func submitForm(t *testing.T, m *Model) tea.Cmd {
 		t.Fatalf("the form refused: %s", why)
 	}
 	return m.dialog.submit(m.dialog.form)
+}
+
+// The gate to the discobox API is a secret only because grants are always of
+// one; its row says what it is instead of a host, so nobody reads it as a
+// token to rotate.
+func TestTheGateSaysWhatItIsOnTheSecretsScreen(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.projectSecrets = []Secret{{ID: "sec_gate", Name: "ai.discobox.sandbox", Type: "token", Host: "api.discobox.internal", WellKnownID: wellknown.DiscoboxSandbox}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress(secretsKey))
+	if body := strings.Join(frame(m), "\n"); !strings.Contains(body, "gate: discobox API") || strings.Contains(body, "api.discobox.internal") {
+		t.Fatalf("frame does not mark the gate:\n%s", body)
+	}
 }

@@ -30,6 +30,20 @@ const (
 	// traffic it already has and brokering is what it does on a sandbox's behalf.
 	//nolint:gosec // A scope name, not a credential.
 	ScopeCredentialBroker = "credential:broker"
+
+	// ScopeSandboxForward authorizes forwarding a sandbox's own call to the
+	// discobox API (ADR 0140 §2). It rides the proxy unit's token too, because
+	// the proxy is what receives the call at the reserved host; the control
+	// plane answers the call as the sandbox the pool names, in the sandbox
+	// role, and never as the pool.
+	ScopeSandboxForward = "sandbox:forward"
+
+	// ForwardedSandboxHeader names the sandbox a forwarded call is for, and
+	// ForwardingPoolHeader the pool that forwarded it, whose assertion rides
+	// the Authorization header. A pool can only name a sandbox the control
+	// plane placed on it.
+	ForwardedSandboxHeader = "X-Discobox-Forwarded-Sandbox"
+	ForwardingPoolHeader   = "X-Discobox-Forwarding-Pool"
 )
 
 type Claims struct {

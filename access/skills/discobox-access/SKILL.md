@@ -74,6 +74,7 @@ getting them wrong is then impossible:
 | ID | What it is for | Delivered in | Sent to |
 | --- | --- | --- | --- |
 | `com.github.api` | GitHub: repositories over HTTPS, and the REST and GraphQL API as `gh` uses it | `GH_TOKEN` | `github.com`, and the hosts beneath it such as `api.github.com` |
+| `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes, give a new one uses of project secrets, and answer credential requests | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
 
 ```bash
 discobox-access request com.github.api --use "Open a pull request against the current repo" --why "the task asks for a PR"
@@ -82,6 +83,25 @@ discobox-access request com.github.api --use "Open a pull request against the cu
 or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,
 `justification`, `grantTTLSeconds`, `wait` — is asked for exactly as above.
 For anything not in this table, spell out `name`, `envVar`, and `host`.
+
+`ai.discobox.sandbox` is how you drive other discoboxes. The `discobox` CLI is
+installed and already pointed at the API; run it under an approved use, as
+with any credential:
+
+```bash
+discobox-access run --use <id> -- discobox admin box create --name worker-1 --harness claude-code \
+  --grant 'com.github.api=push a branch to org/repo for issue 42'
+discobox-access run --use <id> -- discobox admin box ls
+discobox-access run --use <id> -- discobox secret request ls --status pending
+discobox-access run --use <id> -- discobox secret request approve <request-id> --secret-id github
+```
+
+`--grant ID[@HOST]=USE` gives the new discobox a use of a well-known
+credential, and `--grant SECRET[@HOST]:ENV_VAR=USE` a use of any other project
+secret; repeat either for more. You cannot give it `ai.discobox.sandbox`: a
+person grants that, when the new discobox asks for it itself. It is created as the user who created you, and what
+you give it is recorded as given by you. Anything outside those commands is
+refused.
 
 Use `--json` with a heredoc rather than flags: your justification will contain
 apostrophes and quotes, and the shell would eat them. Unknown JSON fields are

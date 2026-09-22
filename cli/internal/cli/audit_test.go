@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -304,5 +305,78 @@ func TestAuditHTTPJSONCarriesTheMissingPools(t *testing.T) {
 	}
 	if strings.Contains(stdout, "\u202e") || got.Exchanges[0].URL != "https://api.github.com/repos/o/r/pulls\x1b[1A\u202e" {
 		t.Fatalf("json is not terminal-safe or not exact:\n%s", stdout)
+	}
+}
+
+// A request the proxy refused says what refused it: its host policy, the
+// credential judge, or the discobox API's gate — and a gate call carries the
+// use it was let in or refused under, so --use-id finds it.
+func TestAuditHTTPSaysWhatRefusedARequest(t *testing.T) {
+	body := `{"exchanges":[
+	{"poolId":"pool-a","id":"http_3","createdAt":"2026-09-17T10:02:00Z","sandboxId":"sbx_1","method":"POST",
+	 "url":"https://api.discobox.internal/projects/default/sandboxes","host":"api.discobox.internal","status":201,"blocked":false,"swappedUseIds":["use_api"]},
+	{"poolId":"pool-a","id":"http_2","createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"GET",
+	 "url":"https://api.discobox.internal/projects/default/pools","host":"api.discobox.internal","status":0,"blocked":true,
+	 "blockedReason":"gate: the call carries no live use of ai.discobox.sandbox","swappedUseIds":[]},
+	{"poolId":"pool-a","id":"http_1","createdAt":"2026-09-17T10:00:00Z","sandboxId":"sbx_1","method":"DELETE",
+	 "url":"https://api.github.com/repos/o/r","host":"api.github.com","status":0,"blocked":true,
+	 "blockedReason":"judge: deleting a repository is not what use_gh was approved for","swappedUseIds":["use_gh"]}
+],"unavailablePools":[]}`
+	_, stdout, _, err := runAuditHTTP(t, body)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	lines := strings.Split(stdout, "\n")
+	find := func(id string) string {
+		for _, line := range lines {
+			if strings.Contains(line, id) {
+				return line
+			}
+		}
+		t.Fatalf("no row for %s:\n%s", id, stdout)
+		return ""
+	}
+	if !strings.Contains(stdout, "REFUSED BY") {
+		t.Fatalf("table has no REFUSED BY column:\n%s", stdout)
+	}
+	if row := find("http_3"); !strings.Contains(row, "201") || !strings.Contains(row, "use_api") {
+		t.Fatalf("admitted gate row = %q, want its status and its use", row)
+	}
+	if row := find("http_2"); !strings.Contains(row, "blocked") || !strings.Contains(row, "gate") {
+		t.Fatalf("gate refusal row = %q, want it refused by the gate", row)
+	}
+	if row := find("http_1"); !strings.Contains(row, "judge") || !strings.Contains(row, "use_gh") {
+		t.Fatalf("judge refusal row = %q, want it refused by the judge, with its use", row)
+	}
+}
+
+func TestHTTPAuditRefuserReadsTheReason(t *testing.T) {
+	for _, tc := range []struct {
+		blocked bool
+		reason  string
+		want    string
+	}{
+		{false, "", ""},
+		{true, "host denied", "host"},
+		{true, "judge: not what the use was for", "judge"},
+		{true, "gate: no live use", "gate"},
+		{true, "", "policy"},
+	} {
+		if got := httpAuditRefuser(tc.blocked, tc.reason); got != tc.want {
+			t.Errorf("httpAuditRefuser(%v, %q) = %q, want %q", tc.blocked, tc.reason, got, tc.want)
+		}
+	}
+}
+
+// The timeline says why a request was refused, not only that it was.
+func TestTheTimelineSaysWhyARequestWasRefused(t *testing.T) {
+	var exchange apimodel.HTTPAuditExchange
+	if err := json.Unmarshal([]byte(`{"poolId":"pool-a","id":"http_2","createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"GET",
+	 "url":"https://api.discobox.internal/projects/default/pools","host":"api.discobox.internal","status":0,"blocked":true,
+	 "blockedReason":"gate: the call carries no live use of ai.discobox.sandbox","swappedUseIds":[]}`), &exchange); err != nil {
+		t.Fatal(err)
+	}
+	if summary := httpAuditRecord(exchange).summary; !strings.Contains(summary, "refused: gate: the call carries no live use") {
+		t.Fatalf("summary = %q, want what refused it and why", summary)
 	}
 }

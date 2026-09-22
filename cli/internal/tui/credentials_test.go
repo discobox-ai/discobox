@@ -1127,3 +1127,37 @@ func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
 		t.Fatal("declining changed something")
 	}
 }
+
+// A credential with nothing behind it — the discobox API — is let in or not.
+// Its card offers no secret to choose and nothing to type, and approving it
+// names no secret: the server answers it.
+func TestAGateIsApprovedWithoutASecret(t *testing.T) {
+	t.Parallel()
+	req := waitingRequest()
+	req.Name, req.EnvVar, req.Host, req.WellKnownID = "discobox", "DISCOBOX_TOKEN", "api.discobox.internal", wellknown.DiscoboxSandbox
+	ds := newFakeSource(testSandboxes()...)
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if m.dialog == nil || len(m.dialog.items) != 2 || m.dialog.items[0].key != "gate" || m.dialog.items[1].key != "deny" {
+		t.Fatalf("dialog = %s, want only approve and deny", describe(m.dialog))
+	}
+	// It says what it hands over before it is agreed to.
+	if card := dialogText(m); !strings.Contains(card, "what approving gives it") || !strings.Contains(card, "any secret in this project") {
+		t.Fatalf("card = %q, want it to say what approving gives the discobox", card)
+	}
+	drain(t, m, m.dialog.action("gate"), 0)
+	if !strings.Contains(dialogText(m), "no secret") {
+		t.Fatalf("lifetime card = %q, want it to say no secret answers it", dialogText(m))
+	}
+	grantFor(t, m, lifetime.Day)
+
+	if len(ds.createdSecrets) != 0 {
+		t.Fatalf("created = %#v, want nothing typed or stored", ds.createdSecrets)
+	}
+	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "" || ds.approvals[0].TTLSeconds != 86400 {
+		t.Fatalf("approvals = %#v, want one naming no secret, for a day", ds.approvals)
+	}
+}

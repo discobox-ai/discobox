@@ -9,6 +9,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -152,5 +153,112 @@ func TestAnAskByIDDoesNotReuseAPlainAsk(t *testing.T) {
 	// than adding another line to the approval inbox.
 	if again := askFor(ctx, t, svc, wellknown.GitHubAPI); again.ID != byID.ID {
 		t.Fatalf("retry = %s, want the open ask by ID %s", again.ID, byID.ID)
+	}
+}
+
+// Access to the discobox API is a gate: approving a request for it chooses no
+// secret, the project's one gate secret stands behind every grant of it, and
+// that secret is never handed out to anything.
+func TestTheDiscoboxAPIIsApprovedWithNoSecret(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	github := createBearerSecret(ctx, t, svc)
+
+	req := askFor(ctx, t, svc, wellknown.DiscoboxSandbox)
+	if req.Host != "api.discobox.internal" || req.EnvName != "DISCOBOX_TOKEN" {
+		t.Fatalf("request = %+v, want the discobox API's host and variable", req)
+	}
+	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(github.ID)})
+	requireStatus(t, err, http.StatusBadRequest)
+
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{})
+	if err != nil {
+		t.Fatalf("approve without a secret: %v", err)
+	}
+	gate, err := st.GetSecret(ctx, "project-1", approved.SecretID)
+	if err != nil || gate.WellKnownID != wellknown.DiscoboxSandbox || gate.Host != "api.discobox.internal" {
+		t.Fatalf("answered with %+v, %v; want the project's gate secret", gate, err)
+	}
+
+	// The gate stands behind every later grant of it too.
+	again := askFor(ctx, t, svc, wellknown.DiscoboxSandbox)
+	if again.ID == req.ID {
+		t.Fatal("a second ask reused the approved one")
+	}
+	second, err := svc.ApproveSecretRequest(ctx, "project-1", again.ID, services.ApproveSecretRequestBody{})
+	if err != nil || second.SecretID != gate.ID {
+		t.Fatalf("second approval = %+v, %v; want the same gate secret", second, err)
+	}
+
+	// And it resolves to nothing, whatever asks.
+	bindings, err := st.ListSandboxSecrets(ctx, "project-1", testSandboxID)
+	if err != nil || len(bindings) != 1 {
+		t.Fatalf("bindings = %#v, %v; want the one binding for DISCOBOX_TOKEN", bindings, err)
+	}
+	resolution, err := svc.ResolveSandboxSecret(ctx, testPoolID, testSandboxID, bindings[0].Sentinel, "api.discobox.internal")
+	if err != nil || resolution.Status != model.SecretRequestStatusDenied || resolution.Value != nil {
+		t.Fatalf("resolution = %+v, %v; want a gate's secret never handed out", resolution, err)
+	}
+}
+
+// The discobox API's host is reached only by asking for it by ID: a secret
+// approved for that host under another name would open the API unannounced.
+func TestTheDiscoboxAPIsHostIsAskedForOnlyByID(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	for _, host := range []string{"api.discobox.internal", "x.api.discobox.internal"} {
+		_, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+			SandboxId: testSandboxID,
+			Name:      "discobox",
+			EnvVar:    "DISCOBOX_TOKEN",
+			Host:      host,
+			Uses:      []apimodel.SecretUse{{Description: "create a discobox"}},
+		})
+		requireStatus(t, err, http.StatusBadRequest)
+	}
+}
+
+// The gate's secret stands for access, not a credential: nothing is behind its
+// value, and its host is where the pool admits the discobox API. Changing
+// either is refused, with the way to take access back instead.
+func TestTheGateSecretIsNotEdited(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	req := askFor(ctx, t, svc, wellknown.DiscoboxSandbox)
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{})
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	for name, body := range map[string]services.UpdateSecretBody{
+		"its value": {Value: serverapi.NewOptSecretValue(serverapi.SecretValue{Token: serverapi.NewOptString("a-real-token")})},
+		"its host":  {Host: serverapi.NewOptString("evil.example")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := svc.UpdateSecret(ctx, "project-1", approved.SecretID, body)
+			requireStatus(t, err, http.StatusBadRequest)
+		})
+	}
+	gate, err := st.GetSecret(ctx, "project-1", approved.SecretID)
+	if err != nil || gate.Host != "api.discobox.internal" {
+		t.Fatalf("gate = %+v, %v; want it unchanged", gate, err)
+	}
+}
+
+// The discobox API is granted only by a person. A discobox holding it may
+// answer the inbox, but not a request for the API itself — or it could give
+// every credential onward with no person seeing it (ADR 0140 §4).
+func TestOnlyAPersonApprovesTheDiscoboxAPI(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	lead := auth.WithPrincipal(ctx, auth.Principal{
+		Type: auth.PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: "project-1", UserID: "user-1",
+	})
+
+	req := askFor(ctx, t, svc, wellknown.DiscoboxSandbox)
+	_, err := svc.ApproveSecretRequest(lead, "project-1", req.ID, services.ApproveSecretRequestBody{})
+	requireStatus(t, err, http.StatusForbidden)
+
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{}); err != nil {
+		t.Fatalf("a person approving it: %v", err)
 	}
 }

@@ -2395,9 +2395,11 @@ type PoolDeleteSandboxNoContent struct{}
 type PoolHTTPAuditExchange struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// True when the proxy's destination policy refused the request.
+	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
+	// the credential judge, or at the discobox API's gate. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
-	// Why the request was refused.
+	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
+	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// True when the response came from the pool's response cache.
 	CacheHit OptBool `json:"cacheHit"`
@@ -2614,9 +2616,11 @@ type PoolHTTPAuditExchangeDetail struct {
 	AppliedPattern OptString `json:"appliedPattern"`
 	// The proxy rewrite rule that applied.
 	AppliedRuleId OptString `json:"appliedRuleId"`
-	// True when the proxy's destination policy refused the request.
+	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
+	// the credential judge, or at the discobox API's gate. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
-	// Why the request was refused.
+	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
+	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// Why the response cache could not be used.
 	CacheError OptString `json:"cacheError"`

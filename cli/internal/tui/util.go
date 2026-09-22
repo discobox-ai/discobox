@@ -391,16 +391,26 @@ func since(t time.Time, now time.Time) string {
 	}
 }
 
+// ago is how long before now t was, as a column says it: "5m ago", "3d ago",
+// and "just now" for anything under a minute, which since spells "now" and
+// "now ago" would not. Empty for a time nothing recorded.
+func ago(t, now time.Time) string {
+	switch age := since(t, now); age {
+	case "":
+		return ""
+	case "now":
+		return "just now"
+	default:
+		return age + " ago"
+	}
+}
+
 // createdText is the column: the sandbox's age with "ago" on it. Creation is
 // the one timestamp a user's action put there — nothing yet records real
 // access — so the row says how old the discobox is rather than pretending to
 // know when it was last touched.
 func createdText(s Sandbox, now time.Time) string {
-	age := since(s.Created, now)
-	if age == "" {
-		return ""
-	}
-	return age + " ago"
+	return ago(s.Created, now)
 }
 
 // renderTitle draws a pane title bar with an optional right aligned suffix.

@@ -769,7 +769,7 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	// The mark spelled out, in the mark's own color. It is added right after
 	// the position so the two survive a narrowing terminal together.
 	addCol(baseStyle.Render(pad(s.changes(), 7)), 8)
-	addCol(st.dimText.Render(pad(createdText(s, l.now()), 7)), 8)
+	addCol(st.dimText.Render(pad(createdText(s, l.now()), 8)), 9)
 	addCol(usage(st, s), usageWidth+1)
 	addCol(padANSI(diffText(st, s), 11), 11)
 	tail := cols.text

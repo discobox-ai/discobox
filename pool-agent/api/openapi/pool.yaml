@@ -413,10 +413,10 @@ components:
                     readOnly: true
                     type: string
                 blocked:
-                    description: True when the proxy's destination policy refused the request
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, or at the discobox API's gate. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
                     type: string
                 cacheHit:
                     description: True when the response came from the pool's response cache
@@ -505,10 +505,10 @@ components:
                     description: The proxy rewrite rule that applied
                     type: string
                 blocked:
-                    description: True when the proxy's destination policy refused the request
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, or at the discobox API's gate. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate -- then the reason.
                     type: string
                 cacheError:
                     description: Why the response cache could not be used

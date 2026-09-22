@@ -119,6 +119,37 @@ registry. `wellknown.go` owns it.
   ID — written last, once the grant is minted and bound, so a secret whose
   approval failed never becomes the answer. A later approval may still name
   another secret, which answers that one request and marks nothing.
+- **A gate has nothing behind it** (`wellknown.Credential.Gate`; today
+  `ai.discobox.sandbox`, the discobox API —
+  [ADR 0140](../../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)).
+  Approving one names no secret: the first approval creates the project's gate
+  secret (`gateSecret`), marked with the ID, whose value is random filler, and
+  every later grant of it is of that secret — grants and bindings are always
+  of a secret. `ResolveSandboxSecret` never hands a gate's secret out; the pool
+  admits a live use of it at its host instead. Its value and host are not
+  edited (`UpdateSecret` refuses both): access is taken back by revoking its
+  grants, or deleting it. Listings mark it as a gate. A free-form ask for a gate's host
+  is refused (`reservedHostAsk`): only an ask by its ID may open it. A gate
+  is handed on only by a person (`gateGivenOnlyByAPerson`): a discobox may not
+  approve a request for one, nor give one at create by its ID or its secret's.
+
+## A discobox created with uses
+
+A create may give the new discobox uses of project secrets
+(`CreateSandboxBody.grants`), each naming a secret and a variable, or a
+well-known credential by its ID (`sandboxGrantTarget`). An ID is read as an ask
+by ID is — its variable and host are its own, a host may only narrow it — and
+answers with the project secret marked for it, so only the person who first
+approved the ID chooses that secret. A gate is not given this way: the discobox
+API lets its holder give credentials in turn, so a person grants it.
+`PrepareSandboxGrants` checks each as a person's
+grant of the same shape is checked — a concrete host within the secret's
+binding (`guardGrantHost`), a lifetime within its limit (`guardGrantTTL`), at
+least one use, one credential per variable — and builds the use grants and
+agent bindings without storing them; the sandbox create stores them in the
+transaction that stores the discobox, so a create that cannot give them all
+creates nothing. A grant a sandbox makes records the sandbox as its granter
+(`grantedByOf`).
 
 ## Delegation grants
 

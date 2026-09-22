@@ -234,7 +234,7 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 	}
 	addCol(files, 9)
 
-	addCol(st.dimText.Render(pad(harnessAge(h, l.now()), 7)), 8)
+	addCol(st.dimText.Render(pad(harnessAge(h, l.now()), 8)), 9)
 	// The image is what the harness actually runs, and the longest thing on the
 	// row, so it goes last: it is the first column a narrow terminal gives up.
 	addCol(st.dimText.Render(truncate(h.Image, 34)), 34)
@@ -272,11 +272,7 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 // list's own spelling. A harness nothing has ever configured has nothing to
 // say.
 func harnessAge(h Harness, now time.Time) string {
-	age := since(h.Updated, now)
-	if age == "" {
-		return ""
-	}
-	return age + " ago"
+	return ago(h.Updated, now)
 }
 
 // ---------------------------------------------------------------------------

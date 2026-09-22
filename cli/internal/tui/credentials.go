@@ -10,6 +10,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/wellknown"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -182,6 +183,9 @@ func (m *Model) credentialRequestByID(requestID string) (CredentialRequest, bool
 // answer it. Choosing a secret, or a new credential, is the first of two steps;
 // the second is how long the grant lives (askLifetime).
 func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.Cmd {
+	if known, ok := wellknown.Lookup(req.WellKnownID); ok && known.Gate {
+		return m.askAboutGate(req, secrets, known)
+	}
 	items := make([]action, 0, len(secrets)+3)
 	// Every secret is offered. A secret bound to a neighboring host is the
 	// likeliest answer, not the least: a GitHub token is inferred as
@@ -222,6 +226,41 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 	d.sections = credentialAsk(req, m.secrets.now())
 	d.answerLabel = "which secret answers this?"
 	d.keys = []hint{pressing("enter chooses the highlighted secret", "enter"), pressing("esc leaves it waiting", "esc")}
+	m.dialog = d
+	return nil
+}
+
+// askAboutGate is the card for a credential with nothing behind it, such as the
+// discobox API (ADR 0140 §1): there is no secret to choose and no value to
+// type, only whether to let the discobox in, and for how long.
+func (m *Model) askAboutGate(req CredentialRequest, secrets []Secret, known wellknown.Credential) tea.Cmd {
+	items := []action{
+		{key: "gate", press: "a", label: "Approve", detail: "let it in, then choose for how long", enabled: true},
+		{key: "deny", press: "d", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true},
+	}
+	d := actionsDialog("Credential request", "", items, func(result string) tea.Cmd {
+		a := approval{req: req, secrets: secrets, gate: true}
+		switch result {
+		case "deny":
+			return m.denyCredential(req)
+		case "gate":
+			return m.askLifetime(a, m.toRequest(a))
+		}
+		return nil
+	})
+	// What approving hands over is the whole point of asking, and the request
+	// card cannot say it: an ordinary grant is one credential, and this one is
+	// the power to give every credential onward (ADR 0140, Consequences).
+	d.sections = append(credentialAsk(req, m.secrets.now()), section{
+		label: "what approving gives it",
+		lines: []line{
+			{text: known.Description, tone: toneDim},
+			{text: "it may give any secret in this project to the discoboxes it creates", tone: toneAlert},
+			{text: "and answer any credential request here, for as long as the grant lives", tone: toneAlert},
+		},
+	})
+	d.answerLabel = "let it in?"
+	d.keys = []hint{pressing("enter chooses", "enter"), pressing("esc leaves it waiting", "esc")}
 	m.dialog = d
 	return nil
 }
@@ -367,8 +406,11 @@ func (m *Model) askCustomLifetime(a approval, back func() tea.Cmd, refused strin
 // it may be sent.
 func grantSection(a approval) section {
 	answered := a.secret.Name
-	if a.fresh {
+	switch {
+	case a.fresh:
 		answered = "a new credential, stored as " + a.storedAs()
+	case a.gate:
+		answered = "no secret: its pool lets its uses in"
 	}
 	fields := []field{
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
@@ -405,8 +447,8 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 		// to do.
 		asked = "the proxy — this discobox used a credential it has no grant for"
 	}
-	if age := since(req.Created, now); age != "" {
-		asked = age + " ago by " + asked
+	if when := ago(req.Created, now); when != "" {
+		asked = when + " by " + asked
 	}
 	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
 	if req.Type != "" {
@@ -692,6 +734,9 @@ type approval struct {
 	// fresh is an answer typed in on the spot rather than a secret the project
 	// holds: secret is empty, and the value is asked for after the lifetime.
 	fresh bool
+	// gate is an answer that is no secret at all: the credential is a gate
+	// (wellknown.Credential.Gate), secret is empty, and the server answers it.
+	gate bool
 	// name is what the new credential is stored under, when the approver was
 	// asked for one because the request's own name is taken. Empty is the
 	// request's name, which is the usual case.

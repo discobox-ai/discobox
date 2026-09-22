@@ -74,6 +74,29 @@ type ReportRequest struct {
 	Outcome  Outcome
 }
 
+// JudgeRequest is a request the proxy has just put credentials into, as the
+// judge reads it before it is sent. Everything in it is what the sandbox sent:
+// the URL and headers are the ones from before the swap, so a judge sees the
+// sentinels and never a credential.
+type JudgeRequest struct {
+	ClientID string
+	// UseIDs are the approved uses the substituted values were taken under,
+	// empty for a credential with no use. They are what a request is judged
+	// against: whether sending it is what those uses were approved for.
+	UseIDs    []string
+	Sentinels []string
+	Method    string
+	Host      string
+	URL       string
+	Header    http.Header
+}
+
+// Verdict is a judge's answer. A request it does not allow is never sent.
+type Verdict struct {
+	Allow  bool
+	Reason string
+}
+
 // Resolver resolves a sentinel to its real credential value, and hears back
 // what the upstream made of it. Implementations live outside the proxy
 // (pool-agent/proxyagent) so the proxy stays server-agnostic.
@@ -84,6 +107,49 @@ type Resolver interface {
 	// a rejection would be indistinguishable from a credential that never
 	// failed, which is the state ADR 0132 exists to end.
 	Report(ctx context.Context, req ReportRequest) error
+	// Judge decides whether a request may be sent carrying the credentials
+	// just swapped into it: whether sending it is what their uses were
+	// approved for. It runs for every request, after the swap and before the
+	// request leaves, because a resolved value is cached and reused while
+	// every request it goes out on is a different one. A resolver that cannot
+	// answer returns an error, and the request is not sent.
+	Judge(ctx context.Context, req JudgeRequest) (Verdict, error)
+	// Gate answers a request for the gate host, which never goes to the
+	// internet (Config.GateHost). It admits the request only when it carries
+	// a live use of the credential that opens the gate and the judge allows
+	// it, and answers it from the upstream behind the gate. One it does not
+	// admit is refused with a *GateRefusal saying why, and never sent. Any
+	// other error is the gate failing after it let the request in — the
+	// upstream unreachable, or gone quiet after the request went out — and
+	// the admission returned with it still names the use, since the request
+	// may have been acted on.
+	Gate(ctx context.Context, req GateRequest) (GateAdmission, error)
+}
+
+// GateAdmission is a request the gate let in: the upstream's answer, and the
+// approved use it was let in under. The use is what joins the audited request
+// to the approval that allowed it, as a swapped credential's use does.
+type GateAdmission struct {
+	Response *http.Response
+	UseID    string
+}
+
+// GateRefusal is a gate declining a request, and why. Its text is the reason
+// alone, which is what the sandbox is shown: it is an answer, not a failure
+// of anything. UseID is the use the request carried, when it carried one the
+// gate recognized and still refused — the judge's refusal, say.
+type GateRefusal struct {
+	Reason string
+	UseID  string
+}
+
+func (r *GateRefusal) Error() string { return r.Reason }
+
+// GateRequest is a request for the gate host, from ClientID, with the
+// sentinel it carries still in it.
+type GateRequest struct {
+	ClientID string
+	Request  *http.Request
 }
 
 // Config configures a Swapper.
@@ -105,6 +171,10 @@ type Config struct {
 	// invalidation, yet a control-plane outage cannot stop a running sandbox
 	// from resolving until the grant actually expires. Zero uses a default.
 	RefreshInterval time.Duration
+	// GateHost is a host the proxy never sends to the internet: a request for
+	// it is answered by the resolver's Gate, which admits one carrying a live
+	// use of the credential that opens it (ADR 0140 §2). Empty is no gate.
+	GateHost string
 }
 
 const (
@@ -130,6 +200,7 @@ type Swapper struct {
 	negTTL     time.Duration
 	refreshTTL time.Duration
 	sentinels  map[string][]string
+	gateHost   string
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
@@ -194,6 +265,7 @@ func New(resolver Resolver, cfg Config) *Swapper {
 		negTTL:     negTTL,
 		refreshTTL: refreshTTL,
 		sentinels:  sentinels,
+		gateHost:   extractHost(strings.ToLower(strings.TrimSpace(cfg.GateHost))),
 		cache:      map[string]cacheEntry{},
 		previous:   map[string]previousValue{},
 		refreshing: map[string]struct{}{},
@@ -535,6 +607,31 @@ func (s *Swapper) Report(ctx context.Context, req ReportRequest) error {
 		return nil
 	}
 	return s.resolver.Report(ctx, req)
+}
+
+// IsGate reports whether host is the gate host, which is answered by the
+// resolver's Gate and never sent to the internet.
+func (s *Swapper) IsGate(host string) bool {
+	return s != nil && s.gateHost != "" && extractHost(strings.ToLower(host)) == s.gateHost
+}
+
+// Gate hands a request for the gate host to the resolver. A Swapper without a
+// resolver admits nothing.
+func (s *Swapper) Gate(ctx context.Context, req GateRequest) (GateAdmission, error) {
+	if s == nil || s.resolver == nil {
+		return GateAdmission{}, &GateRefusal{Reason: "nothing answers for this host"}
+	}
+	return s.resolver.Gate(ctx, req)
+}
+
+// Judge asks the resolver whether a request may leave with what was just
+// swapped into it. A Swapper built without a resolver swaps nothing, so it has
+// nothing to judge.
+func (s *Swapper) Judge(ctx context.Context, req JudgeRequest) (Verdict, error) {
+	if s == nil || s.resolver == nil {
+		return Verdict{Allow: true}, nil
+	}
+	return s.resolver.Judge(ctx, req)
 }
 
 // Invalidate drops whatever this client's sentinels resolved to for host, so

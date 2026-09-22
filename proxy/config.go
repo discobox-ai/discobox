@@ -53,6 +53,11 @@ type SecretsConfig struct {
 	NegativeTTLSeconds     int64
 	RefreshIntervalSeconds int64
 	Clients                []SecretClient
+	// GateHost is a host the proxy never sends to the internet. A request for
+	// it is answered by the resolver's Gate: admitted to the upstream behind it
+	// only while it carries a live use of the credential that opens it, and
+	// refused by the proxy otherwise (ADR 0140 §2). Empty is no gate.
+	GateHost string
 }
 
 // DefaultSecretPositiveTTLSeconds bounds the positive resolution cache when no

@@ -208,10 +208,15 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	}
 	router := chi.NewRouter()
 	router.Use(auth.Authentication(
+		// First, so a forwarded sandbox call can never reach the default user.
+		auth.SandboxForwardAuthenticator{Store: appStore},
 		auth.PoolAuthenticator{Store: appStore},
 		auth.DefaultUserAuthenticator{UserID: opts.UserID},
 	))
 	router.Use(auth.Authorization(
+		// First, so a sandbox is held to its role before any authorizer that
+		// admits every authenticated principal.
+		auth.SandboxRoleAuthorizer{},
 		auth.ProjectAuthorizer{Store: appStore},
 		auth.PoolRouteAuthorizer{},
 		auth.AuthenticatedAuthorizer{},

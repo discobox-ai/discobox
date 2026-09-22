@@ -168,6 +168,13 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	if err != nil {
 		return nil, apperrors.NotFound(err, "secret not found")
 	}
+	// A gate's secret stands for access, not a credential: there is no value
+	// to replace, and its host is where the pool admits the discobox API.
+	// Revoking its grants, or deleting it, is how a person takes access back.
+	if isGateSecret(sec) && (input.Value.IsSet() || input.Host.IsSet()) {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("%s is a gate, with no value: revoke its grants, or delete it, to take access back", sec.WellKnownID))
+	}
 	if nameVal, ok := input.Name.Get(); ok {
 		name := strings.TrimSpace(nameVal)
 		if name == "" {
@@ -318,6 +325,12 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if secret, err = s.store.GetSecret(ctx, projectID, secretID); err != nil {
 			return nil, apperrors.NotFound(err, "secret not found")
 		}
+	}
+
+	// A discobox answers the inbox as a person does, with one exception: the
+	// discobox API itself is granted only by a person.
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox && isGateSecret(secret) {
+		return nil, gateGivenOnlyByAPerson(secret.WellKnownID)
 	}
 
 	scope := strings.TrimSpace(string(input.Scope.Or("")))
@@ -472,6 +485,11 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 	// the hosts beneath it and nowhere else — which has to hold for grants that
 	// already exist too: one written before the binding, or before this check,
 	// is exactly the grant nobody would write today.
+	// A gate's secret stands for no credential, and is never handed out: the
+	// pool admits a use of it at its host instead (ADR 0140 §2).
+	if isGateSecret(secret) {
+		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
+	}
 	if !hostscope.Covers(secret.Host, host) {
 		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
 	}
@@ -749,10 +767,7 @@ func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *mod
 		return nil, err
 	}
 	principal, _ := auth.PrincipalFromContext(ctx)
-	grantedBy := principal.UserID
-	if grantedBy == "" {
-		grantedBy = principal.PoolID
-	}
+	grantedBy := grantedByOf(principal)
 	grant := &model.SecretGrant{
 		ProjectID: projectID,
 		SecretID:  secret.ID,
@@ -772,6 +787,19 @@ func (s *Service) mintGrantAs(ctx context.Context, projectID string, secret *mod
 		return nil, err
 	}
 	return grant, nil
+}
+
+// grantedByOf is who a grant records as having made it. A sandbox acts as the
+// user who created it but is recorded as itself: the grant was its doing
+// (ADR 0140 §4).
+func grantedByOf(principal auth.Principal) string {
+	switch {
+	case principal.Type == auth.PrincipalTypeSandbox:
+		return principal.SandboxID
+	case principal.UserID != "":
+		return principal.UserID
+	}
+	return principal.PoolID
 }
 
 func validateGrantScope(scope, scopeKey string) error {

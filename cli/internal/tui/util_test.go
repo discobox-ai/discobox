@@ -142,3 +142,23 @@ func TestTruncateMiddleKeepsBothEnds(t *testing.T) {
 		}
 	}
 }
+
+// A column's age reads as English at every size, including the first minute,
+// where "now ago" does not.
+func TestAgoReadsAsEnglish(t *testing.T) {
+	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		t    time.Time
+		want string
+	}{
+		{time.Time{}, ""},
+		{now.Add(-10 * time.Second), "just now"},
+		{now.Add(-5 * time.Minute), "5m ago"},
+		{now.Add(-3 * time.Hour), "3h ago"},
+		{now.Add(-50 * time.Hour), "2d ago"},
+	} {
+		if got := ago(tc.t, now); got != tc.want {
+			t.Errorf("ago(%v) = %q, want %q", now.Sub(tc.t), got, tc.want)
+		}
+	}
+}
