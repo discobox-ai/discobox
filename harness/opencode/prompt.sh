@@ -65,11 +65,14 @@ if [ -n "$schema" ]; then
 fi
 
 # The judge is the model named by `judgeModel` in Discobox's settings for this
-# harness (.config/discobox/opencode-harness.json), else the last model picked
-# with /models, else opencode's own pick among the connected providers. The user
-# chooses the providers here, so no fixed model is one this harness can be sure
-# to reach, and a judge that cannot answer refuses every command it is asked
-# about.
+# harness (.config/discobox/opencode-harness.json), else the model opencode
+# itself starts with: the `model` setting in its configuration, else the last
+# model picked with /models, else opencode's own pick among the connected
+# providers. The user chooses the providers here, so no fixed model is one this
+# harness can be sure to reach, and a judge that cannot answer refuses every
+# command it is asked about. The judge then runs isolated from that
+# configuration (below), so the model is read from it here, beforehand, and
+# nothing else of it is.
 #
 # Both named sources are files the judged agent can write, which is the gap a
 # pinned model would close: the agent could point the judge at another model,
@@ -80,10 +83,79 @@ fi
 # The choice is recorded in ADR 0127 §4.
 SETTINGS="$HOME/.config/discobox/opencode-harness.json"
 MODEL_PREFERENCE="${XDG_STATE_HOME:-$HOME/.local/state}/opencode/model.json"
+# configured_model is opencode's `model` setting, read the way opencode layers
+# its global configuration: config.json, then opencode.json, then
+# opencode.jsonc, the later winning — so they are read in reverse, and the
+# first that names a model is the one. opencode reads them as JSONC, so they
+# are read the same way here: comments, line and block, and trailing commas
+# are allowed. A file that still is not JSON is skipped, as one that is not
+# there is. Only the model's name is taken from it.
+configured_model() {
+	dir="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+	for file in "$dir/opencode.jsonc" "$dir/opencode.json" "$dir/config.json"; do
+		[ -f "$file" ] || continue
+		configured=$(read_config_model "$file") || configured=""
+		if [ -n "$configured" ]; then
+			printf '%s' "$configured"
+			return
+		fi
+	done
+}
+
+# read_config_model prints a JSONC file's top-level `model`, if it is a string.
+# Comments and trailing commas are dropped outside strings, by walking the text
+# rather than by pattern, so a URL or a "//" inside a string is left alone.
+# node is what the image has for this; without it, plain JSON still reads.
+read_config_model() {
+	if ! command -v node >/dev/null 2>&1; then
+		jq -r '.model // "" | strings' "$1" 2>/dev/null
+		return
+	fi
+	node -e '
+		// Two walks, each outside strings: comments out first, then trailing
+		// commas, so a comment between a comma and its bracket cannot hide it.
+		const walk = (src, visit) => {
+			let out = "", i = 0, inString = false;
+			while (i < src.length) {
+				const c = src[i];
+				if (inString) {
+					out += c;
+					if (c === "\\") { out += src[i + 1] ?? ""; i += 2; continue; }
+					if (c === "\"") inString = false;
+					i++;
+					continue;
+				}
+				if (c === "\"") { inString = true; out += c; i++; continue; }
+				const skip = visit(src, i);
+				if (skip > 0) { i += skip; continue; }
+				out += c;
+				i++;
+			}
+			return out;
+		};
+		const noComments = walk(require("fs").readFileSync(process.argv[1], "utf8"), (src, i) => {
+			if (src[i] === "/" && src[i + 1] === "/") { const end = src.indexOf("\n", i); return (end < 0 ? src.length : end) - i; }
+			if (src[i] === "/" && src[i + 1] === "*") { const end = src.indexOf("*/", i + 2); return (end < 0 ? src.length : end + 2) - i; }
+			return 0;
+		});
+		const json = walk(noComments, (src, i) => {
+			if (src[i] !== ",") return 0;
+			let j = i + 1;
+			while (j < src.length && /\s/.test(src[j])) j++;
+			return src[j] === "}" || src[j] === "]" ? 1 : 0;
+		});
+		const model = JSON.parse(json).model;
+		if (typeof model === "string") process.stdout.write(model);
+	' "$1" 2>/dev/null
+}
+
 judge_model() {
 	named=""
 	if [ -f "$SETTINGS" ]; then
 		named=$(jq -r '.judgeModel // "" | strings' "$SETTINGS" 2>/dev/null) || named=""
+	fi
+	if [ -z "$named" ]; then
+		named=$(configured_model)
 	fi
 	if [ -z "$named" ] && [ -f "$MODEL_PREFERENCE" ]; then
 		named=$(jq -r '.recent[0] // empty | "\(.providerID)/\(.modelID)"' "$MODEL_PREFERENCE" 2>/dev/null) || named=""
@@ -96,7 +168,9 @@ case "$model" in
 judge)
 	named=$(judge_model)
 	if [ -n "$named" ]; then
-		set -- "$@" --model "$named"
+		# One word, so no value in a file the agent can write becomes a flag
+		# of its own on the judge's command line.
+		set -- "$@" "--model=$named"
 	fi
 	;;
 fast | "") ;;

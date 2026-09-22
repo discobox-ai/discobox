@@ -368,7 +368,8 @@ func TestLaunchAppliesTheWebSearchSetting(t *testing.T) {
 
 // TestPromptJudgesWithTheConfiguredModel covers discobox-prompt's judge role:
 // the model the settings file names, else the last /models pick — read before
-// the judge is isolated from the state it lives in — else opencode's own pick.
+// the judge is isolated from the state it lives in — else opencode's own pick,
+// when opencode's configuration names no model (see the next test).
 func TestPromptJudgesWithTheConfiguredModel(t *testing.T) {
 	args := `for arg in "$@"; do printf '[%s]' "$arg"; done; printf '\n'`
 	state := t.TempDir()
@@ -386,14 +387,73 @@ func TestPromptJudgesWithTheConfiguredModel(t *testing.T) {
 		setting string
 		want    string
 	}{
-		{`{"judgeModel": "anthropic/claude-opus-5"}`, "[run][--model][anthropic/claude-opus-5][--pure][is it safe]"},
-		{`{"judgeModel": ""}`, "[run][--model][openai/gpt-5.6-terra][--pure][is it safe]"},
-		{"", "[run][--model][openai/gpt-5.6-terra][--pure][is it safe]"},
+		{`{"judgeModel": "anthropic/claude-opus-5"}`, "[run][--model=anthropic/claude-opus-5][--pure][is it safe]"},
+		{`{"judgeModel": ""}`, "[run][--model=openai/gpt-5.6-terra][--pure][is it safe]"},
+		{"", "[run][--model=openai/gpt-5.6-terra][--pure][is it safe]"},
 	} {
 		got := runWrapper(t, "prompt.sh", tc.setting, args, map[string]string{"XDG_STATE_HOME": state}, "--model", "judge", "--no-tools", "--prompt", "is it safe")
 		if got != tc.want {
 			t.Errorf("setting %q: opencode argv %s, want %s", tc.setting, got, tc.want)
 		}
+	}
+}
+
+// TestPromptJudgesWithOpencodesDefaultModel covers the judge following the
+// model opencode itself starts with when Discobox's settings name none: the
+// `model` setting in its configuration wins over the last /models pick, the
+// way it does for opencode, and a .jsonc file with comments is read too.
+func TestPromptJudgesWithOpencodesDefaultModel(t *testing.T) {
+	args := `for arg in "$@"; do printf '[%s]' "$arg"; done; printf '\n'`
+	state := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(state, "opencode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "opencode", "model.json"),
+		[]byte(`{"recent":[{"providerID":"openai","modelID":"gpt-5.6-luna"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, file, content, setting, want string
+	}{
+		{"opencode.json's model", "opencode.json", `{"model": "zai/glm-5.3"}`, "",
+			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+		{"opencode.jsonc, with comments", "opencode.jsonc", "// my default\n{\n  // the model\n  \"model\": \"zai/glm-5.3\"\n}", "",
+			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+		{"opencode.jsonc, as opencode writes it", "opencode.jsonc",
+			"{\n  \"$schema\": \"https://opencode.ai/config.json\", // the schema\n  /* the default\n     model */\n  \"model\": \"zai/glm-5.3\",\n  \"provider\": {\"zai\": {\"options\": {\"baseURL\": \"https://api.z.ai/v1\",},},},\n}", "",
+			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+		{"a trailing comma with a comment before its bracket", "opencode.jsonc",
+			"{\n  \"model\": \"zai/glm-5.3\", // the default\n  \"small_model\": \"zai/glm-5.3-air\", /* the small one */\n}", "",
+			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+		{"a trailing comma in an array, before a comment", "opencode.jsonc",
+			"{\n  \"plugin\": [\"a\", // first\n  ],\n  \"model\": \"zai/glm-5.3\"\n}", "",
+			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+		{"an escaped quote and a slash pair inside a string", "opencode.jsonc",
+			"{\"instructions\": [\"say \\\"hi\\\" // not a comment\"], \"model\": \"zai/glm-5.3\",}", "",
+			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+		{"a model that reads like a flag stays the model's value", "opencode.json", `{"model": "--agent=build"}`, "",
+			"[run][--model=--agent=build][--pure][is it safe]"},
+		{"config.json's model", "config.json", `{"model": "zai/glm-5.3"}`, "",
+			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+		{"a configuration naming no model falls to /models", "opencode.json", `{"theme": "tokyonight"}`, "",
+			"[run][--model=openai/gpt-5.6-luna][--pure][is it safe]"},
+		{"judgeModel still wins", "opencode.json", `{"model": "zai/glm-5.3"}`, `{"judgeModel": "anthropic/claude-haiku-4-5"}`,
+			"[run][--model=anthropic/claude-haiku-4-5][--pure][is it safe]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(config, "opencode"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(config, "opencode", tc.file), []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got := runWrapper(t, "prompt.sh", tc.setting, args,
+				map[string]string{"XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config}, "--model", "judge", "--no-tools", "--prompt", "is it safe")
+			if got != tc.want {
+				t.Errorf("opencode argv %s, want %s", got, tc.want)
+			}
+		})
 	}
 }
 

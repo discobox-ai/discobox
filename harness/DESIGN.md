@@ -672,13 +672,19 @@ that declares none. See
   of configuration the agent wrote; it is not a boundary against an agent that
   sets out to defeat it, which has sudo (ADR 0090).
 - **`judge` is not pinned.** It is `judgeModel` from the settings file, else the
-  last `/models` pick (read before isolation and passed with `--model`), else
-  opencode's own pick among the connected providers. The user chooses the
-  providers here, so no fixed model is one the harness can be sure to reach, and
-  a judge that cannot answer refuses every command. Both named sources are files
-  the judged agent can write, and so is `auth.json`, so an agent that set out to
-  could move the judge to another model, or to a provider it added a key for.
-  That trade is recorded in ADR 0127 §4.
+  model opencode itself starts with: the `model` setting in its configuration
+  (`opencode.jsonc`, `opencode.json`, then `config.json`), else the last
+  `/models` pick, else opencode's own pick among the connected providers. The
+  configuration is read as JSONC, as opencode reads it (comments and trailing
+  commas, walked rather than pattern-matched). The named ones are read before
+  isolation and passed as one `--model=NAME` word, so only the model's name
+  crosses into the isolated run, and no value can become a flag of its own. The user chooses the providers
+  here, so no fixed model is one the harness can be sure to reach, and a judge
+  that cannot answer refuses every command — which is also why it follows
+  opencode's default rather than a `/models` pick the default overrides. The
+  named sources are files the judged agent can write, and so is `auth.json`,
+  so an agent that set out to could move the judge to another model, or to a
+  provider it added a key for. That trade is recorded in ADR 0127 §4.
 - The configure image declares config ports 1455 (ChatGPT's browser sign-in)
   and 1456 (DigitalOcean's). A browser sign-in on a random port cannot be
   forwarded; those providers connect with a key.
