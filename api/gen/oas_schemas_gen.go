@@ -18524,6 +18524,11 @@ func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 // this defines the sandbox.json default user, and on exec create it
 // overrides that user for one exec — the same fields mean the same thing at
 // both layers.
+// Sandbox create is stricter, because it names the account the sandbox
+// creates: a user that gives name or homeDirectory must give uid, and uid
+// and gid must each be 0 (root) or within 1000-60000, the range a Linux
+// guest gives ordinary accounts. Anything else is refused with 400, never
+// clamped (ADR 0141).
 // Ref: #/components/schemas/SandboxUser
 type SandboxUser struct {
 	// Supplementary groups, each a group name or a numeric GID, resolved inside

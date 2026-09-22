@@ -122,7 +122,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if len(secrets) > 0 {
 		body.Config.SetSecrets(secrets)
 	}
-	userIdentity, _, err := resolveRunUserIdentity()
+	userIdentity, userNamed, err := resolveRunUserIdentity()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -170,7 +170,10 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		return nil, nil, err
 	}
 	body.SetOrigin(apiclientgen.NewOptOrigin(resolvedOrigin))
-	userIdentity.setCreateSandboxUser(body)
+	// Root asks for nobody: the image's own user (ADR 0025 §5).
+	if userNamed {
+		userIdentity.setCreateSandboxUser(body)
+	}
 	setCreateSandboxGit(body, resolveGitIdentity(ctx, sourceArg))
 	return body, local, nil
 }

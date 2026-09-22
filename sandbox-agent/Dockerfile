@@ -380,8 +380,9 @@ RUN set -eux \
 # turns out to run as to it. The group is `--system`, and what makes that safe
 # is that groupadd picks an unused gid at build time and nothing outside this
 # image ever names the number -- boot looks the group up by name. Not the range
-# it lands in: a manifest's gid is the client's own local gid, which on macOS is
-# staff's 20, so "below 1000" is where those live too rather than clear of them.
+# it lands in: a sandbox created before ADR 0141 can carry a macOS client's own
+# gid, staff's 20, so "below 1000" is where those live too rather than clear of
+# them.
 #
 # A sandbox running as root -- a manifest that named no user (ADR 0025 §5) --
 # gets a working brew, not a refusal. Homebrew's own root guard stands down
