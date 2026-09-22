@@ -97,7 +97,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
 | [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted (§2 superseded by [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)) |
 | [0044](0044-builds-run-on-a-pool-shared-buildkit.md) | Builds run on a pool-shared BuildKit, bound to a sandbox by a mediator | Accepted |
-| [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) | A directory with no repository is delivered by push | Accepted (§2's "nobody is asked" superseded by [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md)) |
+| [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) | A directory with no repository is delivered by push | Accepted (§2's "nobody is asked" superseded by [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md); its apply consequence by [0139](0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md)) |
 | [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md) | Listening ports are discovered by a standing poller and probed for HTTP | Accepted |
 | [0047](0047-local-base-images-resolve-through-a-per-sandbox-registry-namespace.md) | Local base images resolve through a per-sandbox registry namespace | Accepted |
 | [0048](0048-a-sandbox-names-its-harness-or-the-project-does.md) | A sandbox names its harness, or the project does | Accepted (supersedes [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) §1's fallback step) |
@@ -193,3 +193,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0136](0136-a-sandboxs-meta-lives-in-the-sandbox-and-the-server-caches-it.md) | A sandbox's meta lives in the sandbox, and the server caches it | Accepted |
 | [0137](0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md) | A terminal can be read, typed into, and waited on without attaching | Accepted |
 | [0138](0138-a-shell-opened-for-a-person-is-their-own-shell-when-the-sandbox-has-it.md) | A shell opened for a person is their own shell, when the sandbox has it | Accepted |
+| [0139](0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md) | The first apply into a directory with no repository makes one | Accepted (supersedes [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md)'s apply consequence) |

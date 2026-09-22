@@ -2,6 +2,8 @@
 
 - **Status**: Accepted (§2's "Nobody is asked about this" superseded by
   [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md);
+  the consequence that apply fails back into the directory superseded by
+  [0139](0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md);
   everything else stands)
 - **Date**: 2026-08-08
 
