@@ -168,6 +168,14 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	// listener for the ordinary handler, so routing and authentication are
 	// unchanged.
 	controlPlaneStreams := opts.ControlPlaneStreams
+	// A sandbox is told its discobox:// address only when that address
+	// reaches this server: every server has a peer ID (ADR 0117), but a peer
+	// ID is dialed only over iroh, and a server not listening on it answers
+	// nothing there.
+	var addressPeerID string
+	if hasIrohEndpoint(opts.ListenEndpoints) {
+		addressPeerID = opts.ServerPeer.ID
+	}
 	appServices := service.New(appStore, reconcileEngine, service.Options{
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 		DevelopmentImageSync:           developmentImageSync,
@@ -176,6 +184,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
 		ArchiveRetention:               opts.ArchiveRetention,
+		ServerPeerID:                   addressPeerID,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
 	})

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/endpoint"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -119,6 +120,9 @@ type SandboxReconciler struct {
 	// sets its own. Zero means unconfigured, not "purge immediately", so the
 	// package default applies; see serverArchiveRetention.
 	archiveRetention time.Duration
+	// serverPeerID names this server in the address each sandbox is started
+	// with. Empty starts sandboxes with no address.
+	serverPeerID string
 }
 
 // SandboxReconcilerOption configures a sandbox reconciler.
@@ -171,6 +175,16 @@ func WithSandboxReconcileEngine(engine *reconcile.Engine) SandboxReconcilerOptio
 func WithArchiveRetention(retention time.Duration) SandboxReconcilerOption {
 	return func(reconciler *SandboxReconciler) {
 		reconciler.archiveRetention = retention
+	}
+}
+
+// WithServerPeerID starts every sandbox created from here on with its own
+// address, discobox://<peer-id>/<sandbox-id>, in endpoint.EnvSandboxAddress.
+// The caller passes an ID only when this server listens on iroh; the address
+// is not dialable otherwise.
+func WithServerPeerID(id string) SandboxReconcilerOption {
+	return func(reconciler *SandboxReconciler) {
+		reconciler.serverPeerID = id
 	}
 }
 
@@ -522,6 +536,13 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		for key, value := range sb.Env {
 			opts.Env[key] = value
 		}
+	}
+	if r.serverPeerID != "" {
+		if opts.Env == nil {
+			opts.Env = map[string]string{}
+		}
+		address := endpoint.SandboxAddress{Server: endpoint.SchemeDiscobox + "://" + r.serverPeerID, Sandbox: sb.ID}
+		opts.Env[endpoint.EnvSandboxAddress] = address.String()
 	}
 	if r.store != nil {
 		// A failed read must fail the reconcile, not degrade to "no secrets":

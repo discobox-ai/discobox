@@ -267,12 +267,12 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	}
 }
 
-func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
+func TestSandboxReconcileExecutorInjectsTrustKeyAndAddress(t *testing.T) {
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
 	provider := &recordingSandboxProvider{}
 	auth := &recordingSandboxAuth{trustKey: "public-key"}
-	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
+	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth), sandboxes.WithServerPeerID("d1-server"))
 	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "prov-trust", ProjectID: projectID, Type: "recording", Name: "recording"}); err != nil {
 		t.Fatalf("create provider instance: %v", err)
 	}
@@ -302,6 +302,9 @@ func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	}
 	if got := provider.createOptions.Env["DISCOBOX_TRUST_KEY"]; got != "public-key" {
 		t.Fatalf("trust key env = %q, want public-key", got)
+	}
+	if got := provider.createOptions.Env["DISCOBOX_ADDRESS"]; got != "discobox://d1-server/sandbox-1" {
+		t.Fatalf("address env = %q, want discobox://d1-server/sandbox-1", got)
 	}
 }
 

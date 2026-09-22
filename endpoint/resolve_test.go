@@ -244,6 +244,9 @@ func TestParseSandboxAddress(t *testing.T) {
 		if _, err := Parse(got.Server); err != nil {
 			t.Fatalf("the server half %q does not parse: %v", got.Server, err)
 		}
+		if again, _, err := ParseSandboxAddress(got.String()); err != nil || again != got {
+			t.Fatalf("%+v written as %q reads back as %+v, %v", got, got.String(), again, err)
+		}
 	}
 
 	// What is not written as an address is somebody else's to read.

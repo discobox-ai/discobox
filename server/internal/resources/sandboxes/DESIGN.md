@@ -569,6 +569,25 @@ bindings (`rebindSandboxSecretRows`) before building the create options. That
 catches a binding change the live fan-out (`RebindHarnessConfigSecrets`) missed
 while the sandbox was down.
 
+## The Sandbox's Own Address
+
+The create options carry `DISCOBOX_ADDRESS` (`endpoint.EnvSandboxAddress`):
+`discobox://<server-peer-id>/<sandbox-id>`, the address a process inside hands
+somebody to reach this discobox. The peer ID is the one `GET /peer` serves
+(`WithServerPeerID`), passed only when the server listens on iroh: a peer ID is
+dialed over nothing else (ADR 0116 §1), and ADR 0117 keeps an always-present ID
+from being handed out as an address. It overrides a caller-set value of the
+same name.
+
+Like the trust key it is outside the spec fingerprint, and a container's env is
+fixed when the container is built. A sandbox that existed before the server
+began listening on iroh — or before this variable existed — has none until
+something else rebuilds its container; stop and start reuse it. The reverse holds too:
+a value, once set, is never updated or removed, so a sandbox built while the
+server listened on iroh keeps its address after the server stops listening
+there or its peer ID changes (a lost `iroh_endpoint_key`), and that address
+then reaches nothing.
+
 ## Creation While Pool Health Is Unknown
 
 Create accepts and persists the requested pool assignment without requiring

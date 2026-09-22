@@ -41,6 +41,10 @@ type Service struct {
 	// archiveRetention is the server-wide default retention for archived
 	// sandboxes; zero leaves DefaultArchiveRetention in force.
 	archiveRetention time.Duration
+	// serverPeerID is this server's own peer ID, the <server> of the
+	// discobox://<server>/<discobox> address a sandbox is started with. Empty
+	// when the server is not reachable at it, and then no address is given.
+	serverPeerID string
 }
 
 func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine, providerStore ...any) *Service {
@@ -86,6 +90,12 @@ func (s *Service) SetDefaultSandboxImage(image, digest string) {
 // WithArchiveRetention.
 func (s *Service) SetArchiveRetention(retention time.Duration) {
 	s.archiveRetention = retention
+}
+
+// SetServerPeerID records this server's peer ID, which names it in the address
+// a sandbox is started with; see WithServerPeerID.
+func (s *Service) SetServerPeerID(id string) {
+	s.serverPeerID = strings.TrimSpace(id)
 }
 
 // SetHostID records the machine this server runs on, so a create request whose
@@ -1079,6 +1089,7 @@ func (s *Service) NewSandboxReconciler() *SandboxReconciler {
 		WithSandboxAuthenticator(s.sandboxAuth),
 		WithSandboxReconcileEngine(s.engine),
 		WithArchiveRetention(s.archiveRetention),
+		WithServerPeerID(s.serverPeerID),
 	)
 }
 

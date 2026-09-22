@@ -19,6 +19,23 @@ type SandboxAddress struct {
 	Sandbox string
 }
 
+// EnvSandboxAddress holds a discobox's own address,
+// discobox://<server-peer-id>/<sandbox-id>: what a process inside it hands
+// somebody so they can reach this discobox. A server sets it on the sandboxes
+// it creates while it listens on iroh; a sandbox created before, or on a
+// server with no iroh listener, has none.
+const EnvSandboxAddress = "DISCOBOX_ADDRESS"
+
+// String is the address written out, the form [ParseSandboxAddress] reads.
+func (a SandboxAddress) String() string {
+	u, err := url.Parse(a.Server)
+	if err != nil {
+		return strings.TrimSuffix(a.Server, "/") + "/" + a.Sandbox
+	}
+	u.Path = "/" + a.Sandbox
+	return u.String()
+}
+
 // ParseSandboxAddress reads raw as a discobox's address.
 //
 // Anything not written as a discobox:// address — an ID, a prefix, a name —

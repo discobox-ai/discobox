@@ -80,6 +80,10 @@ type Options struct {
 	// for, which a project follows until it sets its own. Zero leaves the
 	// package default (24h) in force.
 	ArchiveRetention time.Duration
+	// ServerPeerID is this server's own peer ID, which names it in the address
+	// a sandbox is started with. Empty when the server does not listen on iroh,
+	// where that address would reach nothing; sandboxes then get none.
+	ServerPeerID string
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options) *Service {
@@ -101,6 +105,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	poolService.SetSandboxStateReporter(sandboxService)
 	jobsService := resourcejobs.NewService(store, engine)
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
+	sandboxService.SetServerPeerID(options.ServerPeerID)
 	harnessConfigService := harnessconfigs.NewService(store, options.HarnessImages, options.ServerDefaults.Release != nil)
 	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)
 	// The configure flow runs an ephemeral sandbox and watches it through the
