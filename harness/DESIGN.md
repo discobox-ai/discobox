@@ -190,8 +190,12 @@ launchers, and configure scripts.
   sandboxing it has instead. It goes on PATH rather than in `libexec` because
   its callers resolve it by name. Its first consumer is the credential CLI's
   judge, which will not run a wrapped command until a model agrees the command
-  is the approved use, and which never omits `--no-tools`; a harness with no
-  wrapper (`shell`) refuses those commands rather than running them unjudged.
+  is the approved use, and which never omits `--no-tools`. The `shell` image
+  runs no model, so its wrapper answers only the `judge` role, with a fixed
+  verdict. It refuses, as the judge fails closed, unless a person set
+  `DISCOBOX_SHELL_JUDGE=allow` for the discobox, which allows every judged
+  command. It is a stand-in until the pool judge decides these requests; the
+  host a credential may go to is enforced either way.
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,
