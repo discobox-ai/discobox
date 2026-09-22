@@ -23,6 +23,15 @@ sandbox create requests.
   ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §5) — root on most harness images. A stated identity is not a guess about the
   local machine, because there is no local answer to get wrong.
+- Every identity sent carries both ids, because sandbox create refuses an account
+  named without its uid and an id outside root and 1000–60000
+  ([ADR 0141](../../../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)).
+  An id the host has that the guest cannot give an account is replaced here, not
+  dropped: a uid outside the range (a macOS account's 501) becomes 1000, a gid
+  outside it (macOS's 20, Linux's `users` 100) becomes the uid, and a name no
+  Linux account can have becomes `discobox`. The server refuses rather than
+  clamps, so this is the one place the choice is made. A root host asks for
+  nobody.
 - A local source keeps its own absolute path inside the sandbox **when that path
   is one a sandbox may hold** — a child of `/home`, `/Users`, `/mnt`,
   `/workspace`, `/Volumes`, `/media`, `/srv`, `/opt`, `/data` or `/var/home`

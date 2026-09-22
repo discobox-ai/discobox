@@ -6,7 +6,8 @@ caller needs.
 
 Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
 (the rules), [ADR 0033](../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md)
-(where they live).
+(where they live), [ADR 0141](../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)
+(the ids a sandbox account may be created with).
 
 ## Why it is in the root module
 
@@ -44,6 +45,7 @@ graph TD
 | `Fields` · `Credential` · `Complete` | Which fields a caller requires. `Credential` is uid+gid+groups (enough to `setuid`); `Complete` adds name and home. |
 | `UnresolvedError` · `Unresolved` | A required field that could not be determined, naming it. Built by `runuser`. |
 | `(*User).Validate` | Rejects the one in-layer contradiction: both `GID` and `GroupName`. |
+| `(*User).ValidateAccount` · `InAccountRange` · `AccountIDMin`/`AccountIDMax` | The stricter check for a sandbox's own user, which sandbox create applies: naming an account needs its uid, and each id is 0 or in the guest's account range, 1000–60000. Refused, never clamped; the client picks a usable id ([ADR 0141](../docs/adr/0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)). Exec users are checked only by `Validate`. |
 | `(*User).Clone` · `ID` | Deep copy that trims strings; pointer to a known id. |
 
 ## The three facets

@@ -549,7 +549,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the discobox")
 	cmd.Flags().StringVar(&opts.sourceCodeReferences, "source-code-references", "", "Additional source code references JSON or @path")
 	cmd.Flags().StringVar(&opts.userName, "user-name", "", "Username to use inside the discobox")
-	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the discobox")
+	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the discobox: 0 (root) or 1000-60000, and required with --user-name or --home-directory")
 	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the discobox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the discobox")
 	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox new`, this command infers nothing from the local environment")

@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -110,6 +111,32 @@ func SandboxUserToModel(value OptSandboxUser) SandboxUserFields {
 		HomeDirectory:    OptStringPtr(user.HomeDirectory),
 		AdditionalGroups: append([]string(nil), user.AdditionalGroups...),
 	}
+}
+
+// ValidateAccount refuses a user no sandbox may be created with: an account
+// named without its uid, or an id outside root and the guest's account range
+// (ADR 0141). The rule is sandboxuser's; this is only the conversion to it.
+func (f SandboxUserFields) ValidateAccount() error {
+	user := &sandboxuser.User{AdditionalGroups: f.AdditionalGroups}
+	if f.Name != nil {
+		user.Name = *f.Name
+	}
+	if f.GroupName != nil {
+		user.GroupName = *f.GroupName
+	}
+	if f.HomeDirectory != nil {
+		user.HomeDirectory = *f.HomeDirectory
+	}
+	if f.UID != nil {
+		user.UID = sandboxuser.ID(int64(*f.UID))
+	}
+	if f.GID != nil {
+		user.GID = sandboxuser.ID(int64(*f.GID))
+	}
+	if err := user.ValidateAccount(); err != nil {
+		return apperrors.NewStatusError(http.StatusBadRequest, "sandbox user: "+err.Error())
+	}
+	return nil
 }
 
 func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {

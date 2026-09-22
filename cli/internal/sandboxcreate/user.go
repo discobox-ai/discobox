@@ -11,18 +11,28 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/x/gitutil"
 )
 
 var runUnixUserNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}\$?$`)
 
+// runUserIdentity is this machine's account as a sandbox can hold it. It always
+// carries both ids: a sandbox create refuses an account named without its uid,
+// and an id outside root and the guest's account range (ADR 0141), so an id the
+// guest cannot give an account is replaced here, by the client, rather than
+// dropped or clamped at runtime.
 type runUserIdentity struct {
 	Name          string
 	UID           int64
 	GID           int64
 	HomeDirectory string
-	IDsUsable     bool
 }
+
+// fallbackRunUserName names the sandbox account when this machine has no name a
+// Linux sandbox could use: the product, rather than an impersonation of an
+// account whose name would only be a coincidence in the sandbox.
+const fallbackRunUserName = "discobox"
 
 // windowsRunUser is the identity a create carries from a Windows client.
 //
@@ -41,16 +51,14 @@ type runUserIdentity struct {
 // creates that account exactly as it would for one a Linux client named.
 //
 // 1000 is the first non-system id on every distro the harness images build from,
-// and "discobox" names the product rather than impersonating the Windows account,
-// whose name would only be a coincidence in the sandbox. The home directory is
-// deliberately absent: boot resolves it from the account when the image already
-// has a "discobox", and defaults to /home/discobox when it does not, which is the same
+// and the name is fallbackRunUserName. The home directory is deliberately
+// absent: boot resolves it from the account when the image already has a
+// "discobox", and defaults to /home/discobox when it does not, which is the same
 // "ask where you can, decide only where you must" rule the rest of this follows.
 var windowsRunUser = runUserIdentity{
-	Name:      "discobox",
-	UID:       1000,
-	GID:       1000,
-	IDsUsable: true,
+	Name: fallbackRunUserName,
+	UID:  sandboxuser.AccountIDMin,
+	GID:  sandboxuser.AccountIDMin,
 }
 
 func resolveRunUserIdentity() (runUserIdentity, bool, error) {
@@ -61,34 +69,42 @@ func resolveRunUserIdentity() (runUserIdentity, bool, error) {
 	if err != nil {
 		return runUserIdentity{}, false, fmt.Errorf("resolve current user: %w", err)
 	}
-	return parseRunUserIdentity(current)
+	identity, ok := parseRunUserIdentity(current)
+	return identity, ok, nil
 }
 
-func parseRunUserIdentity(current *user.User) (runUserIdentity, bool, error) {
+// parseRunUserIdentity turns this machine's account into the one the sandbox is
+// asked for. Root asks for nobody, reported by ok false. Otherwise the name and
+// home travel when a Linux sandbox can use them, and each id when it is in the
+// guest's account range. One that is not -- a macOS account is 501 in group 20,
+// below UID_MIN, and 20 is dialout there -- is replaced: the uid by
+// sandboxuser.AccountIDMin, the gid by the uid, as useradd's own private group
+// would be. This is the one place such a choice is made; the API refuses the
+// out-of-range id rather than making it.
+func parseRunUserIdentity(current *user.User) (identity runUserIdentity, ok bool) {
 	if current == nil {
-		return runUserIdentity{}, false, nil
+		return runUserIdentity{}, false
 	}
 	uid, uidOK := parseRunNumericUserID(current.Uid)
-	gid, gidOK := parseRunNumericUserID(current.Gid)
 	if uidOK && uid == 0 {
-		return runUserIdentity{}, false, nil
+		return runUserIdentity{}, false
 	}
-	identity := runUserIdentity{}
+	gid, gidOK := parseRunNumericUserID(current.Gid)
+	identity = runUserIdentity{Name: fallbackRunUserName, UID: sandboxuser.AccountIDMin}
 	if validRunUnixUserName(current.Username) {
 		identity.Name = current.Username
 	}
 	if validRunHomeDirectory(current.HomeDir) {
 		identity.HomeDirectory = current.HomeDir
 	}
-	if uidOK && gidOK && uid != 0 {
+	if uidOK && sandboxuser.InAccountRange(uid) {
 		identity.UID = uid
+	}
+	identity.GID = identity.UID
+	if gidOK && sandboxuser.InAccountRange(gid) {
 		identity.GID = gid
-		identity.IDsUsable = true
 	}
-	if identity.Name == "" && identity.HomeDirectory == "" && !identity.IDsUsable {
-		return runUserIdentity{}, false, nil
-	}
-	return identity, true, nil
+	return identity, true
 }
 
 func parseRunNumericUserID(value string) (int64, bool) {
@@ -156,9 +172,7 @@ func (u runUserIdentity) setCreateSandboxUser(body *apimodel.CreateSandboxBody) 
 	sandboxUser := apimodel.SandboxUser{}
 	sandboxUser.SetName(optionalString(u.Name))
 	sandboxUser.SetHomeDirectory(optionalString(u.HomeDirectory))
-	if u.IDsUsable {
-		sandboxUser.SetUID(apiclientgen.NewOptInt64(u.UID))
-		sandboxUser.SetGid(apiclientgen.NewOptInt64(u.GID))
-	}
+	sandboxUser.SetUID(apiclientgen.NewOptInt64(u.UID))
+	sandboxUser.SetGid(apiclientgen.NewOptInt64(u.GID))
 	body.Config.SetUser(apiclientgen.NewOptSandboxUser(sandboxUser))
 }
