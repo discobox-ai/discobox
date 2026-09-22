@@ -31,8 +31,9 @@ type sshConfigFakeServer struct {
 }
 
 type sshConfigFakeSandbox struct {
-	id   string
-	name string
+	id                       string
+	name                     string
+	sourceWithoutDestination bool
 	// workdir is where the primary source's working tree sits inside the
 	// sandbox, which is the directory an editor opens on. Empty leaves the
 	// sandbox with no source at all.
@@ -127,7 +128,9 @@ func (f *sshConfigFakeServer) sandboxJSON(id string) (string, bool) {
 			continue
 		}
 		source := ""
-		if sandbox.workdir != "" {
+		if sandbox.sourceWithoutDestination {
+			source = `,"source":{"kind":"git","slug":"primary","url":"https://example.com/repo.git"}`
+		} else if sandbox.workdir != "" {
 			source = fmt.Sprintf(`,"source":{"kind":"git","slug":"primary","url":"https://example.com/repo.git",
 				"destination":{"directory":%q,"workingDirectory":%q}}`, sandbox.workdir, sandbox.workdir)
 		}

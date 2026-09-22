@@ -11,6 +11,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func (a *App) newSSHConfigCommand() *cobra.Command {
@@ -639,10 +640,10 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 // sandbox's exec default, so unlike `discobox tools git` this cannot leave the
 // directory unsaid: without one, VS Code would open a window on the home
 // directory and the working tree would be somewhere else, and a git URL would
-// name a directory that is not a repository. Empty is still possible — a
-// sandbox may not have told us where its source landed — and then VS Code opens
-// on the host with no folder, which is its own way of saying "connected,
-// nothing open", and there is no git URL to print at all.
+// name a directory that is not a repository. A primary source without an
+// explicit destination uses the runtime's default working root. Empty means
+// the sandbox has no primary source; VS Code then opens on the host with no
+// folder, and there is no git URL to print.
 func (a *App) sandboxSSHFolder(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (string, error) {
 	if sourceSlug != "" {
 		return a.toolSourceWorkdir(ctx, client, projectID, sandboxID, sourceSlug)
@@ -655,9 +656,12 @@ func (a *App) sandboxSSHFolder(ctx context.Context, client *apiclientgen.Client,
 	if err != nil {
 		return "", err
 	}
-	sources := applySources(sandbox)
-	if len(sources) == 0 {
+	source, ok := sandbox.Config.Source.Get()
+	if !ok {
 		return "", nil
 	}
-	return sourceWorkdir(sources[0].source), nil
+	if dir := sourceWorkdir(source); dir != "" {
+		return dir, nil
+	}
+	return sandboxconfig.DefaultWorkingRoot, nil
 }

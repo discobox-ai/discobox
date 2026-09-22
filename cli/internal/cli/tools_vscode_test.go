@@ -101,6 +101,31 @@ func vscodeFakeServer() *sshConfigFakeServer {
 	}
 }
 
+func TestEditorsOpenDefaultPrimarySourceDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fake func(*testing.T) string
+		want []string
+	}{
+		{"vscode", fakeVSCode, []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/workspace"}},
+		{"zed", fakeZed, []string{"--new", "ssh://devbox/workspace"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := tc.fake(t)
+			fake := &sshConfigFakeServer{
+				ingress:   sshConfigEnabledIngress,
+				sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox", sourceWithoutDestination: true}},
+			}
+			if _, _, _, err := runToolsCmd(t, fake, t.TempDir(), tc.name, "--discobox-id", "sbx_devbox00000001"); err != nil {
+				t.Fatal(err)
+			}
+			if got := editorArgs(t, record); !equalStrings(got, tc.want) {
+				t.Fatalf("editor args = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree is the whole command: the
 // host has to exist in a file ssh reads before the editor is told to use it,
 // and the window has to open on the working tree rather than the home directory
