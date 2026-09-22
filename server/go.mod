@@ -430,7 +430,8 @@ replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v
 // framework's own close lands on whatever reused the number; the server exits
 // with "accept unix ...: bad file descriptor". The fork duplicates it instead.
 // Drop this once an upstream release does, after `task test:vz-stress` passes.
-replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20260911044327-cfc8ce376aee
+// It also carries WithMacGuestProvisioning (macOS 27), which upstream lacks.
+replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20260922054351-c8cee82c6395
 
 // goproxy drops the bytes a client sends in the same write as an upgrade
 // request, hanging both ends; see the root go.mod for the detail. Repeated here
