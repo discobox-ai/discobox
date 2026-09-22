@@ -381,9 +381,9 @@ func TestTheRepositoryAnApplyMadeIsRemovedUnlessItsBranchHoldsCommits(t *testing
 	emptyTree := git("hash-object", "-t", "tree", "-w", "--stdin")
 	commit := git("commit-tree", emptyTree, "-m", "landed")
 	git("update-ref", "refs/heads/"+git("symbolic-ref", "--short", "HEAD"), commit)
-	cancelled, cancel := context.WithCancel(ctx)
+	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if kept, err := removeApplyRepositoryUnlessBorn(cancelled, root); err != nil || !kept {
+	if kept, err := removeApplyRepositoryUnlessBorn(canceled, root); err != nil || !kept {
 		t.Fatalf("removeApplyRepositoryUnlessBorn with commits on the branch = %v, %v; want it kept", kept, err)
 	}
 }
