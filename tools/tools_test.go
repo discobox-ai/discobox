@@ -200,7 +200,7 @@ func TestRemoteExpand(t *testing.T) {
 	}
 
 	root := Remote{Host: "discobox.box"}
-	if got, _ := root.Expand([]string{"{ssh.url}"}); got[0] != "ssh://discobox.box/" {
+	if got, _ := root.Expand([]string{"{ssh.url}"}); got[0] != "ssh://discobox.box/workspace" {
 		t.Errorf("no working tree ssh url = %q", got[0])
 	}
 	if _, err := root.Expand([]string{"{git.url}"}); err == nil {

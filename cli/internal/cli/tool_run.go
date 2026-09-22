@@ -154,12 +154,9 @@ func (l hostToolLaunch) sshTargets(ctx context.Context, notes noteFunc) ([]sshTa
 }
 
 // run execs the tool with the discobox handed to it, wired to the given
-// streams.
-func (l hostToolLaunch) run(ctx context.Context, remote tools.Remote, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	expanded, err := remote.Expand(l.def.Args)
-	if err != nil {
-		return err
-	}
+// streams. expanded is the tool's declared args with remote already
+// substituted into them.
+func (l hostToolLaunch) run(ctx context.Context, remote tools.Remote, expanded, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	full := append(append(append([]string{}, l.prefix...), expanded...), args...)
 	//nolint:gosec // G204: a tool declared by this CLI or by the user, with the user's own arguments.
 	session := exec.CommandContext(ctx, l.program, full...)
@@ -191,8 +188,15 @@ func (a *App) runHostTool(ctx context.Context, def tools.Definition, target tool
 	if err != nil {
 		return err
 	}
+	handed := tools.Remote{SandboxID: target.sandboxID, Host: remote.host, Workdir: remote.folder}
+	// Expanded before anything is said about opening: a tool that asked for
+	// something this discobox cannot give it never opens.
+	expanded, err := handed.Expand(launch.def.Args)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(stderr, "opening %s in %s\n", remote.describe(), launch.program)
-	return launch.run(ctx, tools.Remote{SandboxID: target.sandboxID, Host: remote.host, Workdir: remote.folder}, args, stdin, stdout, stderr)
+	return launch.run(ctx, handed, expanded, args, stdin, stdout, stderr)
 }
 
 // toolTarget is the discobox a tool was pointed at, on the server it is on.

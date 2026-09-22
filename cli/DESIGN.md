@@ -997,7 +997,11 @@ flowchart LR
   `admin ssh-config --write` does — and yields the alias and working tree, which
   `tools.Remote` expands into `{ssh.host}`, `{ssh.url}`, `{git.url}`,
   `{workdir}`, `{workdir.urlpath}`, `{discobox.id}` and exports as
-  `DISCOBOX_*`. Nothing is held open afterwards (ADR 0057).
+  `DISCOBOX_*`. A box with no source has no working tree: `{workdir}` is the
+  sandbox working root (`sandboxconfig.DefaultWorkingRoot`) and `{git.url}` an
+  error (ADR 0141). The args are expanded before "opening" is printed, so a
+  tool that asked for what the box cannot give never claims to open. Nothing is
+  held open afterwards (ADR 0057).
 - **The builtins** (`builtin-tools/`): `vscode` passes a `vscode-remote://`
   folder URI and `zed` an `ssh://` URL, never a bare path — started from WSL,
   either editor is normally the Windows build and would resolve a path on the

@@ -199,9 +199,9 @@ func TestToolsVSCodePassesEditorArgumentsThrough(t *testing.T) {
 	}
 }
 
-// A sandbox that never said where its source landed still opens, on the
-// discobox's root: a connected window whose tree is the box.
-func TestToolsVSCodeOpensTheRootWhenNoWorkTreeIsKnown(t *testing.T) {
+// A sandbox with no source still opens, on its working root: where every shell
+// in the box starts, rather than the filesystem root.
+func TestToolsVSCodeOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	record := fakeVSCode(t)
 	fake := &sshConfigFakeServer{
 		ingress:   sshConfigEnabledIngress,
@@ -210,7 +210,7 @@ func TestToolsVSCodeOpensTheRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	if _, _, _, err := runToolsVSCodeCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
-	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/"}
+	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/workspace"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}

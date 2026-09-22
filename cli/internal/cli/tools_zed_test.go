@@ -97,10 +97,9 @@ func TestToolsZedEncodesTheWorkdir(t *testing.T) {
 	}
 }
 
-// A sandbox that never said where its source landed still opens. Zed's URL has
-// no way to say "connected, nothing open" the way VS Code's --remote does, so
-// it opens on the discobox's root: a connected window whose tree is the box.
-func TestToolsZedOpensTheRootWhenNoWorkTreeIsKnown(t *testing.T) {
+// A sandbox with no source still opens, on its working root: where every shell
+// in the box starts, rather than the filesystem root.
+func TestToolsZedOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	record := fakeZed(t)
 	fake := &sshConfigFakeServer{
 		ingress:   sshConfigEnabledIngress,
@@ -109,7 +108,7 @@ func TestToolsZedOpensTheRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	if _, _, _, err := runToolsZedCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
-	want := []string{"--new", "ssh://devbox/"}
+	want := []string{"--new", "ssh://devbox/workspace"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}

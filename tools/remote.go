@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // Remote is the discobox as a host tool is handed it: the ssh_config host that
@@ -17,11 +19,13 @@ type Remote struct {
 	Workdir string
 }
 
-// workdir is the directory a tool opens: the working tree, or the discobox's
-// root when there is none, which is still a connected window on the box.
+// workdir is the directory a tool opens: the working tree, or the sandbox's
+// working root when there is none — the directory boot seeds and every shell
+// in the box starts in, so a window opens where the box's own work happens
+// (ADR 0141).
 func (r Remote) workdir() string {
 	if r.Workdir == "" {
-		return "/"
+		return sandboxconfig.DefaultWorkingRoot
 	}
 	return r.Workdir
 }
@@ -35,7 +39,7 @@ func (r Remote) sshURL() string {
 }
 
 // GitURL is sshURL for git, and empty when there is no working tree: a URL to
-// the discobox's root is a clone of nothing.
+// the working root of a box with no source is a clone of nothing.
 func (r Remote) GitURL() string {
 	if r.Workdir == "" {
 		return ""

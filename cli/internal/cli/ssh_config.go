@@ -642,8 +642,8 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 // directory and the working tree would be somewhere else, and a git URL would
 // name a directory that is not a repository. A primary source without an
 // explicit destination uses the runtime's default working root. Empty means
-// the sandbox has no primary source; VS Code then opens on the host with no
-// folder, and there is no git URL to print.
+// the sandbox has no primary source: an editor still opens on the working
+// root (tools.Remote), but there is no git URL to print.
 func (a *App) sandboxSSHFolder(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (string, error) {
 	if sourceSlug != "" {
 		return a.toolSourceWorkdir(ctx, client, projectID, sandboxID, sourceSlug)
