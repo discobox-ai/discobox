@@ -1,6 +1,9 @@
 // Package vsock provides the guest-side AF_VSOCK transport used by local
 // libkrun and vz pools. HTTP remains the application protocol; this package only
 // supplies net.Listener and net.Conn implementations.
+//
+// Linux guests use mdlayher/vsock. A macOS guest has AF_VSOCK too, but that
+// library implements Linux only, so darwin has its own (transport_darwin.go).
 package vsock
 
 import (
@@ -9,13 +12,12 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	mdvsock "github.com/mdlayher/vsock"
 )
 
 const (
-	// HostCID is the standard guest-visible VSOCK context ID for the host.
-	HostCID = mdvsock.Host
+	// HostCID is the standard guest-visible VSOCK context ID for the host
+	// (VMADDR_CID_HOST), the same on Linux and macOS guests.
+	HostCID uint32 = 2
 	// AnyCID binds on the guest's assigned CID without consulting /dev/vsock.
 	// This matters for the pool-agent container: AF_VSOCK is available through
 	// the shared guest kernel even when the character device is not mounted
@@ -32,7 +34,7 @@ func Listen(port uint32) (net.Listener, error) {
 	if port < 1024 {
 		return nil, fmt.Errorf("vsock listener port %d must be at least 1024", port)
 	}
-	return mdvsock.ListenContextID(AnyCID, port, nil)
+	return listen(AnyCID, port)
 }
 
 // DialHostContext dials a fixed host VSOCK port. The network and address
@@ -53,7 +55,7 @@ func DialContextCID(cid, port uint32) func(context.Context, string, string) (net
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		conn, err := mdvsock.Dial(cid, port, nil)
+		conn, err := dial(cid, port)
 		if err != nil {
 			return nil, err
 		}

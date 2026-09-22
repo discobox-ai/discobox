@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -140,10 +141,17 @@ func serveLifecycle(ctx context.Context, listener net.Listener, shutdown func(co
 }
 
 func poweroff(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "poweroff") //nolint:gosec // Fixed guest lifecycle command.
+	name, args := "/usr/bin/systemctl", []string{"poweroff"}
+	if runtime.GOOS == "darwin" {
+		// A macOS guest has no systemd; shutdown(8) is its orderly path. It is
+		// also the only one: Virtualization.framework's stop request reaches a
+		// macOS guest as a power-button press, which macOS answers by sleeping.
+		name, args = "/sbin/shutdown", []string{"-h", "now"}
+	}
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // Fixed guest lifecycle command.
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl poweroff: %w: %s", err, string(output))
+		return fmt.Errorf("%s: %w: %s", name, err, string(output))
 	}
 	return nil
 }
