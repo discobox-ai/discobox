@@ -92,7 +92,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0037](0037-drop-disco-diff-and-disco-status.md) | Drop `disco diff` and `disco status` | Accepted |
 | [0038](0038-terminal-identity-is-the-exec-id-terminals-revive-in-place.md) | Terminal identity is the exec id, and terminals revive in place | Accepted |
 | [0039](0039-attach-waits-for-readiness-at-every-tier.md) | Attach waits for readiness at every tier | Accepted (progress-frame transport superseded by [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)) |
-| [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted |
+| [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted (§2's `LastTagTime`-on-build premise superseded by [0141](0141-an-arrival-no-later-than-the-build-is-an-unknown-age.md)) |
 | [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Proposed |
 | [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
 | [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted (§2 superseded by [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)) |
@@ -179,7 +179,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0122](0122-a-window-that-polls-lists-the-servers-that-answer.md) | A window that polls lists the servers that answer, the primary included | Accepted (supersedes [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md) §4's "the primary not answering fails the command" for the launcher) |
 | [0123](0123-a-discobox-is-exported-as-its-spec-and-its-durable-tree.md) | A discobox is exported as its spec and its durable tree, and a transfer is two of those | Accepted (§1's `tree/data/` narrowed to what the image lets travel by [0129](0129-the-sandbox-agent-reads-the-tree-an-export-carries.md)) |
 | [0124](0124-a-terminal-is-active-while-what-it-shows-changes.md) | A terminal is active while what it shows changes | Accepted |
-| [0125](0125-tools-are-declared-in-files-the-way-services-are.md) | Tools are declared in files, the way services are | Accepted |
+| [0125](0125-tools-are-declared-in-files-the-way-services-are.md) | Tools are declared in files, the way services are | Accepted (§4's `/` fallback for `{workdir}` superseded by [0140](0140-a-host-tool-with-no-working-tree-opens-the-working-root.md)) |
 | [0126](0126-remote-sandboxes-connect-out-to-their-pool.md) | Remote sandboxes connect out to their pool | Proposed |
 | [0127](0127-the-opencode-harness-runs-opencode-1.md) | The opencode harness runs opencode 1 | Accepted |
 | [0128](0128-a-private-remote-source-is-fetched-with-a-credential-the-client-lends.md) | A private remote source is fetched with a credential the client lends | Proposed |
@@ -196,3 +196,5 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0139](0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md) | The first apply into a directory with no repository makes one | Accepted (supersedes [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md)'s apply consequence) |
 | [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) | A discobox reaches the discobox API through its pool, with a fixed role | Accepted |
 | [0141](0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md) | A sandbox account is created with an id the guest gives accounts | Accepted (supersedes [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md) §5's name-only sandbox create) |
+| [0141](0141-a-host-tool-with-no-working-tree-opens-the-working-root.md) | A host tool with no working tree opens the working root | Accepted (supersedes [0125](0125-tools-are-declared-in-files-the-way-services-are.md) §4's `/` fallback) |
+| [0142](0142-an-arrival-no-later-than-the-build-is-an-unknown-age.md) | An image arrival no later than its build is an unknown age | Accepted (supersedes [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) §2's build premise) |

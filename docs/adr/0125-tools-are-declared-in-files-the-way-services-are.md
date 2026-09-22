@@ -1,6 +1,9 @@
 # 0125 — Tools are declared in files, the way services are
 
-- **Status**: Accepted
+- **Status**: Accepted (§4's `/` for `{workdir}` with no working tree, and the
+  consequence that such a VS Code window opens `/`, superseded by
+  [0141](0141-a-host-tool-with-no-working-tree-opens-the-working-root.md);
+  everything else stands)
 - **Date**: 2026-09-16
 - **Supersedes**: [ADR 0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md)
   §6 (the catalog is the launcher's table), the part of §7 that makes a

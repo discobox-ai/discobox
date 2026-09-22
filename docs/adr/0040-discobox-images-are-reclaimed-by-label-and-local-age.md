@@ -1,6 +1,9 @@
 # 0040 — Discobox images are reclaimed by label and local tag age
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's premise that `LastTagTime` is stamped on every
+  build superseded by
+  [0142](0142-an-arrival-no-later-than-the-build-is-an-unknown-age.md);
+  everything else stands)
 - **Date**: 2026-08-14
 
 ## Context
