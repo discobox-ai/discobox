@@ -7,8 +7,9 @@ description: You are running inside a discobox — a disposable sandbox holding 
 
 A discobox is a disposable machine with the user's source in it. You are the
 agent it runs. Inside is a full computer you may do anything to; outside is
-everything of theirs, which you cannot reach. Root instead of a command
-allowlist, and none of their credentials.
+everything of theirs, which you cannot reach except where a person lets you
+in. Root instead of a command allowlist, and none of their credentials until
+you ask for one with `discobox-access` and a person approves it.
 
 Usually the box is on the user's own computer, but not always, and nothing in
 here tells you which. Do not answer "where is my code running?" from the usual
@@ -385,9 +386,7 @@ Installed in every discobox, whatever it was made from:
 | Pool | the host boxes are scheduled onto, and what they share: a cache volume, CPU and memory, a kernel |
 | Harness | the agent a box runs — Claude Code, Codex, OpenCode, a shell, or any terminal agent in an image |
 
-Commands are on the user's side. You do not have the `discobox` CLI in here,
-unless the box is working on discobox's own source, where it is a build
-artifact:
+These are the user's commands, run on their side:
 
 ```
 discobox            open the launcher
@@ -415,8 +414,24 @@ command, not a prompt.
 `delete` is an alias for it. A NAME two boxes share is refused rather than
 guessed at. `discobox admin box purge` destroys one and its data.
 
-Do not invent flags — you cannot run these commands to check them. Name the
-command and say to check `--help`.
+Do not invent flags for them. Name the command and say to check `--help`.
+
+### Driving other discoboxes from here
+
+The `discobox` CLI is installed in this box too, pointed at the discobox API
+through this box's pool (`DISCOBOX_SERVER`). It reaches the API only under an
+approved use of the well-known credential `ai.discobox.sandbox`, which you ask
+a person for with `discobox-access` — the `discobox-access` skill says how —
+and run under: `discobox-access run --use <id> -- discobox …`. Without one,
+every call is refused by the pool.
+
+With it, you may create discoboxes (`discobox admin box create`, which can
+give the new box uses of project secrets with `--grant`), list and read them
+(`admin box ls`, `admin box get`), and list and answer credential requests
+(`discobox secret request ls`, `approve`, `deny`). Nothing else: the user's
+commands above need their machine or reach further than a box may, and are
+refused. A box you create is the user's, and cannot be given
+`ai.discobox.sandbox` by you — a person approves that when it asks.
 
 For the threat model and what discobox does not defend against, point at
 https://discobox.ai and https://discobox.ai/security. Parts of the security
