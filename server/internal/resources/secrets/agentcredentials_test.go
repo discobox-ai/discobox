@@ -8,6 +8,7 @@ import (
 	"github.com/discobox-ai/discobox/agentcreds"
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
@@ -513,4 +514,127 @@ func TestApprovedHostIsNormalizedToWhatTheProxyReports(t *testing.T) {
 			}
 		})
 	}
+}
+
+// What the approver agreed to change on the secret — its binding, its limit —
+// is written with the grant or not at all. A binding that sits outside the ask
+// and a limit shorter than the lifetime are both fixed by the approval itself.
+func TestAnApprovalChangesTheSecretItAgreedTo(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBoundSecret(ctx, t, svc, "github", "www.github.com", 3600)
+	req := createAgentRequest(ctx, t, svc)
+
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId:                 serverapi.NewOptString(secret.ID),
+		GrantTTLSeconds:          serverapi.NewOptInt64(7200),
+		SecretHost:               serverapi.NewOptString("github.com"),
+		SecretMaxGrantTTLSeconds: serverapi.NewOptInt64(7200),
+	})
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	stored, err := st.GetSecret(ctx, "project-1", secret.ID)
+	if err != nil {
+		t.Fatalf("get secret: %v", err)
+	}
+	if stored.Host != "github.com" || stored.MaxGrantTTL != 7200 {
+		t.Fatalf("secret = %s, limit %d; want bound to github.com with a 7200s limit", stored.Host, stored.MaxGrantTTL)
+	}
+	if approved.Status != model.SecretRequestStatusApproved || approved.GrantID == "" {
+		t.Fatalf("request = %#v, want approved with a grant", approved)
+	}
+}
+
+// A refused approval leaves the secret as it was: the binding it would have
+// widened and the limit it would have raised are not left behind by an
+// approval that never happened.
+func TestARefusedApprovalLeavesTheSecretAsItWas(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+
+	// GITHUB_TOKEN is already bound to another credential in this discobox,
+	// which refuses the second approval after the grant would be minted.
+	first := createBoundSecret(ctx, t, svc, "first", "", 0)
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", createAgentRequest(ctx, t, svc).ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(first.ID),
+	}); err != nil {
+		t.Fatalf("approve first: %v", err)
+	}
+	secret := createBoundSecret(ctx, t, svc, "github", "www.github.com", 3600)
+	req := createAgentRequest(ctx, t, svc)
+
+	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId:                 serverapi.NewOptString(secret.ID),
+		GrantTTLSeconds:          serverapi.NewOptInt64(7200),
+		SecretHost:               serverapi.NewOptString("github.com"),
+		SecretMaxGrantTTLSeconds: serverapi.NewOptInt64(7200),
+	})
+	if err == nil || !strings.Contains(err.Error(), "different secret") {
+		t.Fatalf("approve = %v, want the binding conflict", err)
+	}
+	stored, err := st.GetSecret(ctx, "project-1", secret.ID)
+	if err != nil {
+		t.Fatalf("get secret: %v", err)
+	}
+	if stored.Host != "www.github.com" || stored.MaxGrantTTL != 3600 {
+		t.Fatalf("secret = %s, limit %d; want it as it was, bound to www.github.com with a 3600s limit", stored.Host, stored.MaxGrantTTL)
+	}
+	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID)
+	if err != nil {
+		t.Fatalf("list grants: %v", err)
+	}
+	if len(grants) != 0 {
+		t.Fatalf("grants = %#v, want none left behind", grants)
+	}
+	pending, err := st.GetSecretRequest(ctx, "project-1", req.ID)
+	if err != nil {
+		t.Fatalf("get request: %v", err)
+	}
+	if pending.Status != model.SecretRequestStatusPending {
+		t.Fatalf("request status = %q, want still pending", pending.Status)
+	}
+}
+
+// A discobox answering the inbox approves with the secret as it is: its role
+// changes no secret, and an approval is no way around that.
+func TestADiscoboxCannotChangeASecretByApproving(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBoundSecret(ctx, t, svc, "github", "www.github.com", 0)
+	req := createAgentRequest(ctx, t, svc)
+
+	asSandbox := auth.WithPrincipal(context.Background(), auth.Principal{
+		Type: auth.PrincipalTypeSandbox, SandboxID: "sbx-lead", UserID: "user-1",
+	})
+	_, err := svc.ApproveSecretRequest(asSandbox, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId:   serverapi.NewOptString(secret.ID),
+		SecretHost: serverapi.NewOptString(""),
+	})
+	if err == nil || !strings.Contains(err.Error(), "a person changes") {
+		t.Fatalf("approve = %v, want a discobox refused a change to the secret", err)
+	}
+	if stored, _ := st.GetSecret(ctx, "project-1", secret.ID); stored == nil || stored.Host != "www.github.com" {
+		t.Fatalf("secret = %#v, want its binding kept", stored)
+	}
+}
+
+func createBoundSecret(ctx context.Context, t *testing.T, svc *resourcesecrets.Service, name, host string, limit int64) *model.Secret {
+	t.Helper()
+	body := services.CreateSecretBody{
+		Name:  name,
+		Type:  serverapi.CreateSecretBodyTypeToken,
+		Value: serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
+	}
+	if host != "" {
+		body.Host = serverapi.NewOptString(host)
+	}
+	if limit > 0 {
+		body.MaxGrantTTLSeconds = serverapi.NewOptInt64(limit)
+	}
+	secret, err := svc.CreateSecret(ctx, "project-1", body)
+	if err != nil {
+		t.Fatalf("create secret: %v", err)
+	}
+	return secret
 }

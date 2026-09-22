@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
+	"gorm.io/gorm"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/hostscope"
@@ -301,7 +302,8 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 // ApproveSecretRequest approves a pending request by minting a SecretGrant at the
 // chosen scope and linking it to the request. The grant is the durable
 // authorization future resolutions match against; the request is only marked
-// approved for audit.
+// approved for audit. A change to the secret the approver agreed to along the
+// way is written with the grant, or not at all.
 func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID string, input services.ApproveSecretRequestBody) (*model.SecretRequest, error) {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
@@ -331,6 +333,39 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	// discobox API itself is granted only by a person.
 	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox && isGateSecret(secret) {
 		return nil, gateGivenOnlyByAPerson(secret.WellKnownID)
+	}
+
+	// What the approver agreed to change on the secret so this grant fits it:
+	// its host binding, its grant limit. It is part of the approval rather
+	// than a call ahead of it, so a refused approval leaves the secret as it
+	// was — the change is written in the transaction that mints the grant, and
+	// the grant is checked against the secret as changed.
+	var bindTo *string
+	var limit *int64
+	if host, ok := input.SecretHost.Get(); ok {
+		host = normalizeHost(host)
+		bindTo = &host
+	}
+	if seconds, ok := input.SecretMaxGrantTTLSeconds.Get(); ok {
+		if seconds < 0 {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a grant limit is a number of seconds; 0 allows grants that never expire")
+		}
+		limit = &seconds
+	}
+	if bindTo != nil || limit != nil {
+		// A gate's host is where the pool admits the discobox API, as
+		// UpdateSecret holds; its limit is a limit like any other.
+		if bindTo != nil && isGateSecret(secret) {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				fmt.Sprintf("%s is a gate, and its host is where the pool admits the discobox API", secret.WellKnownID))
+		}
+		// A discobox answering the inbox approves with the secret as it is:
+		// its role does not change secrets, and an approval is not a way
+		// around that.
+		if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
+			return nil, apperrors.NewStatusError(http.StatusForbidden,
+				"a discobox approves with the secret as it is; a person changes its binding or limit")
+		}
 	}
 
 	scope := strings.TrimSpace(string(input.Scope.Or("")))
@@ -378,35 +413,51 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		return nil, err
 	}
 
-	// The secret's limit is also the lifetime nobody has to choose; an explicit
-	// value is checked against it in mintGrantAs, along with every other path
-	// that mints one.
-	ttl := secret.MaxGrantTTL
-	if v, ok := input.GrantTTLSeconds.Get(); ok {
-		ttl = v
-	}
-	grant, err := s.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, req.EnvName, ttl, approvedUses, model.SecretGrantPurposeUse)
-	if err != nil {
-		return nil, err
-	}
-
-	if req.FromProtocol() {
-		if err := s.bindAgentCredential(ctx, req, secret); err != nil {
-			// Leave no live authorization behind for a binding that never
-			// happened: without the binding nothing can be activated, so the
-			// grant would be an approval nobody can act on and nobody can see.
-			_ = s.store.DeleteSecretGrant(ctx, projectID, grant.ID)
-			return nil, err
+	// Every write the approval makes is one act: the secret's change, the
+	// grant, the binding that delivers it, and the request marked approved. A
+	// refusal anywhere — a binding already taken, the request answered
+	// concurrently — leaves none of them behind.
+	err = s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		tx := &Service{store: txStore}
+		// The grant is checked against the secret as it stands now, with the
+		// agreed change on top: a copy read before this could put back a
+		// binding or limit changed since.
+		current, err := txStore.GetSecret(ctx, projectID, secret.ID)
+		if err != nil {
+			return apperrors.NotFound(err, "secret not found")
 		}
-	}
-
-	req.SecretID = secret.ID
-	req.Status = model.SecretRequestStatusApproved
-	req.GrantID = grant.ID
-	if err := s.store.UpdateSecretRequestIfPending(ctx, req); err != nil {
-		// Avoid leaving a live authorization behind if the request was denied or
-		// approved concurrently.
-		_ = s.store.DeleteSecretGrant(ctx, projectID, grant.ID)
+		secret = current
+		if bindTo != nil {
+			secret.Host = *bindTo
+		}
+		if limit != nil {
+			secret.MaxGrantTTL = *limit
+		}
+		if err := txStore.SetSecretLimits(ctx, projectID, secret.ID, bindTo, limit); err != nil {
+			return secretCollision(err, secret)
+		}
+		// The secret's limit is also the lifetime nobody has to choose; an
+		// explicit value is checked against it in mintGrantAs, along with
+		// every other path that mints one.
+		ttl := secret.MaxGrantTTL
+		if v, ok := input.GrantTTLSeconds.Get(); ok {
+			ttl = v
+		}
+		grant, err := tx.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, req.EnvName, ttl, approvedUses, model.SecretGrantPurposeUse)
+		if err != nil {
+			return err
+		}
+		if req.FromProtocol() {
+			if err := tx.bindAgentCredential(ctx, req, secret); err != nil {
+				return err
+			}
+		}
+		req.SecretID = secret.ID
+		req.Status = model.SecretRequestStatusApproved
+		req.GrantID = grant.ID
+		return txStore.UpdateSecretRequestIfPending(ctx, req)
+	})
+	if err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return nil, apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
 		}

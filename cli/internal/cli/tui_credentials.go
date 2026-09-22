@@ -342,6 +342,12 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// minting.
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
 	body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
+	if approval.SecretHost != nil {
+		body.SetSecretHost(apiclientgen.NewOptString(strings.TrimSpace(*approval.SecretHost)))
+	}
+	if approval.SecretMaxTTLSeconds != nil {
+		body.SetSecretMaxGrantTTLSeconds(apiclientgen.NewOptInt64(*approval.SecretMaxTTLSeconds))
+	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
 		RequestId: approval.RequestID,

@@ -57,6 +57,17 @@ strictness is refused rather than silently relaxed:
   IDs, so an agent cannot name the use it will later present. An approver may
   rewrite the descriptions; supplied IDs are dropped either way.
 
+**An approval is one write.** Rebinding the answering secret and setting its
+grant limit (`secretHost`, `secretMaxGrantTTLSeconds`) ride on the approval. The
+secret is re-read inside the transaction, the change is applied to it, and the
+grant is checked against the result. Only the fields sent are written, so a
+concurrent edit to the other one stands. The change, the grant, the agent
+binding, and the request marked approved share one transaction. A refusal
+anywhere, such as a variable already bound or a request answered concurrently,
+leaves none of them behind. A gate's host cannot change, as in `UpdateSecret`.
+A discobox answering the inbox approves with the secret as it is, because its
+role changes no secret.
+
 ## Two ways to reach the agent credentials shape
 
 A credential the sandbox cannot read — no environment variable, no
@@ -92,7 +103,7 @@ Two paths mint that pair, and they mint the same thing:
   obligations — a concrete host, use IDs minted here, and an environment
   variable naming where the wrapped command receives it — but may sit at any of
   the three scopes. A sandbox-scoped one binds immediately, and a failed binding
-  deletes the grant just as a failed approval does; a wider one binds lazily as
+  deletes the grant, as a failed approval leaves none; a wider one binds lazily as
   above.
 
 A grant with no uses is the ordinary standing kind: it authorizes the sentinel

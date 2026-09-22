@@ -180,10 +180,17 @@ type ApproveSecretRequestBody struct {
 	// How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
 	// otherwise project.
 	Scope OptApproveSecretRequestBodyScope `json:"scope"`
+	// Rebinds the answering secret to this host as part of the approval; empty releases its binding.
+	// Applied only if the approval goes through, in the same write, so a refused approval leaves the
+	// secret as it was. Refused for a gate.
+	SecretHost OptString `json:"secretHost"`
 	// Secret ID selected by the approver. Required unless the request names a well-known credential
 	// whose secret is already marked; naming one for it the first time marks it as the one that answers
 	// every later request for that ID.
 	SecretId OptString `json:"secretId"`
+	// Sets the answering secret's grant limit, in seconds, as part of the approval; 0 allows grants that
+	// never expire. Applied only if the approval goes through, in the same write.
+	SecretMaxGrantTTLSeconds OptInt64 `json:"secretMaxGrantTTLSeconds"`
 	// Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to
 	// approve the requested uses as written. Use IDs are always minted here and any supplied ones are
 	// ignored.
@@ -210,9 +217,19 @@ func (s *ApproveSecretRequestBody) GetScope() OptApproveSecretRequestBodyScope {
 	return s.Scope
 }
 
+// GetSecretHost returns the value of SecretHost.
+func (s *ApproveSecretRequestBody) GetSecretHost() OptString {
+	return s.SecretHost
+}
+
 // GetSecretId returns the value of SecretId.
 func (s *ApproveSecretRequestBody) GetSecretId() OptString {
 	return s.SecretId
+}
+
+// GetSecretMaxGrantTTLSeconds returns the value of SecretMaxGrantTTLSeconds.
+func (s *ApproveSecretRequestBody) GetSecretMaxGrantTTLSeconds() OptInt64 {
+	return s.SecretMaxGrantTTLSeconds
 }
 
 // GetUses returns the value of Uses.
@@ -240,9 +257,19 @@ func (s *ApproveSecretRequestBody) SetScope(val OptApproveSecretRequestBodyScope
 	s.Scope = val
 }
 
+// SetSecretHost sets the value of SecretHost.
+func (s *ApproveSecretRequestBody) SetSecretHost(val OptString) {
+	s.SecretHost = val
+}
+
 // SetSecretId sets the value of SecretId.
 func (s *ApproveSecretRequestBody) SetSecretId(val OptString) {
 	s.SecretId = val
+}
+
+// SetSecretMaxGrantTTLSeconds sets the value of SecretMaxGrantTTLSeconds.
+func (s *ApproveSecretRequestBody) SetSecretMaxGrantTTLSeconds(val OptInt64) {
+	s.SecretMaxGrantTTLSeconds = val
 }
 
 // SetUses sets the value of Uses.

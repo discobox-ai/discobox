@@ -1402,6 +1402,11 @@ func (f *fakeSource) ApproveCredentialRequest(_ context.Context, server string, 
 	if f.approveErr != nil {
 		return f.approveErr
 	}
+	// The secret's change is applied with the approval, as the server does: a
+	// refused approval above changed nothing.
+	if approval.SecretHost != nil || approval.SecretMaxTTLSeconds != nil {
+		f.applySecretUpdateLocked(approval.SecretID, SecretUpdate{Host: approval.SecretHost, MaxTTLSeconds: approval.SecretMaxTTLSeconds})
+	}
 	f.approvals = append(f.approvals, approval)
 	f.dropRequestLocked(approval.RequestID)
 	return nil
@@ -1441,6 +1446,13 @@ func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, up
 	if update.MaxTTLSeconds != nil && f.limitErr != nil {
 		return f.limitErr
 	}
+	f.applySecretUpdateLocked(secretID, update)
+	return nil
+}
+
+// applySecretUpdateLocked records a change to a secret and makes it, whether it
+// came as an edit or with an approval.
+func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdate) {
 	f.updated = append(f.updated, update)
 	if update.Host != nil {
 		f.bound = append(f.bound, secretID+"="+*update.Host)
@@ -1468,7 +1480,6 @@ func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, up
 			f.projectSecrets[i].MaxTTL = time.Duration(*update.MaxTTLSeconds) * time.Second
 		}
 	}
-	return nil
 }
 
 func (f *fakeSource) Grants(_ context.Context, server, secretID string) ([]Grant, error) {

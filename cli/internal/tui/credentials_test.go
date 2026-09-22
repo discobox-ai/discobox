@@ -1051,11 +1051,10 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	}
 }
 
-// A change agreed to on the way through is applied before the grant is minted —
-// the server checks the ceiling at minting — so an approval that fails after it
-// leaves a changed credential behind. The failure says so, since nothing else
-// on screen will.
-func TestAFailedApprovalSaysWhatWasAlreadyChanged(t *testing.T) {
+// A change agreed to on the way through goes with the approval, which the
+// server applies whole or not at all: an approval that fails leaves the
+// credential as it was, and claims nothing was done to it.
+func TestAFailedApprovalLeavesTheSecretAsItWas(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
@@ -1071,10 +1070,17 @@ func TestAFailedApprovalSaysWhatWasAlreadyChanged(t *testing.T) {
 	if m.dialog == nil || !m.dialog.err {
 		t.Fatalf("dialog = %s, want the failure", describe(m.dialog))
 	}
-	text := dialogText(m)
-	for _, want := range []string{"changed concurrently", "already done", "GitHub token's limit was lifted", "forever"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("failure = %q, want it to say %q", text, want)
+	if text := dialogText(m); !strings.Contains(text, "changed concurrently") || strings.Contains(text, "already done") {
+		t.Fatalf("failure = %q, want the server's reason and no change claimed", text)
+	}
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	if len(ds.limited) != 0 || ds.projectSecrets[0].MaxTTL != time.Hour {
+		t.Fatalf("limited = %v, limit = %s; want the secret left as it was", ds.limited, ds.projectSecrets[0].MaxTTL)
+	}
+	for _, call := range ds.onServer {
+		if strings.HasPrefix(call, "UpdateSecret@") {
+			t.Fatalf("calls = %v, want the change carried by the approval, not a call ahead of it", ds.onServer)
 		}
 	}
 }

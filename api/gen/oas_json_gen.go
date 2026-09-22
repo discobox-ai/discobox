@@ -409,9 +409,21 @@ func (s *ApproveSecretRequestBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SecretHost.Set {
+			e.FieldStart("secretHost")
+			s.SecretHost.Encode(e)
+		}
+	}
+	{
 		if s.SecretId.Set {
 			e.FieldStart("secretId")
 			s.SecretId.Encode(e)
+		}
+	}
+	{
+		if s.SecretMaxGrantTTLSeconds.Set {
+			e.FieldStart("secretMaxGrantTTLSeconds")
+			s.SecretMaxGrantTTLSeconds.Encode(e)
 		}
 	}
 	{
@@ -422,13 +434,15 @@ func (s *ApproveSecretRequestBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfApproveSecretRequestBody = [6]string{
+var jsonFieldsNameOfApproveSecretRequestBody = [8]string{
 	0: "$schema",
 	1: "grantTTLSeconds",
 	2: "host",
 	3: "scope",
-	4: "secretId",
-	5: "uses",
+	4: "secretHost",
+	5: "secretId",
+	6: "secretMaxGrantTTLSeconds",
+	7: "uses",
 }
 
 // Decode decodes ApproveSecretRequestBody from json.
@@ -479,6 +493,16 @@ func (s *ApproveSecretRequestBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"scope\"")
 			}
+		case "secretHost":
+			if err := func() error {
+				s.SecretHost.Reset()
+				if err := s.SecretHost.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretHost\"")
+			}
 		case "secretId":
 			if err := func() error {
 				s.SecretId.Reset()
@@ -488,6 +512,16 @@ func (s *ApproveSecretRequestBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"secretId\"")
+			}
+		case "secretMaxGrantTTLSeconds":
+			if err := func() error {
+				s.SecretMaxGrantTTLSeconds.Reset()
+				if err := s.SecretMaxGrantTTLSeconds.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretMaxGrantTTLSeconds\"")
 			}
 		case "uses":
 			if err := func() error {

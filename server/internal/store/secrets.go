@@ -131,6 +131,40 @@ func (s *Store) MarkSecretWellKnown(ctx context.Context, projectID, secretID, we
 	return nil
 }
 
+// SetSecretLimits writes a secret's host binding, its grant limit, or both,
+// and nothing else, for an approval that changes them in the transaction
+// minting its grant. A nil field is left as it is: writing back what the caller
+// read would revert a change made since. A full save would write back the rest
+// of the row too, and the value may have been rotated since (an OAuth refresh);
+// neither column is the credential, so nothing recorded about it is retracted
+// (ADR 0132 §4).
+func (s *Store) SetSecretLimits(ctx context.Context, projectID, secretID string, host *string, maxGrantTTL *int64) error {
+	columns := map[string]any{}
+	if host != nil {
+		columns["host"] = *host
+	}
+	if maxGrantTTL != nil {
+		columns["max_grant_ttl_seconds"] = *maxGrantTTL
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	res := write.Model(&model.Secret{}).
+		Where("project_id = ? AND id = ?", projectID, secretID).
+		Updates(columns)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) ListSecrets(ctx context.Context, projectID string) ([]model.Secret, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

@@ -29,7 +29,7 @@ flowchart LR
     WS -->|leader S0| SvcMenu["services menu → DoService"]
     WS -->|open| Fwd["port forward → DataSource.Forward"]
     WS -->|beat| Push["automatic push → PushSources"]
-    L -->|C| Cred["credential dialog → Secrets / CreateSecret / UpdateSecret / ApproveCredentialRequest / DenyCredentialRequest"]
+    L -->|C| Cred["credential dialog → Secrets / CreateSecret / ApproveCredentialRequest / DenyCredentialRequest"]
     M --> S["secretList (F4)"]
     S -->|n e d enter p| SVerb["Secrets / Grants / CreateSecret / UpdateSecret / CreateGrant / RevokeGrant / DeleteSecret"]
     S -->|C| Cred
@@ -353,9 +353,10 @@ at minting, so the request card names it on each secret's row, the lifetime
 step marks every choice over it, and choosing one anyway offers to raise it —
 one question, defaulting to No, since raising it is a decision about the
 credential rather than something a grant does in passing. Nothing any question
-agrees to is applied until the last step: the binding and the limit chain into
-one `SecretUpdate` and one approval (`finishApproval`), because a card whose
-answers were saved by a call each half-applies when the second fails.
+agrees to is applied until the last step. Then the binding and the limit ride on
+the approval itself (`finishApproval`), and the server writes them with the
+grant or not at all. A refused approval leaves the credential as it was, and a
+failure never has a changed secret to report.
 
 ## The attention band
 

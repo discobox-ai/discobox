@@ -1358,8 +1358,9 @@ type SecretUpdate struct {
 }
 
 // Approval is what a person decided about a request: which secret answers it,
-// and how long the grant it mints lives. Everything else — scope, the approved
-// uses, the host — follows the request, which is what the approver read.
+// how long the grant it mints lives, and what they agreed to change on that
+// secret so the grant fits it. Everything else — scope, the approved uses, the
+// host — follows the request, which is what the approver read.
 type Approval struct {
 	RequestID string
 	SecretID  string
@@ -1369,6 +1370,13 @@ type Approval struct {
 	// had seen — most credentials cap nothing, so most of those grants never
 	// expired. See credentials.go.
 	TTLSeconds int64
+	// SecretHost rebinds the secret (empty releases its binding), and
+	// SecretMaxTTLSeconds sets its grant limit. Nil leaves each as it is. They
+	// ride on the approval rather than a call ahead of it, so the server
+	// writes them with the grant or not at all: a refused approval leaves the
+	// secret as it was.
+	SecretHost          *string
+	SecretMaxTTLSeconds *int64
 }
 
 // SourcePush is what one of a discobox's push-delivered sources did when the

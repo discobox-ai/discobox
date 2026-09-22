@@ -72,10 +72,10 @@ type credentialAnsweredMsg struct {
 	ttl      time.Duration
 	err      error
 	// applied is what had already been done to the project's secrets when an
-	// approval failed: a limit raised, a binding moved, a credential stored.
-	// Each was agreed to as part of a grant that then did not happen, so the
-	// failure has to say it rather than leave a changed credential behind in
-	// silence.
+	// approval failed: a credential typed in and stored ahead of the grant that
+	// then did not happen. The failure says so rather than leave it behind in
+	// silence. A change to an existing secret is never here: it goes with the
+	// approval, and the server writes the two together or not at all.
 	applied []string
 }
 
@@ -721,8 +721,8 @@ func (m *Model) createAndApprove(a approval, value string) tea.Cmd {
 }
 
 // approval is what answering a request will do, gathered one step at a time:
-// the secret chosen, how long its grant lives, and the one change to the secret
-// those two need first.
+// the secret chosen, how long its grant lives, and the change to the secret
+// those two need, applied with the grant.
 //
 // It is carried whole, and copied rather than changed at each step, because
 // every step can be gone back from: the dialog before one is rebuilt from the
@@ -742,12 +742,14 @@ type approval struct {
 	// request's name, which is the usual case.
 	name string
 	ttl  time.Duration
-	// update is what must change on the secret before the grant can be minted.
-	// One update, not one per question: a card whose rows were saved by a call
-	// each half-applies when the second fails.
-	update SecretUpdate
-	// changes is what that update does, in the words the status dialog says
-	// while it happens.
+	// bindTo and limit are what the approver agreed to change on the secret so
+	// the grant fits it: its binding (empty releases it) and its grant limit.
+	// Nil leaves each alone. They go with the approval, which the server
+	// applies whole or not at all.
+	bindTo *string
+	limit  *int64
+	// changes is what they do, in the words the status dialog says while it
+	// happens.
 	changes []string
 }
 
@@ -806,7 +808,7 @@ func (m *Model) confirmGrantHost(a approval) tea.Cmd {
 	d := confirmDialog("Bound to another host", "", func(string) tea.Cmd {
 		next := a
 		host := widened
-		next.update.Host = &host
+		next.bindTo = &host
 		what := "releasing " + a.secret.Name + "'s binding"
 		if host != "" {
 			what = "binding " + a.secret.Name + " to " + host
@@ -858,7 +860,7 @@ func (m *Model) confirmGrantLimit(a approval, back func() tea.Cmd) tea.Cmd {
 	d := confirmDialog("Longer than the credential allows", "", func(string) tea.Cmd {
 		next := a
 		seconds := lifetime.Seconds(a.ttl)
-		next.update.MaxTTLSeconds = &seconds
+		next.limit = &seconds
 		next.changes = append(slices.Clip(a.changes), "raising "+a.secret.Name+"'s limit to "+lifetime.Label(a.ttl))
 		return m.finishApproval(next)
 	})
@@ -881,7 +883,9 @@ func (m *Model) confirmGrantLimit(a approval, back func() tea.Cmd) tea.Cmd {
 	return nil
 }
 
-// finishApproval applies whatever the questions agreed to and mints the grant.
+// finishApproval mints the grant, with whatever the questions agreed to change
+// on the secret carried in the same approval: the server writes them together
+// or not at all, so a refused approval leaves the credential as it was.
 //
 // The lifetime rides on the approval itself rather than being left out for the
 // server to default: the default is the secret's own ceiling, which most
@@ -890,51 +894,19 @@ func (m *Model) confirmGrantLimit(a approval, back func() tea.Cmd) tea.Cmd {
 func (m *Model) finishApproval(a approval) tea.Cmd {
 	what := "approving for " + lifetime.Label(a.ttl) + "…"
 	if len(a.changes) > 0 {
-		what = strings.Join(a.changes, ", then ") + ", then approving…"
+		what = strings.Join(a.changes, " and ") + ", approving…"
 	}
 	m.dialog = statusDialog("Credential request", what)
-	changing := a.update.Host != nil || a.update.MaxTTLSeconds != nil
 	return func() tea.Msg {
-		if changing {
-			if err := m.ds.UpdateSecret(m.ctx, a.req.Server, a.secret.ID, a.update); err != nil {
-				return credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err}
-			}
-		}
 		err := m.ds.ApproveCredentialRequest(m.ctx, a.req.Server, Approval{
-			RequestID:  a.req.ID,
-			SecretID:   a.secret.ID,
-			TTLSeconds: lifetime.Seconds(a.ttl),
+			RequestID:           a.req.ID,
+			SecretID:            a.secret.ID,
+			TTLSeconds:          lifetime.Seconds(a.ttl),
+			SecretHost:          a.bindTo,
+			SecretMaxTTLSeconds: a.limit,
 		})
-		msg := credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err}
-		if err != nil && changing {
-			msg.applied = appliedChanges(a)
-		}
-		return msg
+		return credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err}
 	}
-}
-
-// appliedChanges says what an approval's secret update did, as done rather than
-// being done. It is not put back when the approval then fails: undoing one
-// write with another that can fail too leaves a state nobody described, while
-// saying what stands leaves it to the person who agreed to it.
-func appliedChanges(a approval) []string {
-	var done []string
-	if host := a.update.Host; host != nil {
-		if *host == "" {
-			done = append(done, a.secret.Name+"'s binding was released: it may be sent anywhere a grant says")
-		} else {
-			done = append(done, a.secret.Name+" is now bound to "+*host)
-		}
-	}
-	if seconds := a.update.MaxTTLSeconds; seconds != nil {
-		limit := time.Duration(*seconds) * time.Second
-		if limit <= 0 {
-			done = append(done, a.secret.Name+"'s limit was lifted: grants on it may now live forever")
-		} else {
-			done = append(done, a.secret.Name+"'s limit was raised: grants on it may now live "+lifetime.Label(limit))
-		}
-	}
-	return done
 }
 
 func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {
@@ -966,7 +938,7 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 			for _, change := range msg.applied {
 				done.lines = append(done.lines, line{text: change, bullet: true, tone: toneAlert})
 			}
-			done.lines = append(done.lines, line{}, line{text: "they were agreed to for this approval; the secrets screen (F4) puts them back if the grant is not coming", tone: toneDim})
+			done.lines = append(done.lines, line{}, line{text: "it was done for this approval; the secrets screen (F4) removes it if the grant is not coming", tone: toneDim})
 			d.sections = append(d.sections, done)
 		}
 		m.dialog = d

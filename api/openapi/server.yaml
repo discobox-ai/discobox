@@ -4086,9 +4086,16 @@ components:
                         - harnessConfig
                         - project
                     type: string
+                secretHost:
+                    description: Rebinds the answering secret to this host as part of the approval; empty releases its binding. Applied only if the approval goes through, in the same write, so a refused approval leaves the secret as it was. Refused for a gate.
+                    type: string
                 secretId:
                     description: Secret ID selected by the approver. Required unless the request names a well-known credential whose secret is already marked; naming one for it the first time marks it as the one that answers every later request for that ID.
                     type: string
+                secretMaxGrantTTLSeconds:
+                    description: Sets the answering secret's grant limit, in seconds, as part of the approval; 0 allows grants that never expire. Applied only if the approval goes through, in the same write.
+                    format: int64
+                    type: integer
                 uses:
                     description: Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to approve the requested uses as written. Use IDs are always minted here and any supplied ones are ignored.
                     items:
