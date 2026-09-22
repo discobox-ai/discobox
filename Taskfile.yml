@@ -169,6 +169,22 @@ tasks:
       - task: sign
         vars: { SIGN_BINARY: '{{.BINARY}}' }
 
+  build:macvm:
+    desc: Build and sign discobox-macvm, the macOS-guest proof of concept (macOS only)
+    # Not part of `build`, and not a server subcommand: installing macOS takes a
+    # ~20 GB restore image and half an hour, and the framework's window owns the
+    # main thread of whatever opens it, which a server cannot give it. It
+    # creates a VM, so it needs the same entitlement and takes the same signing
+    # path as the server.
+    platforms: [darwin]
+    vars:
+      MACVM_BINARY: build/discobox-macvm
+    cmds:
+      - mkdir -p build
+      - cd server && go build -o ../{{.MACVM_BINARY}} ./cmd/discobox-macvm
+      - task: sign
+        vars: { SIGN_BINARY: '{{.MACVM_BINARY}}' }
+
   sign:
     desc: Codesign SIGN_BINARY with the Virtualization entitlement (macOS only)
     # Creating a Virtualization.framework VM requires the entitlement, and it
