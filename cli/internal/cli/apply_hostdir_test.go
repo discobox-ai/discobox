@@ -264,18 +264,21 @@ func TestBaseOriginExplainsTheSourceCheckout(t *testing.T) {
 // never enters the history.
 func TestFirstApplyIntoADirectoryWithNoRepositoryMakesOne(t *testing.T) {
 	ctx := context.Background()
-	// gitapply's cherry-pick runs git with this process's environment, so the
-	// identity has to be here, not only on the test's own git commands.
+	// gitapply runs git with this process's environment, so the identity and
+	// the config isolation have to be here, not only on the test's own git
+	// commands: a runner with no identity cannot cherry-pick, and Windows'
+	// system core.autocrlf would check main.go out with CRLF.
 	t.Setenv("GIT_AUTHOR_NAME", "test")
 	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	gitIn := func(dir string) func(args ...string) string {
 		return func(args ...string) string {
 			t.Helper()
 			cmd := exec.CommandContext(ctx, "git", args...)
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
