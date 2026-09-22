@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-08-07
+- **Partially superseded by**: [0141](0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md) — §5's name-only request, for sandbox create only.
 
 ## Context
 
