@@ -44,7 +44,17 @@ var sudoersNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*\$?$`)
 // it names somebody, that account may not exist yet -- ensureUser is about to
 // create it -- so only the ids can be required, and the descriptive fields are
 // asked for separately and allowed to be absent.
-func resolveIdentity() (identity, error) {
+//
+// One manifest cannot answer even for the ids: a name alone, for an account the
+// image does not have. A client sends that when its own ids are ones a Linux
+// guest cannot give an account -- a macOS user is 501 in group 20, below
+// UID_MIN -- and it is asking for the account by name and leaving the numbers
+// to the sandbox. Nothing can resolve them until the account exists, so boot
+// creates it here, by name, and useradd picks the ids from the range the image
+// allows. That is an answer asked of the OS rather than one boot invented (ADR
+// 0025 §6): the account is being created, so which free id it gets is the
+// creator's to decide, the same way its home directory is.
+func (b *booter) resolveIdentity() (identity, error) {
 	manifest, err := manifestUser()
 	if err != nil {
 		return identity{}, err
@@ -75,6 +85,15 @@ func resolveIdentity() (identity, error) {
 	// coincidence, and guessing it runs the process under whatever group happens
 	// to hold that number (ADR 0025 §6).
 	resolved, err := runuser.Resolve(layers, sandboxuser.FieldUID|sandboxuser.FieldGID)
+	if err != nil && manifest.UID == nil && unresolvedField(err) == sandboxuser.FieldUID {
+		// The manifest gave no uid and no account of that name exists to take
+		// one from. Create the account by name, then ask again: its passwd
+		// entry now answers for both ids.
+		if err = b.addAccount(manifest); err != nil {
+			return identity{}, fmt.Errorf("create sandbox user: %w", err)
+		}
+		resolved, err = runuser.Resolve(layers, sandboxuser.FieldUID|sandboxuser.FieldGID)
+	}
 	if err != nil {
 		return identity{}, fmt.Errorf("resolve sandbox user: %w", err)
 	}
@@ -90,7 +109,7 @@ func resolveIdentity() (identity, error) {
 		id.name = strings.TrimSpace(manifest.Name)
 	}
 	if id.name == "" {
-		return identity{}, errors.New("DISCOBOX_USER_NAME is required for a user the image does not already have")
+		return identity{}, errNameRequired
 	}
 	if id.home == "" {
 		id.home = strings.TrimSpace(manifest.HomeDirectory)
@@ -141,6 +160,52 @@ func envID(key string) (*int64, error) {
 		return nil, fmt.Errorf("%s %q must be numeric", key, raw)
 	}
 	return &parsed, nil
+}
+
+// errNameRequired is the one thing boot cannot supply for an account it has to
+// create: which name to give it.
+var errNameRequired = errors.New("DISCOBOX_USER_NAME is required for a user the image does not already have")
+
+// unresolvedField names the field a runuser.Resolve error could not determine,
+// or 0 for any other error.
+func unresolvedField(err error) sandboxuser.Fields {
+	var unresolved *sandboxuser.UnresolvedError
+	if errors.As(err, &unresolved) {
+		return unresolved.Field
+	}
+	return 0
+}
+
+// addAccount creates the account a manifest named without a uid and leaves the
+// ids to useradd. It is the one mutation boot makes before the identity is
+// resolved, because for this account the mutation is what resolves it.
+//
+// The home is the manifest's or, as for any account boot creates, /home/<name>
+// (see resolveIdentity). A primary group the manifest chose is handed on: a gid
+// is made to exist the way ensureGroup does for every configured account, and a
+// group name has already been checked against the image by the resolver. With
+// neither, useradd's own default stands, a group of the account's name.
+func (b *booter) addAccount(manifest *runuser.User) error {
+	name := strings.TrimSpace(manifest.Name)
+	if name == "" {
+		return errNameRequired
+	}
+	home := strings.TrimSpace(manifest.HomeDirectory)
+	if home == "" {
+		home = filepath.Join("/home", name)
+	}
+	args := []string{"--home-dir", home, "--shell", "/bin/bash"}
+	switch {
+	case manifest.GID != nil:
+		group, err := b.ensureGroup(identity{gid: int(*manifest.GID), name: name})
+		if err != nil {
+			return err
+		}
+		args = append(args, "--gid", group)
+	case strings.TrimSpace(manifest.GroupName) != "":
+		args = append(args, "--gid", strings.TrimSpace(manifest.GroupName))
+	}
+	return b.run("useradd", append(args, name)...)
 }
 
 // ensureUser creates or aligns the sandbox user/group and grants passwordless

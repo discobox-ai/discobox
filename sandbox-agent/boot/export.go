@@ -82,7 +82,11 @@ func exportExclusions() (func(string) bool, error) {
 	if len(effective.Volumes) == 0 {
 		return nil, nil
 	}
-	id, err := resolveIdentity()
+	// A booter because an account the manifest named without ids has to be
+	// created before it can be resolved (resolveIdentity). That happens in this
+	// one-shot container as it did in the sandbox's, from the same image, so
+	// useradd gives it the same uid. Nothing else here runs a command.
+	id, err := newBooter().resolveIdentity()
 	if err != nil {
 		return nil, fmt.Errorf("resolve sandbox identity: %w", err)
 	}

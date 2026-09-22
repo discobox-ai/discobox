@@ -4,6 +4,7 @@ import (
 	"os"
 	osuser "os/user"
 	"path/filepath"
+	"strconv"
 )
 
 // FixedDatabase swaps the account database for a fixed table and returns a
@@ -100,4 +101,28 @@ func FixedEffectiveIDs(uid, gid int64) (restore func()) {
 	prev := effectiveIDs
 	effectiveIDs = func() (int64, int64) { return uid, gid }
 	return func() { effectiveIDs = prev }
+}
+
+// FixedAccount adds one account to the database the lookups answer from and
+// returns a restore function. It is for a test whose code under test creates an
+// account and then resolves it: the fake useradd calls this, and the next
+// lookup finds the passwd entry the real one would have written.
+func FixedAccount(name string, uid, gid int64, home string) (restore func()) {
+	account := osuser.User{Uid: strconv.FormatInt(uid, 10), Gid: strconv.FormatInt(gid, 10), Username: name, HomeDir: home}
+	prevName, prevID := lookupUserByName, lookupUserByID
+	lookupUserByName = func(n string) (*osuser.User, error) {
+		if n == name {
+			u := account
+			return &u, nil
+		}
+		return prevName(n)
+	}
+	lookupUserByID = func(id string) (*osuser.User, error) {
+		if id == account.Uid {
+			u := account
+			return &u, nil
+		}
+		return prevID(id)
+	}
+	return func() { lookupUserByName, lookupUserByID = prevName, prevID }
 }

@@ -46,6 +46,13 @@ here". `boot` is the worked example: for a configured user it requires only
 creates it, then asks again for `Complete` and treats a failure as "no name or
 home yet" rather than an error.
 
+A manifest that names an account by name alone, one the image lacks, cannot
+answer even for the ids. `boot` reads that `*UnresolvedError` on the uid as
+"create it first": it runs `useradd` by name and asks again, so the ids still
+come from the passwd entry the OS wrote, not from anything `boot` chose. That
+is not a fallback in the sense below; the answer is read, after the one
+mutation that makes it readable.
+
 ## Rules it enforces
 
 - **Ask, never default.** A missing id is read from the passwd entry. Never `0`,
@@ -85,6 +92,10 @@ before the account exists. That is a different question from resolution.
 effective ids for a fixed table; use it with `t.Cleanup` from any package.
 `FixedEffectiveIDs(uid, gid) (restore func())` overrides just the image layer,
 for an image running as a uid with no passwd entry.
+`FixedAccount(name, uid, gid, home) (restore func())` adds one account on top,
+for a test whose code under test creates an account and then resolves it: the
+fake `useradd` calls it, and the next lookup finds what the real one would have
+written.
 
 Its ids deliberately break `uid == gid` — including the effective ids, because
 a test reading the real process's ids could only assert them against another

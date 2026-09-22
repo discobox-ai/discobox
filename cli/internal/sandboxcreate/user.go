@@ -16,6 +16,20 @@ import (
 
 var runUnixUserNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}\$?$`)
 
+// guestUserIDMin and guestUserIDMax bound the ids a Linux guest gives ordinary
+// accounts: UID_MIN and UID_MAX in login.defs on the Debian the harness images
+// build from. An id outside them is a system account's there, whatever it was
+// on this machine -- a macOS account is 501 in group 20 -- and useradd warns
+// about one it is handed. Such an id is not sent. The name and home still are,
+// and boot creates the account by name and lets useradd choose the ids.
+const (
+	guestUserIDMin int64 = 1000
+	guestUserIDMax int64 = 60000
+)
+
+// runUserIdentity is this machine's account as a sandbox can hold it. IDsUsable
+// says whether UID and GID travel; when it is false the sandbox creates the
+// account by name and the ids are whatever it gives it.
 type runUserIdentity struct {
 	Name          string
 	UID           int64
@@ -64,6 +78,11 @@ func resolveRunUserIdentity() (runUserIdentity, bool, error) {
 	return parseRunUserIdentity(current)
 }
 
+// parseRunUserIdentity turns this machine's account into the identity the
+// sandbox is asked for. Root asks for nobody. The name and home travel when a
+// Linux sandbox can use them; the numeric ids only when they fall in the range
+// the guest gives ordinary accounts, so a macOS account's 501 stays here and the
+// sandbox creates the account by name.
 func parseRunUserIdentity(current *user.User) (runUserIdentity, bool, error) {
 	if current == nil {
 		return runUserIdentity{}, false, nil
@@ -80,7 +99,7 @@ func parseRunUserIdentity(current *user.User) (runUserIdentity, bool, error) {
 	if validRunHomeDirectory(current.HomeDir) {
 		identity.HomeDirectory = current.HomeDir
 	}
-	if uidOK && gidOK && uid != 0 {
+	if uidOK && gidOK && guestUsableID(uid) && guestUsableID(gid) {
 		identity.UID = uid
 		identity.GID = gid
 		identity.IDsUsable = true
@@ -94,6 +113,13 @@ func parseRunUserIdentity(current *user.User) (runUserIdentity, bool, error) {
 func parseRunNumericUserID(value string) (int64, bool) {
 	parsed, err := strconv.ParseInt(value, 10, 64)
 	return parsed, err == nil
+}
+
+// guestUsableID reports whether the sandbox can give an account this id. It is
+// asked of both ids, and both travel or neither: a uid on its own would leave a
+// new account's primary group to a passwd entry that does not exist yet.
+func guestUsableID(id int64) bool {
+	return id >= guestUserIDMin && id <= guestUserIDMax
 }
 
 func validRunUnixUserName(value string) bool {

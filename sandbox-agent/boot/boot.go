@@ -17,7 +17,7 @@ func Init(logger *slog.Logger, args []string) int {
 		logger = slog.Default()
 	}
 	b := newBooter()
-	id, err := resolveIdentity()
+	id, err := b.resolveIdentity()
 	if err != nil {
 		logger.Error("resolve sandbox identity", "error", err)
 		return 1

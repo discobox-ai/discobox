@@ -29,6 +29,57 @@ func TestParseRunUserIdentitySkipsRoot(t *testing.T) {
 	}
 }
 
+// A macOS account is uid 501 in group 20, below the 1000 a Linux guest gives
+// its first ordinary account. The ids stay here; the name and home travel, and
+// the sandbox creates the account by name.
+func TestParseRunUserIdentityDropsIDsBelowTheGuestRange(t *testing.T) {
+	identity, ok, err := parseRunUserIdentity(&user.User{Username: "darren", Uid: "501", Gid: "20", HomeDir: "/Users/darren"})
+	if err != nil {
+		t.Fatalf("parseRunUserIdentity: %v", err)
+	}
+	if !ok || identity.Name != "darren" || identity.HomeDirectory != "/Users/darren" {
+		t.Fatalf("identity = %#v, ok=%t, want the name and home kept", identity, ok)
+	}
+	if identity.IDsUsable || identity.UID != 0 || identity.GID != 0 {
+		t.Fatalf("identity = %#v, want the ids dropped", identity)
+	}
+}
+
+func TestParseRunUserIdentityDropsIDsAboveTheGuestRange(t *testing.T) {
+	identity, ok, err := parseRunUserIdentity(&user.User{Username: "darren", Uid: "60001", Gid: "60001", HomeDir: "/home/darren"})
+	if err != nil {
+		t.Fatalf("parseRunUserIdentity: %v", err)
+	}
+	if !ok || identity.Name != "darren" || identity.IDsUsable {
+		t.Fatalf("identity = %#v, ok=%t, want the name kept and the ids dropped", identity, ok)
+	}
+}
+
+// Both ids travel or neither. A uid the guest can hold, in a primary group it
+// cannot, would leave the new account's group to a passwd entry that is not
+// there yet.
+func TestParseRunUserIdentityDropsBothIDsWhenOnlyTheGidIsOutOfRange(t *testing.T) {
+	identity, ok, err := parseRunUserIdentity(&user.User{Username: "darren", Uid: "1000", Gid: "100", HomeDir: "/home/darren"})
+	if err != nil {
+		t.Fatalf("parseRunUserIdentity: %v", err)
+	}
+	if !ok || identity.Name != "darren" || identity.IDsUsable {
+		t.Fatalf("identity = %#v, ok=%t, want the name kept and both ids dropped", identity, ok)
+	}
+}
+
+func TestParseRunUserIdentityKeepsIDsAtTheGuestRangeEdges(t *testing.T) {
+	for _, id := range []string{"1000", "60000"} {
+		identity, ok, err := parseRunUserIdentity(&user.User{Username: "darren", Uid: id, Gid: id, HomeDir: "/home/darren"})
+		if err != nil {
+			t.Fatalf("parseRunUserIdentity(%s): %v", id, err)
+		}
+		if !ok || !identity.IDsUsable {
+			t.Fatalf("identity = %#v, ok=%t, want uid/gid %s usable", identity, ok, id)
+		}
+	}
+}
+
 func TestParseRunUserIdentityUsesValidUsernameWhenIDsAreNotNumeric(t *testing.T) {
 	identity, ok, err := parseRunUserIdentity(&user.User{Username: "darren", Uid: "S-1-5-21", Gid: "S-1-5-32", HomeDir: "/Users/darren"})
 	if err != nil {

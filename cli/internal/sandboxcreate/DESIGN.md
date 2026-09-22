@@ -23,6 +23,18 @@ sandbox create requests.
   ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §5) — root on most harness images. A stated identity is not a guess about the
   local machine, because there is no local answer to get wrong.
+  The numeric ids travel only when they fall in the range a Linux guest gives
+  ordinary accounts, 1000 to 60000 (`UID_MIN`/`UID_MAX` in `login.defs` on the
+  Debian the images build from). A macOS account is 501 in group 20, so it
+  sends its name and home alone, and boot creates the account by name with the
+  ids `useradd` chooses ([`sandbox-agent`](../../../sandbox-agent/DESIGN.md),
+  `boot`). Clamping to a fixed uid as Windows does would give every
+  out-of-range host the same id, an arbitrary number the guest is better placed
+  to choose, and sending nothing would mean the image's own user (root on most
+  harness images); neither is the account the person asked for. A Linux host
+  whose primary gid is out of range (for example `users`, gid 100) drops both
+  ids by the same rule and receives a private group, since a usable uid does not
+  travel without a usable gid.
 - A local source keeps its own absolute path inside the sandbox **when that path
   is one a sandbox may hold** — a child of `/home`, `/Users`, `/mnt`,
   `/workspace`, `/Volumes`, `/media`, `/srv`, `/opt`, `/data` or `/var/home`
