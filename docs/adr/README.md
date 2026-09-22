@@ -194,3 +194,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0137](0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md) | A terminal can be read, typed into, and waited on without attaching | Accepted |
 | [0138](0138-a-shell-opened-for-a-person-is-their-own-shell-when-the-sandbox-has-it.md) | A shell opened for a person is their own shell, when the sandbox has it | Accepted |
 | [0139](0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md) | The first apply into a directory with no repository makes one | Accepted (supersedes [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md)'s apply consequence) |
+| [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) | A discobox reaches the discobox API through its pool, with a fixed role | Accepted |
