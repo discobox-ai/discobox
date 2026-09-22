@@ -53,9 +53,10 @@ const (
 	// is whether the discobox committed anything after that commit.
 	baseOriginSourceCheckout baseOrigin = "source-checkout"
 	// baseOriginDiscoboxBase: the discobox was created from a repository with
-	// no commits, so it starts from an empty base commit of its own and there
-	// is no shared history to find a merge base in. Everything after that base
-	// is the discobox's work (ADR 0084).
+	// no commits, or a directory with no repository, so it starts from an
+	// empty base commit of its own and there is no shared history to find a
+	// merge base in. Everything after that base is the discobox's work
+	// (ADR 0084, ADR 0139).
 	baseOriginDiscoboxBase baseOrigin = "discobox-base"
 )
 
@@ -98,7 +99,14 @@ type applySourceReport struct {
 	// reported whatever the source's status ends up being, and the report
 	// carries it for every outcome the text output mentions it in.
 	HostPathError string `json:"hostPathError,omitempty"`
-	HostBranch    string `json:"hostBranch,omitempty"`
+	// CreatedRepository records that the local directory held no Git
+	// repository until this apply made one to land the commits in (ADR 0139).
+	// Set whenever that repository was kept, which is once its branch holds
+	// the applied commits — usually alongside applied, but also on an error
+	// that came after the branch was written. While HEAD is still unborn the
+	// repository is taken away again and this stays false.
+	CreatedRepository bool   `json:"createdRepository,omitempty"`
+	HostBranch        string `json:"hostBranch,omitempty"`
 	// HostBase is the host commit the branch was on before this apply, and
 	// still is unless Status is applied.
 	HostBase string `json:"hostBase,omitempty"`
@@ -573,7 +581,7 @@ func formatBaseOrigin(origin baseOrigin) string {
 	case baseOriginSourceCheckout:
 		return "the commit this source was created at"
 	case baseOriginDiscoboxBase:
-		return "the empty base this discobox started from; local had no commits"
+		return "the empty base this discobox started from; it was created with no commits to share with local"
 	}
 	return string(origin)
 }

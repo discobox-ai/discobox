@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -279,7 +280,7 @@ func lastApplied(sandbox *apimodel.Sandbox, slug string) (apimodel.AppliedSource
 // the way. It never returns an error: every outcome, failure included, is a
 // status on the returned report, so the caller renders them all the same way
 // and no failure loses the context the run had already established.
-func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *apiclientgen.Client, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID, gitServerURL string, entry applySourceEntry, dirOverrides map[string]string, allowDirty bool) applySourceReport {
+func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *apiclientgen.Client, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID, gitServerURL string, entry applySourceEntry, dirOverrides map[string]string, allowDirty bool) (outcome applySourceReport) {
 	report := applySourceReport{Slug: entry.slug, Status: applyStatusError}
 	fail := func(format string, args ...any) applySourceReport {
 		report.Status = applyStatusError
@@ -294,6 +295,26 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	}
 	report.HostPathOrigin = dirOrigin
 	repoRoot, err := gitutil.Root(ctx, hostDir)
+	noRepository := errors.Is(err, gitutil.ErrNotARepository) && entry.source.NoLocalRepository.Or(false)
+	if noRepository {
+		// The discobox was created from this directory as it is, with no
+		// repository in it, so there is nothing here to land commits in yet.
+		// Making one is what bringing the work home needs, and it is only kept
+		// once its branch holds the discobox's commits: while HEAD is still
+		// unborn every outcome takes it away again, so an apply refused or
+		// failed before anything landed leaves the directory as it was found
+		// (ADR 0139).
+		repoRoot, err = initApplyRepository(ctx, hostDir, entry.source)
+		if err == nil {
+			defer func() {
+				kept, err := removeApplyRepositoryUnlessBorn(ctx, repoRoot)
+				if err != nil {
+					printer.caution("the Git repository made in %s to apply into could not be removed again: %v", repoRoot, err)
+				}
+				outcome.CreatedRepository = kept
+			}()
+		}
+	}
 	if errors.Is(err, gitutil.ErrNotARepository) {
 		printer.bareSourceHeader(entry.slug)
 		return fail("%s is not a Git repository", hostDir)
@@ -314,6 +335,9 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	// them, so a slow fetch or a failure that follows already has its context
 	// on screen.
 	printer.sourceHeader(report)
+	if noRepository {
+		printer.note("local %s is not a Git repository; the discobox was created from it as a plain directory, so one is made there to apply into, and removed again if nothing lands", repoRoot)
+	}
 
 	blocked, err := a.sandboxDirtyBlocks(ctx, printer, projectID, sandboxID, &report, allowDirty, dirOverrides[entry.slug])
 	if err != nil {
@@ -336,12 +360,13 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		lastCommit = last.Commit
 	}
 	discoboxBase := ""
-	if entry.source.NoLocalCommits.Or(false) {
-		// The discobox was created from a repository with no commits, so it
-		// starts from an empty base commit of its own and shares nothing with
-		// this repository by construction — there is no merge base to look for,
-		// and everything after that base is the discobox's work. This holds
-		// however many commits the user has made here since (ADR 0084 §1).
+	if entry.source.NoLocalCommits.Or(false) || entry.source.NoLocalRepository.Or(false) {
+		// The discobox was created from a repository with no commits, or from
+		// a directory with no repository at all, so it starts from an empty
+		// base commit of its own and shares nothing with this repository by
+		// construction — there is no merge base to look for, and everything
+		// after that base is the discobox's work. This holds however many
+		// commits the user has made here since (ADR 0084 §1, ADR 0139).
 		discoboxBase = checkoutCommit(entry.source)
 		if discoboxBase == "" {
 			return fail("source %q records no base commit to apply from", entry.slug)
@@ -388,8 +413,8 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		if len(result.ChangedPaths) > 0 {
 			report.Status = applyStatusBlocked
 			report.LocalChanges = result.ChangedPaths
-			report.NextSteps = localChangesNextSteps(sandboxID, entry.slug, repoRoot, dirOverrides[entry.slug], carried)
-			printer.outcome(applyStatusBlocked, "BLOCKED: %s", blockedLocalChanges(repoRoot, carried))
+			report.NextSteps = localChangesNextSteps(sandboxID, entry.slug, repoRoot, dirOverrides[entry.slug], carried, noRepository)
+			printer.outcome(applyStatusBlocked, "BLOCKED: %s", blockedLocalChanges(repoRoot, carried, noRepository))
 			printer.detailLines(report.LocalChanges)
 			printer.nextSteps(report.NextSteps)
 			return report
@@ -443,6 +468,55 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	printer.landed(report)
 	printer.note("recorded on discobox %s as applied to %s", sandboxID, repoRoot)
 	return report
+}
+
+// initApplyRepository makes a repository in dir, a directory a discobox was
+// created from that holds none, and returns its root. HEAD is left unborn on
+// the branch the discobox was created on, so the first apply into it is the
+// one that gives it its history (ADR 0084) and its branch is the one the
+// discobox's work is on.
+//
+// It refuses a directory that already has a .git of any kind. Git says "not a
+// git repository" of a .git it cannot read — HEAD missing, say — and `git init`
+// then reuses it, objects and refs and all; a repository apply did not make is
+// never one it may remove again.
+func initApplyRepository(ctx context.Context, dir string, source apimodel.GitSource) (string, error) {
+	if _, err := os.Lstat(filepath.Join(dir, ".git")); !errors.Is(err, os.ErrNotExist) {
+		if err != nil {
+			return "", fmt.Errorf("check %s for a .git before making a repository there: %w", dir, err)
+		}
+		return "", fmt.Errorf("%s has a .git that Git does not read as a repository; apply will not make one over it", dir)
+	}
+	args := []string{"init", "--quiet"}
+	if checkout, ok := source.Checkout.Get(); ok && checkout.RefType.Or("") == "branch" {
+		if branch := strings.TrimSpace(checkout.RefName.Or("")); branch != "" {
+			args = append(args, "--initial-branch="+branch)
+		}
+	}
+	if _, err := gitutil.Output(ctx, dir, nil, nil, args...); err != nil {
+		return "", fmt.Errorf("make a Git repository in %s to apply into: %w", dir, err)
+	}
+	root, err := gitutil.Root(ctx, dir)
+	if err != nil {
+		_ = os.RemoveAll(filepath.Join(dir, ".git"))
+		return "", err
+	}
+	return root, nil
+}
+
+// removeApplyRepositoryUnlessBorn takes away the repository initApplyRepository
+// made at root, unless its branch now holds a commit — and reports whether it
+// kept it. The branch is what decides, not whether the apply reported landing:
+// AttemptRoot creates the branch before it checks the commits out, so an apply
+// that fails or is interrupted between the two has still put the commits there,
+// and removing the repository would lose them with the working tree already
+// half replaced. The check ignores cancellation for the same reason; if it
+// cannot tell, the repository stays.
+func removeApplyRepositoryUnlessBorn(ctx context.Context, root string) (bool, error) {
+	if !gitunborn.HeadIsUnborn(context.WithoutCancel(ctx), root) {
+		return true, nil
+	}
+	return false, os.RemoveAll(filepath.Join(root, ".git"))
 }
 
 // resolveApplyBase chooses the exclusive end of the sandbox commit range.
@@ -674,11 +748,19 @@ func resolveTree(ctx context.Context, repoRoot, rev string) (string, error) {
 // (--include-dirty=false, or a repository that gained files after the create).
 // Telling the second one their repository "has changed" accuses them of
 // something they did not do.
-func blockedLocalChanges(repoRoot string, carried bool) string {
-	if carried {
-		return fmt.Sprintf("local %s has changed since this discobox was created, and has no commits to keep those changes in", repoRoot)
+//
+// noRepository says the directory had no repository until this apply made one,
+// which it has taken away again, so there is not even an empty history there
+// to keep anything in.
+func blockedLocalChanges(repoRoot string, carried, noRepository bool) string {
+	keep := "has no commits to keep"
+	if noRepository {
+		keep = "is not a Git repository to keep"
 	}
-	return fmt.Sprintf("local %s holds files this discobox was never given, and has no commits to keep them in", repoRoot)
+	if carried {
+		return fmt.Sprintf("local %s has changed since this discobox was created, and %s those changes in", repoRoot, keep)
+	}
+	return fmt.Sprintf("local %s holds files this discobox was never given, and %s them in", repoRoot, keep)
 }
 
 // localChangesNextSteps is the way out of a first apply refused because the
@@ -691,24 +773,35 @@ func blockedLocalChanges(repoRoot string, carried bool) string {
 // working tree back the way the discobox found it; doing that to files the
 // discobox was never given would mean deleting them, which is nobody's idea of
 // a way out.
-func localChangesNextSteps(sandboxID, slug, repoRoot, dir string, carried bool) []applyNextStep {
+//
+// A directory that had no repository until this apply made one — and took it
+// away again, refusing — needs one before anything can be committed in it, so
+// both ways out start by making it.
+func localChangesNextSteps(sandboxID, slug, repoRoot, dir string, carried, noRepository bool) []applyNextStep {
 	rerun := applyRerun(sandboxID, slug, dir)
 	alternative := "or look at what changed, and put it back the way the discobox found it"
+	lookCommands := []string{fmt.Sprintf("git -C %s status", repoRoot)}
 	if !carried {
 		alternative = "or look at what is here, and move aside anything the discobox's commits would land on"
 	}
+	var commitCommands []string
+	if noRepository {
+		commitCommands = append(commitCommands, fmt.Sprintf("git -C %s init", repoRoot))
+		lookCommands = []string{fmt.Sprintf("ls -A %s", repoRoot)}
+	}
+	commitCommands = append(commitCommands,
+		fmt.Sprintf("git -C %s add -A", repoRoot),
+		fmt.Sprintf("git -C %s commit -m MESSAGE", repoRoot),
+		rerun,
+	)
 	return []applyNextStep{
 		{
 			Description: "commit the local files first, then apply the discobox's commits on top of them",
-			Commands: []string{
-				fmt.Sprintf("git -C %s add -A", repoRoot),
-				fmt.Sprintf("git -C %s commit -m MESSAGE", repoRoot),
-				rerun,
-			},
+			Commands:    commitCommands,
 		},
 		{
 			Description: alternative,
-			Commands:    []string{fmt.Sprintf("git -C %s status", repoRoot)},
+			Commands:    lookCommands,
 		},
 	}
 }

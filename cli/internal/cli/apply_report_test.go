@@ -433,7 +433,7 @@ func TestBaseOriginExplainsADiscoboxThatStartedFromNothing(t *testing.T) {
 // way to finish the job — commit the local work, which the discobox's commits
 // then cherry-pick on top of, since they never needed a shared history.
 func TestLocalChangesNextStepsLeadWithCommittingTheLocalWork(t *testing.T) {
-	steps := localChangesNextSteps("sbx_23x11jnw03w11nf2", "primary", "/home/ada/src/new", "", true)
+	steps := localChangesNextSteps("sbx_23x11jnw03w11nf2", "primary", "/home/ada/src/new", "", true, false)
 	if len(steps) != 2 {
 		t.Fatalf("got %d next steps, want 2: %+v", len(steps), steps)
 	}
@@ -453,7 +453,7 @@ func TestLocalChangesNextStepsLeadWithCommittingTheLocalWork(t *testing.T) {
 }
 
 func TestLocalChangesNextStepsCarryDirOverride(t *testing.T) {
-	steps := localChangesNextSteps("sbx_1", "web", "/work/web", "/home/ada/src/web", true)
+	steps := localChangesNextSteps("sbx_1", "web", "/work/web", "/home/ada/src/web", true, false)
 	for _, step := range steps {
 		for _, command := range step.Commands {
 			if strings.HasPrefix(command, "discobox apply") && !strings.Contains(command, "--dir web=/home/ada/src/web") {
@@ -479,11 +479,11 @@ func TestAppliedFromNamesAnAbsentStartingPoint(t *testing.T) {
 // never given those files, and saying it "has changed" accuses them of work
 // they did not do.
 func TestBlockedMessageDoesNotAccuseAUserWhoWithheldTheirFiles(t *testing.T) {
-	changed := blockedLocalChanges("/home/ada/src/new", true)
+	changed := blockedLocalChanges("/home/ada/src/new", true, false)
 	if !strings.Contains(changed, "has changed since this discobox was created") {
 		t.Fatalf("carried workspace explained as %q", changed)
 	}
-	withheld := blockedLocalChanges("/home/ada/src/new", false)
+	withheld := blockedLocalChanges("/home/ada/src/new", false, false)
 	if strings.Contains(withheld, "has changed") {
 		t.Fatalf("a discobox that was given nothing still says the repository changed: %q", withheld)
 	}
@@ -496,11 +496,11 @@ func TestBlockedMessageDoesNotAccuseAUserWhoWithheldTheirFiles(t *testing.T) {
 // Doing that to files it was never given means deleting them, so that
 // alternative must not be offered there.
 func TestLocalChangesAlternativeNeverSuggestsDeletingWithheldFiles(t *testing.T) {
-	carried := localChangesNextSteps("sbx_1", "primary", "/work/new", "", true)
+	carried := localChangesNextSteps("sbx_1", "primary", "/work/new", "", true, false)
 	if !strings.Contains(carried[1].Description, "put it back the way the discobox found it") {
 		t.Fatalf("carried alternative = %q", carried[1].Description)
 	}
-	withheld := localChangesNextSteps("sbx_1", "primary", "/work/new", "", false)
+	withheld := localChangesNextSteps("sbx_1", "primary", "/work/new", "", false, false)
 	if strings.Contains(withheld[1].Description, "put it back the way the discobox found it") {
 		t.Fatalf("withheld alternative tells the user to delete their own files: %q", withheld[1].Description)
 	}

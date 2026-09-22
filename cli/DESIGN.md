@@ -2312,7 +2312,8 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
 - An empty directory is not asked about and not an error: it snapshots nothing
   and the sandbox starts on the empty commit at the directory's own path, which
   is the point of running in one — a project that does not exist yet, with
-  somewhere for `discobox push` to carry the work back to. Nothing was declined
+  somewhere for `discobox apply` to bring the work home to, making the
+  repository there when it does (ADR 0139). Nothing was declined
   there, so unlike a declined directory it keeps its source.
 - With no terminal there is nobody to ask and the directory is copied, the same
   way a dirty workspace is.
@@ -2710,6 +2711,14 @@ the round trip back. See
   user having done something, and "put it back the way the discobox found it"
   is a way out of the first and an instruction to delete their files in the
   second.
+- A discobox created from a directory in no repository ("A Directory That Is
+  Not a Repository" above) carries `noLocalRepository`, and comes home the same
+  way: apply `git init`s the directory, unborn on the discobox's
+  `checkout.refName`, and takes the path above — base included, on every apply.
+  The `.git` it made is removed again unless the commits land, so a refusal's
+  next steps start with `git init`, and a landed one reports
+  `createdRepository`. See
+  [ADR 0139](../docs/adr/0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md).
 - `cli/internal/gitunborn` holds the two questions create and apply both ask —
   whether HEAD is unborn, and what the working tree holds when there is no HEAD
   to read it against — so neither can disagree with the other about what

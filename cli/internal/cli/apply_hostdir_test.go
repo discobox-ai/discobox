@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/gitapply"
 	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 )
 
@@ -252,5 +254,173 @@ func TestBaseOriginExplainsTheSourceCheckout(t *testing.T) {
 	explained := formatBaseOrigin(baseOriginSourceCheckout)
 	if explained == string(baseOriginSourceCheckout) || !strings.Contains(explained, "created at") {
 		t.Fatalf("formatBaseOrigin(source-checkout) = %q, want it spelled out", explained)
+	}
+}
+
+// A discobox created from an empty directory with no repository in it (ADR
+// 0045) brings its work home by making that repository (ADR 0139): unborn, on
+// the branch the discobox worked on, so the landing is the same first apply a
+// `git init` and nothing since gets (ADR 0084), and the discobox's empty base
+// never enters the history.
+func TestFirstApplyIntoADirectoryWithNoRepositoryMakesOne(t *testing.T) {
+	ctx := context.Background()
+	gitIn := func(dir string) func(args ...string) string {
+		return func(args ...string) string {
+			t.Helper()
+			cmd := exec.CommandContext(ctx, "git", args...)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(),
+				"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+				"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+				"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+			}
+			return strings.TrimSpace(string(out))
+		}
+	}
+
+	// The discobox's side: the empty base create made, and one commit on it.
+	sandboxRepo := t.TempDir()
+	sandboxGit := gitIn(sandboxRepo)
+	sandboxGit("init", "--initial-branch=trunk")
+	emptyTree := sandboxGit("hash-object", "-t", "tree", "-w", "--stdin")
+	base := sandboxGit("commit-tree", emptyTree, "-m", "discobox new empty base")
+	sandboxGit("update-ref", "refs/heads/trunk", base)
+	sandboxGit("reset", "--hard")
+	if err := os.WriteFile(filepath.Join(sandboxRepo, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sandboxGit("add", "main.go")
+	sandboxGit("commit", "-m", "start the project")
+	tip := sandboxGit("rev-parse", "HEAD")
+
+	local := t.TempDir()
+	source := apimodel.GitSource{
+		NoLocalRepository: apiclientgen.NewOptBool(true),
+		Checkout: apiclientgen.NewOptGitSourceCheckout(apiclientgen.GitSourceCheckout{
+			Commit:  apiclientgen.NewOptString(base),
+			RefName: apiclientgen.NewOptString("trunk"),
+			RefType: apiclientgen.NewOptString("branch"),
+		}),
+	}
+	repoRoot, err := initApplyRepository(ctx, local, source)
+	if err != nil {
+		t.Fatalf("initApplyRepository: %v", err)
+	}
+	if !gitunborn.HeadIsUnborn(ctx, repoRoot) {
+		t.Fatal("the repository made to apply into has a commit already; its first commit has to be the discobox's")
+	}
+	localGit := gitIn(repoRoot)
+	if branch := localGit("symbolic-ref", "--short", "HEAD"); branch != "trunk" {
+		t.Fatalf("HEAD names %q, want the branch the discobox was created on", branch)
+	}
+
+	localGit("fetch", sandboxRepo, "+refs/heads/trunk:refs/discobox/sandbox")
+	wantTree, carried, err := (&App{}).createdFromTree(ctx, repoRoot, "", "", "", source)
+	if err != nil || carried {
+		t.Fatalf("createdFromTree = %s (carried %v, err %v), want the empty tree an empty directory was", wantTree, carried, err)
+	}
+	result, err := gitapply.AttemptRoot(ctx, repoRoot, base, tip, wantTree)
+	if err != nil || !result.Landed {
+		t.Fatalf("AttemptRoot = %+v, %v; want it landed", result, err)
+	}
+	if roots := localGit("rev-list", "--max-parents=0", "HEAD"); roots != localGit("rev-parse", "HEAD") {
+		t.Fatalf("root commits %q, want the discobox's first commit as the only one", roots)
+	}
+	if got, err := os.ReadFile(filepath.Join(local, "main.go")); err != nil || string(got) != "package main\n" {
+		t.Fatalf("main.go = %q, %v; want the discobox's file checked out", got, err)
+	}
+	if kept, err := removeApplyRepositoryUnlessBorn(ctx, repoRoot); err != nil || !kept {
+		t.Fatalf("removeApplyRepositoryUnlessBorn after landing = %v, %v; want the repository kept", kept, err)
+	}
+	if _, err := os.Stat(filepath.Join(local, ".git")); err != nil {
+		t.Fatalf("the repository holding the landed commits is gone: %v", err)
+	}
+}
+
+// Nothing landed, the repository apply made goes again and the directory is
+// as it was found. But a branch that holds commits keeps it, even with the
+// checkout never done — an apply interrupted between AttemptRoot's update-ref
+// and its reset has still put the commits there.
+func TestTheRepositoryAnApplyMadeIsRemovedUnlessItsBranchHoldsCommits(t *testing.T) {
+	ctx := context.Background()
+	source := apimodel.GitSource{NoLocalRepository: apiclientgen.NewOptBool(true)}
+
+	refused := t.TempDir()
+	root, err := initApplyRepository(ctx, refused, source)
+	if err != nil {
+		t.Fatalf("initApplyRepository: %v", err)
+	}
+	if kept, err := removeApplyRepositoryUnlessBorn(ctx, root); err != nil || kept {
+		t.Fatalf("removeApplyRepositoryUnlessBorn on an unborn repository = %v, %v; want it removed", kept, err)
+	}
+	if _, err := os.Lstat(filepath.Join(refused, ".git")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the .git apply made is still there: %v", err)
+	}
+
+	interrupted := t.TempDir()
+	root, err = initApplyRepository(ctx, interrupted, source)
+	if err != nil {
+		t.Fatalf("initApplyRepository: %v", err)
+	}
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	emptyTree := git("hash-object", "-t", "tree", "-w", "--stdin")
+	commit := git("commit-tree", emptyTree, "-m", "landed")
+	git("update-ref", "refs/heads/"+git("symbolic-ref", "--short", "HEAD"), commit)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if kept, err := removeApplyRepositoryUnlessBorn(cancelled, root); err != nil || !kept {
+		t.Fatalf("removeApplyRepositoryUnlessBorn with commits on the branch = %v, %v; want it kept", kept, err)
+	}
+}
+
+// Git calls a directory whose .git it cannot read "not a git repository", and
+// `git init` would reuse that .git. Apply must not make a repository there,
+// since it would then remove the user's history along with it.
+func TestApplyMakesNoRepositoryOverAnExistingGitDirectory(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	objects := filepath.Join(dir, ".git", "objects")
+	if err := os.MkdirAll(objects, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := initApplyRepository(ctx, dir, apimodel.GitSource{NoLocalRepository: apiclientgen.NewOptBool(true)}); err == nil {
+		t.Fatal("initApplyRepository made a repository over an existing .git")
+	}
+	if _, err := os.Stat(objects); err != nil {
+		t.Fatalf("the existing .git was touched: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "HEAD")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("git init ran over the existing .git: %v", err)
+	}
+}
+
+// Refused, the directory has no repository to commit anything in, so the way
+// out makes one first — and the look around does not ask git about a
+// repository that is not there.
+func TestLocalChangesNextStepsMakeTheRepositoryAnApplyTookAway(t *testing.T) {
+	steps := localChangesNextSteps("sbx_1", "primary", "/work/new", "", true, true)
+	if got := steps[0].Commands[0]; got != "git -C /work/new init" {
+		t.Fatalf("first command = %q, want the repository made before anything is committed", got)
+	}
+	if got := steps[1].Commands[0]; strings.HasPrefix(got, "git ") {
+		t.Fatalf("look-around command = %q, want one that works with no repository", got)
+	}
+	if got := blockedLocalChanges("/work/new", true, true); !strings.Contains(got, "not a Git repository") {
+		t.Fatalf("refusal = %q, want it to say there is no repository", got)
 	}
 }
