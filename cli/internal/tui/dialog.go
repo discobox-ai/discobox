@@ -43,11 +43,13 @@ type dialog struct {
 	// the same place for the same reason.
 	copied bool
 
-	// singleLineBody keeps a summary on one row and ellipsizes it at the card
-	// edge. It is for a question whose body is context, not prose to read: a
-	// long source path must not push the answers down by wrapping.
-	singleLineBody bool
-	items          []action
+	// subject is the row above the body naming what the question is about —
+	// a source path. It is kept to one row and cut from the middle at the card
+	// edge, so a long path cannot push the answers down by wrapping; the body
+	// under it is prose and wraps, because a question cut off mid-sentence
+	// cannot be answered.
+	subject string
+	items   []action
 	// footer is the line under a menu, which says what choosing one of its
 	// rows does. Empty takes the action menu's wording.
 	footer string
@@ -747,26 +749,29 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 }
 
 // bodyLines is everything between the title and the answer, wrapped to the
-// width it will be drawn at: the prose body, and under it the sections.
+// width it will be drawn at: the subject, the prose body, and under it the
+// sections.
 //
 // It is one list of lines rather than two blocks because a text dialog scrolls
 // and searches its body, and a card built out of sections has to scroll and be
 // searched the same way a paragraph does.
 func (d *dialog) bodyLines(st *styles, room int) []string {
 	var lines []string
+	if d.subject != "" {
+		// Middle, not end: a path's start says where it is and its end says
+		// which one it is, and the end is the half that tells two apart.
+		lines = append(lines, truncateMiddle(d.subject, room))
+	}
 	if d.body != "" {
-		if d.singleLineBody {
-			lines = []string{truncate(d.body, room)}
-		} else {
-			lines = wrap(d.body, room)
-		}
+		start := len(lines)
+		lines = append(lines, wrap(d.body, room)...)
 		// Wrapping is not enough on its own: a line the wrapper could not break
 		// — the help text's key columns are one long run of spaces and words —
 		// comes back wider than the box, and lipgloss wraps it again into a row
 		// the height was not budgeted for. One row over is a frame one row
 		// taller than the terminal.
-		for i, text := range lines {
-			lines[i] = truncate(text, room)
+		for i := start; i < len(lines); i++ {
+			lines[i] = truncate(lines[i], room)
 		}
 	}
 	if len(d.sections) == 0 {

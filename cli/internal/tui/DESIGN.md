@@ -1897,7 +1897,13 @@ content — so the config card fills a tall terminal while "Disable Codex?" stay
 the size of the question. Body lines are truncated to the inner width as well as
 wrapped to it: a line the wrapper cannot break comes back wider than the box,
 lipgloss wraps it again, and the extra row makes the frame taller than the
-terminal.
+terminal. A path the question is about is the dialog's `subject`, a row of its
+own above the body cut from the middle, so a long path cannot push the answers
+down — the body itself always wraps, because a question cut off mid-sentence
+cannot be answered. Only a scrolling card caps its body at the height
+allowance; a question's body is never cut, so on a terminal shorter than the
+card it is the answers and key line that fall off the bottom, and their keys
+still answer it.
 
 **A card of facts is a column, not a paragraph** (`section`, `field`, `line`,
 `answerLabel`). What a credential is, what a grant covers, what an agent is
