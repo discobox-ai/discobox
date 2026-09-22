@@ -49,6 +49,27 @@ func TestReclaimableAgesOutUnusedImages(t *testing.T) {
 	assertIDs(t, Reclaimable(candidates, nil, nil, retention, now), "sha256:stale", "sha256:boundary")
 }
 
+// A build clamped to SOURCE_DATE_EPOCH, which the Nix dev shell sets to 1980, is
+// stamped with that epoch for both Created and LastTagTime on the containerd
+// image store. It was reclaimed seconds after `task build:harness-image` made
+// it, as decades old, because the watcher's retagged build of the same
+// repository had the later — real — arrival (ADR 0142).
+func TestReclaimableKeepsAnImageWhoseArrivalIsItsBuildTime(t *testing.T) {
+	now := time.Now()
+	epoch := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+	candidates := []Candidate{
+		{ID: "sha256:clamped", RepoTags: []string{"discobox-harness-shell:local"}, LastLocal: epoch, Created: epoch},
+		{ID: "sha256:watcher", RepoTags: []string{"discobox-harness-shell:dev-abc"}, LastLocal: now.Add(-time.Minute), Created: epoch},
+		// Retagging stamps a real arrival, so a superseded build is still
+		// reclaimed however it was built.
+		{ID: "sha256:superseded", RepoTags: []string{"discobox-harness-shell:dev-old"}, LastLocal: now.Add(-retention - time.Hour), Created: epoch},
+		// No arrival reported at all is still never reclaimed.
+		{ID: "sha256:undescribed"},
+	}
+
+	assertIDs(t, Reclaimable(candidates, nil, nil, retention, now), "sha256:superseded")
+}
+
 // The regression that ate a developer's images: the watcher had built a new
 // sandbox base, but the server's keep set was the manifest it loaded at startup,
 // which still named the previous one. Age then made the *current* image — the

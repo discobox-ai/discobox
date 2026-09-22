@@ -11,7 +11,10 @@
 // Created is when whoever published the image built it, so a release image built
 // weeks before it shipped would be stale the instant it was pulled. LastTagTime
 // is stamped on build, pull (including a re-pull that only re-applies an
-// unchanged tag), load, and tag — every way an image gets here.
+// unchanged tag), load, and tag — every way an image gets here — except that a
+// build clamped to SOURCE_DATE_EPOCH takes that epoch for both, on the
+// containerd image store. An arrival no later than the build is that clamp, not
+// an arrival, and is an unknown age (ADR 0142).
 //
 // The package is split the way the volume reaper is: Reclaimable decides from
 // plain data and is where the rules are tested, while Reclaim does the daemon
@@ -129,6 +132,20 @@ type Candidate struct {
 	// Zero means the daemon did not report one, which is treated as an unknown
 	// age and never reclaimed.
 	LastLocal time.Time
+	// Created is when the image was built. It is never an age, only the floor
+	// an arrival has to be after to be one (knownArrival).
+	Created time.Time
+}
+
+// knownArrival reports whether LastLocal is a time this image arrived here.
+//
+// It is not when the daemon reported none, and not when it is no later than
+// Created: nothing arrives before it was built, and a build clamped to
+// SOURCE_DATE_EPOCH — the Nix dev shell sets 1980 — is stamped with that epoch
+// for both on the containerd image store. Taken as an age, that makes the image
+// decades old the moment it is built (ADR 0142).
+func (c Candidate) knownArrival() bool {
+	return !c.LastLocal.IsZero() && c.LastLocal.After(c.Created)
 }
 
 // references returns every way this image can be named, so a keep entry matches
@@ -164,8 +181,9 @@ func Reclaimable(candidates []Candidate, inUse, keep map[string]struct{}, retent
 			continue
 		}
 		// No knowable local age. Reclaiming on a guess here would mean deleting
-		// an image the daemon simply declined to describe.
-		if candidate.LastLocal.IsZero() {
+		// an image the daemon simply declined to describe, or one built a moment
+		// ago under a clamped timestamp.
+		if !candidate.knownArrival() {
 			continue
 		}
 		if now.Sub(candidate.LastLocal) < retention {
@@ -383,11 +401,15 @@ func labeledImages(ctx context.Context, cli *client.Client) ([]Candidate, error)
 			}
 			return nil, fmt.Errorf("inspect image %s: %w", image.ID, err)
 		}
+		// An unparsable Created leaves it zero, which leaves the arrival to
+		// stand on its own, as it did before Created was consulted.
+		created, _ := time.Parse(time.RFC3339Nano, inspect.Created)
 		candidates = append(candidates, Candidate{
 			ID:          image.ID,
 			RepoTags:    image.RepoTags,
 			RepoDigests: image.RepoDigests,
 			LastLocal:   inspect.Metadata.LastTagTime,
+			Created:     created,
 		})
 	}
 	return candidates, nil
