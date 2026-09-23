@@ -214,7 +214,7 @@ PID, because PIDs are reused and the pool agent differences per process.
   `brew install docker` would otherwise replace the ADR 0044 `docker` shim for
   good, leaving a nested `docker build` to succeed against the wrong daemon.
   The hazard is narrowed rather than closed — `~/.npm-global/bin`, `~/.local/bin`,
-  `~/.cargo/bin` and the nix profiles all still precede `/usr/local/bin`, so a `docker` CLI
+  `~/.cargo/bin`, `~/go/bin` and the nix profiles all still precede `/usr/local/bin`, so a `docker` CLI
   installed through any user prefix disarms ADR 0044 the same way.
 - A source's origin, when it has one, arrives at `/.discobox/origins/<slug>` as a
   plain read-only bind the pool host already made directly onto that final path

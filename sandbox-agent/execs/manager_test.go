@@ -209,7 +209,7 @@ func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
 func testEffectiveEnv() map[string]string {
 	return map[string]string{
 		"NPM_CONFIG_PREFIX": "/home/darren/.npm-global",
-		"PATH":              "/home/darren/.npm-global/bin:/home/darren/.cargo/bin:/home/darren/.nix-profile/bin:/home/darren/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"PATH":              "/home/darren/.npm-global/bin:/home/darren/.cargo/bin:/home/darren/go/bin:/home/darren/.nix-profile/bin:/home/darren/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	}
 }
 
