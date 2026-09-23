@@ -1,6 +1,6 @@
 # 0101 — One guest image for every VM backend, and the kernel is a separate artifact
 
-- **Status**: Accepted
+- **Status**: Accepted (§3 and libkrun's half of §1's pin superseded by [0148](0148-a-linux-release-defaults-to-libkrun-and-ships-what-it-needs.md))
 - **Date**: 2026-09-04
 
 ## Context

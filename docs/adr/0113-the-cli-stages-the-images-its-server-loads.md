@@ -1,6 +1,6 @@
 # 0113 — A release CLI stages its server's images, and a pool loads them before it pulls
 
-- **Status**: Accepted
+- **Status**: Accepted (the deferred libkrun staging superseded by [0148](0148-a-linux-release-defaults-to-libkrun-and-ships-what-it-needs.md) §6)
 - **Date**: 2026-09-11
 - **Relates to**: [0099](0099-the-cli-downloads-the-server-it-starts.md), whose staged server is what names the images; [0069](0069-staging-pool-images-is-a-condition.md), whose staging condition is unchanged and now usually loads rather than pulls; [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) §6, whose digest pin every loaded image has to satisfy; [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md) §3, whose digest-pinned guest image is staged too.
 
