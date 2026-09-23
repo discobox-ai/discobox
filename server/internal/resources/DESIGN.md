@@ -47,9 +47,20 @@ operating system judge at all. Every refusal on that path is the same answer —
 no verdict — and the reason travels back so the pool can say why.
 
 Judge-mode discoboxes are left out of listings unless asked for
-(`store.IncludingJudges`, the API's `includeJudge`): a judge runs no terminal
-and holds no work, so it is not what asking what is in a project means. For the
-same reason they are not counted against a pool or project being deleted.
+(`store.IncludingJudges`, the API's `includeJudge`, `discobox admin box ls
+--include-judge`): a judge runs no terminal and holds no work, so it is not
+what asking what is in a project means. For the same reason it is not counted
+against a pool or a project being deleted: a judge is not work anybody would
+lose.
+
+Naming one is another matter — the CLI's ID resolution includes judges, so a
+judge can be got, shelled into, stopped and taken away like any other discobox.
+Taking it away is not permanent: the convergence makes another, which is how a
+judge is rebuilt after its harness image changes. The one thing it will not do
+is run its harness, which the sandbox agent refuses in judge mode (see
+[`sandbox-agent/DESIGN.md`](../../../sandbox-agent/DESIGN.md)): launching it
+would run the project's agent, with the judge's own credential, in the discobox
+whose purpose is to have no work in it.
 Everything else — pool and harness resolution, the image pin, the harness
 credential's sentinel — is the ordinary create, which is the point of a judge
 being a discobox at all.

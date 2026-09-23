@@ -80,6 +80,7 @@ func (a *App) newSandboxCommand() *cobra.Command {
 }
 
 func (a *App) newSandboxListCommand() *cobra.Command {
+	var includeJudge bool
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
@@ -93,7 +94,11 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			bodyRes, err := client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{ProjectId: projectID})
+			params := apiclientgen.ListSandboxesParams{ProjectId: projectID}
+			if includeJudge {
+				params.IncludeJudge = apiclientgen.NewOptBool(true)
+			}
+			bodyRes, err := client.ListSandboxes(cmd.Context(), params)
 			if err != nil {
 				return err
 			}
@@ -104,6 +109,8 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			return a.writeSandboxes(cmd, body.GetSandboxes(), true, nil)
 		},
 	}
+	cmd.Flags().BoolVar(&includeJudge, "include-judge", false,
+		"Also list the project's judge, which is left out otherwise: it runs no terminal and holds none of your work")
 	a.addQuietFlag(cmd)
 	return cmd
 }
