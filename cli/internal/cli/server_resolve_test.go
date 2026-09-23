@@ -401,8 +401,8 @@ func TestLocalServerEnvNamesTheImageCache(t *testing.T) {
 func TestExplicitReleaseStagesImagesWithADevelopmentBinary(t *testing.T) {
 	registry := imagecachetest.NewRegistry(t)
 	image := registry.Publish("x/agent", "v1", []byte("base"))
-	m := releasemanifest.Manifest{Format: 1, Version: "v0.8.0", Images: releasemanifest.Images{
-		PoolAgent: image.Reference, SandboxAgent: image.Reference, VM: image.Reference, Kernel: image.Reference,
+	m := releasemanifest.Manifest{Format: releasemanifest.Format, Version: "v0.8.0", Images: releasemanifest.Images{
+		PoolAgent: image.Reference, SandboxAgent: image.Reference, VM: image.Reference, Libkrun: image.Reference,
 		Harnesses: map[string]string{"shell": image.Reference},
 	}}
 	data, err := json.Marshal(m)
@@ -441,6 +441,9 @@ func TestReleaseManifestDownloadsInsteadOfUsingDevelopmentSibling(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// v0.8.0 is format 1; written back out, it must be the current format.
+	m.Format = releasemanifest.Format
+	m.Images.Libkrun = "ghcr.io/discobox-ai/discobox-libkrun:v0.8.0"
 	m.Servers = []serverstage.Manifest{binary}
 	data, err := json.Marshal(m)
 	if err != nil {
@@ -480,6 +483,9 @@ func TestReleaseManifestRejectsCorruptServerDownload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// v0.8.0 is format 1; written back out, it must be the current format.
+	m.Format = releasemanifest.Format
+	m.Images.Libkrun = "ghcr.io/discobox-ai/discobox-libkrun:v0.8.0"
 	m.Servers = []serverstage.Manifest{binary}
 	data, err := json.Marshal(m)
 	if err != nil {

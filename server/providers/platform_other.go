@@ -4,9 +4,12 @@ package providers
 
 import (
 	"context"
+	"runtime"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/libkrun"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
+	"github.com/discobox-ai/discobox/version"
 )
 
 // registerPlatformProviderFactories registers no additional providers. The
@@ -16,9 +19,19 @@ func registerPlatformProviderFactories(*sandbox.ProviderManager, poolruntime.Poo
 }
 
 // DefaultBootImages are the images the provider this server installs by default
-// on this OS boots before it can run a pool (ADR 0113 §1). Linux defaults to the
-// host's Docker, which boots nothing; libkrun, which does, is chosen by hand.
-func DefaultBootImages() []string { return nil }
+// on this OS boots before it can run a pool (ADR 0113 §1). configured is the
+// server's defaultProvider setting. On amd64 Linux, libkrun — a release build's
+// default, or configured — boots its image (ADR 0148 §6); the host's Docker, a
+// development build's default, boots nothing.
+func DefaultBootImages(configured string) []string {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		return nil
+	}
+	if configured == libkrun.ProviderType || (configured == "" && version.Released()) {
+		return []string{libkrun.DefaultImage}
+	}
+	return nil
+}
 
 // ensurePlatformPrerequisites has nothing to check. There is no platform
 // backend here: pools run on the portable providers, which are configured per

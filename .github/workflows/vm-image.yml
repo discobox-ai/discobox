@@ -8,15 +8,23 @@
 # would make a VM fix require a product release and a product release imply a
 # new VM image.
 #
-# There are two artifacts, on two tag lines, because they move on unrelated
+# There are three images, on three tag lines, because they move on unrelated
 # clocks:
 #
-#   vm/v*         discobox-vm         one guest, linux/arm64 + linux/amd64.
-#                                     `vz` boots the arm64 variant and `libkrun`
-#                                     the amd64 one, from one Dockerfile.
-#   vm-kernel/v*  discobox-vm-kernel  the libkrunfw-patched kernel — a separate
-#                                     workflow, because it compiles Linux and
-#                                     must not run on a guest change.
+#   vm/v*                discobox-vm               one guest, linux/arm64 +
+#                                                  linux/amd64. `vz` boots the
+#                                                  arm64 variant; the amd64 one
+#                                                  reaches libkrun through
+#                                                  discobox-vm-krun.
+#   libkrun-runtime/v*   discobox-libkrun-runtime  libkrun's patched kernel,
+#                                                  libkrun and passt — a separate
+#                                                  workflow, because it compiles
+#                                                  Linux and must not run on a
+#                                                  guest change.
+#   vm-krun/v*           discobox-vm-krun          what libkrun boots: the amd64
+#                                                  guest's root disk and the
+#                                                  runtime, packaged from pinned
+#                                                  digests of both (vm-krun.yml).
 #
 # "Pool image" is deliberately not used for either — that already means the
 # pool-agent container (dockerworker.DefaultPoolImage).
@@ -31,9 +39,10 @@ on:
   pull_request:
     paths:
       - "vm-image/**"
-      # The kernel is built by vm-kernel.yml and changes on its own clock;
-      # nothing under it reaches this build.
-      - "!vm-image/kernel/**"
+      # libkrun's runtime and packaging are built by libkrun-runtime.yml and
+      # vm-krun.yml and change on their own clocks; nothing under them reaches
+      # this build.
+      - "!vm-image/libkrun/**"
       - "pool-agent/vsock/**"
       - "pool-agent/cmd/discobox-vsock-guest/**"
       - ".github/workflows/vm-image.yml"

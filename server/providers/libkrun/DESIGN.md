@@ -1,32 +1,35 @@
 # libkrun Provider Design
 
-This package implements ADR 0013 as amended by ADR 0062 §9. It is a
+This package implements ADR 0013 as amended by ADR 0062 §9 and ADR 0148. It is a
 `dockerworker.Driver`: the shared engine still owns the pool-agent container and
 Docker behavior, while this package owns one local libkrun microVM per pool.
 
 ## The invariant
 
-A linux/amd64 machine needs `discobox-server`, KVM, and two things the launcher
-reaches at run time: `passt` on `PATH`, and `libkrun.so.1` somewhere the dynamic
-loader looks. Nothing else, including for guest artifacts: the root filesystem
-and the kernel are fetched by digest through the server's image store — from a
-registry the first time — and no image is built on the host to start a pool.
+A linux/amd64 machine needs `discobox-server` and KVM. Nothing else: the root
+filesystem, the kernel, libkrun, and passt all arrive in one image, fetched by
+digest through the server's image store — staged by a release CLI before the
+server starts, otherwise from a registry on first use (ADR 0148 §5–§6). Nothing
+is built or installed on the host to start a pool.
 
-Both are dlopened or exec'd by name, never linked, so "somewhere the loader
-looks" is the whole of the install contract and a Nix store path does not
-satisfy it by itself. `nix develop .#libkrun` sets `LD_LIBRARY_PATH` and is the
-development answer; `nix build .#libkrun-runtime` builds the same closure for a
-machine that is not in a dev shell, which then names the library in the
-provider's `libkrunPath` or puts it on the loader's path itself.
+libkrun is dlopened and passt exec'd by path, from the directory the image was
+extracted into, so neither has an install location. `libkrunPath` and
+`passtPath` override them — `nix develop .#libkrun` supplies Nix-built ones —
+and are otherwise unset.
+
+This is what makes libkrun Linux's default in a release build
+(`service.defaultProviderType`). A first start that would install it runs
+`CheckHost` — the platform, `/dev/kvm`, and the image's libkrun loaded in a
+launcher child — and a host that fails holds the start for a choice rather than
+installing Docker in its place (ADR 0148 §2; see
+[Startup and Readiness](../../DESIGN.md#startup-and-readiness)).
 
 Everything is ordered off that:
 
-1. `guestimage` fetches the shared guest image and the kernel image through the
-   server's image store (ADR 0113 §5) and extracts `root.ext4` and `vmlinux`,
-   one directory per digest. The pool reports this as
-   `sandbox.PoolPhaseFetchingVMImage`, with byte counts while anything is
-   downloaded. libkrun is not Linux's default provider, so a CLI does not stage
-   these ahead of a first run; the first pool fetches them into the store.
+1. `guestimage` resolves the libkrun image through the server's image store
+   (ADR 0113 §5) and extracts its four artifacts, one directory per digest. The
+   pool reports this as `sandbox.PoolPhaseFetchingVMImage`, with byte counts
+   while anything is downloaded.
 2. The launcher child boots the VM and its Docker daemon comes up.
 3. With development image sync on, the engine converges the watcher's pool,
    sandbox-base, and harness images onto that daemon — copied from the host
@@ -112,15 +115,17 @@ host TAP/TUN/veth device.
 
 ## Guest artifact boundary
 
-Two images, resolved by `server/providers/guestimage`:
+One image, `discobox-vm-krun` (`DefaultImage`, `linux/amd64`), resolved by
+`server/providers/guestimage` (ADR 0148 §5). It packages two builds without
+compiling either:
 
-- **`root.ext4`**, from the shared `discobox-vm` image
-  (`guestimage.DefaultVMImage`, `linux/amd64`). Read-only, shared by every pool
-  on the host, and the same artifact set `vz` boots on arm64.
-- **`vmlinux`**, from `discobox-vm-kernel` (`DefaultKernelImage`). libkrunfw's
-  patched kernel, which is the one thing this backend cannot take from a guest
-  image every backend shares: no distribution kernel boots under libkrun. The
-  guest image's own kernel and initrd are never asked for.
+- **`root.ext4`**, copied from the shared `discobox-vm` guest — the same root
+  filesystem `vz` boots on arm64. Read-only, shared by every pool on the host.
+  The guest's own kernel and initrd are not in the image.
+- **`vmlinux`, `libkrun.so.1`, `passt`**, from the libkrun runtime build
+  (`vm-image/libkrun`): libkrunfw's patched kernel, which no distribution kernel
+  can stand in for, the upstream libkrun that boots it — which needs no
+  libkrunfw, being handed its kernel — and a static passt.
 
 Disks are attached in a fixed order the guest depends on — root, data, cache
 become `/dev/vda`, `/dev/vdb`, `/dev/vdc` — and all three are raw.
@@ -133,28 +138,33 @@ existing image when the configured size is raised and never shrinks one, the
 guest formats each disk on first boot, and runs `resize2fs` on every mount so
 the filesystem follows. No `mkfs.ext4` runs on the host.
 
-Both are pinned by digest — `guestimage.DefaultVMImage` from the `vm/v*` line,
-`DefaultKernelImage` from `vm-kernel/v*` — and `guestimage` checks the image's
-declared architecture, because a single-architecture manifest is returned
-whatever platform was asked for. A complete local build from
-`task build:vm-guest` or `task build:vm-kernel` lands in the `local/` directory
-the resolver prefers over the published image, and a resolve failure names the
-task that answers it. `guestImageDir` and `kernelImageDir` instead assert a
-directory and fail when it is incomplete.
+The image is one pin because a host can use none of the four without the
+other three, and `guestimage` checks its declared architecture, because a
+single-architecture manifest is returned whatever platform was asked for. A
+release server boots the image its release manifest names and never a local
+build. Otherwise a complete local build from `task build:vm-krun` lands in the
+`local/` directory the resolver prefers over the published image, and a
+resolve failure names that task. `vmImageDir` instead asserts a directory and
+fails when it is incomplete. A saved configuration still carrying the
+superseded `guestImage*`/`kernelImage*` keys loads with a warning naming them —
+it is the user's record, and a provider that stopped loading would take its
+pools with it — and a write that sets one is refused. The caches they filled,
+`.images/{guest,kernel}`, are no longer read.
 
-`GuestImageBuildSpec` builds the guest image (`vm-image/Dockerfile`,
-`linux/amd64`) on the pool's own Docker and exports it into the guest
-resolver's `local/` directory, the same loop macOS needs (ADR 0062 §7). It is not
-macOS-specific: it answers on a pool whose agent never started, which is the
-pool a broken guest image produces. The kernel is not buildable this way — it
-has its own image and its own clock.
+`GuestImageBuildSpec` builds the guest (`vm-image/Dockerfile`, `linux/amd64`)
+on the pool's own Docker, completes it with the kernel, libkrun, and passt of
+the image this driver resolves today, and exports the whole into the
+resolver's `local/` directory — the same loop macOS needs (ADR 0062 §7). It is
+not macOS-specific: it answers on a pool whose agent never started, which is
+the pool a broken guest image produces. The kernel and runtime are not
+buildable this way; they have their own build and their own clock.
 
 ## Storage layout
 
 | Path | Holds |
 | --- | --- |
 | `<stateDir>/<poolID>/{data,cache}.raw` | the pool's durable and disposable disks |
-| `<default stateDir>/.images/{guest,kernel}/` | artifacts extracted from each fetched digest, and `local/` for a local build |
+| `<default stateDir>/.images/vm/` | artifacts extracted from each fetched digest, and `local/` for a local build |
 | `<runtimeDir>/<poolID>/` | `passt.sock` and the host-listening VSOCK sockets, the manifest `config.json`, `console.log`, `launcher.log`, `passt.log` |
 
 `stateDir` defaults under `XDG_DATA_HOME` and `runtimeDir` under
@@ -162,12 +172,12 @@ has its own image and its own clock.
 exists, so disks created under the old provider name are still found.
 
 The image cache follows neither that fallback nor a configured `stateDir`: it is
-always under the default directory, because `task build:vm-guest` has to write
+always under the default directory, because `task build:vm-krun` has to write
 where the resolver reads and a task cannot know one provider instance's
 configuration. This provider's `imageCacheDir` moves that extraction cache —
 the compressed images themselves live in the server's image store, the server
-configuration's own `imageCacheDir` — and the `local/` build directories move
-separately, with `guestImageLocalDir` and `kernelImageLocalDir`. The leading dot is what
+configuration's own `imageCacheDir` — and the `local/` build directory moves
+separately, with `vmImageLocalDir`. The leading dot is what
 keeps `.images` from colliding with a pool in the default layout — a pool ID
 must start with a letter or a digit, so no pool can take that name — and where
 `stateDir` is configured elsewhere the two are not in the same directory at all.

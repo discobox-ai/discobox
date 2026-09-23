@@ -170,6 +170,9 @@ func TestAutolaunchKeepsSelectedOlderServerAcrossInvocations(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				// v0.8.0 is format 1; written back out, it must be the current format.
+				full.Format = releasemanifest.Format
+				full.Images.Libkrun = "ghcr.io/discobox-ai/discobox-libkrun:v0.8.0"
 				full.Servers = []serverstage.Manifest{manifest}
 				data, err := json.Marshal(full)
 				if err != nil {

@@ -60,10 +60,11 @@ git fetch upstream --tags
 git tag -l 'v[0-9]*' --sort=-v:refname | head -6
 ```
 
-The glob matters. `'v*'` also matches `vm/vN` and `vm-kernel/vN` — the VM guest
-image and libkrun kernel tags, on their own release lines, which sort above every
-CLI tag, so it returns a screen of the one thing this decision must ignore and no
-CLI version at all. `'v[0-9]*'` excludes them.
+The glob matters. `'v*'` also matches `vm/vN` and `vm-krun/vN` — the VM guest
+and libkrun image tags, on their own release lines, which sort above every CLI
+tag, so it returns a screen of the one thing this decision must ignore and no
+CLI version at all. `'v[0-9]*'` excludes them, and `libkrun-runtime/vN` with
+them.
 
 The scheme is plain `vMAJOR.MINOR.PATCH`.
 

@@ -730,6 +730,17 @@ of `StartTimeout` on every command that autolaunches. A server started as a user
 service is the exception: systemd owns that process and the CLI has no handle on
 it, so only the probes speak for it.
 
+A server that answers `needs-choice` is not waited on at all: its first start
+is held because its default provider cannot run here, and waiting will not end
+that (ADR 0148 §3). `EnsureRunning` returns it as `endpoint.ChoiceRequiredError`,
+and `ensureLocalServer` asks (`answerDefaultProviderChoice`): it says why libkrun
+cannot run, that Docker runs sandboxes on this machine's kernel with no VM
+boundary, and `Use Docker? [y/N]`. Yes posts the answer
+(`endpoint.ChooseDefaultProvider`) and waits for the start to finish as it would
+any other; nothing restarts. No, `--quiet`, or no terminal on stdin and stderr
+fails with the same reason and `discobox admin server choose-provider docker`,
+which answers a server started any other way. A script is never answered yes.
+
 That log is the launched server's only account of itself: it has no terminal,
 and nothing else records what it did. So it lives with the server's state rather
 than beside the socket, which sits in a runtime directory the system clears; it

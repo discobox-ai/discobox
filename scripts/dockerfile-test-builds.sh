@@ -112,9 +112,15 @@ build_dockerfile() {
       # .github/workflows/vm-image.yml already does.
       echo "[dockerfile-test-builds] skipping $dockerfile (built by the VM image workflow)"
       ;;
-    vm-image/kernel/Dockerfile)
-      # This one compiles Linux. Same reasoning, more so.
-      echo "[dockerfile-test-builds] skipping $dockerfile (built by the VM image workflow)"
+    vm-image/libkrun/Dockerfile)
+      # libkrun's runtime compiles Linux and libkrun. Same reasoning, more so.
+      echo "[dockerfile-test-builds] skipping $dockerfile (built by the libkrun runtime workflow)"
+      ;;
+    vm-image/libkrun/package/Dockerfile)
+      # It compiles nothing but pulls the pinned guest and runtime images, and a
+      # runtime pin may name one that is not published yet. Whether the pins
+      # resolve is what .github/workflows/vm-krun.yml checks.
+      echo "[dockerfile-test-builds] skipping $dockerfile (built by the vm-krun workflow)"
       ;;
     *)
       # Test fixtures and anything new: a self-contained image whose context is

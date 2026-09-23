@@ -372,7 +372,8 @@ a running development server.
 The pool VM guest — the kernel, initrd, and root filesystem a VM-backed pool
 boots — is built from [`vm-image/`](vm-image/DESIGN.md) and released on its own
 `vm/v*` line with its own workflow (ADR 0062 §3); the server pins its digest. It
-is one image for every VM backend: `vz` boots its `linux/arm64` variant and
-`libkrun` the `linux/amd64` one (ADR 0101). The libkrunfw-patched kernel libkrun
-needs is the one artifact it cannot take from there, so it has a third line of
-its own, `vm-kernel/v*`.
+is one guest for every VM backend: `vz` boots its `linux/arm64` variant and
+`libkrun` the `linux/amd64` one (ADR 0101). libkrun also needs a host runtime it
+cannot take from there — the libkrunfw-patched kernel, libkrun, and passt — built
+on its own `libkrun-runtime/v*` line, and boots one image packaging both,
+`vm-krun/v*` (ADR 0148 §5).

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/discobox-ai/discobox/server/internal/config"
@@ -26,9 +27,15 @@ func Images() ([]string, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	if cfg.Release != nil {
-		return cfg.Release.Images.References(runtime.GOOS, runtime.GOARCH), nil
+		refs := cfg.Release.Images.References(runtime.GOOS, runtime.GOARCH)
+		// A server told to install Docker boots no libkrun image, and staging
+		// one would download hundreds of megabytes for nothing.
+		if cfg.DefaultProvider == "docker" {
+			refs = slices.DeleteFunc(refs, func(ref string) bool { return ref == cfg.Release.Images.Libkrun })
+		}
+		return refs, nil
 	}
-	images := append([]string{}, providers.DefaultBootImages()...)
+	images := append([]string{}, providers.DefaultBootImages(cfg.DefaultProvider)...)
 	images = append(images, dockerworker.EffectivePoolImage("", dockerworker.ServerDefaults{PoolImage: cfg.DockerPoolImage}), cfg.DefaultSandboxImage)
 	for _, definition := range harnessdefs.Seeds(cfg.HarnessImages, false) {
 		images = append(images, definition.Image)

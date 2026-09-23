@@ -144,7 +144,8 @@ while it runs. CI takes about seven minutes.
 
 - **Green** — every check is `pass` or `skipping`, and CI's six jobs (`check`,
   `test`, `verify`, `build`, `darwin`, `windows`) are among them. Path-filtered
-  workflows (`vm-image`, `vm-kernel`) appear only when their paths changed.
+  workflows (`vm-image`, `libkrun-runtime`, `vm-krun`) appear only when their
+  paths changed.
 - **`cancel`** — CI cancels a PR's run when a newer push supersedes it. A
   cancelled check on an older commit is not a failure; one on the head commit
   is — re-list, then re-run it.

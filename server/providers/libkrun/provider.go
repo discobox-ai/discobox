@@ -2,18 +2,19 @@
 // microVM while dockerworker.Engine continues to own the pool-agent container
 // and Docker behavior inside that VM.
 //
-// The VM boots the same guest image a vz pool does, pulled straight from a
-// registry by server/providers/guestimage, plus a libkrunfw-patched kernel that
-// is libkrun's alone. Nothing is built on the host to start a pool, and libkrun
-// itself is dlopened by the launcher child rather than linked into the server,
-// so a machine that never enables this provider needs none of it installed
-// (ADR 0013, ADR 0062 §9).
+// The VM boots one image, pulled from a registry by
+// server/providers/guestimage: the root disk of the guest a vz pool boots, the
+// libkrunfw-patched kernel that is libkrun's alone, and the host runtime that
+// boots them — libkrun itself and passt (ADR 0148 §5). Nothing is built or
+// installed on the host to start a pool, and libkrun is dlopened by the
+// launcher child rather than linked into the server (ADR 0062 §9).
 package libkrun
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,25 +55,30 @@ const (
 	labelProviderType = "discobox.provider_type"
 )
 
-// The artifacts each image carries. The guest image publishes a kernel and an
-// initrd too, and this backend wants neither: libkrun boots the patched kernel
-// from its own image, which has every driver this guest needs built in.
+// The artifacts the libkrun image carries (ADR 0148 §5): the guest's root disk,
+// the libkrunfw-patched kernel libkrun boots it with, and the host runtime —
+// the library the launcher dlopens and the passt it execs. kernel.config rides
+// along so what booted can be read back off the artifact, and nothing here
+// needs it.
 const (
-	rootArtifact   = "root.ext4"
-	kernelArtifact = "vmlinux"
+	rootArtifact    = "root.ext4"
+	kernelArtifact  = "vmlinux"
+	libraryArtifact = "libkrun.so.1"
+	passtArtifact   = "passt"
 )
 
-// DefaultKernelImage is the published libkrun guest kernel.
-//
-// It is a second release line rather than a file in the guest image because the
-// two move on unrelated clocks: this changes when libkrunfw or upstream Linux
-// does, the guest when Debian or Docker does. Folding them together would make
-// every guest rebuild compile a kernel and every kernel bump republish a
-// userland.
-//
-// A digest rather than a tag, for the reason the guest image is one: a tag
-// would let whoever runs the server decide which kernel they boot.
-const DefaultKernelImage = "ghcr.io/discobox-ai/discobox-vm-kernel@sha256:23f0ce879e1dc3939fd0f498237d857d11478bec1c570d3f7222194ccf81955f"
+// runtimeArtifacts are the files a guest built on its own lacks: everything in
+// the libkrun image but the root disk. GuestImageBuildSpec pairs a freshly built
+// guest with them so the local directory it writes is a whole image.
+var runtimeArtifacts = []string{kernelArtifact, libraryArtifact, passtArtifact}
+
+// DefaultImage is the published libkrun image: the shared guest's root disk
+// packaged with the kernel and runtime built for it (vm-image/libkrun). It is
+// one pin because a host can use none of the four files without the other
+// three. `task vm:publish-krun` reports the digest to pin here, and a digest
+// is what belongs here: a tag would let whoever runs the server decide which
+// kernel and which libkrun they boot.
+const DefaultImage = "ghcr.io/discobox-ai/discobox-vm-krun:v1"
 
 // guestImageDockerfile is the Dockerfile in a discobox checkout that produces
 // the guest artifact set, in the path form BuildKit's frontend wants. Its
@@ -88,25 +94,26 @@ const guestImagePlatform = "linux/amd64"
 type Config struct {
 	poolruntime.PoolPolicy
 
-	// GuestImage and KernelImage override the published images. Each has a
-	// directory pair with the same meaning as vz's: an override that is an
-	// assertion, and a local build that wins when it is complete.
-	GuestImage          string `json:"guestImage,omitempty"`
-	GuestImageDir       string `json:"guestImageDir,omitempty"`
-	GuestImageLocalDir  string `json:"guestImageLocalDir,omitempty"`
-	KernelImage         string `json:"kernelImage,omitempty"`
-	KernelImageDir      string `json:"kernelImageDir,omitempty"`
-	KernelImageLocalDir string `json:"kernelImageLocalDir,omitempty"`
-	// ImageCacheDir holds one directory per pulled image digest, for both.
-	// Sharing it is safe and deliberate: the cache is content-addressed.
+	// VMImage overrides the published libkrun image. Its directory pair has
+	// the same meaning as vz's guest pair: an override that is an assertion,
+	// and a local build that wins when it is complete.
+	//
+	// The keys are new rather than the guestImage/kernelImage pairs this
+	// replaced, because those named a guest and a kernel on their own and
+	// neither is a whole libkrun image (ADR 0148 §5). See supersededKeys for
+	// what becomes of a configuration that still carries them.
+	VMImage         string `json:"vmImage,omitempty"`
+	VMImageDir      string `json:"vmImageDir,omitempty"`
+	VMImageLocalDir string `json:"vmImageLocalDir,omitempty"`
+	// ImageCacheDir holds one directory per pulled image digest.
 	ImageCacheDir string `json:"imageCacheDir,omitempty"`
 
 	StateDir           string `json:"stateDir,omitempty"`
 	RuntimeDir         string `json:"runtimeDir,omitempty"`
 	ControlPlaneSocket string `json:"controlPlaneSocket,omitempty"`
-	// PasstPath and LibkrunPath name the two host dependencies this backend
-	// has. Both are resolved by the loader or PATH when unset, which is what
-	// installing the runtime environment is for.
+	// PasstPath and LibkrunPath override the passt and libkrun the image
+	// carries — with `nix develop .#libkrun`'s, for one. Unset, the launcher
+	// uses the image's.
 	PasstPath    string `json:"passtPath,omitempty"`
 	LibkrunPath  string `json:"libkrunPath,omitempty"`
 	WorkerImage  string `json:"workerImage,omitempty"`
@@ -120,21 +127,44 @@ func Decode(data json.RawMessage) (Config, error) {
 	return poolruntime.DecodeConfig[Config](data, ProviderType)
 }
 
+// supersededKeys are the configuration keys the one libkrun image replaced
+// (ADR 0148 §5). A saved configuration carrying one still loads — it is the
+// user's record, and a provider that stopped loading would take its pools
+// with it — but the key does nothing, so loading says so, and a write that
+// sets one is refused rather than accepted and ignored.
+var supersededKeys = []string{"guestImage", "guestImageDir", "guestImageLocalDir", "kernelImage", "kernelImageDir", "kernelImageLocalDir"}
+
+// supersededKeysIn names the superseded keys data sets, in supersededKeys order.
+func supersededKeysIn(data json.RawMessage) []string {
+	var raw map[string]json.RawMessage
+	if len(data) == 0 || json.Unmarshal(data, &raw) != nil {
+		return nil
+	}
+	var found []string
+	for _, key := range supersededKeys {
+		if value, ok := raw[key]; ok && string(value) != `""` && string(value) != "null" {
+			found = append(found, key)
+		}
+	}
+	return found
+}
+
 func Validate(data json.RawMessage) error {
 	cfg, err := Decode(data)
 	if err != nil {
 		return err
 	}
+	if keys := supersededKeysIn(data); len(keys) > 0 {
+		return fmt.Errorf("libkrun %s no longer applies: a libkrun pool boots one image carrying the guest, the kernel, libkrun and passt; use vmImage, vmImageDir or vmImageLocalDir", strings.Join(keys, ", "))
+	}
 	for field, value := range map[string]string{
-		"guestImageDir":       cfg.GuestImageDir,
-		"guestImageLocalDir":  cfg.GuestImageLocalDir,
-		"kernelImageDir":      cfg.KernelImageDir,
-		"kernelImageLocalDir": cfg.KernelImageLocalDir,
-		"imageCacheDir":       cfg.ImageCacheDir,
-		"stateDir":            cfg.StateDir,
-		"runtimeDir":          cfg.RuntimeDir,
-		"passtPath":           cfg.PasstPath,
-		"libkrunPath":         cfg.LibkrunPath,
+		"vmImageDir":      cfg.VMImageDir,
+		"vmImageLocalDir": cfg.VMImageLocalDir,
+		"imageCacheDir":   cfg.ImageCacheDir,
+		"stateDir":        cfg.StateDir,
+		"runtimeDir":      cfg.RuntimeDir,
+		"passtPath":       cfg.PasstPath,
+		"libkrunPath":     cfg.LibkrunPath,
 	} {
 		if path := strings.TrimSpace(value); path != "" && !filepath.IsAbs(path) {
 			return fmt.Errorf("libkrun %s must be an absolute path", field)
@@ -160,15 +190,10 @@ func Validate(data json.RawMessage) error {
 	if cfg.DataDiskGiB > 4096 || cfg.CacheDiskGiB > 4096 {
 		return fmt.Errorf("libkrun disk sizes must not exceed 4096 GiB")
 	}
-	// Building the resolvers is the configuration check: it is what rejects an
+	// Building the resolver is the configuration check: it is what rejects an
 	// unparseable reference or a relative path, and it touches no network.
-	if _, err := guestResolver(cfg, dockerworker.ServerDefaults{}); err != nil {
-		return err
-	}
-	if _, err := kernelResolver(cfg, dockerworker.ServerDefaults{}); err != nil {
-		return err
-	}
-	return nil
+	_, err = imageResolver(cfg, dockerworker.ServerDefaults{})
+	return err
 }
 
 func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
@@ -177,21 +202,21 @@ func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dock
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
 	}
-	guest, err := guestResolver(cfg, serverDefaults)
-	if err != nil {
-		return nil, err
+	if keys := supersededKeysIn(instance.Config); len(keys) > 0 {
+		slog.WarnContext(ctx, "libkrun provider configuration sets keys that no longer apply; its pools boot the libkrun image instead",
+			"provider_id", instance.ID, "keys", keys, "image", defaultString(cfg.VMImage, DefaultImage))
 	}
-	kernel, err := kernelResolver(cfg, serverDefaults)
+	image, err := imageResolver(cfg, serverDefaults)
 	if err != nil {
 		return nil, err
 	}
 	progress := sandbox.PoolProgressReporterFor(poolManager)
-	driver, err := NewDriver(driverConfig(cfg, guest, kernel, progress))
+	driver, err := NewDriver(driverConfig(cfg, image, progress))
 	if err != nil {
 		return nil, err
 	}
@@ -224,11 +249,10 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 	}
 }
 
-func driverConfig(cfg Config, guest, kernel *guestimage.Resolver, progress sandbox.PoolProgressReporter) DriverConfig {
+func driverConfig(cfg Config, image *guestimage.Resolver, progress sandbox.PoolProgressReporter) DriverConfig {
 	parsed, _ := endpoint.Parse(effectiveControlPlaneSocket(cfg.ControlPlaneSocket))
 	return DriverConfig{
-		Guest:              guest,
-		Kernel:             kernel,
+		Image:              image,
 		StateDir:           effectiveStateDir(cfg.StateDir),
 		RuntimeDir:         effectiveRuntimeDir(cfg.RuntimeDir),
 		ControlPlaneSocket: parsed.Value,
@@ -242,48 +266,32 @@ func driverConfig(cfg Config, guest, kernel *guestimage.Resolver, progress sandb
 	}
 }
 
-// guestResolver builds the root filesystem resolver. Only the root is asked
-// for: the guest image's kernel and initrd belong to backends that boot a
-// distribution kernel, and extracting artifacts this VM will never load would
-// cost a machine hundreds of megabytes of cache for nothing.
+// imageResolver builds the resolver for the one image a libkrun pool boots.
+// The guest image's own kernel and initrd belong to backends that boot a
+// distribution kernel and are not in it at all.
 //
-// Both resolvers fetch through images, the server's image store; Validate,
-// fetching nothing, passes none.
-func guestResolver(cfg Config, defaults dockerworker.ServerDefaults) (*guestimage.Resolver, error) {
+// It fetches through images, the server's image store; Validate, fetching
+// nothing, passes none. A release server boots the image its release manifest
+// names and never a local build, so what a release runs is what it shipped.
+func imageResolver(cfg Config, defaults dockerworker.ServerDefaults) (*guestimage.Resolver, error) {
+	localDir := defaultString(cfg.VMImageLocalDir, effectiveImageLocalDir(""))
 	if defaults.Release != nil {
-		cfg.GuestImage = defaults.Release.Images.VM
-		cfg.GuestImageDir = ""
-	}
-	localDir := defaultString(cfg.GuestImageLocalDir, effectiveGuestLocalDir(""))
-	if defaults.Release != nil {
+		cfg.VMImage = defaults.Release.Images.Libkrun
+		cfg.VMImageDir = ""
 		localDir = ""
 	}
 	return guestimage.New(guestimage.Config{
 		Images:      defaults.ImageCache,
-		Reference:   defaultString(cfg.GuestImage, guestimage.DefaultVMImage),
-		OverrideDir: strings.TrimSpace(cfg.GuestImageDir),
+		Reference:   defaultString(cfg.VMImage, DefaultImage),
+		OverrideDir: strings.TrimSpace(cfg.VMImageDir),
 		LocalDir:    localDir,
-		CacheDir:    effectiveImageCacheDir(cfg.ImageCacheDir, "guest"),
-		Artifacts:   []guestimage.Artifact{{Name: rootArtifact}},
-	})
-}
-
-func kernelResolver(cfg Config, defaults dockerworker.ServerDefaults) (*guestimage.Resolver, error) {
-	if defaults.Release != nil {
-		cfg.KernelImage = defaults.Release.Images.Kernel
-		cfg.KernelImageDir = ""
-	}
-	localDir := defaultString(cfg.KernelImageLocalDir, effectiveKernelLocalDir(""))
-	if defaults.Release != nil {
-		localDir = ""
-	}
-	return guestimage.New(guestimage.Config{
-		Images:      defaults.ImageCache,
-		Reference:   defaultString(cfg.KernelImage, DefaultKernelImage),
-		OverrideDir: strings.TrimSpace(cfg.KernelImageDir),
-		LocalDir:    localDir,
-		CacheDir:    effectiveImageCacheDir(cfg.ImageCacheDir, "kernel"),
-		Artifacts:   []guestimage.Artifact{{Name: kernelArtifact}},
+		CacheDir:    effectiveImageCacheDir(cfg.ImageCacheDir),
+		Artifacts: []guestimage.Artifact{
+			{Name: rootArtifact},
+			{Name: kernelArtifact},
+			{Name: libraryArtifact},
+			{Name: passtArtifact},
+		},
 	})
 }
 
@@ -329,12 +337,9 @@ func Definition() sandbox.ProviderDefinition {
 		// Each pool VM is sized from the pool's own size first (see vmsize).
 		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			{Key: "guestImage", Label: "Guest Image", Type: "string", Placeholder: guestimage.DefaultVMImage, Description: "Published guest image carrying the root filesystem.", Advanced: true},
-			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
-			{Key: "guestImageLocalDir", Label: "Local Guest Build", Type: "string", Placeholder: effectiveGuestLocalDir(""), Description: "Where a local guest image build lands; used automatically when complete.", Advanced: true},
-			{Key: "kernelImage", Label: "Kernel Image", Type: "string", Placeholder: DefaultKernelImage, Description: "Published image carrying the libkrunfw-patched kernel.", Advanced: true},
-			{Key: "kernelImageDir", Label: "Kernel Artifact Directory", Type: "string", Description: "Boot this kernel instead of the published image, and fail if it is missing.", Advanced: true},
-			{Key: "kernelImageLocalDir", Label: "Local Kernel Build", Type: "string", Placeholder: effectiveKernelLocalDir(""), Advanced: true},
+			{Key: "vmImage", Label: "VM Image", Type: "string", Placeholder: DefaultImage, Description: "Published libkrun image carrying the root filesystem, the kernel, libkrun, and passt.", Advanced: true},
+			{Key: "vmImageDir", Label: "VM Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
+			{Key: "vmImageLocalDir", Label: "Local VM Build", Type: "string", Placeholder: effectiveImageLocalDir(""), Description: "Where a local libkrun image build lands; used automatically when complete.", Advanced: true},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
 			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU, up to libkrun's limit of 255. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
@@ -344,8 +349,8 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "runtimeDir", Label: "VM Runtime Directory", Type: "string", Placeholder: defaultRuntimeDir(), Advanced: true},
 			{Key: "imageCacheDir", Label: "Image Cache", Type: "string", Placeholder: defaultImageRoot(), Advanced: true},
 			{Key: "controlPlaneSocket", Label: "Control Plane Unix Socket", Type: "string", Placeholder: endpoint.DefaultEndpoint(), Advanced: true},
-			{Key: "passtPath", Label: "passt Path", Type: "string", Placeholder: "passt", Advanced: true},
-			{Key: "libkrunPath", Label: "libkrun Library Path", Type: "string", Placeholder: "libkrun.so.1", Advanced: true},
+			{Key: "passtPath", Label: "passt Path", Type: "string", Description: "Run this passt instead of the one the VM image carries.", Advanced: true},
+			{Key: "libkrunPath", Label: "libkrun Library Path", Type: "string", Description: "Load this libkrun instead of the one the VM image carries.", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }
@@ -384,7 +389,7 @@ func runtimeDir(namespace string) string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("discobox-%d", os.Getuid()), namespace)
 }
 
-// defaultImageRoot holds the pulled guest and kernel images.
+// defaultImageRoot holds the pulled libkrun images.
 //
 // It is a dotted directory inside the pool disk root rather than a sibling of
 // it, and the dot is what makes that safe: a pool's disks live at
@@ -394,33 +399,26 @@ func runtimeDir(namespace string) string {
 // It is rooted at the canonical state directory and never at the pre-rename
 // one. The legacy path exists to find disks that were created under it; nothing
 // ever cached an image there, so following it would only put the cache
-// somewhere `task build:vm-guest` does not write.
+// somewhere `task build:vm-krun` does not write.
 func defaultImageRoot() string {
 	return filepath.Join(defaultStateDir(), ".images")
 }
 
-func effectiveImageCacheDir(configured, kind string) string {
+func effectiveImageCacheDir(configured string) string {
 	if value := strings.TrimSpace(configured); value != "" {
-		return filepath.Join(value, kind)
+		return filepath.Join(value, "vm")
 	}
-	return filepath.Join(defaultImageRoot(), kind)
+	return filepath.Join(defaultImageRoot(), "vm")
 }
 
-// effectiveGuestLocalDir names where a local guest image build lands. It is the
-// same path `task build:vm-guest` writes, and that agreement is the whole
+// effectiveImageLocalDir names where a local libkrun image build lands. It is
+// the same path `task build:vm-krun` writes, and that agreement is the whole
 // mechanism: nothing is configured to adopt a local build.
-func effectiveGuestLocalDir(configured string) string {
+func effectiveImageLocalDir(configured string) string {
 	if value := strings.TrimSpace(configured); value != "" {
 		return value
 	}
-	return filepath.Join(defaultImageRoot(), "guest", "local")
-}
-
-func effectiveKernelLocalDir(configured string) string {
-	if value := strings.TrimSpace(configured); value != "" {
-		return value
-	}
-	return filepath.Join(defaultImageRoot(), "kernel", "local")
+	return filepath.Join(defaultImageRoot(), "vm", "local")
 }
 
 func effectiveStateDir(configured string) string {

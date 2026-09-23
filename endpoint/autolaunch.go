@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -81,6 +82,9 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	// A server that is already up needs nothing, and one that is still starting
 	// needs waiting on rather than a second process started alongside it.
 	if status, err := probeEndpoint(ctx, opts); err == nil {
+		if status.NeedsChoice() {
+			return false, choiceRequired(status)
+		}
 		if !olderServer(status, opts.ExpectedVersion) {
 			if !status.Starting() {
 				return false, nil
@@ -98,6 +102,9 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	defer unlock()
 	replaceOlder := false
 	if status, err := probeEndpoint(ctx, opts); err == nil {
+		if status.NeedsChoice() {
+			return false, choiceRequired(status)
+		}
 		if olderServer(status, opts.ExpectedVersion) {
 			replaceOlder = true
 		} else if status.Starting() {
@@ -152,6 +159,9 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
 		if err == nil {
+			if status.NeedsChoice() {
+				return true, choiceRequired(status)
+			}
 			if !status.Starting() {
 				return true, nil
 			}
@@ -181,6 +191,58 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		}
 	}
 	return true, fmt.Errorf("local server at %s never answered: %w%s", opts.Endpoint, lastErr, opts.logTail())
+}
+
+// ChoiceRequiredError is a server holding its startup until a choice is made
+// (ADR 0148 §2). It is not a failure to start, and waiting will not end it:
+// the caller asks whoever it can, and answers with ChooseDefaultProvider.
+type ChoiceRequiredError struct {
+	Choice health.Choice
+}
+
+func (e *ChoiceRequiredError) Error() string {
+	return fmt.Sprintf("the local server is waiting for a default provider to be chosen: the %s provider cannot run on this host: %s",
+		e.Choice.Provider, e.Choice.Detail)
+}
+
+func choiceRequired(status health.Status) error {
+	return &ChoiceRequiredError{Choice: *status.Choice}
+}
+
+// ChooseDefaultProvider answers a server holding at health.StatusNeedsChoice
+// with the provider it should install. The server goes on starting; a caller
+// that wants it ready waits for that as it would for any start.
+func ChooseDefaultProvider(ctx context.Context, rawEndpoint, provider string) error {
+	if rawEndpoint == "" {
+		rawEndpoint = DefaultEndpoint()
+	}
+	target, err := Parse(rawEndpoint)
+	if err != nil {
+		return err
+	}
+	baseURL, client, err := HTTPClient(target, nil)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(health.DefaultProviderChoice{Provider: provider})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+health.SetupDefaultProviderPath, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("choose %s as the default provider: %s: %s", provider, resp.Status, strings.TrimSpace(string(message)))
+	}
+	return nil
 }
 
 // olderServer is deliberately one-way. An older CLI must not downgrade a
@@ -241,6 +303,8 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
 		switch {
+		case err == nil && status.NeedsChoice():
+			return choiceRequired(status)
 		case err == nil && !status.Starting():
 			return nil
 		case err == nil:
@@ -320,7 +384,7 @@ func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, erro
 		status = health.Status{}
 	}
 	switch {
-	case resp.StatusCode == http.StatusServiceUnavailable && status.Starting():
+	case resp.StatusCode == http.StatusServiceUnavailable && (status.Starting() || status.NeedsChoice()):
 		return status, nil
 	case resp.StatusCode < 200 || resp.StatusCode >= 500:
 		return health.Status{}, fmt.Errorf("local server probe returned %s", resp.Status)

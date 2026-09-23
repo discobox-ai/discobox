@@ -15,9 +15,11 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/health"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -111,6 +113,7 @@ func Run(ctx context.Context) error {
 		// mid-flight. Liveness comes from ReadHeaderTimeout,
 		// IdleTimeout, and websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
+		ConnContext: markLocalIPC,
 	}
 	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
 	// listeners are released promptly instead of dying with the process. Armed
@@ -198,7 +201,16 @@ func Run(ctx context.Context) error {
 			ImageRetention: cfg.ImageRetention,
 			ImageCache:     imageCache,
 		},
-		WSLCCommand: cfg.WSLCCommand,
+		WSLCCommand:     cfg.WSLCCommand,
+		DefaultProvider: cfg.DefaultProvider,
+		AwaitDefaultProviderChoice: func(ctx context.Context, unavailable *sandbox.ProviderUnavailableError, alternatives []string) (string, error) {
+			return startup.awaitChoice(ctx, health.Choice{
+				Provider:     unavailable.Provider,
+				Reason:       unavailable.Reason,
+				Detail:       unavailable.Err.Error(),
+				Alternatives: alternatives,
+			})
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

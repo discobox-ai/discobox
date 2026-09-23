@@ -84,6 +84,27 @@ type Options struct {
 	// a sandbox is started with. Empty when the server does not listen on iroh,
 	// where that address would reach nothing; sandboxes then get none.
 	ServerPeerID string
+	// DefaultProvider is the provider type a first start installs as the
+	// machine's default, when the server is configured with one (ADR 0148 §4).
+	// Empty lets the build decide: see defaultProviderType.
+	DefaultProvider string
+	// AwaitDefaultProviderChoice holds a first start whose default provider
+	// cannot run on this host until someone chooses one of alternatives, and
+	// returns that choice (ADR 0148 §2). The server answers it through its
+	// startup endpoint. Nil refuses the start instead, with the reason.
+	AwaitDefaultProviderChoice func(ctx context.Context, unavailable *sandbox.ProviderUnavailableError, alternatives []string) (string, error)
+}
+
+// providerFactoryOptions is what every provider this server builds is built
+// with.
+func (o Options) providerFactoryOptions() providerregistry.FactoryOptions {
+	return providerregistry.FactoryOptions{
+		DevelopmentImageSync: o.DevelopmentImageSync,
+		ControlPlaneStreams:  o.ControlPlaneStreams,
+		ListenEndpoints:      o.ListenEndpoints,
+		ServerDefaults:       o.ServerDefaults,
+		WSLCCommand:          o.WSLCCommand,
+	}
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options) *Service {
@@ -92,13 +113,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	}
 	manager := sandbox.NewProviderManager()
 	poolControlPlane := pools.NewControlPlane(store, engine)
-	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
-		DevelopmentImageSync: options.DevelopmentImageSync,
-		ControlPlaneStreams:  options.ControlPlaneStreams,
-		ListenEndpoints:      options.ListenEndpoints,
-		ServerDefaults:       options.ServerDefaults,
-		WSLCCommand:          options.WSLCCommand,
-	})
+	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, options.providerFactoryOptions())
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
 	poolService := pools.NewService(store, manager, poolControlPlane)

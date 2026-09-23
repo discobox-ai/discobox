@@ -351,8 +351,9 @@ resolve() {
 		die "could not read the release list from $api: $tags releases state a tag and $flags state whether they are a prerelease. Pin a release with --version instead (see $releases_page)"
 	fi
 
-	# Only CLI tags count: the vm/* and vm-kernel/* lines are their own
-	# releases and no installer installs them.
+	# Only CLI tags count: the vm/*, libkrun-runtime/* and vm-krun/* lines are
+	# their own releases and no installer installs them. Anything not starting
+	# v<digit> is one of those, whatever its prefix.
 	awk '
 		$1 == "tag" { tag = $2; seen_tag = 1 }
 		$1 == "prerelease" { pre = $2; seen_pre = 1 }

@@ -17,6 +17,12 @@ import (
 // "dev" is not one.
 var Version = ""
 
+// Released reports whether this binary is a release build: one whose version
+// the release's linker flags stamped. Anything else is a development build,
+// which is what decides, for one, which provider a Linux server installs by
+// default on its first start (ADR 0148 §1).
+func Released() bool { return Version != "" }
+
 // String is the version to show a human.
 //
 // A release says v1.2.3. A build from a checkout says the commit it came from,

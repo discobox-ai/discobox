@@ -53,12 +53,9 @@ var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 // DriverConfig configures the local libkrun VM driver.
 type DriverConfig struct {
-	// Guest resolves the shared VM guest image; Kernel resolves the
-	// libkrunfw-patched kernel, which is a separate artifact on its own release
-	// line because it is the one thing libkrun cannot take from a guest image
-	// every backend shares.
-	Guest  *guestimage.Resolver
-	Kernel *guestimage.Resolver
+	// Image resolves the one image a pool boots: root disk, kernel, libkrun,
+	// and passt (ADR 0148 §5).
+	Image *guestimage.Resolver
 
 	// StateDir roots each pool's durable disks at <StateDir>/<poolID>.
 	// RuntimeDir roots the sockets, manifest, and logs of a running VM, and is
@@ -69,9 +66,8 @@ type DriverConfig struct {
 	// ControlPlaneSocket is the server's own listening socket, which libkrun
 	// terminates the guest's outbound control-plane port at.
 	ControlPlaneSocket string
-	// PasstPath and LibraryPath override the two host binaries this backend
-	// needs. Both are resolved by the launcher, not here, because the launcher
-	// is the process that uses them.
+	// PasstPath and LibraryPath override the passt and libkrun the image
+	// carries.
 	PasstPath   string
 	LibraryPath string
 
@@ -82,7 +78,7 @@ type DriverConfig struct {
 
 	// ProgressReporter says what bringing a VM up is doing. What only this
 	// driver knows is that the first pool on a machine downloads and extracts a
-	// guest image before there is a VM to start at all.
+	// libkrun image before there is a VM to start at all.
 	ProgressReporter sandbox.PoolProgressReporter
 }
 
@@ -94,8 +90,7 @@ type DriverConfig struct {
 // Only the disks under StateDir survive, which is sufficient — the guest keeps
 // all image, container, and volume state on them.
 type Driver struct {
-	guest              *guestimage.Resolver
-	kernel             *guestimage.Resolver
+	image              *guestimage.Resolver
 	stateDir           string
 	runtimeDir         string
 	controlPlaneSocket string
@@ -135,8 +130,8 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	if err := krunvm.Supported(); err != nil {
 		return nil, err
 	}
-	if cfg.Guest == nil || cfg.Kernel == nil {
-		return nil, errors.New("libkrun: a guest image and a kernel image resolver are required")
+	if cfg.Image == nil {
+		return nil, errors.New("libkrun: an image resolver is required")
 	}
 	if cfg.VCPUs < 0 || cfg.MemoryMiB < 0 || cfg.DataDiskGiB < 0 || cfg.CacheDiskGiB < 0 {
 		return nil, errors.New("libkrun: sizing values must not be negative")
@@ -162,8 +157,7 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		return nil, fmt.Errorf("libkrun cache disk size: %w", err)
 	}
 	return &Driver{
-		guest:              cfg.Guest,
-		kernel:             cfg.Kernel,
+		image:              cfg.Image,
 		stateDir:           stateDir,
 		runtimeDir:         runtimeDir,
 		controlPlaneSocket: filepath.Clean(controlPlaneSocket),
@@ -213,19 +207,19 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		}
 	}
 
-	// Resolved outside the lock: the first pool on a machine pulls the guest
-	// image and the kernel, and no other pool should block on that.
+	// Resolved outside the lock: the first pool on a machine pulls the libkrun
+	// image, and no other pool should block on that.
 	//
 	// The phase is reported and not held. A fetch that moves bytes restates
 	// itself twice a second with its byte counts, and a held phase would blank
 	// those every time its heartbeat fired.
 	d.progress.Report(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
-	root, kernel, err := d.resolveArtifacts(ctx, poolID)
+	image, err := d.resolveImage(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
 
-	guest, started, err := d.launch(ctx, poolID, root, kernel, want)
+	guest, started, err := d.launch(ctx, poolID, image, want)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +236,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		return nil, err
 	}
 	slog.InfoContext(ctx, "started libkrun pool VM",
-		"pool_id", poolID, "guest_image", root.Source, "kernel_image", kernel.Source,
+		"pool_id", poolID, "vm_image", image.Source,
 		"vcpus", want.VCPUs, "memory_mib", want.MemoryMiB, "pid", guest.cmd.Process.Pid)
 	return runningInfo(poolID), nil
 }
@@ -253,7 +247,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 //
 // started is false when the VM was already running, which is the only case
 // where the caller has nothing to wait for.
-func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guestimage.Bundle, size vmsize.Size) (*guestVM, bool, error) {
+func (d *Driver) launch(ctx context.Context, poolID string, image *guestimage.Bundle, size vmsize.Size) (*guestVM, bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -282,7 +276,7 @@ func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guesti
 		return nil, false, err
 	}
 
-	manifest := d.manifest(poolID, root, kernel, dataDisk, cacheDisk, size)
+	manifest := d.manifest(poolID, image, dataDisk, cacheDisk, size)
 	if err := manifest.Validate(); err != nil {
 		return nil, false, fmt.Errorf("libkrun VM %s: %w", poolID, err)
 	}
@@ -326,10 +320,9 @@ func (d *Driver) forget(poolID string, guest *guestVM) {
 	guest.close()
 }
 
-// resolveArtifacts fetches the root filesystem and the kernel. They are two
-// images because they change on unrelated clocks: the guest moves when Debian
-// or Docker does, the kernel when libkrunfw or upstream Linux does.
-func (d *Driver) resolveArtifacts(ctx context.Context, poolID string) (*guestimage.Bundle, *guestimage.Bundle, error) {
+// resolveImage fetches the libkrun image: the root disk, the kernel, and the
+// runtime that boots them.
+func (d *Driver) resolveImage(ctx context.Context, poolID string) (*guestimage.Bundle, error) {
 	report := func(fetch guestimage.Progress) {
 		d.progress.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
 			Phase: sandbox.PoolPhaseFetchingVMImage,
@@ -343,19 +336,14 @@ func (d *Driver) resolveArtifacts(ctx context.Context, poolID string) (*guestima
 			},
 		})
 	}
-	// Both failures name the local build that answers them. Both artifacts are
-	// published and pinned by digest (guestimage.DefaultVMImage,
-	// DefaultKernelImage), but a resolver error on its own reports only a
-	// registry problem, and a local build is a way past one.
-	root, err := d.guest.Resolve(ctx, report)
+	// The failure names the local build that answers it. The image is
+	// published and pinned (DefaultImage), but a resolver error on its own
+	// reports only a registry problem, and a local build is a way past one.
+	image, err := d.image.Resolve(ctx, report)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w (build one from this checkout with `task build:vm-guest`)", err)
+		return nil, fmt.Errorf("%w (build one from this checkout with `task build:vm-krun`)", err)
 	}
-	kernel, err := d.kernel.Resolve(ctx, report)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w (build one from this checkout with `task build:vm-kernel`)", err)
-	}
-	return root, kernel, nil
+	return image, nil
 }
 
 // StopVM powers the guest down but keeps its data and cache disks, so a repair
@@ -486,42 +474,86 @@ func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolL
 // and at the directory this driver's resolver prefers.
 //
 // A Linux developer usually has a Docker daemon of their own and can run
-// `task build:vm-guest` instead. This exists for the case that made it
+// `task build:vm-krun` instead. This exists for the case that made it
 // necessary on macOS (ADR 0062 §7) and is not macOS-specific at all: a host
 // with no daemon, or one whose only useful builder is the one inside a pool VM.
 // It is reached through the driver, so it answers on a pool whose agent never
 // started — which is the pool a broken guest image produces, and therefore the
 // only pool anybody would be rebuilding a guest from.
 //
-// The kernel is not buildable this way. It has its own image, and it changes on
-// its own clock; a guest rebuild is the loop worth closing.
+// Only the guest is rebuilt. The kernel and the runtime are the libkrun
+// image's and change on their own clock, so the build is completed with the
+// ones this driver boots today: the local directory it writes is a whole
+// libkrun image, which is what the resolver prefers it for.
 func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
-	destination := d.guest.LocalDir()
+	destination := d.image.LocalDir()
 	if destination == "" {
-		return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("this libkrun provider instance has no local guest image directory configured: %w", sandbox.ErrGuestImageBuildUnsupported)
+		return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("this libkrun provider instance has no local VM image directory configured: %w", sandbox.ErrGuestImageBuildUnsupported)
 	}
 	return dockerworker.GuestImageBuildSpec{
 		Dockerfile:  guestImageDockerfile,
 		Platform:    guestImagePlatform,
 		Destination: destination,
-		Adopt:       d.guest.Invalidate,
+		Complete:    d.completeGuestBuild,
+		Adopt:       d.image.Invalidate,
 	}, nil
 }
 
+// completeGuestBuild copies the runtime the current image carries beside a
+// freshly built guest, before it is published.
+func (d *Driver) completeGuestBuild(ctx context.Context, dir string) error {
+	current, err := d.image.Resolve(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("a built guest boots only with the kernel and libkrun of a libkrun image, and none resolved: %w (build a whole one with `task build:vm-krun`)", err)
+	}
+	for _, name := range runtimeArtifacts {
+		if err := copyArtifact(current.Path(name), filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copyArtifact copies one file with its permissions, which for passt is the
+// executable bit the launcher runs it by.
+func copyArtifact(source, destination string) error {
+	in, err := os.Open(source) //nolint:gosec // A path the resolver produced.
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm()) //nolint:gosec // Inside the build's staging directory.
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return fmt.Errorf("copy %s: %w", source, err)
+	}
+	return out.Close()
+}
+
 // manifest renders one VM for the launcher.
-func (d *Driver) manifest(poolID string, root, kernel *guestimage.Bundle, dataDisk, cacheDisk string, size vmsize.Size) krunvm.Config {
+//
+// The launcher loads libkrun and runs passt from the image unless the provider
+// names its own.
+func (d *Driver) manifest(poolID string, image *guestimage.Bundle, dataDisk, cacheDisk string, size vmsize.Size) krunvm.Config {
 	runtimeDir := d.poolRuntimeDir(poolID)
 	return krunvm.Config{
 		Version:     krunvm.ConfigVersion,
 		PoolID:      poolID,
 		RuntimeDir:  runtimeDir,
-		KernelImage: kernel.Path(kernelArtifact),
-		RootDisk:    root.Path(rootArtifact),
+		KernelImage: image.Path(kernelArtifact),
+		RootDisk:    image.Path(rootArtifact),
 		DataDisk:    dataDisk,
 		CacheDisk:   cacheDisk,
 		PasstSocket: filepath.Join(runtimeDir, passtSocketName),
-		PasstPath:   d.passtPath,
-		LibraryPath: d.libraryPath,
+		PasstPath:   defaultString(d.passtPath, image.Path(passtArtifact)),
+		LibraryPath: defaultString(d.libraryPath, image.Path(libraryArtifact)),
 		ConsoleLog:  filepath.Join(runtimeDir, consoleLogName),
 		VCPUs:       size.VCPUs,
 		MemoryMiB:   size.MemoryMiB,

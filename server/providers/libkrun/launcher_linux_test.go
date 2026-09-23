@@ -100,24 +100,25 @@ func newTestDriver(t *testing.T, root, libraryPath string) *Driver {
 	if err := os.MkdirAll(artifacts, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{rootArtifact, kernelArtifact} {
+	for _, name := range []string{rootArtifact, kernelArtifact, libraryArtifact, passtArtifact} {
 		if err := os.WriteFile(filepath.Join(artifacts, name), []byte("not a real artifact"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	resolver := func(artifact string) *guestimage.Resolver {
-		r, err := guestimage.New(guestimage.Config{
-			OverrideDir: artifacts,
-			Artifacts:   []guestimage.Artifact{{Name: artifact}},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return r
+	image, err := guestimage.New(guestimage.Config{
+		OverrideDir: artifacts,
+		Artifacts: []guestimage.Artifact{
+			{Name: rootArtifact},
+			{Name: kernelArtifact},
+			{Name: libraryArtifact},
+			{Name: passtArtifact},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	driver, err := NewDriver(DriverConfig{
-		Guest:              resolver(rootArtifact),
-		Kernel:             resolver(kernelArtifact),
+		Image:              image,
 		StateDir:           filepath.Join(root, "state"),
 		RuntimeDir:         filepath.Join(root, "run"),
 		ControlPlaneSocket: filepath.Join(root, "server.sock"),

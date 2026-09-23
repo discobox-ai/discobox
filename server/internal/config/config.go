@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -163,6 +164,10 @@ type Config struct {
 	// checked for at startup, for a host that keeps it somewhere this check
 	// would not look. It accepts a full path.
 	WSLCCommand string `yaml:"wslcCommand" env:"DISCOBOX_WSLC_COMMAND" doc:"The WSL Containers program to look for on a Windows host, as a name on PATH or a full path. Empty looks for the component's own name, wslc. Windows only." example:"'C:\\tools\\wslc.exe'"`
+	// DefaultProvider chooses the provider a first start installs on Linux
+	// (ADR 0148 §4). Empty lets the build decide: libkrun in a release, the
+	// host's Docker in a development build.
+	DefaultProvider string `yaml:"defaultProvider" env:"DISCOBOX_DEFAULT_PROVIDER" doc:"The provider a first start installs as this machine's default, on Linux: libkrun, which runs each pool in a VM, or docker, which runs sandboxes as containers on the host kernel with no VM boundary. Empty installs libkrun in a release build and docker in a development build. Read only until a default has been installed. Linux only." example:"docker"`
 
 	// DevImageSync converges the watcher-built images onto each Docker daemon
 	// before it hosts a development pool, and DevImageManifest names the file
@@ -380,6 +385,15 @@ func (c *Config) validate(configured func(string) bool) error {
 	}
 	if len(c.Listen) == 0 {
 		return fmt.Errorf("listen must include at least one endpoint")
+	}
+	switch c.DefaultProvider {
+	case "":
+	case "libkrun", "docker":
+		if runtime.GOOS != "linux" {
+			return fmt.Errorf("defaultProvider applies only on Linux; %s has one default provider", runtime.GOOS)
+		}
+	default:
+		return fmt.Errorf("defaultProvider %q must be libkrun or docker", c.DefaultProvider)
 	}
 	for _, raw := range c.Listen {
 		if _, err := endpoint.Parse(raw); err != nil {
