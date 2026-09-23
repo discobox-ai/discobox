@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/privatefs"
+	"github.com/discobox-ai/discobox/internal/privatefs/privatefstest"
 )
 
 // The key is the server's address, so a restart must answer on the same one.
@@ -45,12 +47,35 @@ func TestLoadOrCreateEndpointKeyIsStableAcrossCalls(t *testing.T) {
 
 func TestLoadOrCreateEndpointKeyWritesPrivateFile(t *testing.T) {
 	dir := t.TempDir()
+	// Widened first, so the key cannot pass by inheriting a private temporary
+	// directory, which is what a default Windows profile's is.
+	privatefstest.Widen(t, dir)
 	if _, err := LoadOrCreateEndpointKey(dir); err != nil {
 		t.Fatalf("LoadOrCreateEndpointKey() error = %v", err)
 	}
 	// Whatever "only this user" means on the platform running the test: a mode
 	// on Unix, an access list on Windows, which the mode would not have set.
 	if err := privatefs.Check(filepath.Join(dir, endpointKeyFileName)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A key an earlier Windows server wrote with nothing but its directory's ACL
+// is made private by the next load.
+func TestLoadOrCreateEndpointKeyRestrictsAnExistingKey(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("keys were always written 0600 on Unix, and there is no ACL to repair")
+	}
+	dir := t.TempDir()
+	if _, err := LoadOrCreateEndpointKey(dir); err != nil {
+		t.Fatalf("LoadOrCreateEndpointKey() error = %v", err)
+	}
+	path := filepath.Join(dir, endpointKeyFileName)
+	privatefstest.Widen(t, path)
+	if _, err := LoadOrCreateEndpointKey(dir); err != nil {
+		t.Fatalf("LoadOrCreateEndpointKey() on the existing key error = %v", err)
+	}
+	if err := privatefs.Check(path); err != nil {
 		t.Fatal(err)
 	}
 }

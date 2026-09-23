@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -34,8 +35,13 @@ func LoadOrCreateHostKey(dataDir string) (ssh.Signer, error) {
 	if pemBytes, err := os.ReadFile(path); err == nil {
 		// Restricted again on every load, which is what repairs a key an
 		// earlier Windows server wrote with nothing but the directory's ACL.
+		// Best-effort: a key this server can read but not re-permission (owned
+		// by another account, granted read-only, on a volume with no ACLs) is
+		// no less exposed for the server refusing to start, so it is logged as
+		// an error and the key is used as it is.
 		if err := privatefs.Restrict(path); err != nil {
-			return nil, fmt.Errorf("restrict SSH host key to this user: %w", err)
+			slog.Error("could not restrict the SSH host key to this user; it keeps the permissions it has",
+				"path", path, "error", err)
 		}
 		return ssh.ParsePrivateKey(pemBytes)
 	} else if !os.IsNotExist(err) {

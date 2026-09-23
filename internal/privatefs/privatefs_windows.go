@@ -82,8 +82,11 @@ func fullAccess(sid *windows.SID, inheritance uint32) windows.EXPLICIT_ACCESS {
 // and Administrators. It reports an error naming the first principal that
 // breaks that.
 //
-// The check that matters is that nothing was inherited. A profile that grants
-// a group anything grants it on every file created under there.
+// It asks who can reach the object, not how the entries got there: a file
+// inheriting from a directory Restrict made private is private too. That is
+// why a test proving a writer restricted its file widens the directory first
+// (privatefstest.Widen) — a default profile's temporary directory already
+// passes.
 func Check(path string) error {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)

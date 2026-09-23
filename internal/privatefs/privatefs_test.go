@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/discobox-ai/discobox/internal/privatefs/privatefstest"
 )
 
 // A directory and a file written into it are private once restricted, and
@@ -33,19 +35,35 @@ func TestRestrictMakesPrivate(t *testing.T) {
 	}
 }
 
-// Check is not a formality: a file others can read fails it.
-func TestCheckRejectsAWideMode(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a mode grants nothing on Windows; the ACL cases are Restrict's")
+// Check is not a formality: a file others can reach fails it, whatever
+// "others can reach" means on the platform.
+func TestCheckRejectsAWidenedFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "wide")
+	if err := os.WriteFile(file, []byte("key"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	privatefstest.Widen(t, file)
+	if err := Check(file); err == nil {
+		t.Fatal("Check accepted a file others can read")
+	}
+}
+
+// On Windows Restrict is what takes a widened file back. On Unix the mode is
+// the permission and the writer sets it, so there is nothing for Restrict to
+// repair.
+func TestRestrictRepairsAWidenedFile(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Restrict changes nothing on Unix; the mode a file is written with is its permission")
 	}
 	file := filepath.Join(t.TempDir(), "wide")
 	if err := os.WriteFile(file, []byte("key"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := os.Chmod(file, 0o644); err != nil {
-		t.Fatalf("chmod: %v", err)
+	privatefstest.Widen(t, file)
+	if err := Restrict(file); err != nil {
+		t.Fatalf("Restrict: %v", err)
 	}
-	if err := Check(file); err == nil {
-		t.Fatal("Check accepted a 0644 file")
+	if err := Check(file); err != nil {
+		t.Fatal(err)
 	}
 }

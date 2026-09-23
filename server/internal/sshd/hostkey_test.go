@@ -2,14 +2,19 @@ package sshd
 
 import (
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
 	"github.com/discobox-ai/discobox/internal/privatefs"
+	"github.com/discobox-ai/discobox/internal/privatefs/privatefstest"
 )
 
 func TestLoadOrCreateHostKeyGeneratesOnce(t *testing.T) {
 	dir := t.TempDir()
+	// Widened first, so the key cannot pass by inheriting a private temporary
+	// directory, which is what a default Windows profile's is.
+	privatefstest.Widen(t, dir)
 
 	signer1, err := LoadOrCreateHostKey(dir)
 	if err != nil {
@@ -26,6 +31,26 @@ func TestLoadOrCreateHostKeyGeneratesOnce(t *testing.T) {
 	// Whatever "only this user" means on the platform running the test: a mode
 	// on Unix, an access list on Windows, which the mode would not have set.
 	if err := privatefs.Check(filepath.Join(dir, hostKeyFileName)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A key an earlier Windows server wrote with nothing but its directory's ACL
+// is made private by the next load.
+func TestLoadOrCreateHostKeyRestrictsAnExistingKey(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("keys were always written 0600 on Unix, and there is no ACL to repair")
+	}
+	dir := t.TempDir()
+	if _, err := LoadOrCreateHostKey(dir); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	path := filepath.Join(dir, hostKeyFileName)
+	privatefstest.Widen(t, path)
+	if _, err := LoadOrCreateHostKey(dir); err != nil {
+		t.Fatalf("load of the existing key: %v", err)
+	}
+	if err := privatefs.Check(path); err != nil {
 		t.Fatal(err)
 	}
 }
