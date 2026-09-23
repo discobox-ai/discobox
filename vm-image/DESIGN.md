@@ -1,8 +1,9 @@
 # Pool VM Guest Image Design
 
-One guest for every VM backend, and the kernel one backend cannot take from it.
+One guest for every VM backend, and the host runtime one backend cannot take
+from it.
 
-This directory implements ADR 0062 §3, §4, §6 and ADR 0101. It is not a Go
+This directory implements ADR 0062 §3, §4, §6, ADR 0101 and ADR 0148 §5. It is not a Go
 module and is imported by nothing — its one Go binary, `discobox-vsock-guest`,
 is compiled from `pool-agent` sources inside the build. What it produces are
 boot artifacts, published to a registry on their own release lines and pulled
@@ -12,22 +13,32 @@ by `server/providers/guestimage`.
 
 | Path | Publishes | Release line | Booted by |
 | --- | --- | --- | --- |
-| `Dockerfile` | `vmlinux` (arm64 only), `initrd.img`, `root.ext4` | `vm/v*` → `discobox-vm`, `linux/arm64` + `linux/amd64` | `vz` (arm64), `libkrun` (amd64) |
-| `kernel/Dockerfile` | `vmlinux`, `kernel.config` | `vm-kernel/v*` → `discobox-vm-kernel`, `linux/amd64` | `libkrun` |
+| `Dockerfile` | `vmlinux` (arm64 only), `initrd.img`, `root.ext4` | `vm/v*` → `discobox-vm`, `linux/arm64` + `linux/amd64` | `vz` (arm64); libkrun through `discobox-vm-krun` |
+| `libkrun/Dockerfile` | `vmlinux`, `kernel.config`, `libkrun.so.1`, `passt` | `libkrun-runtime/v*` → `discobox-libkrun-runtime`, `linux/amd64` | nothing directly; packaged below |
+| `libkrun/package/Dockerfile` | `root.ext4` + the four runtime files | `vm-krun/v*` → `discobox-vm-krun`, `linux/amd64` | `libkrun` |
 
-Two builds, two workflows (`.github/workflows/vm-image.yml`, `vm-kernel.yml`).
-The split is not bookkeeping: the kernel build compiles Linux, so a guest change
-must not trigger it, and `vm-image.yml` excludes `vm-image/kernel/**` from its
-paths for exactly that reason.
+Three builds, three workflows (`.github/workflows/vm-image.yml`,
+`libkrun-runtime.yml`, `vm-krun.yml`). The split is not bookkeeping: the runtime
+build compiles Linux and libkrun, so a guest change must not trigger it, and
+`vm-image.yml` excludes `vm-image/libkrun/**` from its paths for exactly that
+reason. The package build compiles nothing — it copies from a pinned
+`discobox-vm` digest and a pinned runtime digest (its `GUEST_IMAGE` and
+`RUNTIME_IMAGE` build args) — so a guest release reaches libkrun as one
+packaging publish and one pin edit, not a kernel compile.
 
-Publishing is tag-driven only: `vm:publish` / `vm:publish-kernel` push to
-`ghcr.io` and report the digest to pin. The scheduled runs — weekly for the
-guest, monthly for the kernel — build and verify but never publish, so a
-security rebuild is still a release someone deliberately pins.
+Publishing is tag-driven only: `vm:publish`, `vm:publish-libkrun-runtime` and
+`vm:publish-krun` push to `ghcr.io` and report the digest to pin. The scheduled
+runs — weekly for the guest, monthly for the runtime — build and verify but
+never publish, so a security rebuild is still a release someone deliberately
+pins.
 
-The server pins digests (`guestimage.DefaultVMImage` for the guest, libkrun's
-`DefaultKernelImage` for the kernel), so the three lines — product, guest,
-kernel — move independently in both directions.
+Every pin is a digest, so the four lines — product, guest, runtime, libkrun
+image — move independently in both directions:
+
+- `guestimage.DefaultVMImage` pins the guest `vz` boots;
+- `libkrun/package/Dockerfile` pins the guest and runtime it packages;
+- libkrun's `DefaultImage` (`server/providers/libkrun/provider.go`) pins
+  `discobox-vm-krun`.
 
 `REVIEW.md` beside this file carries the pitfalls — the rules whose violation
 is a guest that boots and then fails somewhere else.
@@ -84,31 +95,49 @@ The clock timer is the same shape of tolerance: every 30 seconds it steps the
 guest clock from a host-backed RTC, and its service is conditioned on that RTC
 existing, so where there is none it never runs.
 
-## Why the kernel is not one of them
+## Why libkrun's runtime is separate
 
 libkrun boots a kernel directly through libkrunfw's patched entry paths, so no
 distribution kernel boots under it. `vz` is stock virtio and takes Debian's,
 which is why ADR 0062 §8 declined to build one at all.
 
-`kernel/` is therefore a separate artifact with a separate release line, not a
-stage of the guest build. The inputs move on unrelated clocks — this changes
-when libkrunfw or upstream Linux does, the guest when Debian or Docker does —
-and folding them together would make every guest rebuild compile a kernel and
-every kernel bump republish a userland (ADR 0101 §3).
+`libkrun/` is therefore a separate build with a separate release line, not a
+stage of the guest build. The inputs move on unrelated clocks — it changes
+when libkrunfw, libkrun, passt or upstream Linux does, the guest when Debian or
+Docker does — and folding them together would make every guest rebuild compile
+a kernel and every kernel bump republish a userland (ADR 0101 §3).
 
-It builds libkrunfw's patched Linux from a checksum-pinned libkrunfw commit and
-kernel tarball. `configure-kernel` then builds in what libkrunfw's compact
-nftables-only baseline leaves out and the guest needs — Docker's `x_tables` /
-`iptables-nft` compatibility, `PACKET` for the DHCP client, macvlan, ipvlan,
-VXLAN and 802.1Q — and fails the build if `olddefconfig` drops any required
-setting. The output is an ELF `vmlinux`, which libkrun loads with no initramfs,
-plus the `kernel.config` it was built from, so what booted can be read back off
-the artifact.
+The kernel, libkrun, and passt are one build because they change together: the
+libkrunfw patches are what that libkrun version expects of its kernel
+(ADR 0148 §5). What it builds is what ships inside a release, onto hosts this
+repository knows nothing about:
+
+- **Debian's toolchain, not Nix's.** Built on the guest's Debian, nothing needs
+  a newer glibc than the guest's userland, and nothing names a `/nix/store`
+  RUNPATH or interpreter that exists only where it was built.
+- **Upstream libkrun, without libkrunfw.** The provider hands libkrun its own
+  kernel, and upstream opens libkrunfw lazily and only when it is not given
+  one, so its 21 MB copy of a kernel is never shipped.
+- **passt static.** It is the one executable here; it brings no loader or
+  library with it.
+
+The kernel comes from a checksum-pinned libkrunfw commit and kernel tarball.
+`configure-kernel` builds in what libkrunfw's compact nftables-only baseline
+leaves out and the guest needs — Docker's `x_tables` / `iptables-nft`
+compatibility, `PACKET` for the DHCP client, macvlan, ipvlan, VXLAN and
+802.1Q — and fails the build if `olddefconfig` drops any required setting. The
+output is an ELF `vmlinux`, which libkrun loads with no initramfs, plus the
+`kernel.config` it was built from, so what booted can be read back off the
+artifact.
+
+No host pulls the runtime on its own. `libkrun/package/` puts it beside the
+guest's `root.ext4` in `discobox-vm-krun`, the one image libkrun resolves, so a
+host that can use any of the five files has all of them under one pin.
 
 The guest build still installs `linux-image-<arch>` on both architectures, so it
 has no per-backend branch in it. Assembly publishes `vmlinux` only where it can
-produce an uncompressed image a hypervisor will load, which today is arm64;
-libkrun asks the resolver for `root.ext4` alone and never extracts the rest.
+produce an uncompressed image a hypervisor will load, which today is arm64; the
+package takes `root.ext4` alone from the amd64 guest.
 
 ## Assembly
 
@@ -131,32 +160,40 @@ slack is a byte pulled over the network on a machine's first pool start.
 
 ```
 task build:vm-guest     # build and stage where this host's provider finds it
-task build:vm-kernel    # libkrun's kernel, Linux only
+task build:vm-krun      # libkrun's runtime plus the guest, Linux only
 ```
 
 Both stage into the provider's local build directory, which resolution prefers
-over the published image when it is complete. `build:vm-guest` builds
-`linux/arm64` into `vz`'s directory on macOS and the host's architecture into
-libkrun's on Linux. Building one is the whole act of adopting it; deleting the
-directory is the whole act of going back. Resolution is memoized per server
-process, though, so a server that has already resolved a guest boots the new
-build only after it restarts.
+over the published image when it is complete. On macOS `build:vm-guest` builds
+`linux/arm64` into `vz`'s directory. On Linux libkrun's local directory
+(`libkrun/.images/vm/local`) holds all five files, so `build:vm-krun` builds the
+runtime and the amd64 guest from source and swaps both in, and `build:vm-guest`
+then replaces only `root.ext4` — refusing when no runtime is staged there yet.
+Building is the whole act of adopting a local image; deleting the directory is
+the whole act of going back. Resolution is memoized per server process, though,
+so a server that has already resolved an image boots the new build only after
+it restarts.
 
 A host with no Docker daemon of its own builds the guest on a pool's instead:
 `discobox admin pool build-guest` builds this Dockerfile on the pool VM's Docker
 through the driver's `GuestImageBuildSpec`, exports the artifacts into the same
 local directory, and drops the resolver's memo (ADR 0062 §7). `vz` and libkrun
-both support it; the kernel is not buildable this way. See
+both support it; the runtime is not buildable this way. See
 [`server/providers/vz/DESIGN.md`](../server/providers/vz/DESIGN.md) and
 [`server/providers/libkrun/DESIGN.md`](../server/providers/libkrun/DESIGN.md).
 
-`task vm:build` / `vm:verify` are what CI runs, into `build/vm`, and
-`vm:build-kernel` / `vm:verify-kernel` into `build/vm-kernel`. Verification is
-not optional politeness: a guest that publishes a kernel the hypervisor cannot
-load, or a root filesystem that will not mount, fails as a blank console with
-nothing to read. `vm:verify` checks the kernel format per architecture, the root
-label, the hostname, and the network properties above; `vm:verify-kernel`
-checks the ELF header and the required config settings.
+CI runs `task vm:build` / `vm:verify` into `build/vm`,
+`vm:build-libkrun-runtime` / `vm:verify-libkrun-runtime` into
+`build/libkrun-runtime`, and `vm:build-krun` / `vm:verify-krun` into
+`build/vm-krun`. Verification is not optional politeness: a guest that
+publishes a kernel the hypervisor cannot load, or a root filesystem that will
+not mount, fails as a blank console with nothing to read. `vm:verify` checks
+the kernel format per architecture, the root label, the hostname, and the
+network properties above. `vm:verify-libkrun-runtime` checks the kernel's ELF
+header and required config, that `libkrun.so.1` is a shared object with that
+soname and no `NEEDED` on libkrunfw, that `passt` is static, and that nothing
+names `/nix/store`; `vm:verify-krun` repeats those on the packaged image and
+checks its `root.ext4` label, so a pin to the wrong digest fails there.
 
 ## Compatibility surface
 

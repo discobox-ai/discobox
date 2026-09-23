@@ -64,9 +64,9 @@ func RunVMLauncherIfInvoked() {
 // It does not read machine configuration, so a release build exports its own
 // artifacts even on a machine configured for a different release.
 func PrintReleaseManifest(w io.Writer) error {
-	m := releasemanifest.Manifest{Format: 1, Version: version.String(), Images: releasemanifest.Images{
+	m := releasemanifest.Manifest{Format: releasemanifest.Format, Version: version.String(), Images: releasemanifest.Images{
 		PoolAgent: dockerworker.DefaultPoolImage, SandboxAgent: sandbox.DefaultSandboxImageName,
-		VM: guestimage.DefaultVMImage, Kernel: libkrun.DefaultKernelImage, Harnesses: map[string]string{},
+		VM: guestimage.DefaultVMImage, Libkrun: libkrun.DefaultImage, Harnesses: map[string]string{},
 	}}
 	for _, definition := range registry.Definitions() {
 		m.Images.Harnesses[definition.ID] = definition.Image

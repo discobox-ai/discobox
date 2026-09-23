@@ -1,10 +1,17 @@
 # Release manifests
 
-A manifest names runtime images by role: pool agent, sandbox agent, VM guest,
-libkrun kernel, and harness slug. `Images.References` derives the host cache's
-staging list from those roles. Never add a separately maintained preload list.
-The VM/kernel retain their independent release pins; container image tags name
-the Discobox release. Windows supplies its own guest through WSL Containers.
+A manifest names runtime images by role: pool agent, sandbox agent, vz's VM
+guest, the libkrun image, and harness slug. `Images.References` derives the host
+cache's staging list from those roles: the guest on macOS, the libkrun image on
+amd64 Linux, where a release installs libkrun by default (ADR 0148 §6). Never add
+a separately maintained preload list. The VM images retain their independent
+release pins; container image tags name the Discobox release. Windows supplies
+its own guest through WSL Containers.
+
+This is format 2. Format 1 named the guest and libkrun's kernel as two images;
+it is still read — a published release's manifest is durable — with its kernel
+checked and dropped, and never written back. Under one, a libkrun pool boots
+the image its own build pins.
 
 `clients` and `servers` carry verified binary descriptors per platform: version,
 OS, architecture, command, download URLs, byte size, SHA-256, and execute bit.

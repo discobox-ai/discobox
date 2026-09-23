@@ -1,0 +1,70 @@
+# The image a libkrun pool boots has its own release line (ADR 0148 §5).
+#
+# It compiles nothing: vm-image/libkrun/package/Dockerfile copies the guest's
+# root disk from a pinned `discobox-vm` digest and the host runtime from a
+# pinned `discobox-libkrun-runtime` digest into one `FROM scratch` image. So a
+# release on this line is a pin moving in that Dockerfile, and the server then
+# pins what this publishes (libkrun's DefaultImage).
+#
+# It publishes as `discobox-vm-krun`, linux/amd64 only: libkrun is the only
+# backend that boots it, and the only architecture libkrun runs.
+name: VM krun
+
+on:
+  push:
+    tags:
+      - "vm-krun/v*"
+  pull_request:
+    paths:
+      - "vm-image/libkrun/package/**"
+      - ".github/workflows/vm-krun.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-krun-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: ./.github/actions/task
+        with:
+          target: vm:build-krun
+
+      - run: nix develop -c go tool task vm:verify-krun
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/vm-krun/v')
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      # Depot authenticates by OIDC against the trust relationship on its
+      # project, which is what mints the token. Without this the CLI has
+      # nothing to present and the push fails with "unauthenticated: Invalid
+      # token" after the build has already succeeded.
+      id-token: write
+    env:
+      DEPOT_PROJECT_ID: ${{ vars.DEPOT_PROJECT_ID }}
+      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: depot/setup-action@v1.7.2
+        if: vars.DEPOT_PROJECT_ID != ''
+      - uses: docker/login-action@v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/task
+        with:
+          target: vm:publish-krun

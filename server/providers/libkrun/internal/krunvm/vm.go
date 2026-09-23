@@ -2,6 +2,7 @@ package krunvm
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 )
 
@@ -12,6 +13,10 @@ import (
 // cannot run rather than not be shown it at all, and it refuses at the point a
 // pool would start.
 var ErrUnsupported = errors.New("krunvm: libkrun microVMs need linux/amd64 with KVM")
+
+// ErrKVMUnavailable reports a host whose /dev/kvm cannot be opened or does not
+// speak the KVM API this launcher expects. CheckKVM wraps it with the cause.
+var ErrKVMUnavailable = errors.New("krunvm: KVM is not available")
 
 // Supported reports whether this build can start a libkrun microVM.
 //
@@ -33,4 +38,19 @@ func Supported() error {
 // architecture that artifact is built for.
 func hostSupported() bool {
 	return runtime.GOOS == "linux" && runtime.GOARCH == "amd64"
+}
+
+// CheckKVM reports whether this host can start a libkrun microVM right now:
+// the platform gate, then a usable /dev/kvm. It is what a server asks before it
+// installs libkrun as a machine's default provider (ADR 0148 §2) — the one
+// point at which KVM is a property of the decision rather than of a pool that
+// has not started yet (see Supported).
+func CheckKVM() error {
+	if !hostSupported() {
+		return ErrUnsupported
+	}
+	if err := checkKVM(); err != nil {
+		return fmt.Errorf("%w: %w", ErrKVMUnavailable, err)
+	}
+	return nil
 }

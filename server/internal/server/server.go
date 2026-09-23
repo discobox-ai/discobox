@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/health"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/judge/jev"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -23,6 +24,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -117,12 +119,14 @@ func Run(ctx context.Context) error {
 		// IdleTimeout, and websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
 		// A stream the iroh listener accepted carries the enrolled identity
-		// its peer proved, for IrohPeerAuthenticator.
+		// its peer proved, for IrohPeerAuthenticator; any other connection
+		// is marked when it arrived on the local IPC endpoint, which is the
+		// only place a held start takes its answer (markLocalIPC).
 		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
 			if peer, ok := conn.(*endpoint.IrohPeerConn); ok {
 				return auth.WithIrohPeer(ctx, peer.Peer)
 			}
-			return ctx
+			return markLocalIPC(ctx, conn)
 		},
 	}
 	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
@@ -240,8 +244,17 @@ func Run(ctx context.Context) error {
 			ImageRetention: cfg.ImageRetention,
 			ImageCache:     imageCache,
 		},
-		WSLCCommand: cfg.WSLCCommand,
-		OverlayDir:  cfg.OverlayDir,
+		WSLCCommand:     cfg.WSLCCommand,
+		OverlayDir:      cfg.OverlayDir,
+		DefaultProvider: cfg.DefaultProvider,
+		AwaitDefaultProviderChoice: func(ctx context.Context, unavailable *sandbox.ProviderUnavailableError, alternatives []string) (string, error) {
+			return startup.awaitChoice(ctx, health.Choice{
+				Provider:     unavailable.Provider,
+				Reason:       unavailable.Reason,
+				Detail:       unavailable.Err.Error(),
+				Alternatives: alternatives,
+			})
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

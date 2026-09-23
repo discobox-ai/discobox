@@ -61,3 +61,19 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 func EnsurePlatformPrerequisites(ctx context.Context, options FactoryOptions) error {
 	return ensurePlatformPrerequisites(ctx, options)
 }
+
+// CheckDefaultProvider reports whether a first start can install providerType
+// as this host's default, and a *sandbox.ProviderUnavailableError when it
+// cannot (ADR 0148 §2).
+//
+// Only libkrun has anything to check. It is the default that needs the host to
+// have something — KVM, and a runtime that loads — and a missing one is the
+// difference between the VM boundary a user was promised and none at all. The
+// platform backends are checked for the whole server by
+// EnsurePlatformPrerequisites, and the portable providers fail per instance.
+func CheckDefaultProvider(ctx context.Context, providerType string, options FactoryOptions) error {
+	if providerType == libkrun.ProviderType {
+		return libkrun.CheckHost(ctx, options.ServerDefaults)
+	}
+	return nil
+}

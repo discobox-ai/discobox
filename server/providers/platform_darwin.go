@@ -30,7 +30,7 @@ func controlPlaneStreams(options FactoryOptions) vz.StreamSink {
 // DefaultBootImages are the images the provider this server installs by default
 // on this OS boots before it can run a pool, for a CLI to stage ahead of a first
 // run (ADR 0113 §1). On macOS that is vz, which boots the guest.
-func DefaultBootImages() []string { return []string{vz.DefaultGuestImage} }
+func DefaultBootImages(string) []string { return []string{vz.DefaultGuestImage} }
 
 // ensurePlatformPrerequisites has nothing to check: Virtualization.framework is
 // part of macOS, so the vz backend needs nothing installed alongside discobox —

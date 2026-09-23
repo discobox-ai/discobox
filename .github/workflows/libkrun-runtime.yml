@@ -1,24 +1,29 @@
-# The libkrun guest kernel has its own build and its own release line
-# (ADR 0101 §3).
+# The libkrun host runtime has its own build and its own release line
+# (ADR 0148 §5): libkrunfw's patched kernel, libkrun, and a static passt,
+# built together because the libkrunfw patches are what this libkrun expects
+# of its kernel.
 #
 # It is separate from the guest image workflow because it compiles Linux. The
-# two artifacts move on unrelated clocks — this one when libkrunfw or upstream
-# does, the guest when Debian or Docker does — and folding them together would
-# mean every guest change waiting on a kernel build that nothing in it touched.
+# two move on unrelated clocks — this one when libkrunfw, libkrun, passt or
+# upstream Linux does, the guest when Debian or Docker does — and folding them
+# together would mean every guest change waiting on a kernel build that nothing
+# in it touched.
 #
-# It publishes as `discobox-vm-kernel`, linux/amd64 only: it exists because no
-# distribution kernel boots under libkrun, and libkrun is the only backend that
-# runs this architecture.
-name: VM kernel
+# It publishes as `discobox-libkrun-runtime`, linux/amd64 only: libkrun is the
+# only backend that runs this architecture. No host pulls it directly; the
+# image a libkrun pool boots packages it with the guest (vm-krun.yml).
+name: libkrun runtime
 
 on:
   push:
     tags:
-      - "vm-kernel/v*"
+      - "libkrun-runtime/v*"
   pull_request:
     paths:
-      - "vm-image/kernel/**"
-      - ".github/workflows/vm-kernel.yml"
+      - "vm-image/libkrun/**"
+      # The packaging image compiles nothing and is built by vm-krun.yml.
+      - "!vm-image/libkrun/package/**"
+      - ".github/workflows/libkrun-runtime.yml"
   # Rebuilt on a cadence for upstream security fixes, like the guest. This run
   # only builds; publishing stays tag-driven so a rebuild is still a deliberate
   # release someone pins.
@@ -30,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: vm-kernel-${{ github.ref }}
+  group: libkrun-runtime-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -42,13 +47,13 @@ jobs:
 
       - uses: ./.github/actions/task
         with:
-          target: vm:build-kernel
+          target: vm:build-libkrun-runtime
 
-      - run: nix develop -c go tool task vm:verify-kernel
+      - run: nix develop -c go tool task vm:verify-libkrun-runtime
 
   publish:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/vm-kernel/v')
+    if: startsWith(github.ref, 'refs/tags/libkrun-runtime/v')
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 120
     permissions:
@@ -73,4 +78,4 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/task
         with:
-          target: vm:publish-kernel
+          target: vm:publish-libkrun-runtime

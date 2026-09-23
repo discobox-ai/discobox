@@ -32,8 +32,8 @@ together, where before it broke one".
   decides only whether Debian's kernel can be published in a form a hypervisor
   loads directly (ADR 0101 §4). It never changes the root filesystem. A
   difference a backend genuinely needs and the other cannot take belongs in a
-  separate artifact with its own release line, as the libkrunfw-patched kernel
-  does (ADR 0101 §3). The one
+  separate artifact with its own release line, as libkrun's runtime does
+  (ADR 0101 §3, ADR 0148 §5). The one
   thing that could have differed — how the guest gets an address — is answered
   the same way for both, because passt serves DHCP as Virtualization.framework's
   NAT attachment does.
@@ -58,9 +58,21 @@ together, where before it broke one".
 - **Guest image changes are a separate release.** Editing this directory does
   not ship with the server; it ships when a `vm/v*` tag is cut and
   `guestimage.DefaultVMImage` is re-pinned to the new `discobox-vm` digest.
-  `kernel/` ships on its own line the same way: a `vm-kernel/v*` tag, then
-  libkrun's `DefaultKernelImage` is re-pinned to the new `discobox-vm-kernel`
-  digest.
+  That reaches `vz` only. libkrun gets it when `libkrun/package/Dockerfile`'s
+  `GUEST_IMAGE` is re-pinned, a `vm-krun/v*` tag is cut, and libkrun's
+  `DefaultImage` is re-pinned to the new `discobox-vm-krun` digest. A change
+  under `libkrun/` (outside `package/`) ships the same way one step earlier: a
+  `libkrun-runtime/v*` tag, then `RUNTIME_IMAGE` is re-pinned, then the
+  `vm-krun/v*` release.
+- **The package compiles nothing.** `libkrun/package/Dockerfile` only copies
+  from two pinned digests. A build step there puts a compile back on every
+  guest release the split exists to keep cheap; it belongs in
+  `libkrun/Dockerfile`.
+- **The runtime ships onto hosts nobody here controls.** Build it on the
+  guest's Debian, never from Nix; keep libkrun free of a `NEEDED` on libkrunfw
+  and passt static. `vm:verify-libkrun-runtime` refuses all three, and any
+  artifact naming `/nix/store` — do not weaken those checks to get a build
+  through.
 - **Do not replace the clock step with NTP, or make it conditional on anything
   but the RTC's presence.** A guest is hours off precisely when its host has
   slept, which is the case an NTP daemon refuses to correct on its own. Every

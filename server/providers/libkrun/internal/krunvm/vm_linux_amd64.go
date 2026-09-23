@@ -39,6 +39,16 @@ func checkKVM() error {
 	return nil
 }
 
+// CheckLibrary loads libkrun from path and binds every entry point Run uses,
+// then returns without starting anything. It runs in a launcher child for the
+// reason Run does — the server never maps libkrun (ADR 0062 §9) — and answers
+// whether the runtime a first start would install can load at all
+// (ADR 0148 §2), which is otherwise first discovered at a pool's boot.
+func CheckLibrary(path string) error {
+	_, err := openLibrary(path)
+	return err
+}
+
 // passtStartTimeout is how long passt gets to create its socket. It forks,
 // binds, and writes the socket; anything slower than this is a failure that has
 // not reported itself yet.
