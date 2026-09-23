@@ -33,7 +33,7 @@ func newConfigureService(t *testing.T) (*Service, *fakeUnits) {
 		RuntimeDir:  filepath.Join(dir, "rt"),
 		Env:         env,
 		Harness:     config.Harness{ID: "codex", Command: []string{"/usr/local/libexec/discobox/configure-codex"}},
-		HarnessMode: configHarnessMode,
+		HarnessMode: config.HarnessModeConfig,
 		Units:       units,
 		Installer:   &noopInstaller{},
 	})

@@ -293,7 +293,7 @@ func TestReviveStartupCommandCarriesThePrompt(t *testing.T) {
 	if got := reviveStartupCommand(harness, ShellHarnessID, "", []string{"p"}); got != nil {
 		t.Fatalf("shell revive = %v, want nothing typed", got)
 	}
-	if got := reviveStartupCommand(harness, "codex", configHarnessMode, []string{"p"}); got != nil {
+	if got := reviveStartupCommand(harness, "codex", config.HarnessModeConfig, []string{"p"}); got != nil {
 		t.Fatalf("configure revive = %v, want nothing typed", got)
 	}
 }

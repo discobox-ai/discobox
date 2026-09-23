@@ -506,7 +506,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		return err
 	}
 	manager, execManager, localStore := built.terminals, built.execs, built.store
-	if cfg.HarnessMode == "config" {
+	if cfg.HarnessMode == config.HarnessModeConfig {
 		// Before anything can be seeded: the configure command runs as the
 		// sandbox user, and this is the only part of root-owned /run/discobox
 		// it may write.
@@ -518,7 +518,10 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// command is interactive and reads inputs seeded into the sandbox after it is
 	// running, so launching it at boot would race that seeding. Attaching to the
 	// virtual primary exec id launches it (see terminal.ResolvePrimary).
-	if cfg.HarnessMode != "config" {
+	//
+	// A judge launches no terminal at all: it answers its pool and is worked in
+	// by nobody (ADR 0141 §1).
+	if config.WorkedIn(cfg.HarnessMode) {
 		go func() {
 			switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
 			case err == nil, errors.Is(err, context.Canceled):
@@ -533,7 +536,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// cannot hold up the agent answering — and a config-mode sandbox starts
 	// none, since it exists to run one setup command and end, not to be worked
 	// in.
-	if cfg.HarnessMode != "config" && built.services != nil {
+	if config.WorkedIn(cfg.HarnessMode) && built.services != nil {
 		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
 	}
 	// Exec state converges on notifications rather than a poll (ADR 0115): the
@@ -552,8 +555,10 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// The sandbox powers itself off once nothing has happened in it for the
 	// idle timeout, and the pool agent's auto-start brings it back (ADR 0108).
 	// A configure-mode sandbox runs one setup command for a flow the control
-	// plane drives, so its lifetime belongs to that flow and not to this.
-	if cfg.HarnessMode != "config" {
+	// plane drives, so its lifetime belongs to that flow and not to this. A
+	// judge is idle exactly when nothing is being judged, and powering it off
+	// then would put a cold start in front of the next credential anyone uses.
+	if config.WorkedIn(cfg.HarnessMode) {
 		go built.autostop.Run(ctx)
 	}
 	go func() {

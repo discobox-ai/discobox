@@ -3,6 +3,7 @@
 package execs
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 
@@ -30,3 +31,8 @@ func userEnvDefaults(user *User) (map[string]string, error) {
 func UserEnvDefaults(user *User) (map[string]string, error) {
 	return userEnvDefaults(user)
 }
+
+// killGroup has no session to signal on Windows; the process itself is what
+// there is. The sandbox runtime is Linux, and this exists so the package still
+// builds for the cross-check.
+func killGroup(int) error { return errors.ErrUnsupported }

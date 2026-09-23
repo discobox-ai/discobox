@@ -55,6 +55,13 @@ func (h *Handler) UpdateSandboxAgentMeta(context.Context, *serverapi.UpdateSandb
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// JudgeSandbox is the judge runtime's own route, which the pool reaches
+// through its agent (ADR 0141 §2). The control plane routes judging rather
+// than answering it, so this route is neither served nor proxied here.
+func (h *Handler) JudgeSandbox(context.Context, *serverapi.JudgeJob, serverapi.JudgeSandboxParams) (serverapi.JudgeSandboxRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) ListHarnessHooks(context.Context, serverapi.ListHarnessHooksParams) (serverapi.ListHarnessHooksRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

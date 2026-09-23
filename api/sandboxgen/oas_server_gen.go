@@ -74,6 +74,16 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (*SandboxService, error)
+	// JudgeSandbox implements judge-sandbox operation.
+	//
+	// Puts one judging job to this discobox's harness and returns what it answered (ADR 0141). Only a
+	// discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
+	// evidence and the approved use; the prompt, the schema, the model role and the tools restriction
+	// are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and
+	// one is answered at a time.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
+	JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (*JudgeAnswer, error)
 	// ListExecEvents implements list-exec-events operation.
 	//
 	// Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),

@@ -77,7 +77,7 @@ func (s *Service) WatchSecretFiles(ctx context.Context, logger *slog.Logger) {
 	// extract_oauth_payload). Restoring the sentinel over it would overwrite
 	// the login being captured, breaking the one flow that produces a
 	// credential in the first place.
-	if s.harnessMode == configHarnessMode {
+	if s.harnessMode == config.HarnessModeConfig {
 		return
 	}
 	ticker := time.NewTicker(secretFilesInterval)

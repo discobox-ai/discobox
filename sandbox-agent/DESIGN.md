@@ -545,6 +545,25 @@ development images without a registry.
 
 ## Runtime Rules
 
+- **What a sandbox exists for decides what starts in it** (`config.WorkedIn`).
+  A sandbox that is worked in launches a primary terminal, starts the
+  repository's declared services, and powers itself off when idle. Two modes
+  answer no, each existing to do one thing for somebody else: `config`, which
+  runs a harness's setup command once for a flow the control plane drives, and
+  `judge`, the project's judge ([ADR 0141](../docs/adr/0141-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)).
+  The three places that would otherwise have to agree read the predicate rather
+  than naming a mode.
+- **A judge answers its pool and nothing else** (`terminal.Judge`,
+  `server/judge.go`). A job — the approved use, its host, and evidence — is put
+  to the image's own `discobox-prompt` with the role, the system prompt, the
+  schema and `--no-tools` this process supplies, so a caller cannot ask a
+  kinder question than Discobox asks; the wrapper is resolved on the harness
+  environment's PATH, and the answer is decoded strictly, so anything that is
+  not a verdict is an error rather than an allow. Asks are answered one at a
+  time and a second is told the judge is busy rather than queued, because the
+  caller is holding a request open. The route has its own scope (`judge:run`),
+  which no token for a discobox's own work carries, and a discobox that is not
+  a judge refuses the ask outright.
 - Every sandbox has a default terminal: on sandbox start the harness always
   launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
   clients such as `discobox new` can rely on one existing and attach to it. The

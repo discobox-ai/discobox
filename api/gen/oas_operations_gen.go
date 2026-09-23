@@ -65,6 +65,7 @@ const (
 	GetServerInfoOperation                    OperationName = "GetServerInfo"
 	GetServerPeerOperation                    OperationName = "GetServerPeer"
 	GetTrustRequestOperation                  OperationName = "GetTrustRequest"
+	JudgeSandboxOperation                     OperationName = "JudgeSandbox"
 	ListApprovalRequestsOperation             OperationName = "ListApprovalRequests"
 	ListCredentialVerdictsOperation           OperationName = "ListCredentialVerdicts"
 	ListDNSAuditOperation                     OperationName = "ListDNSAudit"

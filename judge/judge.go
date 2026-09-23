@@ -26,6 +26,12 @@ const (
 	PromptVersion = "1"
 	// Timeout bounds one exchange — every round of it together, not each ask.
 	// A request is being held open while the judge thinks.
+	//
+	// The caller owns it, because only the caller knows an exchange is under
+	// way: it passes a context carrying the remaining time, and each ask is
+	// bounded by whichever is sooner, that or this. A judge runtime applies it
+	// on its own as a ceiling for a caller that passed no deadline at all,
+	// which bounds one ask rather than the exchange.
 	Timeout = 90 * time.Second
 	// MaxRounds is how many times the judge may be asked about one job: the
 	// first ask, and at most two more after it asks to be shown something.

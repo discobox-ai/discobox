@@ -237,7 +237,7 @@ func TestWatchSecretFilesSkipsConfigSandboxes(t *testing.T) {
 	svc := &Service{
 		harness:     credentialsHarness(),
 		installer:   installer,
-		harnessMode: configHarnessMode,
+		harnessMode: config.HarnessModeConfig,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

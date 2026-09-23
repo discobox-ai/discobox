@@ -97,9 +97,6 @@ type ServiceConfig struct {
 }
 
 // Service is the harness-terminal layer over execs.Manager.
-// configHarnessMode is the sandbox that exists to run a harness's setup once,
-// rather than to be worked in. See sandbox-agent/config.
-const configHarnessMode = "config"
 
 type Service struct {
 	execs          *execs.Manager
@@ -115,8 +112,11 @@ type Service struct {
 	// run user's own home stands in for it everywhere else (resolveHomeDir).
 	homeDirectory string
 	harnessMode   string
-	bootPrompt    []string
-	awaitSources  func(context.Context) error
+	// judging is the one judging run a judge allows at a time (judge.go). It
+	// is made whatever the mode is; in every other mode nothing takes it.
+	judging      chan struct{}
+	bootPrompt   []string
+	awaitSources func(context.Context) error
 
 	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
@@ -170,6 +170,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		primaryState:  cfg.PrimaryState,
 		homeDirectory: strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
 		harnessMode:   strings.TrimSpace(cfg.HarnessMode),
+		judging:       make(chan struct{}, 1),
 		bootPrompt:    append([]string(nil), cfg.Prompt...),
 		awaitSources:  cfg.AwaitSources,
 		installing:    map[string]struct{}{},
@@ -246,6 +247,13 @@ func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 // record exists and the mapper projects it as the "installing" phase. The unit
 // is only launched later by Start, so the record sits idle during install.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, error) {
+	// A judge has no terminal, and starting the harness in one would run the
+	// project's agent — with the judge's own credential — in the sandbox whose
+	// whole purpose is to have no work in it (ADR 0141 §1). Nothing in the
+	// agent asks for one, and this is what keeps an attach from asking.
+	if s.harnessMode == config.HarnessModeJudge {
+		return execs.Exec{}, errors.New("a judge runs no terminal")
+	}
 	harness, harnessID, err := s.resolveHarness(req.HarnessID)
 	if err != nil {
 		return execs.Exec{}, err
@@ -318,7 +326,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	// for a harness you sit in front of; it is not worth the answer to "did
 	// this succeed" for a program that runs once and ends.
 	switch {
-	case s.harnessMode == configHarnessMode:
+	case s.harnessMode == config.HarnessModeConfig:
 		execReq.Shell = false
 		execReq.Command = command
 	case harnessID != ShellHarnessID:
@@ -423,7 +431,7 @@ func reviveStartupCommand(harness config.Harness, harnessID, harnessMode string,
 	switch {
 	case harnessID == ShellHarnessID:
 		return nil
-	case harnessMode == configHarnessMode:
+	case harnessMode == config.HarnessModeConfig:
 		return nil
 	}
 	return append(resumeStartupCommand(harness), prompt...)
@@ -716,7 +724,7 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 		}
 	}
 	request := primaryCreateRequest(harness, harnessID, prompt, launched)
-	if s.harnessMode == configHarnessMode {
+	if s.harnessMode == config.HarnessModeConfig {
 		// The image-owned config command is exact: never append the normal prompt
 		// and never replace it with the normal relaunch command.
 		request.command = append([]string{}, harness.Command...)

@@ -90,3 +90,15 @@ func userCredential(user *User) (*syscall.Credential, bool, error) {
 		Groups: groups,
 	}, true, nil
 }
+
+// killGroup ends a process and everything it started. A one-shot runs in its
+// own session (agentSysProcAttr sets Setsid), so the session's process group is
+// what must be signaled: killing the child alone leaves its helpers holding
+// the pipes this process is reading, and a wait does not return while anything
+// can still write to them.
+func killGroup(pid int) error {
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
+		return nil
+	}
+	return syscall.Kill(pid, syscall.SIGKILL)
+}

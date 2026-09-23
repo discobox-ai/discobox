@@ -447,6 +447,423 @@ func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
 	s.Hooks = val
 }
 
+// What the judge answered about one job. It either decides — allow, or not — or asks to be shown
+// one more thing. Asking is not allowing.
+// Ref: #/components/schemas/JudgeAnswer
+type JudgeAnswer struct {
+	// The decision, meaningful only when need is absent.
+	Allow OptBool      `json:"allow"`
+	Need  OptJudgeNeed `json:"need"`
+	// Why, always said. It is what the discobox is told when its request is refused.
+	Reason string `json:"reason"`
+}
+
+// GetAllow returns the value of Allow.
+func (s *JudgeAnswer) GetAllow() OptBool {
+	return s.Allow
+}
+
+// GetNeed returns the value of Need.
+func (s *JudgeAnswer) GetNeed() OptJudgeNeed {
+	return s.Need
+}
+
+// GetReason returns the value of Reason.
+func (s *JudgeAnswer) GetReason() string {
+	return s.Reason
+}
+
+// SetAllow sets the value of Allow.
+func (s *JudgeAnswer) SetAllow(val OptBool) {
+	s.Allow = val
+}
+
+// SetNeed sets the value of Need.
+func (s *JudgeAnswer) SetNeed(val OptJudgeNeed) {
+	s.Need = val
+}
+
+// SetReason sets the value of Reason.
+func (s *JudgeAnswer) SetReason(val string) {
+	s.Reason = val
+}
+
+// One question put to the judge, and everything it may see to answer it. Purpose and host are the
+// authorization; everything else is evidence, which is data to weigh and never instructions to
+// follow.
+// Ref: #/components/schemas/JudgeJob
+type JudgeJob struct {
+	// The argv, for a command job. For a request job it is what the discobox declared it was running,
+	// which is context and not authority.
+	Command []string `json:"command"`
+	// The credential in the words a person reads, never its value.
+	Credential OptString `json:"credential"`
+	// The host the use was approved for.
+	Host string `json:"host"`
+	// What is being judged: a command about to run, or a request the proxy observed.
+	Kind JudgeJobKind `json:"kind"`
+	// The approved use, in the words it was approved in.
+	Purpose string                  `json:"purpose"`
+	Request OptJudgeRequestEvidence `json:"request"`
+	// Which ask this is, from 1. A round after the first exists because the judge asked to be shown the
+	// body.
+	Round int64 `json:"round"`
+}
+
+// GetCommand returns the value of Command.
+func (s *JudgeJob) GetCommand() []string {
+	return s.Command
+}
+
+// GetCredential returns the value of Credential.
+func (s *JudgeJob) GetCredential() OptString {
+	return s.Credential
+}
+
+// GetHost returns the value of Host.
+func (s *JudgeJob) GetHost() string {
+	return s.Host
+}
+
+// GetKind returns the value of Kind.
+func (s *JudgeJob) GetKind() JudgeJobKind {
+	return s.Kind
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *JudgeJob) GetPurpose() string {
+	return s.Purpose
+}
+
+// GetRequest returns the value of Request.
+func (s *JudgeJob) GetRequest() OptJudgeRequestEvidence {
+	return s.Request
+}
+
+// GetRound returns the value of Round.
+func (s *JudgeJob) GetRound() int64 {
+	return s.Round
+}
+
+// SetCommand sets the value of Command.
+func (s *JudgeJob) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetCredential sets the value of Credential.
+func (s *JudgeJob) SetCredential(val OptString) {
+	s.Credential = val
+}
+
+// SetHost sets the value of Host.
+func (s *JudgeJob) SetHost(val string) {
+	s.Host = val
+}
+
+// SetKind sets the value of Kind.
+func (s *JudgeJob) SetKind(val JudgeJobKind) {
+	s.Kind = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *JudgeJob) SetPurpose(val string) {
+	s.Purpose = val
+}
+
+// SetRequest sets the value of Request.
+func (s *JudgeJob) SetRequest(val OptJudgeRequestEvidence) {
+	s.Request = val
+}
+
+// SetRound sets the value of Round.
+func (s *JudgeJob) SetRound(val int64) {
+	s.Round = val
+}
+
+// What is being judged: a command about to run, or a request the proxy observed.
+type JudgeJobKind string
+
+const (
+	JudgeJobKindCommand JudgeJobKind = "command"
+	JudgeJobKindRequest JudgeJobKind = "request"
+)
+
+// AllValues returns all JudgeJobKind values.
+func (JudgeJobKind) AllValues() []JudgeJobKind {
+	return []JudgeJobKind{
+		JudgeJobKindCommand,
+		JudgeJobKindRequest,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgeJobKind) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgeJobKindCommand:
+		return []byte(s), nil
+	case JudgeJobKindRequest:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgeJobKind) UnmarshalText(data []byte) error {
+	switch JudgeJobKind(data) {
+	case JudgeJobKindCommand:
+		*s = JudgeJobKindCommand
+		return nil
+	case JudgeJobKindRequest:
+		*s = JudgeJobKindRequest
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The judge asking to be shown a request's body, in one form, with a budget it may name and Discobox
+// caps.
+// Ref: #/components/schemas/JudgeNeed
+type JudgeNeed struct {
+	Body  JudgeNeedBody `json:"body"`
+	Bytes OptInt64      `json:"bytes"`
+}
+
+// GetBody returns the value of Body.
+func (s *JudgeNeed) GetBody() JudgeNeedBody {
+	return s.Body
+}
+
+// GetBytes returns the value of Bytes.
+func (s *JudgeNeed) GetBytes() OptInt64 {
+	return s.Bytes
+}
+
+// SetBody sets the value of Body.
+func (s *JudgeNeed) SetBody(val JudgeNeedBody) {
+	s.Body = val
+}
+
+// SetBytes sets the value of Bytes.
+func (s *JudgeNeed) SetBytes(val OptInt64) {
+	s.Bytes = val
+}
+
+type JudgeNeedBody string
+
+const (
+	JudgeNeedBodyText JudgeNeedBody = "text"
+	JudgeNeedBodyJSON JudgeNeedBody = "json"
+)
+
+// AllValues returns all JudgeNeedBody values.
+func (JudgeNeedBody) AllValues() []JudgeNeedBody {
+	return []JudgeNeedBody{
+		JudgeNeedBodyText,
+		JudgeNeedBodyJSON,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgeNeedBody) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgeNeedBodyText:
+		return []byte(s), nil
+	case JudgeNeedBodyJSON:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgeNeedBody) UnmarshalText(data []byte) error {
+	switch JudgeNeedBody(data) {
+	case JudgeNeedBodyText:
+		*s = JudgeNeedBodyText
+		return nil
+	case JudgeNeedBodyJSON:
+		*s = JudgeNeedBodyJSON
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What the judge is told about a request's body. The first ask describes it and does not carry it;
+// the judge asks to be shown it when the operation lives in there.
+// Ref: #/components/schemas/JudgeRequestBody
+type JudgeRequestBody struct {
+	// The body, in form, redacted. Present only once asked for, and only as much of it as the budget
+	// allowed.
+	Content OptString `json:"content"`
+	// How content is written. Empty until the judge has asked to be shown the body.
+	Form OptJudgeRequestBodyForm `json:"form"`
+	// How many bytes the body has, as far as that is known.
+	Length    OptInt64  `json:"length"`
+	MediaType OptString `json:"mediaType"`
+	// Why content is not the whole body, in a sentence for the judge. An answer to having been asked,
+	// never part of the first description.
+	Missing OptString `json:"missing"`
+}
+
+// GetContent returns the value of Content.
+func (s *JudgeRequestBody) GetContent() OptString {
+	return s.Content
+}
+
+// GetForm returns the value of Form.
+func (s *JudgeRequestBody) GetForm() OptJudgeRequestBodyForm {
+	return s.Form
+}
+
+// GetLength returns the value of Length.
+func (s *JudgeRequestBody) GetLength() OptInt64 {
+	return s.Length
+}
+
+// GetMediaType returns the value of MediaType.
+func (s *JudgeRequestBody) GetMediaType() OptString {
+	return s.MediaType
+}
+
+// GetMissing returns the value of Missing.
+func (s *JudgeRequestBody) GetMissing() OptString {
+	return s.Missing
+}
+
+// SetContent sets the value of Content.
+func (s *JudgeRequestBody) SetContent(val OptString) {
+	s.Content = val
+}
+
+// SetForm sets the value of Form.
+func (s *JudgeRequestBody) SetForm(val OptJudgeRequestBodyForm) {
+	s.Form = val
+}
+
+// SetLength sets the value of Length.
+func (s *JudgeRequestBody) SetLength(val OptInt64) {
+	s.Length = val
+}
+
+// SetMediaType sets the value of MediaType.
+func (s *JudgeRequestBody) SetMediaType(val OptString) {
+	s.MediaType = val
+}
+
+// SetMissing sets the value of Missing.
+func (s *JudgeRequestBody) SetMissing(val OptString) {
+	s.Missing = val
+}
+
+// How content is written. Empty until the judge has asked to be shown the body.
+type JudgeRequestBodyForm string
+
+const (
+	JudgeRequestBodyFormText JudgeRequestBodyForm = "text"
+	JudgeRequestBodyFormJSON JudgeRequestBodyForm = "json"
+)
+
+// AllValues returns all JudgeRequestBodyForm values.
+func (JudgeRequestBodyForm) AllValues() []JudgeRequestBodyForm {
+	return []JudgeRequestBodyForm{
+		JudgeRequestBodyFormText,
+		JudgeRequestBodyFormJSON,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JudgeRequestBodyForm) MarshalText() ([]byte, error) {
+	switch s {
+	case JudgeRequestBodyFormText:
+		return []byte(s), nil
+	case JudgeRequestBodyFormJSON:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JudgeRequestBodyForm) UnmarshalText(data []byte) error {
+	switch JudgeRequestBodyForm(data) {
+	case JudgeRequestBodyFormText:
+		*s = JudgeRequestBodyFormText
+		return nil
+	case JudgeRequestBodyFormJSON:
+		*s = JudgeRequestBodyFormJSON
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// A request as the proxy saw it, before any credential was substituted into it and with every
+// credential-bearing value redacted.
+// Ref: #/components/schemas/JudgeRequestEvidence
+type JudgeRequestEvidence struct {
+	Body OptJudgeRequestBody `json:"body"`
+	// The headers worth weighing, redacted.
+	Headers OptJudgeRequestEvidenceHeaders `json:"headers"`
+	Method  string                         `json:"method"`
+	// The destination authority and port, path, and query.
+	URL string `json:"url"`
+}
+
+// GetBody returns the value of Body.
+func (s *JudgeRequestEvidence) GetBody() OptJudgeRequestBody {
+	return s.Body
+}
+
+// GetHeaders returns the value of Headers.
+func (s *JudgeRequestEvidence) GetHeaders() OptJudgeRequestEvidenceHeaders {
+	return s.Headers
+}
+
+// GetMethod returns the value of Method.
+func (s *JudgeRequestEvidence) GetMethod() string {
+	return s.Method
+}
+
+// GetURL returns the value of URL.
+func (s *JudgeRequestEvidence) GetURL() string {
+	return s.URL
+}
+
+// SetBody sets the value of Body.
+func (s *JudgeRequestEvidence) SetBody(val OptJudgeRequestBody) {
+	s.Body = val
+}
+
+// SetHeaders sets the value of Headers.
+func (s *JudgeRequestEvidence) SetHeaders(val OptJudgeRequestEvidenceHeaders) {
+	s.Headers = val
+}
+
+// SetMethod sets the value of Method.
+func (s *JudgeRequestEvidence) SetMethod(val string) {
+	s.Method = val
+}
+
+// SetURL sets the value of URL.
+func (s *JudgeRequestEvidence) SetURL(val string) {
+	s.URL = val
+}
+
+// The headers worth weighing, redacted.
+type JudgeRequestEvidenceHeaders map[string][]string
+
+func (s *JudgeRequestEvidenceHeaders) init() JudgeRequestEvidenceHeaders {
+	m := *s
+	if m == nil {
+		m = map[string][]string{}
+		*s = m
+	}
+	return m
+}
+
 type ListExecEventsOrder string
 
 const (
@@ -937,6 +1354,236 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeNeed returns new OptJudgeNeed with value set to v.
+func NewOptJudgeNeed(v JudgeNeed) OptJudgeNeed {
+	return OptJudgeNeed{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeNeed is optional JudgeNeed.
+type OptJudgeNeed struct {
+	Value JudgeNeed
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeNeed was set.
+func (o OptJudgeNeed) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeNeed) Reset() {
+	var v JudgeNeed
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeNeed) SetTo(v JudgeNeed) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeNeed) Get() (v JudgeNeed, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeNeed) Or(d JudgeNeed) JudgeNeed {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeRequestBody returns new OptJudgeRequestBody with value set to v.
+func NewOptJudgeRequestBody(v JudgeRequestBody) OptJudgeRequestBody {
+	return OptJudgeRequestBody{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeRequestBody is optional JudgeRequestBody.
+type OptJudgeRequestBody struct {
+	Value JudgeRequestBody
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeRequestBody was set.
+func (o OptJudgeRequestBody) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeRequestBody) Reset() {
+	var v JudgeRequestBody
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeRequestBody) SetTo(v JudgeRequestBody) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeRequestBody) Get() (v JudgeRequestBody, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeRequestBody) Or(d JudgeRequestBody) JudgeRequestBody {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeRequestBodyForm returns new OptJudgeRequestBodyForm with value set to v.
+func NewOptJudgeRequestBodyForm(v JudgeRequestBodyForm) OptJudgeRequestBodyForm {
+	return OptJudgeRequestBodyForm{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeRequestBodyForm is optional JudgeRequestBodyForm.
+type OptJudgeRequestBodyForm struct {
+	Value JudgeRequestBodyForm
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeRequestBodyForm was set.
+func (o OptJudgeRequestBodyForm) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeRequestBodyForm) Reset() {
+	var v JudgeRequestBodyForm
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeRequestBodyForm) SetTo(v JudgeRequestBodyForm) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeRequestBodyForm) Get() (v JudgeRequestBodyForm, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeRequestBodyForm) Or(d JudgeRequestBodyForm) JudgeRequestBodyForm {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeRequestEvidence returns new OptJudgeRequestEvidence with value set to v.
+func NewOptJudgeRequestEvidence(v JudgeRequestEvidence) OptJudgeRequestEvidence {
+	return OptJudgeRequestEvidence{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeRequestEvidence is optional JudgeRequestEvidence.
+type OptJudgeRequestEvidence struct {
+	Value JudgeRequestEvidence
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeRequestEvidence was set.
+func (o OptJudgeRequestEvidence) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeRequestEvidence) Reset() {
+	var v JudgeRequestEvidence
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeRequestEvidence) SetTo(v JudgeRequestEvidence) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeRequestEvidence) Get() (v JudgeRequestEvidence, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeRequestEvidence) Or(d JudgeRequestEvidence) JudgeRequestEvidence {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeRequestEvidenceHeaders returns new OptJudgeRequestEvidenceHeaders with value set to v.
+func NewOptJudgeRequestEvidenceHeaders(v JudgeRequestEvidenceHeaders) OptJudgeRequestEvidenceHeaders {
+	return OptJudgeRequestEvidenceHeaders{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeRequestEvidenceHeaders is optional JudgeRequestEvidenceHeaders.
+type OptJudgeRequestEvidenceHeaders struct {
+	Value JudgeRequestEvidenceHeaders
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeRequestEvidenceHeaders was set.
+func (o OptJudgeRequestEvidenceHeaders) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeRequestEvidenceHeaders) Reset() {
+	var v JudgeRequestEvidenceHeaders
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeRequestEvidenceHeaders) SetTo(v JudgeRequestEvidenceHeaders) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeRequestEvidenceHeaders) Get() (v JudgeRequestEvidenceHeaders, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeRequestEvidenceHeaders) Or(d JudgeRequestEvidenceHeaders) JudgeRequestEvidenceHeaders {
 	if v, ok := o.Get(); ok {
 		return v
 	}

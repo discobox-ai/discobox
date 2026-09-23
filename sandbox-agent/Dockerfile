@@ -20,6 +20,7 @@ COPY auditid ./auditid
 COPY declared ./declared
 COPY execstream ./execstream
 COPY harness ./harness
+COPY judge ./judge
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig

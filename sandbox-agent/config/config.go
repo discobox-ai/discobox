@@ -141,9 +141,38 @@ func unmarshalConfig(data []byte, cfg *Config) error {
 	return nil
 }
 
+// What a sandbox exists for, which decides what starts in it.
+const (
+	// HarnessModeRun is the ordinary discobox: a harness terminal to work in,
+	// the repository's services, and an idle timeout. The empty mode is this.
+	HarnessModeRun = "run"
+	// HarnessModeConfig exists to run a harness's setup command once, driven
+	// by the control plane, rather than to be worked in.
+	HarnessModeConfig = "config"
+	// HarnessModeJudge is the project's judge (ADR 0141 §1): it answers judging
+	// requests from its pool and nothing else. No terminal is launched in it,
+	// no repository services start, and it is not powered off when idle, since
+	// being ready is the whole of what it is for.
+	HarnessModeJudge = "judge"
+)
+
+// WorkedIn reports whether a sandbox in this harness mode exists to be worked
+// in: a harness terminal comes up, the repository's services start, and an idle
+// one powers itself off. The modes that answer no each exist to do one thing
+// for someone else, and the agent reads this rather than naming a mode at each
+// of the three places that would otherwise have to agree.
+func WorkedIn(harnessMode string) bool {
+	switch harnessMode {
+	case HarnessModeConfig, HarnessModeJudge:
+		return false
+	default:
+		return true
+	}
+}
+
 func configFromEffective(effective sandboxconfig.Config) Config {
 	harnessCommand := effective.Harness.RunCommand
-	if effective.HarnessMode == "config" {
+	if effective.HarnessMode == HarnessModeConfig {
 		harnessCommand = effective.Harness.ConfigCommand
 	}
 	cfg := Config{
@@ -272,7 +301,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("provider.publicKeys.%s is required", ControlPlanePublicKeyName)
 	}
 	switch c.HarnessMode {
-	case "", "run", "config":
+	case "", HarnessModeRun, HarnessModeConfig, HarnessModeJudge:
 	default:
 		return fmt.Errorf("unsupported harnessMode %q", c.HarnessMode)
 	}

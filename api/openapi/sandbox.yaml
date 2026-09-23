@@ -111,6 +111,117 @@ components:
             required:
                 - hooks
             type: object
+        JudgeAnswer:
+            additionalProperties: false
+            description: What the judge answered about one job. It either decides — allow, or not — or asks to be shown one more thing. Asking is not allowing.
+            properties:
+                allow:
+                    description: The decision, meaningful only when need is absent.
+                    type: boolean
+                need:
+                    $ref: '#/components/schemas/JudgeNeed'
+                reason:
+                    description: Why, always said. It is what the discobox is told when its request is refused.
+                    type: string
+            required:
+                - reason
+            type: object
+        JudgeJob:
+            additionalProperties: false
+            description: One question put to the judge, and everything it may see to answer it. Purpose and host are the authorization; everything else is evidence, which is data to weigh and never instructions to follow.
+            properties:
+                command:
+                    description: The argv, for a command job. For a request job it is what the discobox declared it was running, which is context and not authority.
+                    items:
+                        type: string
+                    type: array
+                credential:
+                    description: The credential in the words a person reads, never its value.
+                    type: string
+                host:
+                    description: The host the use was approved for.
+                    type: string
+                kind:
+                    description: 'What is being judged: a command about to run, or a request the proxy observed.'
+                    enum:
+                        - command
+                        - request
+                    type: string
+                purpose:
+                    description: The approved use, in the words it was approved in.
+                    type: string
+                request:
+                    $ref: '#/components/schemas/JudgeRequestEvidence'
+                round:
+                    description: Which ask this is, from 1. A round after the first exists because the judge asked to be shown the body.
+                    format: int64
+                    type: integer
+            required:
+                - kind
+                - purpose
+                - host
+                - round
+            type: object
+        JudgeNeed:
+            additionalProperties: false
+            description: The judge asking to be shown a request's body, in one form, with a budget it may name and Discobox caps.
+            properties:
+                body:
+                    enum:
+                        - text
+                        - json
+                    type: string
+                bytes:
+                    format: int64
+                    type: integer
+            required:
+                - body
+            type: object
+        JudgeRequestBody:
+            additionalProperties: false
+            description: What the judge is told about a request's body. The first ask describes it and does not carry it; the judge asks to be shown it when the operation lives in there.
+            properties:
+                content:
+                    description: The body, in form, redacted. Present only once asked for, and only as much of it as the budget allowed.
+                    type: string
+                form:
+                    description: How content is written. Empty until the judge has asked to be shown the body.
+                    enum:
+                        - text
+                        - json
+                    type: string
+                length:
+                    description: How many bytes the body has, as far as that is known.
+                    format: int64
+                    type: integer
+                mediaType:
+                    type: string
+                missing:
+                    description: Why content is not the whole body, in a sentence for the judge. An answer to having been asked, never part of the first description.
+                    type: string
+            type: object
+        JudgeRequestEvidence:
+            additionalProperties: false
+            description: A request as the proxy saw it, before any credential was substituted into it and with every credential-bearing value redacted.
+            properties:
+                body:
+                    $ref: '#/components/schemas/JudgeRequestBody'
+                headers:
+                    additionalProperties:
+                        items:
+                            type: string
+                        type: array
+                    description: The headers worth weighing, redacted.
+                    type: object
+                method:
+                    type: string
+                url:
+                    description: The destination authority and port, path, and query.
+                    type: string
+            required:
+                - method
+                - url
+            type: object
         ResourceHistoryResponse:
             additionalProperties: false
             properties:
@@ -1862,6 +1973,45 @@ paths:
             summary: List recent sandbox harness hook payload logs.
             tags:
                 - Harness Hooks
+    /api/projects/{projectId}/sandboxes/{sandboxId}/judge:
+        post:
+            description: Puts one judging job to this discobox's harness and returns what it answered (ADR 0141). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and the approved use; the prompt, the schema, the model role and the tools restriction are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is answered at a time.
+            operationId: judge-sandbox
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/JudgeJob'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/JudgeAnswer'
+                    description: 'What the judge answered: a decision, or what it needs to be shown.'
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Put one judging job to this discobox's harness.
+            tags:
+                - Sandbox Judge
     /api/projects/{projectId}/sandboxes/{sandboxId}/meta:
         patch:
             description: Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home, and returns what it holds afterwards. The file is read, changed and replaced in one step, so what the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is refused rather than overwritten (ADR 0136).

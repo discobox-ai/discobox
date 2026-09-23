@@ -15,6 +15,7 @@ const (
 	GetSandboxExecResourcesOperation        OperationName = "GetSandboxExecResources"
 	GetSandboxExecScreenOperation           OperationName = "GetSandboxExecScreen"
 	GetSandboxServiceOperation              OperationName = "GetSandboxService"
+	JudgeSandboxOperation                   OperationName = "JudgeSandbox"
 	ListExecEventsOperation                 OperationName = "ListExecEvents"
 	ListHarnessHooksOperation               OperationName = "ListHarnessHooks"
 	ListSandboxExecEventsOperation          OperationName = "ListSandboxExecEvents"
