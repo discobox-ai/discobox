@@ -103,7 +103,13 @@ func Run(ctx context.Context) error {
 	// pool guest through its own transport.
 	listeners = append(listeners, serverListener{Listener: controlPlaneStreams, display: "pool control-plane streams"})
 
+	// Cancelable here so a start held for a choice can be told to stop: the
+	// router's /shutdown does not exist yet, and a held start may be waiting
+	// for good (startupHandler.serveShutdown).
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
 	startup := newStartupHandler("opening the database")
+	startup.stop = stop
 	httpServer := &http.Server{
 		Handler:           startup,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -213,6 +219,13 @@ func Run(ctx context.Context) error {
 		},
 	})
 	if err != nil {
+		// A held start that was asked to stop abandons initialization by
+		// design; exiting non-zero would mark a user service failed and put
+		// an error last in the log for a stop that did what it was told.
+		if startup.stopRequested() && errors.Is(err, context.Canceled) {
+			log.Printf("stopped while waiting for a default provider to be chosen")
+			return nil
+		}
 		return fmt.Errorf("initialize app: %w", err)
 	}
 	// The iroh gate has been answering from authorized_ids alone since the

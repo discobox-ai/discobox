@@ -645,7 +645,7 @@ Handing over is becoming ready. There are three states
 | State | API | `/healthz` | Meaning |
 | --- | --- | --- | --- |
 | `starting` | `503` with the status on every route | `503` | no router yet: the database is being opened or migrated, the services built, or the built-in harnesses checked; `phase` names the step |
-| `needs-choice` | `503`; `POST /setup/default-provider` over local IPC | `503` | a first start is held until its default provider is chosen; `choice` says why and what it will accept |
+| `needs-choice` | `503`; `POST /setup/default-provider` over local IPC; `POST /shutdown` | `503` | a first start is held until its default provider is chosen; `choice` says why and what it will accept. `/shutdown` stops it, so a user who answered no, or a newer server reclaiming the socket, is not left with a process only a kill ends |
 | `ready` | every route serves | `200` | the real router is serving |
 
 `startupHandler` answers every route itself until handover. The router's own

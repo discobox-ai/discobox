@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,5 +71,31 @@ func TestEnsureRunningHandsBackAServerWaitingForAChoice(t *testing.T) {
 	}
 	if got := <-answers; got != "docker" {
 		t.Fatalf("the server was told %q, want docker", got)
+	}
+}
+
+// A server that is not waiting has nothing to choose, and saying so is the
+// answer — not whatever its router says about a path it does not serve.
+func TestChooseDefaultProviderSaysWhenNothingIsWaiting(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc(health.Path, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(health.Status{Status: health.StatusReady})
+	})
+	mux.HandleFunc(health.SetupDefaultProviderPath, func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("a choice was posted to a server that was not waiting")
+		w.WriteHeader(http.StatusForbidden)
+	})
+	socket := filepath.Join(t.TempDir(), "server.sock")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	err = ChooseDefaultProvider(t.Context(), "unix://"+socket, "docker")
+	if err == nil || !strings.Contains(err.Error(), "not waiting") || !strings.Contains(err.Error(), "ready") {
+		t.Fatalf("ChooseDefaultProvider() = %v, want it to say the server is ready and not waiting", err)
 	}
 }

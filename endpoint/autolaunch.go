@@ -216,6 +216,16 @@ func ChooseDefaultProvider(ctx context.Context, rawEndpoint, provider string) er
 	if rawEndpoint == "" {
 		rawEndpoint = DefaultEndpoint()
 	}
+	// Asked first, because a server that is not waiting has no such path:
+	// once ready, the router answers it with an authorization refusal that
+	// says nothing about why.
+	status, err := probeEndpoint(ctx, LaunchOptions{Endpoint: rawEndpoint})
+	if err != nil {
+		return fmt.Errorf("reach the server at %s: %w", rawEndpoint, err)
+	}
+	if !status.NeedsChoice() {
+		return fmt.Errorf("the server at %s is not waiting for a default provider to be chosen: it is %s", rawEndpoint, status.Status)
+	}
 	target, err := Parse(rawEndpoint)
 	if err != nil {
 		return err

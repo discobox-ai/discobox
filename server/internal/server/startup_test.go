@@ -216,3 +216,40 @@ func TestDefaultProviderChoiceIsTakenOnlyOverTheLocalSocket(t *testing.T) {
 		t.Fatalf("a choice over the Unix socket answered %d, want 202", code)
 	}
 }
+
+// A start held for a choice can be stopped: the user who answered no, and a
+// newer server reclaiming the socket, both ask /shutdown, which the router
+// that serves it has not got yet. A start that is merely slow is not.
+func TestAHeldStartCanBeShutDown(t *testing.T) {
+	handler := newStartupHandler("starting services")
+	stopped := make(chan struct{}, 1)
+	handler.stop = func() { stopped <- struct{}{} }
+	shutdown := func() int {
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/shutdown", nil))
+		return resp.Code
+	}
+	if code := shutdown(); code != http.StatusServiceUnavailable {
+		t.Fatalf("/shutdown during an ordinary start answered %d, want 503", code)
+	}
+	go func() {
+		_, _ = handler.awaitChoice(t.Context(), health.Choice{Provider: "libkrun", Reason: health.ReasonKVMUnavailable, Alternatives: []string{"docker"}})
+	}()
+	for deadline := time.Now().Add(5 * time.Second); !handler.holding(); {
+		if time.Now().After(deadline) {
+			t.Fatal("startup never held")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if code := shutdown(); code != http.StatusAccepted {
+		t.Fatalf("/shutdown while held answered %d, want 202", code)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the held server was not stopped")
+	}
+	if !handler.stopRequested() {
+		t.Fatal("a requested stop is not recorded, so Run would report the abandoned start as a failure")
+	}
+}
