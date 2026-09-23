@@ -3,12 +3,14 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/x/gormdb"
 	"github.com/discobox-ai/x/id"
@@ -58,12 +60,16 @@ type ResourceSample struct {
 }
 
 type HarnessHookRecord struct {
-	ID         string          `json:"id,omitempty"`
-	TerminalID string          `json:"terminalId,omitempty"`
-	Provider   string          `json:"provider"`
-	Event      string          `json:"event"`
-	Payload    json.RawMessage `json:"payload"`
-	CreatedAt  time.Time       `json:"createdAt"`
+	ID         string `json:"id,omitempty"`
+	TerminalID string `json:"terminalId,omitempty"`
+	Provider   string `json:"provider"`
+	Event      string `json:"event"`
+	// CanonicalEvent is Claude Code's name for what Event names, empty when
+	// Claude Code has no name for it (ADR 0146 §3). The store derives it when
+	// it records the hook; setting it on the way in has no effect.
+	CanonicalEvent string          `json:"canonicalEvent,omitempty"`
+	Payload        json.RawMessage `json:"payload"`
+	CreatedAt      time.Time       `json:"createdAt"`
 }
 
 func Open(ctx context.Context, dsn string) (*Store, error) {
@@ -81,7 +87,64 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err := s.purgeDeletedExecRecords(ctx); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
+	if err := s.backfillCanonicalHookEvents(ctx); err != nil {
+		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
+	}
 	return s, nil
+}
+
+const canonicalHookEventsBackfilledKey = "canonical_hook_events_backfilled"
+
+// backfillCanonicalHookEvents gives a canonical name to hooks recorded before
+// the column existed, and to hooks whose name the mapping has learned since,
+// so a query by canonical name finds them too (ADR 0146 §7). It is additive:
+// no row's own event name is touched, so no stored hook changes meaning.
+//
+// It is stamped with the mapping's fingerprint rather than a boolean. The scan
+// is proportional to the rows with no canonical name, and those are never
+// removed — `harness_hook_logs` has no retention, and a hook Claude Code has
+// no word for keeps an empty canonical name forever — so an unstamped backfill
+// would re-read every one of them on every agent start, for a set that only
+// grows. Stamping on the fingerprint runs it once per table, which is exactly
+// as often as it can find anything: a new entry changes the fingerprint and
+// reaches the old rows, and an unchanged table is skipped in one indexed read.
+func (s *Store) backfillCanonicalHookEvents(ctx context.Context) error {
+	version := harness.CanonicalHookEventsVersion()
+	var stamp AgentState
+	err := s.write.WithContext(ctx).Where("key = ?", canonicalHookEventsBackfilledKey).Take(&stamp).Error
+	switch {
+	case err == nil && stamp.Value == version:
+		return nil
+	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
+		return err
+	}
+
+	var pairs []struct {
+		Provider string
+		Event    string
+	}
+	if err := s.write.WithContext(ctx).Model(&HarnessHookLog{}).
+		Select("provider", "event").
+		Where("canonical_event = '' OR canonical_event IS NULL").
+		Group("provider, event").
+		Find(&pairs).Error; err != nil {
+		return err
+	}
+	for _, pair := range pairs {
+		canonical := harness.CanonicalHookEvent(pair.Provider, pair.Event)
+		if canonical == "" {
+			continue
+		}
+		if err := s.write.WithContext(ctx).Model(&HarnessHookLog{}).
+			Where("provider = ? AND event = ? AND (canonical_event = '' OR canonical_event IS NULL)", pair.Provider, pair.Event).
+			Update("canonical_event", canonical).Error; err != nil {
+			return err
+		}
+	}
+	// Stamped after the fill, so an interrupted run is simply run again.
+	return s.write.WithContext(ctx).Save(&AgentState{
+		Key: canonicalHookEventsBackfilledKey, Value: version, UpdatedAt: time.Now().UTC(),
+	}).Error
 }
 
 const deletedExecRecordsPurgedKey = "deleted_exec_records_purged"
@@ -521,6 +584,12 @@ func (s *Store) RecordHarnessHook(ctx context.Context, record HarnessHookRecord)
 	}
 	record.ID = id
 	record.TerminalID = strings.TrimSpace(record.TerminalID)
+	// The canonical name is derived here and nowhere else (ADR 0146 §4): when
+	// the row is written, so a wait can match it in SQL, and in one place, so
+	// no writer can store a row whose two names disagree. Whatever a caller
+	// put in this field is overwritten rather than trusted — it is an answer
+	// the store gives, not an input it takes.
+	record.CanonicalEvent = harness.CanonicalHookEvent(record.Provider, record.Event)
 	// Stamped and written under the lock, so hooks reach the table in the
 	// order of their stamps and a wait resuming past one cannot miss an
 	// earlier-stamped hook written after it.
@@ -528,12 +597,13 @@ func (s *Store) RecordHarnessHook(ctx context.Context, record HarnessHookRecord)
 	defer s.hookMu.Unlock()
 	record.CreatedAt = s.tickHookClock()
 	row := HarnessHookLog{
-		ID:         record.ID,
-		TerminalID: record.TerminalID,
-		Provider:   record.Provider,
-		Event:      record.Event,
-		Payload:    append([]byte{}, record.Payload...),
-		CreatedAt:  record.CreatedAt,
+		ID:             record.ID,
+		TerminalID:     record.TerminalID,
+		Provider:       record.Provider,
+		Event:          record.Event,
+		CanonicalEvent: record.CanonicalEvent,
+		Payload:        append([]byte{}, record.Payload...),
+		CreatedAt:      record.CreatedAt,
 	}
 	if err := s.write.WithContext(ctx).Create(&row).Error; err != nil {
 		return HarnessHookRecord{}, err
@@ -590,15 +660,37 @@ func (s *Store) HarnessHookSignal() <-chan struct{} {
 // The events are matched in the query, not after it: a terminal records every
 // tool call, and a wait for the one hook that ends a turn must find it behind
 // any number of hooks it did not name.
+//
+// A name matches either the harness's own event or its canonical one
+// (ADR 0146 §6), so a wait for Stop ends on every harness that has a turn-end
+// hook, and one for an event with no canonical name still ends on the harness
+// that emits it.
 func (s *Store) FirstHarnessHookSince(ctx context.Context, terminalID string, since time.Time, events []string) (*HarnessHookRecord, error) {
-	if s == nil || len(events) == 0 {
+	if s == nil {
 		return nil, nil
 	}
+	// A blank name matches nothing. Without this it matches everything whose
+	// canonical name is empty — every Interrupt, every opencode event Claude
+	// Code has no word for — because `canonical_event IN ('')` is true for all
+	// of them. The API puts no minLength on a wait's event names and pflag
+	// reads `--hook Stop,` as two, so a blank reaches here from an ordinary
+	// typo.
+	named := make([]string, 0, len(events))
+	for _, event := range events {
+		if event = strings.TrimSpace(event); event != "" {
+			named = append(named, event)
+		}
+	}
+	if len(named) == 0 {
+		return nil, nil
+	}
+	events = named
 	var rows []HarnessHookLog
 	// Hooks are recorded in UTC and SQLite compares times as text carrying
 	// their offset, so the bound is compared in UTC.
 	if err := s.read.WithContext(ctx).
-		Where("terminal_id = ? AND created_at > ? AND event IN ?", strings.TrimSpace(terminalID), since.UTC(), events).
+		Where("terminal_id = ? AND created_at > ? AND (event IN ? OR canonical_event IN ?)",
+			strings.TrimSpace(terminalID), since.UTC(), events, events).
 		Order("created_at ASC").
 		Limit(1).
 		Find(&rows).Error; err != nil {
@@ -618,7 +710,9 @@ type HarnessHookFilter struct {
 	ID         string
 	TerminalID string
 	Provider   string
-	Event      string
+	// Event matches either the harness's own event name or its canonical one
+	// (ADR 0146 §6), so a reader need not know which of the two a name is.
+	Event string
 	// Since keeps hooks recorded at or after it. Hooks are recorded in UTC and
 	// SQLite compares times as text carrying their offset, so the bound is
 	// compared in UTC.
@@ -653,7 +747,7 @@ func (s *Store) ListHarnessHooks(ctx context.Context, filter HarnessHookFilter) 
 		query = query.Where("provider = ?", v)
 	}
 	if v := strings.TrimSpace(filter.Event); v != "" {
-		query = query.Where("event = ?", v)
+		query = query.Where("event = ? OR canonical_event = ?", v, v)
 	}
 	if !filter.Since.IsZero() {
 		query = query.Where("created_at >= ?", filter.Since.UTC())
@@ -678,12 +772,13 @@ func hookRecord(row HarnessHookLog) HarnessHookRecord {
 		payload = json.RawMessage(`{}`)
 	}
 	return HarnessHookRecord{
-		ID:         row.ID,
-		TerminalID: row.TerminalID,
-		Provider:   row.Provider,
-		Event:      row.Event,
-		Payload:    payload,
-		CreatedAt:  row.CreatedAt,
+		ID:             row.ID,
+		TerminalID:     row.TerminalID,
+		Provider:       row.Provider,
+		Event:          row.Event,
+		CanonicalEvent: row.CanonicalEvent,
+		Payload:        payload,
+		CreatedAt:      row.CreatedAt,
 	}
 }
 

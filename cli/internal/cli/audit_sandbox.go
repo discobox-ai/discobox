@@ -83,7 +83,7 @@ are recorded.
 	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Discobox whose hooks to read (required)")
 	cmd.Flags().StringVar(&terminalID, "terminal-id", "", "Only hooks from this terminal (ID or prefix)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Only hooks from this harness provider, such as claude-code")
-	cmd.Flags().StringVar(&event, "event", "", "Only this hook event, such as PreToolUse")
+	cmd.Flags().StringVar(&event, "event", "", "Only this hook event, by its own or canonical name, such as PreToolUse")
 	cmd.Flags().StringVar(&since, "since", "", "Only hooks from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of hooks to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing hooks as they are recorded")

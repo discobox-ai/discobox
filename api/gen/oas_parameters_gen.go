@@ -8066,7 +8066,7 @@ type ListHarnessHooksParams struct {
 	Limit OptInt `json:",omitempty,omitzero"`
 	// Only hooks from this provider (e.g. claude-code).
 	Provider OptString `json:",omitempty,omitzero"`
-	// Only hooks for this provider event (e.g. PreToolUse).
+	// Only hooks whose own or canonical event name is this (e.g. PreToolUse).
 	Event OptString `json:",omitempty,omitzero"`
 	// Only hooks recorded at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`

@@ -278,11 +278,41 @@ Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
 the sandbox agent's generic publisher; no Go code in this package writes or
 merges a harness's settings.
 
-opencode publishes no hooks. Its lifecycle events reach JavaScript plugins
-rather than commands, and hooks are recorded and read by nothing that derives
-state from them (`sandbox-agent/agentstatus`), so the harness loses a log rather
-than a behavior. Its policy baseline is a launch flag rather than a system layer
-(see [OpenCode](#opencode)).
+opencode publishes no hooks, and that costs a behavior rather than a log. A
+wait ends on a hook event (ADR 0137 §3) and an opencode terminal records none,
+so only `--quiet` and `--exit` can end one there. The cost rose when a hook
+event became a name a caller matches on across harnesses (ADR 0146) rather
+than an entry in a trail. The reason is structural and not a gap in the image:
+opencode's lifecycle events reach JavaScript plugins and an event bus, never a
+command, so there is nothing for the generic publisher to be invoked from. Its
+policy baseline is a launch flag rather than a system layer (see
+[OpenCode](#opencode)).
+
+## Canonical hook event names
+
+A harness names its lifecycle events as it likes, and a caller waiting for one
+should not have to know which harness a terminal runs. `CanonicalHookEvent`
+(`hookevent.go`) answers Claude Code's name for another harness's event, or the
+empty string when Claude Code has no name for it
+([ADR 0146](../docs/adr/0146-a-hook-keeps-the-name-its-harness-used-and-gains-a-canonical-one.md)).
+The sandbox agent's store calls it as it records each hook — one owner, so no
+writer can store a row whose two names disagree — and keeps both names; a wait
+or an audit filter then matches either.
+
+- **Claude Code's vocabulary is the canonical one**, so `claude-code` is absent
+  from the table and passes through — including events added after the table
+  was written, which is the case a table would get wrong.
+- **An agreement on spelling is recorded, not assumed.** Codex adopted Claude
+  Code's hook vocabulary wholesale, and each of the 11 events it shares is an
+  entry mapping a name to itself: two harnesses spelling an event the same way
+  is a fact about how they were built, not a contract.
+- **An event with no Claude Code counterpart gets no canonical name**, never a
+  copy of its own. Codex's `Interrupt` is the only one today. Copying it in
+  would squat a name Claude Code has not chosen, so that when Claude Code does
+  choose one, stored hooks already claim it.
+- Each image's hook config and this table are kept together by a test in that
+  harness's package: publishing an event without deciding what it is called
+  across harnesses fails the build.
 
 ## Source-scoped memory
 

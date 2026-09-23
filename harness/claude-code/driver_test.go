@@ -222,6 +222,13 @@ func TestDefinitionConfigure(t *testing.T) {
 	}
 }
 
+// The list is Claude Code's own hook lifecycle table, which is published with
+// the docs and readable as Markdown at
+// https://docs.claude.com/en/docs/claude-code/hooks.md. Last checked against
+// 2.1.278, which defines 33 events. A CLI that grows one is drift, not a
+// failure of this image: the store hands a sandbox the newest version it has
+// (ADR 0114), so the settings file is only complete for as long as nobody
+// adds an event. Re-read that table when this test fails.
 func TestManagedSettingsPublishesEverySupportedEvent(t *testing.T) {
 	data, err := os.ReadFile("managed-settings.json")
 	if err != nil {
@@ -245,7 +252,8 @@ func TestManagedSettingsPublishesEverySupportedEvent(t *testing.T) {
 		"PostToolBatch", "PermissionDenied", "Notification", "SubagentStart", "SubagentStop",
 		"TaskCreated", "TaskCompleted", "Stop", "StopFailure", "TeammateIdle", "ConfigChange",
 		"CwdChanged", "DirectoryAdded", "FileChanged", "WorktreeCreate", "WorktreeRemove",
-		"PreCompact", "PostCompact", "SessionEnd", "Elicitation", "ElicitationResult",
+		"PreCompact", "PostCompact", "PreModelSwitch", "PostModelSwitch", "SessionEnd",
+		"Elicitation", "ElicitationResult",
 	}
 	if len(settings.Hooks) != len(wantEvents) {
 		t.Fatalf("events = %d, want %d", len(settings.Hooks), len(wantEvents))
@@ -286,5 +294,29 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 				t.Fatalf("claude argv = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+// Claude Code's vocabulary is the canonical one (ADR 0146 §1), so every event
+// this image publishes is its own canonical name. The mapping never rewrites
+// one, and this is what says so.
+func TestEveryPublishedEventIsItsOwnCanonicalName(t *testing.T) {
+	raw, err := os.ReadFile("managed-settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Hooks map[string]json.RawMessage `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if len(settings.Hooks) == 0 {
+		t.Fatal("managed settings publish no hooks")
+	}
+	for event := range settings.Hooks {
+		if got := harness.CanonicalHookEvent(Driver{}.ID(), event); got != event {
+			t.Errorf("CanonicalHookEvent(%s, %s) = %q, want %q", Driver{}.ID(), event, got, event)
+		}
 	}
 }

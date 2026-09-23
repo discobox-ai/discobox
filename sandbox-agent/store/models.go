@@ -25,12 +25,16 @@ type ResourceSnapshot struct {
 func (ResourceSnapshot) TableName() string { return "resource_snapshots" }
 
 type HarnessHookLog struct {
-	ID         string    `gorm:"primaryKey" json:"id"`
-	TerminalID string    `gorm:"index:idx_harness_hook_logs_terminal_created,priority:1" json:"terminalId,omitempty"`
-	Provider   string    `gorm:"index" json:"provider"`
-	Event      string    `gorm:"index" json:"event"`
-	Payload    []byte    `gorm:"type:json" json:"payload"`
-	CreatedAt  time.Time `gorm:"index:idx_harness_hook_logs_terminal_created,priority:2" json:"createdAt"`
+	ID         string `gorm:"primaryKey" json:"id"`
+	TerminalID string `gorm:"index:idx_harness_hook_logs_terminal_created,priority:1" json:"terminalId,omitempty"`
+	Provider   string `gorm:"index" json:"provider"`
+	Event      string `gorm:"index" json:"event"`
+	// CanonicalEvent is Claude Code's name for what Event names, empty when
+	// Claude Code has no name for it (ADR 0146 §3). Indexed because a wait
+	// matches it in SQL beside Event.
+	CanonicalEvent string    `gorm:"index" json:"canonicalEvent,omitempty"`
+	Payload        []byte    `gorm:"type:json" json:"payload"`
+	CreatedAt      time.Time `gorm:"index:idx_harness_hook_logs_terminal_created,priority:2" json:"createdAt"`
 }
 
 func (HarnessHookLog) TableName() string { return "harness_hook_logs" }

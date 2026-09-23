@@ -346,8 +346,11 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 
 // Ref: #/components/schemas/HarnessHookLog
 type HarnessHookLog struct {
-	CreatedAt time.Time `json:"createdAt"`
-	// Provider-specific hook event name.
+	// Claude Code's name for the same event, absent when Claude Code has no name for it. Match on this
+	// to name an event the same way across harnesses.
+	CanonicalEvent OptString `json:"canonicalEvent"`
+	CreatedAt      time.Time `json:"createdAt"`
+	// The hook event name as the harness emitted it, never rewritten.
 	Event string `json:"event"`
 	// Hook log ID.
 	ID string `json:"id"`
@@ -357,6 +360,11 @@ type HarnessHookLog struct {
 	Provider string `json:"provider"`
 	// Harness terminal runtime ID that emitted the hook.
 	TerminalId OptString `json:"terminalId"`
+}
+
+// GetCanonicalEvent returns the value of CanonicalEvent.
+func (s *HarnessHookLog) GetCanonicalEvent() OptString {
+	return s.CanonicalEvent
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -387,6 +395,11 @@ func (s *HarnessHookLog) GetProvider() string {
 // GetTerminalId returns the value of TerminalId.
 func (s *HarnessHookLog) GetTerminalId() OptString {
 	return s.TerminalId
+}
+
+// SetCanonicalEvent sets the value of CanonicalEvent.
+func (s *HarnessHookLog) SetCanonicalEvent(val OptString) {
+	s.CanonicalEvent = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -3356,8 +3369,9 @@ type SandboxExecWaitUntil struct {
 	After OptString `json:"after"`
 	// The exec has ended.
 	Exit OptBool `json:"exit"`
-	// Harness hook event names from this terminal, such as Claude Code's Stop and Notification. The
-	// caller names them; the server holds no mapping of events to meanings.
+	// Harness hook event names from this terminal, such as Stop and Notification. A name matches either
+	// the harness's own event or its canonical (Claude Code) name, so a caller need not know which
+	// harness the terminal runs.
 	HookEvents []string `json:"hookEvents"`
 	// Neither output nor input for this many seconds, counted from no earlier than the start of the wait.
 	QuietSeconds OptInt64 `json:"quietSeconds"`

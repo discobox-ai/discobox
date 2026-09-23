@@ -200,3 +200,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0143](0143-an-arrival-no-later-than-the-build-is-an-unknown-age.md) | An image arrival no later than its build is an unknown age | Accepted (supersedes [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) §2's build premise) |
 | [0144](0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md) | A pool of host-VM sandboxes runs its agent on the host | Accepted (narrows [0006](0006-pool-is-the-runtime-host.md)'s Docker-host pool for that pool kind) |
 | [0145](0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md) | A sandbox declares its platform, and a non-Linux one is a VM template | Accepted |
+| [0146](0146-a-hook-keeps-the-name-its-harness-used-and-gains-a-canonical-one.md) | A hook keeps the name its harness used, and gains a canonical one | Accepted |

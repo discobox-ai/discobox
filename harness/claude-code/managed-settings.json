@@ -28,6 +28,8 @@
     "WorktreeRemove": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event WorktreeRemove", "timeout": 10 }] }],
     "PreCompact": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event PreCompact", "timeout": 10 }] }],
     "PostCompact": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event PostCompact", "timeout": 10 }] }],
+    "PreModelSwitch": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event PreModelSwitch", "timeout": 10 }] }],
+    "PostModelSwitch": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event PostModelSwitch", "timeout": 10 }] }],
     "SessionEnd": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event SessionEnd", "timeout": 10 }] }],
     "Elicitation": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event Elicitation", "timeout": 10 }] }],
     "ElicitationResult": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event ElicitationResult", "timeout": 10 }] }]

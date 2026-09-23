@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
@@ -606,5 +607,252 @@ func TestListEventsAcrossExecsFiltersAndReadsForward(t *testing.T) {
 	}
 	if got := names(forward); !slices.Equal(got, []string{"ex_2/exec.created", "ex_2/exec.stopped"}) {
 		t.Fatalf("forward from ex_2's create = %v", got)
+	}
+}
+
+// A hook is recorded under the name its harness used and, when Claude Code has
+// one for the same thing, under that too (ADR 0146). The harness's own name is
+// never rewritten, and an event Claude Code has no word for gets no canonical
+// name rather than a copy of its own.
+func TestRecordHarnessHookResolvesTheCanonicalName(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "canonical.db"))
+	for _, tc := range []struct {
+		provider, event, wantCanonical string
+	}{
+		{"claude-code", "Stop", "Stop"},
+		{"claude-code", "PreModelSwitch", "PreModelSwitch"},
+		{"codex-cli", "Stop", "Stop"},
+		{"codex-cli", "Interrupt", ""},
+		{"a-third-party-harness", "Frobnicate", ""},
+	} {
+		rec, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "agt_1", Provider: tc.provider, Event: tc.event})
+		if err != nil {
+			t.Fatalf("record %s/%s: %v", tc.provider, tc.event, err)
+		}
+		if rec.Event != tc.event {
+			t.Errorf("%s/%s event = %q, want it recorded unchanged", tc.provider, tc.event, rec.Event)
+		}
+		if rec.CanonicalEvent != tc.wantCanonical {
+			t.Errorf("%s/%s canonical = %q, want %q", tc.provider, tc.event, rec.CanonicalEvent, tc.wantCanonical)
+		}
+		read, err := st.ListHarnessHooks(ctx, HarnessHookFilter{ID: rec.ID})
+		if err != nil || len(read) != 1 {
+			t.Fatalf("read back %s: %+v, %v", rec.ID, read, err)
+		}
+		if read[0].CanonicalEvent != tc.wantCanonical {
+			t.Errorf("%s/%s stored canonical = %q, want %q", tc.provider, tc.event, read[0].CanonicalEvent, tc.wantCanonical)
+		}
+	}
+}
+
+// A wait and a filter each take either name (ADR 0146 §6), so a caller need
+// not know which harness the terminal runs to name the event that ends a turn.
+func TestHarnessHookQueriesMatchEitherName(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "eithername.db"))
+	since := st.HarnessHookResumePoint()
+	interrupt, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "exec_1", Provider: "codex-cli", Event: "Interrupt"})
+	if err != nil {
+		t.Fatalf("record interrupt: %v", err)
+	}
+	stop, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "exec_1", Provider: "codex-cli", Event: "Stop"})
+	if err != nil {
+		t.Fatalf("record stop: %v", err)
+	}
+	// Named canonically, and named as the harness emits it: the same hook.
+	for _, name := range []string{"Stop"} {
+		got, err := st.FirstHarnessHookSince(ctx, "exec_1", since, []string{name})
+		if err != nil || got == nil || got.ID != stop.ID {
+			t.Fatalf("wait for %s = %+v, %v; want %s", name, got, err, stop.ID)
+		}
+	}
+	// An event with no canonical name is still waitable under its own.
+	got, err := st.FirstHarnessHookSince(ctx, "exec_1", since, []string{"Interrupt"})
+	if err != nil || got == nil || got.ID != interrupt.ID {
+		t.Fatalf("wait for Interrupt = %+v, %v; want %s", got, err, interrupt.ID)
+	}
+	for _, tc := range []struct {
+		name    string
+		wantIDs []string
+	}{
+		{"Stop", []string{stop.ID}},
+		{"Interrupt", []string{interrupt.ID}},
+	} {
+		hooks, err := st.ListHarnessHooks(ctx, HarnessHookFilter{Event: tc.name})
+		if err != nil {
+			t.Fatalf("list %s: %v", tc.name, err)
+		}
+		if len(hooks) != len(tc.wantIDs) || hooks[0].ID != tc.wantIDs[0] {
+			t.Fatalf("list %s = %+v, want %v", tc.name, hooks, tc.wantIDs)
+		}
+	}
+}
+
+// Hooks recorded before the column existed are filled on the next open, so a
+// query by canonical name finds them too (ADR 0146 §7). Nothing is rewritten:
+// the harness's own name is left exactly as it was recorded.
+func TestOpenBackfillsCanonicalHookEvents(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "backfill.db")
+	st := openStore(ctx, t, path)
+	mapped, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "agt_1", Provider: "codex-cli", Event: "Stop"})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	unmapped, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "agt_1", Provider: "codex-cli", Event: "Interrupt"})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	// Back to how a store looked before any of this existed: no canonical
+	// names, and no stamp saying the mapping was ever applied.
+	if err := st.write.WithContext(ctx).Model(&HarnessHookLog{}).
+		Where("1 = 1").Update("canonical_event", "").Error; err != nil {
+		t.Fatalf("clear canonical: %v", err)
+	}
+	if err := st.write.WithContext(ctx).
+		Where("key = ?", canonicalHookEventsBackfilledKey).
+		Delete(&AgentState{}).Error; err != nil {
+		t.Fatalf("clear backfill stamp: %v", err)
+	}
+	cleared, err := st.ListHarnessHooks(ctx, HarnessHookFilter{TerminalID: "agt_1"})
+	if err != nil {
+		t.Fatalf("list cleared: %v", err)
+	}
+	for _, hook := range cleared {
+		if hook.CanonicalEvent != "" {
+			t.Fatalf("hook %s still canonical %q; the test never exercises the backfill", hook.ID, hook.CanonicalEvent)
+		}
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	reopened := openStore(ctx, t, path)
+	hooks, err := reopened.ListHarnessHooks(ctx, HarnessHookFilter{TerminalID: "agt_1"})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	byID := map[string]HarnessHookRecord{}
+	for _, hook := range hooks {
+		byID[hook.ID] = hook
+	}
+	if got := byID[mapped.ID]; got.CanonicalEvent != "Stop" || got.Event != "Stop" {
+		t.Errorf("mapped hook = %+v, want event and canonical both Stop", got)
+	}
+	if got := byID[unmapped.ID]; got.CanonicalEvent != "" || got.Event != "Interrupt" {
+		t.Errorf("unmapped hook = %+v, want event Interrupt and no canonical name", got)
+	}
+	// And the backfill made it findable by its canonical name.
+	found, err := reopened.ListHarnessHooks(ctx, HarnessHookFilter{Event: "Stop"})
+	if err != nil || len(found) != 1 || found[0].ID != mapped.ID {
+		t.Fatalf("list Stop after backfill = %+v, %v; want %s", found, err, mapped.ID)
+	}
+}
+
+// A blank event name matches nothing. It used to be harmless — `event` is
+// always populated, so `event IN (”)` found nothing — but a canonical name is
+// empty for every event Claude Code has no word for, so an unfiltered blank
+// would end a wait on the next Interrupt. The API sets no minLength on a
+// wait's names and pflag reads `--hook Stop,` as two, so this arrives from a
+// typo rather than from malice.
+func TestFirstHarnessHookSinceIgnoresBlankEventNames(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "blank.db"))
+	since := st.HarnessHookResumePoint()
+	if _, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "exec_1", Provider: "codex-cli", Event: "Interrupt"}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	for _, events := range [][]string{{""}, {"  "}, {"", "  "}} {
+		got, err := st.FirstHarnessHookSince(ctx, "exec_1", since, events)
+		if err != nil {
+			t.Fatalf("wait for %q: %v", events, err)
+		}
+		if got != nil {
+			t.Errorf("wait for %q found %s/%s; a blank name must match nothing", events, got.Provider, got.Event)
+		}
+	}
+	// A blank beside a real name leaves the real one working.
+	stop, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "exec_1", Provider: "codex-cli", Event: "Stop"})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	got, err := st.FirstHarnessHookSince(ctx, "exec_1", since, []string{"Stop", ""})
+	if err != nil || got == nil || got.ID != stop.ID {
+		t.Fatalf("wait for [Stop, \"\"] = %+v, %v; want %s", got, err, stop.ID)
+	}
+}
+
+// An event filter is ANDed with the filters beside it, never ORed across them.
+// The clause holds two columns joined by OR, and GORM only parenthesizes such
+// an expression when it is combined with another — so a filter that reached
+// the query unwrapped would return every terminal's and every provider's hooks
+// of that name.
+func TestListHarnessHooksEventFilterDoesNotEscapeItsOtherFilters(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(ctx, t, filepath.Join(t.TempDir(), "scoped.db"))
+	record := func(terminalID, provider, event string) HarnessHookRecord {
+		t.Helper()
+		rec, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: terminalID, Provider: provider, Event: event})
+		if err != nil {
+			t.Fatalf("record: %v", err)
+		}
+		return rec
+	}
+	mine := record("exec_1", "codex-cli", "Stop")
+	record("exec_2", "codex-cli", "Stop")
+	record("exec_1", "claude-code", "Stop")
+
+	for _, tc := range []struct {
+		name   string
+		filter HarnessHookFilter
+		wantID string
+	}{
+		{"provider narrows it", HarnessHookFilter{Event: "Stop", Provider: "codex-cli", TerminalID: "exec_1"}, mine.ID},
+		{"terminal narrows it", HarnessHookFilter{Event: "Stop", TerminalID: "exec_1", Provider: "codex-cli"}, mine.ID},
+	} {
+		hooks, err := st.ListHarnessHooks(ctx, tc.filter)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if len(hooks) != 1 || hooks[0].ID != tc.wantID {
+			t.Errorf("%s: got %d hooks %+v, want only %s", tc.name, len(hooks), hooks, tc.wantID)
+		}
+	}
+}
+
+// The backfill is stamped with the mapping's fingerprint, so an unchanged
+// table is not re-scanned on every agent start — the rows it would scan are
+// the ones with no canonical name, and those are never removed.
+func TestBackfillIsSkippedWhenTheMappingHasNotChanged(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "stamp.db")
+	st := openStore(ctx, t, path)
+	if _, err := st.RecordHarnessHook(ctx, HarnessHookRecord{TerminalID: "agt_1", Provider: "codex-cli", Event: "Stop"}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	var stamp AgentState
+	if err := st.write.WithContext(ctx).Where("key = ?", canonicalHookEventsBackfilledKey).Take(&stamp).Error; err != nil {
+		t.Fatalf("read stamp: %v", err)
+	}
+	if stamp.Value != harness.CanonicalHookEventsVersion() {
+		t.Fatalf("stamp = %q, want the mapping's fingerprint %q", stamp.Value, harness.CanonicalHookEventsVersion())
+	}
+	// Clearing a row's canonical name without clearing the stamp leaves it
+	// alone: the store has already applied this table, and says so.
+	if err := st.write.WithContext(ctx).Model(&HarnessHookLog{}).
+		Where("1 = 1").Update("canonical_event", "").Error; err != nil {
+		t.Fatalf("clear canonical: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	reopened := openStore(ctx, t, path)
+	hooks, err := reopened.ListHarnessHooks(ctx, HarnessHookFilter{TerminalID: "agt_1"})
+	if err != nil || len(hooks) != 1 {
+		t.Fatalf("list = %+v, %v", hooks, err)
+	}
+	if hooks[0].CanonicalEvent != "" {
+		t.Errorf("canonical = %q; an unchanged mapping must not re-scan", hooks[0].CanonicalEvent)
 	}
 }
