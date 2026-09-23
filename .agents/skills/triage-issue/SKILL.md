@@ -1,7 +1,7 @@
 ---
 name: triage-issue
-description: Triage a discobox GitHub issue — read it, find the code it concerns, reproduce it against the running `task dev` loop, write a failing test and post it on the issue, classify it by kind, area, platform, and priority, label it, tag this discobox to match, and then, when the issue is actionable and in scope, start working on it. Use when the user wants an issue triaged, reproduced, labeled, classified, or picked up, or names an issue number to look at.
-allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, AskUserQuestion
+description: Triage a discobox GitHub issue — read it, find the code it concerns, reproduce it against the running `task dev` loop, write a failing test and post it on the issue, classify it by kind, area, platform, and priority, label it, tag this discobox to match, and then, when the issue is actionable and in scope, fix it and take the fix through review, tests, QA, and a pull request with green CI. Use when the user wants an issue triaged, reproduced, labeled, classified, or picked up, or names an issue number to look at.
+allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, SendMessage, Skill, Monitor, AskUserQuestion
 metadata:
   argument-hint: "[issue-number-or-url] [--triage-only]"
 ---
@@ -13,8 +13,9 @@ to work on it now. Triage (§1–§5) is always done; work (§6) is conditional.
 
 Invoking this skill is authorization to read the issue, check out commits to
 reproduce it, add, change, and remove its labels from §4, post the triage
-comment and later short updates to it (§5), and tag this discobox with them.
-It is **not**
+comment and later short updates to it (§5), and tag this discobox with them;
+and, when §6 works on it, to push an `issue-<N>` branch and open a pull request
+for the fix (the `open-pr` skill). It is **not**
 authorization to close, lock, assign, retitle, or edit the issue — ask first for
 any of those. `--triage-only` stops after §5.
 
@@ -30,7 +31,10 @@ This box usually has no `GH_TOKEN`, and every `gh` call needs one. Check
 away; every mid-run approval prompt stalls the triage until they come back.
 So before any other step, make a single request whose uses cover every `gh`
 call through §6 — reading, labeling, creating a missing label, the triage
-comment, and later follow-ups — with a grant long enough to finish the work.
+comment, later follow-ups, and the fix's branch, pull request, and CI — with a
+grant long enough to finish the work. Ask for the pull-request uses even though
+§6 may not happen: asking later would stall the run exactly when the user has
+walked away. Leave them out only with `--triage-only`.
 Skip only the uses an approved grant in `discobox-access list` already covers.
 Name the issue when it was given; when it was not (§1 will ask the user
 which), word the write uses as "the one issue the user picks to triage".
@@ -39,11 +43,14 @@ which), word the write uses as "the one issue the user picks to triage".
 discobox-access request --json <<'EOF'
 {
   "id": "com.github.api",
-  "justification": "the user asked me to triage discobox issue #N and, if it is actionable, work on it; I need to read the repo, label the issue, and post what I found",
+  "justification": "the user asked me to triage discobox issue #N and, if it is actionable, fix it; I need to read the repo, label the issue, post what I found, and open a pull request for the fix and watch its CI",
   "uses": [
     {"description": "Read issues, their comments, and labels in discobox-ai/discobox with gh issue view, gh issue list, and gh label list, filtering with --state, --label, --search, and --jq; and resolve release tags to commits with gh api"},
     {"description": "Add, change, or remove labels on issue #N in discobox-ai/discobox with gh issue edit, and create any missing label from the triage-issue skill's table with gh label create"},
-    {"description": "Post the triage comment and short follow-up comments on issue #N in discobox-ai/discobox with gh issue comment"}
+    {"description": "Post the triage comment and short follow-up comments on issue #N in discobox-ai/discobox with gh issue comment"},
+    {"description": "Fetch main from discobox-ai/discobox, and push the branch issue-N to it, with git over https using the token; never main, never --force"},
+    {"description": "Open a draft pull request from issue-N into main in discobox-ai/discobox, and view, list, edit the body of, mark ready, and comment on that pull request, with gh pr create, gh pr view, gh pr list, gh pr edit, gh pr ready, and gh pr comment"},
+    {"description": "Read CI for that pull request with gh pr checks, gh run list, gh run view, and job logs via gh api repos/discobox-ai/discobox/actions/jobs/<id>/logs, and re-run its failed jobs once with gh run rerun --failed"}
   ],
   "grantTTLSeconds": 14400,
   "wait": true
@@ -106,37 +113,14 @@ behavior the issue describes, briefly, and skip to §4.
 
 ### The dev loop is already running
 
-The box runs `task dev` as a service (`.discobox/services/10-discobox-api.sh`).
-It watches the whole tree and rebuilds on any change — including a `git
-switch` — so checking out a commit *is* building it:
-
-- `build/discobox` and `build/discobox-server` are rebuilt; the server is
-  restarted on `http://127.0.0.1:8080` with its data under `.tmp/discobox`.
-- The pool, sandbox, and harness images are rebuilt by the image watcher.
-- Reach it with `./build/discobox --server http://127.0.0.1:8080 ...`. Without
-  `--server`, the CLI inside a discobox talks to the *outer* discobox API, not
-  this one.
-- A rebuild is done when `./build/discobox --server http://127.0.0.1:8080
-  --version` reports a server version starting with the checkout's
-  `git rev-parse --short=12 HEAD`, and `go tool task check:dev-build` passes
-  (a `wnb-*-failed.txt` in the repo root means it did not build or would not
-  start). Not binary mtimes: `go build` leaves an identical output untouched.
-  Wait on that with Monitor, not a sleep loop.
-- Images are built reproducibly (created time is always 1980) and tagged by
-  content, `dev-<digest>`; the watcher writes the new tags into
-  `.tmp/discobox-dev-images.json` and `.env`, and the `.env` change restarts
-  the server onto them. When the bug lives in an image, first check whether
-  the switch changed that image's inputs — its own and every image it is built
-  `FROM`. There are two chains, both from base-image:
-  base-image → sandbox-agent → harness, and base-image → pool-agent; each
-  agent image also bakes in binaries from its own module and the root
-  packages. `git diff --stat <from> <to> --` over the chain the image is on. If none changed, the image is identical and there is
-  nothing to wait for. If any did — between a release tag and `main`, nearly
-  always — save the manifest before switching and wait until that image's
-  `reference` in it changes.
-
-Never start a second server or run `discobox-server` directly; use the one the
-loop runs.
+The box starts `task dev` at boot as a discobox service, before this session
+began — do not start it yourself. It rebuilds on any change — including a `git
+switch` — so checking out a commit *is* building it. Read
+[../test-fix/driving-task-dev.md](../test-fix/driving-task-dev.md) before
+reproducing: how to confirm the loop is up (and the one way to restart it if
+it died), which server to talk to (always `--server
+http://127.0.0.1:8080`), how to know a rebuild has finished, when an image
+changed, how to make and clean up a box, and how to run Bats here.
 
 ### Where
 
@@ -376,19 +360,32 @@ Start only when **all** hold:
 Otherwise stop after §5 and say why. For `needs-decision`, offer to draft a
 `Proposed` ADR — that is the next step, not code.
 
-When working:
+When working, the order is fix → review → commit → test → PR. Each step
+starts only once the one before it is finished, and a code change at any later
+step goes back through review before it is committed.
 
 1. Add `in-progress`, on the issue and the box. Stay on the branch already
-   checked out; do not branch.
+   checked out; do not branch locally — the PR branch exists only on GitHub.
+   Record the base, the commit the fix starts from: `git rev-parse HEAD`.
 2. Start from the failing test. Move it out of `issue<N>_test.go` into the file
    where its neighbors live, unchanged, so the fix is proven by the test that
    was posted.
 3. Fix it properly per root `CLAUDE.md` — follow ownership across packages, and
-   update `DESIGN.md` in the same change if the architecture moved.
-4. The test passes; run the affected module's tests, then
-   `go tool task check-hooks` until clean.
-5. Commit conventionally with `Fixes #N` in the body. Do not push — hand back
-   and let the user run `/push-main`, which closes the issue when it lands.
+   update `DESIGN.md` in the same change if the architecture moved. The test
+   passes; the affected module's tests pass; `go tool task check-hooks` is
+   clean.
+4. **Review:** `discobox-review base <base>`, then run the `discobox-review`
+   skill until it reports `open 0` and `unapproved 0`.
+5. **Commit** conventionally with `Fixes #N` in the body.
+6. **Test:** run the `test-fix` skill with `<base>` and `--issue N` —
+   phase 1, the automated tests, then phase 2, QA against the dev loop. A fix
+   either phase needs goes back through step 4 and is committed before testing
+   resumes.
+7. **PR:** run the `open-pr` skill with branch `issue-<N>`, `--issue N`, and
+   QA's report. It opens the PR and drives its CI green; it does not merge.
+8. Post a short follow-up on the issue: the PR link, QA's verdict, and CI
+   green. Mirror nothing new to labels — `in-progress` stays until the PR
+   merges.
 
 If the work turns out bigger or different than triage said, stop, correct the
 labels (and the box's tags), take `in-progress` off, post a follow-up comment
@@ -401,7 +398,10 @@ with what you found, and ask the user.
 - This discobox carries an `issue` tag and the same labels as tags.
 - The checkout is back where it started, and any unused `issue<N>_test.go` is
   gone.
-- Either a local commit fixes it, or the user knows why it was not started.
+- Either an open PR fixes it — reviewed, QA-verified, every check green on its
+  head commit, the issue told — or the user knows why it was not started or
+  where it stopped.
 
 Finish with the labels applied, the comment's link, the reproduction result,
-and — if worked — the commit and the test that proves it.
+and — if worked — the test that proves it, the review rounds, QA's verdict, and
+the PR's URL and head SHA.
