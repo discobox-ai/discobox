@@ -1,6 +1,6 @@
 ---
 name: triage-issue
-description: Triage a discobox GitHub issue — read it, find the code it concerns, reproduce it against the running `task dev` loop, write a failing test and post it on the issue, classify it by kind, area, and priority, label it, tag this discobox to match, and then, when the issue is actionable and in scope, start working on it. Use when the user wants an issue triaged, reproduced, labeled, classified, or picked up, or names an issue number to look at.
+description: Triage a discobox GitHub issue — read it, find the code it concerns, reproduce it against the running `task dev` loop, write a failing test and post it on the issue, classify it by kind, area, platform, and priority, label it, tag this discobox to match, and then, when the issue is actionable and in scope, start working on it. Use when the user wants an issue triaged, reproduced, labeled, classified, or picked up, or names an issue number to look at.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, AskUserQuestion
 metadata:
   argument-hint: "[issue-number-or-url] [--triage-only]"
@@ -24,42 +24,39 @@ The repo is always `discobox-ai/discobox`. `gh` cannot infer it (the local
 remote is a mirror), so pass `--repo discobox-ai/discobox` to every call.
 
 This box usually has no `GH_TOKEN`, and every `gh` call needs one. Check
-`discobox-access list` first. If no approved use covers what you are about to
-run, ask in two steps, because the write uses name an issue you may not know
-yet.
+`discobox-access list` first.
 
-**Reading the repo** — ask as soon as the skill starts:
-
-```bash
-discobox-access request --json <<'EOF'
-{
-  "id": "com.github.api",
-  "justification": "the user asked me to triage a discobox issue; I need to read issues, labels, and release tags to do it",
-  "uses": [
-    {"description": "Read issues, their comments, and labels in discobox-ai/discobox with gh issue view, gh issue list, and gh label list, filtering with --state, --label, --search, and --jq; and resolve release tags to commits with gh api"}
-  ],
-  "grantTTLSeconds": 7200,
-  "wait": true
-}
-EOF
-```
-
-**Writing to issue #N** — ask once the issue is chosen (§1), before §5:
+**Ask once, up front, for everything.** The user starts this skill and walks
+away; every mid-run approval prompt stalls the triage until they come back.
+So before any other step, make a single request whose uses cover every `gh`
+call through §6 — reading, labeling, creating a missing label, the triage
+comment, and later follow-ups — with a grant long enough to finish the work.
+Skip only the uses an approved grant in `discobox-access list` already covers.
+Name the issue when it was given; when it was not (§1 will ask the user
+which), word the write uses as "the one issue the user picks to triage".
 
 ```bash
 discobox-access request --json <<'EOF'
 {
   "id": "com.github.api",
-  "justification": "the user asked me to triage issue #N: label it and post what I found",
+  "justification": "the user asked me to triage discobox issue #N and, if it is actionable, work on it; I need to read the repo, label the issue, and post what I found",
   "uses": [
+    {"description": "Read issues, their comments, and labels in discobox-ai/discobox with gh issue view, gh issue list, and gh label list, filtering with --state, --label, --search, and --jq; and resolve release tags to commits with gh api"},
     {"description": "Add, change, or remove labels on issue #N in discobox-ai/discobox with gh issue edit, and create any missing label from the triage-issue skill's table with gh label create"},
     {"description": "Post the triage comment and short follow-up comments on issue #N in discobox-ai/discobox with gh issue comment"}
   ],
-  "grantTTLSeconds": 7200,
+  "grantTTLSeconds": 14400,
   "wait": true
 }
 EOF
 ```
+
+Do not come back for more mid-run. If a command turns out to fall outside
+every granted use, that is a gap in the request above: finish what the grant
+covers, tell the user what was left undone, and propose the missing use as an
+edit to this file. The same goes for questions: ask anything that needs the
+user (§1's choice of issue) as soon as the grant arrives, not scattered
+through the run.
 
 Run every `gh` call as `discobox-access run --use <id> -- gh ...`, picking the
 matching use. A model checks each command against the use's sentence, and it
@@ -74,7 +71,10 @@ stop.
 - A number or URL was given: use it.
 - Nothing was given: list open issues with no `triaged` label, oldest first,
   and ask which one via AskUserQuestion (up to four, with titles). Do not
-  triage a batch unless asked.
+  triage a batch unless asked. Leave out issues labeled for a platform this
+  box is not (`platform/windows` or `platform/macos` on Linux; see §4) — they
+  are waiting for an agent on that OS. On Windows or macOS, offer that
+  platform's issues first, including triaged ones not yet `in-progress`.
 - The issue already has `triaged`: this is a re-triage. Read the earlier
   triage comment, and post an update to it in §5 rather than a second triage.
 
@@ -198,11 +198,16 @@ Exactly one of these goes in the comment:
   the fixing commit if `git log` finds it, and ask the user whether to close.
 - **Not reproduced** — what was tried, at which commits. This means
   `needs-info` with specific questions.
+- **Needs Windows / macOS** — the defect only shows on an OS this box is not
+  (`uname -s`). Say what the code shows, with `file:line`, and leave the
+  reproduction to an agent on that OS. Not `needs-info`: the reporter already
+  said enough.
 
 ## 4. Classify
 
-Apply exactly one **kind**, one or more **area**, one **priority**, and the
-**status** labels that fit.
+Apply exactly one **kind**, one or more **area**, one **priority**, a
+**platform** label when the issue is specific to one OS, and the **status**
+labels that fit.
 
 Labels are the current best reading, not a verdict. Revise them whenever the
 issue says something new — reproduction points at another area, the cause is
@@ -234,6 +239,8 @@ this scheme. Propose additions by editing this file.
 | | `area/build` | Taskfile, CI, release, installers, the dev loop |
 | | `area/hooks` | `.discobox/hooks` background checks |
 | | `area/docs` | Docs not owned by one component (ADR index, READMEs) |
+| platform | `platform/windows` | Only happens on Windows; needs a Windows agent to reproduce and fix |
+| | `platform/macos` | Only happens on macOS; needs a macOS agent to reproduce and fix |
 | priority | `priority/critical` | Security or credential exposure, data loss, or unusable for everyone; no workaround |
 | | `priority/high` | A core flow broken for some users, or a regression in a release |
 | | `priority/medium` | Broken with a workaround, or a clearly wanted enhancement |
@@ -248,6 +255,15 @@ this scheme. Propose additions by editing this file.
 
 Area follows ownership, not the symptom: a CLI error caused by a server handler
 is `area/server`. Several areas are fine when the fix genuinely spans them.
+
+Platform follows where the defect lives, not where the reporter ran: a server
+bug first seen from a Mac is not `platform/macos`. Apply it when the cause is
+OS-specific — `_windows.go`/`_darwin.go` files or build tags, `runtime.GOOS`
+branches, paths, shells, console and terminal handling, installers, the
+Windows version resource, a macOS VM provider — or when it does not reproduce
+on Linux and the report shows it only on that OS. It routes the issue: an
+agent on that OS picks it up (§1, §6). A defect on both Windows and macOS but
+not Linux gets both labels; one that is also on Linux gets neither.
 
 ## 5. Label and comment
 
@@ -289,12 +305,21 @@ $ cd server && go test ./internal/resources/pools -run TestSupersededReconcileDo
 </details>
 
 **Next:** working on it now
+
+<sub>Triaged in `discobox://d1-…/sbx_…`</sub>
 ````
 
-`Next` is one of: working on it now; needs `<specific info>` from the reporter;
-needs a decision between X and Y; duplicate of #M; fixed on main by `<sha>`.
+`Next` is one of: working on it now; needs a Windows / macOS agent; needs
+`<specific info>` from the reporter; needs a decision between X and Y;
+duplicate of #M; fixed on main by `<sha>`.
 For `needs-info`, ask specific questions (version, exact command, output,
 provider, OS), never "more details please".
+
+Every comment this skill posts — the triage comment and each follow-up — ends
+with that footer, carrying `$DISCOBOX_ADDRESS` verbatim, so whoever reads the
+issue can find the box that did the work and pick it back up. The security
+comment gets it too. If `DISCOBOX_ADDRESS` is unset (a server with no iroh
+listener gives none), leave the footer off rather than inventing one.
 
 Later changes — labels revised, work started or stopped, a re-triage — get a
 short follow-up comment saying what changed and why, never a second triage
@@ -344,6 +369,8 @@ Start only when **all** hold:
 - kind is `bug`, `flaky`, `documentation`, or a small `enhancement`;
 - no `needs-info`, `needs-decision`, `duplicate`, or `wontfix`;
 - the result is **Reproduced** or **Seen in code**;
+- no `platform/*` label names an OS this box is not — hand those to an agent
+  on that OS, and say so in `Next` ("needs a Windows agent");
 - the fix fits in this session without redesigning a package.
 
 Otherwise stop after §5 and say why. For `needs-decision`, offer to draft a
