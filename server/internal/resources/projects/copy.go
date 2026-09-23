@@ -180,8 +180,18 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 		if err != nil {
 			return fmt.Errorf("%s: %w", sourcePool.Name, err)
 		}
+		// The copy's judge runs in the copy's own pool, not the one it was
+		// copied from (ADR 0141 §1).
+		changed := false
 		if source.DefaultPoolID == sourcePool.ID {
 			project.DefaultPoolID = created.ID
+			changed = true
+		}
+		if source.JudgePoolID == sourcePool.ID {
+			project.JudgePoolID = created.ID
+			changed = true
+		}
+		if changed {
 			if err := s.store.UpsertProject(ctx, project); err != nil {
 				return err
 			}

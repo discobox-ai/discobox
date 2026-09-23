@@ -45,6 +45,9 @@ const (
 	// ScopePoolCacheClear authorizes stopping every sandbox on a pool and
 	// emptying its cache.
 	ScopePoolCacheClear = "pool:cache-clear"
+	// ScopeJudgeRun puts a job to a pool's judge (ADR 0141 §2). It is the
+	// control plane's copy of the pool agent's scope of the same name.
+	ScopeJudgeRun = "judge:run"
 	// ScopeStatusRead authorizes only the sandbox-agent status endpoint. It is
 	// the sole scope MintSandboxAgentStatusTokens ever mints, hardcoded there
 	// rather than accepted from the caller, so a pool agent can never obtain a

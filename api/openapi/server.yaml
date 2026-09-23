@@ -2913,10 +2913,11 @@ components:
                     description: Harness config ID
                     type: string
                 harnessMode:
-                    description: Harness startup mode. Config runs the image-owned interactive configuration command instead of the normal harness command. Judging is not offered here — the project's judge is Discobox's own, and is not something a caller creates (ADR 0141).
+                    description: 'What the sandbox exists for: run works in it, config runs the image-owned interactive configuration command once, and judge answers judging asks and nothing else (ADR 0141). A project''s own judge is created and kept converged by Discobox; one created here is an ordinary discobox that happens to be in judge mode.'
                     enum:
                         - run
                         - config
+                        - judge
                     type: string
                 model:
                     description: Model the harness should use
@@ -6418,6 +6419,46 @@ paths:
             summary: Poll an agent credential request
             tags:
                 - Pools
+    /api/pools/{poolId}/judge:
+        post:
+            description: Puts one judging job to the judge of the project that owns this pool (ADR 0141 §2). The control plane forwards it to the pool hosting that judge, which is how a pool whose own discoboxes cannot run one still judges. Anything that is not an explicit answer is no verdict — a project with no judge, a judge that will not come up, a pool that cannot be reached.
+            operationId: judge-for-pool
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/JudgeJob'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/JudgeAnswer'
+                    description: What the judge answered.
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Put a judging job to the project's judge
+            tags:
+                - Pools
     /api/pools/{poolId}/sandbox-credential-verdicts:
         post:
             operationId: record-credential-verdict
@@ -7746,6 +7787,13 @@ paths:
                     items:
                         type: string
                     type: array
+                - description: Also list sandboxes in judge mode, which are left out otherwise (ADR 0141) - a judge runs no terminal and holds no work, so it is not what asking what is in a project means
+                  in: query
+                  name: includeJudge
+                  required: false
+                  schema:
+                    description: Also list sandboxes in judge mode, which are left out otherwise (ADR 0141)
+                    type: boolean
             responses:
                 200:
                     content:

@@ -87,6 +87,24 @@ func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error 
 	return write.Delete(pool).Error
 }
 
+// CountWorkSandboxesForPool counts what somebody would lose if this pool went:
+// its discoboxes, except the project's own judge, which Discobox put there and
+// makes again wherever the project's judge belongs (ADR 0141 §1). Only a delete
+// gate asks this. The reconcilers count every discobox, because a judge is as
+// real to a pool host as anything else it runs.
+func (s *Store) CountWorkSandboxesForPool(ctx context.Context, projectID, poolID string) (int64, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = read.Model(&model.Sandbox{}).
+		Where("project_id = ? AND pool_id = ?", projectID, poolID).
+		Where("id <> coalesce((select judge_sandbox_id from projects where id = ?), '')", projectID).
+		Count(&count).Error
+	return count, err
+}
+
 func (s *Store) CountSandboxesForPool(ctx context.Context, projectID, poolID string) (int64, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

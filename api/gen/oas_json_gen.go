@@ -28924,6 +28924,8 @@ func (s *SandboxCreateConfigHarnessMode) Decode(d *jx.Decoder) error {
 		*s = SandboxCreateConfigHarnessModeRun
 	case SandboxCreateConfigHarnessModeConfig:
 		*s = SandboxCreateConfigHarnessModeConfig
+	case SandboxCreateConfigHarnessModeJudge:
+		*s = SandboxCreateConfigHarnessModeJudge
 	default:
 		*s = SandboxCreateConfigHarnessMode(v)
 	}

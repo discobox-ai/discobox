@@ -6831,6 +6831,72 @@ func decodeGetTrustRequestParams(args [2]string, argsEscaped bool, r *http.Reque
 	return params, nil
 }
 
+// JudgeForPoolParams is parameters of judge-for-pool operation.
+type JudgeForPoolParams struct {
+	// Pool ID.
+	PoolId string
+}
+
+func unpackJudgeForPoolParams(packed middleware.Parameters) (params JudgeForPoolParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeJudgeForPoolParams(args [1]string, argsEscaped bool, r *http.Request) (params JudgeForPoolParams, _ error) {
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // JudgeSandboxParams is parameters of judge-sandbox operation.
 type JudgeSandboxParams struct {
 	// Project that owns the sandbox.
@@ -12050,6 +12116,9 @@ type ListSandboxesParams struct {
 	// - key to require the tag with any value, key=value to require that value; repeat the parameter for
 	// each selector.
 	Tag []string `json:",omitempty"`
+	// Also list sandboxes in judge mode, which are left out otherwise (ADR 0141) - a judge runs no
+	// terminal and holds no work, so it is not what asking what is in a project means.
+	IncludeJudge OptBool `json:",omitempty,omitzero"`
 }
 
 func unpackListSandboxesParams(packed middleware.Parameters) (params ListSandboxesParams) {
@@ -12085,6 +12154,15 @@ func unpackListSandboxesParams(packed middleware.Parameters) (params ListSandbox
 		}
 		if v, ok := packed[key]; ok {
 			params.Tag = v.([]string)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "includeJudge",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.IncludeJudge = v.(OptBool)
 		}
 	}
 	return params
@@ -12265,6 +12343,47 @@ func decodeListSandboxesParams(args [1]string, argsEscaped bool, r *http.Request
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "tag",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: includeJudge.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "includeJudge",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotIncludeJudgeVal bool
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToBool(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotIncludeJudgeVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.IncludeJudge.SetTo(paramsDotIncludeJudgeVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "includeJudge",
 			In:   "query",
 			Err:  err,
 		}

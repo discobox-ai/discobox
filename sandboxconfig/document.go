@@ -60,8 +60,8 @@ type RuntimeLayer struct {
 	// the wrapper never hardcodes env var names itself.
 	ProxyEnvs []string `json:"proxyEnvs,omitempty"`
 
-	// HarnessMode selects run vs config mode; it is a selection, not a
-	// capability grant, so it stays runtime-owned.
+	// HarnessMode is what this sandbox exists for (HarnessMode* below); it is
+	// a selection, not a capability grant, so it stays runtime-owned.
 	HarnessMode string `json:"harnessMode,omitempty"`
 
 	// Files overlays onto the image's declared files, by path.
@@ -342,3 +342,32 @@ func SourcesAwaitDelivery(sources []Source) bool {
 // AwaitsSourceDelivery reports whether the sandbox is waiting on its client for
 // any of its sources.
 func (c Config) AwaitsSourceDelivery() bool { return SourcesAwaitDelivery(c.Sources) }
+
+// What a sandbox exists for. The control plane writes one of these into a
+// sandbox's document, the pool carries it, and the sandbox agent reads it —
+// three modules whose only agreement is this document, which is why the words
+// live here rather than in any one of them.
+const (
+	// HarnessModeRun is the ordinary discobox: a harness terminal to work in,
+	// the repository's services, and an idle timeout. The empty mode is this.
+	HarnessModeRun = "run"
+	// HarnessModeConfig exists to run a harness's setup command once, driven
+	// by the control plane, rather than to be worked in.
+	HarnessModeConfig = "config"
+	// HarnessModeJudge is the project's judge (ADR 0141 §1): it answers
+	// judging asks and nothing else. No terminal is launched in it, no
+	// repository services start, and it is not powered off when idle, since
+	// being ready is the whole of what it is for.
+	HarnessModeJudge = "judge"
+)
+
+// WorkedIn reports whether a sandbox in this harness mode exists to be worked
+// in. The modes that answer no each exist to do one thing for somebody else.
+func WorkedIn(harnessMode string) bool {
+	switch harnessMode {
+	case HarnessModeConfig, HarnessModeJudge:
+		return false
+	default:
+		return true
+	}
+}

@@ -217,6 +217,18 @@ type Project struct {
 	Default                bool   `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
 	DefaultPoolID          string `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
 	DefaultHarnessConfigID string `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
+	// JudgePoolID is the pool the project's judge runs in (ADR 0141 §1). It is
+	// recorded when the project's first pool is made, because that pool runs
+	// Linux containers on every platform Discobox supports, and a judge is one.
+	// It is not chosen again afterwards: a pool whose discoboxes are whole VMs
+	// of another operating system asks this pool's judge rather than running
+	// one of its own.
+	JudgePoolID string `gorm:"column:judge_pool_id;type:text;default:''" json:"-" doc:"Pool the project's judge runs in (ADR 0141)"`
+	// JudgeSandboxID is which discobox is this project's judge. Judge mode is
+	// something anybody may create, so the mode alone does not say which one
+	// Discobox runs and keeps converged; this does, and it is written by the
+	// judge's own convergence and by nothing else.
+	JudgeSandboxID string `gorm:"column:judge_sandbox_id;type:text;default:''" json:"-" doc:"The discobox that is this project's judge (ADR 0141)"`
 	// ArchiveRetentionSeconds is how long this project's archived sandboxes are
 	// kept before they are purged (ADR 0022 §4). Zero means the server default:
 	// a project that has never chosen gets the default as it changes, rather

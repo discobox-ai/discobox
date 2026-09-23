@@ -2677,6 +2677,7 @@ func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) getServerInfoRes()                    {}
 func (*ErrorModelStatusCode) getServerPeerRes()                    {}
 func (*ErrorModelStatusCode) getTrustRequestRes()                  {}
+func (*ErrorModelStatusCode) judgeForPoolRes()                     {}
 func (*ErrorModelStatusCode) listApprovalRequestsRes()             {}
 func (*ErrorModelStatusCode) listCredentialVerdictsRes()           {}
 func (*ErrorModelStatusCode) listDNSAuditRes()                     {}
@@ -5604,6 +5605,7 @@ func (s *JudgeAnswer) SetReason(val string) {
 	s.Reason = val
 }
 
+func (*JudgeAnswer) judgeForPoolRes() {}
 func (*JudgeAnswer) judgeSandboxRes() {}
 
 // One question put to the judge, and everything it may see to answer it. Purpose and host are the
@@ -17241,9 +17243,10 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 type SandboxCreateConfig struct {
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
-	// Harness startup mode. Config runs the image-owned interactive configuration command instead of the
-	// normal harness command. Judging is not offered here — the project's judge is Discobox's own, and
-	// is not something a caller creates (ADR 0141).
+	// What the sandbox exists for: run works in it, config runs the image-owned interactive
+	// configuration command once, and judge answers judging asks and nothing else (ADR 0141). A
+	// project's own judge is created and kept converged by Discobox; one created here is an ordinary
+	// discobox that happens to be in judge mode.
 	HarnessMode OptSandboxCreateConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
@@ -17437,14 +17440,16 @@ func (s *SandboxCreateConfigEnv) init() SandboxCreateConfigEnv {
 	return m
 }
 
-// Harness startup mode. Config runs the image-owned interactive configuration command instead of the
-// normal harness command. Judging is not offered here — the project's judge is Discobox's own, and
-// is not something a caller creates (ADR 0141).
+// What the sandbox exists for: run works in it, config runs the image-owned interactive
+// configuration command once, and judge answers judging asks and nothing else (ADR 0141). A
+// project's own judge is created and kept converged by Discobox; one created here is an ordinary
+// discobox that happens to be in judge mode.
 type SandboxCreateConfigHarnessMode string
 
 const (
 	SandboxCreateConfigHarnessModeRun    SandboxCreateConfigHarnessMode = "run"
 	SandboxCreateConfigHarnessModeConfig SandboxCreateConfigHarnessMode = "config"
+	SandboxCreateConfigHarnessModeJudge  SandboxCreateConfigHarnessMode = "judge"
 )
 
 // AllValues returns all SandboxCreateConfigHarnessMode values.
@@ -17452,6 +17457,7 @@ func (SandboxCreateConfigHarnessMode) AllValues() []SandboxCreateConfigHarnessMo
 	return []SandboxCreateConfigHarnessMode{
 		SandboxCreateConfigHarnessModeRun,
 		SandboxCreateConfigHarnessModeConfig,
+		SandboxCreateConfigHarnessModeJudge,
 	}
 }
 
@@ -17461,6 +17467,8 @@ func (s SandboxCreateConfigHarnessMode) MarshalText() ([]byte, error) {
 	case SandboxCreateConfigHarnessModeRun:
 		return []byte(s), nil
 	case SandboxCreateConfigHarnessModeConfig:
+		return []byte(s), nil
+	case SandboxCreateConfigHarnessModeJudge:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -17475,6 +17483,9 @@ func (s *SandboxCreateConfigHarnessMode) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxCreateConfigHarnessModeConfig:
 		*s = SandboxCreateConfigHarnessModeConfig
+		return nil
+	case SandboxCreateConfigHarnessModeJudge:
+		*s = SandboxCreateConfigHarnessModeJudge
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

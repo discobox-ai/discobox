@@ -246,9 +246,11 @@ components:
                 harnessConfigId:
                     type: string
                 harnessMode:
+                    description: What this sandbox exists for, carried through to its sandbox configuration; judge is the project's judge (ADR 0141).
                     enum:
                         - run
                         - config
+                        - judge
                     type: string
                 model:
                     type: string

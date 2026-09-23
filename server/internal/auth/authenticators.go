@@ -170,7 +170,10 @@ var poolRuntimeActions = map[string]bool{
 	"resolve-sandbox-secret": false,
 	// What an upstream made of a swapped credential (ADR 0132). One call
 	// reports one verdict, so it takes no trailing ID.
-	"sandbox-secret-rejections":   false,
+	"sandbox-secret-rejections": false,
+	// Putting a job to the project's judge (ADR 0141 §2). One call is one
+	// job, so it takes no trailing ID.
+	"judge":                       false,
 	"sandbox-agent-status-tokens": false,
 	"sandbox-agent-status":        false,
 	// The pool's resource report (ADR 0071, resource accounting). It addresses the pool itself, so

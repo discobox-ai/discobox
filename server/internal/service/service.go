@@ -13,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/discobox-ai/discobox/server/internal/resources/jobs"
+	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	"github.com/discobox-ai/discobox/server/internal/resources/peers"
 	"github.com/discobox-ai/discobox/server/internal/resources/pools"
 	"github.com/discobox-ai/discobox/server/internal/resources/projects"
@@ -52,6 +53,7 @@ type Service struct {
 	providerService  *providers.Service
 	poolControlPlane *pools.ControlPlane
 	harnessConfigs   *harnessconfigs.Service
+	judges           *judges.Service
 }
 
 type Options struct {
@@ -116,6 +118,13 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// One service answers both: host trust is the credential broker's act
 	// about a different thing (ADR 0149), and shares its pool-ownership check.
 	secretService := secrets.NewService(store)
+	// The project's judge is converged like any other resource (ADR 0141 §1):
+	// it exists when the project has a pool for it and a configured default
+	// harness, and is replaced when that harness is.
+	judgeService := judges.New(store, sandboxService, nil)
+	// Reaching the judge's own agent is the sandbox service's to do; which
+	// discobox is the judge is this one's (ADR 0141 §2).
+	judgeService.SetLeases(sandboxService)
 	return &Service{
 		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService),
 		HarnessConfigService:           harnessConfigService,
@@ -136,6 +145,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		options:          options,
 		poolControlPlane: poolControlPlane,
 		harnessConfigs:   harnessConfigService,
+		judges:           judgeService,
 	}
 }
 
@@ -218,9 +228,17 @@ func (s *Service) registerReconcilers() error {
 	if err := s.engine.Register(harnessconfigs.HarnessConfigResourceType, s.harnessConfigs); err != nil {
 		return err
 	}
+	// Keeps each project's judge matching what the project says it should be,
+	// and finds the ones nothing thought to mark.
+	if err := s.engine.Register(judges.JudgeResourceType, s.judges); err != nil {
+		return err
+	}
 	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager())
 }
 
 func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 	return s.Service.SandboxProviderManager()
 }
+
+// Judges answers a pool asking for a verdict from the project's judge.
+func (s *Service) Judges() *judges.Service { return s.judges }

@@ -171,7 +171,7 @@ func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 	if project.Default {
 		return apperrors.NewStatusError(http.StatusConflict, "project is the default project; make another project the default before deleting it")
 	}
-	sandboxes, err := s.store.CountSandboxesForProject(ctx, projectID)
+	sandboxes, err := s.store.CountWorkSandboxesForProject(ctx, projectID)
 	if err != nil {
 		return err
 	}

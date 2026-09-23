@@ -6884,6 +6884,8 @@ func (s *SandboxConfigHarnessMode) Decode(d *jx.Decoder) error {
 		*s = SandboxConfigHarnessModeRun
 	case SandboxConfigHarnessModeConfig:
 		*s = SandboxConfigHarnessModeConfig
+	case SandboxConfigHarnessModeJudge:
+		*s = SandboxConfigHarnessModeJudge
 	default:
 		*s = SandboxConfigHarnessMode(v)
 	}

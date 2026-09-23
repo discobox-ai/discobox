@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
@@ -200,12 +201,34 @@ func (s *Store) ListStoppedSandboxesForHarnessConfig(ctx context.Context, projec
 	return sandboxes, err
 }
 
+// SandboxListOption narrows or widens what a listing answers with.
+type SandboxListOption func(*sandboxListOptions)
+
+type sandboxListOptions struct {
+	judges bool
+}
+
+// IncludingJudges lists the project's judge alongside its discoboxes. It is
+// left out otherwise (ADR 0141 §1): a judge runs no terminal and holds no
+// work, so it is not what somebody asking what is in their project means.
+func IncludingJudges() SandboxListOption {
+	return func(options *sandboxListOptions) { options.judges = true }
+}
+
 // ListSandboxes lists a project's sandboxes. A non-empty sourceRoot restricts
 // the result to sandboxes whose primary source resolves to that repository root.
 // Non-empty originKeys restrict it to sandboxes filed under any one of those
 // origin keys (ADR 0111). The two filters are independent: sourceRoot asks what
 // a sandbox runs against, originKeys ask where on which client it belongs.
-func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error) {
+//
+// A judge is left out unless IncludingJudges asks for it (ADR 0141 §1).
+func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, listOptions ...SandboxListOption) ([]model.Sandbox, error) {
+	var options sandboxListOptions
+	for _, option := range listOptions {
+		if option != nil {
+			option(&options)
+		}
+	}
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -216,6 +239,12 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 		Preload("Pool.ProviderInstance").
 		Preload("HarnessConfig", withBoundSecrets).
 		Where("project_id = ?", projectID)
+	if !options.judges {
+		// A judge is not what somebody asking what is in their project means
+		// (ADR 0141 §1): it runs no terminal, holds no work, and is answering
+		// asks rather than being worked in. Asking for it says so.
+		query = query.Where("harness_mode <> ?", sandboxconfig.HarnessModeJudge)
+	}
 	if sourceRoot != "" {
 		query = query.Where("source_root = ?", sourceRoot)
 	}

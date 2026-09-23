@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,6 +72,26 @@ func (e *Engine) Register(resourceType string, r Reconciler, opts ...RegisterOpt
 	if _, ok := e.regs[resourceType]; ok {
 		return fmt.Errorf("reconcile: %q already registered", resourceType)
 	}
+	// A reconciler becomes a Scanner by type assertion, so a ScanDirty whose
+	// signature has drifted registers happily and is never called: the
+	// level-triggered backstop silently stops existing, and nothing says so
+	// until something that relied on it does not happen. Caught here instead,
+	// at boot, where it is one error rather than an investigation.
+	if _, ok := r.(Scanner); !ok {
+		// Both method sets: a ScanDirty declared on the pointer and registered
+		// by value is not in the value's method set at all, which is the same
+		// silent non-scanning by a different route — and the likelier of the
+		// two to be written by accident.
+		declared := reflect.TypeOf(r)
+		method, found := declared.MethodByName(scanDirtyMethod)
+		if !found {
+			method, found = reflect.PointerTo(declared).MethodByName(scanDirtyMethod)
+		}
+		if found {
+			return fmt.Errorf("reconcile: %s has %s%s, which does not satisfy Scanner (ScanDirty(context.Context) ([]string, error)), so it would register and never scan",
+				resourceType, scanDirtyMethod, signatureWithoutReceiver(method))
+		}
+	}
 	reg := &registration{reconciler: r, concurrency: e.opt.DefaultConcurrency}
 	for _, opt := range opts {
 		opt(reg)
@@ -113,6 +135,49 @@ func (e *Engine) Start(ctx context.Context) error {
 	}
 	e.mu.Unlock()
 	return nil
+}
+
+// scanDirtyMethod is the name Scanner is recognized by, which is what makes a
+// drifted signature findable at all.
+const scanDirtyMethod = "ScanDirty"
+
+// signatureWithoutReceiver prints a method as it was written. reflect puts the
+// receiver first, which would read as a parameter nobody declared, so the
+// parameters are walked rather than cut out of the printed type — the drift
+// most worth naming is a missing one, and a string cut on the first comma
+// finds that comma inside the results and invents a parameter instead.
+func signatureWithoutReceiver(method reflect.Method) string {
+	signature := method.Type
+	var out strings.Builder
+	out.WriteByte('(')
+	for i := 1; i < signature.NumIn(); i++ {
+		if i > 1 {
+			out.WriteString(", ")
+		}
+		if signature.IsVariadic() && i == signature.NumIn()-1 {
+			out.WriteString("...")
+			out.WriteString(signature.In(i).Elem().String())
+			continue
+		}
+		out.WriteString(signature.In(i).String())
+	}
+	out.WriteByte(')')
+	switch signature.NumOut() {
+	case 0:
+	case 1:
+		out.WriteString(" ")
+		out.WriteString(signature.Out(0).String())
+	default:
+		out.WriteString(" (")
+		for i := range signature.NumOut() {
+			if i > 0 {
+				out.WriteString(", ")
+			}
+			out.WriteString(signature.Out(i).String())
+		}
+		out.WriteByte(')')
+	}
+	return out.String()
 }
 
 // Stop cancels background loops and waits for in-flight reconciles.

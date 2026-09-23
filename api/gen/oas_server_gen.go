@@ -398,6 +398,15 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/trust-requests/{requestId}
 	GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error)
+	// JudgeForPool implements judge-for-pool operation.
+	//
+	// Puts one judging job to the judge of the project that owns this pool (ADR 0141 §2). The control
+	// plane forwards it to the pool hosting that judge, which is how a pool whose own discoboxes cannot
+	// run one still judges. Anything that is not an explicit answer is no verdict — a project with no
+	// judge, a judge that will not come up, a pool that cannot be reached.
+	//
+	// POST /api/pools/{poolId}/judge
+	JudgeForPool(ctx context.Context, req *JudgeJob, params JudgeForPoolParams) (JudgeForPoolRes, error)
 	// JudgeSandbox implements judge-sandbox operation.
 	//
 	// Puts one judging job to this discobox's harness and returns what it answered (ADR 0141). Only a

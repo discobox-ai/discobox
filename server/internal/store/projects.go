@@ -162,6 +162,23 @@ func (s *Store) CountSandboxesForProject(ctx context.Context, projectID string) 
 	return s.countForProject(ctx, projectID, &model.Sandbox{})
 }
 
+// CountWorkSandboxesForProject counts what somebody would lose with the
+// project: its discoboxes, except its own judge, which Discobox made and would
+// make again (ADR 0141 §1). A project holding nothing but its judge is a
+// project with nothing in it.
+func (s *Store) CountWorkSandboxesForProject(ctx context.Context, projectID string) (int64, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = read.Model(&model.Sandbox{}).
+		Where("project_id = ?", projectID).
+		Where("id <> coalesce((select judge_sandbox_id from projects where id = ?), '')", projectID).
+		Count(&count).Error
+	return count, err
+}
+
 func (s *Store) CountPoolsForProject(ctx context.Context, projectID string) (int64, error) {
 	return s.countForProject(ctx, projectID, &model.Pool{})
 }

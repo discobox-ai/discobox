@@ -1080,6 +1080,8 @@ func (s SandboxConfigHarnessMode) Validate() error {
 		return nil
 	case "config":
 		return nil
+	case "judge":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

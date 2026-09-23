@@ -10,6 +10,7 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 | --- | --- | --- |
 | [harnessconfigs](harnessconfigs/DESIGN.md) | Project-scoped harness configs and the configure flow | `harnessConfig` |
 | [jobs](jobs/DESIGN.md) | Jobs API, a projection of the reconcile engine's dirty set | none |
+| `judges` | The project's judge: the discobox that answers judging asks (ADR 0141) | `judge` |
 | `peers` | Enrolled peers: machines permitted to connect to this server | none |
 | [pools](pools/DESIGN.md) | `Pool` API (`Service`) and trusted pool intent (`ControlPlane`, the `sandbox.PoolManager` handed to drivers) | `pool` |
 | [projects](projects/DESIGN.md) | Projects and the default-project flag | none |
@@ -20,6 +21,38 @@ lifecycle, the lifecycle intent and the reconciler that converges it.
 
 `peers` and `sshkeys` are plain store-backed CRUD services with no design doc of
 their own.
+
+`judges` has no API of its own: nothing a client calls creates, lists or deletes
+a judge. It converges one per project against what the project says — a pool for
+it, recorded when the project's first pool was made, and a configured default
+harness, which is its image, its settings and the credential it answers with —
+and is marked by whatever changes those. Its reconcile id is a project ID,
+because a project has one judge, and its scan names every project so a judge
+converges even when whatever changed did not think to say so.
+
+A judge is an ordinary discobox in judge mode. Judge mode is a create body's to
+ask for like any other, so what makes one *the project's* judge is that the
+project points at it (`Project.JudgeSandboxID`), written by this package and by
+nothing else — the mode alone would also match one somebody made themselves.
+
+Routing a job to a judge is this package's other half (`route.go`). A pool asks
+the control plane — `POST /api/pools/{poolId}/judge`, on the credential
+broker's own scope, since deciding whether a credential may be used is what
+that scope is for — and the control plane forwards to the pool hosting the
+project's judge over the channel it already uses to create and start
+discoboxes there. Pools never call each other: they sit behind NAT, in clouds,
+and inside VMs, and the only thing every pool can reach is the control plane.
+That is what lets a pool whose own discoboxes are whole VMs of another
+operating system judge at all. Every refusal on that path is the same answer —
+no verdict — and the reason travels back so the pool can say why.
+
+Judge-mode discoboxes are left out of listings unless asked for
+(`store.IncludingJudges`, the API's `includeJudge`): a judge runs no terminal
+and holds no work, so it is not what asking what is in a project means. For the
+same reason they are not counted against a pool or project being deleted.
+Everything else — pool and harness resolution, the image pin, the harness
+credential's sentinel — is the ordinary create, which is the point of a judge
+being a discobox at all.
 
 ## Boundaries
 

@@ -19,6 +19,7 @@ import (
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
@@ -130,6 +131,19 @@ func (s *Service) SetSandboxRuntime(runtime SandboxRuntime) { s.sandboxes = runt
 
 // SetDirtier installs the reconcile hook used to reap abandoned configures.
 func (s *Service) SetDirtier(dirtier Dirtier) { s.dirtier = dirtier }
+
+// markJudge says the project's judge may no longer be the right one: its
+// harness is what it runs, and this package owns which harness that is
+// (ADR 0141 §1). Failing to say so is not worth failing the change that
+// prompted it — the judge's own scan finds it either way — so it is logged.
+func (s *Service) markJudge(ctx context.Context, projectID string) {
+	if s.dirtier == nil || strings.TrimSpace(projectID) == "" {
+		return
+	}
+	if err := s.dirtier.MarkDirtyAt(ctx, judges.JudgeResourceType, projectID, time.Now().UTC()); err != nil {
+		slog.WarnContext(ctx, "failed to mark the project's judge for reconcile", "projectId", projectID, "error", err)
+	}
+}
 
 // ConfigureHarnessConfig launches the harness's configure sandbox and returns it.
 // The sandbox comes up idle: in config mode the sandbox-agent defers the primary

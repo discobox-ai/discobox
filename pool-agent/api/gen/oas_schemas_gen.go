@@ -4095,7 +4095,9 @@ func (s *ResolvedHarnessConfigEnv) init() ResolvedHarnessConfigEnv {
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
-	HarnessConfigId     OptString                   `json:"harnessConfigId"`
+	HarnessConfigId OptString `json:"harnessConfigId"`
+	// What this sandbox exists for, carried through to its sandbox configuration; judge is the project's
+	// judge (ADR 0141).
 	HarnessMode         OptSandboxConfigHarnessMode `json:"harnessMode"`
 	Model               OptString                   `json:"model"`
 	ModelReasoningLevel OptString                   `json:"modelReasoningLevel"`
@@ -4305,11 +4307,14 @@ func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 	return m
 }
 
+// What this sandbox exists for, carried through to its sandbox configuration; judge is the project's
+// judge (ADR 0141).
 type SandboxConfigHarnessMode string
 
 const (
 	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
 	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
+	SandboxConfigHarnessModeJudge  SandboxConfigHarnessMode = "judge"
 )
 
 // AllValues returns all SandboxConfigHarnessMode values.
@@ -4317,6 +4322,7 @@ func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
 	return []SandboxConfigHarnessMode{
 		SandboxConfigHarnessModeRun,
 		SandboxConfigHarnessModeConfig,
+		SandboxConfigHarnessModeJudge,
 	}
 }
 
@@ -4326,6 +4332,8 @@ func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
 	case SandboxConfigHarnessModeRun:
 		return []byte(s), nil
 	case SandboxConfigHarnessModeConfig:
+		return []byte(s), nil
+	case SandboxConfigHarnessModeJudge:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -4340,6 +4348,9 @@ func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxConfigHarnessModeConfig:
 		*s = SandboxConfigHarnessModeConfig
+		return nil
+	case SandboxConfigHarnessModeJudge:
+		*s = SandboxConfigHarnessModeJudge
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

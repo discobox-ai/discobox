@@ -51,12 +51,21 @@ model integration, no model API credential, and nothing to configure of its
 own. It exists as soon as the project has a default harness, and follows it:
 change the default, and the judge is replaced with it.
 
-**The judge is a system discobox**, created and kept ready by the reconciler
-that already schedules, starts, replaces, and deletes discoboxes. It is not
-listed, not reachable by a discobox's own role, and not something a work
-discobox can stop, delete, or create. Everything else about its lifecycle —
-image pinning, readiness, replacement when its configuration changes — is the
-behavior every discobox already has, rather than a second implementation of it.
+**The judge is an ordinary discobox in judge mode**, created and kept ready by
+the reconciler that already schedules, starts, replaces, and deletes
+discoboxes. Judge mode is not a privilege: it says what a discobox exists for,
+and anybody may make one. What makes one *the project's* judge is that the
+project points at it, which Discobox writes and nothing else does. A judge is
+left out of listings unless it is asked for, and it is not counted against a
+pool or a project being deleted, because it runs no terminal and holds none of
+the project's work. Everything else about its lifecycle — image pinning,
+readiness, replacement when its configuration changes — is the behavior every
+discobox already has, rather than a second implementation of it.
+
+*(Amended 2026-09-23, before anything shipped against it: the first draft made
+the judge a discobox of a kind only Discobox could create, hidden by a flag of
+its own. The mode already says what the discobox is for, and a second marker
+saying the same thing is one more thing to keep true.)*
 
 It is not a work discobox and shares nothing with one: no work sources, no
 repository skills or hooks, no cache or home a work discobox can write. Judge

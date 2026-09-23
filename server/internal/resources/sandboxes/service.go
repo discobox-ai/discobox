@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -116,11 +117,14 @@ type SandboxProviderCatalogItem struct {
 	ConfigFields []ProviderConfigField
 }
 
-func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error) {
+// ListSandboxes answers with the project's discoboxes. A judge is not one of
+// them unless it is asked for: it runs no terminal and holds no work, so it is
+// not what asking what is in a project means (ADR 0141 §1).
+func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, listOptions ...store.SandboxListOption) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	sandboxes, err := s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys)
+	sandboxes, err := s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys, listOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -237,13 +241,13 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, err
 	}
 	git := services.SandboxGitToModel(config.Git)
-	harnessMode := "run"
+	harnessMode := sandboxconfig.HarnessModeRun
 	if mode, ok := config.HarnessMode.Get(); ok {
 		harnessMode = string(mode)
 	}
 	image := strings.TrimSpace(config.Image.Or(""))
 	imageDigest := ""
-	if harnessConfigID != "" && harnessMode != "config" {
+	if harnessConfigID != "" && harnessMode != sandboxconfig.HarnessModeConfig {
 		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 		if err != nil {
 			return nil, apperrors.NotFound(err, "harness config not found")
@@ -315,7 +319,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	// secrets are obtained in the first place, so requiring them to already exist
 	// would make an unconfigured harness impossible to configure.
 	if harnessConfigID != "" {
-		if harnessMode == "config" {
+		if harnessMode == sandboxconfig.HarnessModeConfig {
 			// Config mode instead offers the previous configuration's secrets back
 			// under PREV_-prefixed names, so the configure flow can verify and keep
 			// an existing credential without it ever being re-typed or re-read.
@@ -422,6 +426,19 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err := authorizeRequestedScopes(ctx, scopes); err != nil {
 		return nil, nil, err
 	}
+	return s.acquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
+}
+
+// AcquireSandboxHTTPClientForServer is the same lease for a call Discobox
+// makes itself rather than on behalf of somebody: putting a job to the
+// project's judge (ADR 0141 §2). There are no caller scopes to check, because
+// there is no caller — the scopes are this code's own, and the route they
+// reach is the one they name.
+func (s *Service) AcquireSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	return s.acquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
+}
+
+func (s *Service) acquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, nil, apperrors.NotFound(err, "sandbox not found")

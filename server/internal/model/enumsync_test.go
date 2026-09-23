@@ -74,7 +74,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxRuntime.displayState":        "derived presentation state computed by the API layer, not stored on the model",
 	"PoolSandboxState.state":             "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
 	"SandboxConfig.harnessMode":          "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
-	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction, and judging is not offered to a caller (ADR 0141)",
+	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
 	"JudgeJob.kind":                      "what a judge is asked about, owned by the root judge package and never stored (ADR 0141)",
 	"JudgeNeed.body":                     "how a judge may ask to be shown a body, owned by the root judge package (ADR 0141 §6)",
 	"JudgeRequestBody.form":              "how a body is written when a judge is shown one, owned by the root judge package (ADR 0141 §6)",

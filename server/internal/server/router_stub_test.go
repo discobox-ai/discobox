@@ -19,6 +19,7 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	appservice "github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -148,7 +149,7 @@ func (s *routerTestServices) FallbackHarnessConfig(context.Context, string) (*mo
 	return nil, nil
 }
 
-func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot string, _ []string, _ []sandboxmeta.Selector) ([]model.Sandbox, error) {
+func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot string, _ []string, _ []sandboxmeta.Selector, _ ...store.SandboxListOption) ([]model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

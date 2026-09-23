@@ -237,6 +237,10 @@ type GetTrustRequestRes interface {
 	getTrustRequestRes()
 }
 
+type JudgeForPoolRes interface {
+	judgeForPoolRes()
+}
+
 type JudgeSandboxRes interface {
 	judgeSandboxRes()
 }

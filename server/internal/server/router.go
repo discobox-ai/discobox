@@ -215,6 +215,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		HostTrusts:     appServices,
 		SSHKeys:        appServices,
 		Peers:          appServices,
+		Judges:         appServices.Judges(),
 	}
 	router := chi.NewRouter()
 	router.Use(auth.Authentication(

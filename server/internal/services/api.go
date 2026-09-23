@@ -9,6 +9,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -137,7 +138,7 @@ type SandboxService interface {
 	FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error)
 	// ListSandboxes filters on the sandboxes' recorded tags as well as where
 	// they came from; no selectors lists them whatever their tags.
-	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error)
+	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, listOptions ...store.SandboxListOption) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)
@@ -537,4 +538,12 @@ type Services struct {
 	HostTrusts     HostTrustService
 	SSHKeys        SSHKeyService
 	Peers          PeerService
+	// Judges answers a pool asking for a verdict from the project's judge
+	// (ADR 0141 §2). It has no other route: nothing a person calls reaches it.
+	Judges JudgeService
+}
+
+// JudgeService puts a job to the judge of the project that owns a pool.
+type JudgeService interface {
+	Judge(ctx context.Context, poolID string, job judge.Job) (judge.Answer, error)
 }

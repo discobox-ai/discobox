@@ -232,6 +232,8 @@ func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, config
 	if err := s.store.UpsertProject(ctx, project); err != nil {
 		return nil, err
 	}
+	// The project's judge follows its default harness (ADR 0141 §1).
+	s.markJudge(ctx, projectID)
 	return s.store.GetProject(ctx, projectID)
 }
 
@@ -257,6 +259,8 @@ func (s *Service) UnsetDefaultHarnessConfig(ctx context.Context, projectID, conf
 	if err := s.store.UpsertProject(ctx, project); err != nil {
 		return nil, err
 	}
+	// A project with no default harness has no judge (ADR 0141 §1).
+	s.markJudge(ctx, projectID)
 	return s.store.GetProject(ctx, projectID)
 }
 
