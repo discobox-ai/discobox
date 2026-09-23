@@ -337,15 +337,16 @@ directory *and* restricts it to this user. The two are one step because a mode
 is not a permission on Windows: `os.WriteFile(path, data, 0600)` sets the
 read-only attribute at most and never writes an ACL, so a file lands with
 whatever its parent grants — and a profile that grants a group anything grants
-it on every private key written underneath. `restrictToUser`
-(`statedir_windows.go`) replaces the inherited list with this user, SYSTEM and
+it on every private key written underneath. `privatefs.Restrict`
+([`internal/privatefs`](../internal/privatefs), shared with the server's keys)
+replaces the inherited list with this user, SYSTEM and
 Administrators, and takes ownership; on Unix it is a no-op, because the mode
 bits already said it. Files are restricted individually as well as inheriting
 from the directory, since a file may predate its directory's restriction.
 
 This is not cosmetic: OpenSSH refuses to read a config, a `known_hosts` or a
 private key another principal can reach, and reports only "Bad owner or
-permissions". `assertPrivateToUser` in the tests checks the real thing on each
+permissions". `privatefs.Check` in the tests checks the real thing on each
 platform — the mode on Unix, the owner and every ACE on Windows.
 
 The JSON memories under it — `recent-selections.json`, `prompt-drafts.json` and
@@ -1981,7 +1982,7 @@ level or layering on the attach transports above.
   back, never inherited. A file written from WSL onto a drive mount carries an
   explicit `S-1-5-32` ACE, one created from Windows inherits whatever the
   profile grants below it, and `os.WriteFile` over an existing file keeps the
-  old DACL. What is granted instead is what `restrictToUser` grants natively and
+  old DACL. What is granted instead is what `privatefs.Restrict` grants natively and
   what Windows OpenSSH reads a file under — the user, SYSTEM and Administrators
   — the well-known two by SID, since their names are localized (ADR 0102 §1).
   `sshTarget.restrict` is the seam: the mode or the ACL this process can set
@@ -2002,7 +2003,7 @@ level or layering on the attach transports above.
   nothing else, and a fourth is an explicit entry that survived
   `/inheritance:r`, which is what reading back exists to catch — reported by
   principal, not removed, since `/grant:r` replaces only the grants of the three
-  it names. The owner is left alone here, unlike `restrictToUser`: a drive mount
+  it names. The owner is left alone here, unlike `privatefs.Restrict`: a drive mount
   hands out one ssh accepts already, and taking ownership from this side needs a
   right over the file the user may not hold. A file this cannot vouch for is
   removed again — the mirrored key, and the managed config with its known_hosts

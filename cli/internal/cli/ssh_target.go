@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 // sshPath is one file this CLI writes for an ssh client to read, in the two
@@ -216,7 +218,7 @@ func (t sshTarget) dir(p sshPath) sshPath {
 }
 
 // restrict gives a file this CLI wrote the permissions the ssh that reads it
-// insists on, on the side that reads it. Locally that is restrictToUser — the
+// insists on, on the side that reads it. Locally that is privatefs.Restrict — the
 // ACL on Windows, and nothing on Unix, where the mode the file was written with
 // already said it. Across the boundary only Windows can set an ACL, so it is
 // set with icacls (windowsTools.restrictFile).
@@ -228,7 +230,7 @@ func (t sshTarget) restrict(ctx context.Context, p sshPath) error {
 	if t.acrossWSL() {
 		return t.tools.restrictFile(ctx, p.client)
 	}
-	return restrictToUser(p.local)
+	return privatefs.Restrict(p.local)
 }
 
 // The written artifacts live beside the generated key, under the state

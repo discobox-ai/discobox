@@ -38,7 +38,3 @@ func ownedByThisUser(info fs.FileInfo) bool {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return !ok || int(stat.Uid) == os.Getuid()
 }
-
-// restrictToUser is what the mode bits already did. A file created 0600 and a
-// directory created 0700 are this user's alone, so there is nothing to repair.
-func restrictToUser(string) error { return nil }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/discobox-ai/discobox/internal/privatefs"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -74,7 +75,7 @@ func loadOrCreateSSHIdentity(path string) (publicKeyLine string, created bool, e
 	// The private key is the reason any of this is restricted: ssh refuses to
 	// use one another principal can read, and on Windows the 0600 above did not
 	// make it so.
-	if err := restrictToUser(path); err != nil {
+	if err := privatefs.Restrict(path); err != nil {
 		return "", false, fmt.Errorf("restrict SSH identity to this user: %w", err)
 	}
 

@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 // endpointKeyFileName is the server's persistent iroh identity inside its data
@@ -43,6 +44,11 @@ func LoadOrCreateEndpointKey(dataDir string) (ed25519.PrivateKey, error) {
 	path := filepath.Join(dataDir, endpointKeyFileName)
 
 	if pemBytes, err := os.ReadFile(path); err == nil {
+		// Restricted again on every load, which is what repairs a key an
+		// earlier Windows server wrote with nothing but the directory's ACL.
+		if err := privatefs.Restrict(path); err != nil {
+			return nil, fmt.Errorf("restrict iroh endpoint key to this user: %w", err)
+		}
 		return parseEndpointKey(pemBytes)
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read iroh endpoint key: %w", err)
@@ -72,6 +78,13 @@ func LoadOrCreateEndpointKey(dataDir string) (ed25519.PrivateKey, error) {
 	if err := tmpFile.Chmod(0o600); err != nil {
 		_ = tmpFile.Close()
 		return nil, fmt.Errorf("chmod iroh endpoint key temp file: %w", err)
+	}
+	// Before the key is written, so it is never readable by anyone else: on
+	// Windows the 0600 above grants and restricts nothing, and the link below
+	// carries this ACL with it, since both names are the one file.
+	if err := privatefs.Restrict(tmpPath); err != nil {
+		_ = tmpFile.Close()
+		return nil, fmt.Errorf("restrict iroh endpoint key to this user: %w", err)
 	}
 	if _, err := tmpFile.Write(pemBytes); err != nil {
 		_ = tmpFile.Close()

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/internal/privatefs"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -31,7 +32,9 @@ func TestGeneratedIdentityIsReadableByOpenSSH(t *testing.T) {
 	// Whatever "only this user" means on the platform running the test: a mode
 	// on Unix, an access list on Windows. ssh refuses a private key anyone else
 	// can reach, and refuses it in the same words either way.
-	assertPrivateToUser(t, path)
+	if err := privatefs.Check(path); err != nil {
+		t.Fatal(err)
+	}
 
 	// -y derives the public key from the private one, which requires actually
 	// parsing it.

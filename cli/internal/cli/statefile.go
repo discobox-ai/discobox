@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 // writeStateFile writes value to a file under the state directory as JSON,
@@ -53,7 +55,7 @@ func writePrivateFile(path string, data []byte) error {
 	if err := os.Chmod(temp.Name(), 0o600); err != nil {
 		return err
 	}
-	if err := restrictToUser(temp.Name()); err != nil {
+	if err := privatefs.Restrict(temp.Name()); err != nil {
 		return err
 	}
 	return os.Rename(temp.Name(), path)

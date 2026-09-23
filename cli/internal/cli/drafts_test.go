@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 func TestPromptDraftRoundTrips(t *testing.T) {
@@ -58,10 +60,12 @@ func TestPromptDraftsLiveUnderXDGStateHome(t *testing.T) {
 
 	path := filepath.Join(state, "discobox", "cli", "prompt-drafts.json")
 	// A prompt is the user's own writing, so the file it sits in is theirs.
-	// Asserted through the helper each platform defines, because Windows has no
-	// Unix mode to report: writeStateFile restricts the file by ACL there, and
-	// Stat still says -rw-rw-rw- whatever the ACL says.
-	assertPrivateToUser(t, path)
+	// Asserted through privatefs.Check, because Windows has no Unix mode to
+	// report: writeStateFile restricts the file by ACL there, and Stat still
+	// says -rw-rw-rw- whatever the ACL says.
+	if err := privatefs.Check(path); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // A broken or missing file means the window opens empty, which is where it used

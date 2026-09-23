@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 // The identity is what an operator enrolls, so regenerating it would silently
@@ -41,8 +43,11 @@ func TestLoadOrCreateIrohIdentityWritesPrivateFile(t *testing.T) {
 	}
 	// A private key, so whatever "only this user" means here: a mode on Unix,
 	// an access list on Windows, which the mode would not have set.
-	assertPrivateToUser(t, path)
-	assertPrivateToUser(t, filepath.Dir(path))
+	for _, p := range []string{path, filepath.Dir(path)} {
+		if err := privatefs.Check(p); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // The identity is written through a temporary file and renamed, so a process

@@ -5,11 +5,11 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 // The key is the server's address, so a restart must answer on the same one.
@@ -48,20 +48,10 @@ func TestLoadOrCreateEndpointKeyWritesPrivateFile(t *testing.T) {
 	if _, err := LoadOrCreateEndpointKey(dir); err != nil {
 		t.Fatalf("LoadOrCreateEndpointKey() error = %v", err)
 	}
-	info, err := os.Stat(filepath.Join(dir, endpointKeyFileName))
-	if err != nil {
-		t.Fatalf("stat endpoint key: %v", err)
-	}
-	// Windows reports 0666 for any writable file whatever its ACL, so there is
-	// no mode here to assert. Noting the gap rather than papering over it:
-	// LoadOrCreateEndpointKey does not restrict the key by ACL either, so on
-	// Windows the file is only as private as the directory holding it. The CLI
-	// solves the same problem with restrictToUser (statedir_windows.go).
-	if runtime.GOOS == "windows" {
-		t.Skip("no Unix mode on Windows; the key is not ACL-restricted there either")
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("endpoint key mode = %o, want 600", perm)
+	// Whatever "only this user" means on the platform running the test: a mode
+	// on Unix, an access list on Windows, which the mode would not have set.
+	if err := privatefs.Check(filepath.Join(dir, endpointKeyFileName)); err != nil {
+		t.Fatal(err)
 	}
 }
 

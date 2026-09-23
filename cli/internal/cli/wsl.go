@@ -151,7 +151,7 @@ func resolveWindowsTools(ctx context.Context) (windowsTools, error) {
 // restrictFile narrows a file written for the Windows side to the
 // principals ssh.exe will read one under, and checks that it worked.
 //
-// This is restrictToUser's job from the other side of the boundary: a mode bit
+// This is privatefs.Restrict's job from the other side of the boundary: a mode bit
 // written from here means nothing to Windows, and ssh.exe refuses to read a
 // private key — or a config, or a known_hosts — that a principal it does not
 // trust can reach. Neither default is safe to inherit — WSL puts an explicit
@@ -166,7 +166,7 @@ func resolveWindowsTools(ctx context.Context) (windowsTools, error) {
 // managed config left under a wide ACL takes every host in that file down with
 // it, this CLI's stanzas and the user's own hosts alike.
 //
-// The three it grants are the three restrictToUser grants natively, which are
+// The three it grants are the three privatefs.Restrict grants natively, which are
 // the three Windows OpenSSH accepts: the user, SYSTEM, and Administrators. The
 // last two are on every file a Windows profile holds, ssh reads those files,
 // and removing them would take away the user's own recovery path without taking
@@ -183,7 +183,7 @@ func resolveWindowsTools(ctx context.Context) (windowsTools, error) {
 // fourth survives `/inheritance:r` and is reported rather than removed (ADR
 // 0102 §2).
 //
-// The owner it leaves alone, which restrictToUser does not. This side did not
+// The owner it leaves alone, which privatefs.Restrict does not. This side did not
 // create most of these files — the user's own ssh_config least of all — and the
 // owner a drive mount hands out is one ssh accepts already: the user, or
 // Administrators when the distribution was started elevated. Taking ownership

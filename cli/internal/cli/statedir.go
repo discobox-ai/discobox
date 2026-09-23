@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/discobox-ai/discobox/internal/privatefs"
 )
 
 // The CLI's own state — the picker's memory, this machine's iroh identity, the
@@ -86,12 +88,12 @@ func stagedImagesRoot() string {
 // The two go together deliberately. On Windows a new directory inherits its
 // parent's permissions and the mode argument does nothing, so a state directory
 // is only private if something makes it private — and the private key inside is
-// the reason it has to be. See restrictToUser.
+// the reason it has to be. See privatefs.Restrict.
 func ensureStateDir(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
-	if err := restrictToUser(path); err != nil {
+	if err := privatefs.Restrict(path); err != nil {
 		return fmt.Errorf("restrict %s to this user: %w", path, err)
 	}
 	return nil
