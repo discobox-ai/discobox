@@ -49,6 +49,36 @@ var canonicalHookEvents = map[string]map[string]string{
 		"SessionStart":      "SessionStart",
 		"SessionEnd":        "SessionEnd",
 	},
+	// opencode names its lifecycle in dot.lower.case and shares no spelling
+	// with Claude Code, so every entry here is a real translation rather than
+	// a recorded agreement. Its image publishes more events than appear here
+	// (ADR 0147): the ones left out — permission.replied, command.executed,
+	// todo.updated, session.deleted, server.connected, installation.updated —
+	// are opencode facts Claude Code has no word for, and are recorded under
+	// their own names alone.
+	//
+	// session.deleted is deliberately not SessionEnd: Claude Code ends a
+	// session when it terminates, and opencode deletes one on an explicit
+	// removal, which is a different event that happens to sound alike.
+	//
+	// session.idle, session.created, session.error and session.compacted mean
+	// the root session's here, and only because the image's plugin publishes
+	// those four for the root alone. opencode publishes each of them per
+	// session, and its task tool runs sub-sessions, so unfiltered they would
+	// name a subagent's turn Stop — or its compaction PostCompact — and end a
+	// wait early (ADR 0147 §4). The name carries no session, so the
+	// distinction cannot be made here: if the plugin ever stops filtering,
+	// all four of these entries have to go.
+	"opencode": {
+		"tool.execute.before": "PreToolUse",
+		"tool.execute.after":  "PostToolUse",
+		"session.idle":        "Stop",
+		"session.error":       "StopFailure",
+		"session.created":     "SessionStart",
+		"permission.asked":    "PermissionRequest",
+		"session.compacted":   "PostCompact",
+		"file.edited":         "FileChanged",
+	},
 }
 
 // CanonicalHookEvent answers the Claude Code name for one harness's hook

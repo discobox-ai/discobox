@@ -26,6 +26,19 @@ RUN npm install -g opencode-ai \
 # part of it.
 COPY --chmod=0644 agent.conf /usr/local/libexec/discobox/agent.conf
 
+# opencode's lifecycle reaches JavaScript and never a command, so this plugin
+# is what the other harness images declare as command hooks (ADR 0144). It is
+# installed beside the configure script rather than on PATH because opencode
+# resolves it by the absolute path the managed config names, not by name.
+COPY --chmod=0644 hook-plugin.js /usr/local/libexec/discobox/opencode-hook-plugin.js
+
+# opencode's managed configuration layer, read after the user's own and after a
+# project's, and the only layer the configure flow's capture cannot replace.
+# Plugin entries accumulate across layers, so naming this one never drops a
+# plugin the user added.
+RUN install -d -m 0755 /etc/opencode
+COPY --chmod=0644 managed-config.json /etc/opencode/opencode.json
+
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-opencode
 # The harness-run convention (ADR 0086 §3): the image installs its agent
 # under this name, overwriting the base image's no-op shim, and the runtime

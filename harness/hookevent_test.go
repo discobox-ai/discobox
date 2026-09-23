@@ -82,17 +82,17 @@ func TestCanonicalHookEventsVersionChangesWithTheTable(t *testing.T) {
 			for k, v := range original["codex-cli"] {
 				grown[k] = v
 			}
-			return map[string]map[string]string{"codex-cli": grown}
+			return map[string]map[string]string{"codex-cli": grown, "opencode": original["opencode"]}
 		}()},
 		{"a different canonical name for the same event", func() map[string]map[string]string {
 			changed := map[string]string{}
-			for k, v := range original["codex-cli"] {
+			for k, v := range original["opencode"] {
 				changed[k] = v
 			}
-			changed["Stop"] = "StopFailure"
-			return map[string]map[string]string{"codex-cli": changed}
+			changed["session.idle"] = "StopFailure"
+			return map[string]map[string]string{"codex-cli": original["codex-cli"], "opencode": changed}
 		}()},
-		{"an entry removed", map[string]map[string]string{}},
+		{"an entry removed", map[string]map[string]string{"codex-cli": original["codex-cli"]}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer restore(original)()

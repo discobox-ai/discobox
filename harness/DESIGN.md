@@ -273,20 +273,31 @@ subject to repo trust prompts or user/project override:
   or merge Codex's hook format. Every configured lifecycle event invokes the
   generic publisher with its provider and event name while its stdin payload is
   stored unchanged. System hooks are treated as managed and trusted by policy.
+- opencode: `/etc/opencode/opencode.json`, naming an image-owned plugin by
+  absolute file URL
+  ([ADR 0147](../docs/adr/0147-opencode-publishes-its-lifecycle-through-an-image-owned-plugin.md)).
+  opencode has no command hook at any layer — its lifecycle reaches JavaScript
+  and nothing else — so `hook-plugin.js` is what the other two images declare
+  as commands, and it invokes the same generic publisher. The managed layer is
+  read last of all, after the user's global config and a project's, and plugin
+  entries accumulate across layers rather than replacing, so naming this one
+  neither loses to the configure flow's capture nor drops a plugin the user
+  added. Its policy baseline is a launch flag rather than a system layer (see
+  [OpenCode](#opencode)).
 
 Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
 the sandbox agent's generic publisher; no Go code in this package writes or
 merges a harness's settings.
 
-opencode publishes no hooks, and that costs a behavior rather than a log. A
-wait ends on a hook event (ADR 0137 §3) and an opencode terminal records none,
-so only `--quiet` and `--exit` can end one there. The cost rose when a hook
-event became a name a caller matches on across harnesses (ADR 0146) rather
-than an entry in a trail. The reason is structural and not a gap in the image:
-opencode's lifecycle events reach JavaScript plugins and an event bus, never a
-command, so there is nothing for the generic publisher to be invoked from. Its
-policy baseline is a launch flag rather than a system layer (see
-[OpenCode](#opencode)).
+The plugin publishes an **allowlist** of twelve bus events plus the
+`tool.execute.before` / `.after` hooks, which opencode delivers as hooks rather
+than bus events. opencode's bus carries per-token events —
+`message.part.updated` fires for every delta of every message — and a denylist
+would publish each event opencode ships next by default. That makes opencode's
+trail coarser than Claude Code's on purpose: it records a turn's shape and not
+its content. A test in `harness/opencode` reads the allowlist out of the plugin
+and fails if an event is published with no canonical name and no entry saying
+it has none.
 
 ## Canonical hook event names
 
@@ -310,6 +321,18 @@ or an audit filter then matches either.
   copy of its own. Codex's `Interrupt` is the only one today. Copying it in
   would squat a name Claude Code has not chosen, so that when Claude Code does
   choose one, stored hooks already claim it.
+- **`Stop`, `StopFailure`, `SessionStart` and `PostCompact` on opencode depend
+  on a filter, not only on a name.** opencode publishes `session.idle`,
+  `session.error`, `session.created` and `session.compacted` per *session*,
+  and its task tool runs sub-sessions, so a child's idle is indistinguishable
+  by name from the user's turn ending — opencode's own `run` command scopes the
+  two it consumes to the root session for the same reason. The image's plugin
+  publishes all four for the root session only, learning that a session is a
+  child from the `parentID` on its `session.created` and treating an unknown
+  session as the root. If that filter goes, all four entries must go with it;
+  a test in `harness/opencode` runs the plugin against the filtered set it
+  declares and
+  fails if the two drift apart.
 - Each image's hook config and this table are kept together by a test in that
   harness's package: publishing an event without deciding what it is called
   across harnesses fails the build.
