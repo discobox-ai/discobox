@@ -1,4 +1,4 @@
-# 0142 — An image arrival no later than its build is an unknown age
+# 0143 — An image arrival no later than its build is an unknown age
 
 - **Status**: Accepted
 - **Date**: 2026-09-22

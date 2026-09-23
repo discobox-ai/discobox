@@ -53,7 +53,7 @@ func TestReclaimableAgesOutUnusedImages(t *testing.T) {
 // stamped with that epoch for both Created and LastTagTime on the containerd
 // image store. It was reclaimed seconds after `task build:harness-image` made
 // it, as decades old, because the watcher's retagged build of the same
-// repository had the later — real — arrival (ADR 0142).
+// repository had the later — real — arrival (ADR 0143).
 func TestReclaimableKeepsAnImageWhoseArrivalIsItsBuildTime(t *testing.T) {
 	now := time.Now()
 	epoch := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)

@@ -1048,7 +1048,7 @@ daemon pool containers run *on* the same way. An image goes when it carries
 ago than the retention window. Arrival is the daemon's `LastTagTime`, not
 `Created`, which is when whoever published the image built it; see ADR 0040.
 An arrival no later than `Created` is a build clamped to `SOURCE_DATE_EPOCH`,
-not an arrival, and is kept as an unknown age; see ADR 0142.
+not an arrival, and is kept as an unknown age; see ADR 0143.
 
 The window arrives as `DISCOBOX_IMAGE_RETENTION` in the container environment,
 defaulting to 24h to match `sandboxVolumeRetention`. The loop's own interval is

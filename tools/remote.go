@@ -22,7 +22,7 @@ type Remote struct {
 // workdir is the directory a tool opens: the working tree, or the sandbox's
 // working root when there is none — the directory boot seeds and every shell
 // in the box starts in, so a window opens where the box's own work happens
-// (ADR 0141).
+// (ADR 0142).
 func (r Remote) workdir() string {
 	if r.Workdir == "" {
 		return sandboxconfig.DefaultWorkingRoot

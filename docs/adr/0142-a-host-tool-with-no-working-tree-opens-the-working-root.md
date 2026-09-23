@@ -1,4 +1,4 @@
-# 0141 — A host tool with no working tree opens the working root
+# 0142 — A host tool with no working tree opens the working root
 
 - **Status**: Accepted
 - **Date**: 2026-09-22

@@ -14,7 +14,7 @@
 // unchanged tag), load, and tag — every way an image gets here — except that a
 // build clamped to SOURCE_DATE_EPOCH takes that epoch for both, on the
 // containerd image store. An arrival no later than the build is that clamp, not
-// an arrival, and is an unknown age (ADR 0142).
+// an arrival, and is an unknown age (ADR 0143).
 //
 // The package is split the way the volume reaper is: Reclaimable decides from
 // plain data and is where the rules are tested, while Reclaim does the daemon
@@ -143,7 +143,7 @@ type Candidate struct {
 // Created: nothing arrives before it was built, and a build clamped to
 // SOURCE_DATE_EPOCH — the Nix dev shell sets 1980 — is stamped with that epoch
 // for both on the containerd image store. Taken as an age, that makes the image
-// decades old the moment it is built (ADR 0142).
+// decades old the moment it is built (ADR 0143).
 func (c Candidate) knownArrival() bool {
 	return !c.LastLocal.IsZero() && c.LastLocal.After(c.Created)
 }
