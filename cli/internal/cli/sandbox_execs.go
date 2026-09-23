@@ -84,7 +84,7 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			exec, err := a.createSandboxExec(cmd.Context(), projectID, resolvedSandboxID, body)
+			exec, err := a.createSandboxExec(cmd.Context(), projectID, resolvedSandboxID, body, false)
 			if err != nil {
 				return err
 			}
@@ -847,7 +847,7 @@ func (a *App) sandboxCommandOutput(ctx context.Context, projectID, sandboxID, wo
 	body := &apimodel.CreateSandboxExecRequest{}
 	body.SetCommand(append([]string{}, command...))
 	body.SetWorkdir(optString(workdir))
-	exec, err := a.createSandboxExec(ctx, projectID, sandboxID, body)
+	exec, err := a.createSandboxExec(ctx, projectID, sandboxID, body, false)
 	if err != nil {
 		return "", "", -1, err
 	}
@@ -921,9 +921,13 @@ func (a *App) sandboxExecOutput(ctx context.Context, projectID, sandboxID, execI
 	return out.String(), errOut.String(), nil
 }
 
-func (a *App) createSandboxExec(ctx context.Context, projectID, sandboxID string, body *apimodel.CreateSandboxExecRequest) (apimodel.SandboxExec, error) {
+func (a *App) createSandboxExec(ctx context.Context, projectID, sandboxID string, body *apimodel.CreateSandboxExecRequest, wait bool) (apimodel.SandboxExec, error) {
 	var response sandboxExecRecordResponse
-	if err := a.execJSON(ctx, http.MethodPost, projectID, sandboxID, "", body, &response); err != nil {
+	suffix := ""
+	if wait {
+		suffix = "?wait=ready"
+	}
+	if err := a.execJSON(ctx, http.MethodPost, projectID, sandboxID, suffix, body, &response); err != nil {
 		return apimodel.SandboxExec{}, err
 	}
 	return response.Exec.model(), nil
@@ -981,7 +985,11 @@ func (a *App) execJSON(ctx context.Context, method, projectID, sandboxID, suffix
 	if err != nil {
 		return err
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/api/projects/" + url.PathEscape(projectID) + "/sandboxes/" + url.PathEscape(sandboxID) + "/execs" + suffix
+	pathSuffix, rawQuery, _ := strings.Cut(suffix, "?")
+	u.Path = strings.TrimRight(u.Path, "/") + "/api/projects/" + url.PathEscape(projectID) + "/sandboxes/" + url.PathEscape(sandboxID) + "/execs" + pathSuffix
+	if rawQuery != "" {
+		u.RawQuery = rawQuery
+	}
 
 	var body io.Reader
 	if in != nil {

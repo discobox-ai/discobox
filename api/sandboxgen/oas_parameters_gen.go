@@ -365,6 +365,9 @@ func decodeAttachSandboxExecOnceParams(args [3]string, argsEscaped bool, r *http
 
 // CreateSandboxExecParams is parameters of create-sandbox-exec operation.
 type CreateSandboxExecParams struct {
+	// Wait for the sandbox and its pool to become ready before creating the exec. The control plane
+	// consumes this option.
+	Wait OptCreateSandboxExecWait `json:",omitempty,omitzero"`
 	// Project that owns the sandbox.
 	ProjectId string
 	// Sandbox resource ID.
@@ -372,6 +375,15 @@ type CreateSandboxExecParams struct {
 }
 
 func unpackCreateSandboxExecParams(packed middleware.Parameters) (params CreateSandboxExecParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "wait",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Wait = v.(OptCreateSandboxExecWait)
+		}
+	}
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -390,6 +402,63 @@ func unpackCreateSandboxExecParams(packed middleware.Parameters) (params CreateS
 }
 
 func decodeCreateSandboxExecParams(args [2]string, argsEscaped bool, r *http.Request) (params CreateSandboxExecParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode query: wait.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "wait",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotWaitVal CreateSandboxExecWait
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotWaitVal = CreateSandboxExecWait(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Wait.SetTo(paramsDotWaitVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Wait.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "wait",
+			In:   "query",
+			Err:  err,
+		}
+	}
 	// Decode path: projectId.
 	if err := func() error {
 		param := args[0]

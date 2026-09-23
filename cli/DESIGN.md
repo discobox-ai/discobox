@@ -808,7 +808,9 @@ running agent out from under somebody.
 `discobox shell` is the exception: the root command is the everyday one-shot "run
 this in my sandbox" verb, while `admin exec create` stays the raw, fully
 configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive
-the same exec create/attach/status sequence. The root form has no `-it`: stdin
+the same exec create/attach/status sequence. Shell requests `wait=ready` on
+create, since it cannot reach the waiting attach until an exec exists. Raw
+`admin exec create` keeps the immediate API answer. The root form has no `-it`: stdin
 is always attached, and a PTY is requested only when stdin, stdout, and stderr
 are all terminals, so pipes and redirects behave like a local command. The attach
 session writes stdout frames to stdout and stderr frames to stderr, with no

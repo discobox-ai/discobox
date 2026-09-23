@@ -100,6 +100,15 @@ func (s *CreateSandboxExecResponse) Validate() error {
 	return nil
 }
 
+func (s CreateSandboxExecWait) Validate() error {
+	switch s {
+	case "ready":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *HarnessHookLogsResponse) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

@@ -90,7 +90,8 @@ Current proxy routes:
   agent own serving that API; the server owns project authorization, scope
   selection, and lease/token injection only. An `attach` acquires through
   `AwaitSandboxHTTPClient`, so it waits for a sandbox still coming up
-  (ADR 0039); every other route fails fast.
+  (ADR 0039). Exec creation can request the same wait with `wait=ready`;
+  other routes fail fast.
 - `/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach?host=&port=`
   forwards the websocket upgrade to the sandbox-agent `/tcp/attach` endpoint,
   which dials `host:port` from inside the sandbox's network namespace and

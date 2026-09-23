@@ -55,13 +55,11 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Hand
 			return
 		}
 
-		// An attach is a caller saying "I want to use this sandbox now", so it
-		// waits for a sandbox that is still coming up rather than being
-		// refused by one (ADR 0039 tier 1). Every other exec route keeps the
-		// fail-fast answer: they are asked on a cadence, and a poll that
-		// blocks is worse than one that is told no.
+		// Attach always waits. Exec creation may opt in when its caller is
+		// about to use the exec immediately; list and status polls stay fast.
 		acquire := service.AcquireSandboxHTTPClient
-		if strings.HasSuffix(r.URL.Path, "/attach") {
+		waitForCreate := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs") && r.URL.Query().Get("wait") == "ready"
+		if strings.HasSuffix(r.URL.Path, "/attach") || waitForCreate {
 			acquire = service.AwaitSandboxHTTPClient
 		}
 		lease, sandboxModel, err := acquire(r.Context(), projectID, sandboxID, scopes)
@@ -85,6 +83,12 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Hand
 			return
 		}
 		proxy := sandboxPoolReverseProxy(target, lease)
+		if waitForCreate {
+			// This option belongs to the control plane, not the sandbox agent.
+			query := r.URL.Query()
+			query.Del("wait")
+			r.URL.RawQuery = query.Encode()
+		}
 		proxy.ServeHTTP(w, r)
 	})
 }

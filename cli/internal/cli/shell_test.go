@@ -88,6 +88,9 @@ func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/sandboxes"):
 			t.Fatal("shell listed sandboxes despite a full generated ID")
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
+			if got := r.URL.Query().Get("wait"); got != "ready" {
+				t.Fatalf("create wait = %q, want ready", got)
+			}
 			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
 				t.Fatalf("decode create body: %v", err)
 			}

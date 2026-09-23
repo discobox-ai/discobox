@@ -1297,6 +1297,40 @@ func (s *CreateSandboxExecResponse) SetExec(val SandboxExec) {
 
 func (*CreateSandboxExecResponse) createSandboxExecRes() {}
 
+type CreateSandboxExecWait string
+
+const (
+	CreateSandboxExecWaitReady CreateSandboxExecWait = "ready"
+)
+
+// AllValues returns all CreateSandboxExecWait values.
+func (CreateSandboxExecWait) AllValues() []CreateSandboxExecWait {
+	return []CreateSandboxExecWait{
+		CreateSandboxExecWaitReady,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSandboxExecWait) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSandboxExecWaitReady:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSandboxExecWait) UnmarshalText(data []byte) error {
+	switch CreateSandboxExecWait(data) {
+	case CreateSandboxExecWaitReady:
+		*s = CreateSandboxExecWaitReady
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/CreateSandboxProviderInstanceBody
 type CreateSandboxProviderInstanceBody struct {
 	// A URL to the JSON Schema for this object.
@@ -5627,6 +5661,52 @@ func (o OptCreateSandboxExecRequestMetadata) Get() (v CreateSandboxExecRequestMe
 
 // Or returns value if set, or given parameter if does not.
 func (o OptCreateSandboxExecRequestMetadata) Or(d CreateSandboxExecRequestMetadata) CreateSandboxExecRequestMetadata {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptCreateSandboxExecWait returns new OptCreateSandboxExecWait with value set to v.
+func NewOptCreateSandboxExecWait(v CreateSandboxExecWait) OptCreateSandboxExecWait {
+	return OptCreateSandboxExecWait{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSandboxExecWait is optional CreateSandboxExecWait.
+type OptCreateSandboxExecWait struct {
+	Value CreateSandboxExecWait
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSandboxExecWait was set.
+func (o OptCreateSandboxExecWait) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSandboxExecWait) Reset() {
+	var v CreateSandboxExecWait
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSandboxExecWait) SetTo(v CreateSandboxExecWait) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSandboxExecWait) Get() (v CreateSandboxExecWait, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSandboxExecWait) Or(d CreateSandboxExecWait) CreateSandboxExecWait {
 	if v, ok := o.Get(); ok {
 		return v
 	}

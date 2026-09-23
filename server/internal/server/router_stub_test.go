@@ -28,21 +28,22 @@ import (
 var testDefaultProjectID = id.NewString(id.PrefixProject)
 
 type routerTestServices struct {
-	mu             sync.Mutex
-	user           model.User
-	project        model.Project
-	harnessConfigs map[string]model.HarnessConfig
-	providers      map[string]model.SandboxProviderInstance
-	pools          map[string]model.Pool
-	sandboxes      map[string]model.Sandbox
-	sandboxLease   *services.HTTPClientLease
-	sandboxScopes  []string
-	console        *stubPoolConsole
-	consoleErr     error
-	poolLog        *stubPoolLog
-	importResult   *services.SandboxImportResult
-	exportStream   io.ReadCloser
-	poolLogErr     error
+	mu                sync.Mutex
+	user              model.User
+	project           model.Project
+	harnessConfigs    map[string]model.HarnessConfig
+	providers         map[string]model.SandboxProviderInstance
+	pools             map[string]model.Pool
+	sandboxes         map[string]model.Sandbox
+	sandboxLease      *services.HTTPClientLease
+	sandboxScopes     []string
+	sandboxAwaitCalls int
+	console           *stubPoolConsole
+	consoleErr        error
+	poolLog           *stubPoolLog
+	importResult      *services.SandboxImportResult
+	exportStream      io.ReadCloser
+	poolLogErr        error
 
 	guestImageBuild    *sandbox.GuestImageBuild
 	guestImageBuildErr error
@@ -244,6 +245,7 @@ func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, project
 // AwaitSandboxHTTPClient is the waiting acquire. The stub's sandboxes are
 // always either there or not, so the two answer the same.
 func (s *routerTestServices) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	s.sandboxAwaitCalls++
 	return s.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
 }
 

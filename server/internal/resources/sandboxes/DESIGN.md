@@ -71,7 +71,8 @@ archived sandbox — it has no container to power.
 through, and it answers now: the sandbox exists, and its pool is up.
 
 `AwaitSandboxHTTPClient` (`attach_wait.go`) is the same acquire for a caller
-that means "I want to use this sandbox now" — the exec attach, and nothing else.
+that means "I want to use this sandbox now" — the exec attach, or an exec
+create request with `wait=ready`.
 It waits for a sandbox that is still being provisioned instead of refusing it,
 which is what lets a client create a sandbox and attach to it in the next call
 rather than polling for readiness (ADR 0039 tier 1).

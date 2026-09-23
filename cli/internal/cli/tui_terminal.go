@@ -275,7 +275,7 @@ func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string,
 	if err != nil {
 		return tui.Exec{}, nil, err
 	}
-	exec, err := d.app.createSandboxExec(ctx, d.projectID, sandboxID, body)
+	exec, err := d.app.createSandboxExec(ctx, d.projectID, sandboxID, body, true)
 	if err != nil {
 		return tui.Exec{}, nil, err
 	}

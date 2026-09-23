@@ -2804,6 +2804,10 @@ func (s *Server) handleCreateSandboxExecRequest(args [2]string, argsEscaped bool
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
 				{
+					Name: "wait",
+					In:   "query",
+				}: params.Wait,
+				{
 					Name: "projectId",
 					In:   "path",
 				}: params.ProjectId,

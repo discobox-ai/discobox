@@ -77,7 +77,7 @@ so, and one more quits shell and leaves the command where it is.`,
 			if err != nil {
 				return err
 			}
-			exec, err := a.createSandboxExec(cmd.Context(), projectID, sandboxID, body)
+			exec, err := a.createSandboxExec(cmd.Context(), projectID, sandboxID, body, true)
 			if err != nil {
 				return err
 			}

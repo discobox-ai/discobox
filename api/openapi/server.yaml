@@ -8311,6 +8311,14 @@ paths:
         post:
             operationId: create-sandbox-exec
             parameters:
+                - description: Wait for the sandbox and its pool to become ready before creating the exec. The control plane consumes this option.
+                  in: query
+                  name: wait
+                  required: false
+                  schema:
+                    enum:
+                        - ready
+                    type: string
                 - description: Project that owns the sandbox.
                   in: path
                   name: projectId

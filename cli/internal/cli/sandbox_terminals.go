@@ -109,7 +109,7 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			terminal, err := a.createSandboxExec(cmd.Context(), projectID, resolvedSandboxID, body)
+			terminal, err := a.createSandboxExec(cmd.Context(), projectID, resolvedSandboxID, body, false)
 			if err != nil {
 				return err
 			}

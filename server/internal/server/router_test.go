@@ -536,6 +536,43 @@ func TestSandboxExecProxyErrorUsesJSON(t *testing.T) {
 	}
 }
 
+func TestSandboxExecCreateWaitOptionUsesAwait(t *testing.T) {
+	stubs := newRouterTestServices()
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID: "sandbox-1", ProjectID: testDefaultProjectID,
+		CreatedByUserID: service.DefaultUserID, PoolID: "pool-1",
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Errorf("upstream query = %q, want control-plane wait option removed", r.URL.RawQuery)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(upstream.Close)
+	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", nil)
+	router, err := NewRouter(services.Services{
+		Projects: stubs, HarnessConfigs: stubs, Sandboxes: stubs,
+		Providers: stubs, Pools: stubs, Jobs: stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	path := "/api/projects/" + testDefaultProjectID + "/sandboxes/sandbox-1/execs"
+	for _, tc := range []struct {
+		query     string
+		wantAwait int
+	}{
+		{"", 0}, {"?wait=ready", 1},
+	} {
+		resp := httptest.NewRecorder()
+		req := scopedUserRequest(context.Background(), http.MethodPost, path+tc.query, nil, poolagentauth.ScopeExecWrite)
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusCreated || stubs.sandboxAwaitCalls != tc.wantAwait {
+			t.Fatalf("POST %s: status=%d await calls=%d, want 201 and %d", tc.query, resp.Code, stubs.sandboxAwaitCalls, tc.wantAwait)
+		}
+	}
+}
+
 func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()

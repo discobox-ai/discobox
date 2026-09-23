@@ -251,7 +251,7 @@ func (a *App) runToolInSelected(cmd *cobra.Command, projectID, sandboxID string,
 	if err != nil {
 		return err
 	}
-	exec, err := a.createSandboxExec(ctx, projectID, sandboxID, body)
+	exec, err := a.createSandboxExec(ctx, projectID, sandboxID, body, true)
 	if err != nil {
 		return err
 	}
