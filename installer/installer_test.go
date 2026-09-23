@@ -594,6 +594,7 @@ const (
 
 func TestShellDrawsTheMarkOnlyWhereItShows(t *testing.T) {
 	requireShell(t)
+	t.Setenv("NO_COLOR", "")
 	s := newServer(t, ladder)
 	script := s.script(t, "v1.1.0", ShellName)
 
