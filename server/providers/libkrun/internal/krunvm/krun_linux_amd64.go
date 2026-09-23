@@ -65,7 +65,8 @@ func openLibrary(path string) (*krunLibrary, error) {
 	}
 	handle, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
-		return nil, fmt.Errorf("load %s: %w; the libkrun image carries this library, and the provider's libkrunPath names another", path, err)
+		// The loader's own error names the path and says why.
+		return nil, fmt.Errorf("load libkrun: %w", err)
 	}
 	lib := &krunLibrary{}
 	for name, target := range map[string]any{

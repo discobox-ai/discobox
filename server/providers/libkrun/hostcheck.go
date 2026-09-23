@@ -53,7 +53,7 @@ func CheckHost(ctx context.Context, defaults dockerworker.ServerDefaults) error 
 }
 
 // checkLibrary loads libkrun in a launcher child and reports what it said if
-// it could not.
+// it could not, which already names the library and why.
 func checkLibrary(ctx context.Context, path string) error {
 	self, err := os.Executable()
 	if err != nil {
@@ -62,8 +62,8 @@ func checkLibrary(ctx context.Context, path string) error {
 	//nolint:gosec // The command is this binary and the path is one the resolver produced.
 	output, err := exec.CommandContext(ctx, self, launcherCommand, checkLibraryFlag, path).CombinedOutput()
 	if err != nil {
-		if message := strings.TrimSpace(string(output)); message != "" {
-			return fmt.Errorf("load %s: %s", path, message)
+		if message := strings.TrimSpace(strings.TrimPrefix(string(output), launcherErrorPrefix)); message != "" {
+			return errors.New(message)
 		}
 		return fmt.Errorf("load %s: %w", path, err)
 	}

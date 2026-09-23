@@ -39,7 +39,7 @@ func RunLauncherIfInvoked() {
 		return
 	}
 	if err := runLauncher(os.Args[2:]); err != nil {
-		fmt.Fprintf(os.Stderr, "discobox pool VM launcher: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s%v\n", launcherErrorPrefix, err)
 		os.Exit(1)
 	}
 	// krunvm.Run only returns on failure, so only a library check gets here.
@@ -50,6 +50,9 @@ func RunLauncherIfInvoked() {
 // launcher mode rather than a server call for the reason the launcher exists:
 // the server process never maps libkrun (ADR 0062 §9).
 const checkLibraryFlag = "--check-library"
+
+// launcherErrorPrefix begins what a failed launcher writes to stderr.
+const launcherErrorPrefix = "discobox pool VM launcher: "
 
 func runLauncher(args []string) error {
 	if len(args) == 2 && args[0] == checkLibraryFlag {

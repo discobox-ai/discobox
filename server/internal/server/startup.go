@@ -39,7 +39,12 @@ type startupHandler struct {
 	// goes; both nil unless it is (see awaitChoice).
 	choice *health.Choice
 	answer chan string
-	ready  atomic.Pointer[http.Handler]
+	// stop ends the server. Only a start held for a choice is stopped through
+	// it; see serveShutdown. stopped records that it was asked to, so Run can
+	// tell a requested stop from a failed start.
+	stop    func()
+	stopped atomic.Bool
+	ready   atomic.Pointer[http.Handler]
 }
 
 func newStartupHandler(phase string) *startupHandler {
@@ -151,6 +156,34 @@ func (h *startupHandler) serveChoice(w http.ResponseWriter, r *http.Request) {
 	writeHealthStatus(w, http.StatusAccepted, h.status())
 }
 
+// serveShutdown stops a server whose start is held for a choice. The router's
+// /shutdown is not there yet, and without this a held server — one whose user
+// answered no — could be stopped only by killing it, and a newer server could
+// not reclaim its socket (listenWithReclaim asks the incumbent to shut down).
+// A start that is merely slow is not stopped this way: it is going somewhere,
+// and the router's /shutdown will be there when it arrives.
+//
+// It answers before it stops, as the router's /shutdown does: stopping first
+// can take the connection down before the 202 is written, and a caller told
+// nothing reports a failure against a server that did stop.
+func (h *startupHandler) serveShutdown(w http.ResponseWriter) {
+	h.stopped.Store(true)
+	w.WriteHeader(http.StatusAccepted)
+	if h.stop != nil {
+		time.AfterFunc(50*time.Millisecond, h.stop)
+	}
+}
+
+// stopRequested reports whether a held start was asked to stop, which makes
+// the startup it abandons a clean exit rather than a failure.
+func (h *startupHandler) stopRequested() bool { return h.stopped.Load() }
+
+func (h *startupHandler) holding() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.choice != nil
+}
+
 var errNotAnAlternative = errors.New("not one of the providers this server will install instead")
 
 func (h *startupHandler) answerChoice(provider string) error {
@@ -178,6 +211,10 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == health.SetupDefaultProviderPath {
 		h.serveChoice(w, r)
+		return
+	}
+	if r.URL.Path == "/shutdown" && r.Method == http.MethodPost && h.holding() {
+		h.serveShutdown(w)
 		return
 	}
 	// Every path answers the same way, not just the probe: a request that

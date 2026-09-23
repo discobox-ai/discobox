@@ -180,6 +180,15 @@ func (a *App) statusAPILayer(ctx context.Context, diagnosis endpoint.Diagnosis) 
 			Status:  endpoint.DiagnosisSkipped,
 			Summary: "not asked: the server is still starting, and answers every request with 503 until it is ready",
 		}
+	case diagnosis.ServerStatus == health.StatusNeedsChoice:
+		// Holding, not starting: it will not become ready on its own
+		// (ADR 0148 §2), so the row says what does make it ready.
+		return endpoint.DiagnosisStep{
+			Layer:   statusLayerAPI,
+			Status:  endpoint.DiagnosisSkipped,
+			Summary: "not asked: the server is waiting for its default provider to be chosen",
+			Hint:    "Run discobox with a terminal to be asked, or answer with: discobox admin server choose-provider docker",
+		}
 	default:
 		// Timed here rather than inside the call, and stamped on the value
 		// about to be returned. A duration set from a defer inside a function
@@ -250,7 +259,7 @@ func (a *App) statusAPIStep(ctx context.Context) endpoint.DiagnosisStep {
 // serve the field — an older one, or one with no iroh endpoint — reports
 // nothing rather than a listener that is down.
 func (a *App) statusServer(ctx context.Context, diagnosis endpoint.Diagnosis) *statusServer {
-	if !diagnosis.OK() || diagnosis.ServerStatus == health.StatusStarting {
+	if !diagnosis.OK() || diagnosis.ServerStatus == health.StatusStarting || diagnosis.ServerStatus == health.StatusNeedsChoice {
 		return nil
 	}
 	baseURL, httpClient, err := a.httpClientWithAutoStart(false)

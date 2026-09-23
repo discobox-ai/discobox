@@ -859,6 +859,17 @@ func reportHealth(diagnosis *Diagnosis, started time.Time, status health.Status)
 	if summary == "" {
 		summary = "answered"
 	}
+	if status.NeedsChoice() {
+		diagnosis.add(DiagnosisStep{
+			Layer:      DiagnosisLayerServer,
+			Status:     DiagnosisWarn,
+			Summary:    summary,
+			Detail:     append([]string{fmt.Sprintf("the %s provider cannot run here (%s): %s", status.Choice.Provider, status.Choice.Reason, status.Choice.Detail)}, healthDetail(status)...),
+			Hint:       "The server's first start is held until its default provider is chosen, and it will not become ready on its own. Run discobox with a terminal to be asked, or answer with: discobox admin server choose-provider " + strings.Join(status.Choice.Alternatives, "|"),
+			DurationMS: millis(started),
+		})
+		return
+	}
 	if status.Starting() {
 		diagnosis.add(DiagnosisStep{
 			Layer:      DiagnosisLayerServer,
