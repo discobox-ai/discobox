@@ -8,9 +8,10 @@ set -eu
 #
 # Contract:
 #   discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]
-#   stdout: the model's answer, and, when a schema is given, one JSON document
-#           conforming to it. `codex exec` frames its answer in a transcript,
-#           so a caller parsing a schema'd answer must find the JSON in it.
+#   stdout: the model's answer, and, when a schema is given, nothing but one
+#           JSON document conforming to it. `codex exec` narrates its run, so
+#           this prints the agent's last message alone (--output-last-message)
+#           and, for a schema'd answer, the JSON document in it.
 #   exit 0: the model answered. Anything else: it did not.
 #
 # --model names a role, never a model id: the caller does not know what this
@@ -94,4 +95,19 @@ if [ -n "$no_tools" ]; then
 	set -- "$@" --sandbox read-only --config approval_policy=never
 fi
 
-exec "$@" "$composed"
+# Codex narrates its run on stdout, and the contract above is one answer and
+# nothing else, so the last message is written to a file and that file is what
+# is printed. A schema'd answer goes through discobox-prompt-answer, which
+# prints the JSON document in it — codex may wrap an answer in a code fence,
+# and a fence is framing, not an answer.
+answer=$(mktemp)
+trap 'rm -f "$answer"' EXIT
+set -- "$@" --output-last-message "$answer"
+
+# Not exec: the answer is printed once codex has written it.
+"$@" "$composed" >/dev/null || exit
+if [ -n "$schema" ]; then
+	discobox-prompt-answer <"$answer"
+else
+	cat "$answer"
+fi

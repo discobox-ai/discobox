@@ -190,7 +190,23 @@ launchers, and configure scripts.
   sandboxing it has instead. It goes on PATH rather than in `libexec` because
   its callers resolve it by name. Its first consumer is the credential CLI's
   judge, which will not run a wrapped command until a model agrees the command
-  is the approved use, and which never omits `--no-tools`. The `shell` image
+  is the approved use, and which never omits `--no-tools`.
+
+  **With `--output-schema`, stdout is one JSON document and nothing else.** The
+  answer is decoded strictly ([`judge`](../judge/DESIGN.md)): prose around it,
+  a code fence, or a transcript with the answer somewhere inside is an answer
+  that cannot be read, and a wrapper that cannot be told to say only the answer
+  normalizes its own output — `discobox-prompt-answer`, which the
+  sandbox-agent image installs and every harness image inherits, prints the one
+  JSON document in what it is given — the last one that starts a line, so that
+  prose mentioning a brace cannot swallow the answer. `codex-cli`
+  prints the agent's last message alone (`--output-last-message`) and puts it
+  through the helper; `opencode`, which has no such flag, puts its whole
+  transcript through it; `claude-code` prints only what the model said and puts
+  that through it too, since a model asked for JSON may fence it anyway. Each
+  captures its CLI's output rather than piping it, so a failed run is a failed
+  wrapper rather than a successful print of nothing. The `shell`
+  image
   runs no model, so its wrapper answers only the `judge` role, with a fixed
   verdict. It refuses, as the judge fails closed, unless a person set
   `DISCOBOX_SHELL_JUDGE=allow` for the discobox, which allows every judged

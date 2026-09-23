@@ -9,7 +9,10 @@ set -eu
 # Contract:
 #   discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]
 #   stdout: the model's answer, and, when a schema is given, nothing but one
-#           JSON document conforming to it.
+#           JSON document conforming to it. `claude --print` says only what the
+#           model said, but a model asked for JSON may still fence it, so a
+#           schema'd answer goes through discobox-prompt-answer: the promise is
+#           the wrapper's to keep, not the model's to remember.
 #   exit 0: the model answered. Anything else: it did not.
 #
 # --model names a role, never a model id: the caller does not know what this
@@ -91,6 +94,15 @@ if [ -n "$no_tools" ]; then
 	# write; --disable-slash-commands is the same reasoning for skills. None of
 	# the three costs the answer: the judge only ever needed the prompt.
 	set -- "$@" --tools "" --restricted --disable-slash-commands
+fi
+
+if [ -n "$schema" ]; then
+	# Captured rather than piped: a pipeline reports the exit status of its
+	# last command, so claude failing would arrive as this script succeeding
+	# at printing nothing.
+	answer=$("$@") || exit
+	printf '%s\n' "$answer" | discobox-prompt-answer
+	exit
 fi
 
 exec "$@"

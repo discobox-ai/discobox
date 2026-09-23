@@ -8,9 +8,13 @@ set -eu
 #
 # Contract:
 #   discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]
-#   stdout: the model's answer, and, when a schema is given, one JSON document
-#           conforming to it. `opencode run` frames its answer in a transcript,
-#           so a caller parsing a schema'd answer must find the JSON in it.
+#   stdout: the model's answer, and, when a schema is given, nothing but one
+#           JSON document conforming to it. `opencode run` frames its answer in
+#           a transcript, so a schema'd ask is made with --format json and the
+#           assistant's own text is taken from the event stream by structure
+#           rather than found in prose: the prompt carries evidence written by
+#           whatever is being judged, and anything that echoed it back into a
+#           transcript would be indistinguishable from the answer.
 #   exit 0: the model answered. Anything else: it did not.
 #
 # --model names a role, never a model id: the caller does not know what this
@@ -163,6 +167,64 @@ judge_model() {
 	printf '%s' "$named"
 }
 
+# say_why repeats the stream's own error on stderr. Why a judge said nothing —
+# a provider refusing the account, a model that is gone — is the one thing
+# worth knowing when one will not answer, and stderr is where the agent logs it
+# rather than handing it to whoever asked.
+say_why() {
+	failed=$(printf '%s\n' "$1" | jq -rs '
+		[.[] | select(.type == "error") | .error.data.message // .error.name // "error"] | join("; ")
+	' 2>/dev/null)
+	if [ -n "$failed" ]; then
+		printf '%s\n' "discobox-prompt: opencode answered nothing: $failed" >&2
+	else
+		printf '%s\n' "discobox-prompt: opencode answered nothing" >&2
+	fi
+}
+
+# assistant_text prints what the model said, from `opencode run --format json`.
+#
+# The stream is one JSON event per line; a text part carries the model's own
+# words in .part.text, and nothing a transcript wrapped around it can imitate,
+# because this reads the field rather than the page.
+#
+# The parts go out one per line, each at its latest text, and the answer helper
+# takes the last document among them. One per line matters twice: a part cannot
+# be welded onto the answer's line, and a part carrying no document — a "done",
+# a blank, whatever a future opencode adds after the answer — cannot silence it.
+# Taking only the last part would do that, and a judge that answers nothing is
+# every credential in the project refusing.
+#
+# What remains is that a document in a later part would win. Parts are ordered
+# by when each first appeared, not by when its text was finalised, so "later"
+# means a part that started later — a part that began before the answer and was
+# updated after it still comes first. Nothing in the stream says which part is
+# the model concluding, and ordering by the last update only moves which case
+# loses, so the order is what there is.
+#
+# A stream that does not parse is a refusal rather than a reason to go looking
+# in the text: that is either a broken run or an opencode whose format has
+# changed, and neither is an answer. What the model said may still be fenced,
+# so it goes through the image's answer helper.
+assistant_text() {
+	said=$(printf '%s\n' "$1" | jq -rs '
+		reduce .[] as $event ({order: [], text: {}};
+			if $event.type == "text" and ($event.part.text | type) == "string" then
+				.text[$event.part.id] = $event.part.text
+				| (if (.order | index($event.part.id)) == null then .order += [$event.part.id] else . end)
+			else . end)
+		| [.order[] as $id | .text[$id]] | join("\n")
+	') || {
+		printf '%s\n' "discobox-prompt: opencode's answer could not be read" >&2
+		return 1
+	}
+	if [ -z "$said" ]; then
+		say_why "$1"
+		return 1
+	fi
+	printf '%s\n' "$said" | discobox-prompt-answer
+}
+
 set -- opencode run
 case "$model" in
 judge)
@@ -216,11 +278,37 @@ if [ -n "$no_tools" ]; then
 	cd "$isolated/cwd"
 	set -- "$@" --pure
 	# Not exec: the isolated directory is removed when opencode exits.
-	"$@" "$composed"
+	if [ -n "$schema" ]; then
+		# Captured rather than piped: a pipeline reports the exit status of
+		# its last command, so opencode failing would arrive as this script
+		# succeeding at printing nothing.
+		if events=$("$@" --format json "$composed"); then
+			assistant_text "$events" || exit
+		else
+			status=$?
+			say_why "$events"
+			exit "$status"
+		fi
+	else
+		"$@" "$composed"
+	fi
 	exit
 else
 	# Nobody is there to answer a permission prompt.
 	set -- "$@" --auto
 fi
 
+if [ -n "$schema" ]; then
+	if events=$("$@" --format json "$composed"); then
+		assistant_text "$events" || exit
+	else
+		# Read inside the else: after a compound `if` with no else branch, $?
+		# is the compound's own status, which is zero — a failed run would
+		# arrive as this script succeeding at printing nothing.
+		status=$?
+		say_why "$events"
+		exit "$status"
+	fi
+	exit
+fi
 exec "$@" "$composed"

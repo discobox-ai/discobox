@@ -602,6 +602,11 @@ COPY --chmod=0755 sandbox-agent/image/nix-shim /usr/local/lib/discobox/nix-shim
 # The harness-run convention's default implementation, for an image that
 # installs no agent of its own. A harness image overwrites it. See ADR 0086 §3.
 COPY --chmod=0755 sandbox-agent/image/harness-run /usr/local/bin/discobox-harness-run
+# Prints the one JSON document in a wrapper's output, for a harness whose CLI
+# narrates its run or fences its answer: `discobox-prompt --output-schema`
+# promises one JSON document and nothing else, and the normalizing lives once
+# here rather than in each wrapper that needs it. See harness/DESIGN.md.
+COPY --chmod=0755 harness/prompt-answer.sh /usr/local/bin/discobox-prompt-answer
 # Runs the shell a client prefers when the sandbox has it, the login shell
 # otherwise; the agent starts it for `discobox shell` and TUI shell panes.
 # See ADR 0138.
