@@ -885,6 +885,7 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 		want string
 	}{
 		{"an agent names the credential", CredentialRequest{Name: "github", SandboxID: "sbx_1", Uses: []string{"x"}}, "github"},
+		{"an ask to delegate says so", CredentialRequest{Name: "github", SandboxID: "sbx_1", Uses: []string{"x"}, Delegate: true}, "github · to delegate"},
 		{"failing that, the variable", CredentialRequest{EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "GH_TOKEN"},
 		{"the proxy saw a sentinel", CredentialRequest{SandboxID: "sbx_1", Type: "token"}, "an unresolvable sentinel"},
 		{"a person asked for a credential", CredentialRequest{Type: "token"}, "a token credential"},

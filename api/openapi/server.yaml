@@ -3124,6 +3124,12 @@ components:
                 host:
                     description: Destination host the credential will be sent to. Required, because approving this request may not mint a host-unscoped grant.
                     type: string
+                purpose:
+                    description: What the agent asks the credential for, one or the other and never both. use (the default) asks to use it. delegate asks to delegate it to other discoboxes; approving it mints a delegation grant, which authorizes nothing the asking discobox sends itself.
+                    enum:
+                        - use
+                        - delegate
+                    type: string
                 id:
                     description: The well-known credential asked for, such as com.github.api. The name, variable, and host must then be the ones the ID names.
                     type: string
@@ -3157,6 +3163,12 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                purpose:
+                    description: What the request asks the credential for. For delegate, the granted uses are what the sandbox may delegate the credential for, and none of them takes a value.
+                    enum:
+                        - use
+                        - delegate
+                    type: string
                 requestId:
                     description: Request ID to poll
                     type: string
@@ -3176,6 +3188,7 @@ components:
             required:
                 - requestId
                 - status
+                - purpose
             type: object
         RecordCredentialVerdictBody:
             additionalProperties: false
@@ -4536,6 +4549,12 @@ components:
                         $ref: '#/components/schemas/SecretUse'
                     nullable: true
                     type: array
+                purpose:
+                    description: What the agent asked the credential for -- to use it, or to delegate it to other discoboxes. Approving the request mints a grant for that purpose.
+                    enum:
+                        - use
+                        - delegate
+                    type: string
                 projectId:
                     description: Project ID
                     type: string

@@ -1105,7 +1105,12 @@ type SecretRequest struct {
 	// what an approval starts from, never what it is held to: the approver
 	// chooses the lifetime. Zero is "nothing in particular", not forever — an
 	// agent cannot ask for a grant that never lapses.
-	GrantTTL int64  `gorm:"column:grant_ttl_seconds;not null;default:0" json:"grantTTLSeconds,omitempty" doc:"Grant lifetime the agent asked for, in seconds; absent when it named none"`
+	GrantTTL int64 `gorm:"column:grant_ttl_seconds;not null;default:0" json:"grantTTLSeconds,omitempty" doc:"Grant lifetime the agent asked for, in seconds; absent when it named none"`
+	// Purpose is what the agent asked the credential for: to use it, or to
+	// delegate it to other discoboxes. Approving the request mints a grant
+	// with this purpose. Every request written before an agent could ask to
+	// delegate asked to use, which the column's default gives it.
+	Purpose  string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose,omitempty" doc:"What the agent asked the credential for: to use it, or to delegate it to other discoboxes" enum:"use,delegate"`
 	SecretID string `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
 	Status   string `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
 	GrantID  string `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`

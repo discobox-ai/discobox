@@ -286,9 +286,15 @@ func credentialBrokerPrincipal(ctx context.Context) (auth.Principal, error) {
 }
 
 func agentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretGrant) *apimodel.SandboxCredentialRequestStatus {
+	// An empty purpose asks to use, as it does everywhere a purpose is read.
+	purpose := req.Purpose
+	if purpose == "" {
+		purpose = model.SecretGrantPurposeUse
+	}
 	resp := &apimodel.SandboxCredentialRequestStatus{
 		RequestId: req.ID,
 		Status:    serverapi.SandboxCredentialRequestStatusStatus(secretsresource.AgentCredentialRequestStatus(req, grant)),
+		Purpose:   serverapi.SandboxCredentialRequestStatusPurpose(purpose),
 	}
 	if grant != nil {
 		resp.SetUses(serverapi.NewOptNilSecretUseArray(apiSecretUses(grant.Uses)))

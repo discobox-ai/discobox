@@ -1,6 +1,7 @@
 package access
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,6 +27,9 @@ type fakeService struct {
 	getErr      error
 	gotDenial   agentcreds.DenialReport
 	denialErr   error
+	// predatesPurpose answers as a service that knows no purposes: it drops
+	// the field and reports none.
+	predatesPurpose bool
 }
 
 func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
@@ -34,7 +38,11 @@ func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
 
 func (f *fakeService) Request(_ context.Context, body agentcreds.RequestBody) (agentcreds.RequestStatus, error) {
 	f.gotRequest = body
-	return agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusPending}, nil
+	status := agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusPending}
+	if !f.predatesPurpose {
+		status.Purpose = cmp.Or(body.Purpose, agentcreds.PurposeUse)
+	}
+	return status, nil
 }
 
 func (f *fakeService) RequestStatus(context.Context, string) (agentcreds.RequestStatus, error) {
@@ -184,6 +192,83 @@ func TestRequestCarriesTheLifetimeAskedFor(t *testing.T) {
 	}
 	if svc.gotRequest.Name != "" {
 		t.Fatalf("request = %#v, want nothing sent for a lifetime that was refused", svc.gotRequest)
+	}
+}
+
+// An ask to delegate a credential reaches the service from either form of the
+// command, and a purpose the protocol does not know is refused before
+// anything is sent.
+func TestRequestCarriesAnAskToDelegate(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+
+	body := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"purpose":"delegate"}`
+	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if svc.gotRequest.Purpose != agentcreds.PurposeDelegate {
+		t.Fatalf("purpose = %q, want the delegation the JSON asked for", svc.gotRequest.Purpose)
+	}
+
+	svc.gotRequest = agentcreds.RequestBody{}
+	if _, stderr, code := capture(t, "", func() int {
+		return Run([]string{"request", "com.github.api", "--use", "Triage issues", "--delegate"})
+	}); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if svc.gotRequest.Purpose != agentcreds.PurposeDelegate {
+		t.Fatalf("purpose = %q, want the delegation --delegate asked for", svc.gotRequest.Purpose)
+	}
+
+	svc.gotRequest = agentcreds.RequestBody{}
+	if _, stderr, code := capture(t, "", func() int {
+		return Run([]string{"request", "com.github.api", "--use", "Open a PR"})
+	}); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if svc.gotRequest.Purpose != "" {
+		t.Fatalf("purpose = %q, want none named for an ask to use", svc.gotRequest.Purpose)
+	}
+
+	svc.gotRequest = agentcreds.RequestBody{}
+	unknown := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"purpose":"both"}`
+	if _, _, code := capture(t, unknown, func() int { return Run([]string{"request", "--json"}) }); code != exitUsage {
+		t.Fatalf("exit = %d, want a usage error for a purpose that is neither use nor delegate", code)
+	}
+	if svc.gotRequest.ID != "" {
+		t.Fatalf("request = %#v, want nothing sent for a purpose that was refused", svc.gotRequest)
+	}
+}
+
+// A service that predates purposes records an ask to delegate as an ask to
+// use. The CLI says so rather than waiting on a human to approve the wrong
+// thing.
+func TestAnAskToDelegateRefusesAServiceThatDropsIt(t *testing.T) {
+	svc := &fakeService{predatesPurpose: true}
+	serve(t, svc)
+
+	body := `{"id":"com.github.api","uses":[{"description":"Triage issues"}],"purpose":"delegate","wait":true}`
+	_, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
+	if code != exitError || !strings.Contains(stderr, "as an ask to use") {
+		t.Fatalf("exit = %d, stderr = %s; want the dropped delegation reported", code, stderr)
+	}
+}
+
+// A granted delegation says its use IDs are not ones run takes.
+func TestAGrantedDelegationSaysRunTakesNoneOfItsUses(t *testing.T) {
+	svc := &fakeService{status: agentcreds.RequestStatus{
+		RequestID: "sreq_1",
+		Status:    agentcreds.StatusGranted,
+		Purpose:   agentcreds.PurposeDelegate,
+		Uses:      []agentcreds.Use{{UseID: "use_1", Description: "Triage issues"}},
+	}}
+	serve(t, svc)
+
+	stdout, stderr, code := capture(t, "", func() int {
+		return Run([]string{"request", "com.github.api", "--use", "Triage issues", "--delegate", "--wait"})
+	})
+	if code != exitOK || !strings.Contains(stdout, "run takes none of them") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %s; want the delegation's uses marked as not run uses", code, stdout, stderr)
 	}
 }
 

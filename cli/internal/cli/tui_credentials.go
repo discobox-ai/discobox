@@ -177,6 +177,7 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		Type:          string(r.Type),
 		Justification: strings.TrimSpace(r.Justification.Or("")),
 		GrantTTL:      lifetime.FromRequest(r.GrantTTLSeconds.Or(0)),
+		Delegate:      r.Purpose.Or("") == apiclientgen.SecretRequestPurposeDelegate,
 		WellKnownID:   strings.TrimSpace(r.WellKnownId.Or("")),
 		Created:       r.CreatedAt,
 	}

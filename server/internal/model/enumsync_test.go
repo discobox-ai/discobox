@@ -35,12 +35,14 @@ import (
 // yamlEnumAliases maps API-only schema properties to the model field that owns
 // the value set. Both sides must stay identical.
 var yamlEnumAliases = map[string]string{
-	"CreateSecretBody.type":               "Secret.type",
-	"CreateSecretRequestBody.type":        "SecretRequest.type",
-	"CreateSecretGrantBody.scope":         "SecretGrant.scope",
-	"CreateSecretGrantBody.purpose":       "SecretGrant.purpose",
-	"ApproveSecretRequestBody.scope":      "SecretGrant.scope",
-	"ResolveSandboxSecretResponse.status": "SecretRequest.status",
+	"CreateSecretBody.type":                      "Secret.type",
+	"CreateSecretRequestBody.type":               "SecretRequest.type",
+	"CreateSecretGrantBody.scope":                "SecretGrant.scope",
+	"CreateSecretGrantBody.purpose":              "SecretGrant.purpose",
+	"ApproveSecretRequestBody.scope":             "SecretGrant.scope",
+	"CreateSandboxCredentialRequestBody.purpose": "SecretGrant.purpose",
+	"SandboxCredentialRequestStatus.purpose":     "SecretGrant.purpose",
+	"ResolveSandboxSecretResponse.status":        "SecretRequest.status",
 	// The sandbox owns the full existence vocabulary, so the tag on the embedded
 	// ResourceLifecycle is authoritative for it. The pool does not match:
 	// only a sandbox can be archived (ADR 0022 §1), so Pool.desiredState is a

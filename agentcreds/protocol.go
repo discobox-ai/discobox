@@ -122,6 +122,18 @@ type RequestedUse struct {
 // to be asked again.
 const MaxGrantTTLSeconds = 30 * 24 * 60 * 60
 
+// What a request asks the credential for. A grant is one or the other, never
+// both, so a person approving one agrees to one thing.
+const (
+	// PurposeUse asks to use the credential: the approval carries uses the
+	// caller runs commands under. It is what a request naming no purpose asks.
+	PurposeUse = "use"
+	// PurposeDelegate asks to hand the credential on to other sandboxes. The
+	// approval authorizes nothing the caller sends itself; its uses say what
+	// the caller may delegate the credential for.
+	PurposeDelegate = "delegate"
+)
+
 // RequestBody asks a human for a credential.
 //
 // GrantTTLSeconds is how long the agent asks the approval to last. It is a
@@ -130,6 +142,8 @@ const MaxGrantTTLSeconds = 30 * 24 * 60 * 60
 // MaxGrantTTLSeconds, so forever is not something an agent can ask for — the
 // human may still grant it, but the one answer that never comes back to be
 // asked again is never the default.
+//
+// Purpose is PurposeUse or PurposeDelegate; empty asks for PurposeUse.
 type RequestBody struct {
 	// ID names a well-known credential — a reverse-DNS ID such as
 	// "com.github.api" — in place of Name, EnvVar, and Host, which an
@@ -142,14 +156,22 @@ type RequestBody struct {
 	Justification   string         `json:"justification,omitempty"`
 	Uses            []RequestedUse `json:"uses,omitempty"`
 	GrantTTLSeconds int64          `json:"grantTTLSeconds,omitempty"`
+	Purpose         string         `json:"purpose,omitempty"`
 }
 
 // RequestStatus is what request and its poll both answer with. Uses is
 // populated once granted, and is authoritative over the requested uses: the
 // approver may have edited the descriptions.
+//
+// Purpose is what the request asks the credential for, as the implementation
+// recorded it. For PurposeUse the granted uses carry the IDs the use operation
+// accepts; for PurposeDelegate they say what the caller may delegate the
+// credential for, and none of them takes a value. Empty is an implementation
+// that predates purposes, which only ever records an ask to use.
 type RequestStatus struct {
 	RequestID string `json:"requestId"`
 	Status    string `json:"status"`
+	Purpose   string `json:"purpose,omitempty"`
 	Uses      []Use  `json:"uses,omitempty"`
 }
 

@@ -177,6 +177,11 @@ and a discobox that needs both holds two grants.
   beside the host and lifetime guards): a grant wider than a discobox has
   nobody in particular to delegate it, and one without uses has nothing a
   delegation could name.
+- **An agent may ask for one.** An agent credentials request carries a
+  `Purpose` (`SecretRequest.Purpose`, `use` unless the agent asked to
+  delegate), and approving it mints a grant with that purpose. An ask to
+  delegate binds nothing on approval, and is its own question rather than a
+  retry of an open ask to use (`FindPendingAgentCredentialRequest` keys on it).
 
 ## The agent credentials broker
 
@@ -199,7 +204,8 @@ The entry points:
   uses covering this discobox, each with its (lazily minted) binding.
 - **`CreateSandboxCredentialRequest`** — records the ask as a pending request
   and returns at once; the caller polls. An identical pending ask (same
-  sandbox, env var, host) is reused rather than duplicated.
+  sandbox, env var, host, well-known ID, purpose) is reused rather than
+  duplicated.
 - **`GetSandboxCredentialRequest`** — a sandbox's own protocol request and, once
   approved, its grant. `AgentCredentialRequestStatus` reports an approval whose
   grant has since been revoked as `denied`.

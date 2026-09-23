@@ -996,6 +996,10 @@ type CreateSandboxCredentialRequestBody struct {
 	// Destination host the credential will be sent to. Required, because approving this request may not
 	// mint a host-unscoped grant.
 	Host string `json:"host"`
+	// What the agent asks the credential for, one or the other and never both. use (the default) asks to
+	// use it. delegate asks to delegate it to other discoboxes; approving it mints a delegation grant,
+	// which authorizes nothing the asking discobox sends itself.
+	Purpose OptCreateSandboxCredentialRequestBodyPurpose `json:"purpose"`
 	// The well-known credential asked for, such as com.github.api. The name, variable, and host must
 	// then be the ones the ID names.
 	ID OptString `json:"id"`
@@ -1027,6 +1031,11 @@ func (s *CreateSandboxCredentialRequestBody) GetGrantTTLSeconds() OptInt64 {
 // GetHost returns the value of Host.
 func (s *CreateSandboxCredentialRequestBody) GetHost() string {
 	return s.Host
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *CreateSandboxCredentialRequestBody) GetPurpose() OptCreateSandboxCredentialRequestBodyPurpose {
+	return s.Purpose
 }
 
 // GetID returns the value of ID.
@@ -1074,6 +1083,11 @@ func (s *CreateSandboxCredentialRequestBody) SetHost(val string) {
 	s.Host = val
 }
 
+// SetPurpose sets the value of Purpose.
+func (s *CreateSandboxCredentialRequestBody) SetPurpose(val OptCreateSandboxCredentialRequestBodyPurpose) {
+	s.Purpose = val
+}
+
 // SetID sets the value of ID.
 func (s *CreateSandboxCredentialRequestBody) SetID(val OptString) {
 	s.ID = val
@@ -1097,6 +1111,50 @@ func (s *CreateSandboxCredentialRequestBody) SetSandboxId(val string) {
 // SetUses sets the value of Uses.
 func (s *CreateSandboxCredentialRequestBody) SetUses(val []SecretUse) {
 	s.Uses = val
+}
+
+// What the agent asks the credential for, one or the other and never both. use (the default) asks to
+// use it. delegate asks to delegate it to other discoboxes; approving it mints a delegation grant,
+// which authorizes nothing the asking discobox sends itself.
+type CreateSandboxCredentialRequestBodyPurpose string
+
+const (
+	CreateSandboxCredentialRequestBodyPurposeUse      CreateSandboxCredentialRequestBodyPurpose = "use"
+	CreateSandboxCredentialRequestBodyPurposeDelegate CreateSandboxCredentialRequestBodyPurpose = "delegate"
+)
+
+// AllValues returns all CreateSandboxCredentialRequestBodyPurpose values.
+func (CreateSandboxCredentialRequestBodyPurpose) AllValues() []CreateSandboxCredentialRequestBodyPurpose {
+	return []CreateSandboxCredentialRequestBodyPurpose{
+		CreateSandboxCredentialRequestBodyPurposeUse,
+		CreateSandboxCredentialRequestBodyPurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSandboxCredentialRequestBodyPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSandboxCredentialRequestBodyPurposeUse:
+		return []byte(s), nil
+	case CreateSandboxCredentialRequestBodyPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSandboxCredentialRequestBodyPurpose) UnmarshalText(data []byte) error {
+	switch CreateSandboxCredentialRequestBodyPurpose(data) {
+	case CreateSandboxCredentialRequestBodyPurposeUse:
+		*s = CreateSandboxCredentialRequestBodyPurposeUse
+		return nil
+	case CreateSandboxCredentialRequestBodyPurposeDelegate:
+		*s = CreateSandboxCredentialRequestBodyPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Create an exec. Provide command for a plain exec, shell to run the run user's login shell, or
@@ -5575,6 +5633,52 @@ func (o OptBool) Or(d bool) bool {
 	return d
 }
 
+// NewOptCreateSandboxCredentialRequestBodyPurpose returns new OptCreateSandboxCredentialRequestBodyPurpose with value set to v.
+func NewOptCreateSandboxCredentialRequestBodyPurpose(v CreateSandboxCredentialRequestBodyPurpose) OptCreateSandboxCredentialRequestBodyPurpose {
+	return OptCreateSandboxCredentialRequestBodyPurpose{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSandboxCredentialRequestBodyPurpose is optional CreateSandboxCredentialRequestBodyPurpose.
+type OptCreateSandboxCredentialRequestBodyPurpose struct {
+	Value CreateSandboxCredentialRequestBodyPurpose
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSandboxCredentialRequestBodyPurpose was set.
+func (o OptCreateSandboxCredentialRequestBodyPurpose) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSandboxCredentialRequestBodyPurpose) Reset() {
+	var v CreateSandboxCredentialRequestBodyPurpose
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSandboxCredentialRequestBodyPurpose) SetTo(v CreateSandboxCredentialRequestBodyPurpose) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSandboxCredentialRequestBodyPurpose) Get() (v CreateSandboxCredentialRequestBodyPurpose, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSandboxCredentialRequestBodyPurpose) Or(d CreateSandboxCredentialRequestBodyPurpose) CreateSandboxCredentialRequestBodyPurpose {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptCreateSandboxExecRequestEnv returns new OptCreateSandboxExecRequestEnv with value set to v.
 func NewOptCreateSandboxExecRequestEnv(v CreateSandboxExecRequestEnv) OptCreateSandboxExecRequestEnv {
 	return OptCreateSandboxExecRequestEnv{
@@ -9480,6 +9584,52 @@ func (o OptSecretRejectionSecretType) Get() (v SecretRejectionSecretType, ok boo
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretRejectionSecretType) Or(d SecretRejectionSecretType) SecretRejectionSecretType {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestPurpose returns new OptSecretRequestPurpose with value set to v.
+func NewOptSecretRequestPurpose(v SecretRequestPurpose) OptSecretRequestPurpose {
+	return OptSecretRequestPurpose{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestPurpose is optional SecretRequestPurpose.
+type OptSecretRequestPurpose struct {
+	Value SecretRequestPurpose
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestPurpose was set.
+func (o OptSecretRequestPurpose) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestPurpose) Reset() {
+	var v SecretRequestPurpose
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestPurpose) SetTo(v SecretRequestPurpose) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestPurpose) Get() (v SecretRequestPurpose, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestPurpose) Or(d SecretRequestPurpose) SecretRequestPurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -15202,6 +15352,9 @@ func (s *SandboxCredential) SetUses(val OptNilSecretUseArray) {
 type SandboxCredentialRequestStatus struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// What the request asks the credential for. For delegate, the granted uses are what the sandbox may
+	// delegate the credential for, and none of them takes a value.
+	Purpose SandboxCredentialRequestStatusPurpose `json:"purpose"`
 	// Request ID to poll.
 	RequestId string `json:"requestId"`
 	// Request status.
@@ -15213,6 +15366,11 @@ type SandboxCredentialRequestStatus struct {
 // GetSchema returns the value of Schema.
 func (s *SandboxCredentialRequestStatus) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *SandboxCredentialRequestStatus) GetPurpose() SandboxCredentialRequestStatusPurpose {
+	return s.Purpose
 }
 
 // GetRequestId returns the value of RequestId.
@@ -15235,6 +15393,11 @@ func (s *SandboxCredentialRequestStatus) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetPurpose sets the value of Purpose.
+func (s *SandboxCredentialRequestStatus) SetPurpose(val SandboxCredentialRequestStatusPurpose) {
+	s.Purpose = val
+}
+
 // SetRequestId sets the value of RequestId.
 func (s *SandboxCredentialRequestStatus) SetRequestId(val string) {
 	s.RequestId = val
@@ -15252,6 +15415,49 @@ func (s *SandboxCredentialRequestStatus) SetUses(val OptNilSecretUseArray) {
 
 func (*SandboxCredentialRequestStatus) createSandboxCredentialRequestRes() {}
 func (*SandboxCredentialRequestStatus) getSandboxCredentialRequestRes()    {}
+
+// What the request asks the credential for. For delegate, the granted uses are what the sandbox may
+// delegate the credential for, and none of them takes a value.
+type SandboxCredentialRequestStatusPurpose string
+
+const (
+	SandboxCredentialRequestStatusPurposeUse      SandboxCredentialRequestStatusPurpose = "use"
+	SandboxCredentialRequestStatusPurposeDelegate SandboxCredentialRequestStatusPurpose = "delegate"
+)
+
+// AllValues returns all SandboxCredentialRequestStatusPurpose values.
+func (SandboxCredentialRequestStatusPurpose) AllValues() []SandboxCredentialRequestStatusPurpose {
+	return []SandboxCredentialRequestStatusPurpose{
+		SandboxCredentialRequestStatusPurposeUse,
+		SandboxCredentialRequestStatusPurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialRequestStatusPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialRequestStatusPurposeUse:
+		return []byte(s), nil
+	case SandboxCredentialRequestStatusPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialRequestStatusPurpose) UnmarshalText(data []byte) error {
+	switch SandboxCredentialRequestStatusPurpose(data) {
+	case SandboxCredentialRequestStatusPurposeUse:
+		*s = SandboxCredentialRequestStatusPurposeUse
+		return nil
+	case SandboxCredentialRequestStatusPurposeDelegate:
+		*s = SandboxCredentialRequestStatusPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Request status.
 type SandboxCredentialRequestStatusStatus string
@@ -19511,6 +19717,9 @@ type SecretRequest struct {
 	// Uses the agent asked for. Their presence is what marks a request as protocol-originated rather
 	// than one the proxy minted on hitting an unresolvable sentinel.
 	Uses OptNilSecretUseArray `json:"uses"`
+	// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
+	// Approving the request mints a grant for that purpose.
+	Purpose OptSecretRequestPurpose `json:"purpose"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Principal ID of the requestor.
@@ -19578,6 +19787,11 @@ func (s *SecretRequest) GetName() OptString {
 // GetUses returns the value of Uses.
 func (s *SecretRequest) GetUses() OptNilSecretUseArray {
 	return s.Uses
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *SecretRequest) GetPurpose() OptSecretRequestPurpose {
+	return s.Purpose
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -19670,6 +19884,11 @@ func (s *SecretRequest) SetUses(val OptNilSecretUseArray) {
 	s.Uses = val
 }
 
+// SetPurpose sets the value of Purpose.
+func (s *SecretRequest) SetPurpose(val OptSecretRequestPurpose) {
+	s.Purpose = val
+}
+
 // SetProjectId sets the value of ProjectId.
 func (s *SecretRequest) SetProjectId(val string) {
 	s.ProjectId = val
@@ -19713,6 +19932,49 @@ func (s *SecretRequest) SetUpdatedAt(val time.Time) {
 func (*SecretRequest) approveSecretRequestRes() {}
 func (*SecretRequest) createSecretRequestRes()  {}
 func (*SecretRequest) getSecretRequestRes()     {}
+
+// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
+// Approving the request mints a grant for that purpose.
+type SecretRequestPurpose string
+
+const (
+	SecretRequestPurposeUse      SecretRequestPurpose = "use"
+	SecretRequestPurposeDelegate SecretRequestPurpose = "delegate"
+)
+
+// AllValues returns all SecretRequestPurpose values.
+func (SecretRequestPurpose) AllValues() []SecretRequestPurpose {
+	return []SecretRequestPurpose{
+		SecretRequestPurposeUse,
+		SecretRequestPurposeDelegate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestPurposeUse:
+		return []byte(s), nil
+	case SecretRequestPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestPurpose) UnmarshalText(data []byte) error {
+	switch SecretRequestPurpose(data) {
+	case SecretRequestPurposeUse:
+		*s = SecretRequestPurposeUse
+		return nil
+	case SecretRequestPurposeDelegate:
+		*s = SecretRequestPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Request status.
 type SecretRequestStatus string

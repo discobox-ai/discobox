@@ -1202,6 +1202,9 @@ type CredentialRequest struct {
 	// GrantTTL is how long the agent asked to keep the credential, and the
 	// lifetime the approval opens on. Zero is no ask, never forever.
 	GrantTTL time.Duration
+	// Delegate is an ask to delegate the credential to other discoboxes rather
+	// than to use it; approving it mints a delegation grant.
+	Delegate bool
 	// WellKnownID is the well-known credential asked for by ID, which knows
 	// which secret answers it once one is marked.
 	WellKnownID string

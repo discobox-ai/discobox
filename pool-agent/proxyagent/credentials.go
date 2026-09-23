@@ -89,11 +89,13 @@ type createCredentialRequestDoc struct {
 	Justification   string             `json:"justification,omitempty"`
 	Uses            []credentialUseDoc `json:"uses"`
 	GrantTTLSeconds int64              `json:"grantTTLSeconds,omitempty"`
+	Purpose         string             `json:"purpose,omitempty"`
 }
 
 type credentialRequestStatusDoc struct {
 	RequestID string             `json:"requestId"`
 	Status    string             `json:"status"`
+	Purpose   string             `json:"purpose,omitempty"`
 	Uses      []credentialUseDoc `json:"uses,omitempty"`
 }
 
@@ -268,11 +270,12 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 		Justification:   body.Justification,
 		Uses:            uses,
 		GrantTTLSeconds: body.GrantTTLSeconds,
+		Purpose:         body.Purpose,
 	})
 	if err != nil {
 		return agentcreds.RequestStatus{}, err
 	}
-	return agentcreds.RequestStatus{RequestID: doc.RequestID, Status: doc.Status, Uses: protocolUses(doc.Uses, nil)}, nil
+	return doc.protocol(), nil
 }
 
 func (b *credentialBroker) RequestStatus(ctx context.Context, requestID string) (agentcreds.RequestStatus, error) {
@@ -280,7 +283,12 @@ func (b *credentialBroker) RequestStatus(ctx context.Context, requestID string) 
 	if err != nil {
 		return agentcreds.RequestStatus{}, err
 	}
-	return agentcreds.RequestStatus{RequestID: doc.RequestID, Status: doc.Status, Uses: protocolUses(doc.Uses, nil)}, nil
+	return doc.protocol(), nil
+}
+
+// protocol is the status as the sandbox is answered with it.
+func (d credentialRequestStatusDoc) protocol() agentcreds.RequestStatus {
+	return agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose, Uses: protocolUses(d.Uses, nil)}
 }
 
 // Get mints one ephemeral sentinel for one approved use.

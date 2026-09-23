@@ -386,6 +386,12 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	// to the asking sandbox, it mints approved uses, and it binds a stable
 	// sentinel the agent never sees.
 	var approvedUses []model.SecretUse
+	// The grant is for what the agent asked: to use the credential, or to
+	// delegate it. A reactive request asked for nothing but use.
+	purpose, err := grantPurpose(req.Purpose)
+	if err != nil {
+		return nil, err
+	}
 	if req.FromProtocol() {
 		if host == "" {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
@@ -443,11 +449,13 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if v, ok := input.GrantTTLSeconds.Get(); ok {
 			ttl = v
 		}
-		grant, err := tx.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, req.EnvName, ttl, approvedUses, model.SecretGrantPurposeUse)
+		grant, err := tx.mintGrantAs(ctx, projectID, secret, scope, scopeKey, host, req.EnvName, ttl, approvedUses, purpose)
 		if err != nil {
 			return err
 		}
-		if req.FromProtocol() {
+		// A delegation grant binds nothing: there is nothing for its holder
+		// to take.
+		if req.FromProtocol() && grant.MayUse() {
 			if err := tx.bindAgentCredential(ctx, req, secret); err != nil {
 				return err
 			}

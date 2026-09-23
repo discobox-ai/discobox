@@ -59,6 +59,9 @@ func runList(ctx context.Context, args []string) int {
 // GrantTTLSeconds and TimeoutSeconds sit side by side and mean different
 // things: the first is how long the agent asks to keep the credential, the
 // second how long this process waits for somebody to answer.
+//
+// Purpose is agentcreds.PurposeUse or agentcreds.PurposeDelegate; the flags
+// spell the second --delegate, and empty asks to use the credential.
 type requestInput struct {
 	ID              string                    `json:"id,omitempty"`
 	Name            string                    `json:"name"`
@@ -67,6 +70,7 @@ type requestInput struct {
 	Justification   string                    `json:"justification,omitempty"`
 	Uses            []agentcreds.RequestedUse `json:"uses"`
 	GrantTTLSeconds int64                     `json:"grantTTLSeconds,omitempty"`
+	Purpose         string                    `json:"purpose,omitempty"`
 	Wait            bool                      `json:"wait,omitempty"`
 	TimeoutSeconds  int                       `json:"timeoutSeconds,omitempty"`
 }
@@ -78,6 +82,7 @@ func runRequest(ctx context.Context, args []string) int {
 		structured bool
 		timeout    time.Duration
 		grantTTL   time.Duration
+		delegate   bool
 	)
 	// A well-known credential is named as an argument, wherever it falls:
 	// `request com.github.api --use ...` or `request --use ... com.github.api`.
@@ -95,6 +100,7 @@ func runRequest(ctx context.Context, args []string) int {
 	flags.StringVar(&input.Justification, "why", "", "why you need it")
 	flags.Var(&uses, "use", "what you intend to use it for (repeatable)")
 	flags.DurationVar(&grantTTL, "grant-ttl", 0, "how long you ask to keep it (e.g. 30m, 4h); the approver may choose otherwise")
+	flags.BoolVar(&delegate, "delegate", false, "ask to delegate it to other sandboxes, not to use it yourself")
 	flags.BoolVar(&input.Wait, "wait", false, "block until the request is granted or denied")
 	flags.DurationVar(&timeout, "timeout", time.Hour, "how long --wait waits before giving up")
 	if !parse(flags, args) {
@@ -139,6 +145,14 @@ func runRequest(ctx context.Context, args []string) int {
 			return usageError(out, "--grant-ttl %s is not a lifetime: give a positive whole number of seconds, such as 30m or 96h", grantTTL)
 		}
 		input.GrantTTLSeconds = int64(grantTTL / time.Second)
+		if delegate {
+			input.Purpose = agentcreds.PurposeDelegate
+		}
+	}
+	switch input.Purpose {
+	case "", agentcreds.PurposeUse, agentcreds.PurposeDelegate:
+	default:
+		return usageError(out, "purpose is %q or %q, not %q", agentcreds.PurposeUse, agentcreds.PurposeDelegate, input.Purpose)
 	}
 	// Bounded on both sides, because what is asked for becomes the answer a
 	// human is shown already chosen. Refused here rather than trimmed to fit:
@@ -156,9 +170,17 @@ func runRequest(ctx context.Context, args []string) int {
 		Justification:   input.Justification,
 		Uses:            input.Uses,
 		GrantTTLSeconds: input.GrantTTLSeconds,
+		Purpose:         input.Purpose,
 	})
 	if err != nil {
 		return out.report(err)
+	}
+	// A service that predates purposes drops the field and records an ask to
+	// use, which a human could then approve as one. Said now, before anyone
+	// waits on an answer to a question that was never asked.
+	if input.Purpose == agentcreds.PurposeDelegate && status.Purpose != agentcreds.PurposeDelegate {
+		return out.report(fmt.Errorf("%w: the credentials service does not know how to ask for a delegation, and recorded request %s as an ask to use the credential; do not wait on it",
+			agentcreds.ErrInvalid, status.RequestID))
 	}
 
 	if input.Wait {
@@ -178,6 +200,9 @@ func runRequest(ctx context.Context, args []string) int {
 		fmt.Fprintf(w, "%s %s\n", status.RequestID, status.Status)
 		for _, use := range status.Uses {
 			fmt.Fprintf(w, "  %s  %s\n", use.UseID, use.Description)
+		}
+		if status.Purpose == agentcreds.PurposeDelegate && len(status.Uses) > 0 {
+			fmt.Fprintln(w, "  (delegation: these say what you may delegate the credential for; run takes none of them)")
 		}
 		if status.Status == agentcreds.StatusPending {
 			fmt.Fprintf(os.Stderr, "Waiting on a human. Poll with: %s request --wait ...\n", Name)

@@ -62,6 +62,11 @@ EOF
   picked and may pick another. Ask for about as long as the task will take, not
   longer; leave it out to let them choose. You cannot ask for forever, and an
   ask outside that range is refused as `invalid`.
+- `purpose` — optional: `"delegate"` (`--delegate`) asks to hand the
+  credential on to other discoboxes rather than to use it. Its `uses` then say
+  what you would delegate it for, and the approval lets you run nothing with it
+  yourself — its use IDs are not `run` uses and `list` does not show them.
+  Leave it out to ask to use the credential; if you need both, ask twice.
 - `wait: true` blocks until a human answers. Without it you get a request ID
   back and the request sits pending — poll by asking again with `wait`.
 
@@ -81,7 +86,8 @@ discobox-access request com.github.api --use "Open a pull request against the cu
 ```
 
 or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,
-`justification`, `grantTTLSeconds`, `wait` — is asked for exactly as above.
+`justification`, `grantTTLSeconds`, `purpose`, `wait` — is asked for exactly
+as above.
 For anything not in this table, spell out `name`, `envVar`, and `host`.
 
 `ai.discobox.sandbox` is how you drive other discoboxes. The `discobox` CLI is

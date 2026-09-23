@@ -159,6 +159,84 @@ func TestApprovingAnAgentRequestMintsUsesAndAnUninjectedBinding(t *testing.T) {
 	}
 }
 
+// An agent may ask to delegate a credential rather than use it. Approving that
+// ask mints a delegation grant, which binds nothing: there is nothing for the
+// asking discobox to take, and it lists nothing it could run with.
+func TestApprovingAnAskToDelegateMintsADelegationGrant(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID,
+		Name:      "github",
+		EnvVar:    "GITHUB_TOKEN",
+		Host:      "api.github.com",
+		Uses:      []apimodel.SecretUse{{Description: "triage issues on discobox-ai/discobox"}},
+		Purpose:   serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+	})
+	if err != nil {
+		t.Fatalf("create credential request: %v", err)
+	}
+	if req.Purpose != model.SecretGrantPurposeDelegate {
+		t.Fatalf("request purpose = %q, want the delegation asked for", req.Purpose)
+	}
+
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID),
+	})
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+	if err != nil {
+		t.Fatalf("get grant: %v", err)
+	}
+	if grant.Purpose != model.SecretGrantPurposeDelegate || len(grant.Uses) != 1 {
+		t.Fatalf("grant = %s with uses %#v, want a delegation grant carrying the one use", grant.Purpose, grant.Uses)
+	}
+	all, err := st.ListSandboxSecrets(ctx, "project-1", testSandboxID)
+	if err != nil {
+		t.Fatalf("list assignments: %v", err)
+	}
+	if len(all) != 0 {
+		t.Fatalf("assignments = %#v, want none; a delegation grant binds nothing", all)
+	}
+	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
+	if err != nil {
+		t.Fatalf("list credentials: %v", err)
+	}
+	if len(credentials) != 0 {
+		t.Fatalf("credentials = %#v, want none; a delegation grant authorizes nothing its holder runs", credentials)
+	}
+}
+
+// An ask to delegate is not a retry of an ask to use the same credential, so
+// it is its own question rather than folded into the open one.
+func TestAnAskToDelegateIsNotAnAskToUse(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+
+	use := createAgentRequest(ctx, t, svc)
+	delegate, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID,
+		Name:      "github",
+		EnvVar:    "GITHUB_TOKEN",
+		Host:      "api.github.com",
+		Uses:      []apimodel.SecretUse{{Description: "open a pull request"}},
+		Purpose:   serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+	})
+	if err != nil {
+		t.Fatalf("create credential request: %v", err)
+	}
+	if delegate.ID == use.ID {
+		t.Fatalf("ask to delegate reused the open ask to use, %s", use.ID)
+	}
+	if use.Purpose != model.SecretGrantPurposeUse {
+		t.Fatalf("ask naming no purpose = %q, want use", use.Purpose)
+	}
+}
+
 // The row a credential's own use call writes must resolve back to the grant
 // it belongs to, so "every use of one grant" is an ordinary query and not a
 // join nobody can make (ADR 0091 §2).

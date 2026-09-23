@@ -145,9 +145,15 @@ func usage(w io.Writer) {
       chosen, and they may choose another; leave it out to let them pick. You
       cannot ask for forever. timeoutSeconds is only how long --wait waits.
 
+      "purpose": "delegate" (--delegate) asks to hand the credential on to
+      other sandboxes rather than to use it: the approval lets you delegate it
+      for the uses you name, and run nothing with it yourself. Leave it out to
+      ask to use the credential. Someone who needs both asks twice.
+
       With flags: --name, --env-var, --host, --why, --use (repeatable),
-      --grant-ttl, --wait, --timeout. --grant-ttl takes a Go duration -- "30m",
-      "4h", "96h" for four days -- and the same thirty-day ceiling.
+      --grant-ttl, --delegate, --wait, --timeout. --grant-ttl takes a Go
+      duration -- "30m", "4h", "96h" for four days -- and the same thirty-day
+      ceiling.
 
 There is no command that prints a credential's value on its own. "run" is the
 only way to use one — the value goes straight into the child it names and

@@ -108,7 +108,7 @@ POST /v1/credentials/requests
 ```
 
 ```json
-{ "requestId": "req_1a2b…", "status": "pending" }
+{ "requestId": "req_1a2b…", "status": "pending", "purpose": "use" }
 ```
 
 `grantTTLSeconds` is optional: how long the agent asks the approval to last. It
@@ -124,12 +124,22 @@ answer: a ten-year ask is one keystroke from a credential that outlives the
 work, and a number large enough to overflow the duration a client converts it to
 lands back near zero, which reads as forever.
 
+`purpose` is optional: `use`, the default, asks to use the credential; `delegate`
+asks to hand it on to other sandboxes instead. One or the other, never both, so
+a person approving it agrees to one thing. Discobox mints a delegation grant for
+an approved ask to delegate: its uses say what the credential may be delegated
+for, and it authorizes nothing the asking sandbox sends itself, so `list` does
+not report it and `use` does not take a value under it. Any other value is
+`invalid`. The answer, and every poll of it, carries the `purpose` the
+implementation recorded; one that predates purposes reports none, and has
+recorded an ask to use.
+
 `host` is the destination the credential will be sent to. It is required by the
 Discobox implementation, which refuses to mint a host-unscoped approval through
 this flow. Discobox also requires `name`, a valid `envVar`, and at least one use
 with a description, and answers `invalid` without them. A second ask for the
-same `id`, `envVar`, and `host` while one is still pending returns that
-pending request rather than a new one.
+same `id`, `envVar`, `host`, and `purpose` while one is still pending returns
+that pending request rather than a new one.
 
 `id` is optional: a well-known credential's reverse-DNS ID, such as
 `com.github.api`, in place of `name`, `envVar`, and `host`, which an
@@ -156,12 +166,14 @@ GET /v1/credentials/requests/{requestId}
 ```
 
 ```json
-{ "requestId": "req_1a2b…", "status": "granted", "uses": [{ "useId": "use_7f3c…", "description": "…" }] }
+{ "requestId": "req_1a2b…", "status": "granted", "purpose": "use", "uses": [{ "useId": "use_7f3c…", "description": "…" }] }
 ```
 
 `status` is one of `pending`, `granted`, `denied`. `uses` is present once
-granted and carries the ids `get` accepts — the approver may have edited the
-descriptions, so the granted uses are authoritative, not the requested ones.
+granted — the approver may have edited the descriptions, so the granted uses
+are authoritative, not the requested ones. For `purpose` `use` they carry the
+ids `get` accepts; for `delegate` they say what the credential may be delegated
+for, and `get` accepts none of them.
 Discobox reports an approval whose grant has since been revoked as `denied`,
 and a request id that is not the calling sandbox's own as `not_found`.
 

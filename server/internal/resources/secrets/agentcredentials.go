@@ -112,9 +112,15 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("a requested grant lifetime runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds)))
 	}
+	// What the credential is asked for is the grant's purpose once approved,
+	// so it is read the way a grant's is.
+	purpose, err := grantPurpose(string(input.Purpose.Or("")))
+	if err != nil {
+		return nil, err
+	}
 
 	requestedBy := agentRequesterID(sandbox.ID)
-	existing, err := s.store.FindPendingAgentCredentialRequest(ctx, sandbox.ProjectID, sandbox.ID, envName, host, wellKnownID)
+	existing, err := s.store.FindPendingAgentCredentialRequest(ctx, sandbox.ProjectID, sandbox.ID, envName, host, wellKnownID, purpose)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
@@ -136,6 +142,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		Justification: strings.TrimSpace(input.Justification.Or("")),
 		Uses:          uses,
 		GrantTTL:      grantTTL,
+		Purpose:       purpose,
 		WellKnownID:   wellKnownID,
 		Status:        model.SecretRequestStatusPending,
 	}

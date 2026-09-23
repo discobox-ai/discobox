@@ -621,6 +621,24 @@ func (s *CreateSandboxCredentialRequestBody) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Purpose.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "purpose",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if s.Uses == nil {
 			return errors.New("nil is invalid value")
 		}
@@ -635,6 +653,17 @@ func (s *CreateSandboxCredentialRequestBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s CreateSandboxCredentialRequestBodyPurpose) Validate() error {
+	switch s {
+	case "use":
+		return nil
+	case "delegate":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *CreateSandboxExecRequest) Validate() error {
@@ -4119,6 +4148,17 @@ func (s *SandboxCredentialRequestStatus) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.Purpose.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "purpose",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Status.Validate(); err != nil {
 			return err
 		}
@@ -4151,6 +4191,17 @@ func (s *SandboxCredentialRequestStatus) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s SandboxCredentialRequestStatusPurpose) Validate() error {
+	switch s {
+	case "use":
+		return nil
+	case "delegate":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s SandboxCredentialRequestStatusStatus) Validate() error {
@@ -5488,6 +5539,24 @@ func (s *SecretRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Purpose.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "purpose",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Status.Validate(); err != nil {
 			return err
 		}
@@ -5513,6 +5582,17 @@ func (s *SecretRequest) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s SecretRequestPurpose) Validate() error {
+	switch s {
+	case "use":
+		return nil
+	case "delegate":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s SecretRequestStatus) Validate() error {

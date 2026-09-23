@@ -142,6 +142,27 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 	}
 }
 
+// An ask to delegate reads like an ask to use in every field but one, so the
+// card says it before anything else about the credential.
+func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	req.Delegate = true
+	ds.requests = []CredentialRequest{req}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
+	}
+	for _, want := range []string{"never to use it", "uses it would delegate"} {
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("card = %q, want it to carry %q", dialogText(m), want)
+		}
+	}
+}
+
 // The order is the whole of the opinion: the secret for the site being asked
 // about comes first, however the inference spelled its host.
 func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {

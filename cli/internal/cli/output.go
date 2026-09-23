@@ -707,6 +707,9 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	if asked := lifetime.FromRequest(request.GrantTTLSeconds.Or(0)); asked > 0 {
 		fmt.Fprintf(tw, "WANTED FOR\t%s\n", lifetime.Label(asked))
 	}
+	if purpose, ok := request.Purpose.Get(); ok {
+		fmt.Fprintf(tw, "PURPOSE\t%s\n", requestPurposeText(purpose))
+	}
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
 		fmt.Fprintf(tw, "SECRET\t%s\n", secretID)
 	}
@@ -716,6 +719,16 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))
 	return tw.Flush()
+}
+
+// requestPurposeText says what approving a request lets its discobox do with
+// the credential, which for an ask to delegate is not the thing a reader would
+// assume.
+func requestPurposeText(purpose apiclientgen.SecretRequestPurpose) string {
+	if purpose == apiclientgen.SecretRequestPurposeDelegate {
+		return "delegate: asks to delegate the credential to other discoboxes, not to use it"
+	}
+	return string(purpose)
 }
 
 func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.SecretRequest) error {
@@ -729,12 +742,13 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tDISCOBOX\tREQUESTED BY\tUPDATED")
+	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tPURPOSE\tSTATUS\tSECRET\tDISCOBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			request.ID,
 			request.Type,
 			request.Host.Or(""),
+			request.Purpose.Or(apiclientgen.SecretRequestPurposeUse),
 			request.Status,
 			request.SecretId.Or(""),
 			request.SandboxId.Or(""),

@@ -416,6 +416,10 @@ func grantSection(a approval) section {
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
 		{label: "answered with", value: answered},
 	}
+	if a.req.Delegate {
+		fields = append(fields, field{label: "purpose",
+			value: "delegation — may delegate it, never uses it", tone: toneAccent})
+	}
 	if a.req.Host != "" {
 		fields = append(fields, field{label: "may be sent to", value: a.req.Host, tone: toneAccent})
 	}
@@ -451,6 +455,12 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 		asked = when + " by " + asked
 	}
 	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
+	// An ask to delegate is not the ask a reader assumes, so it says so before
+	// anything else about the credential.
+	if req.Delegate {
+		fields = append(fields, field{label: "purpose",
+			value: "delegation — to delegate it, never to use it", tone: toneAccent})
+	}
 	if req.Type != "" {
 		fields = append(fields, field{label: "kind", value: req.Type})
 	}
@@ -476,6 +486,9 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 		return sections
 	}
 	what := section{label: "what for"}
+	if req.Delegate {
+		what.label = "uses it would delegate"
+	}
 	for _, use := range req.Uses {
 		what.lines = append(what.lines, line{text: use, bullet: true})
 	}

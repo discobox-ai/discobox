@@ -367,22 +367,23 @@ func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretI
 }
 
 // FindPendingAgentCredentialRequest returns the open protocol-originated
-// request for a sandbox's environment variable, destination host, and
-// well-known ID (empty for an ask that names none), or ErrNotFound. The ID is
-// part of the key because it changes what approving the request binds.
+// request for a sandbox's environment variable, destination host, well-known
+// ID (empty for an ask that names none), and purpose, or ErrNotFound. The ID
+// and the purpose are part of the key because each changes what approving the
+// request mints: an ask to delegate is not a retry of an ask to use.
 //
 // It keys on (sandbox, env, host) rather than on the secret the way the
 // reactive path does, because a protocol request names no secret: choosing one
 // is part of the approval. An agent that retries its ask therefore reuses its
 // open request instead of adding another line to the approval inbox.
-func (s *Store) FindPendingAgentCredentialRequest(ctx context.Context, projectID, sandboxID, envName, host, wellKnownID string) (*model.SecretRequest, error) {
+func (s *Store) FindPendingAgentCredentialRequest(ctx context.Context, projectID, sandboxID, envName, host, wellKnownID, purpose string) (*model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []model.SecretRequest
-	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND host = ? AND well_known_id = ? AND status = ?",
-		projectID, sandboxID, envName, host, wellKnownID, model.SecretRequestStatusPending).
+	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND host = ? AND well_known_id = ? AND purpose = ? AND status = ?",
+		projectID, sandboxID, envName, host, wellKnownID, purpose, model.SecretRequestStatusPending).
 		Order("created_at DESC").Find(&out).Error
 	if err != nil {
 		return nil, err
