@@ -255,7 +255,7 @@ components:
             type: object
         SandboxAgentAutostopStatus:
             additionalProperties: false
-            description: The sandbox's own idle-stop policy, as it sees the sandbox at observedAt (ADR 0108). The sandbox powers itself off once nothing has happened in it for the idle timeout; the next sandbox-directed request starts it again.
+            description: The sandbox's own idle-stop policy, as it sees the sandbox at observedAt. The sandbox powers itself off once nothing has happened in it for the idle timeout; the next sandbox-directed request starts it again.
             properties:
                 idleTimeoutSeconds:
                     description: How long the sandbox runs with nothing happening in it before it powers itself off.
@@ -288,8 +288,7 @@ components:
                 Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
                 is the difference between two samples over the time between them, and the
                 component holding two samples is the pool agent, which polls every sandbox
-                in the pool on one tick and so measures them all over the same window
-                (ADR 0071).
+                in the pool on one tick and so measures them all over the same window.
             properties:
                 limitVcpus:
                     description: The cgroup's own CPU quota in whole-CPU units, absent when unlimited. Sandbox containers are created with no CPU limit today, so this is normally absent.
@@ -374,7 +373,7 @@ components:
                     type: array
                 declared:
                     description: |
-                        True when a service under .discobox/services declares this port (ADR 0076),
+                        True when a service under .discobox/services declares this port,
                         which puts it on the record whether or not anything observable is listening
                         on it. Discovery only sees sockets the sandbox user owns, so a port
                         published by a nested container or bound by a socket-activated unit - root's
@@ -393,9 +392,9 @@ components:
                         What the port turned out to speak, established by probing it once when it
                         appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
                         HTTP/2-only server); unknown means not classified yet or unreachable when
-                        probed, and is retried. udp is a bound UDP socket, which is never probed
-                        (ADR 0109); it is the only value that is not a TCP port, so it is also what
-                        says which transport a forward of this port has to carry.
+                        probed, and is retried. udp is a bound UDP socket, which is never probed;
+                        it is the only value that is not a TCP port, so it is also what says which
+                        transport a forward of this port has to carry.
                     enum:
                         - http
                         - https
@@ -422,7 +421,7 @@ components:
         SandboxAgentMemoryUsage:
             additionalProperties: false
             description: |
-                Two different true answers about the same sandbox (ADR 0071). currentBytes is
+                Two different true answers about the same sandbox. currentBytes is
                 what the host charges it - anonymous memory, page cache and kernel memory
                 together. virtualBytes and residentBytes are what its own processes hold,
                 summed, and so double-count every shared page: summed resident routinely
@@ -463,7 +462,7 @@ components:
             type: object
         SandboxAgentMeta:
             additionalProperties: false
-            description: A sandbox's meta as its meta file holds it after a write (ADR 0136).
+            description: A sandbox's meta as its meta file holds it after a write.
             properties:
                 meta:
                     $ref: '#/components/schemas/SandboxMeta'
@@ -520,7 +519,7 @@ components:
             type: object
         SandboxAgentResourceUsage:
             additionalProperties: false
-            description: The sandbox's own resource consumption at one moment, as cumulative counters (ADR 0071).
+            description: The sandbox's own resource consumption at one moment, as cumulative counters.
             properties:
                 cpu:
                     $ref: '#/components/schemas/SandboxAgentCPUUsage'
@@ -589,10 +588,10 @@ components:
             properties:
                 autostop:
                     $ref: '#/components/schemas/SandboxAgentAutostopStatus'
-                    description: The sandbox's idle-stop policy (ADR 0108). Absent while the policy is not running, which in a configure-mode sandbox is always.
+                    description: The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode sandbox is always.
                 meta:
                     $ref: '#/components/schemas/SandboxMeta'
-                    description: The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record (ADR 0136). Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
+                    description: The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record. Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
                 metaError:
                     description: Why the meta file could not be read. Present only when meta is absent.
                     type: string
@@ -600,13 +599,13 @@ components:
                     format: date-time
                     type: string
                 ports:
-                    description: Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP ports they have bound (ADR 0109), plus those its services declare (ADR 0076). Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
+                    description: Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP ports they have bound, plus those its services declare. Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it; it can be up to one watcher interval stale.
                     items:
                         $ref: '#/components/schemas/SandboxAgentListeningPort'
                     type: array
                 resources:
                     $ref: '#/components/schemas/SandboxAgentResourceUsage'
-                    description: This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform where neither the cgroup nor procfs could be read.
+                    description: This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where neither the cgroup nor procfs could be read.
                 sessions:
                     description: Terminal sessions only, live and ended alike - every terminal a record still exists for, typically just the primary. One-shot execs are not sessions and never appear.
                     items:
@@ -813,7 +812,7 @@ components:
             type: object
         SandboxExecScreen:
             additionalProperties: false
-            description: A terminal's screen as a person looking at it would read it (ADR 0137 §1).
+            description: A terminal's screen as a person looking at it would read it.
             properties:
                 altScreen:
                     description: Whether the program is on the alternate screen, which has no scrollback.
@@ -936,7 +935,7 @@ components:
             type: object
         SandboxMeta:
             additionalProperties: false
-            description: A sandbox's description and tags, as the file inside it that holds them says (ADR 0136).
+            description: A sandbox's description and tags, as the file inside it that holds them says.
             properties:
                 description:
                     description: What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing shows the first.
@@ -986,7 +985,7 @@ components:
                     format: int64
                     type: integer
                 ports:
-                    description: Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP ones when the declaration states the udp protocol (ADR 0109). A declared port is reported and forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
+                    description: Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP ones when the declaration states the udp protocol. A declared port is reported and forwarded whether or not anything observable is listening on it - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
                     items:
                         format: int64
                         type: integer
@@ -1027,7 +1026,7 @@ components:
             type: object
         SandboxTool:
             additionalProperties: false
-            description: A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary source under .discobox/tools (ADR 0125). The client merges these with the tools it declares itself and runs the result; the sandbox only lists them.
+            description: A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary source under .discobox/tools. The client merges these with the tools it declares itself and runs the result; the sandbox only lists them.
             properties:
                 args:
                     description: Arguments that follow the program or the script.
@@ -1124,7 +1123,7 @@ components:
             additionalProperties: false
             description: |-
                 Run identity and group membership. Every field is optional; omitting the
-                whole object means the image's own user (ADR 0025 §5). On sandbox create
+                whole object means the image's own user. On sandbox create
                 this defines the sandbox.json default user, and on exec create it
                 overrides that user for one exec — the same fields mean the same thing at
                 both layers.
@@ -1139,7 +1138,7 @@ components:
                     description: |-
                         Supplementary groups, each a group name or a numeric GID, resolved inside
                         the sandbox. All-or-nothing, never merged: omit to inherit the sandbox's
-                        groups, or name any to run with exactly those (ADR 0025 §2).
+                        groups, or name any to run with exactly those.
                     items:
                         type: string
                     type: array
@@ -1165,7 +1164,7 @@ components:
             type: object
         UpdateSandboxMetaBody:
             additionalProperties: false
-            description: A change to a sandbox's meta, applied to the meta file in the sandbox (ADR 0136). What the change does not name is left as it is, including what the sandbox wrote itself.
+            description: A change to a sandbox's meta, applied to the meta file in the sandbox. What the change does not name is left as it is, including what the sandbox wrote itself.
             properties:
                 description:
                     description: Replaces the description. An empty string clears it; omit it to leave the description alone.
@@ -1189,7 +1188,7 @@ openapi: 3.1.1
 paths:
     /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events:
         get:
-            description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and read only from a running sandbox; the read never starts one.
+            description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a running sandbox; the read never starts one.
             operationId: list-exec-events
             parameters:
                 - description: Only the event with this ID, which is how one record is read in full
@@ -1559,7 +1558,7 @@ paths:
                 - Sandbox Execs
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input:
         post:
-            description: Writes text and named keys to the terminal, in order, the way typing into an attach does, and counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program enabled one. 409 for an exec with no terminal or closed input.
+            description: Writes text and named keys to the terminal, in order, the way typing into an attach does, and counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409 for an exec with no terminal or closed input.
             operationId: send-sandbox-exec-input
             parameters:
                 - description: Project that owns the sandbox.
@@ -1764,7 +1763,7 @@ paths:
                 - Sandbox Execs
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen:
         get:
-            description: The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR 0137 §1). 409 for an exec with no terminal.
+            description: The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent scrollback on request. Reading it does not attach, resize the terminal, or count as activity. 409 for an exec with no terminal.
             operationId: get-sandbox-exec-screen
             parameters:
                 - description: Project that owns the sandbox.
@@ -1849,7 +1848,7 @@ paths:
                 - Sandbox Execs
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait:
         post:
-            description: Blocks until one of the given conditions holds — a named harness hook event from this terminal, no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137 §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing recorded between two calls is missed.
+            description: Blocks until one of the given conditions holds — a named harness hook event from this terminal, no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes. Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing recorded between two calls is missed.
             operationId: wait-sandbox-exec
             parameters:
                 - description: Project that owns the sandbox.
@@ -1975,7 +1974,7 @@ paths:
                 - Harness Hooks
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge:
         post:
-            description: Puts one judging job to this discobox's harness and returns what it answered (ADR 0141). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and the approved use; the prompt, the schema, the model role and the tools restriction are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is answered at a time.
+            description: Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and the approved use; the prompt, the schema, the model role and the tools restriction are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is answered at a time.
             operationId: judge-sandbox
             parameters:
                 - description: Project that owns the sandbox.
@@ -2014,7 +2013,7 @@ paths:
                 - Sandbox Judge
     /api/projects/{projectId}/sandboxes/{sandboxId}/meta:
         patch:
-            description: Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home, and returns what it holds afterwards. The file is read, changed and replaced in one step, so what the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is refused rather than overwritten (ADR 0136).
+            description: Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home, and returns what it holds afterwards. The file is read, changed and replaced in one step, so what the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is refused rather than overwritten.
             operationId: update-sandbox-agent-meta
             parameters:
                 - description: Project that owns the sandbox.

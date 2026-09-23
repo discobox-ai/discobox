@@ -246,7 +246,7 @@ components:
                 harnessConfigId:
                     type: string
                 harnessMode:
-                    description: What this sandbox exists for, carried through to its sandbox configuration; judge is the project's judge (ADR 0141).
+                    description: What this sandbox exists for, carried through to its sandbox configuration; judge is the project's judge.
                     enum:
                         - run
                         - config
@@ -269,18 +269,18 @@ components:
                 image:
                     type: string
                 imageDigest:
-                    description: Config digest the image must resolve to. The runtime runs this image and replaces a container built from any other, so a moved tag never silently changes a running sandbox (ADR 0016).
+                    description: Config digest the image must resolve to. The runtime runs this image and replaces a container built from any other, so a moved tag never silently changes a running sandbox.
                     type: string
                 start:
                     description: |-
                         Whether creating the container should also bring it up. True for a sandbox being
                         created for the first time, because asking for a sandbox means asking for one that
                         runs. False for a rebuild after the container was lost: recovery restores what
-                        exists, and starting is left to whoever actually wants it (ADR 0017 §13).
+                        exists, and starting is left to whoever actually wants it.
                     type: boolean
                 specFingerprint:
                     description: |-
-                        Digest of the whole sandbox spec this container must be built from (ADR 0017 §5).
+                        Digest of the whole sandbox spec this container must be built from.
                         The runtime records it as a container label and rebuilds any container whose label
                         no longer matches, so image upgrades and every other spec change are one mechanism
                         rather than a growing list of per-field comparisons.
@@ -317,7 +317,7 @@ components:
             description: |-
                 Run identity and group membership, forwarded to the sandbox unresolved.
                 Names and any field the request omitted are resolved inside the sandbox,
-                which is the only place its passwd and group files exist (ADR 0025 §4).
+                which is the only place its passwd and group files exist.
             properties:
                 additionalGroups:
                     description: Supplementary groups, each a group name or a numeric GID.
@@ -342,7 +342,7 @@ components:
             additionalProperties: false
             description: |-
                 Git authorship identity, forwarded to the sandbox verbatim. Authorship, not
-                run identity: see SandboxUser for the account a process runs as (ADR 0042).
+                run identity: see SandboxUser for the account a process runs as.
             properties:
                 userEmail:
                     type: string
@@ -475,7 +475,7 @@ components:
         PoolHTTPAuditExchange:
             additionalProperties: false
             description: |-
-                One HTTP exchange the pool proxy audited (ADR 0130). The URL, host and
+                One HTTP exchange the pool proxy audited. The URL, host and
                 method are what a sandbox sent; headers and bodies stay on the pool.
             properties:
                 "$schema":
@@ -526,7 +526,7 @@ components:
                     description: Response status; zero when no response was received
                     type: integer
                 swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3)
+                    description: Approved credential uses whose sentinels were swapped into this request
                     items:
                         type: string
                     type: array
@@ -554,7 +554,7 @@ components:
             additionalProperties: false
             description: |-
                 One audited HTTP exchange in full: every field the pool proxy's recorder
-                wrote about it (ADR 0130 §5). Headers are stored already redacted, so a
+                wrote about it. Headers are stored already redacted, so a
                 credential swapped into a request is never in one. The bodies and the
                 upgraded stream themselves stay on the pool and are read through the
                 artifact route.
@@ -680,7 +680,7 @@ components:
                     description: The upgraded stream's session
                     type: string
                 swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3)
+                    description: Approved credential uses whose sentinels were swapped into this request
                     items:
                         type: string
                     type: array
@@ -779,7 +779,7 @@ components:
             description: |-
                 Acknowledges that a power instruction was accepted. It carries no
                 state: what became of the instruction arrives on the agent's
-                sandbox state-reporting channel (ADR 0017 §§9-10).
+                sandbox state-reporting channel.
             properties:
                 "$schema":
                     description: A URL to the JSON Schema for this object.
@@ -1030,8 +1030,8 @@ paths:
                     description: |-
                         Confirmed: the container, its proxy material, and the sandbox's durable
                         data tree are all gone. The control plane deletes its row on the strength
-                        of this response, so it is returned only once the removal has happened
-                        (ADR 0022 §3). Keeping a sandbox's data is what archive is for.
+                        of this response, so it is returned only once the removal has happened.
+                        Keeping a sandbox's data is what archive is for.
                 default:
                     content:
                         application/problem+json:
@@ -1138,8 +1138,8 @@ paths:
             description: |-
                 Tear the sandbox's runtime down and keep its data: remove the container and its
                 proxy material, retain the durable data/config/secrets/sources tree, and mark it
-                archived so the volume reaper leaves it alone and nothing starts it on demand
-                (ADR 0022 §6). A later create against the retained tree unarchives it.
+                archived so the volume reaper leaves it alone and nothing starts it on demand. A
+                later create against the retained tree unarchives it.
             operationId: pool-archive-sandbox
             parameters:
             -   description: Project ID
@@ -1455,7 +1455,7 @@ paths:
         get:
             description: |-
                 The pool proxy's audit of HTTP exchanges, newest first, relayed from its
-                loopback control API with a token the agent signs (ADR 0130 §4). A
+                loopback control API with a token the agent signs. A
                 request token that names a sandbox narrows the read to it, whatever
                 sandboxId says.
             operationId: pool-list-http-audit
@@ -1567,7 +1567,7 @@ paths:
         get:
             description: |-
                 One audited HTTP exchange in full, relayed from the pool proxy's loopback
-                control API (ADR 0130 §5). A request token that names a sandbox narrows
+                control API. A request token that names a sandbox narrows
                 the read to it, whatever sandboxId says, so a row belonging to another
                 sandbox is not found rather than refused.
             operationId: pool-get-http-audit

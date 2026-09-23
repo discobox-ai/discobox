@@ -32,7 +32,7 @@ const exampleHeader = `# yaml-language-server: $schema=` + SchemaID + `
 # it. Copy it rather than editing it in place.
 #
 # Every setting can also be set by the environment variable named beside it,
-# and the environment wins over this file (ADR 0096).
+# and the environment wins over this file.
 #
 # A key this server does not define is a startup failure naming the key. That
 # is the point of the file: a misspelled environment variable is silently the

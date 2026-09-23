@@ -168,7 +168,7 @@ func Prepare(projectID, poolID, mitmCASource string) error {
 	// this cannot pay for the walk twice, and so the sandbox-visible cache is
 	// clean by the time any sandbox mounts it (ADR 0050).
 	if err := purgeLegacyRoots(projectID, poolID); err != nil {
-		slog.Warn("purge pre-ADR-0050 build state", "error", err)
+		slog.Warn("purge build state left inside the sandbox-visible cache", "error", err)
 	}
 	stateRoot := StateRoot(projectID, poolID)
 	registryRoot := RegistryRoot(projectID, poolID)

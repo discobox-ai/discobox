@@ -2,7 +2,7 @@
   "$id": "https://raw.githubusercontent.com/discobox-ai/discobox/main/server/config.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "Configuration for discobox-server. Every setting may also be set by the environment variable named in its description, which takes precedence over this file (ADR 0096).",
+  "description": "Configuration for discobox-server. Every setting may also be set by the environment variable named in its description, which takes precedence over this file.",
   "properties": {
     "archiveRetention": {
       "description": "How long an archived sandbox is kept before purging, for projects with no retention of their own, as a Go duration. Defaults to 24h. Environment: DISCOBOX_ARCHIVE_RETENTION (takes precedence over this file).",
@@ -26,7 +26,7 @@
       ]
     },
     "configDir": {
-      "description": "Operator-edited configuration. Defaults to \u003cXDG config home\u003e/discobox. It cannot relocate the configuration file itself, which is found from the environment (ADR 0096 §1). Environment: DISCOBOX_CONFIG_DIR (takes precedence over this file).",
+      "description": "Operator-edited configuration. Defaults to \u003cXDG config home\u003e/discobox. It cannot relocate the configuration file itself, which is found from the environment. Environment: DISCOBOX_CONFIG_DIR (takes precedence over this file).",
       "examples": [
         "/etc/discobox"
       ],

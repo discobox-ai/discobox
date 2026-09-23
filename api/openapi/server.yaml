@@ -561,7 +561,7 @@ components:
             type: object
         SandboxExecScreen:
             additionalProperties: false
-            description: A terminal's screen as a person looking at it would read it (ADR 0137 §1).
+            description: A terminal's screen as a person looking at it would read it.
             properties:
                 rows:
                     format: int64
@@ -717,11 +717,11 @@ components:
         PoolResourceReport:
             additionalProperties: true
             description: |
-                What a pool's own services are consuming, as of its last resource report
-                (ADR 0071): the pool agent, buildkitd, the registry and the proxy, from the
-                pool container's cgroup. The sandboxes are not in it - they run under a
-                nested runtime with its own cgroups - so the pool's total load is this plus
-                the sum of the per-sandbox figures.
+                What a pool's own services are consuming, as of its last resource report: the
+                pool agent, buildkitd, the registry and the proxy, from the pool container's
+                cgroup. The sandboxes are not in it - they run under a nested runtime with its
+                own cgroups - so the pool's total load is this plus the sum of the per-sandbox
+                figures.
             properties:
                 reportedAt:
                     format: date-time
@@ -790,7 +790,7 @@ components:
                 This deliberately excludes the sandboxes. They run under a nested container
                 runtime whose cgroups are not children of the pool container's, so the pool
                 total is `vcpus` here PLUS the sum of the per-sandbox `vcpus` - an addition
-                of two disjoint measurements, never a subtraction (ADR 0071 §6).
+                of two disjoint measurements, never a subtraction.
             properties:
                 usageUsec:
                     description: Total CPU microseconds charged to the pool container's cgroup.
@@ -873,9 +873,9 @@ components:
             description: |
                 One sandbox's durable footprint, by the tree that holds it, walked fresh.
                 There is deliberately no cache figure: cache is one pool-shared tree keyed by
-                the target path a harness declared rather than by which sandbox wrote it
-                (ADR 0007, ADR 0050), so a per-sandbox cache size has no on-disk answer and
-                is reported once at the pool instead (ADR 0071 §5).
+                the target path a harness declared rather than by which sandbox wrote it, so a
+                per-sandbox cache size has no on-disk answer and is reported once at the pool
+                instead.
             properties:
                 sandboxId:
                     type: string
@@ -915,7 +915,7 @@ components:
                 runs on its own adaptive schedule rather than on the reporting tick: the
                 agent spends a fixed fraction of wall-clock time walking, which makes an
                 expensive pool walked rarely and a cheap one often with nothing to tune per
-                pool (ADR 0071 §7).
+                pool.
 
                 These figures are therefore older than the rest of the report, and
                 deliberately so. observedAt says how old, and nextScanAt says how old they
@@ -957,7 +957,7 @@ components:
                     format: int64
                     type: integer
                 buildBytes:
-                    description: buildkitd's store and the pool registry's blobs, which no sandbox can reach and which no per-sandbox figure accounts for (ADR 0050).
+                    description: buildkitd's store and the pool registry's blobs, which no sandbox can reach and which no per-sandbox figure accounts for.
                     format: int64
                     type: integer
             required:
@@ -1022,7 +1022,7 @@ components:
         SandboxMemoryConsumption:
             additionalProperties: true
             description: |
-                Two different true answers about the same sandbox (ADR 0071 §4). currentBytes
+                Two different true answers about the same sandbox. currentBytes
                 is what the host charges it, including page cache and kernel memory.
                 virtualBytes and residentBytes are what its own processes hold, summed, and so
                 double-count every shared page: summed resident routinely exceeds
@@ -1126,7 +1126,7 @@ components:
             additionalProperties: false
             description: |
                 One resource report: what this pool is using, and what each sandbox on it is
-                using, in one delivery (ADR 0071). Every rate was computed by the pool agent
+                using, in one delivery. Every rate was computed by the pool agent
                 from cumulative counters over one tick, which is what makes the per-sandbox
                 figures rankable - all of them were measured over the same window.
             properties:
@@ -1153,8 +1153,7 @@ components:
                 Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
                 is the difference between two samples over the time between them, and the
                 component holding two samples is the pool agent, which polls every sandbox
-                in the pool on one tick and so measures them all over the same window
-                (ADR 0071).
+                in the pool on one tick and so measures them all over the same window.
             properties:
                 usageUsec:
                     description: Total CPU microseconds charged to the sandbox's cgroup since it was created.
@@ -1180,7 +1179,7 @@ components:
         SandboxAgentMemoryUsage:
             additionalProperties: false
             description: |
-                Two different true answers about the same sandbox (ADR 0071). currentBytes is
+                Two different true answers about the same sandbox. currentBytes is
                 what the host charges it - anonymous memory, page cache and kernel memory
                 together. virtualBytes and residentBytes are what its own processes hold,
                 summed, and so double-count every shared page: summed resident routinely
@@ -1263,7 +1262,7 @@ components:
             type: object
         SandboxAgentResourceUsage:
             additionalProperties: false
-            description: The sandbox's own resource consumption at one moment, as cumulative counters (ADR 0071).
+            description: The sandbox's own resource consumption at one moment, as cumulative counters.
             properties:
                 observedAt:
                     description: When this sample was taken. Rates are computed against this, never against the reporting tick's wall clock, so poll skew inside a tick cannot distort one.
@@ -1320,7 +1319,7 @@ components:
                     type: array
                 declared:
                     description: |
-                        True when a service under .discobox/services declares this port (ADR 0076),
+                        True when a service under .discobox/services declares this port,
                         which puts it on the record whether or not anything observable is listening
                         on it. Discovery only sees sockets the sandbox user owns, so a port
                         published by a nested container or bound by a socket-activated unit - root's
@@ -1331,9 +1330,9 @@ components:
                         What the port turned out to speak, established by probing it once when it
                         appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
                         HTTP/2-only server); unknown means not classified yet or unreachable when
-                        probed, and is retried. udp is a bound UDP socket, which is never probed
-                        (ADR 0109); it is the only value that is not a TCP port, so it is also what
-                        says which transport a forward of this port has to carry.
+                        probed, and is retried. udp is a bound UDP socket, which is never probed;
+                        it is the only value that is not a TCP port, so it is also what says which
+                        transport a forward of this port has to carry.
                     enum:
                         - http
                         - https
@@ -1352,7 +1351,7 @@ components:
             type: object
         SandboxAgentAutostopStatus:
             additionalProperties: false
-            description: The sandbox's own idle-stop policy, as it sees the sandbox at observedAt (ADR 0108). The sandbox powers itself off once nothing has happened in it for the idle timeout; the next sandbox-directed request starts it again.
+            description: The sandbox's own idle-stop policy, as it sees the sandbox at observedAt. The sandbox powers itself off once nothing has happened in it for the idle timeout; the next sandbox-directed request starts it again.
             properties:
                 idleTimeoutSeconds:
                     description: How long the sandbox runs with nothing happening in it before it powers itself off.
@@ -1476,19 +1475,19 @@ components:
                         $ref: '#/components/schemas/SandboxAgentSessionStatus'
                     type: array
                 ports:
-                    description: Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP ports they have bound (ADR 0109), plus those its services declare (ADR 0076). Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
+                    description: Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP ports they have bound, plus those its services declare. Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it; it can be up to one watcher interval stale.
                     items:
                         $ref: '#/components/schemas/SandboxAgentListeningPort'
                     type: array
                 resources:
                     $ref: '#/components/schemas/SandboxAgentResourceUsage'
-                    description: This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform where neither the cgroup nor procfs could be read.
+                    description: This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where neither the cgroup nor procfs could be read.
                 autostop:
                     $ref: '#/components/schemas/SandboxAgentAutostopStatus'
-                    description: The sandbox's idle-stop policy (ADR 0108). Absent while the policy is not running, which in a configure-mode sandbox is always.
+                    description: The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode sandbox is always.
                 meta:
                     $ref: '#/components/schemas/SandboxMeta'
-                    description: The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record (ADR 0136). Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
+                    description: The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record. Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
                 metaError:
                     description: Why the meta file could not be read. Present only when meta is absent.
                     type: string
@@ -1503,7 +1502,7 @@ components:
             type: object
         SandboxMeta:
             additionalProperties: false
-            description: A sandbox's description and tags, as the file inside it that holds them says (ADR 0136).
+            description: A sandbox's description and tags, as the file inside it that holds them says.
             properties:
                 description:
                     description: What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing shows the first.
@@ -1518,7 +1517,7 @@ components:
             type: object
         SandboxAgentMeta:
             additionalProperties: false
-            description: A sandbox's meta as its meta file holds it after a write (ADR 0136).
+            description: A sandbox's meta as its meta file holds it after a write.
             properties:
                 meta:
                     $ref: '#/components/schemas/SandboxMeta'
@@ -1533,7 +1532,7 @@ components:
             type: object
         UpdateSandboxMetaBody:
             additionalProperties: false
-            description: A change to a sandbox's meta, applied to the meta file in the sandbox (ADR 0136). What the change does not name is left as it is, including what the sandbox wrote itself.
+            description: A change to a sandbox's meta, applied to the meta file in the sandbox. What the change does not name is left as it is, including what the sandbox wrote itself.
             properties:
                 description:
                     description: Replaces the description. An empty string clears it; omit it to leave the description alone.
@@ -1736,7 +1735,7 @@ components:
                     description: The declaring file's own name. It orders the listing, which is what the numeric prefix stripped from the ID is for.
                     type: string
                 ports:
-                    description: Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP ones when the declaration states the udp protocol (ADR 0109). A declared port is reported and forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
+                    description: Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP ones when the declaration states the udp protocol. A declared port is reported and forwarded whether or not anything observable is listening on it - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
                     items:
                         format: int64
                         type: integer
@@ -1794,7 +1793,7 @@ components:
             type: object
         SandboxTool:
             additionalProperties: false
-            description: A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary source under .discobox/tools (ADR 0125). The client merges these with the tools it declares itself and runs the result; the sandbox only lists them.
+            description: A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary source under .discobox/tools. The client merges these with the tools it declares itself and runs the result; the sandbox only lists them.
             properties:
                 id:
                     description: Stable filename-derived tool ID, with any numeric ordering prefix and known extension removed - 20-fresh.yaml is fresh - unless the declaration states one.
@@ -2400,7 +2399,7 @@ components:
                     format: date-time
                     type: string
                 desiredState:
-                    description: Requested existence, the same vocabulary every orchestrated resource uses (ADR 0017 §2)
+                    description: Requested existence, the same vocabulary every orchestrated resource uses
                     enum:
                         - present
                         - deleted
@@ -2824,7 +2823,7 @@ components:
                 Upgrade takes no parameters. The target is whatever the sandbox's harness config
                 resolves to when the reconciler runs; accepting a client-observed digest would
                 turn a continuously-rebuilt dev image into a retry loop against a target that was
-                never wrong (ADR 0016).
+                never wrong.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -2880,7 +2879,7 @@ components:
                     description: Sandbox base image
                     type: string
                 imageDigest:
-                    description: Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host refuses an image that does not match it (ADR 0016).
+                    description: Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host refuses an image that does not match it.
                     type: string
                 name:
                     description: Sandbox name
@@ -2913,7 +2912,7 @@ components:
                     description: Harness config ID
                     type: string
                 harnessMode:
-                    description: 'What the sandbox exists for: run works in it, config runs the image-owned interactive configuration command once, and judge answers judging asks and nothing else (ADR 0141). A project''s own judge is created and kept converged by Discobox; one created here is an ordinary discobox that happens to be in judge mode.'
+                    description: 'What the sandbox exists for: run works in it, config runs the image-owned interactive configuration command once, and judge answers judging asks and nothing else. A project''s own judge is created and kept converged by Discobox; one created here is an ordinary discobox that happens to be in judge mode.'
                     enum:
                         - run
                         - config
@@ -2929,7 +2928,7 @@ components:
                     description: Model service tier the harness should use
                     type: string
                 description:
-                    description: The sandbox's first description. It seeds the meta file inside the sandbox, which holds the description from then on (ADR 0136); read the current one from the sandbox's meta.
+                    description: The sandbox's first description. It seeds the meta file inside the sandbox, which holds the description from then on; read the current one from the sandbox's meta.
                     type: string
                 env:
                     additionalProperties:
@@ -2991,7 +2990,7 @@ components:
             type: object
         ReportSandboxSecretRejectionBody:
             additionalProperties: false
-            description: What an upstream made of a credential the pool's proxy swapped in, reported after the proxy's own retry has had its chance (ADR 0132). It names the sentinel, never the value.
+            description: What an upstream made of a credential the pool's proxy swapped in, reported after the proxy's own retry has had its chance. It names the sentinel, never the value.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3197,7 +3196,7 @@ components:
             type: object
         RecordCredentialVerdictBody:
             additionalProperties: false
-            description: A judge's verdict about one command run under an agent credential use, relayed by the pool agent on behalf of one of its sandboxes (ADR 0091). Carried on the same call that takes a value, so a credential cannot be issued without a record of why; sent on its own when the judge refused and no value was ever taken.
+            description: A judge's verdict about one command run under an agent credential use, relayed by the pool agent on behalf of one of its sandboxes. Carried on the same call that takes a value, so a credential cannot be issued without a record of why; sent on its own when the judge refused and no value was ever taken.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3260,7 +3259,7 @@ components:
             type: object
         CredentialVerdict:
             additionalProperties: false
-            description: One recorded judge decision about a command run under an agent credential use (ADR 0091). The row lives in the control plane and outlives its sandbox. Its command, reason and prompt were composed inside the sandbox and are display data, never instruction. A row with volunteered false rode the call that issued a credential, so the record is complete for every value issued; one with volunteered true is a denial the sandbox chose to report, so denials are undercounted by exactly the reports never sent.
+            description: One recorded judge decision about a command run under an agent credential use. The row lives in the control plane and outlives its sandbox. Its command, reason and prompt were composed inside the sandbox and are display data, never instruction. A row with volunteered false rode the call that issued a credential, so the record is complete for every value issued; one with volunteered true is a denial the sandbox chose to report, so denials are undercounted by exactly the reports never sent.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3306,7 +3305,7 @@ components:
                     description: Sandbox the command ran in. It may no longer exist.
                     type: string
                 useId:
-                    description: Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs (ADR 0130 §3).
+                    description: Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs.
                     type: string
                 volunteered:
                     description: True when the sandbox reported this after a denial the issuing call never saw
@@ -3339,7 +3338,7 @@ components:
             type: object
         HTTPAuditExchange:
             additionalProperties: false
-            description: One HTTP exchange a pool proxy audited (ADR 0130). The method, URL and host are what a sandbox sent; headers and bodies stay on the pool. Recorded by the pool proxy from what crossed the wire, so the sandbox cannot alter the row.
+            description: One HTTP exchange a pool proxy audited. The method, URL and host are what a sandbox sent; headers and bodies stay on the pool. Recorded by the pool proxy from what crossed the wire, so the sandbox cannot alter the row.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3392,7 +3391,7 @@ components:
                     description: Response status; zero when no response was received
                     type: integer
                 swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId (ADR 0130 §3).
+                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId.
                     items:
                         type: string
                     type: array
@@ -3419,7 +3418,7 @@ components:
             type: object
         HTTPAuditExchangeDetail:
             additionalProperties: false
-            description: "One audited HTTP exchange in full: every field the pool proxy's recorder wrote about it (ADR 0130 §5). Headers are stored already redacted, so a credential swapped into a request is never in one. The bodies and the upgraded stream themselves stay on the pool and are read through the recording route."
+            description: "One audited HTTP exchange in full: every field the pool proxy's recorder wrote about it. Headers are stored already redacted, so a credential swapped into a request is never in one. The bodies and the upgraded stream themselves stay on the pool and are read through the recording route."
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3545,7 +3544,7 @@ components:
                     description: The upgraded stream's session
                     type: string
                 swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId (ADR 0130 §3).
+                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId.
                     items:
                         type: string
                     type: array
@@ -3587,7 +3586,7 @@ components:
             type: object
         UnavailableAuditPool:
             additionalProperties: false
-            description: A pool the read asked and could not hear from. Its exchanges are missing from the answer, and saying so is what keeps a partial trail from reading as a complete one (ADR 0130 §1).
+            description: A pool the read asked and could not hear from. Its exchanges are missing from the answer, and saying so is what keeps a partial trail from reading as a complete one.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3806,10 +3805,10 @@ components:
                     type: array
                 desiredState:
                     description: |-
-                        Requested existence. Power state is not requested: whether a sandbox is running is
-                        observed and reported by its runtime, never asked for by the control plane
-                        (ADR 0017 §9). Archived is a third form of existence — as data, with no
-                        container — not a power state (ADR 0022 §1).
+                        Requested existence. Power state is not requested: whether a sandbox is
+                        running is observed and reported by its runtime, never asked for by the
+                        control plane. Archived is a third form of existence — as data, with no
+                        container — not a power state.
                     enum:
                         - present
                         - archived
@@ -3818,7 +3817,7 @@ components:
                 displayState:
                     description: |-
                         User-facing lifecycle state, composed from the existence state, the runtime state,
-                        and whether the existence generations agree (ADR 0034 §5). This is the field
+                        and whether the existence generations agree. This is the field
                         clients should read: it is the one answer to "what is this sandbox doing".
                     enum:
                         - starting
@@ -3860,7 +3859,7 @@ components:
                     description: |-
                         Observed power state: what the container is doing, as reported by the pool agent
                         hosting it, which is the only component that can see it. Absent until an agent has
-                        reported on this sandbox, which is not the same as `stopped` (ADR 0034 §2).
+                        reported on this sandbox, which is not the same as `stopped`.
                     enum:
                         - starting
                         - running
@@ -3875,7 +3874,7 @@ components:
                     description: |-
                         Existence state, written only by the reconciler: whether the sandbox's container has
                         been converged against its spec. `ready` means it has. What that container is doing
-                        is a separate field, runtimeState (ADR 0034 §1).
+                        is a separate field, runtimeState.
                     enum:
                         - pending
                         - awaiting_source
@@ -3952,7 +3951,7 @@ components:
                     $ref: '#/components/schemas/Origin'
                     description: Client host the sandbox was created from. Immutable after create.
                 originKey:
-                    description: Where the sandbox belongs on the client that created it, and what listings filter on (ADR 0111) — the host and the primary source's root, or the host alone for a sandbox with no source. Absent for a sandbox created without an origin.
+                    description: Where the sandbox belongs on the client that created it, and what listings filter on — the host and the primary source's root, or the host alone for a sandbox with no source. Absent for a sandbox created without an origin.
                     readOnly: true
                     type: string
                 projectId:
@@ -3971,7 +3970,7 @@ components:
                     $ref: '#/components/schemas/SandboxMeta'
                     description: |-
                         The sandbox's description and tags. The sandbox holds them, in
-                        ~/.discobox/meta.json, and this is the copy it last reported (ADR 0136): what a
+                        ~/.discobox/meta.json, and this is the copy it last reported: what a
                         listing filters on, and what a stopped sandbox is read as. Change them with
                         update-sandbox-meta, or by editing that file inside the sandbox. Until the
                         sandbox has reported (metaObservedAt absent) it holds the description the
@@ -4001,7 +4000,7 @@ components:
             additionalProperties: false
             description: |-
                 Run identity and group membership. Every field is optional; omitting the
-                whole object means the image's own user (ADR 0025 §5). On sandbox create
+                whole object means the image's own user. On sandbox create
                 this defines the sandbox.json default user, and on exec create it
                 overrides that user for one exec — the same fields mean the same thing at
                 both layers.
@@ -4016,7 +4015,7 @@ components:
                     description: |-
                         Supplementary groups, each a group name or a numeric GID, resolved inside
                         the sandbox. All-or-nothing, never merged: omit to inherit the sandbox's
-                        groups, or name any to run with exactly those (ADR 0025 §2).
+                        groups, or name any to run with exactly those.
                     items:
                         type: string
                     type: array
@@ -4045,7 +4044,7 @@ components:
             description: |-
                 Git authorship identity for work done inside the sandbox. Both fields are
                 optional; omitting the whole object leaves the sandbox's git identity
-                unconfigured, exactly as an image ships it (ADR 0042 §3).
+                unconfigured, exactly as an image ships it.
 
                 This is authorship, not run identity — see SandboxUser for the account a
                 process runs as. The two are independent: a sandbox running as the image's
@@ -4054,8 +4053,7 @@ components:
 
                 Boot seeds each key into the sandbox user's ~/.gitconfig only where git
                 resolves no value for it already, so an identity configured inside the
-                sandbox is never overwritten and each key is decided independently
-                (ADR 0042 §4).
+                sandbox is never overwritten and each key is decided independently.
             properties:
                 userEmail:
                     description: Value for git's user.email inside the sandbox.
@@ -4451,7 +4449,7 @@ components:
             type: object
         SecretRejection:
             additionalProperties: false
-            description: A credential an upstream refused that this control plane cannot renew, so a person has to replace it (ADR 0132). Live state, not history - it is cleared when the credential is replaced or starts working again.
+            description: A credential an upstream refused that this control plane cannot renew, so a person has to replace it. Live state, not history - it is cleared when the credential is replaced or starts working again.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -5032,7 +5030,7 @@ components:
         ReportPoolSandboxStatesBody:
             additionalProperties: false
             description: |-
-                A batch of sandbox state observations from the pool agent hosting them (ADR 0017 §10).
+                A batch of sandbox state observations from the pool agent hosting them.
                 State is reported, never requested: the control plane records what the agent saw and
                 never asks it to make a sandbox running.
             properties:
@@ -5065,7 +5063,7 @@ components:
                 progress:
                     description: |-
                         Provisioning progress on sandboxes this agent hosts: work that is underway and has
-                        no state transition to announce it, an image pull above all (ADR 0032). It is
+                        no state transition to announce it, an image pull above all. It is
                         always a delta and is unaffected by `complete`, which describes `states` only.
                     items:
                         $ref: '#/components/schemas/PoolSandboxProgress'
@@ -5085,7 +5083,7 @@ components:
         SandboxProvisionPhase:
             description: |-
                 What a provisioning sandbox is being made to do right now, named for a client that
-                is waiting to attach and wants to know what it is waiting for (ADR 0060). It is an
+                is waiting to attach and wants to know what it is waiting for. It is an
                 observation and never a state: it decides nothing, and it is history the moment the
                 phase ends. pulling_image is the phase that carries pull byte counts; the rest are
                 named work with no denominator to report.
@@ -5101,7 +5099,7 @@ components:
             additionalProperties: false
             description: |-
                 Work underway on a sandbox that has no state transition to announce it, reported by
-                the hosting pool-agent (ADR 0032). A client waiting to attach reads this to say what
+                the hosting pool-agent. A client waiting to attach reads this to say what
                 it is waiting for. The phase always says what is happening; pull refines the one
                 phase that can report how far in it is, because an image pull is the longest thing
                 an attach waits behind.
@@ -5116,7 +5114,7 @@ components:
         PoolProvisionPhase:
             description: |-
                 What a pool host is being made to do right now, named for a client whose sandbox is
-                waiting for a pool to take it and wants to know what it is waiting for (ADR 0060).
+                waiting for a pool to take it and wants to know what it is waiting for.
                 It is the pool-shaped twin of SandboxProvisionPhase: an observation, never a state,
                 and history the moment the phase ends.
 
@@ -5135,7 +5133,7 @@ components:
                 be reported while Docker extracts the image.
 
                 loading_pool_image is pulling_pool_image's twin when the image is read from the
-                image cache the CLI staged on the server's machine (ADR 0113): the same byte counts,
+                image cache the CLI staged on the server's machine: the same byte counts,
                 read from disk rather than a registry.
             enum:
                 - fetching_vm_image
@@ -5274,9 +5272,9 @@ components:
                     description: |-
                         Observed runtime state. There is no `failed` here: a container that has exited looks
                         the same whether it was stopped deliberately or died, so failure is a judgement about
-                        an operation rather than something the runtime can observe (ADR 0017 §10). For the
+                        an operation rather than something the runtime can observe. For the
                         same reason a report carries no error message — why an operation failed is the
-                        reconciler's verdict, and it owns the field that records one (ADR 0034 §7).
+                        reconciler's verdict, and it owns the field that records one.
                     enum:
                         - starting
                         - running
@@ -5430,7 +5428,7 @@ components:
             type: object
         Peer:
             additionalProperties: false
-            description: A machine permitted to connect to this server (ADR 0095). It authenticates as the server's default user and is not scoped to a project.
+            description: A machine permitted to connect to this server. It authenticates as the server's default user and is not scoped to a project.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -5493,7 +5491,7 @@ components:
             type: object
         ServerPeer:
             additionalProperties: false
-            description: This server's own peer identity (ADR 0098), which every server has whatever it listens on (ADR 0117). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers, and the identity a client records for it otherwise.
+            description: This server's own peer identity, which every server has whatever it listens on. It is the value a client dials as `discobox://<peer-id>` when the server listens for peers, and the identity a client records for it otherwise.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -5509,7 +5507,7 @@ components:
             type: object
         ServerInfo:
             additionalProperties: false
-            description: What this server calls itself (ADR 0116). A client registering this server offers the name as the one to register it under; nothing else depends on it, and two servers may share one.
+            description: What this server calls itself. A client registering this server offers the name as the one to register it under; nothing else depends on it, and two servers may share one.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -6421,7 +6419,7 @@ paths:
                 - Pools
     /api/pools/{poolId}/judge:
         post:
-            description: Puts one judging job to the judge of the project that owns this pool (ADR 0141 §2). The control plane forwards it to the pool hosting that judge, which is how a pool whose own discoboxes cannot run one still judges. Anything that is not an explicit answer is no verdict — a project with no judge, a judge that will not come up, a pool that cannot be reached.
+            description: Puts one judging job to the judge of the project that owns this pool. The control plane forwards it to the pool hosting that judge, which is how a pool whose own discoboxes cannot run one still judges. Anything that is not an explicit answer is no verdict — a project with no judge, a judge that will not come up, a pool that cannot be reached.
             operationId: judge-for-pool
             parameters:
                 - description: Pool ID
@@ -7767,32 +7765,32 @@ paths:
                   schema:
                     description: Only list sandboxes whose primary source resolves to this repository root, given as a local repository root path or a remote Git URL
                     type: string
-                - description: Only list sandboxes filed under one of these origin keys (ADR 0111); repeat the parameter for each key
+                - description: Only list sandboxes filed under one of these origin keys; repeat the parameter for each key
                   explode: true
                   in: query
                   name: originKey
                   required: false
                   schema:
-                    description: Only list sandboxes filed under one of these origin keys (ADR 0111); repeat the parameter for each key
+                    description: Only list sandboxes filed under one of these origin keys; repeat the parameter for each key
                     items:
                         type: string
                     type: array
-                - description: Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors (ADR 0136) - key to require the tag with any value, key=value to require that value; repeat the parameter for each selector
+                - description: Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors - key to require the tag with any value, key=value to require that value; repeat the parameter for each selector
                   explode: true
                   in: query
                   name: tag
                   required: false
                   schema:
-                    description: Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors (ADR 0136) - key to require the tag with any value, key=value to require that value; repeat the parameter for each selector
+                    description: Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors - key to require the tag with any value, key=value to require that value; repeat the parameter for each selector
                     items:
                         type: string
                     type: array
-                - description: Also list sandboxes in judge mode, which are left out otherwise (ADR 0141) - a judge runs no terminal and holds no work, so it is not what asking what is in a project means
+                - description: Also list sandboxes in judge mode, which are left out otherwise - a judge runs no terminal and holds no work, so it is not what asking what is in a project means
                   in: query
                   name: includeJudge
                   required: false
                   schema:
-                    description: Also list sandboxes in judge mode, which are left out otherwise (ADR 0141)
+                    description: Also list sandboxes in judge mode, which are left out otherwise
                     type: boolean
             responses:
                 200:
@@ -7846,7 +7844,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}:
         delete:
             operationId: delete-sandbox
-            description: Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it can be restored with unarchive until its project's archive retention runs out, after which it is purged automatically. To destroy a sandbox and its data now, use purge (ADR 0022 §2).
+            description: Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it can be restored with unarchive until its project's archive retention runs out, after which it is purged automatically. To destroy a sandbox and its data now, use purge.
             parameters:
                 - description: Project ID
                   in: path
@@ -8025,7 +8023,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/purge:
         post:
             operationId: purge-sandbox
-            description: Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the request does not return success until the pool agent has confirmed the container and the sandbox's data are both gone, because a 202 would be a promise the server could not later verify against a row it had just deleted (ADR 0022 §3). A failure leaves the delete intent recorded, so it converges in the background regardless.
+            description: Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the request does not return success until the pool agent has confirmed the container and the sandbox's data are both gone, because a 202 would be a promise the server could not later verify against a row it had just deleted. A failure leaves the delete intent recorded, so it converges in the background regardless.
             parameters:
                 - description: Project ID
                   in: path
@@ -8057,7 +8055,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/meta:
         patch:
             operationId: update-sandbox-meta
-            description: Change a sandbox's description or tags. The change is carried into the sandbox and applied to its meta file, ~/.discobox/meta.json, which is their system of record; the server records what the sandbox then holds and returns the sandbox with it (ADR 0136). A stopped sandbox is started to take the change, and a sandbox that cannot be reached is an error rather than a change recorded only here.
+            description: Change a sandbox's description or tags. The change is carried into the sandbox and applied to its meta file, ~/.discobox/meta.json, which is their system of record; the server records what the sandbox then holds and returns the sandbox with it. A stopped sandbox is started to take the change, and a sandbox that cannot be reached is an error rather than a change recorded only here.
             parameters:
                 - description: Project ID
                   in: path
@@ -8099,7 +8097,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/complete-apply:
         post:
             operationId: complete-sandbox-apply
-            description: Record that the client successfully applied a source's sandbox commits onto a host working tree (ADR 0014). Called once per source, only after the client's fast-forward has actually landed the commits; appends to the sandbox's applied-commits history.
+            description: Record that the client successfully applied a source's sandbox commits onto a host working tree. Called once per source, only after the client's fast-forward has actually landed the commits; appends to the sandbox's applied-commits history.
             parameters:
                 - description: Project ID
                   in: path
@@ -8224,7 +8222,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/repair:
         post:
             operationId: repair-sandbox
-            description: Rebuild the sandbox in place, on its harness config's current image, and start it (ADR 0035, ADR 0062). The container and disposable runtime state are torn down, the container is recreated against the durable data that was kept, and a start is issued - one operation for the archive-unarchive-start sequence. The rebuild always lands on the image the harness config resolves to now, so a repair is an upgrade as well; unlike upgrade, having nothing newer to move to is not an error here. Recording the repair intent also clears a settled failure, so this is the way out of an error state. The rebuild is driven in the request; a request that dies leaves the intent recorded and the rebuild converging in the background, stopped, starting on first use. Conflicts if the sandbox is archived or being deleted.
+            description: Rebuild the sandbox in place, on its harness config's current image, and start it. The container and disposable runtime state are torn down, the container is recreated against the durable data that was kept, and a start is issued - one operation for the archive-unarchive-start sequence. The rebuild always lands on the image the harness config resolves to now, so a repair is an upgrade as well; unlike upgrade, having nothing newer to move to is not an error here. Recording the repair intent also clears a settled failure, so this is the way out of an error state. The rebuild is driven in the request; a request that dies leaves the intent recorded and the rebuild converging in the background, stopped, starting on first use. Conflicts if the sandbox is archived or being deleted.
             parameters:
                 - description: Project ID
                   in: path
@@ -8499,7 +8497,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events:
         get:
-            description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and read only from a running sandbox; the read never starts one.
+            description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a running sandbox; the read never starts one.
             operationId: list-exec-events
             parameters:
                 - description: Only the event with this ID, which is how one record is read in full
@@ -8609,7 +8607,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge:
         post:
-            description: Puts one judging job to this discobox's harness and returns what it answered (ADR 0141). Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and the approved use; the prompt, the schema, the model role and the tools restriction are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is answered at a time.
+            description: Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and the approved use; the prompt, the schema, the model role and the tools restriction are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is answered at a time.
             operationId: judge-sandbox
             parameters:
                 - description: Project that owns the sandbox.
@@ -8649,7 +8647,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/meta:
         patch:
-            description: Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home, and returns what it holds afterwards. The file is read, changed and replaced in one step, so what the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is refused rather than overwritten (ADR 0136).
+            description: Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home, and returns what it holds afterwards. The file is read, changed and replaced in one step, so what the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is refused rather than overwritten.
             operationId: update-sandbox-agent-meta
             parameters:
                 - description: Project that owns the sandbox.
@@ -9147,7 +9145,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen:
         get:
-            description: The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR 0137 §1). 409 for an exec with no terminal.
+            description: The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent scrollback on request. Reading it does not attach, resize the terminal, or count as activity. 409 for an exec with no terminal.
             operationId: get-sandbox-exec-screen
             parameters:
                 - description: Project that owns the sandbox.
@@ -9194,7 +9192,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input:
         post:
-            description: Writes text and named keys to the terminal, in order, the way typing into an attach does, and counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program enabled one. 409 for an exec with no terminal or closed input.
+            description: Writes text and named keys to the terminal, in order, the way typing into an attach does, and counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409 for an exec with no terminal or closed input.
             operationId: send-sandbox-exec-input
             parameters:
                 - description: Project that owns the sandbox.
@@ -9240,7 +9238,7 @@ paths:
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait:
         post:
-            description: Blocks until one of the given conditions holds — a named harness hook event from this terminal, no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137 §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing recorded between two calls is missed.
+            description: Blocks until one of the given conditions holds — a named harness hook event from this terminal, no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes. Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing recorded between two calls is missed.
             operationId: wait-sandbox-exec
             parameters:
                 - description: Project that owns the sandbox.
@@ -10160,7 +10158,7 @@ paths:
                 - Pools
     /projects/{projectId}/audit/http:
         get:
-            description: The HTTP exchanges the project's pool proxies audited, newest first, read from each pool through its agent and merged (ADR 0130 §§1, 4). Project-scoped because a purged sandbox's exchanges stay on its pool for the audit retention window after the record of which pool that was is gone. A pool that does not answer is listed in unavailablePools rather than dropped.
+            description: The HTTP exchanges the project's pool proxies audited, newest first, read from each pool through its agent and merged. Project-scoped because a purged sandbox's exchanges stay on its pool for the audit retention window after the record of which pool that was is gone. A pool that does not answer is listed in unavailablePools rather than dropped.
             operationId: list-http-audit
             parameters:
                 - description: Project ID
@@ -10271,7 +10269,7 @@ paths:
                 - Pools
     /projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}:
         get:
-            description: One audited HTTP exchange in full, read from the pool that recorded it (ADR 0130 §5). The pool is in the path because an audit record ID is only unique within it. The bodies and any upgraded stream are read separately, through the recording route beside this one.
+            description: One audited HTTP exchange in full, read from the pool that recorded it. The pool is in the path because an audit record ID is only unique within it. The bodies and any upgraded stream are read separately, through the recording route beside this one.
             operationId: get-http-audit
             parameters:
                 - description: Project ID
@@ -10320,7 +10318,7 @@ paths:
                 - Pools
     /projects/{projectId}/credential-verdicts:
         get:
-            description: The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091). Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId instead.
+            description: The recorded judge verdicts for agent credential uses in a project, newest first. Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId instead.
             operationId: list-credential-verdicts
             parameters:
                 - description: Only the verdict with this ID, which is how one record is read in full

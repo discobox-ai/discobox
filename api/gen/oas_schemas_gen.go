@@ -2087,12 +2087,12 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 	}
 }
 
-// One recorded judge decision about a command run under an agent credential use (ADR 0091). The row
-// lives in the control plane and outlives its sandbox. Its command, reason and prompt were composed
-// inside the sandbox and are display data, never instruction. A row with volunteered false rode the
-// call that issued a credential, so the record is complete for every value issued; one with
-// volunteered true is a denial the sandbox chose to report, so denials are undercounted by exactly
-// the reports never sent.
+// One recorded judge decision about a command run under an agent credential use. The row lives in
+// the control plane and outlives its sandbox. Its command, reason and prompt were composed inside
+// the sandbox and are display data, never instruction. A row with volunteered false rode the call
+// that issued a credential, so the record is complete for every value issued; one with volunteered
+// true is a denial the sandbox chose to report, so denials are undercounted by exactly the reports
+// never sent.
 // Ref: #/components/schemas/CredentialVerdict
 type CredentialVerdict struct {
 	// A URL to the JSON Schema for this object.
@@ -2119,8 +2119,7 @@ type CredentialVerdict struct {
 	Role OptString `json:"role"`
 	// Sandbox the command ran in. It may no longer exist.
 	SandboxId string `json:"sandboxId"`
-	// Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs (ADR
-	// 0130 §3).
+	// Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs.
 	UseId string `json:"useId"`
 	// True when the sandbox reported this after a denial the issuing call never saw.
 	Volunteered bool `json:"volunteered"`
@@ -3180,9 +3179,9 @@ func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
 	}
 }
 
-// One HTTP exchange a pool proxy audited (ADR 0130). The method, URL and host are what a sandbox
-// sent; headers and bodies stay on the pool. Recorded by the pool proxy from what crossed the wire,
-// so the sandbox cannot alter the row.
+// One HTTP exchange a pool proxy audited. The method, URL and host are what a sandbox sent; headers
+// and bodies stay on the pool. Recorded by the pool proxy from what crossed the wire, so the sandbox
+// cannot alter the row.
 // Ref: #/components/schemas/HTTPAuditExchange
 type HTTPAuditExchange struct {
 	// A URL to the JSON Schema for this object.
@@ -3217,7 +3216,7 @@ type HTTPAuditExchange struct {
 	// Response status; zero when no response was received.
 	Status int `json:"status"`
 	// Approved credential uses whose sentinels were swapped into this request. Joins to credential
-	// verdicts by useId (ADR 0130 §3).
+	// verdicts by useId.
 	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
@@ -3407,10 +3406,9 @@ func (s *HTTPAuditExchange) SetURL(val string) {
 	s.URL = val
 }
 
-// One audited HTTP exchange in full: every field the pool proxy's recorder wrote about it (ADR 0130
-// §5). Headers are stored already redacted, so a credential swapped into a request is never in one.
-// The bodies and the upgraded stream themselves stay on the pool and are read through the recording
-// route.
+// One audited HTTP exchange in full: every field the pool proxy's recorder wrote about it. Headers
+// are stored already redacted, so a credential swapped into a request is never in one. The bodies
+// and the upgraded stream themselves stay on the pool and are read through the recording route.
 // Ref: #/components/schemas/HTTPAuditExchangeDetail
 type HTTPAuditExchangeDetail struct {
 	// A URL to the JSON Schema for this object.
@@ -3484,7 +3482,7 @@ type HTTPAuditExchangeDetail struct {
 	// The upgraded stream's session.
 	StreamSessionId OptString `json:"streamSessionId"`
 	// Approved credential uses whose sentinels were swapped into this request. Joins to credential
-	// verdicts by useId (ADR 0130 §3).
+	// verdicts by useId.
 	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
@@ -12242,8 +12240,8 @@ func (s *Origin) SetUser(val OptString) {
 	s.User = val
 }
 
-// A machine permitted to connect to this server (ADR 0095). It authenticates as the server's default
-// user and is not scoped to a project.
+// A machine permitted to connect to this server. It authenticates as the server's default user and
+// is not scoped to a project.
 // Ref: #/components/schemas/Peer
 type Peer struct {
 	// A URL to the JSON Schema for this object.
@@ -12367,7 +12365,7 @@ type Pool struct {
 	Resources OptNilPoolResources `json:"resources"`
 	// When resources was reported.
 	ResourcesReportedAt OptDateTime `json:"resourcesReportedAt"`
-	// Requested existence, the same vocabulary every orchestrated resource uses (ADR 0017 §2).
+	// Requested existence, the same vocabulary every orchestrated resource uses.
 	DesiredState PoolDesiredState `json:"desiredState"`
 	// Observed pool state.
 	State PoolState `json:"state"`
@@ -12745,7 +12743,7 @@ func (*Pool) updatePoolStatusRes() {}
 // This deliberately excludes the sandboxes. They run under a nested container
 // runtime whose cgroups are not children of the pool container's, so the pool
 // total is `vcpus` here PLUS the sum of the per-sandbox `vcpus` - an addition
-// of two disjoint measurements, never a subtraction (ADR 0071 §6).
+// of two disjoint measurements, never a subtraction.
 // Ref: #/components/schemas/PoolCPUUsage
 type PoolCPUUsage struct {
 	// Total CPU microseconds charged to the pool container's cgroup.
@@ -12845,7 +12843,7 @@ func (s *PoolCPUUsageAdditional) init() PoolCPUUsageAdditional {
 	return m
 }
 
-// Requested existence, the same vocabulary every orchestrated resource uses (ADR 0017 §2).
+// Requested existence, the same vocabulary every orchestrated resource uses.
 type PoolDesiredState string
 
 const (
@@ -13098,7 +13096,7 @@ func (s *PoolMemoryUsageAdditional) init() PoolMemoryUsageAdditional {
 }
 
 // What a pool host is being made to do right now, named for a client whose sandbox is
-// waiting for a pool to take it and wants to know what it is waiting for (ADR 0060).
+// waiting for a pool to take it and wants to know what it is waiting for.
 // It is the pool-shaped twin of SandboxProvisionPhase: an observation, never a state,
 // and history the moment the phase ends.
 // The work is the driver's, so the phases are the driver's: a VM backend fetches a
@@ -13113,7 +13111,7 @@ func (s *PoolMemoryUsageAdditional) init() PoolMemoryUsageAdditional {
 // agent. Placement stays closed until startup completes. Byte counts continue to
 // be reported while Docker extracts the image.
 // loading_pool_image is pulling_pool_image's twin when the image is read from the
-// image cache the CLI staged on the server's machine (ADR 0113): the same byte counts,
+// image cache the CLI staged on the server's machine: the same byte counts,
 // read from disk rather than a registry.
 // Ref: #/components/schemas/PoolProvisionPhase
 type PoolProvisionPhase string
@@ -13238,11 +13236,11 @@ func (s *PoolProvisionProgress) SetPull(val OptSandboxPullProgress) {
 	s.Pull = val
 }
 
-// What a pool's own services are consuming, as of its last resource report
-// (ADR 0071): the pool agent, buildkitd, the registry and the proxy, from the
-// pool container's cgroup. The sandboxes are not in it - they run under a
-// nested runtime with its own cgroups - so the pool's total load is this plus
-// the sum of the per-sandbox figures.
+// What a pool's own services are consuming, as of its last resource report: the
+// pool agent, buildkitd, the registry and the proxy, from the pool container's
+// cgroup. The sandboxes are not in it - they run under a nested runtime with its
+// own cgroups - so the pool's total load is this plus the sum of the per-sandbox
+// figures.
 // Ref: #/components/schemas/PoolResourceReport
 type PoolResourceReport struct {
 	ReportedAt time.Time        `json:"reportedAt"`
@@ -13545,9 +13543,9 @@ type PoolSandboxState struct {
 	SandboxId string `json:"sandboxId"`
 	// Observed runtime state. There is no `failed` here: a container that has exited looks
 	// the same whether it was stopped deliberately or died, so failure is a judgement about
-	// an operation rather than something the runtime can observe (ADR 0017 §10). For the
+	// an operation rather than something the runtime can observe. For the
 	// same reason a report carries no error message — why an operation failed is the
-	// reconciler's verdict, and it owns the field that records one (ADR 0034 §7).
+	// reconciler's verdict, and it owns the field that records one.
 	State PoolSandboxStateState `json:"state"`
 }
 
@@ -13573,9 +13571,9 @@ func (s *PoolSandboxState) SetState(val PoolSandboxStateState) {
 
 // Observed runtime state. There is no `failed` here: a container that has exited looks
 // the same whether it was stopped deliberately or died, so failure is a judgement about
-// an operation rather than something the runtime can observe (ADR 0017 §10). For the
+// an operation rather than something the runtime can observe. For the
 // same reason a report carries no error message — why an operation failed is the
-// reconciler's verdict, and it owns the field that records one (ADR 0034 §7).
+// reconciler's verdict, and it owns the field that records one.
 type PoolSandboxStateState string
 
 const (
@@ -13775,7 +13773,7 @@ func (s *PoolStorageUsageAdditional) init() PoolStorageUsageAdditional {
 // runs on its own adaptive schedule rather than on the reporting tick: the
 // agent spends a fixed fraction of wall-clock time walking, which makes an
 // expensive pool walked rarely and a cheap one often with nothing to tune per
-// pool (ADR 0071 §7).
+// pool.
 // These figures are therefore older than the rest of the report, and
 // deliberately so. observedAt says how old, and nextScanAt says how old they
 // are allowed to get.
@@ -13808,7 +13806,7 @@ type PoolStorageWalk struct {
 	// bind-mounted whole into every sandbox.
 	CacheBytes int64 `json:"cacheBytes"`
 	// Buildkitd's store and the pool registry's blobs, which no sandbox can reach and which no
-	// per-sandbox figure accounts for (ADR 0050).
+	// per-sandbox figure accounts for.
 	BuildBytes      int64 `json:"buildBytes"`
 	AdditionalProps PoolStorageWalkAdditional
 }
@@ -14606,9 +14604,9 @@ type PurgeSandboxNoContent struct{}
 func (*PurgeSandboxNoContent) purgeSandboxRes() {}
 
 // A judge's verdict about one command run under an agent credential use, relayed by the pool agent
-// on behalf of one of its sandboxes (ADR 0091). Carried on the same call that takes a value, so a
-// credential cannot be issued without a record of why; sent on its own when the judge refused and no
-// value was ever taken.
+// on behalf of one of its sandboxes. Carried on the same call that takes a value, so a credential
+// cannot be issued without a record of why; sent on its own when the judge refused and no value was
+// ever taken.
 // Ref: #/components/schemas/RecordCredentialVerdictBody
 type RecordCredentialVerdictBody struct {
 	// A URL to the JSON Schema for this object.
@@ -14780,7 +14778,7 @@ func (s *RegisterPoolResponseBody) SetSchema(val OptURI) {
 func (*RegisterPoolResponseBody) registerPoolRes() {}
 
 // One resource report: what this pool is using, and what each sandbox on it is
-// using, in one delivery (ADR 0071). Every rate was computed by the pool agent
+// using, in one delivery. Every rate was computed by the pool agent
 // from cumulative counters over one tick, which is what makes the per-sandbox
 // figures rankable - all of them were measured over the same window.
 // Ref: #/components/schemas/ReportPoolResourcesBody
@@ -14829,7 +14827,7 @@ type ReportPoolResourcesNoContent struct{}
 
 func (*ReportPoolResourcesNoContent) reportPoolResourcesRes() {}
 
-// A batch of sandbox state observations from the pool agent hosting them (ADR 0017 §10).
+// A batch of sandbox state observations from the pool agent hosting them.
 // State is reported, never requested: the control plane records what the agent saw and
 // never asks it to make a sandbox running.
 // Ref: #/components/schemas/ReportPoolSandboxStatesBody
@@ -14849,7 +14847,7 @@ type ReportPoolSandboxStatesBody struct {
 	// Monotonic counter within bootId, so a delayed delta cannot overwrite a newer sync.
 	Sequence int64 `json:"sequence"`
 	// Provisioning progress on sandboxes this agent hosts: work that is underway and has
-	// no state transition to announce it, an image pull above all (ADR 0032). It is
+	// no state transition to announce it, an image pull above all. It is
 	// always a delta and is unaffected by `complete`, which describes `states` only.
 	Progress []PoolSandboxProgress `json:"progress"`
 	// The observed sandbox states.
@@ -14966,7 +14964,7 @@ type ReportSandboxAgentStatusNoContent struct{}
 func (*ReportSandboxAgentStatusNoContent) reportSandboxAgentStatusRes() {}
 
 // What an upstream made of a credential the pool's proxy swapped in, reported after the proxy's own
-// retry has had its chance (ADR 0132). It names the sentinel, never the value.
+// retry has had its chance. It names the sentinel, never the value.
 // Ref: #/components/schemas/ReportSandboxSecretRejectionBody
 type ReportSandboxSecretRejectionBody struct {
 	// A URL to the JSON Schema for this object.
@@ -15546,9 +15544,9 @@ type Sandbox struct {
 	ID string `json:"id"`
 	// Client host the sandbox was created from. Immutable after create.
 	Origin OptOrigin `json:"origin"`
-	// Where the sandbox belongs on the client that created it, and what listings filter on (ADR 0111)
-	// — the host and the primary source's root, or the host alone for a sandbox with no source. Absent
-	// for a sandbox created without an origin.
+	// Where the sandbox belongs on the client that created it, and what listings filter on — the host
+	// and the primary source's root, or the host alone for a sandbox with no source. Absent for a
+	// sandbox created without an origin.
 	OriginKey OptString `json:"originKey"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
@@ -15559,7 +15557,7 @@ type Sandbox struct {
 	// Observed sandbox runtime state.
 	Runtime SandboxRuntime `json:"runtime"`
 	// The sandbox's description and tags. The sandbox holds them, in
-	// ~/.discobox/meta.json, and this is the copy it last reported (ADR 0136): what a
+	// ~/.discobox/meta.json, and this is the copy it last reported: what a
 	// listing filters on, and what a stopped sandbox is read as. Change them with
 	// update-sandbox-meta, or by editing that file inside the sandbox. Until the
 	// sandbox has reported (metaObservedAt absent) it holds the description the
@@ -15766,9 +15764,9 @@ func (*Sandbox) updateSandboxMetaRes()         {}
 func (*Sandbox) updateSandboxRes()             {}
 func (*Sandbox) upgradeSandboxRes()            {}
 
-// The sandbox's own idle-stop policy, as it sees the sandbox at observedAt (ADR 0108). The sandbox
-// powers itself off once nothing has happened in it for the idle timeout; the next sandbox-directed
-// request starts it again.
+// The sandbox's own idle-stop policy, as it sees the sandbox at observedAt. The sandbox powers
+// itself off once nothing has happened in it for the idle timeout; the next sandbox-directed request
+// starts it again.
 // Ref: #/components/schemas/SandboxAgentAutostopStatus
 type SandboxAgentAutostopStatus struct {
 	// How long the sandbox runs with nothing happening in it before it powers itself off.
@@ -15840,8 +15838,7 @@ func (s *SandboxAgentAutostopStatus) SetLeaseUntil(val OptDateTime) {
 // Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
 // is the difference between two samples over the time between them, and the
 // component holding two samples is the pool agent, which polls every sandbox
-// in the pool on one tick and so measures them all over the same window
-// (ADR 0071).
+// in the pool on one tick and so measures them all over the same window.
 // Ref: #/components/schemas/SandboxAgentCPUUsage
 type SandboxAgentCPUUsage struct {
 	// Total CPU microseconds charged to the sandbox's cgroup since it was created.
@@ -16095,7 +16092,7 @@ type SandboxAgentListeningPort struct {
 	// this describes the bind rather than reachability. Absent for a declared port nothing observable is
 	// listening on.
 	Addresses []string `json:"addresses"`
-	// True when a service under .discobox/services declares this port (ADR 0076),
+	// True when a service under .discobox/services declares this port,
 	// which puts it on the record whether or not anything observable is listening
 	// on it. Discovery only sees sockets the sandbox user owns, so a port
 	// published by a nested container or bound by a socket-activated unit - root's
@@ -16104,9 +16101,9 @@ type SandboxAgentListeningPort struct {
 	// What the port turned out to speak, established by probing it once when it
 	// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
 	// HTTP/2-only server); unknown means not classified yet or unreachable when
-	// probed, and is retried. udp is a bound UDP socket, which is never probed
-	// (ADR 0109); it is the only value that is not a TCP port, so it is also what
-	// says which transport a forward of this port has to carry.
+	// probed, and is retried. udp is a bound UDP socket, which is never probed;
+	// it is the only value that is not a TCP port, so it is also what says which
+	// transport a forward of this port has to carry.
 	Protocol SandboxAgentListeningPortProtocol `json:"protocol"`
 	// When this port was first listed - first observed listening, or first declared. Survives a restart
 	// of whatever is behind it, as long as the port itself never went away in between.
@@ -16186,9 +16183,9 @@ func (s *SandboxAgentListeningPort) SetFirstSeenAt(val time.Time) {
 // What the port turned out to speak, established by probing it once when it
 // appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
 // HTTP/2-only server); unknown means not classified yet or unreachable when
-// probed, and is retried. udp is a bound UDP socket, which is never probed
-// (ADR 0109); it is the only value that is not a TCP port, so it is also what
-// says which transport a forward of this port has to carry.
+// probed, and is retried. udp is a bound UDP socket, which is never probed;
+// it is the only value that is not a TCP port, so it is also what says which
+// transport a forward of this port has to carry.
 type SandboxAgentListeningPortProtocol string
 
 const (
@@ -16251,7 +16248,7 @@ func (s *SandboxAgentListeningPortProtocol) UnmarshalText(data []byte) error {
 	}
 }
 
-// Two different true answers about the same sandbox (ADR 0071). currentBytes is
+// Two different true answers about the same sandbox. currentBytes is
 // what the host charges it - anonymous memory, page cache and kernel memory
 // together. virtualBytes and residentBytes are what its own processes hold,
 // summed, and so double-count every shared page: summed resident routinely
@@ -16347,7 +16344,7 @@ func (s *SandboxAgentMemoryUsage) SetResidentBytes(val int64) {
 	s.ResidentBytes = val
 }
 
-// A sandbox's meta as its meta file holds it after a write (ADR 0136).
+// A sandbox's meta as its meta file holds it after a write.
 // Ref: #/components/schemas/SandboxAgentMeta
 type SandboxAgentMeta struct {
 	// Everything the file now holds.
@@ -16473,7 +16470,7 @@ func (s *SandboxAgentProcessUsage) SetResidentBytes(val int64) {
 	s.ResidentBytes = val
 }
 
-// The sandbox's own resource consumption at one moment, as cumulative counters (ADR 0071).
+// The sandbox's own resource consumption at one moment, as cumulative counters.
 // Ref: #/components/schemas/SandboxAgentResourceUsage
 type SandboxAgentResourceUsage struct {
 	// When this sample was taken. Rates are computed against this, never against the reporting tick's
@@ -16752,19 +16749,19 @@ type SandboxAgentStatusResponse struct {
 	// just the primary. One-shot execs are not sessions and never appear.
 	Sessions []SandboxAgentSessionStatus `json:"sessions"`
 	// Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP
-	// ports they have bound (ADR 0109), plus those its services declare (ADR 0076). Unlike sources and
-	// sessions this is a snapshot from a standing watcher rather than computed per request, since
-	// classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
+	// ports they have bound, plus those its services declare. Unlike sources and sessions this is a
+	// snapshot from a standing watcher rather than computed per request, since classifying a port means
+	// connecting to it; it can be up to one watcher interval stale.
 	Ports []SandboxAgentListeningPort `json:"ports"`
-	// This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform
-	// where neither the cgroup nor procfs could be read.
+	// This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where
+	// neither the cgroup nor procfs could be read.
 	Resources OptSandboxAgentResourceUsage `json:"resources"`
-	// The sandbox's idle-stop policy (ADR 0108). Absent while the policy is not running, which in a
-	// configure-mode sandbox is always.
+	// The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode
+	// sandbox is always.
 	Autostop OptSandboxAgentAutostopStatus `json:"autostop"`
 	// The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home,
-	// which is their system of record (ADR 0136). Empty when there is no such file. Absent when the file
-	// could not be read or is not valid, in which case metaError says why.
+	// which is their system of record. Empty when there is no such file. Absent when the file could not
+	// be read or is not valid, in which case metaError says why.
 	Meta OptSandboxMeta `json:"meta"`
 	// Why the meta file could not be read. Present only when meta is absent.
 	MetaError  OptString `json:"metaError"`
@@ -17011,7 +17008,7 @@ type SandboxConfig struct {
 	// Sandbox base image.
 	Image string `json:"image"`
 	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
-	// by a restart; the pool host refuses an image that does not match it (ADR 0016).
+	// by a restart; the pool host refuses an image that does not match it.
 	ImageDigest OptString `json:"imageDigest"`
 	// Sandbox name.
 	Name string `json:"name"`
@@ -17244,9 +17241,9 @@ type SandboxCreateConfig struct {
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
 	// What the sandbox exists for: run works in it, config runs the image-owned interactive
-	// configuration command once, and judge answers judging asks and nothing else (ADR 0141). A
-	// project's own judge is created and kept converged by Discobox; one created here is an ordinary
-	// discobox that happens to be in judge mode.
+	// configuration command once, and judge answers judging asks and nothing else. A project's own judge
+	// is created and kept converged by Discobox; one created here is an ordinary discobox that happens
+	// to be in judge mode.
 	HarnessMode OptSandboxCreateConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
@@ -17255,7 +17252,7 @@ type SandboxCreateConfig struct {
 	// Model service tier the harness should use.
 	ModelServiceTier OptString `json:"modelServiceTier"`
 	// The sandbox's first description. It seeds the meta file inside the sandbox, which holds the
-	// description from then on (ADR 0136); read the current one from the sandbox's meta.
+	// description from then on; read the current one from the sandbox's meta.
 	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxCreateConfigEnv `json:"env"`
@@ -17441,9 +17438,9 @@ func (s *SandboxCreateConfigEnv) init() SandboxCreateConfigEnv {
 }
 
 // What the sandbox exists for: run works in it, config runs the image-owned interactive
-// configuration command once, and judge answers judging asks and nothing else (ADR 0141). A
-// project's own judge is created and kept converged by Discobox; one created here is an ordinary
-// discobox that happens to be in judge mode.
+// configuration command once, and judge answers judging asks and nothing else. A project's own judge
+// is created and kept converged by Discobox; one created here is an ordinary discobox that happens
+// to be in judge mode.
 type SandboxCreateConfigHarnessMode string
 
 const (
@@ -18308,7 +18305,7 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 	return m
 }
 
-// A terminal's screen as a person looking at it would read it (ADR 0137 §1).
+// A terminal's screen as a person looking at it would read it.
 // Ref: #/components/schemas/SandboxExecScreen
 type SandboxExecScreen struct {
 	Rows int64 `json:"rows"`
@@ -18730,15 +18727,14 @@ func (*SandboxExecsResponse) listSandboxExecsRes() {}
 
 // Git authorship identity for work done inside the sandbox. Both fields are
 // optional; omitting the whole object leaves the sandbox's git identity
-// unconfigured, exactly as an image ships it (ADR 0042 §3).
+// unconfigured, exactly as an image ships it.
 // This is authorship, not run identity — see SandboxUser for the account a
 // process runs as. The two are independent: a sandbox running as the image's
 // own user still commits as the caller, and a sandbox with a named run user
 // may have no git identity to give.
 // Boot seeds each key into the sandbox user's ~/.gitconfig only where git
 // resolves no value for it already, so an identity configured inside the
-// sandbox is never overwritten and each key is decided independently
-// (ADR 0042 §4).
+// sandbox is never overwritten and each key is decided independently.
 // Ref: #/components/schemas/SandboxGitIdentity
 type SandboxGitIdentity struct {
 	// Value for git's user.email inside the sandbox.
@@ -18893,7 +18889,7 @@ func (s *SandboxHarnessSecretsResponseSecrets) init() SandboxHarnessSecretsRespo
 	return m
 }
 
-// Two different true answers about the same sandbox (ADR 0071 §4). currentBytes
+// Two different true answers about the same sandbox. currentBytes
 // is what the host charges it, including page cache and kernel memory.
 // virtualBytes and residentBytes are what its own processes hold, summed, and so
 // double-count every shared page: summed resident routinely exceeds
@@ -19002,7 +18998,7 @@ func (s *SandboxMemoryConsumptionAdditional) init() SandboxMemoryConsumptionAddi
 	return m
 }
 
-// A sandbox's description and tags, as the file inside it that holds them says (ADR 0136).
+// A sandbox's description and tags, as the file inside it that holds them says.
 // Ref: #/components/schemas/SandboxMeta
 type SandboxMeta struct {
 	// What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing
@@ -19249,7 +19245,7 @@ func (*SandboxProviderInstance) getSandboxProviderInstanceRes()    {}
 func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 
 // What a provisioning sandbox is being made to do right now, named for a client that
-// is waiting to attach and wants to know what it is waiting for (ADR 0060). It is an
+// is waiting to attach and wants to know what it is waiting for. It is an
 // observation and never a state: it decides nothing, and it is history the moment the
 // phase ends. pulling_image is the phase that carries pull byte counts; the rest are
 // named work with no denominator to report.
@@ -19324,7 +19320,7 @@ func (s *SandboxProvisionPhase) UnmarshalText(data []byte) error {
 }
 
 // Work underway on a sandbox that has no state transition to announce it, reported by
-// the hosting pool-agent (ADR 0032). A client waiting to attach reads this to say what
+// the hosting pool-agent. A client waiting to attach reads this to say what
 // it is waiting for. The phase always says what is happening; pull refines the one
 // phase that can report how far in it is, because an image pull is the longest thing
 // an attach waits behind.
@@ -19604,13 +19600,13 @@ type SandboxRuntime struct {
 	// History of successful discobox apply runs that landed this sandbox's commits on a host, most
 	// recent last. Client-reported; append-only.
 	AppliedCommits OptNilAppliedSourceCommitArray `json:"appliedCommits"`
-	// Requested existence. Power state is not requested: whether a sandbox is running is
-	// observed and reported by its runtime, never asked for by the control plane
-	// (ADR 0017 §9). Archived is a third form of existence — as data, with no
-	// container — not a power state (ADR 0022 §1).
+	// Requested existence. Power state is not requested: whether a sandbox is
+	// running is observed and reported by its runtime, never asked for by the
+	// control plane. Archived is a third form of existence — as data, with no
+	// container — not a power state.
 	DesiredState SandboxRuntimeDesiredState `json:"desiredState"`
 	// User-facing lifecycle state, composed from the existence state, the runtime state,
-	// and whether the existence generations agree (ADR 0034 §5). This is the field
+	// and whether the existence generations agree. This is the field
 	// clients should read: it is the one answer to "what is this sandbox doing".
 	DisplayState OptSandboxRuntimeDisplayState `json:"displayState"`
 	// Error from the generation currently recorded in observedGeneration. Cleared by every accepted
@@ -19629,13 +19625,13 @@ type SandboxRuntime struct {
 	ObservedGeneration int64 `json:"observedGeneration"`
 	// Observed power state: what the container is doing, as reported by the pool agent
 	// hosting it, which is the only component that can see it. Absent until an agent has
-	// reported on this sandbox, which is not the same as `stopped` (ADR 0034 §2).
+	// reported on this sandbox, which is not the same as `stopped`.
 	RuntimeState OptSandboxRuntimeRuntimeState `json:"runtimeState"`
 	// When runtimeState last changed to its current value.
 	RuntimeStateChangedAt OptDateTime `json:"runtimeStateChangedAt"`
 	// Existence state, written only by the reconciler: whether the sandbox's container has
 	// been converged against its spec. `ready` means it has. What that container is doing
-	// is a separate field, runtimeState (ADR 0034 §1).
+	// is a separate field, runtimeState.
 	State SandboxRuntimeState `json:"state"`
 	// When state last changed to its current value.
 	StateChangedAt OptDateTime `json:"stateChangedAt"`
@@ -19872,10 +19868,10 @@ func (s *SandboxRuntimeAgentStatus) init() SandboxRuntimeAgentStatus {
 	return m
 }
 
-// Requested existence. Power state is not requested: whether a sandbox is running is
-// observed and reported by its runtime, never asked for by the control plane
-// (ADR 0017 §9). Archived is a third form of existence — as data, with no
-// container — not a power state (ADR 0022 §1).
+// Requested existence. Power state is not requested: whether a sandbox is
+// running is observed and reported by its runtime, never asked for by the
+// control plane. Archived is a third form of existence — as data, with no
+// container — not a power state.
 type SandboxRuntimeDesiredState string
 
 const (
@@ -19925,7 +19921,7 @@ func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
 }
 
 // User-facing lifecycle state, composed from the existence state, the runtime state,
-// and whether the existence generations agree (ADR 0034 §5). This is the field
+// and whether the existence generations agree. This is the field
 // clients should read: it is the one answer to "what is this sandbox doing".
 type SandboxRuntimeDisplayState string
 
@@ -20074,7 +20070,7 @@ func (s *SandboxRuntimeResources) init() SandboxRuntimeResources {
 
 // Observed power state: what the container is doing, as reported by the pool agent
 // hosting it, which is the only component that can see it. Absent until an agent has
-// reported on this sandbox, which is not the same as `stopped` (ADR 0034 §2).
+// reported on this sandbox, which is not the same as `stopped`.
 type SandboxRuntimeRuntimeState string
 
 const (
@@ -20132,7 +20128,7 @@ func (s *SandboxRuntimeRuntimeState) UnmarshalText(data []byte) error {
 
 // Existence state, written only by the reconciler: whether the sandbox's container has
 // been converged against its spec. `ready` means it has. What that container is doing
-// is a separate field, runtimeState (ADR 0034 §1).
+// is a separate field, runtimeState.
 type SandboxRuntimeState string
 
 const (
@@ -20273,10 +20269,10 @@ type SandboxService struct {
 	// from the ID is for.
 	FileName OptString `json:"fileName"`
 	// Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP
-	// ones when the declaration states the udp protocol (ADR 0109). A declared port is reported and
-	// forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the
-	// ports discovery cannot find, published by a nested container or bound by a socket-activated unit,
-	// since discovery only sees sockets the sandbox user owns.
+	// ones when the declaration states the udp protocol. A declared port is reported and forwarded
+	// whether or not anything observable is listening on it - it exists for the ports discovery cannot
+	// find, published by a nested container or bound by a socket-activated unit, since discovery only
+	// sees sockets the sandbox user owns.
 	Ports []int64 `json:"ports"`
 	// Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A
 	// service with a problem is listed rather than dropped, because one that silently fails to appear is
@@ -20530,9 +20526,9 @@ func (*SandboxServicesResponse) listSandboxServicesRes() {}
 
 // One sandbox's durable footprint, by the tree that holds it, walked fresh.
 // There is deliberately no cache figure: cache is one pool-shared tree keyed by
-// the target path a harness declared rather than by which sandbox wrote it
-// (ADR 0007, ADR 0050), so a per-sandbox cache size has no on-disk answer and
-// is reported once at the pool instead (ADR 0071 §5).
+// the target path a harness declared rather than by which sandbox wrote it, so a
+// per-sandbox cache size has no on-disk answer and is reported once at the pool
+// instead.
 // Ref: #/components/schemas/SandboxStorageUsage
 type SandboxStorageUsage struct {
 	SandboxId    string `json:"sandboxId"`
@@ -20639,8 +20635,8 @@ func (s *SandboxStorageUsageAdditional) init() SandboxStorageUsageAdditional {
 }
 
 // A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary
-// source under .discobox/tools (ADR 0125). The client merges these with the tools it declares itself
-// and runs the result; the sandbox only lists them.
+// source under .discobox/tools. The client merges these with the tools it declares itself and runs
+// the result; the sandbox only lists them.
 // Ref: #/components/schemas/SandboxTool
 type SandboxTool struct {
 	// Stable filename-derived tool ID, with any numeric ordering prefix and known extension removed -
@@ -21220,7 +21216,7 @@ func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 }
 
 // Run identity and group membership. Every field is optional; omitting the
-// whole object means the image's own user (ADR 0025 §5). On sandbox create
+// whole object means the image's own user. On sandbox create
 // this defines the sandbox.json default user, and on exec create it
 // overrides that user for one exec — the same fields mean the same thing at
 // both layers.
@@ -21233,7 +21229,7 @@ func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 type SandboxUser struct {
 	// Supplementary groups, each a group name or a numeric GID, resolved inside
 	// the sandbox. All-or-nothing, never merged: omit to inherit the sandbox's
-	// groups, or name any to run with exactly those (ADR 0025 §2).
+	// groups, or name any to run with exactly those.
 	AdditionalGroups []string `json:"additionalGroups"`
 	// Primary group ID to use inside the sandbox. Mutually exclusive with groupName.
 	Gid OptInt64 `json:"gid"`
@@ -21830,8 +21826,8 @@ func (s *SecretOAuth) SetTokenUrl(val OptString) {
 }
 
 // A credential an upstream refused that this control plane cannot renew, so a person has to replace
-// it (ADR 0132). Live state, not history - it is cleared when the credential is replaced or starts
-// working again.
+// it. Live state, not history - it is cleared when the credential is replaced or starts working
+// again.
 // Ref: #/components/schemas/SecretRejection
 type SecretRejection struct {
 	// A URL to the JSON Schema for this object.
@@ -22694,8 +22690,8 @@ func (s *SecretValueTokenRequestEncoding) UnmarshalText(data []byte) error {
 	}
 }
 
-// What this server calls itself (ADR 0116). A client registering this server offers the name as the
-// one to register it under; nothing else depends on it, and two servers may share one.
+// What this server calls itself. A client registering this server offers the name as the one to
+// register it under; nothing else depends on it, and two servers may share one.
 // Ref: #/components/schemas/ServerInfo
 type ServerInfo struct {
 	// A URL to the JSON Schema for this object.
@@ -22727,9 +22723,9 @@ func (s *ServerInfo) SetName(val OptString) {
 
 func (*ServerInfo) getServerInfoRes() {}
 
-// This server's own peer identity (ADR 0098), which every server has whatever it listens on (ADR
-// 0117). It is the value a client dials as `discobox://<peer-id>` when the server listens for peers,
-// and the identity a client records for it otherwise.
+// This server's own peer identity, which every server has whatever it listens on. It is the value a
+// client dials as `discobox://<peer-id>` when the server listens for peers, and the identity a
+// client records for it otherwise.
 // Ref: #/components/schemas/ServerPeer
 type ServerPeer struct {
 	// A URL to the JSON Schema for this object.
@@ -22950,7 +22946,7 @@ type UnarchiveSandboxAccepted struct{}
 func (*UnarchiveSandboxAccepted) unarchiveSandboxRes() {}
 
 // A pool the read asked and could not hear from. Its exchanges are missing from the answer, and
-// saying so is what keeps a partial trail from reading as a complete one (ADR 0130 §1).
+// saying so is what keeps a partial trail from reading as a complete one.
 // Ref: #/components/schemas/UnavailableAuditPool
 type UnavailableAuditPool struct {
 	// A URL to the JSON Schema for this object.
@@ -23352,8 +23348,8 @@ func (s *UpdateSandboxBody) SetConfig(val OptSandboxUpdateConfig) {
 	s.Config = val
 }
 
-// A change to a sandbox's meta, applied to the meta file in the sandbox (ADR 0136). What the change
-// does not name is left as it is, including what the sandbox wrote itself.
+// A change to a sandbox's meta, applied to the meta file in the sandbox. What the change does not
+// name is left as it is, including what the sandbox wrote itself.
 // Ref: #/components/schemas/UpdateSandboxMetaBody
 type UpdateSandboxMetaBody struct {
 	// Replaces the description. An empty string clears it; omit it to leave the description alone.
@@ -23527,7 +23523,7 @@ func (s *UpdateSecretBody) SetValue(val OptSecretValue) {
 // Upgrade takes no parameters. The target is whatever the sandbox's harness config
 // resolves to when the reconciler runs; accepting a client-observed digest would
 // turn a continuously-rebuilt dev image into a retry loop against a target that was
-// never wrong (ADR 0016).
+// never wrong.
 // Ref: #/components/schemas/UpgradeSandboxBody
 type UpgradeSandboxBody struct {
 	// A URL to the JSON Schema for this object.

@@ -12109,15 +12109,14 @@ type ListSandboxesParams struct {
 	// Only list sandboxes whose primary source resolves to this repository root, given as a local
 	// repository root path or a remote Git URL.
 	SourceRoot OptString `json:",omitempty,omitzero"`
-	// Only list sandboxes filed under one of these origin keys (ADR 0111); repeat the parameter for each
-	// key.
+	// Only list sandboxes filed under one of these origin keys; repeat the parameter for each key.
 	OriginKey []string `json:",omitempty"`
-	// Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors (ADR 0136)
-	// - key to require the tag with any value, key=value to require that value; repeat the parameter for
-	// each selector.
+	// Only list sandboxes whose recorded tags (meta.tags) match every one of these selectors - key to
+	// require the tag with any value, key=value to require that value; repeat the parameter for each
+	// selector.
 	Tag []string `json:",omitempty"`
-	// Also list sandboxes in judge mode, which are left out otherwise (ADR 0141) - a judge runs no
-	// terminal and holds no work, so it is not what asking what is in a project means.
+	// Also list sandboxes in judge mode, which are left out otherwise - a judge runs no terminal and
+	// holds no work, so it is not what asking what is in a project means.
 	IncludeJudge OptBool `json:",omitempty,omitzero"`
 }
 

@@ -99,7 +99,7 @@ type Config struct {
 	// platform's base directories rather than being literals, so they are
 	// described here and computed in Load.
 	DataDir   string `yaml:"dataDir" env:"DISCOBOX_DATA_DIR" doc:"Durable server state: the database, the SSH host key, the iroh endpoint key, authorized_keys and authorized_ids. Defaults to <XDG data home>/discobox." example:"/var/lib/discobox"`
-	ConfigDir string `yaml:"configDir" env:"DISCOBOX_CONFIG_DIR" doc:"Operator-edited configuration. Defaults to <XDG config home>/discobox. It cannot relocate the configuration file itself, which is found from the environment (ADR 0096 §1)." example:"/etc/discobox"`
+	ConfigDir string `yaml:"configDir" env:"DISCOBOX_CONFIG_DIR" doc:"Operator-edited configuration. Defaults to <XDG config home>/discobox. It cannot relocate the configuration file itself, which is found from the environment." example:"/etc/discobox"`
 	CacheDir  string `yaml:"cacheDir" env:"DISCOBOX_CACHE_DIR" doc:"Reproducible data that may be deleted. Defaults to <XDG cache home>/discobox." example:"/var/cache/discobox"`
 	StateDir  string `yaml:"stateDir" env:"DISCOBOX_STATE_DIR" doc:"State that should survive a restart but is not precious. Defaults to <XDG state home>/discobox." example:"/var/lib/discobox/state"`
 

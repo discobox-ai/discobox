@@ -223,12 +223,12 @@ type Project struct {
 	// It is not chosen again afterwards: a pool whose discoboxes are whole VMs
 	// of another operating system asks this pool's judge rather than running
 	// one of its own.
-	JudgePoolID string `gorm:"column:judge_pool_id;type:text;default:''" json:"-" doc:"Pool the project's judge runs in (ADR 0141)"`
+	JudgePoolID string `gorm:"column:judge_pool_id;type:text;default:''" json:"-" doc:"Pool the project's judge runs in"`
 	// JudgeSandboxID is which discobox is this project's judge. Judge mode is
 	// something anybody may create, so the mode alone does not say which one
 	// Discobox runs and keeps converged; this does, and it is written by the
 	// judge's own convergence and by nothing else.
-	JudgeSandboxID string `gorm:"column:judge_sandbox_id;type:text;default:''" json:"-" doc:"The discobox that is this project's judge (ADR 0141)"`
+	JudgeSandboxID string `gorm:"column:judge_sandbox_id;type:text;default:''" json:"-" doc:"The discobox that is this project's judge"`
 	// ArchiveRetentionSeconds is how long this project's archived sandboxes are
 	// kept before they are purged (ADR 0022 §4). Zero means the server default:
 	// a project that has never chosen gets the default as it changes, rather
@@ -595,7 +595,7 @@ type Pool struct {
 	// Conditions it is not agent-reported: the phases it names — fetching a VM
 	// image, booting the machine, pulling the pool-agent image — all happen
 	// before there is an agent to report anything.
-	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the provider driver, such as a VM image fetch or an image pull in flight (ADR 0060)"`
+	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the provider driver, such as a VM image fetch or an image pull in flight"`
 	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
 	// Resources is what this pool is consuming, reported by its agent every
 	// resource-report interval (ADR 0071, resource accounting). It is the pool's own totals plus its
@@ -605,7 +605,7 @@ type Pool struct {
 	// Overhead — the load that is not any sandbox — is `cpu.vcpus` here minus
 	// the sum of the sandboxes' own, and is derived by whoever reads it rather
 	// than stored, so it can never disagree with its operands.
-	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest pool-wide CPU, memory and disk consumption reported by the pool agent (ADR 0071). Telemetry, not a scheduling input."`
+	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest pool-wide CPU, memory and disk consumption reported by the pool agent. Telemetry, not a scheduling input."`
 	ResourcesReportedAt *time.Time      `gorm:"column:resources_reported_at" json:"resourcesReportedAt,omitempty" doc:"When Resources was reported" format:"date-time"`
 	RuntimeState        json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
 	ResourceLifecycle   `gorm:"embedded"`
@@ -684,7 +684,7 @@ type SandboxManifest struct {
 	ModelReasoningLevel  *string              `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
 	Prompt               []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
 	Image                string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
-	ImageDigest          string               `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Config digest of the image this sandbox is pinned to. Written at create and by an upgrade; the pool host rebuilds any container whose spec fingerprint does not match (ADR 0016, ADR 0017 §5)."`
+	ImageDigest          string               `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Config digest of the image this sandbox is pinned to. Written at create and by an upgrade; the pool host rebuilds any container whose spec fingerprint does not match."`
 	Env                  map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
 	Source               *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
 	SourceCodeReferences SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
@@ -739,14 +739,14 @@ type Sandbox struct {
 	// tags in the meta file inside the sandbox (ADR 0136). Until the sandbox
 	// first reports (MetaObservedAt nil) it holds the description the sandbox
 	// was created with, which is what seeds that file.
-	Description       *string `gorm:"type:text" json:"description,omitempty" doc:"The sandbox's description as it last reported it, or the one it was created with until it has (ADR 0136)"`
+	Description       *string `gorm:"type:text" json:"description,omitempty" doc:"The sandbox's description as it last reported it, or the one it was created with until it has"`
 	SandboxManifest   `gorm:"embedded"`
 	ResourceLifecycle `gorm:"embedded"`
 	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
 	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
 	SourceDeliveredAt *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
-	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
-	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source (ADR 0111). Indexed; what listings filter on."`
+	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host. Client-reported; append-only."`
+	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source. Indexed; what listings filter on."`
 	ProviderState     json.RawMessage       `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	// RepairGeneration marks one generation as a repair (ADR 0035): when it
 	// equals Generation, ensure tears the runtime down (provider Archive:
@@ -759,7 +759,7 @@ type Sandbox struct {
 	// yet. Once ObservedGeneration reaches it the repair has landed, and the
 	// ensures that still arrive on that generation are observation-driven --
 	// which must not tear anything down.
-	RepairGeneration int64      `gorm:"column:repair_generation;not null;default:0" json:"-" doc:"Generation whose ensure rebuilds from a teardown (ADR 0035)"`
+	RepairGeneration int64      `gorm:"column:repair_generation;not null;default:0" json:"-" doc:"Generation whose ensure rebuilds from a teardown"`
 	SecretState      []byte     `gorm:"column:secret_state" json:"-"`
 	LastActiveAt     *time.Time `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
 	// RuntimeState is the power axis: what the container is doing, as observed
@@ -780,7 +780,7 @@ type Sandbox struct {
 	// by the hosting pool-agent (ADR 0030) — a distinct channel from
 	// StateReportedAt above, which is pool-agent's own observed container power
 	// state (ADR 0017 §10).
-	AgentStatus           json.RawMessage `gorm:"column:agent_status;type:text" json:"agentStatus,omitempty" doc:"Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting pool-agent (ADR 0030)"`
+	AgentStatus           json.RawMessage `gorm:"column:agent_status;type:text" json:"agentStatus,omitempty" doc:"Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting pool-agent"`
 	AgentStatusObservedAt *time.Time      `gorm:"column:agent_status_observed_at" json:"agentStatusObservedAt,omitempty" doc:"When AgentStatus was observed by sandbox-agent" format:"date-time"`
 	// ProvisionProgress is work underway on a sandbox that has no state
 	// transition to announce it — an image pull, above all (ADR 0039). It is an
@@ -789,7 +789,7 @@ type Sandbox struct {
 	//
 	// It is transient by nature: a pull that finished is history, and the
 	// record keeps only the last report rather than a series.
-	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the hosting pool-agent, such as an image pull in flight (ADR 0039)"`
+	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the hosting pool-agent, such as an image pull in flight"`
 	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
 	// Resources is this sandbox's CPU, memory and disk consumption, computed by
 	// the hosting pool agent and pushed on its own channel (ADR 0071, resource accounting) — a third
@@ -799,7 +799,7 @@ type Sandbox struct {
 	// and only with those: one agent polls all of its own sandboxes on one tick
 	// and differences them over that same window, while another pool's agent
 	// ticks on its own schedule.
-	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest CPU, memory and disk consumption for this sandbox, computed by the hosting pool agent (ADR 0071)"`
+	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest CPU, memory and disk consumption for this sandbox, computed by the hosting pool agent"`
 	ResourcesObservedAt *time.Time      `gorm:"column:resources_observed_at" json:"resourcesObservedAt,omitempty" doc:"When Resources was observed" format:"date-time"`
 	// Tags are a copy of the sandbox's tags, which live with its description
 	// in the meta file inside the sandbox (ADR 0136). The copy is what a
@@ -809,7 +809,7 @@ type Sandbox struct {
 	// stamped on the sandbox's own clock, and only a newer observation replaces
 	// an older one, so a status poll read before a write cannot land after it
 	// and undo it.
-	Tags           map[string]string `gorm:"column:tags;type:text;serializer:json" json:"tags,omitempty" doc:"The sandbox's tags as it last reported them (ADR 0136)"`
+	Tags           map[string]string `gorm:"column:tags;type:text;serializer:json" json:"tags,omitempty" doc:"The sandbox's tags as it last reported them"`
 	MetaObservedAt *time.Time        `gorm:"column:meta_observed_at" json:"metaObservedAt,omitempty" doc:"When the sandbox read or wrote Description and Tags, on its own clock" format:"date-time"`
 	CreatedAt      time.Time         `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt      time.Time         `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`

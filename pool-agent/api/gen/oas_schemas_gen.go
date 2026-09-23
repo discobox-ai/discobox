@@ -2591,7 +2591,7 @@ func (s *PoolDNSAuditResponse) SetQueries(val []PoolDNSAuditQuery) {
 // PoolDeleteSandboxNoContent is response for PoolDeleteSandbox operation.
 type PoolDeleteSandboxNoContent struct{}
 
-// One HTTP exchange the pool proxy audited (ADR 0130). The URL, host and
+// One HTTP exchange the pool proxy audited. The URL, host and
 // method are what a sandbox sent; headers and bodies stay on the pool.
 // Ref: #/components/schemas/PoolHTTPAuditExchange
 type PoolHTTPAuditExchange struct {
@@ -2623,7 +2623,7 @@ type PoolHTTPAuditExchange struct {
 	SandboxId string `json:"sandboxId"`
 	// Response status; zero when no response was received.
 	Status int `json:"status"`
-	// Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3).
+	// Approved credential uses whose sentinels were swapped into this request.
 	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
@@ -2804,7 +2804,7 @@ func (s *PoolHTTPAuditExchange) SetURL(val string) {
 }
 
 // One audited HTTP exchange in full: every field the pool proxy's recorder
-// wrote about it (ADR 0130 §5). Headers are stored already redacted, so a
+// wrote about it. Headers are stored already redacted, so a
 // credential swapped into a request is never in one. The bodies and the
 // upgraded stream themselves stay on the pool and are read through the
 // artifact route.
@@ -2878,7 +2878,7 @@ type PoolHTTPAuditExchangeDetail struct {
 	StreamRecorded OptBool `json:"streamRecorded"`
 	// The upgraded stream's session.
 	StreamSessionId OptString `json:"streamSessionId"`
-	// Approved credential uses whose sentinels were swapped into this request (ADR 0130 §3).
+	// Approved credential uses whose sentinels were swapped into this request.
 	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
@@ -3607,7 +3607,7 @@ func (s *PoolSandboxListResponse) SetSandboxes(val []PoolSandboxInstance) {
 
 // Acknowledges that a power instruction was accepted. It carries no
 // state: what became of the instruction arrives on the agent's
-// sandbox state-reporting channel (ADR 0017 §§9-10).
+// sandbox state-reporting channel.
 // Ref: #/components/schemas/PoolSandboxOperationAccepted
 type PoolSandboxOperationAccepted struct {
 	// A URL to the JSON Schema for this object.
@@ -4097,7 +4097,7 @@ func (s *ResolvedHarnessConfigEnv) init() ResolvedHarnessConfigEnv {
 type SandboxConfig struct {
 	HarnessConfigId OptString `json:"harnessConfigId"`
 	// What this sandbox exists for, carried through to its sandbox configuration; judge is the project's
-	// judge (ADR 0141).
+	// judge.
 	HarnessMode         OptSandboxConfigHarnessMode `json:"harnessMode"`
 	Model               OptString                   `json:"model"`
 	ModelReasoningLevel OptString                   `json:"modelReasoningLevel"`
@@ -4107,14 +4107,14 @@ type SandboxConfig struct {
 	Git                 OptSandboxGitIdentity       `json:"git"`
 	Image               OptString                   `json:"image"`
 	// Config digest the image must resolve to. The runtime runs this image and replaces a container
-	// built from any other, so a moved tag never silently changes a running sandbox (ADR 0016).
+	// built from any other, so a moved tag never silently changes a running sandbox.
 	ImageDigest OptString `json:"imageDigest"`
 	// Whether creating the container should also bring it up. True for a sandbox being
 	// created for the first time, because asking for a sandbox means asking for one that
 	// runs. False for a rebuild after the container was lost: recovery restores what
-	// exists, and starting is left to whoever actually wants it (ADR 0017 §13).
+	// exists, and starting is left to whoever actually wants it.
 	Start OptBool `json:"start"`
-	// Digest of the whole sandbox spec this container must be built from (ADR 0017 §5).
+	// Digest of the whole sandbox spec this container must be built from.
 	// The runtime records it as a container label and rebuilds any container whose label
 	// no longer matches, so image upgrades and every other spec change are one mechanism
 	// rather than a growing list of per-field comparisons.
@@ -4308,7 +4308,7 @@ func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 }
 
 // What this sandbox exists for, carried through to its sandbox configuration; judge is the project's
-// judge (ADR 0141).
+// judge.
 type SandboxConfigHarnessMode string
 
 const (
@@ -4369,7 +4369,7 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 }
 
 // Git authorship identity, forwarded to the sandbox verbatim. Authorship, not
-// run identity: see SandboxUser for the account a process runs as (ADR 0042).
+// run identity: see SandboxUser for the account a process runs as.
 // Ref: #/components/schemas/SandboxGitIdentity
 type SandboxGitIdentity struct {
 	UserEmail OptString `json:"userEmail"`
@@ -4446,7 +4446,7 @@ func (s *SandboxUpdateConfigEnv) init() SandboxUpdateConfigEnv {
 
 // Run identity and group membership, forwarded to the sandbox unresolved.
 // Names and any field the request omitted are resolved inside the sandbox,
-// which is the only place its passwd and group files exist (ADR 0025 §4).
+// which is the only place its passwd and group files exist.
 // Ref: #/components/schemas/SandboxUser
 type SandboxUser struct {
 	// Supplementary groups, each a group name or a numeric GID.

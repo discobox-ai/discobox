@@ -2117,9 +2117,9 @@ func (s *ResourceSnapshot) SetTerminalId(val string) {
 	s.TerminalId = val
 }
 
-// The sandbox's own idle-stop policy, as it sees the sandbox at observedAt (ADR 0108). The sandbox
-// powers itself off once nothing has happened in it for the idle timeout; the next sandbox-directed
-// request starts it again.
+// The sandbox's own idle-stop policy, as it sees the sandbox at observedAt. The sandbox powers
+// itself off once nothing has happened in it for the idle timeout; the next sandbox-directed request
+// starts it again.
 // Ref: #/components/schemas/SandboxAgentAutostopStatus
 type SandboxAgentAutostopStatus struct {
 	// How long the sandbox runs with nothing happening in it before it powers itself off.
@@ -2191,8 +2191,7 @@ func (s *SandboxAgentAutostopStatus) SetStopsAt(val time.Time) {
 // Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
 // is the difference between two samples over the time between them, and the
 // component holding two samples is the pool agent, which polls every sandbox
-// in the pool on one tick and so measures them all over the same window
-// (ADR 0071).
+// in the pool on one tick and so measures them all over the same window.
 // Ref: #/components/schemas/SandboxAgentCPUUsage
 type SandboxAgentCPUUsage struct {
 	// The cgroup's own CPU quota in whole-CPU units, absent when unlimited. Sandbox containers are
@@ -2433,7 +2432,7 @@ type SandboxAgentListeningPort struct {
 	// this describes the bind rather than reachability. Absent for a declared port nothing observable is
 	// listening on.
 	Addresses []string `json:"addresses"`
-	// True when a service under .discobox/services declares this port (ADR 0076),
+	// True when a service under .discobox/services declares this port,
 	// which puts it on the record whether or not anything observable is listening
 	// on it. Discovery only sees sockets the sandbox user owns, so a port
 	// published by a nested container or bound by a socket-activated unit - root's
@@ -2449,9 +2448,9 @@ type SandboxAgentListeningPort struct {
 	// What the port turned out to speak, established by probing it once when it
 	// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
 	// HTTP/2-only server); unknown means not classified yet or unreachable when
-	// probed, and is retried. udp is a bound UDP socket, which is never probed
-	// (ADR 0109); it is the only value that is not a TCP port, so it is also what
-	// says which transport a forward of this port has to carry.
+	// probed, and is retried. udp is a bound UDP socket, which is never probed;
+	// it is the only value that is not a TCP port, so it is also what says which
+	// transport a forward of this port has to carry.
 	Protocol SandboxAgentListeningPortProtocol `json:"protocol"`
 	// Id of the declaration this port came from, absent for a port only discovery
 	// found. Stable and matchable: `ai.discobox.desktop` is the sandbox's desktop
@@ -2537,9 +2536,9 @@ func (s *SandboxAgentListeningPort) SetServiceName(val OptString) {
 // What the port turned out to speak, established by probing it once when it
 // appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
 // HTTP/2-only server); unknown means not classified yet or unreachable when
-// probed, and is retried. udp is a bound UDP socket, which is never probed
-// (ADR 0109); it is the only value that is not a TCP port, so it is also what
-// says which transport a forward of this port has to carry.
+// probed, and is retried. udp is a bound UDP socket, which is never probed;
+// it is the only value that is not a TCP port, so it is also what says which
+// transport a forward of this port has to carry.
 type SandboxAgentListeningPortProtocol string
 
 const (
@@ -2602,7 +2601,7 @@ func (s *SandboxAgentListeningPortProtocol) UnmarshalText(data []byte) error {
 	}
 }
 
-// Two different true answers about the same sandbox (ADR 0071). currentBytes is
+// Two different true answers about the same sandbox. currentBytes is
 // what the host charges it - anonymous memory, page cache and kernel memory
 // together. virtualBytes and residentBytes are what its own processes hold,
 // summed, and so double-count every shared page: summed resident routinely
@@ -2698,7 +2697,7 @@ func (s *SandboxAgentMemoryUsage) SetVirtualBytes(val int64) {
 	s.VirtualBytes = val
 }
 
-// A sandbox's meta as its meta file holds it after a write (ADR 0136).
+// A sandbox's meta as its meta file holds it after a write.
 // Ref: #/components/schemas/SandboxAgentMeta
 type SandboxAgentMeta struct {
 	// Everything the file now holds.
@@ -2822,7 +2821,7 @@ func (s *SandboxAgentProcessUsage) SetVirtualBytes(val int64) {
 	s.VirtualBytes = val
 }
 
-// The sandbox's own resource consumption at one moment, as cumulative counters (ADR 0071).
+// The sandbox's own resource consumption at one moment, as cumulative counters.
 // Ref: #/components/schemas/SandboxAgentResourceUsage
 type SandboxAgentResourceUsage struct {
 	CPU    SandboxAgentCPUUsage    `json:"cpu"`
@@ -3044,23 +3043,23 @@ func (s *SandboxAgentSessionStatus) SetTitle(val OptString) {
 
 // Ref: #/components/schemas/SandboxAgentStatusResponse
 type SandboxAgentStatusResponse struct {
-	// The sandbox's idle-stop policy (ADR 0108). Absent while the policy is not running, which in a
-	// configure-mode sandbox is always.
+	// The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode
+	// sandbox is always.
 	Autostop OptSandboxAgentAutostopStatus `json:"autostop"`
 	// The sandbox's description and tags, read from ~/.discobox/meta.json in the sandbox user's home,
-	// which is their system of record (ADR 0136). Empty when there is no such file. Absent when the file
-	// could not be read or is not valid, in which case metaError says why.
+	// which is their system of record. Empty when there is no such file. Absent when the file could not
+	// be read or is not valid, in which case metaError says why.
 	Meta OptSandboxMeta `json:"meta"`
 	// Why the meta file could not be read. Present only when meta is absent.
 	MetaError  OptString `json:"metaError"`
 	ObservedAt time.Time `json:"observedAt"`
 	// Ports the sandbox serves - the TCP ports its own processes were seen listening on and the UDP
-	// ports they have bound (ADR 0109), plus those its services declare (ADR 0076). Unlike sources and
-	// sessions this is a snapshot from a standing watcher rather than computed per request, since
-	// classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
+	// ports they have bound, plus those its services declare. Unlike sources and sessions this is a
+	// snapshot from a standing watcher rather than computed per request, since classifying a port means
+	// connecting to it; it can be up to one watcher interval stale.
 	Ports []SandboxAgentListeningPort `json:"ports"`
-	// This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform
-	// where neither the cgroup nor procfs could be read.
+	// This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where
+	// neither the cgroup nor procfs could be read.
 	Resources OptSandboxAgentResourceUsage `json:"resources"`
 	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
 	// just the primary. One-shot execs are not sessions and never appear.
@@ -3665,7 +3664,7 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 	return m
 }
 
-// A terminal's screen as a person looking at it would read it (ADR 0137 §1).
+// A terminal's screen as a person looking at it would read it.
 // Ref: #/components/schemas/SandboxExecScreen
 type SandboxExecScreen struct {
 	// Whether the program is on the alternate screen, which has no scrollback.
@@ -4079,7 +4078,7 @@ func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
 	s.Execs = val
 }
 
-// A sandbox's description and tags, as the file inside it that holds them says (ADR 0136).
+// A sandbox's description and tags, as the file inside it that holds them says.
 // Ref: #/components/schemas/SandboxMeta
 type SandboxMeta struct {
 	// What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing
@@ -4148,10 +4147,10 @@ type SandboxService struct {
 	// Sandbox-local process ID when known.
 	Pid OptInt64 `json:"pid"`
 	// Ports the declaration says this service serves, in the order it names them - TCP ports, or UDP
-	// ones when the declaration states the udp protocol (ADR 0109). A declared port is reported and
-	// forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the
-	// ports discovery cannot find, published by a nested container or bound by a socket-activated unit,
-	// since discovery only sees sockets the sandbox user owns.
+	// ones when the declaration states the udp protocol. A declared port is reported and forwarded
+	// whether or not anything observable is listening on it - it exists for the ports discovery cannot
+	// find, published by a nested container or bound by a socket-activated unit, since discovery only
+	// sees sockets the sandbox user owns.
 	Ports []int64 `json:"ports"`
 	// Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A
 	// service with a problem is listed rather than dropped, because one that silently fails to appear is
@@ -4387,8 +4386,8 @@ func (s *SandboxServicesResponse) SetServices(val []SandboxService) {
 }
 
 // A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary
-// source under .discobox/tools (ADR 0125). The client merges these with the tools it declares itself
-// and runs the result; the sandbox only lists them.
+// source under .discobox/tools. The client merges these with the tools it declares itself and runs
+// the result; the sandbox only lists them.
 // Ref: #/components/schemas/SandboxTool
 type SandboxTool struct {
 	// Arguments that follow the program or the script.
@@ -4707,7 +4706,7 @@ func (s *SandboxToolsResponse) SetTools(val []SandboxTool) {
 }
 
 // Run identity and group membership. Every field is optional; omitting the
-// whole object means the image's own user (ADR 0025 §5). On sandbox create
+// whole object means the image's own user. On sandbox create
 // this defines the sandbox.json default user, and on exec create it
 // overrides that user for one exec — the same fields mean the same thing at
 // both layers.
@@ -4720,7 +4719,7 @@ func (s *SandboxToolsResponse) SetTools(val []SandboxTool) {
 type SandboxUser struct {
 	// Supplementary groups, each a group name or a numeric GID, resolved inside
 	// the sandbox. All-or-nothing, never merged: omit to inherit the sandbox's
-	// groups, or name any to run with exactly those (ADR 0025 §2).
+	// groups, or name any to run with exactly those.
 	AdditionalGroups []string `json:"additionalGroups"`
 	// Primary group ID to use inside the sandbox. Mutually exclusive with groupName.
 	Gid OptInt64 `json:"gid"`
@@ -4809,8 +4808,8 @@ func (s StreamSandboxExecResourcesOK) Read(p []byte) (n int, err error) {
 	return s.Data.Read(p)
 }
 
-// A change to a sandbox's meta, applied to the meta file in the sandbox (ADR 0136). What the change
-// does not name is left as it is, including what the sandbox wrote itself.
+// A change to a sandbox's meta, applied to the meta file in the sandbox. What the change does not
+// name is left as it is, including what the sandbox wrote itself.
 // Ref: #/components/schemas/UpdateSandboxMetaBody
 type UpdateSandboxMetaBody struct {
 	// Replaces the description. An empty string clears it; omit it to leave the description alone.

@@ -89,8 +89,8 @@ func (UnimplementedHandler) GetSandboxExecResources(ctx context.Context, params 
 // GetSandboxExecScreen implements get-sandbox-exec-screen operation.
 //
 // The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent
-// scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR
-// 0137 §1). 409 for an exec with no terminal.
+// scrollback on request. Reading it does not attach, resize the terminal, or count as activity. 409
+// for an exec with no terminal.
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 func (UnimplementedHandler) GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (r *SandboxExecScreen, _ error) {
@@ -108,11 +108,11 @@ func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSan
 
 // JudgeSandbox implements judge-sandbox operation.
 //
-// Puts one judging job to this discobox's harness and returns what it answered (ADR 0141). Only a
-// discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
-// evidence and the approved use; the prompt, the schema, the model role and the tools restriction
-// are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and
-// one is answered at a time.
+// Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in
+// judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and
+// the approved use; the prompt, the schema, the model role and the tools restriction are the judge
+// runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is
+// answered at a time.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
 func (UnimplementedHandler) JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (r *JudgeAnswer, _ error) {
@@ -123,9 +123,9 @@ func (UnimplementedHandler) JudgeSandbox(ctx context.Context, req *JudgeJob, par
 //
 // Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),
 //
-//	recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and
+//	recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a
 //
-// read only from a running sandbox; the read never starts one.
+// running sandbox; the read never starts one.
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
 func (UnimplementedHandler) ListExecEvents(ctx context.Context, params ListExecEventsParams) (r *SandboxExecEventsResponse, _ error) {
@@ -221,8 +221,8 @@ func (UnimplementedHandler) RestartSandboxService(ctx context.Context, params Re
 // SendSandboxExecInput implements send-sandbox-exec-input operation.
 //
 // Writes text and named keys to the terminal, in order, the way typing into an attach does, and
-// counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program
-// enabled one. 409 for an exec with no terminal or closed input.
+// counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409
+// for an exec with no terminal or closed input.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
 func (UnimplementedHandler) SendSandboxExecInput(ctx context.Context, req *SandboxExecInputBody, params SendSandboxExecInputParams) (r *SandboxExecInputResult, _ error) {
@@ -272,7 +272,7 @@ func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, para
 // Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
 // and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
 // the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
-// refused rather than overwritten (ADR 0136).
+// refused rather than overwritten.
 //
 // PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
 func (UnimplementedHandler) UpdateSandboxAgentMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (r *SandboxAgentMeta, _ error) {
@@ -282,9 +282,9 @@ func (UnimplementedHandler) UpdateSandboxAgentMeta(ctx context.Context, req *Upd
 // WaitSandboxExec implements wait-sandbox-exec operation.
 //
 // Blocks until one of the given conditions holds — a named harness hook event from this terminal,
-// no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137
-// §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after,
-// so nothing recorded between two calls is missed.
+// no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes. Every
+// answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing
+// recorded between two calls is missed.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
 func (UnimplementedHandler) WaitSandboxExec(ctx context.Context, req *SandboxExecWaitBody, params WaitSandboxExecParams) (r *SandboxExecWaitResult, _ error) {

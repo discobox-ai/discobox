@@ -15,7 +15,7 @@
 # it. Copy it rather than editing it in place.
 #
 # Every setting can also be set by the environment variable named beside it,
-# and the environment wins over this file (ADR 0096).
+# and the environment wins over this file.
 #
 # A key this server does not define is a startup failure naming the key. That
 # is the point of the file: a misspelled environment variable is silently the
@@ -60,7 +60,7 @@
 
 # Operator-edited configuration. Defaults to <XDG config home>/discobox.
 # It cannot relocate the configuration file itself, which is found from
-# the environment (ADR 0096 §1).
+# the environment.
 # Example: configDir: /etc/discobox
 # Environment: DISCOBOX_CONFIG_DIR
 #configDir:

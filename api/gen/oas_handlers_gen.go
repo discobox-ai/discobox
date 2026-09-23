@@ -1296,9 +1296,9 @@ func (s *Server) handleCommitHarnessConfigConfigureRequest(args [2]string, argsE
 
 // handleCompleteSandboxApplyRequest handles complete-sandbox-apply operation.
 //
-// Record that the client successfully applied a source's sandbox commits onto a host working tree
-// (ADR 0014). Called once per source, only after the client's fast-forward has actually landed the
-// commits; appends to the sandbox's applied-commits history.
+// Record that the client successfully applied a source's sandbox commits onto a host working tree.
+// Called once per source, only after the client's fast-forward has actually landed the commits;
+// appends to the sandbox's applied-commits history.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/complete-apply
 func (s *Server) handleCompleteSandboxApplyRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -4839,7 +4839,7 @@ func (s *Server) handleDeleteSSHKeyRequest(args [2]string, argsEscaped bool, w h
 //
 // Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it
 // can be restored with unarchive until its project's archive retention runs out, after which it is
-// purged automatically. To destroy a sandbox and its data now, use purge (ADR 0022 §2).
+// purged automatically. To destroy a sandbox and its data now, use purge.
 //
 // DELETE /projects/{projectId}/sandboxes/{sandboxId}
 func (s *Server) handleDeleteSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -6023,9 +6023,9 @@ func (s *Server) handleForceJobRequest(args [2]string, argsEscaped bool, w http.
 
 // handleGetHTTPAuditRequest handles get-http-audit operation.
 //
-// One audited HTTP exchange in full, read from the pool that recorded it (ADR 0130 §5). The pool is
-// in the path because an audit record ID is only unique within it. The bodies and any upgraded
-// stream are read separately, through the recording route beside this one.
+// One audited HTTP exchange in full, read from the pool that recorded it. The pool is in the path
+// because an audit record ID is only unique within it. The bodies and any upgraded stream are read
+// separately, through the recording route beside this one.
 //
 // GET /projects/{projectId}/pools/{poolId}/audit/http/{exchangeId}
 func (s *Server) handleGetHTTPAuditRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -7636,8 +7636,8 @@ func (s *Server) handleGetSandboxExecResourcesRequest(args [3]string, argsEscape
 // handleGetSandboxExecScreenRequest handles get-sandbox-exec-screen operation.
 //
 // The terminal's screen as text, rendered from the terminal emulator its shim keeps, with recent
-// scrollback on request. Reading it does not attach, resize the terminal, or count as activity (ADR
-// 0137 §1). 409 for an exec with no terminal.
+// scrollback on request. Reading it does not attach, resize the terminal, or count as activity. 409
+// for an exec with no terminal.
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 func (s *Server) handleGetSandboxExecScreenRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -8930,10 +8930,10 @@ func (s *Server) handleGetTrustRequestRequest(args [2]string, argsEscaped bool, 
 
 // handleJudgeForPoolRequest handles judge-for-pool operation.
 //
-// Puts one judging job to the judge of the project that owns this pool (ADR 0141 §2). The control
-// plane forwards it to the pool hosting that judge, which is how a pool whose own discoboxes cannot
-// run one still judges. Anything that is not an explicit answer is no verdict — a project with no
-// judge, a judge that will not come up, a pool that cannot be reached.
+// Puts one judging job to the judge of the project that owns this pool. The control plane forwards
+// it to the pool hosting that judge, which is how a pool whose own discoboxes cannot run one still
+// judges. Anything that is not an explicit answer is no verdict — a project with no judge, a judge
+// that will not come up, a pool that cannot be reached.
 //
 // POST /api/pools/{poolId}/judge
 func (s *Server) handleJudgeForPoolRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -9091,11 +9091,11 @@ func (s *Server) handleJudgeForPoolRequest(args [1]string, argsEscaped bool, w h
 
 // handleJudgeSandboxRequest handles judge-sandbox operation.
 //
-// Puts one judging job to this discobox's harness and returns what it answered (ADR 0141). Only a
-// discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
-// evidence and the approved use; the prompt, the schema, the model role and the tools restriction
-// are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and
-// one is answered at a time.
+// Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in
+// judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and
+// the approved use; the prompt, the schema, the model role and the tools restriction are the judge
+// runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is
+// answered at a time.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
 func (s *Server) handleJudgeSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -9404,10 +9404,9 @@ func (s *Server) handleListApprovalRequestsRequest(args [1]string, argsEscaped b
 
 // handleListCredentialVerdictsRequest handles list-credential-verdicts operation.
 //
-// The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091).
-// Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes,
-// and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId
-// instead.
+// The recorded judge verdicts for agent credential uses in a project, newest first. Project-scoped
+// rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes
+// most worth asking about are often the ones already gone; filter by sandboxId instead.
 //
 // GET /projects/{projectId}/credential-verdicts
 func (s *Server) handleListCredentialVerdictsRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -9761,9 +9760,9 @@ func (s *Server) handleListDNSAuditRequest(args [1]string, argsEscaped bool, w h
 //
 // Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),
 //
-//	recorded by the sandbox agent inside the sandbox. They are sandbox-attested (ADR 0130 §2) and
+//	recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a
 //
-// read only from a running sandbox; the read never starts one.
+// running sandbox; the read never starts one.
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events
 func (s *Server) handleListExecEventsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -9935,9 +9934,9 @@ func (s *Server) handleListExecEventsRequest(args [2]string, argsEscaped bool, w
 // handleListHTTPAuditRequest handles list-http-audit operation.
 //
 // The HTTP exchanges the project's pool proxies audited, newest first, read from each pool through
-// its agent and merged (ADR 0130 §§1, 4). Project-scoped because a purged sandbox's exchanges stay
-// on its pool for the audit retention window after the record of which pool that was is gone. A pool
-// that does not answer is listed in unavailablePools rather than dropped.
+// its agent and merged. Project-scoped because a purged sandbox's exchanges stay on its pool for the
+// audit retention window after the record of which pool that was is gone. A pool that does not
+// answer is listed in unavailablePools rather than dropped.
 //
 // GET /projects/{projectId}/audit/http
 func (s *Server) handleListHTTPAuditRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -14074,8 +14073,8 @@ func (s *Server) handleMintSandboxAgentStatusTokensRequest(args [1]string, argsE
 // Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
 // request does not return success until the pool agent has confirmed the container and the sandbox's
 // data are both gone, because a 202 would be a promise the server could not later verify against a
-// row it had just deleted (ADR 0022 §3). A failure leaves the delete intent recorded, so it
-// converges in the background regardless.
+// row it had just deleted. A failure leaves the delete intent recorded, so it converges in the
+// background regardless.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/purge
 func (s *Server) handlePurgeSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -14968,15 +14967,15 @@ func (s *Server) handleRegisterPoolRequest(args [0]string, argsEscaped bool, w h
 
 // handleRepairSandboxRequest handles repair-sandbox operation.
 //
-// Rebuild the sandbox in place, on its harness config's current image, and start it (ADR 0035, ADR
-// 0062). The container and disposable runtime state are torn down, the container is recreated
-// against the durable data that was kept, and a start is issued - one operation for the
-// archive-unarchive-start sequence. The rebuild always lands on the image the harness config
-// resolves to now, so a repair is an upgrade as well; unlike upgrade, having nothing newer to move
-// to is not an error here. Recording the repair intent also clears a settled failure, so this is the
-// way out of an error state. The rebuild is driven in the request; a request that dies leaves the
-// intent recorded and the rebuild converging in the background, stopped, starting on first use.
-// Conflicts if the sandbox is archived or being deleted.
+// Rebuild the sandbox in place, on its harness config's current image, and start it. The container
+// and disposable runtime state are torn down, the container is recreated against the durable data
+// that was kept, and a start is issued - one operation for the archive-unarchive-start sequence. The
+// rebuild always lands on the image the harness config resolves to now, so a repair is an upgrade as
+// well; unlike upgrade, having nothing newer to move to is not an error here. Recording the repair
+// intent also clears a settled failure, so this is the way out of an error state. The rebuild is
+// driven in the request; a request that dies leaves the intent recorded and the rebuild converging
+// in the background, stopped, starting on first use. Conflicts if the sandbox is archived or being
+// deleted.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/repair
 func (s *Server) handleRepairSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -16375,8 +16374,8 @@ func (s *Server) handleRevokeSecretGrantRequest(args [2]string, argsEscaped bool
 // handleSendSandboxExecInputRequest handles send-sandbox-exec-input operation.
 //
 // Writes text and named keys to the terminal, in order, the way typing into an attach does, and
-// counts as access to it (ADR 0137 §2). Text is delivered as a bracketed paste when the program
-// enabled one. 409 for an exec with no terminal or closed input.
+// counts as access to it. Text is delivered as a bracketed paste when the program enabled one. 409
+// for an exec with no terminal or closed input.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
 func (s *Server) handleSendSandboxExecInputRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -19322,7 +19321,7 @@ func (s *Server) handleUpdateSandboxRequest(args [2]string, argsEscaped bool, w 
 // Applies a change to the sandbox's meta file, ~/.discobox/meta.json under the sandbox user's home,
 // and returns what it holds afterwards. The file is read, changed and replaced in one step, so what
 // the sandbox wrote itself and this change does not name is kept. A meta file that is not valid is
-// refused rather than overwritten (ADR 0136).
+// refused rather than overwritten.
 //
 // PATCH /api/projects/{projectId}/sandboxes/{sandboxId}/meta
 func (s *Server) handleUpdateSandboxAgentMetaRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -19486,9 +19485,8 @@ func (s *Server) handleUpdateSandboxAgentMetaRequest(args [2]string, argsEscaped
 //
 // Change a sandbox's description or tags. The change is carried into the sandbox and applied to its
 // meta file, ~/.discobox/meta.json, which is their system of record; the server records what the
-// sandbox then holds and returns the sandbox with it (ADR 0136). A stopped sandbox is started to
-// take the change, and a sandbox that cannot be reached is an error rather than a change recorded
-// only here.
+// sandbox then holds and returns the sandbox with it. A stopped sandbox is started to take the
+// change, and a sandbox that cannot be reached is an error rather than a change recorded only here.
 //
 // PATCH /projects/{projectId}/sandboxes/{sandboxId}/meta
 func (s *Server) handleUpdateSandboxMetaRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -20137,9 +20135,9 @@ func (s *Server) handleUpgradeSandboxRequest(args [2]string, argsEscaped bool, w
 // handleWaitSandboxExecRequest handles wait-sandbox-exec operation.
 //
 // Blocks until one of the given conditions holds — a named harness hook event from this terminal,
-// no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes (ADR 0137
-// §3). Every answer carries resumeAfter; a caller waiting longer asks again with it as until.after,
-// so nothing recorded between two calls is missed.
+// no output for a while, or the exec's exit — or the timeout, at most 60 seconds, passes. Every
+// answer carries resumeAfter; a caller waiting longer asks again with it as until.after, so nothing
+// recorded between two calls is missed.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/wait
 func (s *Server) handleWaitSandboxExecRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {

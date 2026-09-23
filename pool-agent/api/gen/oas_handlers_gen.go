@@ -37,8 +37,8 @@ func (c *codeRecorder) Unwrap() http.ResponseWriter {
 //
 // Tear the sandbox's runtime down and keep its data: remove the container and its
 // proxy material, retain the durable data/config/secrets/sources tree, and mark it
-// archived so the volume reaper leaves it alone and nothing starts it on demand
-// (ADR 0022 §6). A later create against the retained tree unarchives it.
+// archived so the volume reaper leaves it alone and nothing starts it on demand. A
+// later create against the retained tree unarchives it.
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/archive
 func (s *Server) handlePoolArchiveSandboxRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -878,7 +878,7 @@ func (s *Server) handlePoolDeleteSandboxRequest(args [3]string, argsEscaped bool
 // handlePoolGetHTTPAuditRequest handles pool-get-http-audit operation.
 //
 // One audited HTTP exchange in full, relayed from the pool proxy's loopback
-// control API (ADR 0130 §5). A request token that names a sandbox narrows
+// control API. A request token that names a sandbox narrows
 // the read to it, whatever sandboxId says, so a row belonging to another
 // sandbox is not found rather than refused.
 //
@@ -1536,7 +1536,7 @@ func (s *Server) handlePoolListDNSAuditRequest(args [2]string, argsEscaped bool,
 // handlePoolListHTTPAuditRequest handles pool-list-http-audit operation.
 //
 // The pool proxy's audit of HTTP exchanges, newest first, relayed from its
-// loopback control API with a token the agent signs (ADR 0130 §4). A
+// loopback control API with a token the agent signs. A
 // request token that names a sandbox narrows the read to it, whatever
 // sandboxId says.
 //

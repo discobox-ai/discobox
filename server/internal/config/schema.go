@@ -30,7 +30,7 @@ func Schema() (map[string]any, error) {
 	root["$schema"] = "https://json-schema.org/draft/2020-12/schema"
 	root["$id"] = SchemaID
 	root["title"] = "Discobox server configuration"
-	root["description"] = "Configuration for discobox-server. Every setting may also be set by the environment variable named in its description, which takes precedence over this file (ADR 0096)."
+	root["description"] = "Configuration for discobox-server. Every setting may also be set by the environment variable named in its description, which takes precedence over this file."
 	return root, nil
 }
 
