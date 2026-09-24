@@ -448,7 +448,9 @@ func TestValidateRefusesSupersededImageKeys(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "kernelImageDir") || !strings.Contains(err.Error(), "vmImageDir") {
 		t.Fatalf("Validate() = %v, want a refusal naming kernelImageDir and vmImageDir", err)
 	}
-	if err := Validate(json.RawMessage(`{"guestImage":""}`)); err != nil {
+	// The socket is named because the default is a named pipe on Windows,
+	// which this provider refuses for a reason of its own.
+	if err := Validate(json.RawMessage(`{"guestImage":"","controlPlaneSocket":"unix:///run/discobox/server.sock"}`)); err != nil {
 		t.Fatalf("an empty superseded key sets nothing, but Validate() = %v", err)
 	}
 }
