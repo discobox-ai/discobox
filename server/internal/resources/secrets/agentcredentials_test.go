@@ -896,13 +896,29 @@ func TestATrustNamesNoUseOfAnotherDiscoboxOrOnceItLapses(t *testing.T) {
 		t.Fatalf("ApprovedUse() for the discobox that holds the trust: %v", err)
 	}
 
-	// Lapsing is the store's to enforce, and ApprovedUse reads it with the
-	// clock rather than a time it chooses, so this is where it can be shown.
-	live, err := st.ListLiveSandboxHostTrusts(ctx, "project-1", other.ID, theirs.ExpiresAt.Add(time.Second))
-	if err != nil {
-		t.Fatalf("list host trusts: %v", err)
+	// And a trust that has lapsed names nothing. The service will not mint one
+	// already expired, so this writes it the way approval does and asks
+	// ApprovedUse itself — asserting the store's predicate instead would pin
+	// the one thing that was never at risk.
+	expired := &model.HostTrustRequest{
+		ProjectID: "project-1", SandboxID: testSandboxID, RequestedBy: "agent:" + testSandboxID,
+		Host: "old.internal:6443", Status: model.HostTrustRequestStatusPending,
+		Uses: []model.SecretUse{{Description: "read the old thing"}},
 	}
-	if len(live) != 0 {
-		t.Fatalf("a trust past its expiry is still listed live: %+v", live)
+	if err := st.CreateHostTrustRequest(ctx, expired); err != nil {
+		t.Fatalf("create trust request: %v", err)
+	}
+	lapsed := &model.HostTrust{
+		ProjectID: "project-1", SandboxID: testSandboxID, Host: "old.internal:6443",
+		Pin:       model.TrustPin{Kind: model.TrustPinKindLeafSPKI, SHA256: strings.Repeat("ab", 32)},
+		Uses:      []model.SecretUse{{UseID: "use_lapsed", Description: "read the old thing"}},
+		ExpiresAt: time.Now().Add(-time.Minute),
+		GrantedBy: "user-1", RequestID: expired.ID,
+	}
+	if err := st.ApproveHostTrustRequest(ctx, expired, lapsed); err != nil {
+		t.Fatalf("write the lapsed trust: %v", err)
+	}
+	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, "use_lapsed", "old.internal"); err == nil {
+		t.Fatal("ApprovedUse() named a use of a trust that has lapsed")
 	}
 }

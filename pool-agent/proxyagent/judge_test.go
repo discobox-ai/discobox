@@ -24,7 +24,7 @@ const (
 // plane that answers judging asks with whatever the test set.
 func judgingPool(t *testing.T, answer any, status int) (*secretResolver, func() []judgeAsk) {
 	t.Helper()
-	return judgingPoolFunc(t, func() response { return response{status: status, body: answer} })
+	return judgingPoolFunc(t, func(judgeAsk) response { return response{status: status, body: answer} })
 }
 
 // response is one answer from the stub control plane. contentType overrides
@@ -36,9 +36,10 @@ type response struct {
 	contentType string
 }
 
-// judgingPoolFunc is judgingPool with an answer the test can change between
-// requests, for the cases that are about what a pool has learned.
-func judgingPoolFunc(t *testing.T, answer func() response) (*secretResolver, func() []judgeAsk) {
+// judgingPoolFunc is judgingPool with an answer the test decides per ask,
+// for the cases that are about what a pool has learned or about which use is
+// being asked about.
+func judgingPoolFunc(t *testing.T, answer func(judgeAsk) response) (*secretResolver, func() []judgeAsk) {
 	t.Helper()
 	var mu sync.Mutex
 	var asked []judgeAsk
@@ -54,7 +55,7 @@ func judgingPoolFunc(t *testing.T, answer func() response) (*secretResolver, fun
 		mu.Lock()
 		asked = append(asked, ask)
 		mu.Unlock()
-		said := answer()
+		said := answer(ask)
 		// The content type the control plane actually uses, which is how a
 		// pool tells this server's own refusal from an ingress's.
 		if said.status >= 400 {
@@ -414,7 +415,7 @@ func TestTheJudgeSeesTheQueryAsItWasSent(t *testing.T) {
 func TestARefusedAskDoesNotDecideThatTheServerJudges(t *testing.T) {
 	var answer atomic.Value
 	answer.Store(response{status: http.StatusRequestEntityTooLarge, body: map[string]any{"detail": "too big"}})
-	resolver, _ := judgingPoolFunc(t, func() response { return answer.Load().(response) })
+	resolver, _ := judgingPoolFunc(t, func(judgeAsk) response { return answer.Load().(response) })
 
 	if verdict, err := resolver.Authorize(context.Background(), authorizeRequest()); err == nil && verdict.Allow {
 		t.Fatalf("verdict = %+v, err = %v; want the ask refused", verdict, err)
@@ -465,7 +466,7 @@ func TestAStatusFromSomethingElseSaysNothingAboutJudging(t *testing.T) {
 		{"a gateway", response{status: http.StatusBadGateway, body: "<html>bad gateway</html>", contentType: "text/html"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resolver, _ := judgingPoolFunc(t, func() response { return tc.said })
+			resolver, _ := judgingPoolFunc(t, func(judgeAsk) response { return tc.said })
 			verdict, err := resolver.Authorize(context.Background(), authorizeRequest())
 			if err != nil || !verdict.Allow {
 				t.Fatalf("verdict = %+v, err = %v; want a pool that was never told this server judges to allow", verdict, err)
@@ -554,9 +555,15 @@ func TestEitherUseRefusingRefusesTheRequest(t *testing.T) {
 		{"the credential's use refuses", "use_abc"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resolver, _ := judgingPoolFunc(t, func() response { return response{status: http.StatusOK, body: nil} })
-			// Answer per use: the named one refuses, the other allows.
-			resolver.judge.plane.client = denyingClient(t, resolver, tc.deny)
+			deny := tc.deny
+			resolver, asked := judgingPoolFunc(t, func(ask judgeAsk) response {
+				if ask.UseID == deny {
+					return response{status: http.StatusOK, body: map[string]any{
+						"allow": false, "reason": "that is not what " + deny + " is for",
+					}}
+				}
+				return response{status: http.StatusOK, body: map[string]any{"allow": true, "reason": "fine"}}
+			})
 
 			req := authorizeRequest()
 			req.TrustUseIDs = []string{"use_kube"}
@@ -565,31 +572,15 @@ func TestEitherUseRefusingRefusesTheRequest(t *testing.T) {
 				t.Fatalf("Authorize() error = %v", err)
 			}
 			if verdict.Allow {
-				t.Fatalf("verdict = %+v, want %s to have refused the request", verdict, tc.deny)
+				t.Fatalf("verdict = %+v, want %s to have refused the request", verdict, deny)
+			}
+			var sawDenied bool
+			for _, ask := range asked() {
+				sawDenied = sawDenied || ask.UseID == deny
+			}
+			if !sawDenied {
+				t.Fatalf("asked about %d uses, none of them %s", len(asked()), deny)
 			}
 		})
 	}
-}
-
-// denyingClient answers a judging ask by refusing exactly one use and allowing
-// every other.
-func denyingClient(t *testing.T, resolver *secretResolver, deny string) *http.Client {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var ask judgeAsk
-		_ = json.NewDecoder(r.Body).Decode(&ask)
-		w.Header().Set("Content-Type", "application/json")
-		if ask.UseID == deny {
-			_, _ = w.Write([]byte(`{"allow":false,"reason":"that is not what ` + deny + ` is for"}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"allow":true,"reason":"fine"}`))
-	}))
-	t.Cleanup(server.Close)
-	if err := writeJSONAtomic(resolver.contextPath, resolveContext{
-		ControlPlaneURL: server.URL, PoolID: "pool-1", Token: "token",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return server.Client()
 }
