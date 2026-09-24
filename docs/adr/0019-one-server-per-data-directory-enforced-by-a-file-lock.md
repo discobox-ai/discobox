@@ -1,6 +1,6 @@
 # 0019 — One server per data directory, enforced by an advisory file lock
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-30
 
 ## Context

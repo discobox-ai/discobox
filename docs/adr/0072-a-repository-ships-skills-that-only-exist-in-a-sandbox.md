@@ -1,6 +1,6 @@
 # 0072 — A repository ships skills that only exist inside a sandbox
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-27
 
 ## Context

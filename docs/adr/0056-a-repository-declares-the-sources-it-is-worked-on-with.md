@@ -1,6 +1,6 @@
 # 0056 — A repository declares the sources it is worked on with
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-19
 
 ## Context

@@ -1,6 +1,6 @@
 # 0055 — A delivered source settles before its sandbox runs
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-19
 
 ## Context

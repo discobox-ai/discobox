@@ -1,6 +1,6 @@
 # 0009 — Previous configure secrets are offered as prefixed sentinels
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-21
 
 ## Context

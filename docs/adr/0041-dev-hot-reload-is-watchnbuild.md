@@ -1,6 +1,6 @@
 # 0041 — Dev hot reload is watchnbuild, not Air
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-14
 
 ## Context

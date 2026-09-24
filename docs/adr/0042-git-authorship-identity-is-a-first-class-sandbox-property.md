@@ -1,6 +1,6 @@
 # 0042 — Git authorship identity is a first-class sandbox property
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-14
 
 ## Context

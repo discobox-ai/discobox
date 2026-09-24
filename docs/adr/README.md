@@ -85,11 +85,11 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0004](0004-user-namespaces-are-the-default-isolation.md) | User namespaces are the default isolation | Proposed |
 | [0005](0005-kubernetes-backend-is-a-worker-driver.md) | Kubernetes backend is a worker driver | Proposed |
 | [0006](0006-pool-is-the-runtime-host.md) | Pool is the runtime host; the worker resource is removed | Accepted |
-| [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) | Declarative sandbox volumes wired by the sandbox-agent | Proposed (§1's cache backing amended by [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)) |
+| [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) | Declarative sandbox volumes wired by the sandbox-agent | Accepted (§1's cache backing amended by [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)) |
 | [0008](0008-attach-stream-packages.md) | Attach stream is one protocol with two roles | Accepted |
-| [0009](0009-previous-configure-secrets-are-prefixed-sentinels.md) | Previous configure secrets are offered as prefixed sentinels | Proposed |
-| [0010](0010-deletes-are-hard-deletes.md) | Deletes are hard deletes | Proposed |
-| [0011](0011-oauth-secrets-refresh-server-side-on-resolve.md) | OAuth secrets refresh server-side, on resolve | Proposed |
+| [0009](0009-previous-configure-secrets-are-prefixed-sentinels.md) | Previous configure secrets are offered as prefixed sentinels | Accepted |
+| [0010](0010-deletes-are-hard-deletes.md) | Deletes are hard deletes | Accepted |
+| [0011](0011-oauth-secrets-refresh-server-side-on-resolve.md) | OAuth secrets refresh server-side, on resolve | Accepted |
 | [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) | Sandbox config is three attribute-owned layers, merged by a shared library | Accepted |
 | [0013](0013-local-linux-pools-use-libkrun-microvms.md) | Local Linux pools use libkrun microVMs with VSOCK and passt | Accepted (§1's launcher lifetime and §2's host-side artifact build superseded by [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md) §9) |
 | [0014](0014-disco-apply-pulls-sandbox-commits-via-cherry-pick.md) | `disco apply` pulls sandbox commits to the host via cherry-pick | Accepted |
@@ -97,14 +97,14 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) | Sandbox image upgrades are explicit, in-place, and digest-driven | Accepted (harnessless part superseded by [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md)) |
 | [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) | Orchestration is generation convergence; a resource has state and desired state | Accepted (§7 superseded for sandboxes by [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md)) |
 | [0018](0018-disco-diff-resolves-its-base-inside-the-sandbox.md) | `disco diff` resolves its base inside the sandbox | Superseded by [0037](0037-drop-disco-diff-and-disco-status.md) |
-| [0019](0019-one-server-per-data-directory-enforced-by-a-file-lock.md) | One server per data directory, enforced by an advisory file lock | Proposed |
+| [0019](0019-one-server-per-data-directory-enforced-by-a-file-lock.md) | One server per data directory, enforced by an advisory file lock | Accepted |
 | [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md) | Nested Docker trust is injected by a runc wrapper, not an NRI plugin | Accepted |
 | [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md) | Upgrade is a desired-state re-pin, and replacing a container preserves its power state | Accepted (§2 superseded by [0082](0082-a-stopped-sandbox-tracks-its-harness-image.md)) |
 | [0022](0022-sandbox-deletion-is-archive-then-confirmed-purge.md) | Sandbox deletion is archive, then confirmed purge | Accepted |
 | [0023](0023-projects-are-created-by-copy-and-deleted-only-when-empty.md) | A project is created by copying an existing one, and deleted only when empty | Accepted |
 | [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) | SSH is a control-plane ingress onto execs, and forwarded TCP terminates inside the sandbox | Accepted (§1's TCP listener superseded by [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md)) |
 | [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md) | The sandbox user is one contract, resolved inside the sandbox | Accepted (§6 launch-time re-lookup superseded by [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md); §5's name-only sandbox create by [0141](0141-a-sandbox-account-is-created-with-an-id-the-guest-gives-accounts.md)) |
-| [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Proposed (§1's bind source superseded by [0093](0093-a-local-sources-origin-is-its-git-directory.md); §§1-2 superseded by [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §4, which serves the origin over Git HTTP) |
+| [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Accepted (§1's bind source superseded by [0093](0093-a-local-sources-origin-is-its-git-directory.md); §§1-2 superseded by [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §4, which serves the origin over Git HTTP) |
 | [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md) | Harness terminals run as a shell's typed-in job, not as the exec's own process | Accepted |
 | [0028](0028-exec-log-transcripts-persist-as-compressed-sqlite-rows.md) | Exec/terminal transcripts persist as compressed sqlite rows, not tmpfs jsonl files | Accepted |
 | [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md) | Sandboxes have no per-sandbox resource requests | Accepted |
@@ -119,8 +119,8 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0038](0038-terminal-identity-is-the-exec-id-terminals-revive-in-place.md) | Terminal identity is the exec id, and terminals revive in place | Accepted |
 | [0039](0039-attach-waits-for-readiness-at-every-tier.md) | Attach waits for readiness at every tier | Accepted (progress-frame transport superseded by [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)) |
 | [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted (§2's `LastTagTime`-on-build premise superseded by [0141](0141-an-arrival-no-later-than-the-build-is-an-unknown-age.md)) |
-| [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Proposed |
-| [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
+| [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Accepted |
+| [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Accepted |
 | [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted (§2 superseded by [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)) |
 | [0044](0044-builds-run-on-a-pool-shared-buildkit.md) | Builds run on a pool-shared BuildKit, bound to a sandbox by a mediator | Accepted |
 | [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) | A directory with no repository is delivered by push | Accepted (§2's "nobody is asked" superseded by [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md); its apply consequence by [0139](0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md)) |
@@ -133,8 +133,8 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0052](0052-iroh-is-an-optional-endpoint-scheme.md) | iroh is an optional endpoint scheme, and each hop names its endpoint package | Accepted (§4's "build the remaining targets now" superseded by [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md); §5's file-only enrollment by [0095](0095-an-enrolled-iroh-id-is-a-managed-resource.md); §§5-6's ID and address spellings superseded by [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md); §6's key loaded only for a bound endpoint superseded by [0117](0117-every-server-has-a-peer-id.md)) |
 | [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md) | iroh is a development-only capability until it builds for macOS and Windows | Superseded by [0067](0067-iroh-ships-in-every-build.md) |
 | [0054](0054-the-workspaces-columns-are-terminals-and-shells.md) | The workspace's two columns are terminals and shells, as the server records them | Accepted |
-| [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md) | A delivered source settles before its sandbox runs | Proposed |
-| [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md) | A repository declares the sources it is worked on with | Proposed |
+| [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md) | A delivered source settles before its sandbox runs | Accepted |
+| [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md) | A repository declares the sources it is worked on with | Accepted |
 | [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md) | SSH reaches the server only through the transport the API answers on | Accepted (supersedes [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) §1's TCP listener) |
 | [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) | A push-delivered source has a pool-side origin the client re-pushes into | Accepted |
 | [0059](0059-a-rejected-swapped-credential-is-retried-once.md) | A rejected swapped credential is retried once, and the delivered file is restored | Accepted |
@@ -150,7 +150,7 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0069](0069-staging-pool-images-is-a-condition.md) | Staging a pool's images is a condition, not a state | Accepted |
 | [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) | Services are declared execs the sandbox starts for you | Accepted |
 | [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted (§6, §7's Go-constant defaults and §11 superseded by [0125](0125-tools-are-declared-in-files-the-way-services-are.md); §3 superseded by [0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md)) |
-| [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md) | A repository ships skills that only exist inside a sandbox | Proposed |
+| [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md) | A repository ships skills that only exist inside a sandbox | Accepted |
 | [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) | A directory with no repository is copied only when asked | Accepted (§2 and §3's outcome superseded by [0077](0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md)) |
 | [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) | A CLI in WSL writes the ssh_config Windows reads | Accepted (§2 and §3 amended by [0078](0078-the-wsl-proxycommand-is-quoted-for-sh.md)) |
 | [0075](0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md) | The nix store is a pool-shared cache, seeded from the image on first use | Accepted (§5's stamps superseded by [0085](0085-the-nix-seed-stamp-names-the-store-that-seeded-it.md); §2's same-user premise dropped, `/nix` declared shared, by [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)) |

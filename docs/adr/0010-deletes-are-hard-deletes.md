@@ -1,6 +1,6 @@
 # 0010 — Deletes are hard deletes
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-21
 
 ## Context

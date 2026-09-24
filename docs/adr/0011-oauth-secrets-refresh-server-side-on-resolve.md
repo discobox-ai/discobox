@@ -1,6 +1,6 @@
 # 0011 — OAuth secrets refresh server-side, on resolve
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-22
 
 ## Context
