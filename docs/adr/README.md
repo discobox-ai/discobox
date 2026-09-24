@@ -203,3 +203,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0146](0146-a-hook-keeps-the-name-its-harness-used-and-gains-a-canonical-one.md) | A hook keeps the name its harness used, and gains a canonical one | Accepted |
 | [0147](0147-opencode-publishes-its-lifecycle-through-an-image-owned-plugin.md) | opencode publishes its lifecycle through an image-owned plugin | Accepted |
 | [0148](0148-a-sandbox-resolves-names-through-its-pool-over-mtls.md) | A sandbox resolves names through its pool, over mTLS | Accepted |
+| [0149](0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md) | A host's certificate is trusted for one sandbox when a person pins it | Accepted |
