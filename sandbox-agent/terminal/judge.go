@@ -29,10 +29,13 @@ const judgePrompt = "discobox-prompt"
 // nothing carried over from the last: no conversation, no history, and no
 // state between two requests that happen to be judged by the same runtime.
 //
-// One at a time. The runtime is one sandbox running one model account, and a
-// second concurrent run would queue inside the wrapper anyway, where it cannot
-// be bounded or canceled. A caller that finds it busy is told so and decides —
-// the request it is holding has its own deadline.
+// Asks are answered in parallel. Each run is its own process in its own
+// process group, sharing nothing with any other, and every discobox in the
+// project is judged here — so one at a time would make every credential-bearing
+// request in the project wait on every other. What is bounded is how many run
+// at once (maxJudgingRuns), for the memory each harness CLI takes. An ask past
+// that waits for a run to finish, for as long as its caller's deadline allows:
+// the caller is holding a request open, and its deadline is what decides.
 func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error) {
 	if s.harnessMode != config.HarnessModeJudge {
 		return judge.Answer{}, errors.New("this discobox is not a judge")
@@ -44,8 +47,8 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 	select {
 	case s.judging <- struct{}{}:
 		defer func() { <-s.judging }()
-	default:
-		return judge.Answer{}, errBusy
+	case <-ctx.Done():
+		return judge.Answer{}, fmt.Errorf("%w: %w", errBusy, ctx.Err())
 	}
 	// Whichever is sooner: the caller's deadline, which covers the whole
 	// exchange it is conducting, or this ceiling, which is here for a caller
@@ -98,10 +101,15 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 	return answer, nil
 }
 
-// errBusy is a judge already answering. It is a refusal to start rather than a
-// queue, so the caller's own deadline decides what happens next.
-var errBusy = errors.New("the judge is already answering")
+// maxJudgingRuns is how many asks a judge answers at once. A run is a harness
+// CLI, and this is what bounds the memory they take together; the model
+// account's own rate limit is the other bound, and a run it refuses fails
+// like any other.
+const maxJudgingRuns = 16
 
-// Busy reports whether an error is a judge that was already answering, which a
-// caller may retry rather than treat as a refusal.
+// errBusy is an ask whose caller gave up while every run was in use.
+var errBusy = errors.New("every judging run was in use until the caller's deadline")
+
+// Busy reports whether an error is an ask that never started because every
+// run was in use, which a caller may retry rather than treat as a refusal.
 func Busy(err error) bool { return errors.Is(err, errBusy) }

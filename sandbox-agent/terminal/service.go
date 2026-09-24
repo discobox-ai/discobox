@@ -112,8 +112,9 @@ type Service struct {
 	// run user's own home stands in for it everywhere else (resolveHomeDir).
 	homeDirectory string
 	harnessMode   string
-	// judging is the one judging run a judge allows at a time (judge.go). It
-	// is made whatever the mode is; in every other mode nothing takes it.
+	// judging holds a slot per judging run under way, up to maxJudgingRuns
+	// (judge.go). It is made whatever the mode is; in every other mode nothing
+	// takes it.
 	judging      chan struct{}
 	bootPrompt   []string
 	awaitSources func(context.Context) error
@@ -170,7 +171,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		primaryState:  cfg.PrimaryState,
 		homeDirectory: strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
 		harnessMode:   strings.TrimSpace(cfg.HarnessMode),
-		judging:       make(chan struct{}, 1),
+		judging:       make(chan struct{}, maxJudgingRuns),
 		bootPrompt:    append([]string(nil), cfg.Prompt...),
 		awaitSources:  cfg.AwaitSources,
 		installing:    map[string]struct{}{},
@@ -1029,21 +1030,38 @@ func writeHarnessFile(path, content string, createOnly bool, uid, gid *int64) er
 			return err
 		}
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if uid != nil && gid != nil {
+		for _, created := range createdDirs {
+			if err := os.Chown(created, int(*uid), int(*gid)); err != nil {
+				return err
+			}
+		}
+	}
+	// Written beside the file and renamed over it, so whatever reads it sees
+	// the old file or the new one and never half of one. A harness reads these
+	// as it starts, and a judge starts one harness run per ask, in parallel —
+	// each of which installs these files again first.
+	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(path, 0o644); err != nil {
+	defer func() { _ = os.Remove(temp.Name()) }()
+	if _, err := temp.WriteString(content); err != nil {
+		_ = temp.Close()
 		return err
 	}
-	if uid == nil || gid == nil {
-		return nil
+	if err := temp.Close(); err != nil {
+		return err
 	}
-	for _, created := range createdDirs {
-		if err := os.Chown(created, int(*uid), int(*gid)); err != nil {
+	if err := os.Chmod(temp.Name(), 0o644); err != nil {
+		return err
+	}
+	if uid != nil && gid != nil {
+		if err := os.Chown(temp.Name(), int(*uid), int(*gid)); err != nil {
 			return err
 		}
 	}
-	return os.Chown(path, int(*uid), int(*gid))
+	return os.Rename(temp.Name(), path)
 }
 
 // mkdirAllTracked behaves like os.MkdirAll but returns the directories it

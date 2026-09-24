@@ -343,8 +343,9 @@ func judgeError(response *http.Response) error {
 	}
 	status := http.StatusBadGateway
 	if response.StatusCode == http.StatusTooManyRequests {
-		// The judge is already answering. That is not a verdict either, but it
-		// is worth telling apart from one that cannot answer at all.
+		// Every judging run was in use until the deadline. That is not a
+		// verdict either, but it is worth telling apart from a judge that
+		// cannot answer at all.
 		status = http.StatusTooManyRequests
 	}
 	return apperrors.NewStatusError(status, said)

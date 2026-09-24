@@ -189,14 +189,40 @@ func TestJudgeRefusesWhenTheWrapperFails(t *testing.T) {
 	}
 }
 
-// One at a time: a second ask while the first is still being answered is told
-// so, rather than queued behind it, because the caller is holding a request
-// open and its deadline is what decides.
-func TestJudgeAnswersOneAtATime(t *testing.T) {
+// Asks are answered side by side: every discobox in the project is judged
+// here, and one ask waiting on another is a request waiting on a stranger's.
+// Each run takes a second, so four in turn would take four.
+func TestJudgeAnswersAsksInParallel(t *testing.T) {
+	svc := newJudgeService(t, config.HarnessModeJudge,
+		"#!/bin/sh\nsleep 1\nprintf '{\"allow\":true,\"reason\":\"fine\"}\\n'\n")
+
+	start := time.Now()
+	errs := make(chan error, 4)
+	for range 4 {
+		go func() {
+			_, err := svc.Judge(context.Background(), requestJob())
+			errs <- err
+		}()
+	}
+	for range 4 {
+		if err := <-errs; err != nil {
+			t.Fatalf("Judge() error = %v", err)
+		}
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("four asks took %s, want them answered together", took)
+	}
+}
+
+// Past the bound, an ask waits for a run to finish rather than being turned
+// away, and gives up only when its caller's deadline does — which is Busy, a
+// caller's to retry, and not a refusal.
+func TestAnAskPastTheBoundWaitsForARun(t *testing.T) {
 	dir := t.TempDir()
 	started := filepath.Join(dir, "started")
 	svc := newJudgeService(t, config.HarnessModeJudge,
-		"#!/bin/sh\ntouch "+started+"\nsleep 2\nprintf '{\"allow\":true,\"reason\":\"fine\"}\\n'\n")
+		"#!/bin/sh\ntouch "+started+"\nsleep 1\nprintf '{\"allow\":true,\"reason\":\"fine\"}\\n'\n")
+	svc.judging = make(chan struct{}, 1)
 
 	done := make(chan struct{})
 	go func() {
@@ -204,7 +230,6 @@ func TestJudgeAnswersOneAtATime(t *testing.T) {
 		_, _ = svc.Judge(context.Background(), requestJob())
 	}()
 	t.Cleanup(func() { <-done })
-
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(started); err == nil {
@@ -215,7 +240,14 @@ func TestJudgeAnswersOneAtATime(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := svc.Judge(context.Background(), requestJob()); !Busy(err) {
-		t.Fatalf("second ask error = %v, want it told the judge is already answering", err)
+
+	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := svc.Judge(short, requestJob()); !Busy(err) {
+		t.Fatalf("an ask whose deadline passed while waiting: error = %v, want Busy", err)
+	}
+	answer, err := svc.Judge(context.Background(), requestJob())
+	if err != nil || !answer.Allow {
+		t.Fatalf("an ask that could wait = %+v, %v; want it answered once the run finished", answer, err)
 	}
 }

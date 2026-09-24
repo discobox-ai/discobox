@@ -559,9 +559,15 @@ development images without a registry.
   schema and `--no-tools` this process supplies, so a caller cannot ask a
   kinder question than Discobox asks; the wrapper is resolved on the harness
   environment's PATH, and the answer is decoded strictly, so anything that is
-  not a verdict is an error rather than an allow. Asks are answered one at a
-  time and a second is told the judge is busy rather than queued, because the
-  caller is holding a request open. The route has its own scope (`judge:run`),
+  not a verdict is an error rather than an allow. Asks are answered in
+  parallel: each is its own process group sharing nothing with another, and
+  every discobox in the project is judged here, so one at a time would make
+  each credential-bearing request wait on every other. At most
+  `maxJudgingRuns` run at once, for the memory each harness CLI takes; an ask
+  past that waits for its caller's deadline, and one still waiting then is a
+  429 (busy) rather than a verdict. Harness files are installed before every
+  run, so they are written by rename and a starting run never reads half of
+  one. The route has its own scope (`judge:run`),
   which no token for a discobox's own work carries, and a discobox that is not
   a judge refuses the ask outright.
 - Every sandbox has a default terminal: on sandbox start the harness always

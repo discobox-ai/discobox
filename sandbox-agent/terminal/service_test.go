@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
@@ -95,10 +96,14 @@ func (f *fakeUnits) Watch(ctx context.Context) (<-chan string, error) {
 }
 
 type noopInstaller struct {
+	// mu guards calls: a judge installs before each of its parallel runs.
+	mu    sync.Mutex
 	calls []config.Harness
 }
 
 func (n *noopInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, _ map[string]string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	n.calls = append(n.calls, harness)
 	return nil
 }

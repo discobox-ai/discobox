@@ -354,9 +354,14 @@ func MergeEnv(base, override map[string]string) map[string]string {
 // container's env, and it holds just as well for an exec's — the nested-Docker
 // bridge and any user-created networks appear only after boot, so an exec
 // started later must see them too.
-func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string {
-	if env == nil {
-		env = map[string]string{}
+//
+// It returns a new map and never writes to the one it was given: callers pass
+// the manager's and the terminal service's own base environment, which
+// concurrent execs and judging runs read at the same time.
+func EnvWithRuntimeDefaults(base map[string]string, user *User) map[string]string {
+	env := make(map[string]string, len(base)+8)
+	for key, value := range base {
+		env[key] = value
 	}
 	// The image's env may still carry %HOME%: the pool agent expands it only
 	// when the request stated a home outright, because the account otherwise
