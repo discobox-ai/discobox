@@ -2,10 +2,10 @@
 // EnvironmentFile, for units systemd starts directly rather than sandbox-agent
 // spawning them.
 //
-// Two consumers, and the rule is the same for both: a socket-activated daemon
-// inherits none of the sandbox's proxy env, and the traffic that matters is
-// its own rather than a container's, so no container-level injection (the runc
-// wrapper of docs/adr/0020) can reach it either.
+// Three consumers, and the rule is the same for all of them: a unit systemd
+// starts inherits none of the sandbox's proxy env, and the traffic that
+// matters is its own rather than a container's, so no container-level
+// injection (the runc wrapper of docs/adr/0020) can reach it either.
 //
 //   - dockerd resolves and pulls images itself, before any container exists.
 //     Without this file every image pull inside a sandbox fails to resolve its
@@ -16,6 +16,10 @@
 //     user's shell has the proxy env; the process doing the downloading does
 //     not, and `nix develop` fails with "Could not resolve host:
 //     cache.nixos.org".
+//   - the Xfce session (xfce4-session@.service) is started by X coming up, and
+//     every program launched from the desktop inherits its environment.
+//     Without the proxy env, Chromium from the desktop icon connects directly
+//     and gets DNS_PROBE_FINISHED_NO_INTERNET.
 //
 // The MITM bundle rides the same file (SSL_CERT_FILE), which is what nix needs
 // on top of the proxy URL — it reads NIX_SSL_CERT_FILE, then SSL_CERT_FILE,
@@ -101,9 +105,9 @@ func Render(sandboxJSONPath string) ([]byte, error) {
 // WriteFile renders sandboxJSONPath's proxy-trust env to outPath. When Render
 // produces nothing (no proxy-trust vars declared), any stale file at outPath
 // from a previous boot is removed rather than left behind, and outPath's
-// absence is not an error: the EnvironmentFile in each consuming drop-in
-// (docker.service.d/proxy.conf, nix-daemon.service.d/proxy.conf) is optional
-// (a leading `-`) for exactly this case.
+// absence is not an error: the EnvironmentFile in each consumer
+// (docker.service.d/proxy.conf, nix-daemon.service.d/proxy.conf,
+// xfce4-session@.service) is optional (a leading `-`) for exactly this case.
 func WriteFile(sandboxJSONPath, outPath string) error {
 	content, err := Render(sandboxJSONPath)
 	if err != nil {

@@ -1,5 +1,5 @@
 [Unit]
-Description=Discobox Render Socket-Activated Daemons' Proxy-Trust Environment
+Description=Discobox Render the Proxy-Trust Environment for Units systemd Starts
 Documentation=https://github.com/discobox-ai/discobox
 DefaultDependencies=no
 After=local-fs.target
@@ -10,10 +10,11 @@ ConditionPathExists=/etc/discobox/sandbox.json
 Type=oneshot
 RemainAfterExit=yes
 # Derives /run/discobox/proxy/proxy.env from sandbox.json's proxy-trust env
-# (proxyenv package). Every daemon systemd starts from a socket rather than
-# sandbox-agent spawning it reads that file as its EnvironmentFile —
-# docker.service.d/proxy.conf and nix-daemon.service.d/proxy.conf — because
-# socket activation inherits none of the sandbox's proxy env any other way.
+# (proxyenv package). Units that systemd starts, rather than sandbox-agent,
+# read that file as their EnvironmentFile — docker.service.d/proxy.conf,
+# nix-daemon.service.d/proxy.conf and the Xfce session in
+# xfce4-session@.service — because they inherit none of the sandbox's proxy
+# env any other way.
 # Run as a unit of its own, rather than folded into the PID-1 boot flow, so it
 # can be re-run (`systemctl restart`) without restarting the sandbox.
 ExecStart=/usr/local/bin/discobox-sandbox-agent render-proxy-env

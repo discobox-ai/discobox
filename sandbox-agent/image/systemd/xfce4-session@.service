@@ -9,6 +9,9 @@ After=xvfb.service discobox-desktop-bus.service
 # written it. Ordering only, not Requires: a boot where the viewer fails still
 # gets a desktop, at the scale boot wrote.
 After=discobox-desktop.service
+# discobox-render-proxy-env.service writes the proxy environment file below from
+# sandbox.json, so it has to have run first.
+After=discobox-render-proxy-env.service
 PartOf=xvfb.service
 
 [Service]
@@ -16,6 +19,15 @@ Type=simple
 User=%i
 Environment=DISPLAY=:0
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/desktop/bus
+# Proxy and trust settings for everything launched from the desktop. systemd
+# starts this unit, not sandbox-agent, so none of the environment a sandbox
+# terminal gets reaches it. Without these, Chromium from the desktop icon connects
+# directly, and the sandbox has no route out except through the proxy
+# (DNS_PROBE_FINISHED_NO_INTERNET). This is the same file dockerd and nix-daemon
+# read; see the proxyenv package. `-`: a sandbox with no MITM proxy has none.
+# Its NO_PROXY is resolved at boot, so a network created later (the default
+# Docker bridge included) is sent to the proxy from the desktop.
+EnvironmentFile=-/run/discobox/proxy/proxy.env
 # The server has to agree with scale.env before anything in the session
 # starts: that file is only the launch-time half of the scale, and the density,
 # cursor size and window decorations it goes with are otherwise applied only by
