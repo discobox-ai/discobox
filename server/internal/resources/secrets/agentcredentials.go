@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -441,8 +442,43 @@ func (s *Service) ApprovedUse(ctx context.Context, poolID, sandboxID, useID, hos
 			Host:       credential.Grant.Host,
 		}, nil
 	}
+	// Not a credential's use. It may still be a host trust's: a person who
+	// pins a host approves uses for it the same way, and every request to that
+	// host is judged against them whether or not it carries a credential
+	// (ADR 0149 §5). Those uses live on the trust rather than on a grant,
+	// which is why this is a second lookup rather than a wider first one.
+	if use, ok, err := s.trustedUse(ctx, sandbox, useID, host); err != nil || ok {
+		return use, err
+	}
 	// Revoked, expired, edited away, or never this discobox's. They are one
 	// answer here on purpose: which it was is the approval trail's to say, and
 	// saying it back to a pool would describe grants it is not party to.
 	return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden, "no live approved use by that ID")
+}
+
+// trustedUse names a use a host trust was granted for. It reports ok only for
+// a use of a live trust of this discobox, for the host the request is going
+// to; a trust is pinned to one endpoint, so the host must be that endpoint's
+// and not merely beneath it the way a credential's grant allows.
+//
+// There is no credential to name: what was approved is reaching the host at
+// all, so the judge is asked about the use and the destination alone.
+func (s *Service) trustedUse(ctx context.Context, sandbox *model.Sandbox, useID, host string) (services.ApprovedUse, bool, error) {
+	trusts, err := s.store.ListLiveSandboxHostTrusts(ctx, sandbox.ProjectID, sandbox.ID, time.Now().UTC())
+	if err != nil {
+		return services.ApprovedUse{}, false, err
+	}
+	for _, trust := range trusts {
+		for _, use := range trust.Uses {
+			if use.UseID != useID || useID == "" {
+				continue
+			}
+			if trusted := hostscope.Normalize(trust.Host); trusted != host {
+				return services.ApprovedUse{}, false, apperrors.NewStatusError(http.StatusForbidden,
+					fmt.Sprintf("that use is not approved for %s", host))
+			}
+			return services.ApprovedUse{Purpose: use.Description, Host: hostscope.Normalize(trust.Host)}, true, nil
+		}
+	}
+	return services.ApprovedUse{}, false, nil
 }

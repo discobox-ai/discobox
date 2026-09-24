@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -806,5 +807,54 @@ func TestApprovedUseCoversTheDiscoboxAPIHost(t *testing.T) {
 	}
 	if use.Purpose != "create a discobox to run the tests in" {
 		t.Fatalf("purpose = %q, want the approved sentence", use.Purpose)
+	}
+}
+
+// A host trust's uses are approved uses too. Every request to a pinned host is
+// judged against them, so the judge has to be able to name one — and they live
+// on the trust rather than on a credential's grant, which is why naming one is
+// a second lookup. Without it every request to every pinned host is refused
+// for a use nobody can find.
+func TestApprovedUseNamesAHostTrustsUse(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	// Through the path a person's approval takes, so the row is the one the
+	// real flow writes.
+	req := &model.HostTrustRequest{
+		ProjectID: "project-1", SandboxID: testSandboxID, RequestedBy: "agent:" + testSandboxID,
+		Host: "kube.internal:6443", Status: model.HostTrustRequestStatusPending,
+		Uses: []model.SecretUse{{Description: "read the pods in the prod namespace"}},
+	}
+	if err := st.CreateHostTrustRequest(ctx, req); err != nil {
+		t.Fatalf("create trust request: %v", err)
+	}
+	trust := &model.HostTrust{
+		ProjectID: "project-1",
+		SandboxID: testSandboxID,
+		Host:      "kube.internal:6443",
+		Pin:       model.TrustPin{Kind: "leaf-spki", SHA256: strings.Repeat("ab", 32)},
+		Uses:      []model.SecretUse{{UseID: "use_kube", Description: "read the pods in the prod namespace"}},
+		ExpiresAt: time.Now().Add(time.Hour),
+		GrantedBy: "user-1",
+		RequestID: req.ID,
+	}
+	if err := st.ApproveHostTrustRequest(ctx, req, trust); err != nil {
+		t.Fatalf("approve trust request: %v", err)
+	}
+
+	use, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, "use_kube", "kube.internal")
+	if err != nil {
+		t.Fatalf("ApprovedUse() error = %v", err)
+	}
+	if use.Purpose != "read the pods in the prod namespace" {
+		t.Fatalf("purpose = %q, want the sentence the trust was approved with", use.Purpose)
+	}
+	if use.Host != "kube.internal" {
+		t.Fatalf("host = %q, want the pinned endpoint's host", use.Host)
+	}
+	// A pin is for one endpoint, so it does not reach beneath it the way a
+	// credential's grant does.
+	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, "use_kube", "api.kube.internal"); err == nil {
+		t.Fatal("ApprovedUse() named a trust's use for a host it is not pinned to")
 	}
 }

@@ -40,7 +40,7 @@ type httpProxy struct {
 	reports *credentialReporter
 	mu      sync.RWMutex
 	ids     map[string]clientIdentity
-	// trusts is the pins in force (ADR 0150), replaced whole by ApplyConfig.
+	// trusts is the pins in force (ADR 0149), replaced whole by ApplyConfig.
 	trusts *trustTable
 }
 
@@ -350,6 +350,7 @@ func (h *httpProxy) setupHandlers() {
 				span.End()
 				return req, refused
 			}
+			meta.authorized = true
 		}
 		h.bufferRetryBody(req, meta)
 		h.captureRequestBody(req, meta)
@@ -802,13 +803,18 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	// would otherwise go upstream under a verdict that never named it.
 	previous := h.rebuiltRequest(req, meta)
 	matched := swapper.Match(previous, meta.client.ID)
+	var retryTrustUseIDs []string
+	if meta.trust != nil {
+		retryTrustUseIDs = meta.trust.UseIDs
+	}
 	verdict, err := swapper.Authorize(meta.ctx, secrets.AuthorizeRequest{
-		ClientID:  meta.client.ID,
-		Sentinels: matched,
-		Method:    req.Method,
-		Host:      req.Host,
-		URL:       meta.url(req),
-		Header:    meta.preSwapHeader,
+		ClientID:    meta.client.ID,
+		Sentinels:   matched,
+		TrustUseIDs: retryTrustUseIDs,
+		Method:      req.Method,
+		Host:        req.Host,
+		URL:         meta.url(req),
+		Header:      meta.preSwapHeader,
 	})
 	if err != nil || !verdict.Allow {
 		// Not an answer to the sandbox: the request has already been sent and

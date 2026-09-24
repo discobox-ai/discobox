@@ -435,12 +435,27 @@ func refusalFrom(answer judgeAnswer, useID string) (proxy.SecretVerdict, bool) {
 	return proxy.SecretVerdict{Reason: reason, UseIDs: []string{useID}}, false
 }
 
-// uses names the approved uses a request's sentinels are being spent under,
-// through the same binding resolution makes: this sandbox's activation, live,
-// for a host the use covers.
+// uses names every approved use this request has to pass: the ones its
+// sentinels are being spent under, bound the way resolution binds them — this
+// sandbox's activation, live, for a host the use covers — and the ones the
+// destination was pinned for, which the proxy hands down from the trust table
+// rather than the request carrying them (ADR 0149 §5).
+//
+// A request to a pinned host has to be asked about whether or not it spends a
+// credential, so the trust's uses are here and not only alongside a sentinel.
 func (r *secretResolver) uses(req proxy.SecretAuthorizeRequest) []string {
 	var ids []string
-	seen := make(map[string]struct{}, len(req.Sentinels))
+	seen := make(map[string]struct{}, len(req.Sentinels)+len(req.TrustUseIDs))
+	for _, useID := range req.TrustUseIDs {
+		if useID == "" {
+			continue
+		}
+		if _, ok := seen[useID]; ok {
+			continue
+		}
+		seen[useID] = struct{}{}
+		ids = append(ids, useID)
+	}
 	for _, sentinel := range req.Sentinels {
 		record, ok := r.activation(proxy.SecretResolveRequest{
 			ClientID: req.ClientID,
@@ -520,7 +535,7 @@ func readResolveContext(path string) (resolveContext, error) {
 //     process as sandboxes come and go.
 //   - live activations, the ephemeral sentinels this process mints per use.
 //   - host trusts, the pins people approved for this pool's sandboxes
-//     (hostTrusts, ADR 0150).
+//     (hostTrusts, ADR 0149).
 //
 // Holding them here is what lets an activation or a newly approved pin take
 // effect the instant it is known: publishing is a function call rather than a

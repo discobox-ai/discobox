@@ -71,3 +71,7 @@ zz_version_windows_*.syso
 /discobox.exe
 /discobox-*
 **/cmd/*/discobox*
+
+# The dev loop writes its build and test failure reports here. They are a
+# moment of local state, and git add -A has swept them into commits twice.
+wnb-*-failed.txt

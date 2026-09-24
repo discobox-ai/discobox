@@ -82,7 +82,7 @@ bounded events to a background writer (`Recording.QueueSize`, shared by HTTP and
 SOCKS rows). If the queue is full, the recorder drops the event and increments
 its drop counter instead of stalling network traffic. DNS rows are recorded
 through `Server.RecordDNS` by the pool's sandbox DNS server, which runs in the
-same process and has no recorder of its own (ADR 0149). They share the
+same process and has no recorder of its own (ADR 0148). They share the
 database's client identity, retention and write-ordered cursor (`dns_<row>`),
 but not the queue: lookups have one of their own, the single writer takes from
 it only when the HTTP and SOCKS queue is empty, and each sandbox has a budget in
@@ -516,7 +516,7 @@ the proxy rather than removing it.
 ```mermaid
 flowchart LR
     req["MITM'd request"] --> lookup{"client holds a pin\nfor host:port?"}
-    lookup -->|yes| judge["Judge(TrustUseIDs)"] --> pinned["the trust's own transport\n(verifies the pin)"]
+    lookup -->|yes| judge["Authorize(TrustUseIDs)"] --> pinned["the trust's own transport\n(verifies the pin)"]
     lookup -->|no| default["proxy transport\n(system roots)"]
     pinned --> refused{"certificate\nrefused?"}
     default --> refused
@@ -550,8 +550,9 @@ flowchart LR
   `ApplyConfig` while its pin is unchanged, and closes the idle connections of
   one that is gone.
 - **A request to a trusted host is judged** against the trust's uses
-  (`JudgeRequest.TrustUseIDs`), whether or not it carries a credential; one
-  that does is judged against both.
+  (`AuthorizeRequest.TrustUseIDs`), whether or not it carries a credential; one
+  that does is judged against both, in the one ask that runs before anything is
+  resolved ([Sentinel Secret Swapping](#sentinel-secret-swapping)).
 - **`ProbeTLS`** connects to a host the way a client's traffic would, completes
   a handshake with verification off, and returns the chain and whether it
   verifies against the system roots, and which upstream proxy it went through

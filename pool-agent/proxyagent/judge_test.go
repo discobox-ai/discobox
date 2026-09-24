@@ -488,3 +488,58 @@ func TestThisServersOwnRefusalIsARefusal(t *testing.T) {
 		t.Fatalf("verdict = %+v, err = %v; want this server's own 404 to refuse", verdict, err)
 	}
 }
+
+// A request to a host the sandbox trusts by a pin is judged against the uses
+// that trust was granted for, whether or not it carries a credential
+// (ADR 0149 §5). Nothing here spends a sentinel, so if the trust's uses were
+// not asked about, nothing would be — and the pin would authorize everything
+// the sandbox sent that host.
+func TestATrustedHostIsJudgedWithNoCredentialAtAll(t *testing.T) {
+	resolver, asked := judgingPool(t, map[string]any{
+		"allow": false, "reason": "deleting a namespace is not reading the pods in it",
+	}, http.StatusOK)
+
+	req := authorizeRequest()
+	req.Sentinels = nil
+	req.Header.Del("Authorization")
+	req.TrustUseIDs = []string{"use_kube"}
+	req.Method = http.MethodDelete
+	req.URL = "https://kube.internal:6443/api/v1/namespaces/prod"
+	req.Host = "kube.internal"
+
+	verdict, err := resolver.Authorize(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Authorize() error = %v", err)
+	}
+	if verdict.Allow {
+		t.Fatalf("verdict = %+v, want the judge's refusal", verdict)
+	}
+	if verdict.Reason != "deleting a namespace is not reading the pods in it" {
+		t.Fatalf("reason = %q, want the judge's own words", verdict.Reason)
+	}
+	if len(asked()) != 1 {
+		t.Fatalf("asked %d times, want the trusted host's request asked about", len(asked()))
+	}
+	if ask := asked()[0]; ask.UseID != "use_kube" {
+		t.Fatalf("asked about use %q, want the one the pin was granted for", ask.UseID)
+	}
+}
+
+// A request that spends a credential and goes to a trusted host is asked about
+// both, and either saying no is the answer.
+func TestACredentialToATrustedHostIsJudgedAgainstBoth(t *testing.T) {
+	resolver, asked := judgingPool(t, map[string]any{"allow": true}, http.StatusOK)
+
+	req := authorizeRequest()
+	req.TrustUseIDs = []string{"use_kube"}
+	if _, err := resolver.Authorize(context.Background(), req); err != nil {
+		t.Fatalf("Authorize() error = %v", err)
+	}
+	seen := map[string]bool{}
+	for _, ask := range asked() {
+		seen[ask.UseID] = true
+	}
+	if !seen["use_kube"] || !seen["use_abc"] {
+		t.Fatalf("asked about %v, want both the trust's use and the credential's", seen)
+	}
+}

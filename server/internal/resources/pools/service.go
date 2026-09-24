@@ -312,7 +312,7 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 // ListDNSAudit reads the DNS queries the project's pools answered and merges
 // them exactly as ListHTTPAudit merges exchanges: the same pools asked, each
 // for the whole limit under its own deadline and cursor, and a pool that
-// cannot be read named rather than dropped (ADR 0150).
+// cannot be read named rather than dropped (ADR 0148).
 func (s *Service) ListDNSAudit(ctx context.Context, projectID string, filter services.DNSAuditFilter) (*services.DNSAuditResult, error) {
 	pools, err := s.auditPools(ctx, projectID, filter.PoolID, filter.SandboxID)
 	if err != nil {

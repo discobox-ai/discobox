@@ -336,7 +336,7 @@ type PoolService interface {
 	OpenHTTPAuditArtifact(ctx context.Context, projectID, poolID, sandboxID string, id auditid.ExchangeID, artifact string) (*sandbox.HTTPAuditArtifact, error)
 	// ListDNSAudit reads the DNS queries the project's pools answered for
 	// their sandboxes, from every pool the filter allows, merged as
-	// ListHTTPAudit merges (ADR 0149).
+	// ListHTTPAudit merges (ADR 0148).
 	ListDNSAudit(ctx context.Context, projectID string, filter DNSAuditFilter) (*DNSAuditResult, error)
 	// OpenPoolConsole attaches to the pool host's administrative console: a
 	// privileged root shell on the machine running the pool's runtime, for

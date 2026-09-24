@@ -87,7 +87,7 @@ type AuthorizeRequest struct {
 	// which use it is spending, and could not be believed if it did.
 	Sentinels []string
 	// TrustUseIDs are the uses the destination was trusted for, when the
-	// client reaches it by a pin (ADR 0150 §5). A request to a trusted host is
+	// client reaches it by a pin (ADR 0149 §5). A request to a trusted host is
 	// authorized against them whether or not it carries a credential, and they
 	// come from the pin rather than from anything the request said.
 	TrustUseIDs []string
