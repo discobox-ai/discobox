@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -271,11 +272,16 @@ func TestTheDiscoboxAPIIsNotGivenAtCreateByItsSecret(t *testing.T) {
 }
 
 // hostPathProvider reaches the server's whole filesystem, so a source whose
-// origin is the server's own machine is cloned from its path there.
-type hostPathProvider struct{ noopSandboxProvider }
+// origin is the server's own machine is cloned from its path there. root is
+// that filesystem's root as the host spells it: "/" on POSIX, a volume such as
+// "C:\\" on Windows, where "/" is not absolute and covers nothing.
+type hostPathProvider struct {
+	noopSandboxProvider
+	root string
+}
 
-func (hostPathProvider) Definition() sandboxes.ProviderDefinition {
-	return sandboxes.ProviderDefinition{Name: "host-path", LocalSourceRoots: []string{"/"}}
+func (p hostPathProvider) Definition() sandboxes.ProviderDefinition {
+	return sandboxes.ProviderDefinition{Name: "host-path", LocalSourceRoots: []string{p.root}}
 }
 
 // A sandbox can read the user's origin off any discobox's record. Claiming it
@@ -284,7 +290,9 @@ func (hostPathProvider) Definition() sandboxes.ProviderDefinition {
 func TestASandboxsOriginDoesNotDecideDelivery(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
-	svc.RegisterSandboxProvider("test", hostPathProvider{})
+	// A real host path, so it is absolute on the machine running the test.
+	directory := t.TempDir()
+	svc.RegisterSandboxProvider("test", hostPathProvider{root: filepath.VolumeName(directory) + string(filepath.Separator)})
 	svc.SetHostID("host-user")
 	lead := auth.WithPrincipal(ctx, auth.Principal{
 		Type: auth.PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: projectID, UserID: service.DefaultUserID,
@@ -297,7 +305,7 @@ func TestASandboxsOriginDoesNotDecideDelivery(t *testing.T) {
 				Name: name,
 				Source: serverapi.NewOptGitSource(serverapi.GitSource{
 					Kind:           serverapi.GitSourceKindGit,
-					LocalDirectory: serverapi.NewOptString("/home/user/.password-store"),
+					LocalDirectory: serverapi.NewOptString(directory),
 					Checkout:       serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{Commit: serverapi.NewOptString("abc123")}),
 				}),
 			},
