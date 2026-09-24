@@ -37,7 +37,7 @@ func TestEnsureRunningHandsBackAServerWaitingForAChoice(t *testing.T) {
 		answers <- body.Provider
 		w.WriteHeader(http.StatusAccepted)
 	})
-	socket := filepath.Join(t.TempDir(), "server.sock")
+	socket := testSocketPath(t)
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestChooseDefaultProviderSaysWhenNothingIsWaiting(t *testing.T) {
 		t.Error("a choice was posted to a server that was not waiting")
 		w.WriteHeader(http.StatusForbidden)
 	})
-	socket := filepath.Join(t.TempDir(), "server.sock")
+	socket := testSocketPath(t)
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	if err != nil {
 		t.Fatal(err)
