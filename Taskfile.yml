@@ -258,36 +258,104 @@ tasks:
     # machine picks it up. Delete the directory to go back to the published
     # image.
     #
-    # One image serves both backends, so this is one target: the platform only
-    # decides which architecture to build and which provider's local directory
-    # to stage it into.
+    # One guest serves both backends, but they take it differently. vz boots
+    # the guest image as it is. libkrun boots one image that carries the guest's
+    # root disk beside its runtime (ADR 0148 §5), so on Linux this swaps the
+    # root disk into an already staged libkrun image rather than staging a
+    # guest on its own: a directory holding only a guest is not one libkrun can
+    # boot.
     vars:
-      GUEST_PLATFORM: '{{.GUEST_PLATFORM | default (printf "linux/%s" (eq OS "darwin" | ternary "arm64" ARCH))}}'
-      GUEST_DIR: '{{.GUEST_DIR | default (eq OS "darwin" | ternary "$HOME/Library/Application Support/discobox/vz/guest/local" "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/guest/local")}}'
+      GUEST_PLATFORM: '{{.GUEST_PLATFORM | default "linux/arm64"}}'
+      GUEST_DIR: '{{.GUEST_DIR | default "$HOME/Library/Application Support/discobox/vz/guest/local"}}'
     cmds:
       - task: stage-vm-artifacts
+        if: '[ "{{OS}}" = darwin ]'
         vars:
           STAGE_DOCKERFILE: vm-image/Dockerfile
           STAGE_PLATFORM: '{{.GUEST_PLATFORM}}'
           STAGE_DIR: '{{.GUEST_DIR}}'
           STAGE_WHAT: guest
-
-  build:vm-kernel:
-    desc: Build the libkrun guest kernel and stage it where the libkrun provider finds it
-    # Only libkrun needs this, and only libkrun can use it: it is the
-    # libkrunfw-patched kernel, which no other hypervisor boots. It compiles
-    # Linux, so it is slow the first time and a BuildKit cache hit afterwards —
-    # which is exactly why it is not a stage of the guest image.
-    platforms: [linux]
-    vars:
-      KERNEL_DIR: '{{.KERNEL_DIR | default "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/kernel/local"}}'
-    cmds:
-      - task: stage-vm-artifacts
+      - task: stage-vm-krun
+        if: '[ "{{OS}}" = linux ]'
         vars:
-          STAGE_DOCKERFILE: vm-image/kernel/Dockerfile
-          STAGE_PLATFORM: linux/amd64
-          STAGE_DIR: '{{.KERNEL_DIR}}'
-          STAGE_WHAT: kernel
+          KRUN_BUILD_RUNTIME: "false"
+
+  build:vm-krun:
+    desc: Build libkrun's runtime and the guest, and stage them where the libkrun provider finds them
+    # Only libkrun needs this, and only libkrun can use it: the runtime is the
+    # libkrunfw-patched kernel, libkrun, and passt, which no other hypervisor
+    # boots. It compiles Linux and libkrun, so it is slow the first time and a
+    # BuildKit cache hit afterwards — which is exactly why it is not a stage of
+    # the guest image. After the first run, `build:vm-guest` is the fast loop
+    # for a guest change.
+    #
+    # This builds from source rather than from vm-image/libkrun/package, which
+    # packages published digests: a local build is how a change to either input
+    # is tried before anything is published.
+    platforms: [linux]
+    cmds:
+      - task: stage-vm-krun
+        vars:
+          KRUN_BUILD_RUNTIME: "true"
+
+  stage-vm-krun:
+    internal: true
+    # The libkrun provider resolves one directory holding all five files
+    # (ADR 0148 §5), so this assembles them aside and swaps the whole directory
+    # in: a pool may be booting from it right now, and a half-written one would
+    # pair one build's kernel with another's library. The staging directory is
+    # a sibling of the destination so the swap is a rename, not a copy.
+    requires:
+      vars: [KRUN_BUILD_RUNTIME]
+    vars:
+      KRUN_DIR: '{{.KRUN_DIR | default "${XDG_DATA_HOME:-$HOME/.local/share}/discobox/libkrun/.images/vm/local"}}'
+    cmds:
+      - |
+        set -eu
+        dest="{{.KRUN_DIR}}"
+        runtime_files="vmlinux kernel.config libkrun.so.1 passt"
+        if [ "{{.KRUN_BUILD_RUNTIME}}" != true ]; then
+          for f in $runtime_files; do
+            if [ ! -s "$dest/$f" ]; then
+              echo "no libkrun runtime staged in $dest (missing $f); run \`go tool task build:vm-krun\` first" >&2
+              exit 1
+            fi
+          done
+        fi
+        mkdir -p "$(dirname "$dest")"
+        staging="$(mktemp -d "$(dirname "$dest")/.local-staging.XXXXXX")"
+        guest="$(mktemp -d "${TMPDIR:-/tmp}/discobox-vm-guest.XXXXXX")"
+        trap 'rm -rf "$staging" "$guest"' EXIT
+        # amd64 whatever this host is: it is the only architecture libkrun boots.
+        docker build \
+          --platform linux/amd64 \
+          --file vm-image/Dockerfile \
+          --output "type=local,dest=$guest" \
+          .
+        if [ "{{.KRUN_BUILD_RUNTIME}}" = true ]; then
+          docker build \
+            --platform linux/amd64 \
+            --file vm-image/libkrun/Dockerfile \
+            --output "type=local,dest=$staging" \
+            .
+        else
+          for f in $runtime_files; do
+            cp -p "$dest/$f" "$staging/$f"
+          done
+        fi
+        # libkrun boots the root disk alone; the guest's initrd is vz's.
+        mv "$guest/root.ext4" "$staging/root.ext4"
+        chmod 0755 "$staging"
+        if [ -e "$dest" ]; then
+          mv "$dest" "$staging.old"
+          mv "$staging" "$dest"
+          rm -rf "$staging.old"
+        else
+          mv "$staging" "$dest"
+        fi
+        trap 'rm -rf "$guest"' EXIT
+        ls -l "$dest"
+        echo "staged libkrun image in $dest; recreate a pool to boot it"
 
   stage-vm-artifacts:
     internal: true
@@ -637,18 +705,19 @@ tasks:
       - cd server && DISCOBOX_E2E=1 go test ./providers/poolruntime -count=1 -v
 
   test:e2e:libkrun:
-    desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM, libkrun and passt on the path, plus the DISCOBOX_LIBKRUN_E2E_* variables"
+    desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM plus the DISCOBOX_LIBKRUN_E2E_* variables"
     cmds:
-      # Unlike the other suites this one needs artifacts the repository does not
+      # Unlike the other suites this one needs artifacts `go test` does not
       # build, so it fails loudly listing what is missing rather than skipping
-      # silently and looking like a pass. The two directories are what
-      # `vm:build` and `vm:build-kernel` write on an amd64 Linux machine:
-      # build/vm and build/vm-kernel. Both have to be amd64 — that is the only
-      # architecture libkrun boots — and an override directory carries no
-      # platform, so nothing downstream can catch an arm64 root filesystem.
+      # silently and looking like a pass. The image directory is what
+      # `vm:build-krun` writes, build/vm-krun: the root disk, the kernel,
+      # libkrun and passt together (ADR 0148 §5), and the launcher loads the
+      # last two from there rather than from the path. It is amd64 whatever the
+      # host, which matters: an override directory carries no platform, so
+      # nothing downstream can catch an arm64 root filesystem.
       - |
         missing=""
-        for v in DISCOBOX_LIBKRUN_E2E_GUEST_DIR DISCOBOX_LIBKRUN_E2E_KERNEL_DIR DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
+        for v in DISCOBOX_LIBKRUN_E2E_IMAGE_DIR DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
           eval "value=\${$v:-}"
           if [ -z "$value" ]; then missing="$missing $v"; fi
         done
@@ -768,7 +837,8 @@ tasks:
           pool-agent/Dockerfile:. \
           sandbox-agent/Dockerfile:. \
           vm-image/Dockerfile:. \
-          vm-image/kernel/Dockerfile:. \
+          vm-image/libkrun/Dockerfile:. \
+          vm-image/libkrun/package/Dockerfile:. \
           harness/claude-code/Dockerfile:harness/claude-code \
           harness/codex-cli/Dockerfile:harness/codex-cli \
           harness/opencode/Dockerfile:harness/opencode \
@@ -1846,17 +1916,31 @@ tasks:
         --output type=local,dest=build/vm
         .
 
-  vm:build-kernel:
-    desc: Build the libkrun guest kernel into build/vm-kernel
+  vm:build-libkrun-runtime:
+    desc: Build libkrun's host runtime (patched kernel, libkrun, passt) into build/libkrun-runtime
     deps:
       - buildx:builder
     cmds:
-      - rm -rf build/vm-kernel
+      - rm -rf build/libkrun-runtime
       - >-
         docker buildx build --builder {{.BUILDX_BUILDER}}
         --platform linux/amd64
-        --file vm-image/kernel/Dockerfile
-        --output type=local,dest=build/vm-kernel
+        --file vm-image/libkrun/Dockerfile
+        --output type=local,dest=build/libkrun-runtime
+        .
+
+  vm:build-krun:
+    desc: Package the image a libkrun pool boots into build/vm-krun, from the pinned guest and runtime
+    # Compiles nothing: it pulls the two digests vm-image/libkrun/package pins.
+    deps:
+      - buildx:builder
+    cmds:
+      - rm -rf build/vm-krun
+      - >-
+        docker buildx build --builder {{.BUILDX_BUILDER}}
+        --platform linux/amd64
+        --file vm-image/libkrun/package/Dockerfile
+        --output type=local,dest=build/vm-krun
         .
 
   vm:verify:
@@ -1878,7 +1962,7 @@ tasks:
           test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
         done
         # Only arm64 publishes a kernel. amd64 is booted by libkrun, which needs
-        # the patched kernel from vm-image/kernel and would not load Debian's;
+        # the patched kernel from vm-image/libkrun and would not load Debian's;
         # see assemble-guest-image.
         if [ "$arch" = arm64 ]; then
           test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
@@ -1922,14 +2006,39 @@ tasks:
         fi
         echo "VM artifacts verified for $arch (hostname $hostname)"
 
-  vm:verify-kernel:
-    desc: Verify the built libkrun kernel is one libkrun can load
+  vm:verify-libkrun-runtime:
+    desc: Verify the built libkrun runtime is one any Linux host can load
+    cmds:
+      - task: verify-libkrun-runtime-files
+        vars: { VERIFY_DIR: build/libkrun-runtime }
+
+  vm:verify-krun:
+    desc: Verify the packaged libkrun image carries everything a libkrun pool boots
     cmds:
       - |
         set -eu
-        cd build/vm-kernel
+        cd build/vm-krun
         ls -l
-        test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
+        test -s root.ext4 || { echo "missing or empty: root.ext4" >&2; exit 1; }
+        dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root" \
+          || { echo "root.ext4 is not the discobox guest's root filesystem" >&2; exit 1; }
+      # The runtime half was verified when it was built, but this is the
+      # artifact that ships, and a pin to the wrong digest is what this catches.
+      - task: verify-libkrun-runtime-files
+        vars: { VERIFY_DIR: build/vm-krun }
+
+  verify-libkrun-runtime-files:
+    internal: true
+    requires:
+      vars: [VERIFY_DIR]
+    cmds:
+      - |
+        set -eu
+        cd {{.VERIFY_DIR}}
+        ls -l
+        for artifact in vmlinux kernel.config libkrun.so.1 passt; do
+          test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
+        done
         # libkrun loads this with KRUN_KERNEL_FORMAT_ELF, so an ELF header is
         # the difference between a VM that boots and one that dies with EINVAL.
         magic=$(dd if=vmlinux bs=4 count=1 status=none | od -An -tx1 | tr -d ' \n')
@@ -1943,7 +2052,56 @@ tasks:
         for required in CONFIG_PACKET=y CONFIG_NFT_COMPAT=y CONFIG_BRIDGE=y CONFIG_VETH=y CONFIG_OVERLAY_FS=y; do
           grep -qx "$required" kernel.config || { echo "kernel is missing $required" >&2; exit 1; }
         done
-        echo "kernel verified"
+        # The launcher dlopens libkrun.so.1 by path, so it has to be a shared
+        # object that answers to that name.
+        readelf -h libkrun.so.1 | grep -q "Type:[[:space:]]*DYN" \
+          || { echo "libkrun.so.1 is not an ELF shared object" >&2; exit 1; }
+        readelf -d libkrun.so.1 | grep "(SONAME)" | grep -q "\[libkrun.so.1\]" \
+          || { echo "libkrun.so.1 does not carry the soname libkrun.so.1" >&2; exit 1; }
+        # The provider hands libkrun its own kernel, so libkrunfw is never
+        # needed — and a NEEDED entry for it makes the library refuse to load
+        # on every host that lacks it (ADR 0148 §5).
+        if readelf -d libkrun.so.1 | grep "(NEEDED)" | grep -q libkrunfw; then
+          echo "libkrun.so.1 links libkrunfw; the runtime ships none" >&2
+          exit 1
+        fi
+        # libkrun is loaded into the host's launcher, so what it links is what
+        # a host must have: glibc 2.34 or newer and nothing beyond it
+        # (vm-image/libkrun/Dockerfile).
+        needed=$(readelf -d libkrun.so.1 | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | sort | tr '\n' ' ')
+        for lib in $needed; do
+          case "$lib" in
+            libc.so.6|libgcc_s.so.1|ld-linux-x86-64.so.2|libm.so.6|libdl.so.2|libpthread.so.0|librt.so.1) ;;
+            *) echo "libkrun.so.1 needs $lib, which a host is not guaranteed to have" >&2; exit 1 ;;
+          esac
+        done
+        floor=$(objdump -T libkrun.so.1 | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+        if [ "$(printf '%s\n2.34\n' "$floor" | sort -V | tail -1)" != 2.34 ]; then
+          echo "libkrun.so.1 needs glibc $floor; hosts from 2.34 have to load it" >&2
+          exit 1
+        fi
+        # passt is exec'd on whatever host boots the pool, so it brings no
+        # loader or library with it.
+        test -x passt || { echo "passt is not executable" >&2; exit 1; }
+        magic=$(dd if=passt bs=4 count=1 status=none | od -An -tx1 | tr -d ' \n')
+        test "$magic" = "7f454c46" || { echo "passt is not an ELF executable" >&2; exit 1; }
+        if readelf -l passt | grep -q INTERP; then
+          echo "passt is dynamically linked; it has to be static" >&2
+          exit 1
+        fi
+        if readelf -d passt 2>/dev/null | grep -q "(NEEDED)"; then
+          echo "passt needs shared libraries; it has to be static" >&2
+          exit 1
+        fi
+        # A Nix store path is a machine that built this, not one that runs it:
+        # an RUNPATH or interpreter there loads nowhere else.
+        for artifact in vmlinux kernel.config libkrun.so.1 passt; do
+          if grep -qa /nix/store "$artifact"; then
+            echo "$artifact refers to /nix/store; it would not load outside the machine that built it" >&2
+            exit 1
+          fi
+        done
+        echo "libkrun runtime verified in {{.VERIFY_DIR}}"
 
   vm:publish:
     desc: Push the multi-architecture VM image for VM_TAG and report the digest to pin
@@ -1958,23 +2116,42 @@ tasks:
           PUSH_FILE: server/providers/guestimage/image.go
           PUSH_CONST: DefaultVMImage
 
-  vm:publish-kernel:
-    desc: Push the libkrun guest kernel for VM_TAG and report the digest to pin
+  vm:publish-libkrun-runtime:
+    desc: Push libkrun's host runtime for VM_TAG and report the digest to pin
     deps:
       - buildx:builder
     cmds:
       - task: vm:push
         vars:
-          PUSH_IMAGE: discobox-vm-kernel
-          PUSH_DOCKERFILE: vm-image/kernel/Dockerfile
+          PUSH_IMAGE: discobox-libkrun-runtime
+          PUSH_DOCKERFILE: vm-image/libkrun/Dockerfile
+          PUSH_PLATFORMS: linux/amd64
+          PUSH_FILE: vm-image/libkrun/package/Dockerfile
+          PUSH_ARG: RUNTIME_IMAGE
+
+  vm:publish-krun:
+    desc: Push the image a libkrun pool boots for VM_TAG and report the digest to pin
+    deps:
+      - buildx:builder
+    cmds:
+      - task: vm:push
+        vars:
+          PUSH_IMAGE: discobox-vm-krun
+          PUSH_DOCKERFILE: vm-image/libkrun/package/Dockerfile
           PUSH_PLATFORMS: linux/amd64
           PUSH_FILE: server/providers/libkrun/provider.go
-          PUSH_CONST: DefaultKernelImage
+          PUSH_CONST: DefaultImage
 
   vm:push:
     internal: true
+    # The digest is pinned in one of two places: a Go constant the server
+    # resolves (PUSH_CONST), or a Dockerfile ARG an image packaging this one
+    # pulls from (PUSH_ARG). Exactly one is set.
     requires:
-      vars: [PUSH_IMAGE, PUSH_DOCKERFILE, PUSH_PLATFORMS, PUSH_FILE, PUSH_CONST]
+      vars: [PUSH_IMAGE, PUSH_DOCKERFILE, PUSH_PLATFORMS, PUSH_FILE]
+    preconditions:
+      - sh: '{ [ -n "{{.PUSH_CONST}}" ] && [ -z "{{.PUSH_ARG}}" ]; } || { [ -z "{{.PUSH_CONST}}" ] && [ -n "{{.PUSH_ARG}}" ]; }'
+        msg: "vm:push: set exactly one of PUSH_CONST and PUSH_ARG"
     cmds:
       - |
         set -eu
@@ -1985,12 +2162,13 @@ tasks:
           # tag namespace; the image tag is the version alone.
           case "${GITHUB_REF_NAME:-}" in
             vm/v*) tag="${GITHUB_REF_NAME#vm/}" ;;
-            vm-kernel/v*) tag="${GITHUB_REF_NAME#vm-kernel/}" ;;
+            libkrun-runtime/v*) tag="${GITHUB_REF_NAME#libkrun-runtime/}" ;;
+            vm-krun/v*) tag="${GITHUB_REF_NAME#vm-krun/}" ;;
           esac
         fi
         case "$tag" in
           v*) ;;
-          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v* or vm-kernel/v* tag)" >&2; exit 1 ;;
+          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v*, libkrun-runtime/v* or vm-krun/v* tag)" >&2; exit 1 ;;
         esac
         if [ -z "{{.REGISTRY}}" ]; then
           echo "vm:publish: could not resolve a registry from the origin remote; pass REGISTRY=ghcr.io/<owner>" >&2
@@ -2028,8 +2206,13 @@ tasks:
           echo
           echo 'Pin this in `{{.PUSH_FILE}}`:'
           echo
-          echo '```go'
-          echo "const {{.PUSH_CONST}} = \"{{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest\""
+          if [ -n "{{.PUSH_ARG}}" ]; then
+            echo '```dockerfile'
+            echo "ARG {{.PUSH_ARG}}={{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest"
+          else
+            echo '```go'
+            echo "const {{.PUSH_CONST}} = \"{{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest\""
+          fi
           echo '```'
         }
         report

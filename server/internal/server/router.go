@@ -93,6 +93,11 @@ type AppOptions struct {
 	// checked for.
 	WSLCCommand string
 
+	// DefaultProvider and AwaitDefaultProviderChoice decide the provider a
+	// first start installs; see service.Options.
+	DefaultProvider            string
+	AwaitDefaultProviderChoice func(ctx context.Context, unavailable *sandbox.ProviderUnavailableError, alternatives []string) (string, error)
+
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own. Zero is left zero rather
 	// than defaulted here: DefaultAppOptions is production wiring, and the
@@ -187,6 +192,8 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ServerPeerID:                   addressPeerID,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
+		DefaultProvider:                opts.DefaultProvider,
+		AwaitDefaultProviderChoice:     opts.AwaitDefaultProviderChoice,
 	})
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	appServices.SetHostID(opts.HostID)

@@ -15,9 +15,11 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/health"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -101,7 +103,13 @@ func Run(ctx context.Context) error {
 	// pool guest through its own transport.
 	listeners = append(listeners, serverListener{Listener: controlPlaneStreams, display: "pool control-plane streams"})
 
+	// Cancelable here so a start held for a choice can be told to stop: the
+	// router's /shutdown does not exist yet, and a held start may be waiting
+	// for good (startupHandler.serveShutdown).
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
 	startup := newStartupHandler("opening the database")
+	startup.stop = stop
 	httpServer := &http.Server{
 		Handler:           startup,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -111,6 +119,7 @@ func Run(ctx context.Context) error {
 		// mid-flight. Liveness comes from ReadHeaderTimeout,
 		// IdleTimeout, and websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
+		ConnContext: markLocalIPC,
 	}
 	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
 	// listeners are released promptly instead of dying with the process. Armed
@@ -198,9 +207,25 @@ func Run(ctx context.Context) error {
 			ImageRetention: cfg.ImageRetention,
 			ImageCache:     imageCache,
 		},
-		WSLCCommand: cfg.WSLCCommand,
+		WSLCCommand:     cfg.WSLCCommand,
+		DefaultProvider: cfg.DefaultProvider,
+		AwaitDefaultProviderChoice: func(ctx context.Context, unavailable *sandbox.ProviderUnavailableError, alternatives []string) (string, error) {
+			return startup.awaitChoice(ctx, health.Choice{
+				Provider:     unavailable.Provider,
+				Reason:       unavailable.Reason,
+				Detail:       unavailable.Err.Error(),
+				Alternatives: alternatives,
+			})
+		},
 	})
 	if err != nil {
+		// A held start that was asked to stop abandons initialization by
+		// design; exiting non-zero would mark a user service failed and put
+		// an error last in the log for a stop that did what it was told.
+		if startup.stopRequested() && errors.Is(err, context.Canceled) {
+			log.Printf("stopped while waiting for a default provider to be chosen")
+			return nil
+		}
 		return fmt.Errorf("initialize app: %w", err)
 	}
 	// The iroh gate has been answering from authorized_ids alone since the

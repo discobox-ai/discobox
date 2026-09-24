@@ -154,6 +154,15 @@
 # Environment: DISCOBOX_WSLC_COMMAND
 #wslcCommand:
 
+# The provider a first start installs as this machine's default, on
+# Linux: libkrun, which runs each pool in a VM, or docker, which runs
+# sandboxes as containers on the host kernel with no VM boundary. Empty
+# installs libkrun in a release build and docker in a development build.
+# Read only until a default has been installed. Linux only.
+# Example: defaultProvider: docker
+# Environment: DISCOBOX_DEFAULT_PROVIDER
+#defaultProvider:
+
 # Converge locally built images onto each Docker daemon before it hosts a
 # development pool.
 # Environment: DISCOBOX_DEV_DOCKER_IMAGE_SYNC

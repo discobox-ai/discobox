@@ -130,6 +130,10 @@ func handleConn(ctx context.Context, conn net.Conn, recorder Recorder) {
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
+	// The hook is recorded under the name its harness used. Its canonical name
+	// is the store's to derive, on the way in, and is not passed from here:
+	// one owner, so no writer can store a row whose two names disagree
+	// (ADR 0146 §4).
 	if _, err := recorder.RecordHarnessHook(ctx, store.HarnessHookRecord{
 		TerminalID: message.TerminalID,
 		Provider:   message.Provider,

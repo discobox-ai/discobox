@@ -26,53 +26,84 @@ func TestProviderIdentity(t *testing.T) {
 	}
 }
 
-// The guest image is shared with vz, so this backend must not carry a pin of
-// its own: one publish has to be one edit, or a backend quietly keeps booting
-// the release before last.
-func TestGuestImageIsTheSharedPin(t *testing.T) {
-	guest, err := guestResolver(Config{}, dockerworker.ServerDefaults{})
+// The pool boots one image, pinned by this backend: the guest's root disk and
+// the kernel and runtime built for it are one pin because a host can use none
+// of the four without the other three (ADR 0148 §5). It is not the shared vz
+// guest image, whose kernel is a distribution one libkrun cannot boot.
+func TestImageIsOnePinCarryingTheRuntime(t *testing.T) {
+	image, err := imageResolver(Config{}, dockerworker.ServerDefaults{})
 	if err != nil {
-		t.Fatalf("build guest resolver: %v", err)
+		t.Fatalf("build image resolver: %v", err)
 	}
-	if got := guest.Reference(); got != guestimage.DefaultVMImage {
-		t.Fatalf("guest image = %q, want the shared %q", got, guestimage.DefaultVMImage)
+	if got := image.Reference(); got != DefaultImage {
+		t.Fatalf("image = %q, want %q", got, DefaultImage)
+	}
+	if image.Reference() == guestimage.DefaultVMImage {
+		t.Fatal("libkrun resolves the shared vz guest image")
+	}
+	// Every artifact is required, so an image missing the runtime fails to
+	// resolve instead of booting with whatever the host has.
+	dir := t.TempDir()
+	for _, name := range []string{rootArtifact, kernelArtifact, libraryArtifact} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("artifact"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	partial, err := imageResolver(Config{VMImageDir: dir}, dockerworker.ServerDefaults{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := partial.Resolve(t.Context(), nil); err == nil {
+		t.Fatal("resolved an image directory with no passt")
+	}
+	if err := os.WriteFile(filepath.Join(dir, passtArtifact), []byte("artifact"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	whole, err := imageResolver(Config{VMImageDir: dir}, dockerworker.ServerDefaults{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := whole.Resolve(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("resolve a whole image directory: %v", err)
+	}
+	for _, name := range []string{rootArtifact, kernelArtifact, libraryArtifact, passtArtifact} {
+		if bundle.Path(name) != filepath.Join(dir, name) {
+			t.Fatalf("%s = %q, want it from %s", name, bundle.Path(name), dir)
+		}
 	}
 }
 
-// The kernel is the one artifact libkrun does not take from the shared guest
-// image: it needs libkrunfw's patches, and a distribution kernel does not boot
-// under libkrun at all.
-func TestKernelIsResolvedFromItsOwnImage(t *testing.T) {
-	kernel, err := kernelResolver(Config{}, dockerworker.ServerDefaults{})
-	if err != nil {
-		t.Fatalf("build kernel resolver: %v", err)
-	}
-	if kernel.Reference() == guestimage.DefaultVMImage {
-		t.Fatal("the kernel resolves from the shared guest image")
-	}
-	if got := kernel.Reference(); got != DefaultKernelImage {
-		t.Fatalf("kernel image = %q, want %q", got, DefaultKernelImage)
-	}
-}
-
-// A local build of either image wins over the published one with nothing
-// configured, and the two land in different directories: both publish a file
-// called vmlinux, so one directory would have them overwrite each other.
-func TestLocalBuildDirectoriesAreDistinctAndDefaulted(t *testing.T) {
+// A local build wins over the published image with nothing configured, and it
+// lands where `task build:vm-krun` writes: under the image cache, which pulled
+// images share, in a directory of its own.
+func TestLocalBuildDirectoryIsDefaulted(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	guest, err := guestResolver(Config{}, dockerworker.ServerDefaults{})
+	image, err := imageResolver(Config{}, dockerworker.ServerDefaults{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernel, err := kernelResolver(Config{}, dockerworker.ServerDefaults{})
+	want := filepath.Join(defaultStateDir(), ".images", "vm", "local")
+	if got := image.LocalDir(); got != want {
+		t.Fatalf("local directory = %q, want %q", got, want)
+	}
+	if got := effectiveImageLocalDir(""); got != want {
+		t.Fatalf("effectiveImageLocalDir = %q, want %q", got, want)
+	}
+	if got, want := effectiveImageCacheDir(""), filepath.Join(defaultImageRoot(), "vm"); got != want {
+		t.Fatalf("image cache = %q, want %q", got, want)
+	}
+	configured := t.TempDir()
+	if got, want := effectiveImageCacheDir(configured), filepath.Join(configured, "vm"); got != want {
+		t.Fatalf("configured image cache = %q, want %q", got, want)
+	}
+	local := t.TempDir()
+	image, err = imageResolver(Config{VMImageLocalDir: local}, dockerworker.ServerDefaults{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if guest.LocalDir() == "" || kernel.LocalDir() == "" {
-		t.Fatalf("local directories = %q, %q; both must be defaulted", guest.LocalDir(), kernel.LocalDir())
-	}
-	if guest.LocalDir() == kernel.LocalDir() {
-		t.Fatalf("guest and kernel share the local build directory %q", guest.LocalDir())
+	if image.LocalDir() != local {
+		t.Fatalf("configured local directory = %q, want %q", image.LocalDir(), local)
 	}
 }
 
@@ -129,12 +160,13 @@ func TestValidateAcceptsAnEmptyConfiguration(t *testing.T) {
 func TestValidateRejectsRelativePaths(t *testing.T) {
 	requireLinuxHost(t)
 	for field, value := range map[string]string{
-		"guestImageDir":  "images",
-		"kernelImageDir": "kernels",
-		"stateDir":       "state",
-		"runtimeDir":     "run",
-		"passtPath":      "passt",
-		"libkrunPath":    "libkrun.so.1",
+		"vmImageDir":      "images",
+		"vmImageLocalDir": "local",
+		"imageCacheDir":   "cache",
+		"stateDir":        "state",
+		"runtimeDir":      "run",
+		"passtPath":       "passt",
+		"libkrunPath":     "libkrun.so.1",
 	} {
 		data, err := json.Marshal(map[string]string{field: value})
 		if err != nil {
@@ -148,8 +180,8 @@ func TestValidateRejectsRelativePaths(t *testing.T) {
 
 func TestValidateRejectsAnUnparseableImageReference(t *testing.T) {
 	requireLinuxHost(t)
-	if err := Validate(json.RawMessage(`{"kernelImage":"NOT A REFERENCE"}`)); err == nil {
-		t.Fatal("Validate accepted an unparseable kernel image reference")
+	if err := Validate(json.RawMessage(`{"vmImage":"NOT A REFERENCE"}`)); err == nil {
+		t.Fatal("Validate accepted an unparseable VM image reference")
 	}
 }
 
@@ -183,7 +215,7 @@ func TestValidateRejectsInvalidSizing(t *testing.T) {
 }
 
 func TestDriverConfigUsesVSOCKAndHostSizingDefaults(t *testing.T) {
-	cfg := driverConfig(Config{}, nil, nil, nil)
+	cfg := driverConfig(Config{}, nil, nil)
 	if cfg.ControlPlaneSocket == "" {
 		t.Fatal("control plane socket default is empty")
 	}
@@ -228,9 +260,8 @@ func TestManifestPlacesEveryPortAndSocket(t *testing.T) {
 		runtimeDir:         "/run/user/1000/discobox/libkrun",
 		controlPlaneSocket: "/run/user/1000/discobox/server.sock",
 	}
-	guest := bundleAt(t, rootArtifact)
-	kernel := bundleAt(t, kernelArtifact)
-	manifest := driver.manifest("pool_1", guest, kernel, "/state/pool_1/data.raw", "/state/pool_1/cache.raw", vmsize.Size{VCPUs: 2, MemoryMiB: 2048})
+	image := bundleAt(t, rootArtifact, kernelArtifact, libraryArtifact, passtArtifact)
+	manifest := driver.manifest("pool_1", image, "/state/pool_1/data.raw", "/state/pool_1/cache.raw", vmsize.Size{VCPUs: 2, MemoryMiB: 2048})
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("the driver rendered a manifest its own launcher rejects: %v", err)
 	}
@@ -252,11 +283,41 @@ func TestManifestPlacesEveryPortAndSocket(t *testing.T) {
 		ports["lifecycle"] != lifecycleVSOCKPort || ports["docker"] != dockerVSOCKPort {
 		t.Fatalf("port map = %v", ports)
 	}
-	if manifest.KernelImage != kernel.Path(kernelArtifact) {
-		t.Fatalf("kernel = %q, want the kernel image's artifact", manifest.KernelImage)
+	if manifest.KernelImage != image.Path(kernelArtifact) {
+		t.Fatalf("kernel = %q, want the image's artifact", manifest.KernelImage)
 	}
-	if manifest.RootDisk != guest.Path(rootArtifact) {
-		t.Fatalf("root disk = %q, want the guest image's artifact", manifest.RootDisk)
+	if manifest.RootDisk != image.Path(rootArtifact) {
+		t.Fatalf("root disk = %q, want the image's artifact", manifest.RootDisk)
+	}
+	if manifest.PasstPath != image.Path(passtArtifact) {
+		t.Fatalf("passt = %q, want the image's artifact", manifest.PasstPath)
+	}
+	if manifest.LibraryPath != image.Path(libraryArtifact) {
+		t.Fatalf("libkrun = %q, want the image's artifact", manifest.LibraryPath)
+	}
+}
+
+// A provider configured with its own passt or libkrun runs those rather than
+// the image's, one at a time.
+func TestManifestPrefersConfiguredRuntimeOverTheImages(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the driver renders Linux host paths; see krunvm for the format's own tests")
+	}
+	image := bundleAt(t, rootArtifact, kernelArtifact, libraryArtifact, passtArtifact)
+	//nolint:gosec // G101: passt is the network daemon, not a password.
+	driver := &Driver{
+		runtimeDir:         "/run/user/1000/discobox/libkrun",
+		controlPlaneSocket: "/run/user/1000/discobox/server.sock",
+		passtPath:          "/nix/store/passt/bin/passt",
+	}
+	manifest := driver.manifest("pool_1", image, "/state/pool_1/data.raw", "/state/pool_1/cache.raw", vmsize.Size{VCPUs: 2, MemoryMiB: 2048})
+	if manifest.PasstPath != driver.passtPath || manifest.LibraryPath != image.Path(libraryArtifact) {
+		t.Fatalf("passt = %q, libkrun = %q; want the configured passt and the image's libkrun", manifest.PasstPath, manifest.LibraryPath)
+	}
+	driver.passtPath, driver.libraryPath = "", "/nix/store/libkrun/lib/libkrun.so.1"
+	manifest = driver.manifest("pool_1", image, "/state/pool_1/data.raw", "/state/pool_1/cache.raw", vmsize.Size{VCPUs: 2, MemoryMiB: 2048})
+	if manifest.PasstPath != image.Path(passtArtifact) || manifest.LibraryPath != driver.libraryPath {
+		t.Fatalf("passt = %q, libkrun = %q; want the image's passt and the configured libkrun", manifest.PasstPath, manifest.LibraryPath)
 	}
 }
 
@@ -327,18 +388,22 @@ func TestLauncherRejectsAMalformedInvocation(t *testing.T) {
 	}
 }
 
-// bundleAt resolves an artifact set out of a directory holding one file. The
-// resolver is exercised by its own package's tests; what matters here is which
-// file the driver reaches for.
-func bundleAt(t *testing.T, artifact string) *guestimage.Bundle {
+// bundleAt resolves an artifact set out of a directory holding the named files.
+// The resolver is exercised by its own package's tests; what matters here is
+// which file the driver reaches for.
+func bundleAt(t *testing.T, artifacts ...string) *guestimage.Bundle {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, artifact), []byte("artifact"), 0o600); err != nil {
-		t.Fatal(err)
+	var wanted []guestimage.Artifact
+	for _, artifact := range artifacts {
+		if err := os.WriteFile(filepath.Join(dir, artifact), []byte("artifact"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		wanted = append(wanted, guestimage.Artifact{Name: artifact})
 	}
 	resolver, err := guestimage.New(guestimage.Config{
 		OverrideDir: dir,
-		Artifacts:   []guestimage.Artifact{{Name: artifact}},
+		Artifacts:   wanted,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -361,19 +426,31 @@ func requireLinuxHost(t *testing.T) {
 	}
 }
 
-func TestReleaseManifestBypassesLocalGuestAndKernelOverrides(t *testing.T) {
-	m := &releasemanifest.Manifest{Images: releasemanifest.Images{VM: "example.com/guest:v8", Kernel: "example.com/kernel:v3"}}
+func TestReleaseManifestBypassesLocalImageOverrides(t *testing.T) {
+	m := &releasemanifest.Manifest{Format: releasemanifest.Format, Images: releasemanifest.Images{VM: "example.com/guest:v8", Libkrun: "example.com/libkrun:v8"}}
 	defaults := dockerworker.ServerDefaults{Release: m}
-	cfg := Config{GuestImage: "old:local", KernelImage: "old:local", GuestImageDir: t.TempDir(), KernelImageDir: t.TempDir(), GuestImageLocalDir: t.TempDir(), KernelImageLocalDir: t.TempDir()}
-	guest, err := guestResolver(cfg, defaults)
+	cfg := Config{VMImage: "old:local", VMImageDir: t.TempDir(), VMImageLocalDir: t.TempDir()}
+	image, err := imageResolver(cfg, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernel, err := kernelResolver(cfg, defaults)
-	if err != nil {
-		t.Fatal(err)
+	// A resolver reports no reference while an override directory is in use,
+	// so the release's reference is also proof the directory was dropped.
+	if image.Reference() != m.Images.Libkrun || image.LocalDir() != "" {
+		t.Fatalf("release reference did not supersede local overrides: reference %q, local %q", image.Reference(), image.LocalDir())
 	}
-	if guest.Reference() != m.Images.VM || kernel.Reference() != m.Images.Kernel || guest.LocalDir() != "" || kernel.LocalDir() != "" {
-		t.Fatal("release references did not supersede local overrides")
+}
+
+// A key the one libkrun image replaced would do nothing, so a write that sets
+// one is refused, naming the key and what replaced it (ADR 0148 §5).
+func TestValidateRefusesSupersededImageKeys(t *testing.T) {
+	err := Validate(json.RawMessage(`{"kernelImageDir":"/opt/kernel"}`))
+	if err == nil || !strings.Contains(err.Error(), "kernelImageDir") || !strings.Contains(err.Error(), "vmImageDir") {
+		t.Fatalf("Validate() = %v, want a refusal naming kernelImageDir and vmImageDir", err)
+	}
+	// The socket is named because the default is a named pipe on Windows,
+	// which this provider refuses for a reason of its own.
+	if err := Validate(json.RawMessage(`{"guestImage":"","controlPlaneSocket":"unix:///run/discobox/server.sock"}`)); err != nil {
+		t.Fatalf("an empty superseded key sets nothing, but Validate() = %v", err)
 	}
 }

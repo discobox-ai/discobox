@@ -183,6 +183,12 @@ func (a *App) newSandboxTerminalWaitCommand(sandboxID *string) *cobra.Command {
 event (--hook), no output or input for a while (--quiet), or the terminal's
 program exiting (--exit). It is one wait, held at most 60s.
 
+A hook event may be named either as the harness emits it or by its canonical
+(Claude Code) name, so --hook Stop ends on any harness with a turn-end hook,
+and the event printed back is the canonical one wherever the hook has one. An
+event with no canonical name is named, both ways, as its harness names it; JSON
+output carries both names.
+
 It prints the reason — hook (with the event and hook ID), quiet, or exit — and
 exits 0, or prints timeout and exits 124. The last field is where the next
 wait resumes: pass it as --after, as input's output is passed, and a hook
@@ -239,7 +245,13 @@ terminal.`,
 					return err
 				}
 			} else if hook, ok := result.Hook.Get(); ok {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s %s %s %s\n", result.Reason, hook.Event, hook.ID, result.ResumeAfter)
+				// The canonical name when the hook has one, so a caller that
+				// waited on a portable name is answered in it and need not know
+				// which harness the terminal runs (ADR 0146 §6). An event Claude
+				// Code has no word for is printed under its own name, which is
+				// the only name it has. JSON carries both.
+				event := hook.CanonicalEvent.Or(hook.Event)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s %s %s %s\n", result.Reason, event, hook.ID, result.ResumeAfter)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", result.Reason, result.ResumeAfter)
 			}
@@ -249,7 +261,7 @@ terminal.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringSliceVar(&hooks, "hook", nil, "Harness hook event to wait for, such as Stop (repeatable)")
+	cmd.Flags().StringSliceVar(&hooks, "hook", nil, "Harness hook event to wait for, by its own or canonical name, such as Stop (repeatable)")
 	cmd.Flags().StringVar(&after, "after", "", "Only hooks recorded after this resume point, as input or a previous wait printed it")
 	cmd.Flags().DurationVar(&quiet, "quiet", 0, "Wait for no output or input for this long (e.g. 10s)")
 	cmd.Flags().BoolVar(&exit, "exit", false, "Wait for the terminal's program to exit")

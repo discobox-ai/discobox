@@ -74,11 +74,14 @@ components:
         HarnessHookLog:
             additionalProperties: false
             properties:
+                canonicalEvent:
+                    description: Claude Code's name for the same event, absent when Claude Code has no name for it. Match on this to name an event the same way across harnesses.
+                    type: string
                 createdAt:
                     format: date-time
                     type: string
                 event:
-                    description: Provider-specific hook event name.
+                    description: The hook event name as the harness emitted it, never rewritten.
                     type: string
                 id:
                     description: Hook log ID.
@@ -800,7 +803,7 @@ components:
                     description: The exec has ended.
                     type: boolean
                 hookEvents:
-                    description: Harness hook event names from this terminal, such as Claude Code's Stop and Notification. The caller names them; the server holds no mapping of events to meanings.
+                    description: Harness hook event names from this terminal, such as Stop and Notification. A name matches either the harness's own event or its canonical (Claude Code) name, so a caller need not know which harness the terminal runs.
                     items:
                         type: string
                     type: array
@@ -1820,7 +1823,7 @@ paths:
                   required: false
                   schema:
                     type: string
-                - description: Only hooks for this provider event (e.g. PreToolUse).
+                - description: Only hooks whose own or canonical event name is this (e.g. PreToolUse).
                   in: query
                   name: event
                   required: false

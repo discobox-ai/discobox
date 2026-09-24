@@ -11,6 +11,7 @@
     "PostCompact": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event PostCompact", "timeout": 3 }] }],
     "SubagentStart": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event SubagentStart", "timeout": 3 }] }],
     "SubagentStop": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event SubagentStop", "timeout": 3 }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event Stop", "timeout": 3 }] }]
+    "Stop": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event Stop", "timeout": 3 }] }],
+    "Interrupt": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event Interrupt", "timeout": 3 }] }]
   }
 }

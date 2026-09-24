@@ -158,6 +158,12 @@ func TestDefinitionConfigure(t *testing.T) {
 	}
 }
 
+// The list is Codex's own hook lifecycle table at
+// https://developers.openai.com/codex/hooks (the repository ships no
+// equivalent Markdown). Last checked against 0.155.1, which defines 12
+// events. Interrupt is the one that does not fire for subagents, and
+// SessionEnd is the one that fires only for the main thread. See the
+// claude-code twin of this test for why the list goes stale.
 func TestImageOwnedHooksPublishEveryCodexLifecycleEvent(t *testing.T) {
 	raw, err := os.ReadFile("hooks.json")
 	if err != nil {
@@ -178,7 +184,7 @@ func TestImageOwnedHooksPublishEveryCodexLifecycleEvent(t *testing.T) {
 	wantEvents := []string{
 		"SessionStart", "SessionEnd", "PreToolUse", "PermissionRequest",
 		"PostToolUse", "UserPromptSubmit", "PreCompact", "PostCompact",
-		"SubagentStart", "SubagentStop", "Stop",
+		"SubagentStart", "SubagentStop", "Stop", "Interrupt",
 	}
 	if len(config.Hooks) != len(wantEvents) {
 		t.Fatalf("events = %d, want %d: %#v", len(config.Hooks), len(wantEvents), config.Hooks)
@@ -355,5 +361,47 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 				t.Fatalf("codex argv = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+// The mapping table and this image's hook config are one thing in two files,
+// and nothing but this test keeps them together. Every event the image
+// publishes must either have a canonical name or be listed here as having
+// none — so adding a hook without deciding what it is called across harnesses
+// fails rather than quietly recording a hook nothing portable can match
+// (ADR 0146 §3).
+func TestEveryPublishedEventHasACanonicalNameOrIsKnownNotTo(t *testing.T) {
+	raw, err := os.ReadFile("hooks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Hooks map[string]json.RawMessage `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	// Codex events Claude Code has no word for. Interrupt is the only one:
+	// Claude Code ends a turn with Stop or StopFailure and has no hook for the
+	// user interrupting one. Delete an entry here the day Claude Code grows a
+	// counterpart, and add the mapping instead.
+	noCanonicalName := []string{"Interrupt"}
+
+	for event := range config.Hooks {
+		canonical := harness.CanonicalHookEvent(Driver{}.ID(), event)
+		if slices.Contains(noCanonicalName, event) {
+			if canonical != "" {
+				t.Errorf("event %s now maps to %q; drop it from noCanonicalName", event, canonical)
+			}
+			continue
+		}
+		if canonical == "" {
+			t.Errorf("event %s has no canonical name and is not listed as having none", event)
+		}
+	}
+	for _, event := range noCanonicalName {
+		if _, ok := config.Hooks[event]; !ok {
+			t.Errorf("noCanonicalName lists %s, which this image does not publish", event)
+		}
 	}
 }

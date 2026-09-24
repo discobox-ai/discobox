@@ -619,12 +619,33 @@ answering every request with the same error. Any harness config satisfies it,
 so a server whose images are briefly unreachable still starts on a project that
 seeded on an earlier boot.
 
-Handing over is becoming ready. There are two states
-(`health.StatusStarting`, `health.StatusReady`):
+A first start whose **default provider cannot run** holds rather than
+installing another one (ADR 0148 §2). The provider a first start installs is
+the OS's VM backend, and on Linux a release build's is libkrun
+(`service.defaultProviderType`; a development build installs Docker, and the
+`defaultProvider` setting decides either way). Before installing it,
+`providers.CheckDefaultProvider` asks whether it can run here — for libkrun:
+the platform, `/dev/kvm`, and the image's libkrun loaded in a launcher child.
+One that cannot is never quietly replaced with a weaker boundary:
+`startupHandler.awaitChoice` holds startup at `needs-choice`, carrying the
+reason and the alternatives (`health.Choice`), until an answer arrives on
+`POST /setup/default-provider`. It stays bound and says why, rather than
+exiting like the platform prerequisite, because an exited server leaves its
+reason only in a log and a CLI that started it as a systemd user service cannot
+see its exit code. The answer is taken only over the local IPC endpoint
+(`markLocalIPC` tags a Unix-socket or named-pipe connection); on any other
+listener the path is one more `503`. The endpoint trusts whatever can connect to
+the socket, as every local request does. Pool agents can reach it too, but none
+exists while a first start is held, since no provider is installed yet. The log names the command that answers,
+for a server started by hand or by a service manager.
+
+Handing over is becoming ready. There are three states
+(`health.StatusStarting`, `health.StatusNeedsChoice`, `health.StatusReady`):
 
 | State | API | `/healthz` | Meaning |
 | --- | --- | --- | --- |
 | `starting` | `503` with the status on every route | `503` | no router yet: the database is being opened or migrated, the services built, or the built-in harnesses checked; `phase` names the step |
+| `needs-choice` | `503`; `POST /setup/default-provider` over local IPC; `POST /shutdown` | `503` | a first start is held until its default provider is chosen; `choice` says why and what it will accept. `/shutdown` stops it, so a user who answered no, or a newer server reclaiming the socket, is not left with a process only a kill ends |
 | `ready` | every route serves | `200` | the real router is serving |
 
 `startupHandler` answers every route itself until handover. The router's own
@@ -633,7 +654,8 @@ that router serves only once startup has finished. Nothing that runs after
 handover — image staging included (ADR 0069) — holds readiness back.
 
 `health` in the root module owns the payload, because the CLI that polls it is
-in another module. `Status.Starting()` is what a client waits out.
+in another module. `Status.Starting()` is what a client waits out;
+`Status.NeedsChoice()` is what it stops waiting on and asks about.
 
 ## Staging a Pool's Images
 

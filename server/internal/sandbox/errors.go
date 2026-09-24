@@ -113,3 +113,19 @@ func (e *ImageUnavailableError) Error() string {
 }
 
 func (e *ImageUnavailableError) Is(target error) bool { return target == ErrImageUnavailable }
+
+// ProviderUnavailableError is a provider that cannot run on this host at all,
+// found when a first start checks the provider it would install as the default
+// (ADR 0148 §2). Reason is one of the health package's Reason constants, which
+// is what lets a client that launched the server say why without reading prose.
+type ProviderUnavailableError struct {
+	Provider string
+	Reason   string
+	Err      error
+}
+
+func (e *ProviderUnavailableError) Error() string {
+	return fmt.Sprintf("the %s provider cannot run on this host: %v", e.Provider, e.Err)
+}
+
+func (e *ProviderUnavailableError) Unwrap() error { return e.Err }

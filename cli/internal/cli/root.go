@@ -683,7 +683,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	// A line per phase would leave a first run five of them scrolled above
 	// output that had nothing to do with them.
 	progress := a.serverStartupLine()
-	started, err := endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
+	launch := endpoint.LaunchOptions{
 		Endpoint: a.serverURL,
 		// Resolved only if a server actually has to be started, because
 		// resolving one can mean downloading it (ADR 0099) — and a machine
@@ -709,8 +709,19 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		OnProgress: func(status health.Status) {
 			progress.set(serverStartupText(status))
 		},
-	})
+	}
+	started, err := endpoint.EnsureRunning(ctx, launch)
 	progress.clear()
+	// A server holding its first start on a choice (ADR 0148 §2) is asked
+	// once, and then waited for as any other start would be: the answer lets it
+	// go on starting, it does not restart it.
+	var choice *endpoint.ChoiceRequiredError
+	if errors.As(err, &choice) {
+		if err = a.answerDefaultProviderChoice(ctx, choice.Choice, os.Stdin); err == nil {
+			_, err = endpoint.EnsureRunning(ctx, launch)
+			progress.clear()
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -806,6 +817,9 @@ func localServerEnv(endpoint string) []string {
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_DATA_DIR",
 		"DISCOBOX_DEFAULT_DISCOBOX_IMAGE",
+		// The provider a first start installs (ADR 0148 §4): how a scripted
+		// install on a host with no KVM chooses Docker before it is asked.
+		"DISCOBOX_DEFAULT_PROVIDER",
 		"DISCOBOX_ENCRYPTION_KEY",
 		"DISCOBOX_ENV_FILE",
 		"DISCOBOX_STATE_DIR",

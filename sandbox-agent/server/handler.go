@@ -920,6 +920,12 @@ func harnessHookLog(in store.HarnessHookRecord) sandboxapi.HarnessHookLog {
 		Payload:   jx.Raw(payload),
 		CreatedAt: in.CreatedAt,
 	}
+	// Absent rather than equal to Event when Claude Code has no name for this
+	// event (ADR 0146 §3): the field means "a Claude Code name", and a copy of
+	// the harness's own name would make it mean something weaker.
+	if in.CanonicalEvent != "" {
+		out.CanonicalEvent = sandboxapi.NewOptString(in.CanonicalEvent)
+	}
 	if in.TerminalID != "" {
 		out.TerminalId = sandboxapi.NewOptString(in.TerminalID)
 	}

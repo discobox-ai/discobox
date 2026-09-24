@@ -4166,8 +4166,11 @@ type HarnessHookLog struct {
 	TerminalId OptString `json:"terminalId"`
 	// Harness hook provider.
 	Provider string `json:"provider"`
-	// Provider-specific hook event name.
+	// The hook event name as the harness emitted it, never rewritten.
 	Event string `json:"event"`
+	// Claude Code's name for the same event, absent when Claude Code has no name for it. Match on this
+	// to name an event the same way across harnesses.
+	CanonicalEvent OptString `json:"canonicalEvent"`
 	// Raw provider hook payload.
 	Payload   jx.Raw    `json:"payload"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -4191,6 +4194,11 @@ func (s *HarnessHookLog) GetProvider() string {
 // GetEvent returns the value of Event.
 func (s *HarnessHookLog) GetEvent() string {
 	return s.Event
+}
+
+// GetCanonicalEvent returns the value of CanonicalEvent.
+func (s *HarnessHookLog) GetCanonicalEvent() OptString {
+	return s.CanonicalEvent
 }
 
 // GetPayload returns the value of Payload.
@@ -4221,6 +4229,11 @@ func (s *HarnessHookLog) SetProvider(val string) {
 // SetEvent sets the value of Event.
 func (s *HarnessHookLog) SetEvent(val string) {
 	s.Event = val
+}
+
+// SetCanonicalEvent sets the value of CanonicalEvent.
+func (s *HarnessHookLog) SetCanonicalEvent(val OptString) {
+	s.CanonicalEvent = val
 }
 
 // SetPayload sets the value of Payload.
@@ -16385,8 +16398,9 @@ func (s *SandboxExecWaitResultReason) UnmarshalText(data []byte) error {
 // The conditions a wait ends on; the first to hold ends it.
 // Ref: #/components/schemas/SandboxExecWaitUntil
 type SandboxExecWaitUntil struct {
-	// Harness hook event names from this terminal, such as Claude Code's Stop and Notification. The
-	// caller names them; the server holds no mapping of events to meanings.
+	// Harness hook event names from this terminal, such as Stop and Notification. A name matches either
+	// the harness's own event or its canonical (Claude Code) name, so a caller need not know which
+	// harness the terminal runs.
 	HookEvents []string `json:"hookEvents"`
 	// Only hooks recorded after this point count — the resumeAfter a previous wait or input answered
 	// with, passed back as given, so nothing recorded between two calls is missed. Absent, only hooks

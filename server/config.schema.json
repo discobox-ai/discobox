@@ -80,6 +80,16 @@
         "null"
       ]
     },
+    "defaultProvider": {
+      "description": "The provider a first start installs as this machine's default, on Linux: libkrun, which runs each pool in a VM, or docker, which runs sandboxes as containers on the host kernel with no VM boundary. Empty installs libkrun in a release build and docker in a development build. Read only until a default has been installed. Linux only. Environment: DISCOBOX_DEFAULT_PROVIDER (takes precedence over this file).",
+      "examples": [
+        "docker"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "defaultSandboxImage": {
       "description": "Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image. Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE (takes precedence over this file).",
       "examples": [

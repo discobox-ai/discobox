@@ -273,16 +273,69 @@ subject to repo trust prompts or user/project override:
   or merge Codex's hook format. Every configured lifecycle event invokes the
   generic publisher with its provider and event name while its stdin payload is
   stored unchanged. System hooks are treated as managed and trusted by policy.
+- opencode: `/etc/opencode/opencode.json`, naming an image-owned plugin by
+  absolute file URL
+  ([ADR 0147](../docs/adr/0147-opencode-publishes-its-lifecycle-through-an-image-owned-plugin.md)).
+  opencode has no command hook at any layer — its lifecycle reaches JavaScript
+  and nothing else — so `hook-plugin.js` is what the other two images declare
+  as commands, and it invokes the same generic publisher. The managed layer is
+  read last of all, after the user's global config and a project's, and plugin
+  entries accumulate across layers rather than replacing, so naming this one
+  neither loses to the configure flow's capture nor drops a plugin the user
+  added. Its policy baseline is a launch flag rather than a system layer (see
+  [OpenCode](#opencode)).
 
 Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
 the sandbox agent's generic publisher; no Go code in this package writes or
 merges a harness's settings.
 
-opencode publishes no hooks. Its lifecycle events reach JavaScript plugins
-rather than commands, and hooks are recorded and read by nothing that derives
-state from them (`sandbox-agent/agentstatus`), so the harness loses a log rather
-than a behavior. Its policy baseline is a launch flag rather than a system layer
-(see [OpenCode](#opencode)).
+The plugin publishes an **allowlist** of twelve bus events plus the
+`tool.execute.before` / `.after` hooks, which opencode delivers as hooks rather
+than bus events. opencode's bus carries per-token events —
+`message.part.updated` fires for every delta of every message — and a denylist
+would publish each event opencode ships next by default. That makes opencode's
+trail coarser than Claude Code's on purpose: it records a turn's shape and not
+its content. A test in `harness/opencode` reads the allowlist out of the plugin
+and fails if an event is published with no canonical name and no entry saying
+it has none.
+
+## Canonical hook event names
+
+A harness names its lifecycle events as it likes, and a caller waiting for one
+should not have to know which harness a terminal runs. `CanonicalHookEvent`
+(`hookevent.go`) answers Claude Code's name for another harness's event, or the
+empty string when Claude Code has no name for it
+([ADR 0146](../docs/adr/0146-a-hook-keeps-the-name-its-harness-used-and-gains-a-canonical-one.md)).
+The sandbox agent's store calls it as it records each hook — one owner, so no
+writer can store a row whose two names disagree — and keeps both names; a wait
+or an audit filter then matches either.
+
+- **Claude Code's vocabulary is the canonical one**, so `claude-code` is absent
+  from the table and passes through — including events added after the table
+  was written, which is the case a table would get wrong.
+- **An agreement on spelling is recorded, not assumed.** Codex adopted Claude
+  Code's hook vocabulary wholesale, and each of the 11 events it shares is an
+  entry mapping a name to itself: two harnesses spelling an event the same way
+  is a fact about how they were built, not a contract.
+- **An event with no Claude Code counterpart gets no canonical name**, never a
+  copy of its own. Codex's `Interrupt` is the only one today. Copying it in
+  would squat a name Claude Code has not chosen, so that when Claude Code does
+  choose one, stored hooks already claim it.
+- **`Stop`, `StopFailure`, `SessionStart` and `PostCompact` on opencode depend
+  on a filter, not only on a name.** opencode publishes `session.idle`,
+  `session.error`, `session.created` and `session.compacted` per *session*,
+  and its task tool runs sub-sessions, so a child's idle is indistinguishable
+  by name from the user's turn ending — opencode's own `run` command scopes the
+  two it consumes to the root session for the same reason. The image's plugin
+  publishes all four for the root session only, learning that a session is a
+  child from the `parentID` on its `session.created` and treating an unknown
+  session as the root. If that filter goes, all four entries must go with it;
+  a test in `harness/opencode` runs the plugin against the filtered set it
+  declares and
+  fails if the two drift apart.
+- Each image's hook config and this table are kept together by a test in that
+  harness's package: publishing an event without deciding what it is called
+  across harnesses fails the build.
 
 ## Source-scoped memory
 

@@ -41,6 +41,10 @@ type GuestImageBuildSpec struct {
 	// whatever is there. It is the directory the driver's guest resolver
 	// prefers over the published image.
 	Destination string
+	// Complete is called on the built artifacts before they are published, for
+	// a driver whose image is more than the guest: libkrun pairs the guest with
+	// the kernel and runtime it boots with. Optional.
+	Complete func(ctx context.Context, dir string) error
 	// Adopt is called once the artifacts are in place, for a driver that caches
 	// what it resolved. Optional.
 	Adopt func()
@@ -142,6 +146,11 @@ func solveGuestImage(ctx context.Context, bk *bkclient.Client, source string, sp
 		return solveErr
 	}
 
+	if spec.Complete != nil {
+		if err := spec.Complete(ctx, staging); err != nil {
+			return err
+		}
+	}
 	if err := publishGuestImage(staging, spec.Destination); err != nil {
 		return err
 	}

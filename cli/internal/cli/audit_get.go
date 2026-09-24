@@ -169,15 +169,21 @@ func (a *App) printSandboxTrailRecord(cmd *cobra.Command, client *apiclientgen.C
 			return writeTerminalSafeJSON(cmd.OutOrStdout(), &hooks[0])
 		}
 		hook := hooks[0]
-		return writeAuditFields(cmd.OutOrStdout(), []auditField{
+		fields := []auditField{
 			{"record", terminalSafe(hook.ID)},
 			{"discobox", terminalSafe(sandboxID)},
 			{"recorded", hook.CreatedAt.Format(time.RFC3339)},
 			{"terminal", terminalSafe(hook.TerminalId.Or(""))},
 			{"provider", terminalSafe(hook.Provider)},
 			{"event", terminalSafe(hook.Event)},
-			{"payload", terminalSafeMultiline(indentAuditJSON(hook.Payload))},
-		})
+		}
+		// Shown only when there is one: an absent canonical name is Claude Code
+		// having no word for this event (ADR 0146 §3), not a blank field.
+		if canonical := hook.CanonicalEvent.Or(""); canonical != "" {
+			fields = append(fields, auditField{"canonical", terminalSafe(canonical)})
+		}
+		fields = append(fields, auditField{"payload", terminalSafeMultiline(indentAuditJSON(hook.Payload))})
+		return writeAuditFields(cmd.OutOrStdout(), fields)
 	}
 	events, eventErr := a.readOneExecEvent(cmd.Context(), client, projectID, sandboxID, recordID)
 	if eventErr == nil && len(events) > 0 {

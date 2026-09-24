@@ -7748,6 +7748,12 @@ func (s *HarnessHookLog) encodeFields(e *jx.Encoder) {
 		e.Str(s.Event)
 	}
 	{
+		if s.CanonicalEvent.Set {
+			e.FieldStart("canonicalEvent")
+			s.CanonicalEvent.Encode(e)
+		}
+	}
+	{
 		if len(s.Payload) != 0 {
 			e.FieldStart("payload")
 			e.Raw(s.Payload)
@@ -7759,13 +7765,14 @@ func (s *HarnessHookLog) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessHookLog = [6]string{
+var jsonFieldsNameOfHarnessHookLog = [7]string{
 	0: "id",
 	1: "terminalId",
 	2: "provider",
 	3: "event",
-	4: "payload",
-	5: "createdAt",
+	4: "canonicalEvent",
+	5: "payload",
+	6: "createdAt",
 }
 
 // Decode decodes HarnessHookLog from json.
@@ -7823,8 +7830,18 @@ func (s *HarnessHookLog) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"event\"")
 			}
+		case "canonicalEvent":
+			if err := func() error {
+				s.CanonicalEvent.Reset()
+				if err := s.CanonicalEvent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"canonicalEvent\"")
+			}
 		case "payload":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.RawAppend(nil)
 				s.Payload = jx.Raw(v)
@@ -7836,7 +7853,7 @@ func (s *HarnessHookLog) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"payload\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -7857,7 +7874,7 @@ func (s *HarnessHookLog) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00111101,
+		0b01101101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

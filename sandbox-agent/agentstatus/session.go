@@ -18,9 +18,12 @@ import (
 //
 // What a session is *doing* — thinking, idle, waiting on the user — is not
 // reported. Deriving it meant reading each terminal's recorded harness hooks
-// through a per-harness event mapping, which only claude-code ever had, and
-// no client read the result. The hooks themselves are still recorded and
-// still readable through `discobox admin audit hooks`; only the derivation is gone.
+// and turning them into a state machine no client read. The hooks themselves
+// are still recorded, readable through `discobox admin audit hooks`, and
+// waitable by name (ADR 0137 §3); a harness's events now also carry the
+// canonical name for what they mean (`harness.CanonicalHookEvent`, ADR 0146),
+// so a reader that wants a session's activity can derive it without this
+// package guessing on every caller's behalf.
 func ComputeSessionStatus(all []execs.Exec) []SessionStatus {
 	var out []SessionStatus
 	for _, exec := range all {

@@ -34,8 +34,7 @@ import (
 )
 
 const (
-	libkrunE2EGuestDirEnv  = "DISCOBOX_LIBKRUN_E2E_GUEST_DIR"
-	libkrunE2EKernelDirEnv = "DISCOBOX_LIBKRUN_E2E_KERNEL_DIR"
+	libkrunE2EImageDirEnv  = "DISCOBOX_LIBKRUN_E2E_IMAGE_DIR"
 	libkrunE2EPoolImageEnv = "DISCOBOX_LIBKRUN_E2E_POOL_IMAGE"
 	libkrunE2EDockerEnv    = "DISCOBOX_LIBKRUN_E2E_DOCKER"
 )
@@ -55,8 +54,7 @@ func TestMain(m *testing.M) {
 // Docker, and pool-agent path. It is opt-in because it requires /dev/kvm and
 // host-built VM and pool-agent images.
 func TestLibkrunEndToEnd(t *testing.T) {
-	guestDir := requireE2EEnv(t, libkrunE2EGuestDirEnv)
-	kernelDir := requireE2EEnv(t, libkrunE2EKernelDirEnv)
+	imageDir := requireE2EEnv(t, libkrunE2EImageDirEnv)
 	poolImage := requireE2EValue(t, libkrunE2EPoolImageEnv)
 	dockerCLI := strings.TrimSpace(os.Getenv(libkrunE2EDockerEnv))
 	if dockerCLI == "" {
@@ -113,23 +111,23 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		_ = controlPlaneListener.Close()
 	})
 
-	guest, err := guestimage.New(guestimage.Config{
-		OverrideDir: guestDir,
-		Artifacts:   []guestimage.Artifact{{Name: rootArtifact}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	kernel, err := guestimage.New(guestimage.Config{
-		OverrideDir: kernelDir,
-		Artifacts:   []guestimage.Artifact{{Name: kernelArtifact}},
+	// One directory holds the whole libkrun image, and the driver is given no
+	// passt or libkrun of its own: booting proves the launcher loads both
+	// from the image (ADR 0148 §5).
+	image, err := guestimage.New(guestimage.Config{
+		OverrideDir: imageDir,
+		Artifacts: []guestimage.Artifact{
+			{Name: rootArtifact},
+			{Name: kernelArtifact},
+			{Name: libraryArtifact},
+			{Name: passtArtifact},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	driver, err := NewDriver(DriverConfig{
-		Guest:              guest,
-		Kernel:             kernel,
+		Image:              image,
 		StateDir:           filepath.Join(testRoot, "state"),
 		RuntimeDir:         filepath.Join(testRoot, "run"),
 		ControlPlaneSocket: controlPlaneSocket,

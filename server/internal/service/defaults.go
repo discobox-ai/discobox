@@ -11,8 +11,12 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	providerregistry "github.com/discobox-ai/discobox/server/providers"
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
+	providerlibkrun "github.com/discobox-ai/discobox/server/providers/libkrun"
+	"github.com/discobox-ai/discobox/version"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -111,6 +115,13 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
+	// Decided before the transaction, never inside it: deciding can mean
+	// fetching the libkrun image, and it can mean waiting for as long as it
+	// takes someone to answer.
+	providerType, err := s.chooseDefaultProvider(ctx)
+	if err != nil {
+		return err
+	}
 
 	return s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
 		if _, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
@@ -122,7 +133,7 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 		if _, err := txStore.GetProject(ctx, projectID); err != nil {
 			return err
 		}
-		defaultProvider := defaultSandboxProviderForOS(projectID, id.NewString(id.PrefixSandboxProvider))
+		defaultProvider := defaultSandboxProvider(projectID, id.NewString(id.PrefixSandboxProvider), providerType)
 		if err := txStore.CreateSandboxProviderInstance(ctx, defaultProvider); err != nil {
 			return err
 		}
@@ -171,32 +182,78 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 	return appStore.UpsertProject(ctx, project)
 }
 
-func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxProviderInstance {
+// defaultProviderType is the provider a first start installs on this host
+// (ADR 0148 §1). Each OS has its VM backend, and Linux's is libkrun in a release
+// build. A development build on Linux installs the host's Docker instead: the
+// `task dev` loop converges the images it builds onto that daemon, and a
+// contributor's machine should not need KVM to run the product. A configured
+// choice decides it on Linux, which is the only OS with two to choose from.
+func defaultProviderType(configured string, released bool) string {
+	switch runtime.GOOS {
+	case "linux":
+		if configured != "" {
+			return configured
+		}
+		if released {
+			return providerlibkrun.ProviderType
+		}
+		return providerdocker.ProviderType
+	case "darwin":
+		return "vz"
+	case "windows":
+		return "wslc"
+	default:
+		return "unsupported"
+	}
+}
+
+// chooseDefaultProvider decides the provider a first start installs, and checks
+// that it can run here before anything is installed. A provider that cannot is
+// never quietly replaced with a weaker one (ADR 0148 §2): the start holds until
+// someone chooses, or refuses when nothing can ask.
+func (s *Service) chooseDefaultProvider(ctx context.Context) (string, error) {
+	providerType := defaultProviderType(s.options.DefaultProvider, version.Released())
+	err := providerregistry.CheckDefaultProvider(ctx, providerType, s.options.providerFactoryOptions())
+	if err == nil {
+		return providerType, nil
+	}
+	var unavailable *sandbox.ProviderUnavailableError
+	if !errors.As(err, &unavailable) || s.options.AwaitDefaultProviderChoice == nil {
+		return "", err
+	}
+	return s.options.AwaitDefaultProviderChoice(ctx, unavailable, []string{providerdocker.ProviderType})
+}
+
+// defaultSandboxProvider is the instance a first start installs for
+// providerType.
+func defaultSandboxProvider(projectID, providerID, providerType string) *model.SandboxProviderInstance {
 	provider := &model.SandboxProviderInstance{
 		ID:        providerID,
 		ProjectID: projectID,
+		Type:      providerType,
 	}
-	switch runtime.GOOS {
-	case "linux":
-		provider.Type = "docker"
+	switch providerType {
+	case providerdocker.ProviderType:
 		provider.Name = "Docker"
 		provider.Config = defaultDockerProviderConfig()
-	case "darwin":
+	case providerlibkrun.ProviderType:
+		// Every field of the libkrun config has a default, and the image it
+		// boots carries the runtime, so the built-in instance needs no
+		// configuration and the host needs nothing installed (ADR 0148 §5).
+		provider.Name = "Linux"
+	case "vz":
 		// Every field of the vz config has a default (see its Definition), so the
 		// built-in instance carries no configuration of its own, exactly as on
 		// Windows. A Mac therefore gets a working default pool with nothing
 		// installed and nothing configured, which is the whole point of ADR 0062:
 		// the guest image is pulled from a registry and the pool builds its own
 		// images inside the VM it boots.
-		provider.Type = "vz"
 		provider.Name = "macOS"
-	case "windows":
+	case "wslc":
 		// Every field of the wslc config has a default (see its Definition), so
 		// the built-in instance carries no configuration of its own.
-		provider.Type = "wslc"
 		provider.Name = "Windows"
 	default:
-		provider.Type = "unsupported"
 		provider.Name = runtime.GOOS
 		provider.Disabled = true
 	}

@@ -3,6 +3,7 @@ package opencode
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -728,4 +729,277 @@ func stripValues(secrets []map[string]any) []map[string]any {
 		out = append(out, kept)
 	}
 	return out
+}
+
+// pluginSet reads one `const NAME = new Set([...])` out of the plugin source.
+func pluginSet(t *testing.T, text, name string) []string {
+	t.Helper()
+	first := strings.Index(text, name+" = new Set([")
+	if first < 0 {
+		t.Fatalf("plugin declares no %s", name)
+	}
+	last := strings.Index(text[first:], "])")
+	if last < 0 {
+		t.Fatalf("%s is not terminated", name)
+	}
+	var out []string
+	for _, line := range strings.Split(text[first:first+last], "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, `"`) {
+			continue
+		}
+		if event := strings.Trim(strings.TrimSuffix(line, ","), `"`); event != "" {
+			out = append(out, event)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s is empty", name)
+	}
+	return out
+}
+
+// publishedPluginEvents reads the event names the plugin publishes straight
+// out of its source: the allowlist it declares, plus the two tool hooks it
+// implements, which opencode delivers as hooks rather than bus events.
+func publishedPluginEvents(t *testing.T) []string {
+	t.Helper()
+	source, err := os.ReadFile("hook-plugin.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	events := pluginSet(t, text, "PUBLISHED_EVENTS")
+	for _, hook := range []string{"tool.execute.before", "tool.execute.after"} {
+		if !strings.Contains(text, `"`+hook+`": async`) {
+			t.Errorf("plugin does not implement the %s hook", hook)
+			continue
+		}
+		events = append(events, hook)
+	}
+	if len(events) == 0 {
+		t.Fatal("plugin publishes no events")
+	}
+	return events
+}
+
+// The plugin, the mapping table, and ADR 0146's rule are one thing in three
+// places. Every event the plugin publishes must either carry a canonical name
+// or be listed here as having none — so adding one without deciding what it is
+// called across harnesses fails rather than quietly recording a hook nothing
+// portable can match.
+func TestEveryPublishedEventHasACanonicalNameOrIsKnownNotTo(t *testing.T) {
+	// opencode facts Claude Code has no word for. Each is still recorded and
+	// still waitable under opencode's own name (ADR 0146 §3).
+	noCanonicalName := []string{
+		"permission.replied",
+		"command.executed",
+		"todo.updated",
+		"session.deleted",
+		"server.connected",
+		"installation.updated",
+	}
+	published := publishedPluginEvents(t)
+	for _, event := range published {
+		canonical := harness.CanonicalHookEvent(Driver{}.ID(), event)
+		if slices.Contains(noCanonicalName, event) {
+			if canonical != "" {
+				t.Errorf("event %s now maps to %q; drop it from noCanonicalName", event, canonical)
+			}
+			continue
+		}
+		if canonical == "" {
+			t.Errorf("event %s has no canonical name and is not listed as having none", event)
+		}
+	}
+	for _, event := range noCanonicalName {
+		if !slices.Contains(published, event) {
+			t.Errorf("noCanonicalName lists %s, which the plugin does not publish", event)
+		}
+	}
+}
+
+// The mapping table must not name an opencode event the plugin never
+// publishes: a translation for an event nothing emits is a claim about
+// opencode that nothing tests.
+func TestMappedEventsAreAllPublished(t *testing.T) {
+	published := publishedPluginEvents(t)
+	for _, event := range []string{
+		"tool.execute.before", "tool.execute.after", "session.idle", "session.error",
+		"session.created", "permission.asked", "session.compacted", "file.edited",
+	} {
+		if harness.CanonicalHookEvent(Driver{}.ID(), event) == "" {
+			t.Errorf("event %s lost its canonical name", event)
+		}
+		if !slices.Contains(published, event) {
+			t.Errorf("event %s has a canonical name but the plugin never publishes it", event)
+		}
+	}
+}
+
+// The stream-rate events are the reason the plugin keeps an allowlist at all:
+// message.part.updated fires for every delta of every message, and publishing
+// one spawns a process and writes a row (ADR 0147).
+func TestStreamRateEventsAreNotPublished(t *testing.T) {
+	published := publishedPluginEvents(t)
+	for _, event := range []string{
+		"message.part.updated", "message.updated", "message.removed",
+		"message.part.removed", "session.status", "session.diff",
+		"lsp.updated", "lsp.client.diagnostics", "file.watcher.updated",
+		"tui.prompt.append", "tui.command.execute", "tui.toast.show",
+	} {
+		if slices.Contains(published, event) {
+			t.Errorf("plugin publishes %s, which is excluded on purpose", event)
+		}
+	}
+}
+
+// The plugin reaches opencode from its managed layer, which outranks both the
+// user's global config and a project's — and which the configure flow's
+// capture cannot replace, because it captures the user's config and not this.
+func TestManagedConfigLoadsThePluginByAbsolutePath(t *testing.T) {
+	raw, err := os.ReadFile("managed-config.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Schema string   `json:"$schema"`
+		Plugin []string `json:"plugin"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	const want = "file:///usr/local/libexec/discobox/opencode-hook-plugin.js"
+	if !slices.Contains(config.Plugin, want) {
+		t.Fatalf("managed config plugins = %v, want it to name %s", config.Plugin, want)
+	}
+	// The path the config names and the path the image installs are the same
+	// file, and only the Dockerfile says so.
+	dockerfile, err := os.ReadFile("Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := strings.TrimPrefix(want, "file://")
+	if !strings.Contains(string(dockerfile), "hook-plugin.js "+installed) {
+		t.Errorf("Dockerfile does not install the plugin at %s", installed)
+	}
+	if !strings.Contains(string(dockerfile), "managed-config.json /etc/opencode/opencode.json") {
+		t.Error("Dockerfile does not install the managed config at /etc/opencode/opencode.json")
+	}
+}
+
+// Every hook this image publishes names opencode as its provider, which is
+// what the mapping is keyed by and what `discobox admin audit hooks --provider`
+// selects on.
+func TestPluginPublishesUnderTheDriverProvider(t *testing.T) {
+	source, err := os.ReadFile("hook-plugin.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), `const PROVIDER = "`+Driver{}.ID()+`"`) {
+		t.Errorf("plugin does not publish under the %s provider", Driver{}.ID())
+	}
+	if !strings.Contains(string(source), "discobox-hook-publish --provider ${PROVIDER} --event ${event}") {
+		t.Error("plugin does not publish through the generic publisher")
+	}
+}
+
+// pluginPublishes runs the plugin against synthetic events and answers the
+// event names it published, in order. It executes the plugin rather than
+// reading it: the filtering this image depends on is four lines that a test
+// grepping for constant names would not miss if they were deleted.
+func pluginPublishes(t *testing.T) []string {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not on PATH; the plugin's behavior is not exercised")
+	}
+	out, err := exec.CommandContext(t.Context(), node, filepath.Join("testdata", "plugin-driver.mjs")).Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			t.Fatalf("run plugin driver: %v: %s", err, exit.Stderr)
+		}
+		t.Fatalf("run plugin driver: %v", err)
+	}
+	var published []string
+	if err := json.Unmarshal(bytes.TrimSpace(out), &published); err != nil {
+		t.Fatalf("parse driver output %q: %v", out, err)
+	}
+	return published
+}
+
+// What the plugin does, not what it says. A child session's lifecycle is
+// filtered and the root's is not; tool calls are published whichever session
+// makes them; a stream-rate event is published from nowhere.
+func TestPluginPublishesTheRootSessionsLifecycleAndEveryToolCall(t *testing.T) {
+	got := pluginPublishes(t)
+	want := []string{
+		"session.created",     // the root's; the child's was dropped
+		"tool.execute.before", // tools are never filtered by session
+		"tool.execute.after",  // this one is a child's
+		"session.compacted",   // the root's; the child's was dropped
+		"session.error",       // the root's; the child's was dropped
+		"session.idle",        // the root's; the child's was dropped
+		"todo.updated",        // a child's, and not session-scoped
+		"session.deleted",     // published, and forgets the child
+		"session.idle",        // the forgotten child now reads as the root
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("published\n got %v\nwant %v", got, want)
+	}
+}
+
+// rootPublishedCounts is how many times the driver's script should publish
+// each session-scoped event: it fires every one of them for a child and for
+// the root, so a count proves both that the child's copy is filtered and that
+// the root's still gets through. A canonical name that stopped being published
+// altogether would pass a "no child copy" check on its own.
+var rootPublishedCounts = map[string]int{
+	"session.created":   1,
+	"session.idle":      2, // the root's, and the child's after its deletion
+	"session.error":     1,
+	"session.compacted": 1,
+}
+
+// Every session-scoped canonical name depends on the plugin filtering a
+// child's copy of it, and "every" is meant literally: the expectations are
+// checked against the plugin's own ROOT_ONLY_EVENTS, so adding a fifth
+// filtered event with a canonical name fails here until it is covered.
+func TestEveryCanonicalSessionEventIsFilteredForAChild(t *testing.T) {
+	source, err := os.ReadFile("hook-plugin.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered := pluginSet(t, string(source), "ROOT_ONLY_EVENTS")
+	published := pluginPublishes(t)
+
+	for _, event := range filtered {
+		if harness.CanonicalHookEvent(Driver{}.ID(), event) == "" {
+			continue // unmapped, so a child's copy cannot be mistaken for a turn end
+		}
+		want, covered := rootPublishedCounts[event]
+		if !covered {
+			t.Errorf("%s is filtered and has a canonical name, but the driver never fires it", event)
+			continue
+		}
+		if got := countOf(published, event); got != want {
+			t.Errorf("%s published %d times, want %d — a child's copy is leaking, or the root's is lost", event, got, want)
+		}
+	}
+	// And nothing in the expectations that the plugin no longer filters.
+	for event := range rootPublishedCounts {
+		if !slices.Contains(filtered, event) {
+			t.Errorf("%s is expected to be root-only but the plugin no longer filters it", event)
+		}
+	}
+}
+
+func countOf(all []string, want string) int {
+	n := 0
+	for _, v := range all {
+		if v == want {
+			n++
+		}
+	}
+	return n
 }
