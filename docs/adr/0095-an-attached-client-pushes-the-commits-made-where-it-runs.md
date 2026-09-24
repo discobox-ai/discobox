@@ -1,6 +1,9 @@
 # 0095 — An attached client pushes the commits made where it is running
 
 - **Status**: Accepted
+- **§2's parked-discobox rule superseded by**: [0150](0150-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)
+  — an attach delivers a discobox still awaiting its source; the beat still
+  never does. Everything else stands.
 - **Date**: 2026-09-05
 - **§1 amended**: 2026-09-09 — the trigger is a terminal attach, not the
   launcher's workspace. Nothing else changes.
