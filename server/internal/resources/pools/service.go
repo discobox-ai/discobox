@@ -267,7 +267,7 @@ var auditPoolReadTimeout = 20 * time.Second
 // agent never registered, is reported without being asked: there is no agent to
 // answer, and asking would only spend the deadline finding that out.
 func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter services.HTTPAuditFilter) (*services.HTTPAuditResult, error) {
-	pools, err := s.auditPools(ctx, projectID, filter)
+	pools, err := s.auditPools(ctx, projectID, filter.PoolID, filter.SandboxID)
 	if err != nil {
 		return nil, err
 	}
@@ -282,54 +282,120 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 		Ascending: filter.Ascending,
 		Limit:     filter.Limit,
 	}
+	pages, unavailable := readAuditPools(ctx, pools, func(ctx context.Context, pool *model.Pool) ([]services.PoolHTTPAuditExchange, error) {
+		poolQuery := query
+		// Each pool reads from its own cursor; the shared time bound is for
+		// the pools the caller has no cursor for.
+		poolQuery.AfterID = filter.After[pool.ID]
+		runtime, err := s.auditRuntime(ctx, pool)
+		if err != nil {
+			return nil, err
+		}
+		exchanges, err := runtime.ListHTTPAudit(ctx, pool, poolQuery)
+		if err != nil {
+			return nil, auditReadError(err)
+		}
+		page := make([]services.PoolHTTPAuditExchange, 0, len(exchanges))
+		for _, exchange := range exchanges {
+			page = append(page, services.PoolHTTPAuditExchange{PoolID: pool.ID, HTTPAuditExchange: exchange})
+		}
+		return page, nil
+	})
+	return &services.HTTPAuditResult{
+		Exchanges: mergeAuditPages(pages, filter.Limit, filter.Ascending, func(e services.PoolHTTPAuditExchange) auditOrder {
+			return auditOrder{at: e.CreatedAt, id: uint64(e.ID), pool: e.PoolID}
+		}),
+		UnavailablePools: unavailable,
+	}, nil
+}
+
+// ListDNSAudit reads the DNS queries the project's pools answered and merges
+// them exactly as ListHTTPAudit merges exchanges: the same pools asked, each
+// for the whole limit under its own deadline and cursor, and a pool that
+// cannot be read named rather than dropped (ADR 0148).
+func (s *Service) ListDNSAudit(ctx context.Context, projectID string, filter services.DNSAuditFilter) (*services.DNSAuditResult, error) {
+	pools, err := s.auditPools(ctx, projectID, filter.PoolID, filter.SandboxID)
+	if err != nil {
+		return nil, err
+	}
+	query := sandbox.DNSAuditFilter{
+		ID:        filter.ID,
+		SandboxID: filter.SandboxID,
+		Name:      filter.Name,
+		Since:     filter.Since,
+		Ascending: filter.Ascending,
+		Limit:     filter.Limit,
+	}
+	pages, unavailable := readAuditPools(ctx, pools, func(ctx context.Context, pool *model.Pool) ([]services.PoolDNSAuditQuery, error) {
+		poolQuery := query
+		poolQuery.AfterID = filter.After[pool.ID]
+		runtime, err := s.auditRuntime(ctx, pool)
+		if err != nil {
+			return nil, err
+		}
+		queries, err := runtime.ListDNSAudit(ctx, pool, poolQuery)
+		if err != nil {
+			return nil, auditReadError(err)
+		}
+		page := make([]services.PoolDNSAuditQuery, 0, len(queries))
+		for _, q := range queries {
+			page = append(page, services.PoolDNSAuditQuery{PoolID: pool.ID, DNSAuditQuery: q})
+		}
+		return page, nil
+	})
+	return &services.DNSAuditResult{
+		Queries: mergeAuditPages(pages, filter.Limit, filter.Ascending, func(q services.PoolDNSAuditQuery) auditOrder {
+			return auditOrder{at: q.CreatedAt, id: uint64(q.ID), pool: q.PoolID}
+		}),
+		UnavailablePools: unavailable,
+	}, nil
+}
+
+// readAuditPools reads one page from each pool concurrently, each under
+// auditPoolReadTimeout, and reports the pools that could not be read by name
+// with why. A pool with no agent to ask is reported without being asked.
+func readAuditPools[T any](ctx context.Context, pools []model.Pool, read func(context.Context, *model.Pool) ([]T, error)) ([][]T, []services.UnavailableAuditPool) {
 	type poolRead struct {
-		poolID    string
-		exchanges []sandbox.HTTPAuditExchange
-		err       error
+		rows []T
+		err  error
 	}
 	reads := make([]poolRead, len(pools))
 	var wg sync.WaitGroup
 	for i := range pools {
 		if reason := unaskableAuditPool(&pools[i]); reason != "" {
-			reads[i] = poolRead{poolID: pools[i].ID, err: errors.New(reason)}
+			reads[i] = poolRead{err: errors.New(reason)}
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			poolCtx, cancel := context.WithTimeout(ctx, auditPoolReadTimeout)
 			defer cancel()
-			poolQuery := query
-			// Each pool reads from its own cursor; the shared time bound is
-			// for the pools the caller has no cursor for.
-			poolQuery.AfterID = filter.After[pools[i].ID]
-			exchanges, err := s.readPoolHTTPAudit(poolCtx, &pools[i], poolQuery)
+			rows, err := read(poolCtx, &pools[i])
 			if err != nil && errors.Is(poolCtx.Err(), context.DeadlineExceeded) {
 				err = fmt.Errorf("it did not answer within %s", auditPoolReadTimeout)
 			}
-			reads[i] = poolRead{poolID: pools[i].ID, exchanges: exchanges, err: err}
-		}()
+			reads[i] = poolRead{rows: rows, err: err}
+		})
 	}
 	wg.Wait()
-
-	result := &services.HTTPAuditResult{
-		Exchanges:        []services.PoolHTTPAuditExchange{},
-		UnavailablePools: []services.UnavailableAuditPool{},
-	}
-	pages := make([][]services.PoolHTTPAuditExchange, 0, len(reads))
-	for _, read := range reads {
+	pages := make([][]T, 0, len(reads))
+	unavailable := []services.UnavailableAuditPool{}
+	for i, read := range reads {
 		if read.err != nil {
-			result.UnavailablePools = append(result.UnavailablePools, services.UnavailableAuditPool{PoolID: read.poolID, Reason: read.err.Error()})
+			unavailable = append(unavailable, services.UnavailableAuditPool{PoolID: pools[i].ID, Reason: read.err.Error()})
 			continue
 		}
-		page := make([]services.PoolHTTPAuditExchange, 0, len(read.exchanges))
-		for _, exchange := range read.exchanges {
-			page = append(page, services.PoolHTTPAuditExchange{PoolID: read.poolID, HTTPAuditExchange: exchange})
-		}
-		pages = append(pages, page)
+		pages = append(pages, read.rows)
 	}
-	result.Exchanges = mergeAuditPages(pages, filter)
-	return result, nil
+	return pages, unavailable
+}
+
+// auditOrder is what the merge orders a pool's record by: when it was
+// recorded, then its row ID and pool, so two records recorded in the same
+// instant have one stable order.
+type auditOrder struct {
+	at   time.Time
+	id   uint64
+	pool string
 }
 
 // mergeAuditPages interleaves the pools' pages into one answer, oldest or
@@ -348,15 +414,15 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 // Taking heads keeps what survives the cut a prefix of every page, whatever
 // order the page came back in, so the last record of a pool is always one with
 // nothing unread behind it.
-func mergeAuditPages(pages [][]services.PoolHTTPAuditExchange, filter services.HTTPAuditFilter) []services.PoolHTTPAuditExchange {
+func mergeAuditPages[T any](pages [][]T, limit int, ascending bool, order func(T) auditOrder) []T {
 	total := 0
 	for _, page := range pages {
 		total += len(page)
 	}
-	if filter.Limit > 0 && total > filter.Limit {
-		total = filter.Limit
+	if limit > 0 && total > limit {
+		total = limit
 	}
-	merged := make([]services.PoolHTTPAuditExchange, 0, total)
+	merged := make([]T, 0, total)
 	heads := make([]int, len(pages))
 	for len(merged) < total {
 		next := -1
@@ -364,7 +430,7 @@ func mergeAuditPages(pages [][]services.PoolHTTPAuditExchange, filter services.H
 			if heads[i] >= len(page) {
 				continue
 			}
-			if next < 0 || auditPageHeadIsFirst(page[heads[i]], pages[next][heads[next]], filter.Ascending) {
+			if next < 0 || auditPageHeadIsFirst(order(page[heads[i]]), order(pages[next][heads[next]]), ascending) {
 				next = i
 			}
 		}
@@ -377,12 +443,11 @@ func mergeAuditPages(pages [][]services.PoolHTTPAuditExchange, filter services.H
 	return merged
 }
 
-// auditPageHeadIsFirst orders two pages' heads: by time, then by ID and pool, so
-// two records recorded in the same instant have one stable order.
-func auditPageHeadIsFirst(a, b services.PoolHTTPAuditExchange, ascending bool) bool {
-	c := a.CreatedAt.Compare(b.CreatedAt)
+// auditPageHeadIsFirst orders two pages' heads: by time, then by ID and pool.
+func auditPageHeadIsFirst(a, b auditOrder, ascending bool) bool {
+	c := a.at.Compare(b.at)
 	if c == 0 {
-		c = cmp.Compare(a.ID, b.ID)
+		c = cmp.Compare(a.id, b.id)
 	}
 	if !ascending {
 		c = -c
@@ -390,7 +455,7 @@ func auditPageHeadIsFirst(a, b services.PoolHTTPAuditExchange, ascending bool) b
 	if c != 0 {
 		return c < 0
 	}
-	return strings.Compare(a.PoolID, b.PoolID) < 0
+	return strings.Compare(a.pool, b.pool) < 0
 }
 
 // unaskableAuditPool says why a pool has no agent to ask, or "" when it does.
@@ -406,16 +471,16 @@ func unaskableAuditPool(pool *model.Pool) string {
 }
 
 // auditPools resolves which pools an audit read asks. See ListHTTPAudit.
-func (s *Service) auditPools(ctx context.Context, projectID string, filter services.HTTPAuditFilter) ([]model.Pool, error) {
-	if filter.PoolID != "" {
-		pool, err := s.store.GetPool(ctx, projectID, filter.PoolID)
+func (s *Service) auditPools(ctx context.Context, projectID, poolID, sandboxID string) ([]model.Pool, error) {
+	if poolID != "" {
+		pool, err := s.store.GetPool(ctx, projectID, poolID)
 		if err != nil {
 			return nil, apperrors.NotFound(err, "pool not found")
 		}
 		return []model.Pool{*pool}, nil
 	}
-	if filter.SandboxID != "" {
-		sb, err := s.store.GetSandbox(ctx, projectID, filter.SandboxID)
+	if sandboxID != "" {
+		sb, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 		switch {
 		case err == nil && sb.PoolID != "":
 			pool, err := s.store.GetPool(ctx, projectID, sb.PoolID)
@@ -432,17 +497,12 @@ func (s *Service) auditPools(ctx context.Context, projectID string, filter servi
 	return s.store.ListPools(ctx, projectID)
 }
 
-// readPoolHTTPAudit reads one pool's audit through its provider's runtime.
-func (s *Service) readPoolHTTPAudit(ctx context.Context, pool *model.Pool, query sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
-	runtime, err := s.auditRuntime(ctx, pool)
-	if err != nil {
-		return nil, err
-	}
-	exchanges, err := runtime.ListHTTPAudit(ctx, pool, query)
+// auditReadError is how one pool's failed audit read is reported.
+func auditReadError(err error) error {
 	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
-		return nil, errors.New("its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled")
+		return errors.New("its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled")
 	}
-	return exchanges, err
+	return err
 }
 
 // GetHTTPAudit reads one audited exchange in full. Record IDs are only unique

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ func (s *Server) ControlHandler() http.Handler {
 	})
 	mux.HandleFunc("GET /audit/http", s.handleControlListHTTP)
 	mux.HandleFunc("GET /audit/socks", s.handleControlListSOCKS)
+	mux.HandleFunc("GET /audit/dns", s.handleControlListDNS)
 	mux.HandleFunc("GET /audit/dropped", s.handleControlDropped)
 	mux.HandleFunc("GET /audit/http/", s.handleControlHTTPArtifact)
 	return s.controlAuth.Middleware(mux)
@@ -88,8 +90,45 @@ func (s *Server) handleControlListSOCKS(w http.ResponseWriter, r *http.Request) 
 	writeControlJSON(w, rows, err)
 }
 
+func (s *Server) handleControlListDNS(w http.ResponseWriter, r *http.Request) {
+	// A DNS query has a name, not a host, and none of an exchange's status,
+	// policy verdict or credential use; a filter on those is refused rather
+	// than ignored, for the reason the SOCKS read gives.
+	for _, param := range []string{"host", "use_id", "min_status", "max_status", "blocked"} {
+		if r.URL.Query().Has(param) {
+			http.Error(w, param+" does not apply to DNS queries", http.StatusBadRequest)
+			return
+		}
+	}
+	query := r.URL.Query()
+	since, ascending, limit, err := controlWindow(query)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	opts := audit.DNSQueryOptions{
+		ClientID:  query.Get("client_id"),
+		Name:      query.Get("name"),
+		Since:     since,
+		Ascending: ascending,
+		Limit:     limit,
+	}
+	for param, field := range map[string]*auditid.DNSQueryID{"after_id": &opts.AfterID, "id": &opts.ID} {
+		if raw := query.Get(param); raw != "" {
+			id, err := auditid.ParseDNSQuery(raw)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("%s %q: %v", param, raw, err), http.StatusBadRequest)
+				return
+			}
+			*field = id
+		}
+	}
+	rows, err := s.audit.ListDNS(r.Context(), opts)
+	writeControlJSON(w, rows, err)
+}
+
 func (s *Server) handleControlDropped(w http.ResponseWriter, _ *http.Request) {
-	writeControlJSON(w, map[string]uint64{"dropped": s.audit.Dropped()}, nil)
+	writeControlJSON(w, map[string]uint64{"dropped": s.audit.Dropped(), "dnsDropped": s.audit.DNSDropped()}, nil)
 }
 
 func (s *Server) handleControlHTTPArtifact(w http.ResponseWriter, r *http.Request) {
@@ -174,26 +213,17 @@ var httpOnlyControlParams = []string{"use_id", "min_status", "max_status", "bloc
 
 func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 	query := r.URL.Query()
-	limit, _ := strconv.Atoi(query.Get("limit"))
+	since, ascending, limit, err := controlWindow(query)
+	if err != nil {
+		return audit.QueryOptions{}, err
+	}
 	opts := audit.QueryOptions{
-		ClientID: query.Get("client_id"),
-		Host:     query.Get("host"),
-		UseID:    query.Get("use_id"),
-		Limit:    limit,
-	}
-	if raw := query.Get("since"); raw != "" {
-		since, err := time.Parse(time.RFC3339Nano, raw)
-		if err != nil {
-			return audit.QueryOptions{}, fmt.Errorf("since %q is not an RFC 3339 time", raw)
-		}
-		opts.Since = since
-	}
-	switch order := query.Get("order"); order {
-	case "", "desc":
-	case "asc":
-		opts.Ascending = true
-	default:
-		return audit.QueryOptions{}, fmt.Errorf("order %q is not asc or desc", order)
+		ClientID:  query.Get("client_id"),
+		Host:      query.Get("host"),
+		UseID:     query.Get("use_id"),
+		Since:     since,
+		Ascending: ascending,
+		Limit:     limit,
 	}
 	for param, field := range map[string]*int{"min_status": &opts.MinStatus, "max_status": &opts.MaxStatus} {
 		if raw := query.Get(param); raw != "" {
@@ -219,6 +249,25 @@ func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 		opts.Blocked = &blocked
 	}
 	return opts, nil
+}
+
+// controlWindow reads the parameters every audit list shares: where the read
+// starts in time, which way it runs, and how many rows it returns.
+func controlWindow(query url.Values) (since time.Time, ascending bool, limit int, err error) {
+	limit, _ = strconv.Atoi(query.Get("limit"))
+	if raw := query.Get("since"); raw != "" {
+		if since, err = time.Parse(time.RFC3339Nano, raw); err != nil {
+			return time.Time{}, false, 0, fmt.Errorf("since %q is not an RFC 3339 time", raw)
+		}
+	}
+	switch order := query.Get("order"); order {
+	case "", "desc":
+	case "asc":
+		ascending = true
+	default:
+		return time.Time{}, false, 0, fmt.Errorf("order %q is not asc or desc", order)
+	}
+	return since, ascending, limit, nil
 }
 
 // controlHTTPArtifact reads /audit/http/{id}, whose artifact is empty and

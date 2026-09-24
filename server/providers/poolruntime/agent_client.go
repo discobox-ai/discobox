@@ -96,6 +96,61 @@ func (p *poolAgentClient) ClearCache(ctx context.Context, projectID string) ([]s
 	return res.StoppedSandboxIds, nil
 }
 
+// ListDNSAudit asks the pool agent for the DNS queries it answered, with the
+// sandbox in the token as well as the filter, as ListHTTPAudit does.
+func (p *poolAgentClient) ListDNSAudit(ctx context.Context, projectID string, filter sandbox.DNSAuditFilter) ([]sandbox.DNSAuditQuery, error) {
+	client, release, err := p.poolClient(sandbox.SandboxRef{ProjectID: projectID, SandboxID: filter.SandboxID}, poolagentauth.ScopeAuditRead)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	params := poolclient.PoolListDNSAuditParams{ProjectId: projectID, PoolId: p.poolID}
+	if filter.SandboxID != "" {
+		params.SandboxId = poolclient.NewOptString(filter.SandboxID)
+	}
+	if filter.Name != "" {
+		params.Name = poolclient.NewOptString(filter.Name)
+	}
+	if filter.ID > 0 {
+		params.ID = poolclient.NewOptString(filter.ID.String())
+	}
+	if !filter.Since.IsZero() {
+		params.Since = poolclient.NewOptDateTime(filter.Since)
+	}
+	if filter.Limit > 0 {
+		params.Limit = poolclient.NewOptInt(filter.Limit)
+	}
+	if filter.Ascending {
+		params.Order = poolclient.NewOptPoolListDNSAuditOrder(poolclient.PoolListDNSAuditOrderAsc)
+	}
+	if filter.AfterID > 0 {
+		params.AfterId = poolclient.NewOptString(filter.AfterID.String())
+	}
+	res, err := client.PoolListDNSAudit(ctx, params)
+	if err != nil {
+		return nil, mapPoolClientError(err)
+	}
+	out := make([]sandbox.DNSAuditQuery, 0, len(res.Queries))
+	for _, q := range res.Queries {
+		id, err := auditid.ParseDNSQuery(q.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sandbox.DNSAuditQuery{
+			ID:             id,
+			CreatedAt:      q.CreatedAt,
+			SandboxID:      q.SandboxId,
+			Name:           q.Name,
+			Type:           q.Type,
+			RCode:          q.Rcode,
+			Answers:        append([]string{}, q.Answers...),
+			DurationMillis: q.DurationMillis.Or(0),
+			Error:          q.Error.Or(""),
+		})
+	}
+	return out, nil
+}
+
 // ListHTTPAudit asks the pool agent for its proxy's HTTP audit. The sandbox a
 // query names goes into the token as well as the filter: the agent narrows to
 // the token's sandbox, so a scoped read cannot come back wider than it asked.

@@ -37,8 +37,9 @@ var SandboxDNSAddress = netip.MustParseAddr("169.254.53.53")
 var sandboxDNSListenAddress = netip.AddrPortFrom(SandboxDNSAddress, dnsforward.Port).String()
 
 // serveDNS answers sandboxes' DNS until ctx is done. The upstream is this
-// container's own resolver, which reaches the outside.
-func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle) error {
+// container's own resolver, which reaches the outside; every query is audited
+// into server's trail, beside the sandbox's HTTP.
+func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, server *proxy.Server) error {
 	upstream, err := dnsforward.SystemUpstream("/etc/resolv.conf")
 	if err != nil {
 		return fmt.Errorf("find the pool's resolver: %w", err)
@@ -49,7 +50,7 @@ func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.Certificat
 		return err
 	}
 	logger.Info("pool sandbox dns serving", "addr", tcp.Addr(), "upstream", upstream)
-	dnsforward.New(logger, upstream).Serve(ctx, tls.NewListener(tcp, sandboxTLSConfig(bundle)))
+	dnsforward.New(logger, upstream, server.RecordDNS).Serve(ctx, tls.NewListener(tcp, sandboxTLSConfig(bundle)))
 	return nil
 }
 

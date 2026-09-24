@@ -349,7 +349,7 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 		// Logged, not sent to errCh, for the control API's reason: a sandbox
 		// that cannot resolve names can still reach everything through the
 		// proxy, which must not stop with it.
-		if err := serveDNS(ctx, logger, bundle); err != nil {
+		if err := serveDNS(ctx, logger, bundle, server); err != nil {
 			logger.Warn("pool sandbox dns stopped", "error", err)
 		}
 	}()

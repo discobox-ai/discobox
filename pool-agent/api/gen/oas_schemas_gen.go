@@ -1820,6 +1820,52 @@ func (o OptNilStringArray) Or(d []string) []string {
 	return d
 }
 
+// NewOptPoolListDNSAuditOrder returns new OptPoolListDNSAuditOrder with value set to v.
+func NewOptPoolListDNSAuditOrder(v PoolListDNSAuditOrder) OptPoolListDNSAuditOrder {
+	return OptPoolListDNSAuditOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolListDNSAuditOrder is optional PoolListDNSAuditOrder.
+type OptPoolListDNSAuditOrder struct {
+	Value PoolListDNSAuditOrder
+	Set   bool
+}
+
+// IsSet returns true if OptPoolListDNSAuditOrder was set.
+func (o OptPoolListDNSAuditOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolListDNSAuditOrder) Reset() {
+	var v PoolListDNSAuditOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolListDNSAuditOrder) SetTo(v PoolListDNSAuditOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolListDNSAuditOrder) Get() (v PoolListDNSAuditOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolListDNSAuditOrder) Or(d PoolListDNSAuditOrder) PoolListDNSAuditOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolListHTTPAuditOrder returns new OptPoolListHTTPAuditOrder with value set to v.
 func NewOptPoolListHTTPAuditOrder(v PoolListHTTPAuditOrder) OptPoolListHTTPAuditOrder {
 	return OptPoolListHTTPAuditOrder{
@@ -2384,6 +2430,162 @@ func (s *PoolClearCacheResponse) SetSchema(val OptURI) {
 // SetStoppedSandboxIds sets the value of StoppedSandboxIds.
 func (s *PoolClearCacheResponse) SetStoppedSandboxIds(val []string) {
 	s.StoppedSandboxIds = val
+}
+
+// One DNS query a sandbox asked of its pool, which answered it over the
+// sandbox's mTLS channel and audited it beside its HTTP (ADR 0148).
+// Ref: #/components/schemas/PoolDNSAuditQuery
+type PoolDNSAuditQuery struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The answers' data -- addresses, and the names aliases and pointers lead to; free-text records are
+	// left out.
+	Answers []string `json:"answers"`
+	// When the query was asked.
+	CreatedAt time.Time `json:"createdAt"`
+	// How long the pool took to answer, in milliseconds.
+	DurationMillis OptInt64 `json:"durationMillis"`
+	// Why there was no answer, when there was none.
+	Error OptString `json:"error"`
+	// Audit record ID, written dns_<row>, unique within this pool and ordered by write.
+	ID string `json:"id"`
+	// The name asked, lowercased and without the trailing dot.
+	Name string `json:"name"`
+	// The answer's response code as DNS tools print it (NOERROR, NXDOMAIN, SERVFAIL, ...); empty when
+	// there was no answer.
+	Rcode string `json:"rcode"`
+	// Sandbox whose client certificate asked.
+	SandboxId string `json:"sandboxId"`
+	// The record type asked for (A, AAAA, ...).
+	Type string `json:"type"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolDNSAuditQuery) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAnswers returns the value of Answers.
+func (s *PoolDNSAuditQuery) GetAnswers() []string {
+	return s.Answers
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *PoolDNSAuditQuery) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDurationMillis returns the value of DurationMillis.
+func (s *PoolDNSAuditQuery) GetDurationMillis() OptInt64 {
+	return s.DurationMillis
+}
+
+// GetError returns the value of Error.
+func (s *PoolDNSAuditQuery) GetError() OptString {
+	return s.Error
+}
+
+// GetID returns the value of ID.
+func (s *PoolDNSAuditQuery) GetID() string {
+	return s.ID
+}
+
+// GetName returns the value of Name.
+func (s *PoolDNSAuditQuery) GetName() string {
+	return s.Name
+}
+
+// GetRcode returns the value of Rcode.
+func (s *PoolDNSAuditQuery) GetRcode() string {
+	return s.Rcode
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolDNSAuditQuery) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetType returns the value of Type.
+func (s *PoolDNSAuditQuery) GetType() string {
+	return s.Type
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolDNSAuditQuery) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAnswers sets the value of Answers.
+func (s *PoolDNSAuditQuery) SetAnswers(val []string) {
+	s.Answers = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *PoolDNSAuditQuery) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDurationMillis sets the value of DurationMillis.
+func (s *PoolDNSAuditQuery) SetDurationMillis(val OptInt64) {
+	s.DurationMillis = val
+}
+
+// SetError sets the value of Error.
+func (s *PoolDNSAuditQuery) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetID sets the value of ID.
+func (s *PoolDNSAuditQuery) SetID(val string) {
+	s.ID = val
+}
+
+// SetName sets the value of Name.
+func (s *PoolDNSAuditQuery) SetName(val string) {
+	s.Name = val
+}
+
+// SetRcode sets the value of Rcode.
+func (s *PoolDNSAuditQuery) SetRcode(val string) {
+	s.Rcode = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolDNSAuditQuery) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetType sets the value of Type.
+func (s *PoolDNSAuditQuery) SetType(val string) {
+	s.Type = val
+}
+
+// Ref: #/components/schemas/PoolDNSAuditResponse
+type PoolDNSAuditResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Matching queries, newest first.
+	Queries []PoolDNSAuditQuery `json:"queries"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolDNSAuditResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetQueries returns the value of Queries.
+func (s *PoolDNSAuditResponse) GetQueries() []PoolDNSAuditQuery {
+	return s.Queries
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolDNSAuditResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetQueries sets the value of Queries.
+func (s *PoolDNSAuditResponse) SetQueries(val []PoolDNSAuditQuery) {
+	s.Queries = val
 }
 
 // PoolDeleteSandboxNoContent is response for PoolDeleteSandbox operation.
@@ -3142,6 +3344,47 @@ func (s *PoolHTTPAuditResponse) SetSchema(val OptURI) {
 // SetExchanges sets the value of Exchanges.
 func (s *PoolHTTPAuditResponse) SetExchanges(val []PoolHTTPAuditExchange) {
 	s.Exchanges = val
+}
+
+type PoolListDNSAuditOrder string
+
+const (
+	PoolListDNSAuditOrderAsc  PoolListDNSAuditOrder = "asc"
+	PoolListDNSAuditOrderDesc PoolListDNSAuditOrder = "desc"
+)
+
+// AllValues returns all PoolListDNSAuditOrder values.
+func (PoolListDNSAuditOrder) AllValues() []PoolListDNSAuditOrder {
+	return []PoolListDNSAuditOrder{
+		PoolListDNSAuditOrderAsc,
+		PoolListDNSAuditOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolListDNSAuditOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolListDNSAuditOrderAsc:
+		return []byte(s), nil
+	case PoolListDNSAuditOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolListDNSAuditOrder) UnmarshalText(data []byte) error {
+	switch PoolListDNSAuditOrder(data) {
+	case PoolListDNSAuditOrderAsc:
+		*s = PoolListDNSAuditOrderAsc
+		return nil
+	case PoolListDNSAuditOrderDesc:
+		*s = PoolListDNSAuditOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 type PoolListHTTPAuditOrder string

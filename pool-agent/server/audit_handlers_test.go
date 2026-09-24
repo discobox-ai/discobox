@@ -36,6 +36,15 @@ type recordingAuditReader struct {
 	getID  auditid.ExchangeID
 	getRow *proxy.AuditHTTPExchange
 	getErr error
+
+	dnsQuery proxy.AuditDNSQueryOptions
+	dnsRows  []proxy.AuditDNSQuery
+}
+
+func (r *recordingAuditReader) ListDNS(_ context.Context, sandboxID string, query proxy.AuditDNSQueryOptions) ([]proxy.AuditDNSQuery, error) {
+	r.calls++
+	r.sandboxID, r.dnsQuery = sandboxID, query
+	return r.dnsRows, r.err
 }
 
 func (r *recordingAuditReader) GetHTTP(_ context.Context, sandboxID string, id auditid.ExchangeID) (*proxy.AuditHTTPExchange, error) {
@@ -407,5 +416,70 @@ func TestPoolGetHTTPAuditRequiresAuditReadAndReportsNotFound(t *testing.T) {
 				t.Fatalf("status = %d, want %d; body = %s", resp.Code, tc.wantStatus, resp.Body.String())
 			}
 		})
+	}
+}
+
+func dnsAuditRequest(router http.Handler, query, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/pool/pool-1/audit/dns"+query, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	return resp
+}
+
+// DNS names are as telling as URLs, so the read takes the same scope; an
+// operation missing from requiredPoolOperationScope would need none at all.
+func TestPoolListDNSAuditRequiresAuditReadAndNarrows(t *testing.T) {
+	reader := &recordingAuditReader{}
+	router, sign := newAuditRouter(t, reader)
+	if resp := dnsAuditRequest(router, "", sign("project-1", "pool-1", "", ScopeSandboxRead)); resp.Code != http.StatusForbidden {
+		t.Fatalf("without audit:read: status = %d, want 403", resp.Code)
+	}
+	if resp := dnsAuditRequest(router, "?sandboxId=sandbox-2", sign("project-1", "pool-1", "sandbox-1", ScopeAuditRead)); resp.Code != http.StatusForbidden {
+		t.Fatalf("naming another sandbox: status = %d, want 403", resp.Code)
+	}
+	if reader.calls != 0 {
+		t.Fatal("the proxy was read for a refused request")
+	}
+	if resp := dnsAuditRequest(router, "", sign("project-1", "pool-1", "sandbox-1", ScopeAuditRead)); resp.Code != http.StatusOK || reader.sandboxID != "sandbox-1" {
+		t.Fatalf("token's sandbox: status = %d, read for %q", resp.Code, reader.sandboxID)
+	}
+}
+
+func TestPoolListDNSAuditPassesFiltersAndMapsRows(t *testing.T) {
+	createdAt := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	reader := &recordingAuditReader{dnsRows: []proxy.AuditDNSQuery{
+		{ID: 7, CreatedAt: createdAt, ClientID: "sandbox-1", Name: "api.github.com", Type: "A", RCode: "NOERROR", Answers: "192.0.2.1,192.0.2.2", DurationMillis: 3},
+		{ID: 8, CreatedAt: createdAt, ClientID: "sandbox-1", Name: "gone.example", Type: "AAAA", Error: "upstream timed out"},
+	}}
+	router, sign := newAuditRouter(t, reader)
+	resp := dnsAuditRequest(router, "?name=api.github.com&since=2026-09-24T09:00:00Z&limit=5&order=asc&afterId=dns_6&id=dns_7", sign("project-1", "pool-1", "", ScopeAuditRead))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", resp.Code, resp.Body.String())
+	}
+	if q := reader.dnsQuery; q.Name != "api.github.com" || q.Limit != 5 || !q.Ascending || q.AfterID != 6 || q.ID != 7 || !q.Since.Equal(time.Date(2026, 9, 24, 9, 0, 0, 0, time.UTC)) {
+		t.Fatalf("proxy query = %+v, want the request's filters", q)
+	}
+	var body struct {
+		Queries []struct {
+			ID      string   `json:"id"`
+			Name    string   `json:"name"`
+			Rcode   string   `json:"rcode"`
+			Answers []string `json:"answers"`
+			Error   string   `json:"error"`
+		} `json:"queries"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Queries) != 2 || body.Queries[0].ID != "dns_7" || !reflect.DeepEqual(body.Queries[0].Answers, []string{"192.0.2.1", "192.0.2.2"}) {
+		t.Fatalf("queries = %+v", body.Queries)
+	}
+	// No answer is an empty list, not null, and the reason travels with it.
+	if body.Queries[1].Answers == nil || len(body.Queries[1].Answers) != 0 || body.Queries[1].Error != "upstream timed out" || !strings.Contains(resp.Body.String(), `"answers":[]`) {
+		t.Fatalf("failed query = %+v; body = %s", body.Queries[1], resp.Body.String())
+	}
+	if resp := dnsAuditRequest(router, "?afterId=http_6", sign("project-1", "pool-1", "", ScopeAuditRead)); resp.Code != http.StatusBadRequest {
+		t.Fatalf("an HTTP cursor: status = %d, want 400", resp.Code)
 	}
 }

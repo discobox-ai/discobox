@@ -357,3 +357,33 @@ func TestPoolProviderSeparatesAMissingRouteFromAMissingRecording(t *testing.T) {
 		})
 	}
 }
+
+// The DNS read is minted the same sandbox-scoped audit token as the HTTP one,
+// and an agent without the route is reported as predating it.
+func TestPoolAgentClientDNSAuditMintsASandboxScopedAuditToken(t *testing.T) {
+	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
+	runtimeProvider.staticToken = true
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	_, _ = provider.ListDNSAudit(context.Background(), activePool("pool-1"), sandbox.DNSAuditFilter{SandboxID: "sandbox-1"})
+	if len(manager.agentTokenClaims) == 0 {
+		t.Fatal("list dns audit minted no pool-agent token")
+	}
+	claims := manager.agentTokenClaims[0]
+	if claims.ProjectID != "project-1" || claims.PoolID != "pool-1" || claims.SandboxID != "sandbox-1" || !reflect.DeepEqual(claims.Scopes, []string{poolagentauth.ScopeAuditRead}) {
+		t.Fatalf("agent token claims = %#v", claims)
+	}
+
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(old.Close)
+	oldAgent := newTestRuntimeProvider(t, "project-1", "pool-1")
+	oldAgent.baseURL = old.URL
+	oldAgent.client = old.Client()
+	oldProvider := New(oldAgent, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1"), schedulable: true})
+	if _, err := oldProvider.ListDNSAudit(context.Background(), activePool("pool-1"), sandbox.DNSAuditFilter{}); !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		t.Fatalf("list dns audit against an agent without the route = %v, want ErrPoolAgentUnsupported", err)
+	}
+}

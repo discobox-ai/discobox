@@ -259,6 +259,36 @@ type PoolHTTPAuditExchangeDetail struct {
 	sandbox.HTTPAuditExchangeDetail
 }
 
+// DNSAuditFilter narrows ListDNSAudit. Its fields mean what HTTPAuditFilter's
+// do; Name is the name asked, matched exactly.
+type DNSAuditFilter struct {
+	// ID reads the one query with this ID, from each pool asked; IDs are only
+	// unique within a pool, so a caller wanting one record names the pool too.
+	ID        auditid.DNSQueryID
+	SandboxID string
+	PoolID    string
+	Name      string
+	Since     time.Time
+	Ascending bool
+	After     map[string]auditid.DNSQueryID
+	Limit     int
+}
+
+// DNSAuditResult is a merged read of every pool that was asked.
+type DNSAuditResult struct {
+	Queries []PoolDNSAuditQuery `json:"queries"`
+	// UnavailablePools are the pools asked that did not answer. A non-empty
+	// list means queries may be missing, and the caller must be told.
+	UnavailablePools []UnavailableAuditPool `json:"unavailablePools"`
+}
+
+// PoolDNSAuditQuery is an audited DNS query and the pool that answered it.
+// Row IDs are only unique within a pool.
+type PoolDNSAuditQuery struct {
+	PoolID string `json:"poolId"`
+	sandbox.DNSAuditQuery
+}
+
 // UnavailableAuditPool is a pool whose part of the trail could not be read.
 type UnavailableAuditPool struct {
 	PoolID string `json:"poolId"`
@@ -301,6 +331,10 @@ type PoolService interface {
 	// one audited exchange on one pool, narrowed to sandboxID when it is set.
 	// The caller closes the artifact's body.
 	OpenHTTPAuditArtifact(ctx context.Context, projectID, poolID, sandboxID string, id auditid.ExchangeID, artifact string) (*sandbox.HTTPAuditArtifact, error)
+	// ListDNSAudit reads the DNS queries the project's pools answered for
+	// their sandboxes, from every pool the filter allows, merged as
+	// ListHTTPAudit merges (ADR 0148).
+	ListDNSAudit(ctx context.Context, projectID string, filter DNSAuditFilter) (*DNSAuditResult, error)
 	// OpenPoolConsole attaches to the pool host's administrative console: a
 	// privileged root shell on the machine running the pool's runtime, for
 	// debugging the backend itself.

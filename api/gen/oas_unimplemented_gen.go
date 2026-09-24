@@ -538,6 +538,17 @@ func (UnimplementedHandler) ListCredentialVerdicts(ctx context.Context, params L
 	return r, ht.ErrNotImplemented
 }
 
+// ListDNSAudit implements list-dns-audit operation.
+//
+// The DNS queries the project's pools answered for their sandboxes, newest first, read from each
+// pool through its agent and merged the way the HTTP audit is (ADR 0130 §§1, 4; ADR 0148). A pool
+// that does not answer is listed in unavailablePools rather than dropped.
+//
+// GET /projects/{projectId}/audit/dns
+func (UnimplementedHandler) ListDNSAudit(ctx context.Context, params ListDNSAuditParams) (r ListDNSAuditRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListExecEvents implements list-exec-events operation.
 //
 // Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),

@@ -14,13 +14,14 @@ import (
 type SweepResult struct {
 	HTTPRows  int64
 	SOCKSRows int64
+	DNSRows   int64
 	Files     int64
 	Bytes     int64
 }
 
 // Empty reports whether the pass reclaimed nothing.
 func (r SweepResult) Empty() bool {
-	return r.HTTPRows == 0 && r.SOCKSRows == 0 && r.Files == 0
+	return r.HTTPRows == 0 && r.SOCKSRows == 0 && r.DNSRows == 0 && r.Files == 0
 }
 
 // Sweep deletes audit rows written before cutoff and reclaims the spool files
@@ -65,6 +66,11 @@ func (r *Recorder) Sweep(ctx context.Context, cutoff time.Time) (SweepResult, er
 			errs = append(errs, fmt.Errorf("delete expired socks audit rows: %w", res.Error))
 		}
 		result.SOCKSRows = res.RowsAffected
+		res = db.Where("created_at < ?", cutoff).Delete(&DNSQuery{})
+		if res.Error != nil {
+			errs = append(errs, fmt.Errorf("delete expired dns audit rows: %w", res.Error))
+		}
+		result.DNSRows = res.RowsAffected
 	}
 	for _, dir := range []string{r.streamDir, r.bodyDir} {
 		files, bytes, err := r.sweepSpoolDir(ctx, dir, cutoff)

@@ -27,6 +27,19 @@ type auditPoolProvider struct {
 	errs    map[string]error
 	hang    map[string]bool
 	queries map[string]sandbox.HTTPAuditQuery
+
+	dnsRows    map[string][]sandbox.DNSAuditQuery
+	dnsFilters map[string]sandbox.DNSAuditFilter
+}
+
+func (p *auditPoolProvider) ListDNSAudit(_ context.Context, pool *model.Pool, filter sandbox.DNSAuditFilter) ([]sandbox.DNSAuditQuery, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.dnsFilters[pool.ID] = filter
+	if err := p.errs[pool.ID]; err != nil {
+		return nil, err
+	}
+	return p.dnsRows[pool.ID], nil
 }
 
 func (p *auditPoolProvider) ListHTTPAudit(ctx context.Context, pool *model.Pool, query sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
@@ -84,6 +97,14 @@ func newAuditServiceWith(t *testing.T, shape func(*model.Pool)) (*Service, *audi
 		errs:    map[string]error{"pool-c": sandbox.ErrPoolAgentUnsupported},
 		hang:    map[string]bool{},
 		queries: map[string]sandbox.HTTPAuditQuery{},
+		dnsRows: map[string][]sandbox.DNSAuditQuery{
+			"pool-a": {{ID: 4, CreatedAt: at(2), SandboxID: "sandbox-gone", Name: "a.example.com", Answers: []string{}}},
+			"pool-b": {
+				{ID: 7, CreatedAt: at(1), SandboxID: "sandbox-live", Name: "b.example.com", Answers: []string{"192.0.2.1"}},
+				{ID: 6, CreatedAt: at(4), SandboxID: "sandbox-live", Name: "b.example.com", Answers: []string{"192.0.2.1"}},
+			},
+		},
+		dnsFilters: map[string]sandbox.DNSAuditFilter{},
 	}
 	manager := sandbox.NewProviderManager()
 	manager.RegisterProvider("audit", provider)
@@ -383,5 +404,50 @@ func TestListHTTPAuditNeverCutsInsideAPoolsWriteOrder(t *testing.T) {
 			}
 		}
 		seen[exchange.PoolID] = exchange.ID
+	}
+}
+
+// The DNS trail is read and merged exactly as the HTTP one: every pool, newest
+// first, the pool that could not answer named, and each pool's own cursor.
+func TestListDNSAuditMergesPoolsWithTheirOwnCursors(t *testing.T) {
+	svc, provider := newAuditService(t)
+	result, err := svc.ListDNSAudit(context.Background(), "project-1", services.DNSAuditFilter{
+		Name:  "b.example.com",
+		After: map[string]auditid.DNSQueryID{"pool-b": 5},
+		Limit: 100,
+	})
+	if err != nil {
+		t.Fatalf("ListDNSAudit() error = %v", err)
+	}
+	var got []string
+	for _, q := range result.Queries {
+		got = append(got, q.PoolID+"/"+q.ID.String())
+	}
+	if want := []string{"pool-b/dns_7", "pool-a/dns_4", "pool-b/dns_6"}; !slices.Equal(got, want) {
+		t.Fatalf("merged = %v, want %v", got, want)
+	}
+	if len(result.UnavailablePools) != 1 || result.UnavailablePools[0].PoolID != "pool-c" || !strings.Contains(result.UnavailablePools[0].Reason, "predates") {
+		t.Fatalf("unavailable = %+v, want pool-c named", result.UnavailablePools)
+	}
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if f := provider.dnsFilters["pool-b"]; f.AfterID != 5 || f.Name != "b.example.com" {
+		t.Fatalf("pool-b filter = %+v, want its own cursor and the name", f)
+	}
+	if f := provider.dnsFilters["pool-a"]; f.AfterID != 0 {
+		t.Fatalf("pool-a filter = %+v, want no cursor", f)
+	}
+}
+
+// A sandbox that still exists narrows the read to its pool.
+func TestListDNSAuditAsksOnlyTheLiveSandboxesPool(t *testing.T) {
+	svc, provider := newAuditService(t)
+	if _, err := svc.ListDNSAudit(context.Background(), "project-1", services.DNSAuditFilter{SandboxID: "sandbox-live"}); err != nil {
+		t.Fatal(err)
+	}
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if len(provider.dnsFilters) != 1 || provider.dnsFilters["pool-b"].SandboxID != "sandbox-live" {
+		t.Fatalf("asked %v, want only pool-b for sandbox-live", provider.dnsFilters)
 	}
 }

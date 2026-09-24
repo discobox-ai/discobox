@@ -1536,10 +1536,11 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 | Command | Trail | Kept | Record ID | Cursor |
 | --- | --- | --- | --- | --- |
 | `http` | `list-http-audit`, `get-http-audit`, and the hand-wired recording route for `--body` | each pool | `http_<row>` | row id, per pool |
+| `dns` | `list-dns-audit`; `get` reads one row through it by `id` | each pool | `dns_<row>` | row id, per pool |
 | `creds` | `list-credential-verdicts` | control plane | `cvd_…` | time |
 | `hooks` | `list-harness-hooks` | inside the discobox | `evt_…` | time |
 | `execs` | `list-exec-events` | inside the discobox | `evt_…` | time |
-| `list` | all four, merged by time, for one discobox | | each trail's own | each trail's own |
+| `list` | every trail but `dns` unless `--source` names it, merged by time, for one discobox | | each trail's own | each trail's own |
 | `get` | whichever trail the ID names | | | |
 
 `http`'s `USES` column is the join to `creds`, by `--use-id` on either; a
@@ -1557,7 +1558,7 @@ records.
 - **The merge is the CLI's.** `list` reads each trail through its own route and
   merges them by time for printing. Each read keeps its own authorization and
   scope, a trail that fails is named without failing the rest, and no server
-  route has to know four trails' cursors.
+  route has to know every trail's cursors.
 - **Every trail keeps its own position** (`auditPosition`, one per source). The
   four trails are stamped by three different machines — the pool proxy, the
   control plane, the sandbox agent — so a shared position would read every

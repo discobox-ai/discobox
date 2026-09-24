@@ -18,6 +18,7 @@ import (
 // §2).
 const (
 	auditSourceHTTP  = "http"
+	auditSourceDNS   = "dns"
 	auditSourceCreds = "creds"
 	auditSourceHooks = "hooks"
 	auditSourceExecs = "execs"
@@ -27,7 +28,13 @@ const (
 	auditAttestorSandbox      = "sandbox"
 )
 
-var auditSources = []string{auditSourceHTTP, auditSourceCreds, auditSourceHooks, auditSourceExecs}
+var auditSources = []string{auditSourceHTTP, auditSourceDNS, auditSourceCreds, auditSourceHooks, auditSourceExecs}
+
+// auditDefaultSources are the trails `audit list` reads when --source names
+// none. DNS is left out: a discobox looks up an A and an AAAA for every name its
+// tools touch, and on the timeline they would crowd out everything else. It is
+// read when --source names it.
+var auditDefaultSources = []string{auditSourceHTTP, auditSourceCreds, auditSourceHooks, auditSourceExecs}
 
 // auditRecord is one record from any trail, labeled with where it came from and
 // who vouches for it. Record is the trail's own record, unchanged.
@@ -74,6 +81,9 @@ it is worth:
 
   http   the pool's proxy recorded the request from what crossed the wire. The
          discobox cannot alter it.
+  dns    the pool recorded a name the discobox looked up, and what came back.
+         The discobox cannot alter it. Read only when --source names it:
+         lookups outnumber everything else.
   creds  the server recorded that a credential was issued with this verdict.
          A record marked "report" instead of "use" is one the discobox sent
          after a denial, on its own; the verdict's words are its account
@@ -89,6 +99,9 @@ are missing from the timeline.`,
   discobox admin audit list --discobox-id sbx_1 --source http,creds --follow`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if len(sources) == 0 {
+				sources = auditDefaultSources
+			}
 			wantSource, err := auditSelection("--source", sources, auditSources)
 			if err != nil {
 				return err
@@ -112,6 +125,15 @@ are missing from the timeline.`,
 						unavailable = append(unavailable, auditUnavailable{Source: auditSourceHTTP, Reason: pool.Reason})
 					}
 				}), auditSourceHTTP, httpAuditRecord))
+			}
+			if wantSource[auditSourceDNS] {
+				query := dnsAuditQuery{projectID: projectID}
+				query.params.SandboxId = apiclientgen.NewOptString(resolvedSandboxID)
+				trails = append(trails, auditRecords(dnsAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) {
+					for _, pool := range pools {
+						unavailable = append(unavailable, auditUnavailable{Source: auditSourceDNS, Reason: pool.Reason})
+					}
+				}), auditSourceDNS, dnsAuditRecord))
 			}
 			if wantSource[auditSourceCreds] {
 				params := apiclientgen.ListCredentialVerdictsParams{
@@ -185,7 +207,7 @@ are missing from the timeline.`,
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Discobox whose trails to read (required); a deleted one needs its full ID")
-	cmd.Flags().StringSliceVar(&sources, "source", nil, "Only these trails: http, creds, hooks, execs")
+	cmd.Flags().StringSliceVar(&sources, "source", nil, "Only these trails: http, dns, creds, hooks, execs (default all but dns)")
 	cmd.Flags().StringVar(&since, "since", "", "Only records from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of records to read")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing records as they are recorded")

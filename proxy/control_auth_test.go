@@ -115,6 +115,7 @@ func TestControlAuthSandboxTokenNarrowsEveryUnscopedRoute(t *testing.T) {
 	for _, target := range []string{
 		"/audit/http",
 		"/audit/socks",
+		"/audit/dns",
 		"/audit/http?host=api.example.com",
 		"/audit/http/7/request-body",
 		"/audit/http/7/response-body",

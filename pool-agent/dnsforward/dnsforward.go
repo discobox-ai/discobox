@@ -10,8 +10,10 @@
 // answerable by any sandbox that claimed the pool's address; this cannot be.
 //
 // Each message is answered by the pool container's own resolver, which reaches
-// the outside. Messages are relayed as bytes: which names resolve is the
-// upstream's business, exactly as it is for the pool itself.
+// the outside, and relayed as it came back: which names resolve is the
+// upstream's business, exactly as it is for the pool itself. Each is also
+// decoded enough to audit — the question, the outcome, the answers — into the
+// proxy's trail beside the sandbox's HTTP (ADR 0148).
 package dnsforward
 
 import (
@@ -29,6 +31,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/dns/dnsmessage"
+
+	"github.com/discobox-ai/discobox/proxy"
 )
 
 const (
@@ -61,6 +67,7 @@ const (
 type Server struct {
 	logger   *slog.Logger
 	upstream string
+	audit    func(proxy.DNSAuditEvent)
 
 	mu      sync.Mutex
 	total   int
@@ -68,12 +75,13 @@ type Server struct {
 	clients map[string]int
 }
 
-// New returns a server that answers from upstream, a host:port.
-func New(logger *slog.Logger, upstream string) *Server {
+// New returns a server that answers from upstream, a host:port, and hands
+// every query it answered, or failed to, to audit. audit must not block.
+func New(logger *slog.Logger, upstream string, audit func(proxy.DNSAuditEvent)) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{logger: logger, upstream: upstream, sources: map[netip.Addr]int{}, clients: map[string]int{}}
+	return &Server{logger: logger, upstream: upstream, audit: audit, sources: map[netip.Addr]int{}, clients: map[string]int{}}
 }
 
 // Serve answers connections on listener, which must be a TLS listener that
@@ -134,7 +142,8 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 	if len(certs) == 0 {
 		return
 	}
-	client := certs[0].Subject.CommonName
+	cert := certs[0]
+	client := cert.Subject.CommonName
 	if !s.admitClient(client) {
 		return
 	}
@@ -145,7 +154,15 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 		if err != nil {
 			return
 		}
+		start := time.Now()
 		answer, err := s.exchange(ctx, query)
+		event := auditEvent(query, answer, err)
+		event.Time = start.UTC()
+		event.Duration = time.Since(start)
+		event.ClientID = client
+		event.ClientSubject = cert.Subject.String()
+		event.ClientSerial = cert.SerialNumber.String()
+		s.audit(event)
 		if err != nil {
 			s.logger.Debug("sandbox dns exchange failed", "sandbox", client, "error", err)
 			return
@@ -240,6 +257,89 @@ func (s *Server) exchangeTCP(ctx context.Context, query []byte) ([]byte, error) 
 		return nil, err
 	}
 	return readMessage(conn)
+}
+
+// auditEvent is what the trail keeps of one exchange: the question, and the
+// outcome — an rcode and the answers' data, or why there was no answer. A
+// message that does not decode is still recorded, as that, since what a
+// sandbox sent is the point of the trail.
+func auditEvent(query, answer []byte, exchangeErr error) proxy.DNSAuditEvent {
+	var event proxy.DNSAuditEvent
+	var parser dnsmessage.Parser
+	if _, err := parser.Start(query); err != nil {
+		event.Error = "query does not decode: " + err.Error()
+		return event
+	}
+	if question, err := parser.Question(); err == nil {
+		event.Name = strings.ToLower(strings.TrimSuffix(question.Name.String(), "."))
+		event.Type = strings.TrimPrefix(question.Type.String(), "Type")
+	}
+	if exchangeErr != nil {
+		event.Error = exchangeErr.Error()
+		return event
+	}
+	header, err := parser.Start(answer)
+	if err != nil {
+		event.Error = "answer does not decode: " + err.Error()
+		return event
+	}
+	event.RCode = rcodeName(header.RCode)
+	if err := parser.SkipAllQuestions(); err != nil {
+		return event
+	}
+	for {
+		resource, err := parser.Answer()
+		if err != nil {
+			break
+		}
+		if data := answerData(resource.Body); data != "" {
+			event.Answers = append(event.Answers, data)
+		}
+	}
+	return event
+}
+
+// answerData is the part of an answer a reader looks for: the address, or the
+// name an alias or pointer leads to. Records whose data is free text — TXT and
+// the like — are left out rather than copied into the trail.
+func answerData(body dnsmessage.ResourceBody) string {
+	switch record := body.(type) {
+	case *dnsmessage.AResource:
+		return netip.AddrFrom4(record.A).String()
+	case *dnsmessage.AAAAResource:
+		return netip.AddrFrom16(record.AAAA).String()
+	case *dnsmessage.CNAMEResource:
+		return strings.TrimSuffix(record.CNAME.String(), ".")
+	case *dnsmessage.PTRResource:
+		return strings.TrimSuffix(record.PTR.String(), ".")
+	case *dnsmessage.NSResource:
+		return strings.TrimSuffix(record.NS.String(), ".")
+	case *dnsmessage.MXResource:
+		return strings.TrimSuffix(record.MX.String(), ".")
+	case *dnsmessage.SRVResource:
+		return fmt.Sprintf("%s:%d", strings.TrimSuffix(record.Target.String(), "."), record.Port)
+	}
+	return ""
+}
+
+// rcodeName is an rcode as DNS tools print it, which is how a reader searches
+// for one.
+func rcodeName(rcode dnsmessage.RCode) string {
+	switch rcode {
+	case dnsmessage.RCodeSuccess:
+		return "NOERROR"
+	case dnsmessage.RCodeFormatError:
+		return "FORMERR"
+	case dnsmessage.RCodeServerFailure:
+		return "SERVFAIL"
+	case dnsmessage.RCodeNameError:
+		return "NXDOMAIN"
+	case dnsmessage.RCodeNotImplemented:
+		return "NOTIMP"
+	case dnsmessage.RCodeRefused:
+		return "REFUSED"
+	}
+	return fmt.Sprintf("RCODE%d", rcode)
 }
 
 // truncated reports the TC bit of a DNS message's header.

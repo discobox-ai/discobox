@@ -11,8 +11,12 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/discobox-ai/discobox/proxy"
 )
@@ -118,8 +122,32 @@ func newCerts(t *testing.T, sandboxes ...string) certs {
 	return out
 }
 
+// audited collects what a server hands its audit hook.
+type audited struct {
+	mu     sync.Mutex
+	events []proxy.DNSAuditEvent
+}
+
+func (a *audited) record(event proxy.DNSAuditEvent) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.events = append(a.events, event)
+}
+
+func (a *audited) all() []proxy.DNSAuditEvent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]proxy.DNSAuditEvent(nil), a.events...)
+}
+
 func startServer(t *testing.T, serverTLS *tls.Config, upstream string) string {
+	addr, _ := startAuditedServer(t, serverTLS, upstream)
+	return addr
+}
+
+func startAuditedServer(t *testing.T, serverTLS *tls.Config, upstream string) (string, *audited) {
 	t.Helper()
+	trail := &audited{}
 	var config net.ListenConfig
 	tcp, err := config.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -127,9 +155,9 @@ func startServer(t *testing.T, serverTLS *tls.Config, upstream string) string {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { New(nil, upstream).Serve(ctx, tls.NewListener(tcp, serverTLS)); close(done) }()
+	go func() { New(nil, upstream, trail.record).Serve(ctx, tls.NewListener(tcp, serverTLS)); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
-	return tcp.Addr().String()
+	return tcp.Addr().String(), trail
 }
 
 func dial(t *testing.T, addr string, clientTLS *tls.Config) *tls.Conn {
@@ -249,7 +277,10 @@ func TestServeReturnsOnCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { New(nil, "127.0.0.1:1").Serve(ctx, tls.NewListener(tcp, c.server)); close(done) }()
+	go func() {
+		New(nil, "127.0.0.1:1", func(proxy.DNSAuditEvent) {}).Serve(ctx, tls.NewListener(tcp, c.server))
+		close(done)
+	}()
 	cancel()
 	select {
 	case <-done:
@@ -288,5 +319,81 @@ func TestSystemUpstream(t *testing.T) {
 				t.Fatalf("SystemUpstream = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// Every query is audited under the sandbox its certificate names, whatever
+// came of it.
+func TestServerAuditsEachQueryUnderItsSandbox(t *testing.T) {
+	c := newCerts(t, "sbx_a")
+	addr, trail := startAuditedServer(t, c.server, startUpstream(t))
+	conn := dial(t, addr, c.clients["sbx_a"])
+	ask(t, conn, "first")
+	ask(t, conn, "second")
+	events := trail.all()
+	if len(events) != 2 {
+		t.Fatalf("audited %d queries, want 2", len(events))
+	}
+	for _, event := range events {
+		if event.ClientID != "sbx_a" || !strings.Contains(event.ClientSubject, "sbx_a") || event.ClientSerial == "" {
+			t.Fatalf("event identity = %q %q %q", event.ClientID, event.ClientSubject, event.ClientSerial)
+		}
+		if event.Time.IsZero() {
+			t.Fatal("event has no time")
+		}
+		// The fake upstream's messages are not DNS; the trail says so rather
+		// than dropping the query.
+		if !strings.HasPrefix(event.Error, "query does not decode") {
+			t.Fatalf("event error = %q", event.Error)
+		}
+	}
+}
+
+func dnsQuery(t *testing.T, name string, qtype dnsmessage.Type) []byte {
+	t.Helper()
+	builder := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: 1, RecursionDesired: true})
+	_ = builder.StartQuestions()
+	_ = builder.Question(dnsmessage.Question{Name: dnsmessage.MustNewName(name), Type: qtype, Class: dnsmessage.ClassINET})
+	message, err := builder.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return message
+}
+
+func TestAuditEventReadsTheQuestionAndOutcome(t *testing.T) {
+	query := dnsQuery(t, "WWW.Example.COM.", dnsmessage.TypeA)
+	builder := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: 1, Response: true})
+	_ = builder.StartQuestions()
+	_ = builder.Question(dnsmessage.Question{Name: dnsmessage.MustNewName("www.example.com."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET})
+	_ = builder.StartAnswers()
+	rh := func(name string) dnsmessage.ResourceHeader {
+		return dnsmessage.ResourceHeader{Name: dnsmessage.MustNewName(name), Class: dnsmessage.ClassINET, TTL: 60}
+	}
+	_ = builder.CNAMEResource(rh("www.example.com."), dnsmessage.CNAMEResource{CNAME: dnsmessage.MustNewName("edge.example.net.")})
+	_ = builder.AResource(rh("edge.example.net."), dnsmessage.AResource{A: [4]byte{192, 0, 2, 7}})
+	_ = builder.TXTResource(rh("edge.example.net."), dnsmessage.TXTResource{TXT: []string{"free text stays out"}})
+	answer, err := builder.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	event := auditEvent(query, answer, nil)
+	if event.Name != "www.example.com" || event.Type != "A" || event.RCode != "NOERROR" || event.Error != "" {
+		t.Fatalf("event = %+v", event)
+	}
+	if got := strings.Join(event.Answers, ","); got != "edge.example.net,192.0.2.7" {
+		t.Fatalf("answers = %q", got)
+	}
+
+	failed := auditEvent(dnsQuery(t, "gone.example.com.", dnsmessage.TypeAAAA), nil, errors.New("upstream timed out"))
+	if failed.Name != "gone.example.com" || failed.Type != "AAAA" || failed.RCode != "" || failed.Error != "upstream timed out" {
+		t.Fatalf("failed exchange = %+v", failed)
+	}
+
+	nx := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: 1, Response: true, RCode: dnsmessage.RCodeNameError})
+	nxAnswer, _ := nx.Finish()
+	if got := auditEvent(query, nxAnswer, nil).RCode; got != "NXDOMAIN" {
+		t.Fatalf("rcode = %q, want NXDOMAIN", got)
 	}
 }

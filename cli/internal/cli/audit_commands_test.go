@@ -189,6 +189,9 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/audit/http"):
 			asked["http"] = true
 			_, _ = w.Write([]byte(`{"exchanges":[{"poolId":"pool-a","id":"http_7","createdAt":"2026-09-17T10:03:00Z","sandboxId":"` + sandboxID + `","method":"GET","url":"https://api.github.com/","host":"api.github.com","status":200,"blocked":false,"swappedUseIds":["use_1"]}],"unavailablePools":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/audit/dns"):
+			asked["dns"] = true
+			_, _ = w.Write([]byte(`{"queries":[{"poolId":"pool-a","id":"dns_3","createdAt":"2026-09-17T10:00:00Z","sandboxId":"` + sandboxID + `","name":"api.github.com","type":"A","rcode":"NOERROR","answers":["192.0.2.1"]}],"unavailablePools":[]}`))
 		case strings.HasSuffix(r.URL.Path, "/credential-verdicts"):
 			asked["creds"] = true
 			_, _ = w.Write([]byte(`{"credentialVerdicts":[
@@ -213,6 +216,9 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	if len(lines) != 5 {
 		t.Fatalf("stdout = %q, want a header and four records", stdout)
+	}
+	if asked["dns"] {
+		t.Fatal("list read the DNS trail without --source naming it")
 	}
 	if got := strings.Fields(lines[0]); !slices.Equal(got, []string{"TIME", "SOURCE", "ID", "RECORD"}) {
 		t.Fatalf("header = %v, want time, source, the ID and the record", got)
@@ -244,6 +250,15 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		t.Fatalf("stderr = %q, want the stopped discobox's exec trail named as missing", stderr)
 	}
 
+	// Named, the DNS trail joins the timeline under the pool's attestation.
+	stdout, _, err = runAudit(context.Background(), t, handler, "list", "--discobox-id", sandboxID, "--source", "dns")
+	if err != nil {
+		t.Fatalf("list --source dns: %v", err)
+	}
+	if !strings.Contains(stdout, "dns_3") || !strings.Contains(stdout, "A api.github.com NOERROR 192.0.2.1") {
+		t.Fatalf("--source dns = %q, want the lookup", stdout)
+	}
+
 	// The attestor is gone from the table, not from the record: -o json keeps
 	// it, which is what a reader deciding whether a record is evidence needs
 	// (ADR 0130 §2).
@@ -254,7 +269,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list -o json: %v", err)
 	}
-	if asked["hooks"] || asked["execs"] {
+	if asked["hooks"] || asked["execs"] || asked["dns"] {
 		t.Fatalf("--source http,creds read other trails: %v", asked)
 	}
 	var got struct {
@@ -333,6 +348,11 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 				rows = append(rows, exchange(2, 3))
 			}
 			_, _ = w.Write([]byte(`{"exchanges":[` + strings.Join(rows, ",") + `],"unavailablePools":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/audit/dns"):
+			if asc {
+				forward["dns"]++
+			}
+			_, _ = w.Write([]byte(`{"queries":[],"unavailablePools":[]}`))
 		case strings.HasSuffix(r.URL.Path, "/credential-verdicts"):
 			if asc {
 				forward["creds"]++
@@ -369,6 +389,9 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	if forward["dns"] != 0 {
+		t.Fatal("follow read the DNS trail without --source naming it")
+	}
 	for _, trail := range []string{"http", "creds", "hooks", "execs"} {
 		if forward[trail] == 0 {
 			t.Fatalf("%s was never read forward: %v", trail, forward)

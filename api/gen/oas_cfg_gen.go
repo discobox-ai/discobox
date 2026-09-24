@@ -19,10 +19,12 @@ import (
 
 var regexMap = map[string]ogenregex.Regexp{
 	"^[0-9a-f]{40}$":                         ogenregex.MustCompile("^[0-9a-f]{40}$"),
+	"^[A-Za-z0-9_-]+:dns_[0-9]+$":            ogenregex.MustCompile("^[A-Za-z0-9_-]+:dns_[0-9]+$"),
 	"^[A-Za-z0-9_-]+:http_[0-9]+$":           ogenregex.MustCompile("^[A-Za-z0-9_-]+:http_[0-9]+$"),
 	"^[A-Za-z_][A-Za-z0-9_]*$":               ogenregex.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$"),
 	"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$": ogenregex.MustCompile("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"),
 	"^[a-z0-9][a-z0-9-]*$":                   ogenregex.MustCompile("^[a-z0-9][a-z0-9-]*$"),
+	"^dns_[0-9]+$":                           ogenregex.MustCompile("^dns_[0-9]+$"),
 	"^http_[0-9]+$":                          ogenregex.MustCompile("^http_[0-9]+$"),
 }
 var (

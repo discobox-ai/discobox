@@ -16,7 +16,7 @@ flowchart LR
     provsvc[providers.Service] -- SchedulePoolReconciliation --> cp
     svc --> store[(store)]
     svc -- "SubmitPoolDelete / SchedulePoolReconciliation /<br/>CreateSandboxAgentToken" --> cp
-    svc -- "OpenConsole / OpenLogs / BuildGuestImage / ClearCache / ListHTTPAudit" --> drivers
+    svc -- "OpenConsole / OpenLogs / BuildGuestImage / ClearCache / ListHTTPAudit / ListDNSAudit" --> drivers
     cp --> store
     cp --> engine[(reconcile engine)]
     engine -- pool --> rec[PoolReconciler]
@@ -76,6 +76,10 @@ flowchart LR
   reconcile-and-wait recovery: a read must not restart the pools it reads. A pool that cannot be read is
   not an error: it is returned in `UnavailablePools` with why, beside what the
   others answered, because a trail silently short a pool reads as complete.
+  `ListDNSAudit` reads the DNS queries the pools answered (ADR 0148) through
+  the same fan-out and merge — `readAuditPools` and `mergeAuditPages` are
+  generic over the trail's row, so the two cannot drift apart — with only a
+  name filter of its own.
   `GetHTTPAudit` reads one exchange in full from the one pool named, and
   `OpenHTTPAuditArtifact` streams one recorded body from it,
   under the same no-recovery rule; with a single pool there is no partial

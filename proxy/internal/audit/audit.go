@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/auditid"
@@ -82,6 +83,24 @@ type SOCKSEvent struct {
 	Port          int
 	Allowed       bool
 	BlockedReason string
+}
+
+// DNSEvent is an asynchronous audit event for one DNS query a sandbox asked
+// of its pool (ADR 0148). Name and Type are the question; RCode and Answers
+// what came back, empty when nothing did, and Error why not.
+type DNSEvent struct {
+	Context       context.Context `gorm:"-"`
+	Time          time.Time
+	EnqueuedAt    time.Time
+	ClientID      string
+	ClientSubject string
+	ClientSerial  string
+	Name          string
+	Type          string
+	RCode         string
+	Answers       []string
+	Duration      time.Duration
+	Error         string
 }
 
 // HTTPExchange is the GORM model for audited HTTP exchanges.
@@ -165,11 +184,46 @@ type SOCKSConnect struct {
 	BlockedReason string
 }
 
+// DNSQuery is the GORM model for audited DNS queries.
+type DNSQuery struct {
+	// ID is the row number, written as dns_<number> (auditid.DNSQueryID) on
+	// every API above this database, for the reason HTTPExchange's is.
+	ID auditid.DNSQueryID `gorm:"primaryKey"`
+	// CreatedAt is indexed, unlike the smaller tables': this is the trail
+	// with the most rows, and both a read by time and the retention sweep
+	// would otherwise scan all of it.
+	CreatedAt     time.Time `gorm:"index"`
+	EnqueuedAt    time.Time
+	WrittenAt     time.Time
+	ClientID      string `gorm:"index"`
+	ClientSubject string
+	ClientSerial  string
+	// Name is the name asked, lowercased and without the root's trailing dot:
+	// the form a reader filters by.
+	Name  string `gorm:"index"`
+	Type  string
+	RCode string
+	// Answers is the answer section's data — addresses, and the targets of
+	// CNAMEs and the like — as a comma-joined list.
+	Answers        string
+	DurationMillis int64
+	DurationMicros int64
+	Error          string
+}
+
 // Recorder asynchronously persists audit events.
 type Recorder struct {
-	enabled         bool
-	db              *gorm.DB
-	ch              chan any
+	enabled bool
+	db      *gorm.DB
+	ch      chan any
+	// dnsCh holds DNS events apart from ch, and the writer takes from it only
+	// when ch is empty: a sandbox's lookups can far outnumber its requests,
+	// and on one queue a flood of them would push the HTTP and SOCKS rows out
+	// (ADR 0148). dnsLimits bounds each sandbox's share of it.
+	dnsCh           chan any
+	dnsDropped      atomic.Uint64
+	dnsMu           sync.Mutex
+	dnsLimits       map[string]*rate.Limiter
 	done            chan struct{}
 	enqueueMu       sync.RWMutex
 	wg              sync.WaitGroup
@@ -229,15 +283,30 @@ type QueryOptions struct {
 	Limit   int
 }
 
-// order is the ORDER BY for opts. id breaks ties between rows written in the
-// same instant, so a reader paging forward sees a stable sequence.
-func (opts QueryOptions) order() string {
-	if opts.AfterID > 0 {
+// DNSQueryOptions filters DNS audit reads. Its fields mean what QueryOptions'
+// do, AfterID included; Name is the name asked, matched exactly.
+type DNSQueryOptions struct {
+	// ID reads the one row with this ID, which is how a reader handed one
+	// record reads it: the list is the only read this trail has.
+	ID        auditid.DNSQueryID
+	ClientID  string
+	Name      string
+	Since     time.Time
+	Ascending bool
+	AfterID   auditid.DNSQueryID
+	Limit     int
+}
+
+// order is the ORDER BY for a read positioned by a row cursor (after) or read
+// oldest first (ascending). id breaks ties between rows written in the same
+// instant, so a reader paging forward sees a stable sequence.
+func order(after uint64, ascending bool) string {
+	if after > 0 {
 		// Write order, which is what a cursor reads along. It is also the
 		// primary key, so this is the one read here that needs no index.
 		return "id ASC"
 	}
-	if opts.Ascending {
+	if ascending {
 		return "created_at ASC, id ASC"
 	}
 	return "created_at DESC, id DESC"
@@ -298,7 +367,7 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 	if err != nil {
 		return nil, err
 	}
-	if err := pools.Write.WithContext(ctx).AutoMigrate(&HTTPExchange{}, &SOCKSConnect{}); err != nil {
+	if err := pools.Write.WithContext(ctx).AutoMigrate(&HTTPExchange{}, &SOCKSConnect{}, &DNSQuery{}); err != nil {
 		_ = pools.Close()
 		return nil, err
 	}
@@ -307,6 +376,7 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 		db:      pools.Write,
 		pools:   pools,
 		ch:      make(chan any, queueSize),
+		dnsCh:   make(chan any, queueSize),
 		done:    make(chan struct{}),
 	}
 	r.wg.Add(1)
@@ -322,6 +392,47 @@ func (r *Recorder) RecordHTTP(event HTTPEvent) {
 	r.enqueue(event)
 }
 
+// DNS audit budget per sandbox: a sustained rate and a burst above it. Past
+// it a sandbox's own lookups are dropped from the trail and counted, rather
+// than spending the queue every sandbox's lookups share.
+const (
+	dnsAuditRate  = 50
+	dnsAuditBurst = 500
+)
+
+// RecordDNS queues a DNS audit event without blocking on SQLite. A sandbox's
+// lookups are the busiest trail there is, which is exactly why this must never
+// wait: they have a queue of their own, written only when the HTTP and SOCKS
+// queue is empty, and each sandbox a budget in it. An event over either is
+// dropped and counted.
+func (r *Recorder) RecordDNS(event DNSEvent) {
+	if r == nil || !r.enabled {
+		return
+	}
+	if event.EnqueuedAt.IsZero() {
+		event.EnqueuedAt = time.Now().UTC()
+	}
+	if !r.dnsLimit(event.ClientID).Allow() {
+		r.dnsDropped.Add(1)
+		return
+	}
+	r.enqueueOn(r.dnsCh, &r.dnsDropped, event)
+}
+
+func (r *Recorder) dnsLimit(clientID string) *rate.Limiter {
+	r.dnsMu.Lock()
+	defer r.dnsMu.Unlock()
+	if r.dnsLimits == nil {
+		r.dnsLimits = map[string]*rate.Limiter{}
+	}
+	limit, ok := r.dnsLimits[clientID]
+	if !ok {
+		limit = rate.NewLimiter(dnsAuditRate, dnsAuditBurst)
+		r.dnsLimits[clientID] = limit
+	}
+	return limit
+}
+
 // RecordSOCKS queues a SOCKS audit event without blocking on SQLite.
 func (r *Recorder) RecordSOCKS(event SOCKSEvent) {
 	if event.EnqueuedAt.IsZero() {
@@ -330,12 +441,22 @@ func (r *Recorder) RecordSOCKS(event SOCKSEvent) {
 	r.enqueue(event)
 }
 
-// Dropped returns the number of events dropped due to backpressure.
+// Dropped returns the number of HTTP and SOCKS events dropped due to
+// backpressure.
 func (r *Recorder) Dropped() uint64 {
 	if r == nil {
 		return 0
 	}
 	return r.dropped.Load()
+}
+
+// DNSDropped returns the number of DNS events dropped, over a sandbox's
+// budget or a full DNS queue.
+func (r *Recorder) DNSDropped() uint64 {
+	if r == nil {
+		return 0
+	}
+	return r.dnsDropped.Load()
 }
 
 // ListHTTP returns recent HTTP audit exchanges newest first.
@@ -345,7 +466,7 @@ func (r *Recorder) ListHTTP(ctx context.Context, opts QueryOptions) ([]HTTPExcha
 	}
 	var rows []HTTPExchange
 	query := applyHTTPQueryOptions(r.db.WithContext(contextOrBackground(ctx)).Model(&HTTPExchange{}), opts)
-	if err := query.Order(opts.order()).Find(&rows).Error; err != nil {
+	if err := query.Order(order(uint64(opts.AfterID), opts.Ascending)).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -358,7 +479,29 @@ func (r *Recorder) ListSOCKS(ctx context.Context, opts QueryOptions) ([]SOCKSCon
 	}
 	var rows []SOCKSConnect
 	query := applySOCKSQueryOptions(r.db.WithContext(contextOrBackground(ctx)).Model(&SOCKSConnect{}), opts)
-	if err := query.Order(opts.order()).Find(&rows).Error; err != nil {
+	if err := query.Order(order(uint64(opts.AfterID), opts.Ascending)).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// ListDNS returns DNS audit rows, newest first unless opts say otherwise.
+func (r *Recorder) ListDNS(ctx context.Context, opts DNSQueryOptions) ([]DNSQuery, error) {
+	if r == nil || !r.enabled {
+		return nil, nil
+	}
+	var rows []DNSQuery
+	query := applyCursor(r.db.WithContext(contextOrBackground(ctx)).Model(&DNSQuery{}), uint64(opts.AfterID), opts.Since)
+	if opts.ClientID != "" {
+		query = query.Where("client_id = ?", opts.ClientID)
+	}
+	if opts.Name != "" {
+		query = query.Where("name = ?", opts.Name)
+	}
+	if opts.ID > 0 {
+		query = query.Where("id = ?", opts.ID)
+	}
+	if err := query.Order(order(uint64(opts.AfterID), opts.Ascending)).Limit(queryLimit(opts.Limit)).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -434,6 +577,7 @@ func (r *Recorder) Close() error {
 	}
 	r.enqueueMu.Lock()
 	close(r.ch)
+	close(r.dnsCh)
 	r.enqueueMu.Unlock()
 	r.wg.Wait()
 	r.streamWg.Wait()
@@ -444,6 +588,10 @@ func (r *Recorder) Close() error {
 }
 
 func (r *Recorder) enqueue(event any) {
+	r.enqueueOn(r.ch, &r.dropped, event)
+}
+
+func (r *Recorder) enqueueOn(ch chan any, dropped *atomic.Uint64, event any) {
 	if r == nil || !r.enabled {
 		return
 	}
@@ -452,16 +600,16 @@ func (r *Recorder) enqueue(event any) {
 	r.enqueueMu.RLock()
 	defer r.enqueueMu.RUnlock()
 	if r.closed.Load() {
-		r.dropped.Add(1)
+		dropped.Add(1)
 		span.SetAttributes(attribute.Bool("proxy.audit.enqueued", false))
 		span.SetStatus(codes.Error, "audit recorder closed")
 		return
 	}
 	select {
-	case r.ch <- event:
+	case ch <- event:
 		span.SetAttributes(attribute.Bool("proxy.audit.enqueued", true))
 	default:
-		r.dropped.Add(1)
+		dropped.Add(1)
 		span.SetAttributes(attribute.Bool("proxy.audit.enqueued", false))
 		span.SetStatus(codes.Error, "audit queue full")
 	}
@@ -470,75 +618,125 @@ func (r *Recorder) enqueue(event any) {
 func (r *Recorder) run() {
 	defer r.wg.Done()
 	defer close(r.done)
-	for event := range r.ch {
-		switch e := event.(type) {
-		case HTTPEvent:
-			_, span := tracer().Start(eventContext(e), "proxy.audit.write", trace.WithAttributes(attribute.String("proxy.audit.type", "http")))
-			writtenAt := time.Now().UTC()
-			err := r.db.Create(&HTTPExchange{
-				CreatedAt:           nonZeroTime(e.Time),
-				EnqueuedAt:          nonZeroTime(e.EnqueuedAt),
-				WrittenAt:           writtenAt,
-				ClientID:            e.ClientID,
-				ClientSubject:       e.ClientSubject,
-				ClientSerial:        e.ClientSerial,
-				Method:              e.Method,
-				URL:                 e.URL,
-				Host:                e.Host,
-				Status:              e.Status,
-				DurationMillis:      e.Duration.Milliseconds(),
-				DurationMicros:      e.Duration.Microseconds(),
-				Blocked:             e.Blocked,
-				BlockedReason:       e.BlockedReason,
-				CacheHit:            e.CacheHit,
-				CacheStored:         e.CacheStored,
-				CacheKey:            e.CacheKey,
-				CacheError:          e.CacheError,
-				AppliedRuleID:       e.AppliedRuleID,
-				AppliedPattern:      e.AppliedPattern,
-				AppliedHeaders:      strings.Join(e.AppliedHeaders, ","),
-				SwappedUseIDs:       strings.Join(e.SwappedUseIDs, ","),
-				RequestHeaders:      marshalHeaders(e.RequestHeaders, e.RedactRequestHeaders),
-				ResponseHeaders:     marshalHeaders(e.ResponseHeaders, nil),
-				ResponseBytes:       e.ResponseBytes,
-				RequestBodyFile:     e.RequestBodyFile,
-				RequestBodyFormat:   e.RequestBodyFormat,
-				RequestBodyBytes:    e.RequestBodyBytes,
-				RequestBodyError:    e.RequestBodyError,
-				ResponseBodyFile:    e.ResponseBodyFile,
-				ResponseBodyFormat:  e.ResponseBodyFormat,
-				ResponseBodyBytes:   e.ResponseBodyBytes,
-				ResponseBodyError:   e.ResponseBodyError,
-				Upgrade:             e.Upgrade,
-				UpgradeType:         e.UpgradeType,
-				UpgradeC2SBytes:     e.UpgradeC2SBytes,
-				UpgradeS2CBytes:     e.UpgradeS2CBytes,
-				StreamSessionID:     e.StreamSessionID,
-				StreamFile:          e.StreamFile,
-				StreamFormat:        e.StreamFormat,
-				StreamDroppedChunks: e.StreamDroppedChunks,
-				StreamDroppedBytes:  e.StreamDroppedBytes,
-			}).Error
-			recordError(span, err)
-			span.End()
-		case SOCKSEvent:
-			_, span := tracer().Start(eventContext(e), "proxy.audit.write", trace.WithAttributes(attribute.String("proxy.audit.type", "socks")))
-			writtenAt := time.Now().UTC()
-			err := r.db.Create(&SOCKSConnect{
-				CreatedAt:     nonZeroTime(e.Time),
-				EnqueuedAt:    nonZeroTime(e.EnqueuedAt),
-				WrittenAt:     writtenAt,
-				ClientID:      e.ClientID,
-				ClientSubject: e.ClientSubject,
-				ClientSerial:  e.ClientSerial,
-				Destination:   e.Destination,
-				Port:          e.Port,
-				Allowed:       e.Allowed,
-				BlockedReason: e.BlockedReason,
-			}).Error
-			recordError(span, err)
-			span.End()
+	ch, dns := r.ch, r.dnsCh
+	for ch != nil || dns != nil {
+		// HTTP and SOCKS first, whenever there are any: a DNS event is
+		// written only when their queue is empty, so it never waits behind
+		// more than one lookup. A closed queue reads as nil and drops out.
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				ch = nil
+				continue
+			}
+			r.write(event)
+			continue
+		default:
 		}
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				ch = nil
+				continue
+			}
+			r.write(event)
+		case event, ok := <-dns:
+			if !ok {
+				dns = nil
+				continue
+			}
+			r.write(event)
+		}
+	}
+}
+
+func (r *Recorder) write(event any) {
+	switch e := event.(type) {
+	case HTTPEvent:
+		_, span := tracer().Start(eventContext(e), "proxy.audit.write", trace.WithAttributes(attribute.String("proxy.audit.type", "http")))
+		writtenAt := time.Now().UTC()
+		err := r.db.Create(&HTTPExchange{
+			CreatedAt:           nonZeroTime(e.Time),
+			EnqueuedAt:          nonZeroTime(e.EnqueuedAt),
+			WrittenAt:           writtenAt,
+			ClientID:            e.ClientID,
+			ClientSubject:       e.ClientSubject,
+			ClientSerial:        e.ClientSerial,
+			Method:              e.Method,
+			URL:                 e.URL,
+			Host:                e.Host,
+			Status:              e.Status,
+			DurationMillis:      e.Duration.Milliseconds(),
+			DurationMicros:      e.Duration.Microseconds(),
+			Blocked:             e.Blocked,
+			BlockedReason:       e.BlockedReason,
+			CacheHit:            e.CacheHit,
+			CacheStored:         e.CacheStored,
+			CacheKey:            e.CacheKey,
+			CacheError:          e.CacheError,
+			AppliedRuleID:       e.AppliedRuleID,
+			AppliedPattern:      e.AppliedPattern,
+			AppliedHeaders:      strings.Join(e.AppliedHeaders, ","),
+			SwappedUseIDs:       strings.Join(e.SwappedUseIDs, ","),
+			RequestHeaders:      marshalHeaders(e.RequestHeaders, e.RedactRequestHeaders),
+			ResponseHeaders:     marshalHeaders(e.ResponseHeaders, nil),
+			ResponseBytes:       e.ResponseBytes,
+			RequestBodyFile:     e.RequestBodyFile,
+			RequestBodyFormat:   e.RequestBodyFormat,
+			RequestBodyBytes:    e.RequestBodyBytes,
+			RequestBodyError:    e.RequestBodyError,
+			ResponseBodyFile:    e.ResponseBodyFile,
+			ResponseBodyFormat:  e.ResponseBodyFormat,
+			ResponseBodyBytes:   e.ResponseBodyBytes,
+			ResponseBodyError:   e.ResponseBodyError,
+			Upgrade:             e.Upgrade,
+			UpgradeType:         e.UpgradeType,
+			UpgradeC2SBytes:     e.UpgradeC2SBytes,
+			UpgradeS2CBytes:     e.UpgradeS2CBytes,
+			StreamSessionID:     e.StreamSessionID,
+			StreamFile:          e.StreamFile,
+			StreamFormat:        e.StreamFormat,
+			StreamDroppedChunks: e.StreamDroppedChunks,
+			StreamDroppedBytes:  e.StreamDroppedBytes,
+		}).Error
+		recordError(span, err)
+		span.End()
+	case SOCKSEvent:
+		_, span := tracer().Start(eventContext(e), "proxy.audit.write", trace.WithAttributes(attribute.String("proxy.audit.type", "socks")))
+		writtenAt := time.Now().UTC()
+		err := r.db.Create(&SOCKSConnect{
+			CreatedAt:     nonZeroTime(e.Time),
+			EnqueuedAt:    nonZeroTime(e.EnqueuedAt),
+			WrittenAt:     writtenAt,
+			ClientID:      e.ClientID,
+			ClientSubject: e.ClientSubject,
+			ClientSerial:  e.ClientSerial,
+			Destination:   e.Destination,
+			Port:          e.Port,
+			Allowed:       e.Allowed,
+			BlockedReason: e.BlockedReason,
+		}).Error
+		recordError(span, err)
+		span.End()
+	case DNSEvent:
+		_, span := tracer().Start(eventContext(e), "proxy.audit.write", trace.WithAttributes(attribute.String("proxy.audit.type", "dns")))
+		err := r.db.Create(&DNSQuery{
+			CreatedAt:      nonZeroTime(e.Time),
+			EnqueuedAt:     nonZeroTime(e.EnqueuedAt),
+			WrittenAt:      time.Now().UTC(),
+			ClientID:       e.ClientID,
+			ClientSubject:  e.ClientSubject,
+			ClientSerial:   e.ClientSerial,
+			Name:           e.Name,
+			Type:           e.Type,
+			RCode:          e.RCode,
+			Answers:        strings.Join(e.Answers, ","),
+			DurationMillis: e.Duration.Milliseconds(),
+			DurationMicros: e.Duration.Microseconds(),
+			Error:          e.Error,
+		}).Error
+		recordError(span, err)
+		span.End()
 	}
 }
 
@@ -553,6 +751,10 @@ func eventContext(event any) context.Context {
 			return e.Context
 		}
 	case SOCKSEvent:
+		if e.Context != nil {
+			return e.Context
+		}
+	case DNSEvent:
 		if e.Context != nil {
 			return e.Context
 		}
@@ -598,7 +800,7 @@ func marshalHeaders(headers http.Header, redactedHeaders []string) string {
 }
 
 func applyHTTPQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
-	query = applyCursor(query, opts)
+	query = applyCursor(query, uint64(opts.AfterID), opts.Since)
 	if opts.ClientID != "" {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
@@ -636,7 +838,7 @@ func escapeLike(value string) string {
 }
 
 func applySOCKSQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
-	query = applyCursor(query, opts)
+	query = applyCursor(query, uint64(opts.AfterID), opts.Since)
 	if opts.ClientID != "" {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
@@ -649,12 +851,12 @@ func applySOCKSQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
 // applyCursor bounds a read by where the reader left off: after a row id, or
 // at a time. Rows are written in UTC (nonZeroTime), and SQLite compares times
 // as text carrying their offset, so a time bound is compared in UTC too.
-func applyCursor(query *gorm.DB, opts QueryOptions) *gorm.DB {
+func applyCursor(query *gorm.DB, after uint64, since time.Time) *gorm.DB {
 	switch {
-	case opts.AfterID > 0:
-		return query.Where("id > ?", opts.AfterID)
-	case !opts.Since.IsZero():
-		return query.Where("created_at >= ?", opts.Since.UTC())
+	case after > 0:
+		return query.Where("id > ?", after)
+	case !since.IsZero():
+		return query.Where("created_at >= ?", since.UTC())
 	}
 	return query
 }

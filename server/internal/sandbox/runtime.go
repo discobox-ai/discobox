@@ -253,6 +253,34 @@ type HTTPAuditQuery struct {
 	Limit   int
 }
 
+// DNSAuditFilter narrows a read of the DNS queries one pool answered for its
+// sandboxes (ADR 0148). Its fields mean what HTTPAuditQuery's do; Name is the
+// name asked, matched exactly.
+type DNSAuditFilter struct {
+	// ID reads the one query with this ID on the pool asked.
+	ID        auditid.DNSQueryID
+	SandboxID string
+	Name      string
+	Since     time.Time
+	Ascending bool
+	AfterID   auditid.DNSQueryID
+	Limit     int
+}
+
+// DNSAuditQuery is one DNS query a pool answered and audited: the question,
+// and the response code and answers' data, or why there was none.
+type DNSAuditQuery struct {
+	ID             auditid.DNSQueryID `json:"id"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	SandboxID      string             `json:"sandboxId"`
+	Name           string             `json:"name"`
+	Type           string             `json:"type"`
+	RCode          string             `json:"rcode"`
+	Answers        []string           `json:"answers"`
+	DurationMillis int64              `json:"durationMillis"`
+	Error          string             `json:"error,omitempty"`
+}
+
 // HTTPAuditArtifact is a body or upgraded stream recorded beside an audited
 // exchange, still being read. Closing it releases whatever reaches the pool.
 type HTTPAuditArtifact struct {
@@ -346,6 +374,10 @@ type PoolRuntime interface {
 	// sandboxID when it is set. A row outside that scope, or with no such
 	// artifact, is ErrNotFound.
 	OpenHTTPAuditArtifact(ctx context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID, artifact string) (*HTTPAuditArtifact, error)
+	// ListDNSAudit reads the DNS queries the pool answered for its sandboxes,
+	// newest first, through the pool agent, narrowed as ListHTTPAudit is. An
+	// agent too old to have the operation is ErrPoolAgentUnsupported.
+	ListDNSAudit(ctx context.Context, pool *model.Pool, filter DNSAuditFilter) ([]DNSAuditQuery, error)
 	// OpenConsole attaches to the pool host's administrative console: a root
 	// shell in the host's own namespaces, for operators debugging the backend
 	// itself. It deliberately does not go through the pool agent, because the

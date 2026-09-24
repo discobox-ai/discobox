@@ -294,6 +294,20 @@ func (p *Provider) ListHTTPAudit(ctx context.Context, pool *model.Pool, query sa
 	return client.ListHTTPAudit(ctx, pool.ProjectID, query)
 }
 
+// ListDNSAudit reads the DNS queries the pool answered through the pool agent,
+// without recovery for the reason ListHTTPAudit has none.
+func (p *Provider) ListDNSAudit(ctx context.Context, pool *model.Pool, filter sandbox.DNSAuditFilter) ([]sandbox.DNSAuditQuery, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	return client.ListDNSAudit(ctx, pool.ProjectID, filter)
+}
+
 // GetHTTPAudit reads one audited exchange in full through the pool agent,
 // without recovery for the reason ListHTTPAudit has none.
 func (p *Provider) GetHTTPAudit(ctx context.Context, pool *model.Pool, sandboxID string, id auditid.ExchangeID) (*sandbox.HTTPAuditExchangeDetail, error) {

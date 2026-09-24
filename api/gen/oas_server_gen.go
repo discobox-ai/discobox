@@ -371,6 +371,14 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/credential-verdicts
 	ListCredentialVerdicts(ctx context.Context, params ListCredentialVerdictsParams) (ListCredentialVerdictsRes, error)
+	// ListDNSAudit implements list-dns-audit operation.
+	//
+	// The DNS queries the project's pools answered for their sandboxes, newest first, read from each
+	// pool through its agent and merged the way the HTTP audit is (ADR 0130 §§1, 4; ADR 0148). A pool
+	// that does not answer is listed in unavailablePools rather than dropped.
+	//
+	// GET /projects/{projectId}/audit/dns
+	ListDNSAudit(ctx context.Context, params ListDNSAuditParams) (ListDNSAuditRes, error)
 	// ListExecEvents implements list-exec-events operation.
 	//
 	// Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),

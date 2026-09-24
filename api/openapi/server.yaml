@@ -3626,6 +3626,84 @@ components:
                 - exchanges
                 - unavailablePools
             type: object
+        DNSAuditQuery:
+            additionalProperties: false
+            description: One DNS query a sandbox asked of its pool, which answered it over the sandbox's mTLS channel and audited it beside the sandbox's HTTP (ADR 0148). Recorded by the pool, so the sandbox cannot alter the row; the name is what the sandbox asked and is display data.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/DNSAuditQuery.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                answers:
+                    description: The answers' data -- addresses, and the names aliases and pointers lead to; free-text records are left out
+                    items:
+                        type: string
+                    type: array
+                createdAt:
+                    description: When the query was asked
+                    format: date-time
+                    type: string
+                durationMillis:
+                    description: How long the pool took to answer, in milliseconds
+                    format: int64
+                    type: integer
+                error:
+                    description: Why there was no answer, when there was none
+                    type: string
+                id:
+                    description: Audit record ID, written dns_<row>, unique within its pool and ordered by write
+                    pattern: ^dns_[0-9]+$
+                    type: string
+                name:
+                    description: The name asked, lowercased and without the trailing dot
+                    type: string
+                poolId:
+                    description: Pool that answered the query
+                    type: string
+                rcode:
+                    description: The answer's response code as DNS tools print it (NOERROR, NXDOMAIN, SERVFAIL, ...); empty when there was no answer
+                    type: string
+                sandboxId:
+                    description: Sandbox whose client certificate asked
+                    type: string
+                type:
+                    description: The record type asked for (A, AAAA, ...)
+                    type: string
+            required:
+                - poolId
+                - id
+                - createdAt
+                - sandboxId
+                - name
+                - type
+                - rcode
+                - answers
+            type: object
+        ListDNSAuditBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListDNSAuditBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                queries:
+                    description: Matching queries from every pool that answered, newest first
+                    items:
+                        $ref: '#/components/schemas/DNSAuditQuery'
+                    type: array
+                unavailablePools:
+                    description: Pools that were asked and did not answer. Non-empty means queries may be missing.
+                    items:
+                        $ref: '#/components/schemas/UnavailableAuditPool'
+                    type: array
+            required:
+                - queries
+                - unavailablePools
+            type: object
         ResolveSandboxSecretResponse:
             additionalProperties: false
             description: Result of resolving a sentinel. The value is present only when status is approved.
@@ -9411,6 +9489,96 @@ paths:
             summary: Revoke a secret grant
             tags:
                 - Secrets
+    /projects/{projectId}/audit/dns:
+        get:
+            description: The DNS queries the project's pools answered for their sandboxes, newest first, read from each pool through its agent and merged the way the HTTP audit is (ADR 0130 §§1, 4; ADR 0148). A pool that does not answer is listed in unavailablePools rather than dropped.
+            operationId: list-dns-audit
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Only queries asked by this sandbox, which need not still exist
+                  in: query
+                  name: sandboxId
+                  schema:
+                    description: Only queries asked by this sandbox, which need not still exist
+                    type: string
+                - description: Only queries answered by this pool
+                  in: query
+                  name: poolId
+                  schema:
+                    description: Only queries answered by this pool
+                    type: string
+                - description: Only queries for this name
+                  in: query
+                  name: name
+                  schema:
+                    description: Only queries for this name
+                    type: string
+                - description: Only the query with this record ID, which is only unique within a pool
+                  in: query
+                  name: id
+                  schema:
+                    description: Only the query with this record ID, which is only unique within a pool
+                    pattern: ^dns_[0-9]+$
+                    type: string
+                - description: Only queries asked at or after this time
+                  in: query
+                  name: since
+                  schema:
+                    description: Only queries asked at or after this time
+                    format: date-time
+                    type: string
+                - description: Maximum number of queries to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: 100
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                - description: 'Read forward from a cursor instead of a time, one per pool, as poolId:dns_<row>. A pool named here is read in write order after that record; a pool not named is read by since.'
+                  explode: true
+                  in: query
+                  name: after
+                  schema:
+                    items:
+                      pattern: ^[A-Za-z0-9_-]+:dns_[0-9]+$
+                      type: string
+                    maxItems: 100
+                    type: array
+                  style: form
+                - description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                  in: query
+                  name: order
+                  schema:
+                    default: desc
+                    description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                    enum:
+                        - asc
+                        - desc
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListDNSAuditBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List audited DNS queries
+            tags:
+                - Pools
     /projects/{projectId}/audit/http:
         get:
             description: The HTTP exchanges the project's pool proxies audited, newest first, read from each pool through its agent and merged (ADR 0130 §§1, 4). Project-scoped because a purged sandbox's exchanges stay on its pool for the audit retention window after the record of which pool that was is gone. A pool that does not answer is listed in unavailablePools rather than dropped.

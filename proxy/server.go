@@ -272,10 +272,22 @@ func (s *Server) sweepAudit(retention time.Duration) {
 	span.SetAttributes(
 		attribute.Int64("proxy.audit.retention.http_rows", result.HTTPRows),
 		attribute.Int64("proxy.audit.retention.socks_rows", result.SOCKSRows),
+		attribute.Int64("proxy.audit.retention.dns_rows", result.DNSRows),
 		attribute.Int64("proxy.audit.retention.files", result.Files),
 		attribute.Int64("proxy.audit.retention.bytes", result.Bytes),
 	)
 	recordSpanError(span, err)
+}
+
+// DNSAuditEvent is one DNS query to record in the proxy's audit trail.
+type DNSAuditEvent = audit.DNSEvent
+
+// RecordDNS audits a DNS query answered in this process on the proxy's behalf:
+// the pool's sandbox DNS runs beside the proxy and shares its trail, its
+// client identity and its retention (ADR 0148). It never blocks; under burst
+// the event is dropped and counted in /audit/dropped like any other.
+func (s *Server) RecordDNS(event DNSAuditEvent) {
+	s.audit.RecordDNS(event)
 }
 
 // Close stops the proxy and flushes queued audit events.

@@ -2031,6 +2031,147 @@ func (s *CredentialVerdict) SetVolunteered(val bool) {
 	s.Volunteered = val
 }
 
+// One DNS query a sandbox asked of its pool, which answered it over the sandbox's mTLS channel and
+// audited it beside the sandbox's HTTP (ADR 0148). Recorded by the pool, so the sandbox cannot alter
+// the row; the name is what the sandbox asked and is display data.
+// Ref: #/components/schemas/DNSAuditQuery
+type DNSAuditQuery struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The answers' data -- addresses, and the names aliases and pointers lead to; free-text records are
+	// left out.
+	Answers []string `json:"answers"`
+	// When the query was asked.
+	CreatedAt time.Time `json:"createdAt"`
+	// How long the pool took to answer, in milliseconds.
+	DurationMillis OptInt64 `json:"durationMillis"`
+	// Why there was no answer, when there was none.
+	Error OptString `json:"error"`
+	// Audit record ID, written dns_<row>, unique within its pool and ordered by write.
+	ID string `json:"id"`
+	// The name asked, lowercased and without the trailing dot.
+	Name string `json:"name"`
+	// Pool that answered the query.
+	PoolId string `json:"poolId"`
+	// The answer's response code as DNS tools print it (NOERROR, NXDOMAIN, SERVFAIL, ...); empty when
+	// there was no answer.
+	Rcode string `json:"rcode"`
+	// Sandbox whose client certificate asked.
+	SandboxId string `json:"sandboxId"`
+	// The record type asked for (A, AAAA, ...).
+	Type string `json:"type"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *DNSAuditQuery) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAnswers returns the value of Answers.
+func (s *DNSAuditQuery) GetAnswers() []string {
+	return s.Answers
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *DNSAuditQuery) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDurationMillis returns the value of DurationMillis.
+func (s *DNSAuditQuery) GetDurationMillis() OptInt64 {
+	return s.DurationMillis
+}
+
+// GetError returns the value of Error.
+func (s *DNSAuditQuery) GetError() OptString {
+	return s.Error
+}
+
+// GetID returns the value of ID.
+func (s *DNSAuditQuery) GetID() string {
+	return s.ID
+}
+
+// GetName returns the value of Name.
+func (s *DNSAuditQuery) GetName() string {
+	return s.Name
+}
+
+// GetPoolId returns the value of PoolId.
+func (s *DNSAuditQuery) GetPoolId() string {
+	return s.PoolId
+}
+
+// GetRcode returns the value of Rcode.
+func (s *DNSAuditQuery) GetRcode() string {
+	return s.Rcode
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *DNSAuditQuery) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetType returns the value of Type.
+func (s *DNSAuditQuery) GetType() string {
+	return s.Type
+}
+
+// SetSchema sets the value of Schema.
+func (s *DNSAuditQuery) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAnswers sets the value of Answers.
+func (s *DNSAuditQuery) SetAnswers(val []string) {
+	s.Answers = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *DNSAuditQuery) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDurationMillis sets the value of DurationMillis.
+func (s *DNSAuditQuery) SetDurationMillis(val OptInt64) {
+	s.DurationMillis = val
+}
+
+// SetError sets the value of Error.
+func (s *DNSAuditQuery) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetID sets the value of ID.
+func (s *DNSAuditQuery) SetID(val string) {
+	s.ID = val
+}
+
+// SetName sets the value of Name.
+func (s *DNSAuditQuery) SetName(val string) {
+	s.Name = val
+}
+
+// SetPoolId sets the value of PoolId.
+func (s *DNSAuditQuery) SetPoolId(val string) {
+	s.PoolId = val
+}
+
+// SetRcode sets the value of Rcode.
+func (s *DNSAuditQuery) SetRcode(val string) {
+	s.Rcode = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *DNSAuditQuery) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetType sets the value of Type.
+func (s *DNSAuditQuery) SetType(val string) {
+	s.Type = val
+}
+
 // DeleteHarnessConfigNoContent is response for DeleteHarnessConfig operation.
 type DeleteHarnessConfigNoContent struct{}
 
@@ -2286,6 +2427,7 @@ func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) getServerInfoRes()                    {}
 func (*ErrorModelStatusCode) getServerPeerRes()                    {}
 func (*ErrorModelStatusCode) listCredentialVerdictsRes()           {}
+func (*ErrorModelStatusCode) listDNSAuditRes()                     {}
 func (*ErrorModelStatusCode) listHTTPAuditRes()                    {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
@@ -4852,6 +4994,91 @@ func (s *ListCredentialVerdictsOrder) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/ListDNSAuditBody
+type ListDNSAuditBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Matching queries from every pool that answered, newest first.
+	Queries []DNSAuditQuery `json:"queries"`
+	// Pools that were asked and did not answer. Non-empty means queries may be missing.
+	UnavailablePools []UnavailableAuditPool `json:"unavailablePools"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListDNSAuditBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetQueries returns the value of Queries.
+func (s *ListDNSAuditBody) GetQueries() []DNSAuditQuery {
+	return s.Queries
+}
+
+// GetUnavailablePools returns the value of UnavailablePools.
+func (s *ListDNSAuditBody) GetUnavailablePools() []UnavailableAuditPool {
+	return s.UnavailablePools
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListDNSAuditBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetQueries sets the value of Queries.
+func (s *ListDNSAuditBody) SetQueries(val []DNSAuditQuery) {
+	s.Queries = val
+}
+
+// SetUnavailablePools sets the value of UnavailablePools.
+func (s *ListDNSAuditBody) SetUnavailablePools(val []UnavailableAuditPool) {
+	s.UnavailablePools = val
+}
+
+func (*ListDNSAuditBody) listDNSAuditRes() {}
+
+// Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
+// the newest first.
+type ListDNSAuditOrder string
+
+const (
+	ListDNSAuditOrderAsc  ListDNSAuditOrder = "asc"
+	ListDNSAuditOrderDesc ListDNSAuditOrder = "desc"
+)
+
+// AllValues returns all ListDNSAuditOrder values.
+func (ListDNSAuditOrder) AllValues() []ListDNSAuditOrder {
+	return []ListDNSAuditOrder{
+		ListDNSAuditOrderAsc,
+		ListDNSAuditOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListDNSAuditOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListDNSAuditOrderAsc:
+		return []byte(s), nil
+	case ListDNSAuditOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListDNSAuditOrder) UnmarshalText(data []byte) error {
+	switch ListDNSAuditOrder(data) {
+	case ListDNSAuditOrderAsc:
+		*s = ListDNSAuditOrderAsc
+		return nil
+	case ListDNSAuditOrderDesc:
+		*s = ListDNSAuditOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type ListExecEventsOrder string
 
 const (
@@ -6606,6 +6833,52 @@ func (o OptListCredentialVerdictsOrder) Get() (v ListCredentialVerdictsOrder, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListCredentialVerdictsOrder) Or(d ListCredentialVerdictsOrder) ListCredentialVerdictsOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListDNSAuditOrder returns new OptListDNSAuditOrder with value set to v.
+func NewOptListDNSAuditOrder(v ListDNSAuditOrder) OptListDNSAuditOrder {
+	return OptListDNSAuditOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListDNSAuditOrder is optional ListDNSAuditOrder.
+type OptListDNSAuditOrder struct {
+	Value ListDNSAuditOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListDNSAuditOrder was set.
+func (o OptListDNSAuditOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListDNSAuditOrder) Reset() {
+	var v ListDNSAuditOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListDNSAuditOrder) SetTo(v ListDNSAuditOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListDNSAuditOrder) Get() (v ListDNSAuditOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListDNSAuditOrder) Or(d ListDNSAuditOrder) ListDNSAuditOrder {
 	if v, ok := o.Get(); ok {
 		return v
 	}

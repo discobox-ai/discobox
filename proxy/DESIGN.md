@@ -80,7 +80,14 @@ SQLite pragmas.
 The HTTP request path must not block on audit database writes. Audit calls enqueue
 bounded events to a background writer (`Recording.QueueSize`, shared by HTTP and
 SOCKS rows). If the queue is full, the recorder drops the event and increments
-its drop counter instead of stalling network traffic.
+its drop counter instead of stalling network traffic. DNS rows are recorded
+through `Server.RecordDNS` by the pool's sandbox DNS server, which runs in the
+same process and has no recorder of its own (ADR 0148). They share the
+database's client identity, retention and write-ordered cursor (`dns_<row>`),
+but not the queue: lookups have one of their own, the single writer takes from
+it only when the HTTP and SOCKS queue is empty, and each sandbox has a budget in
+it. A lookup past either is dropped and counted apart (`dnsDropped` beside
+`dropped` on `/audit/dropped`).
 
 Normal HTTP request and response bodies are streamed to disk spool files. SQLite
 stores only relative spool paths, byte counts, format names, metadata, redacted
@@ -416,7 +423,10 @@ The control API (`ControlHandler`, served by `ListenAndServeControl` only when
 (`GET /audit/http`, `/audit/socks`, filtered by `client_id`, `host`, `since`
 (RFC 3339, compared in UTC because rows are written in UTC) and `limit` up to
 1000; HTTP also takes `use_id`, which the SOCKS route rejects rather than
-ignores, because a tunnel the proxy never reads can have spent no credential),
+ignores, because a tunnel the proxy never reads can have spent no credential)
+and DNS rows (`GET /audit/dns`, by `client_id`, `name`, `since`, `order`,
+`limit`, and a `dns_` `after_id` or exact `id`, refusing every exchange-only filter and an
+`http_` cursor),
 reports the dropped-event counter (`/audit/dropped`), and serves
 body and upgraded-stream spool files only through the owning HTTP audit row
 (`/audit/http/{id}/{request-body|response-body|stream}`), never by path; every

@@ -129,7 +129,8 @@ caller's size.
 pool is in the path because a record ID is only unique within it.
 
 The `after` parameter on `list-http-audit` is one cursor per pool, written
-`poolId:http_<row>`, and the handler refuses a malformed one rather than
+`poolId:http_<row>` — and on `list-dns-audit`, `poolId:dns_<row>`, each trail
+refusing the other's — and the handler refuses a malformed one rather than
 ignoring it:
 a dropped cursor silently restarts a follow from its time bound and re-prints
 what it already showed.

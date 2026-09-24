@@ -60,6 +60,7 @@ const (
 	GetServerInfoOperation                    OperationName = "GetServerInfo"
 	GetServerPeerOperation                    OperationName = "GetServerPeer"
 	ListCredentialVerdictsOperation           OperationName = "ListCredentialVerdicts"
+	ListDNSAuditOperation                     OperationName = "ListDNSAudit"
 	ListExecEventsOperation                   OperationName = "ListExecEvents"
 	ListHTTPAuditOperation                    OperationName = "ListHTTPAudit"
 	ListHarnessConfigSecretBindingsOperation  OperationName = "ListHarnessConfigSecretBindings"

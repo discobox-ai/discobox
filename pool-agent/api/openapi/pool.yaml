@@ -400,6 +400,76 @@ components:
             - config
             - runtime
             type: object
+        PoolDNSAuditQuery:
+            additionalProperties: false
+            description: |-
+                One DNS query a sandbox asked of its pool, which answered it over the
+                sandbox's mTLS channel and audited it beside its HTTP (ADR 0148).
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PoolDNSAuditQuery.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                answers:
+                    description: The answers' data -- addresses, and the names aliases and pointers lead to; free-text records are left out
+                    items:
+                        type: string
+                    type: array
+                createdAt:
+                    description: When the query was asked
+                    format: date-time
+                    type: string
+                durationMillis:
+                    description: How long the pool took to answer, in milliseconds
+                    format: int64
+                    type: integer
+                error:
+                    description: Why there was no answer, when there was none
+                    type: string
+                id:
+                    description: Audit record ID, written dns_<row>, unique within this pool and ordered by write
+                    pattern: ^dns_[0-9]+$
+                    type: string
+                name:
+                    description: The name asked, lowercased and without the trailing dot
+                    type: string
+                rcode:
+                    description: The answer's response code as DNS tools print it (NOERROR, NXDOMAIN, SERVFAIL, ...); empty when there was no answer
+                    type: string
+                sandboxId:
+                    description: Sandbox whose client certificate asked
+                    type: string
+                type:
+                    description: The record type asked for (A, AAAA, ...)
+                    type: string
+            required:
+            - id
+            - createdAt
+            - sandboxId
+            - name
+            - type
+            - rcode
+            - answers
+            type: object
+        PoolDNSAuditResponse:
+            additionalProperties: false
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PoolDNSAuditResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                queries:
+                    description: Matching queries, newest first
+                    items:
+                        "$ref": "#/components/schemas/PoolDNSAuditQuery"
+                    type: array
+            required:
+            - queries
+            type: object
         PoolHTTPAuditExchange:
             additionalProperties: false
             description: |-
@@ -1286,6 +1356,97 @@ paths:
             security:
             -   poolBearerAuth: []
             summary: Stop every sandbox on the pool and empty its caches
+            tags:
+            - Pool Sandboxes
+    "/api/project/{projectId}/pool/{poolId}/audit/dns":
+        get:
+            description: |-
+                The DNS queries the pool answered for its sandboxes, newest first,
+                relayed from the proxy's loopback control API with a token the agent
+                signs (ADR 0130 §4, ADR 0148). A request token that names a sandbox
+                narrows the read to it, whatever sandboxId says.
+            operationId: pool-list-dns-audit
+            parameters:
+            -   description: Project ID
+                in: path
+                name: projectId
+                required: true
+                schema:
+                    description: Project ID
+                    type: string
+            -   description: Pool ID
+                in: path
+                name: poolId
+                required: true
+                schema:
+                    description: Pool ID
+                    type: string
+            -   description: Only queries asked by this sandbox, which need not still exist
+                in: query
+                name: sandboxId
+                schema:
+                    description: Only queries asked by this sandbox, which need not still exist
+                    type: string
+            -   description: Only queries for this name
+                in: query
+                name: name
+                schema:
+                    description: Only queries for this name
+                    type: string
+            -   description: Only the query with this record ID
+                in: query
+                name: id
+                schema:
+                    description: Only the query with this record ID
+                    pattern: ^dns_[0-9]+$
+                    type: string
+            -   description: Only queries asked at or after this time
+                in: query
+                name: since
+                schema:
+                    description: Only queries asked at or after this time
+                    format: date-time
+                    type: string
+            -   description: Maximum number of queries to return
+                in: query
+                name: limit
+                schema:
+                    default: 100
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            -   description: Only queries written after this record, in write order; takes precedence over since and order
+                in: query
+                name: afterId
+                schema:
+                    description: Only queries written after this record, in write order; takes precedence over since and order
+                    pattern: ^dns_[0-9]+$
+                    type: string
+            -   description: asc returns the oldest matches first, for reading forward from a since bound
+                in: query
+                name: order
+                schema:
+                    default: desc
+                    enum:
+                    - asc
+                    - desc
+                    type: string
+            responses:
+                '200':
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/PoolDNSAuditResponse"
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                "$ref": "#/components/schemas/ErrorModel"
+                    description: Error
+            security:
+            -   poolBearerAuth: []
+            summary: List the DNS queries the pool answered and audited
             tags:
             - Pool Sandboxes
     "/api/project/{projectId}/pool/{poolId}/audit/http":

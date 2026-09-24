@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -328,5 +329,147 @@ func TestListHTTPCursorReadsRowsWrittenOutOfTimeOrder(t *testing.T) {
 	// returned twice, and there is no window to re-walk.
 	if rows, err := read(context.Background(), QueryOptions{AfterID: byCursor[0].ID}); err != nil || len(rows) != 0 {
 		t.Fatalf("cursor read after the last row = %+v, %v", rows, err)
+	}
+}
+
+func TestRecorderPersistsDNSEvent(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "audit.db")
+	recorder, err := Open(context.Background(), dsn, 8, true)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	recorder.RecordDNS(DNSEvent{
+		Time:          time.Now().UTC(),
+		ClientID:      "sandbox-1",
+		ClientSubject: "CN=sandbox-1",
+		Name:          "api.example.com",
+		Type:          "A",
+		RCode:         "NOERROR",
+		Answers:       []string{"192.0.2.1", "192.0.2.2"},
+		Duration:      1500 * time.Microsecond,
+	})
+	if err := recorder.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer pools.Close()
+	var query DNSQuery
+	if err := pools.Read.First(&query).Error; err != nil {
+		t.Fatalf("read dns query: %v", err)
+	}
+	if query.ID.String() != "dns_1" || query.ClientID != "sandbox-1" || query.Name != "api.example.com" || query.Type != "A" || query.RCode != "NOERROR" {
+		t.Fatalf("row = %+v", query)
+	}
+	if query.Answers != "192.0.2.1,192.0.2.2" || query.DurationMicros != 1500 || query.DurationMillis != 1 {
+		t.Fatalf("answers %q, duration %dus/%dms", query.Answers, query.DurationMicros, query.DurationMillis)
+	}
+	if query.EnqueuedAt.IsZero() || query.WrittenAt.IsZero() {
+		t.Fatalf("expected queue/write timestamps, got enqueued=%s written=%s", query.EnqueuedAt, query.WrittenAt)
+	}
+}
+
+func TestRecorderListsDNSByClientNameAndCursor(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 8, true)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer recorder.Close()
+	base := time.Now().UTC()
+	for i, event := range []DNSEvent{
+		{ClientID: "sandbox-1", Name: "a.example.com"},
+		{ClientID: "sandbox-2", Name: "a.example.com"},
+		{ClientID: "sandbox-1", Name: "b.example.com"},
+		{ClientID: "sandbox-1", Name: "a.example.com"},
+	} {
+		event.Time = base.Add(time.Duration(i) * time.Second)
+		recorder.RecordDNS(event)
+	}
+	waitForDNSRows(t, recorder, 4)
+
+	rows, err := recorder.ListDNS(context.Background(), DNSQueryOptions{ClientID: "sandbox-1", Name: "a.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].ID != 4 || rows[1].ID != 1 {
+		t.Fatalf("filtered rows newest first = %+v", rows)
+	}
+	rows, err = recorder.ListDNS(context.Background(), DNSQueryOptions{AfterID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].ID != 3 || rows[1].ID != 4 {
+		t.Fatalf("rows after dns_2 in write order = %+v", rows)
+	}
+}
+
+func waitForDNSRows(t *testing.T, recorder *Recorder, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rows, err := recorder.ListDNS(context.Background(), DNSQueryOptions{Limit: 1000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recorder wrote %d dns rows, want %d", len(rows), want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// One sandbox's flood of lookups spends its own budget, not the trail every
+// sandbox's lookups share.
+func TestRecorderBoundsEachSandboxsDNS(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 100000, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recorder.Close()
+	for range dnsAuditBurst + 200 {
+		recorder.RecordDNS(DNSEvent{ClientID: "flooder", Name: "x.example"})
+	}
+	if dropped := recorder.DNSDropped(); dropped < 100 {
+		t.Fatalf("DNSDropped = %d, want the flood past the burst dropped", dropped)
+	}
+	recorder.RecordDNS(DNSEvent{ClientID: "neighbor", Name: "y.example"})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rows, err := recorder.ListDNS(context.Background(), DNSQueryOptions{ClientID: "neighbor"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the neighbor's lookup was never written")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// DNS has a queue of its own: lookups dropped there are not HTTP rows lost,
+// and do not stop an HTTP event from being taken.
+func TestRecorderKeepsDNSOffTheHTTPQueue(t *testing.T) {
+	recorder, err := Open(context.Background(), filepath.Join(t.TempDir(), "audit.db"), 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recorder.Close()
+	for i := range 2000 {
+		recorder.RecordDNS(DNSEvent{ClientID: fmt.Sprintf("sandbox-%d", i), Name: "x.example"})
+	}
+	recorder.RecordHTTP(HTTPEvent{ClientID: "sandbox-1", Host: "api.example.com", Method: http.MethodGet})
+	if dropped := recorder.Dropped(); dropped != 0 {
+		t.Fatalf("Dropped = %d HTTP/SOCKS events after a DNS flood, want 0", dropped)
+	}
+	if recorder.DNSDropped() == 0 {
+		t.Fatal("a one-slot DNS queue took 2000 lookups without dropping any")
 	}
 }

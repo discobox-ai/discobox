@@ -28,8 +28,9 @@ func (a *App) newAuditGetCommand() *cobra.Command {
 reports for it.
 
 The ID says which trail to read: http_<row> is an exchange the pool's proxy
-recorded, cvd_… a credential verdict, and evt_… either a harness hook or an
-exec event, both of which the discobox keeps inside itself.
+recorded, dns_<row> a lookup the pool answered, cvd_… a credential verdict, and
+evt_… either a harness hook or an exec event, both of which the discobox keeps
+inside itself.
 
 An http record's headers are shown as the proxy stored them, which is already
 redacted: a credential the proxy swapped into the request was never written to
@@ -51,16 +52,18 @@ escaped.`,
 			switch {
 			case auditid.IsExchange(recordID):
 				return a.printHTTPAuditRecord(cmd, client, projectID, poolID, sandboxID, recordID)
+			case auditid.IsDNSQuery(recordID):
+				return a.printDNSAuditRecord(cmd, client, projectID, poolID, sandboxID, recordID)
 			case strings.HasPrefix(recordID, "cvd_"):
 				return a.printCredentialVerdictRecord(cmd, client, projectID, sandboxID, recordID)
 			case strings.HasPrefix(recordID, "evt_"):
 				return a.printSandboxTrailRecord(cmd, client, projectID, sandboxID, recordID)
 			default:
-				return fmt.Errorf("%q is not an audit record ID: they are written http_<row>, cvd_… or evt_…", terminalSafe(recordID))
+				return fmt.Errorf("%q is not an audit record ID: they are written http_<row>, dns_<row>, cvd_… or evt_…", terminalSafe(recordID))
 			}
 		},
 	}
-	cmd.Flags().StringVar(&poolID, "pool", "", "Pool that recorded an http_ record, when the discobox is gone and cannot name it")
+	cmd.Flags().StringVar(&poolID, "pool", "", "Pool that recorded an http_ or dns_ record, when the discobox is gone and cannot name it")
 	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
 	return cmd
 }

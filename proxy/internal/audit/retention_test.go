@@ -45,6 +45,8 @@ func TestSweepDropsRowsAndSpoolsPastTheWindow(t *testing.T) {
 	recorder.RecordHTTP(HTTPEvent{Time: now.Add(-time.Hour), ClientID: "sbx-new", Method: http.MethodGet, Host: "new.example.com"})
 	recorder.RecordSOCKS(SOCKSEvent{Time: now.Add(-72 * time.Hour), ClientID: "sbx-old", Destination: "old.example.com"})
 	recorder.RecordSOCKS(SOCKSEvent{Time: now.Add(-time.Hour), ClientID: "sbx-new", Destination: "new.example.com"})
+	recorder.RecordDNS(DNSEvent{Time: now.Add(-72 * time.Hour), ClientID: "sbx-old", Name: "old.example.com"})
+	recorder.RecordDNS(DNSEvent{Time: now.Add(-time.Hour), ClientID: "sbx-new", Name: "new.example.com"})
 	drainRecorder(t, recorder)
 
 	oldBody := filepath.Join(dir, "bodies", "bodies", "sbx-old", "response-1.bin")
@@ -58,8 +60,8 @@ func TestSweepDropsRowsAndSpoolsPastTheWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sweep() error = %v", err)
 	}
-	if result.HTTPRows != 1 || result.SOCKSRows != 1 {
-		t.Fatalf("Sweep() rows = http %d socks %d, want 1 and 1", result.HTTPRows, result.SOCKSRows)
+	if result.HTTPRows != 1 || result.SOCKSRows != 1 || result.DNSRows != 1 {
+		t.Fatalf("Sweep() rows = http %d socks %d dns %d, want 1 of each", result.HTTPRows, result.SOCKSRows, result.DNSRows)
 	}
 	if result.Files != 2 {
 		t.Fatalf("Sweep() files = %d, want the two spools past the window", result.Files)
@@ -73,11 +75,12 @@ func TestSweepDropsRowsAndSpoolsPastTheWindow(t *testing.T) {
 		t.Fatalf("spool inside the window was reclaimed: %v", err)
 	}
 
-	var httpRows, socksRows int64
+	var httpRows, socksRows, dnsRows int64
 	recorder.db.Model(&HTTPExchange{}).Count(&httpRows)
 	recorder.db.Model(&SOCKSConnect{}).Count(&socksRows)
-	if httpRows != 1 || socksRows != 1 {
-		t.Fatalf("rows after sweep = http %d socks %d, want the recent one of each", httpRows, socksRows)
+	recorder.db.Model(&DNSQuery{}).Count(&dnsRows)
+	if httpRows != 1 || socksRows != 1 || dnsRows != 1 {
+		t.Fatalf("rows after sweep = http %d socks %d dns %d, want the recent one of each", httpRows, socksRows, dnsRows)
 	}
 }
 

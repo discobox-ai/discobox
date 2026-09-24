@@ -24,6 +24,7 @@ type AuditReader interface {
 	ListHTTP(ctx context.Context, sandboxID string, query proxy.AuditQuery) ([]proxy.AuditHTTPExchange, error)
 	GetHTTP(ctx context.Context, sandboxID string, id auditid.ExchangeID) (*proxy.AuditHTTPExchange, error)
 	OpenHTTPArtifact(ctx context.Context, sandboxID string, id auditid.ExchangeID, artifact string) (*proxy.AuditArtifact, error)
+	ListDNS(ctx context.Context, sandboxID string, query proxy.AuditDNSQueryOptions) ([]proxy.AuditDNSQuery, error)
 }
 
 // PoolListHTTPAudit relays the pool proxy's HTTP audit (ADR 0130 §4).
@@ -69,6 +70,59 @@ func (s *sandboxService) PoolListHTTPAudit(ctx context.Context, params workerapi
 	out := &workerapimodel.PoolHTTPAuditResponse{Exchanges: make([]workerapimodel.PoolHTTPAuditExchange, 0, len(rows))}
 	for _, row := range rows {
 		out.Exchanges = append(out.Exchanges, poolHTTPAuditExchange(row))
+	}
+	return out, nil
+}
+
+// PoolListDNSAudit relays the DNS queries the pool answered for its sandboxes
+// (ADR 0148), narrowed to a sandbox exactly as the HTTP audit is.
+func (s *sandboxService) PoolListDNSAudit(ctx context.Context, params workerapi.PoolListDNSAuditParams) (*workerapimodel.PoolDNSAuditResponse, error) {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return nil, err
+	}
+	if s.audit == nil {
+		return nil, newStatusError(http.StatusServiceUnavailable, "the pool proxy's audit is not configured")
+	}
+	sandboxID, err := auditSandbox(ctx, params.SandboxId.Or(""))
+	if err != nil {
+		return nil, err
+	}
+	query := proxy.AuditDNSQueryOptions{
+		Name:      params.Name.Or(""),
+		Since:     params.Since.Or(time.Time{}),
+		Ascending: params.Order.Or(workerapi.PoolListDNSAuditOrderDesc) == workerapi.PoolListDNSAuditOrderAsc,
+		Limit:     params.Limit.Or(100),
+	}
+	for value, field := range map[string]*auditid.DNSQueryID{params.AfterId.Or(""): &query.AfterID, params.ID.Or(""): &query.ID} {
+		if value == "" {
+			continue
+		}
+		id, err := auditid.ParseDNSQuery(value)
+		if err != nil {
+			return nil, newStatusError(http.StatusBadRequest, err.Error())
+		}
+		*field = id
+	}
+	rows, err := s.audit.ListDNS(ctx, sandboxID, query)
+	if err != nil {
+		return nil, newStatusError(http.StatusServiceUnavailable, "read the pool proxy's audit: "+err.Error())
+	}
+	out := &workerapimodel.PoolDNSAuditResponse{Queries: make([]workerapimodel.PoolDNSAuditQuery, 0, len(rows))}
+	for _, row := range rows {
+		query := workerapimodel.PoolDNSAuditQuery{
+			ID:             row.ID.String(),
+			CreatedAt:      row.CreatedAt,
+			SandboxId:      row.ClientID,
+			Name:           row.Name,
+			Type:           row.Type,
+			Rcode:          row.RCode,
+			Answers:        splitAuditList(row.Answers),
+			DurationMillis: workerapi.NewOptInt64(row.DurationMillis),
+		}
+		if row.Error != "" {
+			query.Error = workerapi.NewOptString(row.Error)
+		}
+		out.Queries = append(out.Queries, query)
 	}
 	return out, nil
 }

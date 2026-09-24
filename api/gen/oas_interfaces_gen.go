@@ -217,6 +217,10 @@ type ListCredentialVerdictsRes interface {
 	listCredentialVerdictsRes()
 }
 
+type ListDNSAuditRes interface {
+	listDNSAuditRes()
+}
+
 type ListExecEventsRes interface {
 	listExecEventsRes()
 }

@@ -289,7 +289,7 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 		return ScopePoolSync
 	case workerapi.PoolClearCacheOperation:
 		return ScopePoolCacheClear
-	case workerapi.PoolListHTTPAuditOperation, workerapi.PoolGetHTTPAuditOperation:
+	case workerapi.PoolListHTTPAuditOperation, workerapi.PoolGetHTTPAuditOperation, workerapi.PoolListDNSAuditOperation:
 		return ScopeAuditRead
 	default:
 		return ""

@@ -32,6 +32,7 @@ func (a *App) newAuditCommand() *cobra.Command {
 	cmd.AddCommand(a.newAuditGetCommand())
 	cmd.AddCommand(a.newAuditCredsCommand())
 	cmd.AddCommand(a.newAuditHTTPCommand())
+	cmd.AddCommand(a.newAuditDNSCommand())
 	cmd.AddCommand(a.newAuditHooksCommand())
 	cmd.AddCommand(a.newAuditExecsCommand())
 	return cmd
@@ -193,7 +194,7 @@ with non-printing characters escaped.`,
 			var reported auditOnce
 			source := httpAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) {
 				var b strings.Builder
-				writeUnavailableAuditPools(&b, pools)
+				writeUnavailableAuditPools(&b, pools, "requests")
 				if reported.changed(b.String()) {
 					_, _ = io.WriteString(cmd.ErrOrStderr(), b.String())
 				}
@@ -314,13 +315,14 @@ func httpAuditRefuser(blocked bool, reason string) string {
 	return "policy"
 }
 
-// writeUnavailableAuditPools says which pools' requests are missing. It goes to
-// stderr because it is about the answer rather than part of it, and it is never
-// skipped: a list silently short a pool reads as a complete one (ADR 0130 §1).
-func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAuditPool) {
+// writeUnavailableAuditPools says which pools' records — what names them — are
+// missing. It goes to stderr because it is about the answer rather than part of
+// it, and it is never skipped: a list silently short a pool reads as a complete
+// one (ADR 0130 §1).
+func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAuditPool, what string) {
 	for _, pool := range pools {
-		_, _ = fmt.Fprintf(errOut, "pool %s could not be read, so its requests are missing: %s\n",
-			terminalSafe(pool.PoolId), terminalSafe(pool.Reason))
+		_, _ = fmt.Fprintf(errOut, "pool %s could not be read, so its %s are missing: %s\n",
+			terminalSafe(pool.PoolId), what, terminalSafe(pool.Reason))
 	}
 }
 

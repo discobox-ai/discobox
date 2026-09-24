@@ -37,3 +37,33 @@ func TestExchangeIDJSONIsTheAPISpelling(t *testing.T) {
 		t.Fatal("a bare number was accepted as an exchange ID")
 	}
 }
+
+// A DNS query's ID is spelled like an exchange's with its own prefix, and
+// neither trail accepts the other's: a cursor handed to the wrong trail would
+// otherwise read an unrelated table from an unrelated row.
+func TestDNSQueryIDIsItsOwnTrail(t *testing.T) {
+	if got := DNSQueryID(42).String(); got != "dns_42" {
+		t.Fatalf("String() = %q", got)
+	}
+	id, err := ParseDNSQuery("dns_42")
+	if err != nil || id != 42 {
+		t.Fatalf("ParseDNSQuery() = %d, %v", id, err)
+	}
+	if _, err := ParseDNSQuery("http_42"); err == nil {
+		t.Fatal("an exchange ID was accepted as a DNS query ID")
+	}
+	if _, err := ParseExchange("dns_42"); err == nil {
+		t.Fatal("a DNS query ID was accepted as an exchange ID")
+	}
+	if !IsDNSQuery("dns_1") || IsDNSQuery("http_1") || IsExchange("dns_1") {
+		t.Fatal("IsDNSQuery does not separate the trails")
+	}
+	data, err := DNSQueryID(7).MarshalJSON()
+	if err != nil || string(data) != `"dns_7"` {
+		t.Fatalf("MarshalJSON() = %s, %v", data, err)
+	}
+	var decoded DNSQueryID
+	if err := decoded.UnmarshalJSON([]byte(`"dns_7"`)); err != nil || decoded != 7 {
+		t.Fatalf("UnmarshalJSON() = %d, %v", decoded, err)
+	}
+}

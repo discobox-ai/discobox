@@ -124,7 +124,7 @@ func (h *Handler) ListHTTPAudit(ctx context.Context, params serverapi.ListHTTPAu
 	if blocked, ok := params.Blocked.Get(); ok {
 		filter.Blocked = &blocked
 	}
-	after, err := parsePoolCursors(params.After)
+	after, err := parsePoolCursors(params.After, auditid.ExchangePrefix, auditid.ParseExchange)
 	if err != nil {
 		return apiError(err), nil
 	}
@@ -134,6 +134,38 @@ func (h *Handler) ListHTTPAudit(ctx context.Context, params serverapi.ListHTTPAu
 		return apiError(err), nil
 	}
 	body, err := services.Convert[apimodel.ListHTTPAuditBody](result)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+// ListDNSAudit reads the DNS queries the project's pools answered (ADR 0148).
+func (h *Handler) ListDNSAudit(ctx context.Context, params serverapi.ListDNSAuditParams) (serverapi.ListDNSAuditRes, error) {
+	after, err := parsePoolCursors(params.After, auditid.DNSPrefix, auditid.ParseDNSQuery)
+	if err != nil {
+		return apiError(err), nil
+	}
+	var id auditid.DNSQueryID
+	if raw := params.ID.Or(""); raw != "" {
+		if id, err = auditid.ParseDNSQuery(raw); err != nil {
+			return apiError(apperrors.NewStatusError(http.StatusBadRequest, err.Error())), nil
+		}
+	}
+	result, err := h.services.Pools.ListDNSAudit(ctx, params.ProjectId, services.DNSAuditFilter{
+		ID:        id,
+		SandboxID: params.SandboxId.Or(""),
+		PoolID:    params.PoolId.Or(""),
+		Name:      params.Name.Or(""),
+		Since:     params.Since.Or(time.Time{}),
+		Ascending: params.Order.Or(serverapi.ListDNSAuditOrderDesc) == serverapi.ListDNSAuditOrderAsc,
+		After:     after,
+		Limit:     params.Limit.Or(100),
+	})
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.ListDNSAuditBody](result)
 	if err != nil {
 		return nil, err
 	}
@@ -225,21 +257,22 @@ func (h *Handler) MintSandboxAgentStatusTokens(ctx context.Context, req *apimode
 	return &body, nil
 }
 
-// parsePoolCursors reads the `after` parameter: one `poolId:http_<row>` per
-// pool the caller already has records from. A record ID only means anything on
-// the pool that issued it, so the pool travels with it rather than the API
-// pretending one cursor covers a merged read.
-func parsePoolCursors(values []string) (map[string]auditid.ExchangeID, error) {
+// parsePoolCursors reads an audit list's `after` parameter: one
+// `poolId:<prefix><row>` per pool the caller already has records from, parsed
+// with the trail's own ID parser so one trail's cursor is refused by another. A
+// record ID only means anything on the pool that issued it, so the pool travels
+// with it rather than the API pretending one cursor covers a merged read.
+func parsePoolCursors[ID ~uint64](values []string, prefix string, parse func(string) (ID, error)) (map[string]ID, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
-	after := make(map[string]auditid.ExchangeID, len(values))
+	after := make(map[string]ID, len(values))
 	for _, value := range values {
 		poolID, recordID, ok := strings.Cut(value, ":")
 		if !ok || poolID == "" {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("after %q: want poolId:%s<row>", value, auditid.ExchangePrefix))
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("after %q: want poolId:%s<row>", value, prefix))
 		}
-		id, err := auditid.ParseExchange(recordID)
+		id, err := parse(recordID)
 		if err != nil {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("after %q: %s", value, err))
 		}

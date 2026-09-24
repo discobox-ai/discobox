@@ -20,6 +20,13 @@ import (
 // AuditHTTPExchange is one audited HTTP exchange, as the control API returns it.
 type AuditHTTPExchange = audit.HTTPExchange
 
+// AuditDNSQuery is one audited DNS query, as the control API returns it.
+type AuditDNSQuery = audit.DNSQuery
+
+// AuditDNSQueryOptions narrows a control API DNS audit read; ClientID is not
+// set here, as with AuditQuery.
+type AuditDNSQueryOptions = audit.DNSQueryOptions
+
 // AuditQuery narrows a control API audit read. ClientID is not set here: a
 // ControlClient takes the sandbox separately and puts it both in the token it
 // signs and in the query (see sandboxParams).
@@ -110,6 +117,54 @@ func (c *ControlClient) ListHTTP(ctx context.Context, sandboxID string, query Au
 	var rows []AuditHTTPExchange
 	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
 		return nil, fmt.Errorf("decode proxy audit rows: %w", err)
+	}
+	return rows, nil
+}
+
+// ListDNS returns audited DNS queries, newest first unless the query asks for
+// ascending. sandboxID scopes the read as it does ListHTTP's.
+func (c *ControlClient) ListDNS(ctx context.Context, sandboxID string, query AuditDNSQueryOptions) ([]AuditDNSQuery, error) {
+	claims := c.claims
+	claims.SandboxID = sandboxID
+	token, err := CreateControlToken(c.key, claims)
+	if err != nil {
+		return nil, err
+	}
+	params := sandboxParams(sandboxID)
+	if query.Name != "" {
+		params.Set("name", query.Name)
+	}
+	if !query.Since.IsZero() {
+		params.Set("since", query.Since.UTC().Format(time.RFC3339Nano))
+	}
+	if query.Limit > 0 {
+		params.Set("limit", strconv.Itoa(query.Limit))
+	}
+	if query.Ascending {
+		params.Set("order", "asc")
+	}
+	if query.AfterID > 0 {
+		params.Set("after_id", query.AfterID.String())
+	}
+	if query.ID > 0 {
+		params.Set("id", query.ID.String())
+	}
+	target := c.baseURL + "/audit/dns"
+	if len(params) > 0 {
+		target += "?" + params.Encode()
+	}
+	resp, err := c.get(ctx, target, token)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("proxy control API answered %d: %s", resp.StatusCode, strings.TrimSpace(string(detail)))
+	}
+	var rows []AuditDNSQuery
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return nil, fmt.Errorf("decode proxy dns audit rows: %w", err)
 	}
 	return rows, nil
 }

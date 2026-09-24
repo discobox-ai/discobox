@@ -480,8 +480,9 @@ than as something not found (`server/providers/DESIGN.md`).
 
 ## Reading the Proxy's Audit
 
-`audit/http` (scope `audit:read`, `server/audit_handlers.go`) relays the pool
-proxy's HTTP audit to the control plane
+`audit/http` and `audit/dns` (scope `audit:read`, `server/audit_handlers.go`)
+relay the pool proxy's HTTP audit and the DNS queries the pool answered to the
+control plane
 ([ADR 0130](../docs/adr/0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md)
 §4). The control plane never reaches the proxy: this agent does, over the
 proxy's loopback control API, with a token it signs itself.
@@ -612,7 +613,11 @@ flowchart LR
 - The upstream is the pool's own resolver, so a sandbox can resolve the names
   of containers on the pool's egress network too. It cannot reach them.
 - The server relays messages and decides nothing: DNS is not subject to the
-  proxy's allowlist and is not audited.
+  proxy's allowlist. It does decode each exchange — the name and type asked,
+  the rcode, the answers' addresses and targets, or why there was no answer —
+  and records it through the proxy's `RecordDNS` under the sandbox its
+  certificate names, into the same trail, queue and retention as its HTTP.
+  `audit/dns` relays it like `audit/http`, narrowed the same way.
 
 ## Worker Proxy Integration
 

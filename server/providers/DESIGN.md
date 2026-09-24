@@ -536,9 +536,9 @@ operations after intent has already been accepted and stored. The exception is
 operator maintenance the pool agent owns end to end and answers synchronously,
 which has no intent to store: `cache/clear` is forwarded straight from the
 API request and the caller waits for the agent's answer. Reads are the same:
-`audit/http` relays the pool proxy's audit, and `ListHTTPAudit` puts the sandbox
-a read names into the `audit:read` token as well as the query, so the agent
-narrows by what the control plane signed. `OpenHTTPAuditArtifact` reads a
+`audit/http` and `audit/dns` relay the pool proxy's audit, and `ListHTTPAudit`
+and `ListDNSAudit` put the sandbox a read names into the `audit:read` token as
+well as the query, so the agent narrows by what the control plane signed. `OpenHTTPAuditArtifact` reads a
 recorded body over the agent's hand-wired `audit/http/{id}/{artifact}` route the
 way `ExportTree` reads a tree: the lease is released when the body is closed,
 not when the call returns. The canonical

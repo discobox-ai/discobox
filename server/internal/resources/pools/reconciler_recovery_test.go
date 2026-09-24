@@ -388,6 +388,10 @@ func (stubPoolProvider) RemovePool(context.Context, sandbox.PoolManager, *model.
 	return nil
 }
 
+func (stubPoolProvider) ListDNSAudit(context.Context, *model.Pool, sandbox.DNSAuditFilter) ([]sandbox.DNSAuditQuery, error) {
+	return nil, nil
+}
+
 func (stubPoolProvider) ListHTTPAudit(context.Context, *model.Pool, sandbox.HTTPAuditQuery) ([]sandbox.HTTPAuditExchange, error) {
 	return nil, nil
 }
