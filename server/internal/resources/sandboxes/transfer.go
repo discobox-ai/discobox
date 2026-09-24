@@ -272,9 +272,10 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		SandboxManifest: spec.Manifest,
 		// The origin is the client this discobox belongs to, which a move does
 		// not change. Carrying it is what gives the imported discobox a source
-		// data key -- without which it comes up with no
-		// /.discobox/data-per-source/<slug> mount at all -- and what makes
-		// `discobox ls` in that repository list it (ADR 0123 §1).
+		// data key -- without which its primary comes up with an empty private
+		// /.discobox/data-per-source/<slug> rather than the data it shares with
+		// the source's other discoboxes, and its references with none -- and
+		// what makes `discobox ls` in that repository list it (ADR 0123 §1).
 		Origin: spec.Origin,
 		// The workspace arrived with the tree, so there is nothing to clone and
 		// nothing to wait for a push of. Without this the sandbox would park at

@@ -99,6 +99,43 @@ func TestPrepareSandboxVolumesOwnsWhatItWrites(t *testing.T) {
 	}
 }
 
+// A sandbox with no source still gets primary source data: a directory of its
+// own inside its data tree, owned by the sandbox user so a harness can write
+// there, and bound where a keyed source's shared data would be.
+func TestPrepareSandboxVolumesGivesASourcelessSandboxPrivateSourceData(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip("giving a file away requires root")
+	}
+	withTestRoot(t)
+	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	const sandboxID = "sandbox-1"
+	const uid, gid = 1000, 1000
+	userUID, userGID := int64(uid), int64(gid)
+
+	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
+	mounts, _, err := runtime.prepareSandboxVolumes(context.Background(), sandboxID, req, sandboxuser.User{UID: &userUID, GID: &userGID})
+	if err != nil {
+		t.Fatalf("prepareSandboxVolumes: %v", err)
+	}
+
+	private := filepath.Join(runtime.sandboxDataRootPath(sandboxID), ".discobox", "data-per-source", "primary")
+	if owner, group := ownerOf(t, private); owner != uid || group != gid {
+		t.Errorf("%s owned by %d:%d, want %d:%d", private, owner, group, uid, gid)
+	}
+	var found bool
+	for _, m := range mounts {
+		if m.Target == sandboxSourceDataMount+"/primary" {
+			found = true
+			if m.Source != runtime.daemonPath(private) || m.ReadOnly {
+				t.Errorf("primary source data mount = %#v, want a read-write bind of %s", m, private)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no primary source data mount in %#v", mounts)
+	}
+}
+
 func ownerOf(t *testing.T, path string) (uid, gid int) {
 	t.Helper()
 	info, err := os.Lstat(path)

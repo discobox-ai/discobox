@@ -323,8 +323,9 @@ and is answered as a 400 about the archive rather than an error about the pool
   belongs to. Two things need it: `OriginKey` is re-derived from it, which is
   what makes `discobox ls` in that repository list the moved discobox; and
   `buildCreateOptions` gates the per-source data key on it, so an import
-  without it comes up with `/.discobox/data-per-source/<slug>` absent rather
-  than empty.
+  without it comes up with the primary's `/.discobox/data-per-source/<slug>`
+  private to the discobox (see `pool-agent/DESIGN.md`) rather than the
+  source's shared data, and its references' absent.
 - **No secret value ever enters an archive.** Bindings travel as
   `{env, secret name}`; anonymous secrets (minted from an inline value,
   referenced only by ID) and agent-requested bindings do not travel at all. On

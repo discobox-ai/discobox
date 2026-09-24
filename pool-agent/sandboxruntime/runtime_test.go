@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1120,45 +1121,81 @@ func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 	}
 }
 
-func TestSourceDataMountsUseStableKeysAndSandboxSlugs(t *testing.T) {
+// Every sandbox has primary source data at the fixed name harnesses read. A
+// primary with a key shares it; one the control plane could give no key, and a
+// sandbox with no primary at all, keep a private one instead of coming up
+// without the mount. References are mounted under their own slugs, by key.
+func TestSourceDataPlan(t *testing.T) {
 	primaryKey := strings.Repeat("a", 64)
 	refKey := strings.Repeat("b", 64)
-	req := &workerapimodel.PoolSandboxCreateRequest{
-		SandboxId: "sandbox-1",
-		Config: workerapimodel.SandboxConfig{
-			Source: workerclient.NewOptGitSource(workerapimodel.GitSource{
-				Kind: workerclient.GitSourceKindGit, DataKey: workerclient.NewOptString(primaryKey),
-			}),
-			SourceCodeReferences: workerclient.NewOptSandboxConfigSourceCodeReferences(workerclient.SandboxConfigSourceCodeReferences{
-				"/workspace/lib": {
-					Kind: workerclient.GitSourceKindGit,
-					Slug: workerclient.NewOptString("library"), DataKey: workerclient.NewOptString(refKey),
-				},
-				"without-data": {Kind: workerclient.GitSourceKindGit},
-			}),
+	keyed := func(key string) workerapimodel.GitSource {
+		return workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit, DataKey: workerclient.NewOptString(key)}
+	}
+	slugged := func(source workerapimodel.GitSource, slug string) workerapimodel.GitSource {
+		source.Slug = workerclient.NewOptString(slug)
+		return source
+	}
+	unkeyed := workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}
+	for _, tc := range []struct {
+		name    string
+		primary *workerapimodel.GitSource
+		refs    workerclient.SandboxConfigSourceCodeReferences
+		want    []sourceData
+	}{
+		{
+			name:    "a keyed primary and references share by key under their slugs",
+			primary: new(keyed(primaryKey)),
+			refs: workerclient.SandboxConfigSourceCodeReferences{
+				"/workspace/lib": slugged(keyed(refKey), "library"),
+				"without-data":   unkeyed,
+			},
+			want: []sourceData{{slug: "primary", key: primaryKey}, {slug: "library", key: refKey}},
 		},
-	}
-	mounts := sourceDataMounts(
-		sandboxSources(req),
-		func(key string) string { return "/pool/data-per-source/" + key },
-		func(host string) string { return "/daemon" + host },
-	)
-
-	if len(mounts) != 2 {
-		t.Fatalf("source data mounts = %#v, want primary and library", mounts)
-	}
-	byTarget := map[string]mount.Mount{}
-	for _, m := range mounts {
-		byTarget[m.Target] = m
-	}
-	for target, key := range map[string]string{
-		sandboxSourceDataMount + "/primary": primaryKey,
-		sandboxSourceDataMount + "/library": refKey,
+		{
+			name:    "an unkeyed primary keeps its own",
+			primary: &unkeyed,
+			want:    []sourceData{{slug: "primary"}},
+		},
+		{
+			name:    "a primary with its own slug is still mounted where harnesses read it",
+			primary: new(slugged(keyed(primaryKey), "app")),
+			want:    []sourceData{{slug: "primary", key: primaryKey}},
+		},
+		{
+			name:    "an unkeyed primary with its own slug keeps its own where harnesses read it",
+			primary: new(slugged(unkeyed, "app")),
+			want:    []sourceData{{slug: "primary"}},
+		},
+		{name: "no source is a private source", want: []sourceData{{slug: "primary"}}},
+		{
+			name: "references alone still leave the primary private",
+			refs: workerclient.SandboxConfigSourceCodeReferences{"lib": keyed(refKey)},
+			want: []sourceData{{slug: "lib", key: refKey}, {slug: "primary"}},
+		},
+		{
+			name: "a reference that took the primary's name before it was reserved keeps it",
+			refs: workerclient.SandboxConfigSourceCodeReferences{"primary": keyed(refKey)},
+			want: []sourceData{{slug: "primary", key: refKey}},
+		},
+		{
+			name:    "so does the primary's data keep the primary's own slug",
+			primary: new(slugged(keyed(primaryKey), "app")),
+			refs:    workerclient.SandboxConfigSourceCodeReferences{"primary": keyed(refKey)},
+			want:    []sourceData{{slug: "app", key: primaryKey}, {slug: "primary", key: refKey}},
+		},
 	} {
-		got, ok := byTarget[target]
-		if !ok || got.Type != mount.TypeBind || got.ReadOnly || got.Source != "/daemon/pool/data-per-source/"+key {
-			t.Errorf("mount %q = %#v", target, got)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
+			if tc.primary != nil {
+				req.Config.Source = workerclient.NewOptGitSource(*tc.primary)
+			}
+			if tc.refs != nil {
+				req.Config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(tc.refs)
+			}
+			if got := sourceDataPlan(sandboxSources(req), tc.primary != nil); !slices.Equal(got, tc.want) {
+				t.Fatalf("sourceDataPlan = %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }
 

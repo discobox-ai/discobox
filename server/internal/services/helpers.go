@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -641,8 +642,12 @@ func SourceCodeReferencesToModel(input serverapi.SandboxCreateConfigSourceCodeRe
 func DefaultGitSourceSlugs(primary *model.GitSource, refs model.SourceCodeReferences) {
 	used := map[string]struct{}{}
 	if primary != nil {
-		primary.Slug = defaultGitSourceSlug(primary.Slug, "primary", used)
+		primary.Slug = defaultGitSourceSlug(primary.Slug, sandboxconfig.PrimarySourceSlug, used)
 	}
+	// The primary's source data is mounted under this name whatever the
+	// primary's own slug, and in a sandbox with no primary at all, so it is
+	// never a reference's.
+	used[sandboxconfig.PrimarySourceSlug] = struct{}{}
 
 	keys := make([]string, 0, len(refs))
 	for key := range refs {

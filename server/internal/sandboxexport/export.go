@@ -116,8 +116,9 @@ type Spec struct {
 	// two things read it. The destination re-derives `OriginKey` from it, which
 	// is what makes `discobox ls` in that repository list the discobox where it
 	// now lives; and the pool runtime derives each source's data key from it,
-	// without which the sandbox comes up with no
-	// `/.discobox/data-per-source/<slug>` mount at all (ADR 0123 §1).
+	// without which the sandbox's primary comes up with an empty private
+	// `/.discobox/data-per-source/<slug>` rather than the source's shared one,
+	// and its references with none (ADR 0123 §1).
 	Origin   *model.Origin `json:"origin,omitempty"`
 	Manifest model.SandboxManifest
 	// Secrets are bindings, never values (ADR 0123 §1). Each names an

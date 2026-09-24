@@ -1037,28 +1037,74 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	mounts = append(mounts, originMounts(sources, func(slug string) string {
 		return r.sandboxOriginPath(sandboxID, slug)
 	}, r.daemonPath)...)
-	mounts = append(mounts, sourceDataMounts(sources, r.sourceDataPath, r.daemonPath)...)
-	return mounts, project, nil
-}
-
-// sourceDataMounts binds each source's durable pool-local data by its stable
-// key onto the source's sandbox-local slug. The contents are opaque to the
-// pool and sandbox agents; consumers such as harnesses own everything below
-// the mount.
-func sourceDataMounts(sources []sandboxSource, sourcePath func(string) string, daemonPath func(string) string) []mount.Mount {
-	var mounts []mount.Mount
-	for _, source := range sources {
-		dataKey := optString(source.git.DataKey)
-		if dataKey == "" || !validSourceDataKey(dataKey) {
-			continue
+	for _, data := range sourceDataPlan(sources, hasPrimary) {
+		hostPath := r.sourceDataPath(data.key)
+		if data.key == "" {
+			hostPath = r.sandboxSourceDataPath(sandboxID, data.slug)
+			// A keyed source's mountpoint was prepared with the source above.
+			if err := prepareOwnedMountpoint(hostPath, chownID(user.UID), chownID(user.GID)); err != nil {
+				return nil, nil, fmt.Errorf("prepare private source data %q: %w", data.slug, err)
+			}
 		}
 		mounts = append(mounts, mount.Mount{
 			Type:   mount.TypeBind,
-			Source: daemonPath(sourcePath(dataKey)),
-			Target: path.Join(sandboxSourceDataMount, source.slug),
+			Source: r.daemonPath(hostPath),
+			Target: path.Join(sandboxSourceDataMount, data.slug),
 		})
 	}
-	return mounts
+	return mounts, project, nil
+}
+
+// sourceData is one `/.discobox/data-per-source/<slug>` mount: the pool-local
+// data shared under key, or, when key is empty, data private to the sandbox.
+type sourceData struct {
+	slug string
+	key  string
+}
+
+// sourceDataPlan lays out a sandbox's source-data mounts. The contents are
+// opaque to the pool and sandbox agents; consumers such as harnesses own
+// everything below each mount.
+//
+// Every sandbox has primary source data, at sandboxconfig.PrimarySourceSlug
+// whatever the primary's own slug, because that fixed path is what harness
+// images read. It is shared by key when the primary has one; a primary the
+// control plane could give no key -- the sandbox has no origin -- and a sandbox
+// with no primary source at all get a private one instead of none. No source
+// is a private source. A source code reference's data is mounted under its own
+// slug, and only when it has a key.
+//
+// The control plane has reserved the primary's name since this layout began,
+// but a sandbox created before then may have a reference that holds it. That
+// reference keeps its mount, and the primary's data stays under the primary's
+// own slug -- or, with no primary, there is none -- exactly as it was laid out.
+func sourceDataPlan(sources []sandboxSource, hasPrimary bool) []sourceData {
+	var referenceHoldsPrimary bool
+	for i, source := range sources {
+		// The primary source is always first when present (sandboxSources).
+		if (i > 0 || !hasPrimary) && source.slug == sandboxconfig.PrimarySourceSlug {
+			referenceHoldsPrimary = true
+		}
+	}
+	var plan []sourceData
+	for i, source := range sources {
+		key := optString(source.git.DataKey)
+		if i == 0 && hasPrimary {
+			slug := sandboxconfig.PrimarySourceSlug
+			if referenceHoldsPrimary {
+				slug = source.slug
+			}
+			plan = append(plan, sourceData{slug: slug, key: key})
+			continue
+		}
+		if key != "" {
+			plan = append(plan, sourceData{slug: source.slug, key: key})
+		}
+	}
+	if !hasPrimary && !referenceHoldsPrimary {
+		plan = append(plan, sourceData{slug: sandboxconfig.PrimarySourceSlug})
+	}
+	return plan
 }
 
 func validSourceDataKey(key string) bool {
@@ -2608,6 +2654,10 @@ func (r *DockerSandboxRuntime) sourceDataPath(sourceKey string) string {
 	return resolve(layout.SourceData(r.projectID, r.poolID, sourceKey))
 }
 
+func (r *DockerSandboxRuntime) sandboxSourceDataPath(sandboxID, slug string) string {
+	return resolve(layout.SandboxSourceData(r.projectID, r.poolID, sandboxID, slug))
+}
+
 func (r *DockerSandboxRuntime) sandboxConfigRoot(sandboxID string) string {
 	return resolve(layout.SandboxConfig(r.projectID, r.poolID, sandboxID))
 }
@@ -2764,7 +2814,7 @@ func sandboxSources(req *workerapimodel.PoolSandboxCreateRequest) []sandboxSourc
 	var out []sandboxSource
 	used := map[string]struct{}{}
 	if source, ok := req.Config.Source.Get(); ok {
-		out = append(out, sandboxSourceFor("primary", source, sandboxconfig.DefaultWorkingRoot, used))
+		out = append(out, sandboxSourceFor(sandboxconfig.PrimarySourceSlug, source, sandboxconfig.DefaultWorkingRoot, used))
 	}
 	if refs, ok := req.Config.SourceCodeReferences.Get(); ok {
 		keys := make([]string, 0, len(refs))

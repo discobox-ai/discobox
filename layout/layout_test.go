@@ -16,6 +16,7 @@ func TestPathsMatchTheEstablishedLayout(t *testing.T) {
 		"pool source data":  {PoolSourceData("prj", "pool"), "/var/lib/discobox/projects/prj/pools/pool/data-per-source"},
 		"source data":       {SourceData("prj", "pool", "source-key"), "/var/lib/discobox/projects/prj/pools/pool/data-per-source/source-key"},
 		"sandbox data":      {SandboxData("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/data"},
+		"sandbox src data":  {SandboxSourceData("prj", "pool", "sb", "primary"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/data/.discobox/data-per-source/primary"},
 		"sandbox config":    {SandboxConfig("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/config"},
 		"sandbox secrets":   {SandboxSecrets("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/secrets"},
 		"sandbox sources":   {SandboxSources("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/sources"},

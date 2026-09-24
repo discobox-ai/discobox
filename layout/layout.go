@@ -114,6 +114,16 @@ func SandboxData(projectID, poolID, sandboxID string) string {
 	return path.Join(Sandbox(projectID, poolID, sandboxID), "data")
 }
 
+// SandboxSourceData is the source data a sandbox keeps to itself, mounted at
+// `/.discobox/data-per-source/<slug>` when the source has no key to share it
+// under — a sandbox with no primary source, or one with no origin. No source
+// is a private source: it lives inside SandboxData, at the path it is mounted
+// on, so it is the sandbox's alone and survives and travels exactly as the
+// rest of that tree does.
+func SandboxSourceData(projectID, poolID, sandboxID, slug string) string {
+	return path.Join(SandboxData(projectID, poolID, sandboxID), ".discobox", "data-per-source", slug)
+}
+
 func SandboxConfig(projectID, poolID, sandboxID string) string {
 	return path.Join(Sandbox(projectID, poolID, sandboxID), "config")
 }

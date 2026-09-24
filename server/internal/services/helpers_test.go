@@ -161,3 +161,30 @@ func TestSandboxToAPIOmitsUnobservedRuntimeState(t *testing.T) {
 		t.Fatalf("displayState = %q, want starting", got)
 	}
 }
+
+// The primary's source data is mounted under "primary" whatever the primary's
+// own slug, and in a sandbox with no primary at all, so no reference is given
+// that name -- not even one whose key asks for it.
+func TestDefaultGitSourceSlugsReservePrimaryForThePrimary(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		primary *model.GitSource
+	}{
+		{name: "no primary"},
+		{name: "a primary with its own slug", primary: &model.GitSource{Slug: new("app")}},
+		{name: "an unnamed primary", primary: &model.GitSource{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			refs := model.SourceCodeReferences{"primary": {}, "lib": {Slug: new("primary")}}
+			DefaultGitSourceSlugs(tc.primary, refs)
+			for key, ref := range refs {
+				if ref.Slug == nil || *ref.Slug == "primary" {
+					t.Errorf("reference %q slug = %v, want anything but primary", key, ref.Slug)
+				}
+			}
+			if tc.primary != nil && tc.primary.Slug == nil {
+				t.Fatal("primary was given no slug")
+			}
+		})
+	}
+}

@@ -286,6 +286,14 @@ func (c Config) SandboxGroups() []string {
 // in the create request and overrides pool-agent's own default.
 const DefaultWorkingRoot = "/workspace"
 
+// PrimarySourceSlug names the primary source where no slug is given, and it is
+// always the name the primary's source data is mounted under,
+// `/.discobox/data-per-source/primary`, whatever the primary's own slug. Harness
+// images read that fixed path in every sandbox, so the control plane never
+// gives it to a source code reference and pool-agent mounts the primary's data
+// — shared by key, or private to the sandbox — there.
+const PrimarySourceSlug = "primary"
+
 // WorkingRoot is the directory this sandbox works in: the manifest's, or
 // DefaultWorkingRoot when it names none.
 func (c Config) WorkingRoot() string {
