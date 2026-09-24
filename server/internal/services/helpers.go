@@ -321,6 +321,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.CreatedBy != nil {
 		fields["createdBy"] = sandbox.CreatedBy
 	}
+	if sandbox.CreatedBySandboxID != nil {
+		fields["createdBySandboxId"] = *sandbox.CreatedBySandboxID
+	}
 	if sandbox.HarnessConfig != nil {
 		fields["harnessConfig"] = sandbox.HarnessConfig
 	}

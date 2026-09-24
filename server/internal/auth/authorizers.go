@@ -57,40 +57,56 @@ func (a ProjectAuthorizer) Authorize(r *http.Request) (bool, error) {
 
 // SandboxRoleAuthorizer authorizes a sandbox's own calls against the sandbox
 // role (ADR 0140 §4): a fixed list of routes, in the sandbox's own project, and
-// nothing else. It is decided by the route alone. No grant, and no use's text,
-// is read here: what a call is for is the judge's question, asked in the pool.
+// nothing else. It is decided by the route, and for source delivery by whether
+// the sandbox created the discobox the route names (ADR 0149 §2). No grant,
+// and no use's text, is read here: what a call is for is the judge's question,
+// asked in the pool.
 //
 // It answers every request a sandbox principal makes, refusing what the role
 // does not list, rather than stepping aside. The authorizers after it answer
 // any authenticated principal on some routes — enrolling peers, registering a
 // pool — which a sandbox must never reach by being authenticated.
-type SandboxRoleAuthorizer struct{}
+type SandboxRoleAuthorizer struct {
+	Store *store.Store
+}
 
 // sandboxRoleRoute is one route the sandbox role allows: a method, and the
-// path under /projects/{projectId}/ with "*" standing for one ID segment.
+// path under /projects/{projectId}/ with "*" standing for one segment.
 type sandboxRoleRoute struct {
 	method string
 	path   string
+	// service, when set, is the only value the route's `service` query
+	// parameter may have: Git's info/refs answers both push and fetch.
+	service string
+	// created allows the route only on a discobox the calling sandbox
+	// created, named by the path's first "*" (ADR 0149 §2).
+	created bool
 }
 
 // sandboxRole is the sandbox role. Adding a route here is widening what every
 // sandbox holding the discobox credential may do; ADR 0140 §4 lists it, and
 // its Deferred section says what is left out and when to revisit it.
 var sandboxRole = []sandboxRoleRoute{
-	{http.MethodGet, "sandboxes"},
-	{http.MethodPost, "sandboxes"},
-	{http.MethodGet, "sandboxes/*"},
+	{method: http.MethodGet, path: "sandboxes"},
+	{method: http.MethodPost, path: "sandboxes"},
+	{method: http.MethodGet, path: "sandboxes/*"},
+	// Delivering a source into a discobox the sandbox created: the push into
+	// its origin, and the report that ends its wait (ADR 0149 §2). Fetching
+	// from an origin is not delivery, and is not here.
+	{method: http.MethodGet, path: "sandboxes/*/git-origins/*/info/refs", service: "git-receive-pack", created: true},
+	{method: http.MethodPost, path: "sandboxes/*/git-origins/*/git-receive-pack", created: true},
+	{method: http.MethodPost, path: "sandboxes/*/complete-source-push", created: true},
 	// Secrets are listed so a request can be answered with one, or a new
 	// discobox given one: the listing carries names and bindings, never a
 	// value, and nothing in the role changes a secret.
-	{http.MethodGet, "secrets"},
-	{http.MethodGet, "secret-requests"},
-	{http.MethodGet, "secret-requests/*"},
-	{http.MethodPost, "secret-requests/*/approve"},
-	{http.MethodPost, "secret-requests/*/deny"},
+	{method: http.MethodGet, path: "secrets"},
+	{method: http.MethodGet, path: "secret-requests"},
+	{method: http.MethodGet, path: "secret-requests/*"},
+	{method: http.MethodPost, path: "secret-requests/*/approve"},
+	{method: http.MethodPost, path: "secret-requests/*/deny"},
 }
 
-func (SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
+func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 	principal, ok := PrincipalFromContext(r.Context())
 	if !ok || principal.Type != PrincipalTypeSandbox {
 		return false, nil
@@ -109,11 +125,35 @@ func (SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a sandbox may only act in its own project")}
 	}
 	for _, route := range sandboxRole {
-		if route.method == r.Method && matchRolePath(route.path, rest) {
-			return true, nil
+		if route.method != r.Method || !matchRolePath(route.path, rest) {
+			continue
 		}
+		if route.service != "" && r.URL.Query().Get("service") != route.service {
+			continue
+		}
+		if route.created {
+			return a.authorizeCreated(r, principal, strings.Split(rest, "/")[1])
+		}
+		return true, nil
 	}
 	return false, denied
+}
+
+// authorizeCreated allows a route on a discobox only when the calling sandbox
+// is recorded as its creator. A discobox a person created records no creator,
+// so no sandbox passes this for it.
+func (a SandboxRoleAuthorizer) authorizeCreated(r *http.Request, principal Principal, sandboxID string) (bool, error) {
+	target, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, sandboxID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return false, authorizationError{status: http.StatusNotFound, err: errors.New("sandbox not found")}
+		}
+		return false, authorizationError{status: http.StatusInternalServerError, err: err}
+	}
+	if target.CreatedBySandboxID == nil || *target.CreatedBySandboxID != principal.SandboxID {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a discobox delivers source only to a discobox it created")}
+	}
+	return true, nil
 }
 
 // projectRoute splits a project-scoped path into its project and the rest.

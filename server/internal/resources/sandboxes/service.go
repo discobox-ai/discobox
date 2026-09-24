@@ -185,12 +185,17 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if actingUserID, err := auth.ActingUserID(ctx); err == nil {
 		userID = actingUserID
 	}
-	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox && len(config.Secrets) > 0 {
-		// Inline secrets put a value inside the new discobox where anything
-		// in it can read it. A sandbox gives another discobox uses of a
-		// credential, which only discobox-access can take (grants, below).
-		return nil, apperrors.NewStatusError(http.StatusForbidden,
-			"a discobox gives a new discobox uses of a secret, through grants, never its value")
+	// The sandbox creating this one, when a sandbox is (ADR 0149 §1).
+	var createdBySandboxID *string
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
+		if len(config.Secrets) > 0 {
+			// Inline secrets put a value inside the new discobox where anything
+			// in it can read it. A sandbox gives another discobox uses of a
+			// credential, which only discobox-access can take (grants, below).
+			return nil, apperrors.NewStatusError(http.StatusForbidden,
+				"a discobox gives a new discobox uses of a secret, through grants, never its value")
+		}
+		createdBySandboxID = &principal.SandboxID
 	}
 	sandboxID, err := id.New(id.PrefixSandbox)
 	if err != nil {
@@ -215,7 +220,15 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if key := model.SandboxOriginKey(origin, source); key != "" {
 		originKey = &key
 	}
-	if err := s.resolveSourceDelivery(ctx, source, sourceCodeReferences, origin, provider); err != nil {
+	// A sandbox's origin is its own claim about which machine it is on, and it
+	// can read the user's off any discobox's record; believed, it would have a
+	// source cloned from the server's filesystem. Its sources are pushed
+	// (ADR 0149 §3). The origin is still recorded, for listings.
+	deliveryOrigin := origin
+	if createdBySandboxID != nil {
+		deliveryOrigin = nil
+	}
+	if err := s.resolveSourceDelivery(ctx, source, sourceCodeReferences, deliveryOrigin, provider); err != nil {
 		return nil, err
 	}
 	git := services.SandboxGitToModel(config.Git)
@@ -254,12 +267,13 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		image, imageDigest = s.defaultImage, s.defaultImageDigest
 	}
 	sandbox := &model.Sandbox{
-		ID:              sandboxID,
-		ProjectID:       projectID,
-		CreatedByUserID: userID,
-		PoolID:          pool.ID,
-		Name:            config.Name,
-		Description:     services.OptStringPtr(config.Description),
+		ID:                 sandboxID,
+		ProjectID:          projectID,
+		CreatedByUserID:    userID,
+		CreatedBySandboxID: createdBySandboxID,
+		PoolID:             pool.ID,
+		Name:               config.Name,
+		Description:        services.OptStringPtr(config.Description),
 		SandboxManifest: model.SandboxManifest{
 			HarnessConfigID:      &harnessConfigID,
 			HarnessMode:          harnessMode,
@@ -455,6 +469,12 @@ func authorizeRequestedScopes(ctx context.Context, scopes []string) error {
 		return nil
 	}
 	principal, ok := auth.PrincipalFromContext(ctx)
+	if ok && principal.Type == auth.PrincipalTypeSandbox {
+		// A sandbox holds no scopes: the sandbox role decided which of its
+		// calls reach a sandbox, and admits only the push into the origin of a
+		// discobox it created (ADR 0149 §2).
+		return nil
+	}
 	if !ok || principal.Type != auth.PrincipalTypeUser || principal.UserID == "" {
 		return apperrors.NewStatusError(http.StatusForbidden, "user access required")
 	}

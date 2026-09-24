@@ -10,6 +10,8 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
+	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/wellknown"
 )
@@ -88,6 +90,9 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testi
 	}
 	if created.CreatedByUserID != "user-lead" {
 		t.Fatalf("created by %q, want the lead's user", created.CreatedByUserID)
+	}
+	if created.CreatedBySandboxID == nil || *created.CreatedBySandboxID != "sbx-lead" {
+		t.Fatalf("created by sandbox %v, want the lead (ADR 0149 §1)", created.CreatedBySandboxID)
 	}
 	grants, err := svc.ListSecretGrants(ctx, projectID, secret.ID)
 	if err != nil || len(grants) != 1 || grants[0].GrantedBy != "sbx-lead" || grants[0].ScopeKey != created.ID {
@@ -261,4 +266,54 @@ func TestTheDiscoboxAPIIsNotGivenAtCreateByItsSecret(t *testing.T) {
 		}},
 	})
 	requireStatus(t, err, http.StatusForbidden)
+}
+
+// hostPathProvider reaches the server's whole filesystem, so a source whose
+// origin is the server's own machine is cloned from its path there.
+type hostPathProvider struct{ noopSandboxProvider }
+
+func (hostPathProvider) Definition() sandboxes.ProviderDefinition {
+	return sandboxes.ProviderDefinition{Name: "host-path", LocalSourceRoots: []string{"/"}}
+}
+
+// A sandbox can read the user's origin off any discobox's record. Claiming it
+// must not get a source cloned from the server's filesystem: a create from a
+// sandbox is always push-delivered (ADR 0149 §3).
+func TestASandboxsOriginDoesNotDecideDelivery(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _, projectID := newSandboxTestService(t, nil)
+	svc.RegisterSandboxProvider("test", hostPathProvider{})
+	svc.SetHostID("host-user")
+	lead := auth.WithPrincipal(ctx, auth.Principal{
+		Type: auth.PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: projectID, UserID: service.DefaultUserID,
+	})
+	body := func(name string) services.CreateSandboxBody {
+		return services.CreateSandboxBody{
+			HarnessName: serverapi.NewOptString("shell"),
+			Origin:      serverapi.NewOptOrigin(serverapi.Origin{HostId: "host-user"}),
+			Config: serverapi.SandboxCreateConfig{
+				Name: name,
+				Source: serverapi.NewOptGitSource(serverapi.GitSource{
+					Kind:           serverapi.GitSourceKindGit,
+					LocalDirectory: serverapi.NewOptString("/home/user/.password-store"),
+					Checkout:       serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{Commit: serverapi.NewOptString("abc123")}),
+				}),
+			},
+		}
+	}
+
+	mine, err := svc.CreateSandbox(ctx, projectID, body("from-the-user"))
+	if err != nil {
+		t.Fatalf("create sandbox as the user: %v", err)
+	}
+	if mine.Source.Delivery != model.GitSourceDeliveryClone {
+		t.Fatalf("user's own source delivered by %q, want clone from the path", mine.Source.Delivery)
+	}
+	forged, err := svc.CreateSandbox(lead, projectID, body("from-a-sandbox"))
+	if err != nil {
+		t.Fatalf("create sandbox as a sandbox: %v", err)
+	}
+	if forged.Source.Delivery != model.GitSourceDeliveryPush {
+		t.Fatalf("sandbox's source delivered by %q, want push", forged.Source.Delivery)
+	}
 }

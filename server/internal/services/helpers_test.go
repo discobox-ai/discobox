@@ -188,3 +188,22 @@ func TestDefaultGitSourceSlugsReservePrimaryForThePrimary(t *testing.T) {
 		})
 	}
 }
+
+// Who made a discobox reaches the API: the user always, and the sandbox when
+// one did (ADR 0149 §1). A person's discobox says no sandbox at all.
+func TestSandboxToAPIIncludesTheCreatingSandbox(t *testing.T) {
+	lead := "sbx-lead"
+	for _, tc := range []struct {
+		createdBy *string
+		want      string
+	}{{&lead, lead}, {nil, ""}} {
+		out, err := SandboxToAPI(&model.Sandbox{ID: "sb_1", ProjectID: "p1", CreatedByUserID: "user-1", CreatedBySandboxID: tc.createdBy}, nil)
+		if err != nil {
+			t.Fatalf("SandboxToAPI: %v", err)
+		}
+		got, set := out.CreatedBySandboxId.Get()
+		if got != tc.want || set != (tc.want != "") {
+			t.Fatalf("createdBySandboxId = %q (set %t), want %q", got, set, tc.want)
+		}
+	}
+}

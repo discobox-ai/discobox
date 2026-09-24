@@ -14880,6 +14880,8 @@ type Sandbox struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Creating user.
 	CreatedBy OptUser `json:"createdBy"`
+	// Sandbox that created this one, when a sandbox did (ADR 0149). Immutable after create.
+	CreatedBySandboxId OptString `json:"createdBySandboxId"`
 	// Creating user ID.
 	CreatedByUserId string `json:"createdByUserId"`
 	// Name to show for this sandbox in a listing, computed by the server so every
@@ -14941,6 +14943,11 @@ func (s *Sandbox) GetCreatedAt() time.Time {
 // GetCreatedBy returns the value of CreatedBy.
 func (s *Sandbox) GetCreatedBy() OptUser {
 	return s.CreatedBy
+}
+
+// GetCreatedBySandboxId returns the value of CreatedBySandboxId.
+func (s *Sandbox) GetCreatedBySandboxId() OptString {
+	return s.CreatedBySandboxId
 }
 
 // GetCreatedByUserId returns the value of CreatedByUserId.
@@ -15026,6 +15033,11 @@ func (s *Sandbox) SetCreatedAt(val time.Time) {
 // SetCreatedBy sets the value of CreatedBy.
 func (s *Sandbox) SetCreatedBy(val OptUser) {
 	s.CreatedBy = val
+}
+
+// SetCreatedBySandboxId sets the value of CreatedBySandboxId.
+func (s *Sandbox) SetCreatedBySandboxId(val OptString) {
+	s.CreatedBySandboxId = val
 }
 
 // SetCreatedByUserId sets the value of CreatedByUserId.

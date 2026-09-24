@@ -434,7 +434,10 @@ hold, and `sourceNeedsPush` answers `push` otherwise:
 - the provider instance exposes the source's path to its sandboxes (the
   directory lies under one of `ProviderDefinition.LocalSourceRoots`);
 - the client is on this machine (`Origin.HostID` equals the server's, via
-  `internal/hostid`).
+  `internal/hostid`) — and is not a sandbox. A sandbox's origin is its own
+  claim, and it can read the user's off any discobox's record, so a create
+  from a sandbox decides delivery with no origin at all: its local sources are
+  always pushed ([ADR 0149](../../../../docs/adr/0149-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md) §3).
 
 Neither implies the other — a Docker provider on a remote server binds fine,
 just not to the caller's files. Unknowns resolve to `push`: a needless push is slow, a bind of

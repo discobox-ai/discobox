@@ -88,9 +88,14 @@ Current authorizers:
   create, list, and get; secret requests list, get, approve, and deny; secrets
   list) in the sandbox's own project, resolving `default` to it, and refuses
   everything else — including the any-authenticated routes below, which is
-  why it runs first. It is decided by the route alone; no grant or use text is
+  why it runs first. It is decided by the route; no grant or use text is
   read ([ADR 0140](../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
-  §§4–5). `ActingUserID` is the user such a call acts as: the sandbox's
+  §§4–5). Source delivery — the push into a discobox's `git-origins` and
+  `complete-source-push` — is the one exception, and only on a discobox the
+  caller created: the route is `created`, and the authorizer loads the target
+  and compares its recorded `CreatedBySandboxID` to the caller
+  ([ADR 0149](../../../docs/adr/0149-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
+  §2). `ActingUserID` is the user such a call acts as: the sandbox's
   creator.
 - `ProjectAuthorizer` authorizes `/projects/{projectId}/...` and
   `/api/projects/{projectId}/...` routes by user principal and project

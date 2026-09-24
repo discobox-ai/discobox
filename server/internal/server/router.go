@@ -226,7 +226,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	router.Use(auth.Authorization(
 		// First, so a sandbox is held to its role before any authorizer that
 		// admits every authenticated principal.
-		auth.SandboxRoleAuthorizer{},
+		auth.SandboxRoleAuthorizer{Store: appStore},
 		auth.ProjectAuthorizer{Store: appStore},
 		auth.PoolRouteAuthorizer{},
 		auth.AuthenticatedAuthorizer{},

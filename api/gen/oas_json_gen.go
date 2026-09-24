@@ -23909,6 +23909,12 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.CreatedBySandboxId.Set {
+			e.FieldStart("createdBySandboxId")
+			s.CreatedBySandboxId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("createdByUserId")
 		e.Str(s.CreatedByUserId)
 	}
@@ -23970,24 +23976,25 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandbox = [17]string{
+var jsonFieldsNameOfSandbox = [18]string{
 	0:  "$schema",
 	1:  "harnessConfig",
 	2:  "config",
 	3:  "createdAt",
 	4:  "createdBy",
-	5:  "createdByUserId",
-	6:  "displayName",
-	7:  "id",
-	8:  "origin",
-	9:  "originKey",
-	10: "projectId",
-	11: "pool",
-	12: "poolId",
-	13: "runtime",
-	14: "meta",
-	15: "metaObservedAt",
-	16: "updatedAt",
+	5:  "createdBySandboxId",
+	6:  "createdByUserId",
+	7:  "displayName",
+	8:  "id",
+	9:  "origin",
+	10: "originKey",
+	11: "projectId",
+	12: "pool",
+	13: "poolId",
+	14: "runtime",
+	15: "meta",
+	16: "metaObservedAt",
+	17: "updatedAt",
 }
 
 // Decode decodes Sandbox from json.
@@ -24051,8 +24058,18 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createdBy\"")
 			}
+		case "createdBySandboxId":
+			if err := func() error {
+				s.CreatedBySandboxId.Reset()
+				if err := s.CreatedBySandboxId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"createdBySandboxId\"")
+			}
 		case "createdByUserId":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.CreatedByUserId = string(v)
@@ -24064,7 +24081,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdByUserId\"")
 			}
 		case "displayName":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.DisplayName = string(v)
@@ -24076,7 +24093,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"displayName\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -24108,7 +24125,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"originKey\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -24140,7 +24157,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"poolId\"")
 			}
 		case "runtime":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				if err := s.Runtime.Decode(d); err != nil {
 					return err
@@ -24170,7 +24187,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"metaObservedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -24191,9 +24208,9 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b11101100,
-		0b00100100,
-		0b00000001,
+		0b11001100,
+		0b01001001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

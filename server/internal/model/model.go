@@ -717,8 +717,12 @@ type Sandbox struct {
 	ID              string `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
 	ProjectID       string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_sandbox_project_name,priority:1" json:"projectId" doc:"Project ID"`
 	CreatedByUserID string `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	PoolID          string `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
-	Name            string `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
+	// CreatedBySandboxID is the sandbox that created this one, when one did
+	// (ADR 0149 §1). The sandbox role delivers source only into a sandbox the
+	// caller created; nothing else reads it for authority.
+	CreatedBySandboxID *string `gorm:"column:created_by_sandbox_id;type:text;index" json:"createdBySandboxId,omitempty" doc:"Sandbox that created this one, when a sandbox did (ADR 0149). Immutable after create."`
+	PoolID             string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
+	Name               string  `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
 	// Description is a copy of the sandbox's description, which lives with its
 	// tags in the meta file inside the sandbox (ADR 0136). Until the sandbox
 	// first reports (MetaObservedAt nil) it holds the description the sandbox

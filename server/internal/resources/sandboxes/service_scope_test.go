@@ -46,3 +46,15 @@ func TestAuthorizeRequestedScopesAllowsAllScope(t *testing.T) {
 		t.Fatalf("authorize all scopes: %v", err)
 	}
 }
+
+// A sandbox holds no scopes: what reaches a sandbox from one was decided by
+// the sandbox role, which admits only a push into the origin of a discobox it
+// created (ADR 0149 §2).
+func TestAuthorizeRequestedScopesLeavesASandboxToItsRole(t *testing.T) {
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
+		Type: auth.PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: "proj-1", UserID: "user-1",
+	})
+	if err := authorizeRequestedScopes(ctx, []string{poolagentauth.ScopeSandboxWrite}); err != nil {
+		t.Fatalf("authorize a sandbox's push: %v", err)
+	}
+}
