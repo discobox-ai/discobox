@@ -187,6 +187,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         novnc \
         openssh-client \
         openssh-sftp-server \
+        p11-kit-modules \
         passwd \
         patch \
         poppler-utils \
@@ -466,6 +467,19 @@ RUN set -eux \
     && /tmp/discobox-prebuild-ca-store --fresh \
     && rm -f /tmp/discobox-prebuild-ca-store \
     && test -s /opt/discobox/ca-certificates/ca-certificates.crt
+
+# NSS reads the system trust store, so Chromium trusts the MITM CA. Chromium on
+# Linux takes its roots from NSS alone and ignores /etc/ssl/certs, and NSS's
+# built-in roots are Mozilla's list compiled into libnssckbi.so. Diverting that
+# module to p11-kit's trust module makes it serve /etc/ssl/certs/ca-certificates.crt
+# instead, which is the bundle discobox-ca-anchor appends this sandbox's CA to at
+# boot. So no per-user nssdb import is needed, and no boot step is added. The
+# diversion keeps a libnss3 upgrade from putting Mozilla's module back.
+RUN set -eux \
+    && nssckbi="$(dpkg -L libnss3 | grep '/libnssckbi\.so$')" \
+    && dpkg-divert --add --rename --divert "${nssckbi}.nss" "${nssckbi}" \
+    && ln -s pkcs11/p11-kit-trust.so "${nssckbi}" \
+    && test -e "$(readlink -f "${nssckbi}")"
 
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
 COPY sandbox-agent/image/profile.d/sandbox-direnv.sh /etc/profile.d/sandbox-direnv.sh

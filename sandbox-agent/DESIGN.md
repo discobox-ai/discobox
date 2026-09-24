@@ -503,6 +503,13 @@ Two constraints on any change here:
   image's cuts off the egress path the outer proxy owns. Anchors are appended to
   whatever is there.
 
+NSS reads the same bundle. The image replaces NSS's built-in roots module,
+`libnssckbi.so`, with p11-kit's trust module (a `dpkg-divert`, so a libnss3
+upgrade can't undo it), and that module serves
+`/etc/ssl/certs/ca-certificates.crt`. Chromium, which on Linux takes its roots
+from NSS only, therefore trusts every anchor the boot step appends, with no
+per-user nssdb import.
+
 Subject hashes come from `openssl x509 -hash`, not from Go. The value is a
 digest over a canonicalized subject encoding, and getting it subtly wrong would
 misplace a link on the path that decides what the sandbox trusts, to save one
