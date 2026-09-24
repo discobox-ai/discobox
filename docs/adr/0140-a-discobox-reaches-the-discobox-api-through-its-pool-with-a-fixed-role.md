@@ -1,6 +1,6 @@
 # 0140 — A discobox reaches the discobox API through its pool, with a fixed role
 
-- **Status**: Accepted
+- **Status**: Accepted (the rejection of authority by creator superseded, for source delivery, by [0149](0149-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md))
 - **Date**: 2026-09-22
 - **Relates to**: [ADR 0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md),
   the protocol a discobox asks for a credential through and runs it under.
