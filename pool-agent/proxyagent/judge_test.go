@@ -220,21 +220,6 @@ func TestABodyWithNoDeclaredLengthIsNotDescribed(t *testing.T) {
 	}
 }
 
-// A judge asking to be shown the body has not allowed anything. The round that
-// answers it is not implemented, and a question left unanswered is not
-// permission.
-func TestAskingForTheBodyIsNotAnAllow(t *testing.T) {
-	resolver, _ := judgingPool(t, map[string]any{"reason": "show me the body", "need": map[string]any{"body": "json"}}, http.StatusOK)
-
-	verdict, err := resolver.Authorize(context.Background(), authorizeRequest())
-	if err != nil {
-		t.Fatalf("Authorize() error = %v", err)
-	}
-	if verdict.Allow {
-		t.Fatalf("verdict = %+v, want a request that is not allowed", verdict)
-	}
-}
-
 // A server that does not judge is not a refusal. The pool takes that answer,
 // allows the request, and stops asking for a while rather than putting a
 // control-plane call in front of every credential its discoboxes spend.

@@ -59,6 +59,10 @@ func (r *secretResolver) Gate(ctx context.Context, req proxy.SecretGateRequest) 
 		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: fmt.Sprintf(
 			"the call carries no live use of %s; run it under one: discobox-access run --use <id> -- discobox …", wellknown.DiscoboxSandbox)}
 	}
+	// Most of what the discobox API is asked to do is in the body — which
+	// discobox to create, with what, granted what — so the judge can ask to
+	// see it, and what is forwarded is the body it handed back.
+	body := proxy.NewSecretRequestBody(in.Body)
 	verdict, err := r.Authorize(ctx, proxy.SecretAuthorizeRequest{
 		ClientID:  req.ClientID,
 		Sentinels: []string{sentinel},
@@ -70,7 +74,9 @@ func (r *secretResolver) Gate(ctx context.Context, req proxy.SecretGateRequest) 
 		Host:   hostscope.Normalize(in.Host),
 		URL:    in.URL.String(),
 		Header: in.Header,
+		Body:   body,
 	})
+	in.Body = body.Reader()
 	if err != nil {
 		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: "the judge could not decide: " + err.Error(), UseID: record.UseID}
 	}

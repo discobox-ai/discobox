@@ -16,6 +16,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/proxy"
@@ -361,15 +362,34 @@ func (r *secretResolver) Authorize(ctx context.Context, req proxy.SecretAuthoriz
 	if r.judge == nil || !r.judge.asking(time.Now()) {
 		return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
 	}
-	evidence := evidenceOf(req)
 	for _, useID := range uses {
 		// Every applicable use has to pass before anything is substituted
 		// (ADR 26-09-22-838 §4): a request spending two credentials is two questions,
 		// and one of them saying no is the answer.
-		answer, err := r.judge.ask(ctx, judgeAsk{
+		if verdict, settled, err := r.judgeUse(ctx, req, uses, useID); settled {
+			return verdict, err
+		}
+	}
+	return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+}
+
+// judgeUse asks the judge about one use until it decides, showing it the body
+// when it asks (ADR 26-09-22-838 §6). It reports settled when its answer is the
+// request's whole answer — a refusal, or a server with nobody to ask — and
+// not settled when the judge allowed and the next use is to be asked about.
+//
+// The rounds share one deadline, because the request is held open while the
+// judge thinks: a judge that keeps asking spends the time the first ask had,
+// not three times it.
+func (r *secretResolver) judgeUse(ctx context.Context, req proxy.SecretAuthorizeRequest, uses []string, useID string) (proxy.SecretVerdict, bool, error) {
+	exchange, cancel := context.WithTimeout(ctx, judgeHTTPTimeout)
+	defer cancel()
+	evidence := evidenceOf(req)
+	for round := 1; ; round++ {
+		answer, err := r.judge.ask(exchange, judgeAsk{
 			SandboxID: req.ClientID,
 			UseID:     useID,
-			Round:     1,
+			Round:     round,
 			Request:   evidence,
 		})
 		switch {
@@ -383,48 +403,60 @@ func (r *secretResolver) Authorize(ctx context.Context, req proxy.SecretAuthoriz
 			// left to answer, and it says nothing about the control plane —
 			// so it must not silence the next request, which a sandbox could
 			// otherwise arrange one aborted connection at a time.
-			return proxy.SecretVerdict{UseIDs: uses}, err
+			return proxy.SecretVerdict{UseIDs: uses}, true, err
 		case outcomeOf(err) == outcomeNobodyJudges:
 			// There is nobody to ask, which is not a refusal. Remembered for a
 			// few minutes so a server that does not judge is asked once in a
 			// while rather than once a request.
 			r.judge.disabled(time.Now())
-			return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+			return proxy.SecretVerdict{Allow: true, UseIDs: uses}, true, nil
 		case outcomeOf(err) == outcomeRefused:
 			// The control plane would not take this ask. That refuses the
 			// request and nothing else: it neither proves the server judges
 			// nor silences the next question, so a request shaped to be
 			// refused costs the discobox that sent it and no one else.
-			return proxy.SecretVerdict{UseIDs: uses}, err
+			return proxy.SecretVerdict{UseIDs: uses}, true, err
 		default:
-			// Nobody answered at all. Whether that refuses depends on
+			// Nobody answered at all — including an exchange whose deadline
+			// ran out between rounds. Whether that refuses depends on
 			// something this request cannot see: whether this pool has ever
 			// been told the server judges. It must not be the thing that
 			// breaks a discobox on a server that never turned judging on.
 			if r.judge.unanswered(time.Now()) {
-				return proxy.SecretVerdict{UseIDs: uses}, err
+				return proxy.SecretVerdict{UseIDs: uses}, true, err
 			}
-			return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+			return proxy.SecretVerdict{Allow: true, UseIDs: uses}, true, nil
 		}
-		if verdict, ok := refusalFrom(answer, useID); !ok {
-			return verdict, nil
+		if answer.Need == nil {
+			if verdict, ok := refusalFrom(answer, useID); !ok {
+				return verdict, true, nil
+			}
+			return proxy.SecretVerdict{}, false, nil
 		}
+		// The judge wants the body. Asking is not allowing: a judge that is
+		// still asking on the last round, or asks again for what it has
+		// already been shown, has decided nothing, and that refuses.
+		need := *answer.Need
+		switch {
+		case round >= judge.MaxRounds:
+			return proxy.SecretVerdict{
+				Reason: "the judge was still asking to see the body on its last round, and asking is not allowing",
+				UseIDs: []string{useID},
+			}, true, nil
+		case evidence.Body.Answers(need):
+			return proxy.SecretVerdict{
+				Reason: "the judge asked again for what it had already been shown, and decided nothing",
+				UseIDs: []string{useID},
+			}, true, nil
+		}
+		evidence = showBody(exchange, evidence, req, need)
 	}
-	return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
 }
 
-// refusalFrom reads one answer. It reports ok only for an explicit allow:
-// everything else — a deny, an answer that decided nothing, or the judge
-// asking to be shown the body — is a request that goes no further.
+// refusalFrom reads an answer that decided. It reports ok only for an explicit
+// allow: a deny, or an answer that says neither, is a request that goes no
+// further.
 func refusalFrom(answer judgeAnswer, useID string) (proxy.SecretVerdict, bool) {
-	if answer.Need != nil {
-		// The judge wants the body. Supplying it is the round the proxy does
-		// not run yet, and a question left unanswered is not permission.
-		return proxy.SecretVerdict{
-			Reason: "the judge asked to see the request body, which this proxy cannot show it yet",
-			UseIDs: []string{useID},
-		}, false
-	}
 	if answer.Allow != nil && *answer.Allow {
 		return proxy.SecretVerdict{Allow: true, UseIDs: []string{useID}}, true
 	}

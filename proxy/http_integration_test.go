@@ -44,6 +44,9 @@ type stubResolver struct {
 	// shown.
 	deny   string
 	judged *[]secrets.AuthorizeRequest
+	// captured, when set, is where the authorizer puts the body it read, the
+	// way a judge that asked to see it does.
+	captured *[]byte
 	// resolved, when set, counts the sentinels this resolver was asked to
 	// resolve. A refused request must leave it at zero.
 	resolved *atomic.Int64
@@ -75,9 +78,16 @@ func (stubResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmi
 	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
 }
 
-func (r stubResolver) Authorize(_ context.Context, req secrets.AuthorizeRequest) (secrets.Verdict, error) {
+func (r stubResolver) Authorize(ctx context.Context, req secrets.AuthorizeRequest) (secrets.Verdict, error) {
 	if r.judged != nil {
 		*r.judged = append(*r.judged, req)
+	}
+	if r.captured != nil {
+		data, _, err := req.Body.Capture(ctx)
+		if err != nil {
+			return secrets.Verdict{}, err
+		}
+		*r.captured = append([]byte(nil), data...)
 	}
 	verdict := secrets.Verdict{Allow: r.deny == "", Reason: r.deny}
 	if r.useID != "" {
@@ -365,6 +375,90 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 	}
 	if strings.Contains(exchange.SwappedUseIDs, sentinel) {
 		t.Fatalf("audit recorded a sentinel in the use ID column: %s", exchange.SwappedUseIDs)
+	}
+}
+
+// A judge that reads the body changes nothing about what is sent: the upstream
+// receives every byte the sandbox sent, in order, including the part past what
+// the judge could be shown (ADR 26-09-22-838 §6).
+func TestHTTPProxySendsTheBodyTheJudgeRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
+	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
+	sent := bytes.Repeat([]byte(`{"title":"a pull request","body":"words"},`), 2*secrets.MaxCapturedBody/40)
+
+	var arrived []byte
+	var sawAuthorization string
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
+		sawAuthorization = r.Header.Get("Authorization")
+		arrived, _ = io.ReadAll(r.Body)
+		_, _ = io.WriteString(w, "ok")
+	})
+	defer origin.Close()
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	var captured []byte
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		Secrets: SecretsConfig{Clients: []SecretClient{{
+			ClientID:  "sandbox-1",
+			Sentinels: []string{sentinel},
+		}}},
+	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname(), useID: "use_abc", captured: &captured})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	t.Cleanup(func() {
+		if err := server.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+		<-errCh
+	})
+	addr := waitForAddr(t, server)
+
+	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL+"/repos/org/repo/pulls", bytes.NewReader(sent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want the upstream's 200", resp.StatusCode)
+	}
+	if !bytes.Equal(captured, sent[:secrets.MaxCapturedBody]) {
+		t.Fatalf("the judge read %d bytes, want the first %d of the body", len(captured), secrets.MaxCapturedBody)
+	}
+	if !bytes.Equal(arrived, sent) {
+		t.Fatalf("the upstream received %d bytes, want the %d the sandbox sent", len(arrived), len(sent))
+	}
+	if sawAuthorization != "Bearer "+realValue {
+		t.Fatalf("upstream Authorization = %q, want the credential swapped in", sawAuthorization)
 	}
 }
 

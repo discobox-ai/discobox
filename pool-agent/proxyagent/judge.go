@@ -30,37 +30,21 @@ import (
 
 // judgeAsk is what this pool puts to the control plane. It is written by hand
 // rather than taken from the generated client because the pool agent talks to
-// the control plane over its own small surface (see credentials.go).
+// the control plane over its own small surface (see credentials.go). The
+// evidence is the judge package's own, so what a pool shows is what a job
+// carries.
 type judgeAsk struct {
 	SandboxID string         `json:"sandboxId"`
 	UseID     string         `json:"useId"`
 	Round     int            `json:"round"`
-	Request   *judgeEvidence `json:"request"`
-}
-
-// judgeEvidence is the request as the proxy saw it, redacted.
-type judgeEvidence struct {
-	Method  string              `json:"method"`
-	URL     string              `json:"url"`
-	Headers map[string][]string `json:"headers,omitempty"`
-	Body    *judgeEvidenceBody  `json:"body,omitempty"`
-}
-
-// judgeEvidenceBody describes a body without carrying it. The first ask says
-// what there is; the judge asks to be shown it if the decision lives in there.
-type judgeEvidenceBody struct {
-	MediaType string `json:"mediaType,omitempty"`
-	Length    int64  `json:"length"`
+	Request   *judge.Request `json:"request"`
 }
 
 // judgeAnswer is what came back.
 type judgeAnswer struct {
-	Allow  *bool  `json:"allow,omitempty"`
-	Reason string `json:"reason"`
-	Need   *struct {
-		Body  string `json:"body"`
-		Bytes int64  `json:"bytes,omitempty"`
-	} `json:"need,omitempty"`
+	Allow  *bool       `json:"allow,omitempty"`
+	Reason string      `json:"reason"`
+	Need   *judge.Need `json:"need,omitempty"`
 }
 
 // judgingDisabledKind is how a server that does not judge says so. A pool has
@@ -290,16 +274,16 @@ func judgeRefusal(resp *http.Response) error {
 // declared a length is described at all: the contract says a body's length in
 // bytes, with no way to spell "some unknown number of them", so a chunked
 // upload described here would be a body reported as empty. Saying nothing is
-// the honest form of not knowing. Reading the body — which is what would
-// actually answer this — is the round this does not run yet.
-func evidenceOf(req proxy.SecretAuthorizeRequest) *judgeEvidence {
-	evidence := &judgeEvidence{
+// the honest form of not knowing. Reading the body is the next round, which
+// runs only when the judge asks for it (showBody).
+func evidenceOf(req proxy.SecretAuthorizeRequest) *judge.Request {
+	evidence := &judge.Request{
 		Method:  req.Method,
 		URL:     redactedURL(req.URL, req.Sentinels),
 		Headers: redactHeaders(req.Header, req.Sentinels),
 	}
 	if length, err := strconv.ParseInt(strings.TrimSpace(req.Header.Get("Content-Length")), 10, 64); err == nil && length > 0 {
-		evidence.Body = &judgeEvidenceBody{
+		evidence.Body = &judge.Body{
 			MediaType: strings.TrimSpace(req.Header.Get("Content-Type")),
 			Length:    length,
 		}
@@ -379,6 +363,13 @@ func redactedURL(raw string, sentinels []string) string {
 	if hash := strings.IndexByte(query, '#'); hash >= 0 {
 		query, fragment = query[:hash], query[hash:]
 	}
+	return head + redactedQuery(query) + fragment
+}
+
+// redactedQuery is a query string, or a form-encoded body, with the value of
+// every parameter that reads like a credential replaced and everything else
+// exactly as it arrived.
+func redactedQuery(query string) string {
 	segments := strings.Split(query, "&")
 	for i, segment := range segments {
 		equals := strings.IndexByte(segment, '=')
@@ -395,7 +386,7 @@ func redactedURL(raw string, sentinels []string) string {
 			segments[i] = segment[:equals+1] + url.QueryEscape(redactedValue)
 		}
 	}
-	return head + strings.Join(segments, "&") + fragment
+	return strings.Join(segments, "&")
 }
 
 // redactedValue is what stands in for something a judge may not see. It keeps

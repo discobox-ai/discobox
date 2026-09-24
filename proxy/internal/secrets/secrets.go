@@ -98,6 +98,11 @@ type AuthorizeRequest struct {
 	Host   string
 	URL    string
 	Header http.Header
+	// Body is the request's body, read only if the authorizer asks to see it,
+	// and nil for a request with none. Whoever built the request sends
+	// Body.Reader() on, never the body it wrapped: what Capture read comes
+	// back from there, in front of the rest.
+	Body *RequestBody
 }
 
 // Verdict is an authorizer's answer. A request it does not allow is never

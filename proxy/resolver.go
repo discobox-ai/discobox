@@ -1,6 +1,10 @@
 package proxy
 
-import "github.com/discobox-ai/discobox/proxy/internal/secrets"
+import (
+	"io"
+
+	"github.com/discobox-ai/discobox/proxy/internal/secrets"
+)
 
 // SecretResolver resolves a sentinel placeholder to its real credential value.
 // The pool agent implements it (pool-agent/proxyagent, calling the control
@@ -32,6 +36,20 @@ type SecretGateRefusal = secrets.GateRefusal
 // SecretAuthorizeRequest is a request carrying sentinels, as a SecretResolver
 // authorizes it before resolving any of them.
 type SecretAuthorizeRequest = secrets.AuthorizeRequest
+
+// SecretRequestBody is a request's body as an authorizer may read it, without
+// changing what is sent.
+type SecretRequestBody = secrets.RequestBody
+
+// MaxCapturedSecretBody is the most of a request body a SecretRequestBody
+// captures.
+const MaxCapturedSecretBody = secrets.MaxCapturedBody
+
+// NewSecretRequestBody wraps a body for SecretAuthorizeRequest.Body. A request
+// with no body gets nil.
+func NewSecretRequestBody(body io.ReadCloser) *SecretRequestBody {
+	return secrets.NewRequestBody(body)
+}
 
 // SecretVerdict is a SecretResolver's answer to a SecretAuthorizeRequest.
 type SecretVerdict = secrets.Verdict

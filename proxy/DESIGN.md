@@ -237,6 +237,16 @@ Key properties:
   judge about every use a request spends — the ones bound from its sentinels
   and the ones its destination was pinned for — and allows a request that
   spends none; the destination host is held at resolve time either way.
+- **The authorizer can read the body, and reading it changes nothing sent**
+  (`AuthorizeRequest.Body`, `RequestBody`; ADR 26-09-22-838 §6). Nothing is
+  read unless the authorizer asks, since most requests are decided without
+  their body and reading one holds the request until it arrives. A capture
+  reads once, up to `MaxCapturedBody`, on its own goroutine, and the
+  authorizer's context bounds only its wait: the proxy cannot stop a read part
+  way without losing bytes. What is sent on is always `RequestBody.Reader()` —
+  what was read, then the rest, then the error the read stopped on — so the
+  upstream, the retry buffer, and the request-body spool see the bytes the
+  sandbox sent.
 - **The gate host never reaches the internet** (`Secrets.GateHost`,
   `Resolver.Gate`; [ADR 0140](../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) §2).
   A CONNECT to it is intercepted whatever the allowlist says, and a request for

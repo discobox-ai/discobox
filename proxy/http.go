@@ -618,6 +618,9 @@ func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client c
 	if meta.trust != nil {
 		trustUseIDs = meta.trust.UseIDs
 	}
+	// The body goes with the request so the judge can ask to see it. Whether
+	// or not it did, what is sent on is the body the authorizer handed back.
+	body := secrets.NewRequestBody(req.Body)
 	verdict, err := h.secretSwapper().Authorize(meta.ctx, secrets.AuthorizeRequest{
 		ClientID:    client.ID,
 		Sentinels:   matched,
@@ -626,7 +629,11 @@ func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client c
 		Host:        req.Host,
 		URL:         preURL,
 		Header:      preSwapHeader,
+		Body:        body,
 	})
+	if body != nil {
+		req.Body = body.Reader()
+	}
 	if err == nil && verdict.Allow {
 		return nil
 	}
@@ -807,6 +814,12 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	if meta.trust != nil {
 		retryTrustUseIDs = meta.trust.UseIDs
 	}
+	// The body the first attempt sent, which is held whole: a request is
+	// retried only when it was.
+	retryBody := io.ReadCloser(http.NoBody)
+	if len(meta.retryBody) > 0 {
+		retryBody = io.NopCloser(bytes.NewReader(meta.retryBody))
+	}
 	verdict, err := swapper.Authorize(meta.ctx, secrets.AuthorizeRequest{
 		ClientID:    meta.client.ID,
 		Sentinels:   matched,
@@ -815,6 +828,7 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 		Host:        req.Host,
 		URL:         meta.url(req),
 		Header:      meta.preSwapHeader,
+		Body:        secrets.NewRequestBody(retryBody),
 	})
 	if err != nil || !verdict.Allow {
 		// Not an answer to the sandbox: the request has already been sent and

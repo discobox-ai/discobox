@@ -877,11 +877,19 @@ flowchart LR
   the discobox's request waits for a model to answer, which is why only a
   request spending an approved use is asked about and an ordinary injected
   sentinel never is. The pool sends which discobox and which use, never what
-  the use allows; the control plane reads that from the live grant. Anything
-  that is not an explicit allow refuses, including the judge asking to be shown
-  the body, which is the round this does not run yet. This also covers a
-  sandbox's own calls to the discobox API, which the gate admits through the
-  same contract.
+  the use allows; the control plane reads that from the live grant. Only an
+  explicit allow allows. This also covers a sandbox's own calls to the discobox
+  API, which the gate admits through the same contract — and whose operation is
+  usually in the body.
+- **A judge that asks to see the body is shown it** (`judgebody.go`; ADR
+  26-09-22-838 §6). The next round carries it in the form asked for — text as
+  sent, or JSON written back compacted from the token stream so a key said
+  twice is shown twice — cut to the judge's budget, with `Missing` saying what
+  was cut or why nothing could be shown: not text, not JSON, an encoding other
+  than gzip, too large to parse, or not arrived within `bodyArrivalWait`. A
+  judge still asking on round `judge.MaxRounds`, or asking again for what
+  `Body.Answers` says it was already shown, has decided nothing, and that
+  refuses. The rounds for one use share one deadline, `judgeHTTPTimeout`.
 - **What the judge is shown is not what was sent.** Every sentinel is taken out
   through the proxy's own scan (`proxy.RedactSentinels`), so the base64 form
   goes too. Headers are an allowlist: the ones that say what an operation is
@@ -889,9 +897,12 @@ flowchart LR
   replaced — a denylist would only ever cover the credential headers somebody
   thought of. The query string cannot be treated that way, since it is half of
   what identifies an operation, so its credential-ish parameters are a denylist
-  and the rest is shown. The body is described only when the request declared a
-  length: the contract counts bytes and cannot say "unknown", so a chunked
-  upload is not described at all rather than described as empty.
+  and the rest is shown; a form-encoded body is redacted the same way, and a
+  JSON body loses the values under those same names. The first ask describes
+  the body only when the request declared a length: the contract counts bytes
+  and cannot say "unknown", so a chunked upload is not described at all rather
+  than described as empty. Every sentinel is taken out of a shown body before
+  it is cut, so no cut can leave part of one behind.
 - **A server that does not judge is not a refusal.** It says so with a problem
   type a program can recognize, and the pool remembers that for a few minutes
   and allows in the meantime, so an opted-out server does not put a

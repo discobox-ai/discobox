@@ -2,6 +2,7 @@ package proxyagent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -179,6 +180,59 @@ func TestAGateCallThatFailsKeepsItsUse(t *testing.T) {
 	}
 	if admitted.UseID != "use-1" {
 		t.Fatalf("admission names %q, want the use the call went under", admitted.UseID)
+	}
+}
+
+// What a call to the discobox API does is mostly in its body — which discobox
+// to create, and what it is given — so a judge asks to see it, is shown it,
+// and the control plane still receives the call exactly as it was made.
+func TestTheGateShowsTheJudgeTheBodyItAsksFor(t *testing.T) {
+	withTestRoot(t)
+	const sent = `{"prompt":"fix issue 43","grants":[{"id":"com.github.api","uses":[{"description":"push branch fix-43"}]}]}`
+	var shown atomic.Value
+	var forwarded atomic.Value
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/judge") {
+			var ask judgeAsk
+			_ = json.NewDecoder(r.Body).Decode(&ask)
+			w.Header().Set("Content-Type", "application/json")
+			if ask.Round == 1 {
+				_, _ = io.WriteString(w, `{"reason":"which discobox, granted what, is in the body","need":{"body":"json"}}`)
+				return
+			}
+			shown.Store(ask.Request.Body.Content)
+			_, _ = io.WriteString(w, `{"allow":true,"reason":"one discobox for issue 43, granted a push to its branch"}`)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		forwarded.Store(string(body))
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer controlPlane.Close()
+	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
+		t.Fatal(err)
+	}
+	live := newActivations()
+	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	use, err := live.mint("sb-1", "STABLE", "use-1", GateHost(), "", nil)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost,
+		"https://"+GateHost()+"/projects/default/sandboxes", strings.NewReader(sent))
+	req.Header.Set("Authorization", "Bearer "+use.Sentinel)
+	req.Header.Set("Content-Type", "application/json")
+	admitted, err := resolver.Gate(context.Background(), proxy.SecretGateRequest{ClientID: "sb-1", Request: req})
+	if err != nil {
+		t.Fatalf("gate: %v", err)
+	}
+	_ = admitted.Response.Body.Close()
+	if got, _ := shown.Load().(string); got != sent {
+		t.Fatalf("the judge was shown %q, want the body it asked for", got)
+	}
+	if got, _ := forwarded.Load().(string); got != sent {
+		t.Fatalf("the control plane received %q, want the call as the sandbox made it", got)
 	}
 }
 
