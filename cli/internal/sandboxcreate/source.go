@@ -992,7 +992,7 @@ func resolveRunSourceReference(ctx context.Context, arg string, placement refere
 // and the name it takes from.
 //
 // A source that keeps its own host path is placed at it. One that does not — a
-// remote, or a local repository from a root a sandbox may not hold (ADR 0096 on
+// remote, or a local repository from a root a sandbox may not hold (ADR 26-09-09-044 on
 // source host paths) — is placed by name under the reference root, which is
 // also what keeps two such sources from both landing on the primary's default
 // directory.
@@ -1104,7 +1104,7 @@ func defaultRunDestination() resolvedRunSourceDestination {
 // (e.g. symlinked paths).
 //
 // A repository whose host path is not one a sandbox may hold is placed at the
-// default location instead, as a remote source always has been (ADR 0096 §2 on
+// default location instead, as a remote source always has been (ADR 26-09-09-044 §2 on
 // source host paths). That is a placement, not a refusal: the host directory is
 // the caller's, the mount point inside the sandbox is ours, and only the second
 // one can collide with the sandbox's own operating system.
@@ -1136,7 +1136,7 @@ func placeRunSource(repoRoot, workingDirectory, root string) resolvedRunSourceDe
 }
 
 // mirrorableSourceRoots are the directories a source may occupy inside a
-// sandbox under its own host path (ADR 0096 §1 on source host paths): where
+// sandbox under its own host path (ADR 26-09-09-044 §1 on source host paths): where
 // user data lives on every platform Discobox runs on, and none of them
 // systemd's inside the sandbox.
 //
@@ -1146,7 +1146,7 @@ func placeRunSource(repoRoot, workingDirectory, root string) resolvedRunSourceDe
 // a repository whose root is exactly that path — /home/node against an image
 // whose user is node — is mirrored over them. The client cannot see which user
 // an image resolves to, so it cannot tell that path from a safe one. It is a
-// known collision this rule does not close, recorded in ADR 0096 §1 on source
+// known collision this rule does not close, recorded in ADR 26-09-09-044 §1 on source
 // host paths; closing it needs the side that knows the resolved user, which is
 // the server.
 //
@@ -1198,7 +1198,7 @@ var sandboxOwnedPaths = []string{"/opt/discobox"}
 // path is mirrored under the /mnt name WSL already gives it, and a POSIX path
 // is mirrored as itself when it comes from a root a sandbox may hold. Either
 // way, "no" means the source is placed where one with no host path is placed
-// rather than refused (ADR 0096 §2 on source host paths).
+// rather than refused (ADR 26-09-09-044 §2 on source host paths).
 func sandboxSourceRoot(hostPath string) (string, bool) {
 	if runtime.GOOS == "windows" {
 		return wslPath(hostPath)

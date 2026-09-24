@@ -74,8 +74,10 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 
 ## Index
 
-Both ID forms appear here: four-digit numbers up to `0149`, then
-`YY-MM-DD-RRR`.
+Both ID forms appear here, interleaved in the table's rough chronological
+order: four-digit numbers up to `0149`, assigned before this scheme, and
+`YY-MM-DD-RRR` since — plus the four earlier ADRs renumbered to resolve a
+duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
@@ -149,7 +151,8 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0068](0068-container-images-share-one-base-image.md) | Container images share one base image | Accepted |
 | [0069](0069-staging-pool-images-is-a-condition.md) | Staging a pool's images is a condition, not a state | Accepted |
 | [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) | Services are declared execs the sandbox starts for you | Accepted |
-| [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted (§6, §7's Go-constant defaults and §11 superseded by [0125](0125-tools-are-declared-in-files-the-way-services-are.md); §3 superseded by [0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md)) |
+| [26-08-27-302](26-08-27-302-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted (§6, §7's Go-constant defaults and §11 superseded by [0125](0125-tools-are-declared-in-files-the-way-services-are.md); §3 superseded by [0134](0134-a-tool-put-away-is-a-tab-after-the-shells.md)) |
+| [0071](0071-resource-accounting-is-a-pool-agent-differenced-report.md) | Resource accounting is a pool-agent-differenced report | Accepted |
 | [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md) | A repository ships skills that only exist inside a sandbox | Accepted |
 | [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) | A directory with no repository is copied only when asked | Accepted (§2 and §3's outcome superseded by [0077](0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md)) |
 | [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) | A CLI in WSL writes the ssh_config Windows reads | Accepted (§2 and §3 amended by [0078](0078-the-wsl-proxycommand-is-quoted-for-sh.md)) |
@@ -173,14 +176,15 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0092](0092-the-cli-has-no-unjudged-way-to-take-a-value.md) | The CLI has no unjudged way to take a value | Accepted |
 | [0093](0093-a-local-sources-origin-is-its-git-directory.md) | A local source's origin is its git directory, not its working tree | Accepted (supersedes [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) §1's bind source) |
 | [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md) | The pool cache is partitioned by the sandbox user's uid | Accepted (amends [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) §1's cache backing) |
+| [26-09-05-409](26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md) | An image declares services in the format a repository does | Accepted |
 | [0095](0095-an-enrolled-iroh-id-is-a-managed-resource.md) | An enrolled iroh ID is a managed resource, and the file is the way back in | Accepted (supersedes [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §5's file-only enrollment; §2's spelling and the resource's name amended by [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md)) |
 | [0096](0096-the-server-reads-one-schema-checked-configuration-file.md) | The server reads one schema-checked configuration file, and the environment still wins | Accepted |
 | [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md) | A Discobox address is `discobox://<peer-id>`, and nothing user-facing says iroh | Accepted (settles [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §6's deferred address form; amends [0095](0095-an-enrolled-iroh-id-is-a-managed-resource.md) §2's hex spelling; §1's exact-concatenation address superseded by [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md)) |
 | [0098](0098-a-server-serves-its-own-peer-id.md) | A server serves its own peer ID, and `discobox id` prints both halves | Accepted (narrows [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §6's out-of-band address to the case iroh is the only way in; §2 superseded by [0117](0117-every-server-has-a-peer-id.md)) |
 | [0099](0099-the-cli-downloads-the-server-it-starts.md) | The CLI downloads the server it starts, staged by version and checked by digest | Accepted (amends [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) §5's entitlement scope to the server binary) |
 | [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) | The prompt is a flag, and the bare command takes no words | Accepted (supersedes [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md) §4's positional prompt and §5; §1's mechanism superseded by [0103](0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md); §§3–4's command spelling superseded by [0133](0133-the-command-that-makes-a-discobox-is-new.md)) |
-| [0095](0095-an-attached-client-pushes-the-commits-made-where-it-runs.md) | An attached client pushes the commits made where it is running | Accepted (supersedes [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) §8's manual key; §2's parked-discobox rule superseded by [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)) |
-| [0096](0096-a-source-keeps-its-host-path-only-where-a-sandbox-may-hold-it.md) | A source keeps its host path inside the sandbox only where a sandbox may hold it | Accepted |
+| [26-09-05-008](26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md) | An attached client pushes the commits made where it is running | Accepted (supersedes [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) §8's manual key; §2's parked-discobox rule superseded by [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)) |
+| [26-09-09-044](26-09-09-044-a-source-keeps-its-host-path-only-where-a-sandbox-may-hold-it.md) | A source keeps its host path inside the sandbox only where a sandbox may hold it | Accepted |
 | [0101](0101-one-guest-image-for-every-vm-backend-and-the-kernel-is-separate.md) | One guest image for every VM backend, and the kernel is a separate artifact | Accepted (settles [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md)'s deferred one-image question) |
 | [0102](0102-a-mirrored-key-carries-the-acl-ssh-reads.md) | A mirrored key carries the ACL ssh reads, and the Windows side may fail | Accepted (supersedes [0078](0078-the-wsl-proxycommand-is-quoted-for-sh.md) §2's ACL and read-back) |
 | [0103](0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md) | A global flag belongs to the command it is written in front of | Accepted (supersedes [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) §1's mechanism) |
@@ -232,5 +236,5 @@ Both ID forms appear here: four-digit numbers up to `0149`, then
 | [0149](0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md) | A host's certificate is trusted for one sandbox when a person pins it | Accepted |
 | [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) | A dedicated pool harness judges commands and credential-bearing requests | Accepted (amends [0079](0079-a-local-judge-gates-every-wrapped-credential-use.md), [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md), [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md); settles [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) §6) |
 | [26-09-24-630](26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md) | A discobox delivers the source of the discoboxes it creates | Accepted (supersedes [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)'s rejection of authority by creator, for source delivery) |
-| [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md) | Attaching to a discobox still awaiting its source delivers it | Accepted (supersedes [0095](0095-an-attached-client-pushes-the-commits-made-where-it-runs.md) §2's parked-discobox rule) |
+| [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md) | Attaching to a discobox still awaiting its source delivers it | Accepted (supersedes [26-09-05-008](26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md) §2's parked-discobox rule) |
 | [26-09-24-458](26-09-24-458-adr-ids-are-a-date-and-a-random-suffix.md) | ADR IDs are a date and a random suffix | Accepted |

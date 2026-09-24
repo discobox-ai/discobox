@@ -342,7 +342,7 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	// so there is no terminal to wait for first.
 	fmt.Fprintf(stderr, "Attaching to configure terminal (answer any prompts)\n")
 	// The sandbox a configure flow runs in is the flow's, not a discobox
-	// anybody keeps work in, so nothing here is pushed into it (ADR 0095 §1 on
+	// anybody keeps work in, so nothing here is pushed into it (ADR 26-09-05-008 §1 on
 	// automatic push).
 	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, execAttachOptions{notWorkingHere: true}, stdin, stdout, stderr); err != nil {
 		return nil, fmt.Errorf("attach configure terminal: %w", err)

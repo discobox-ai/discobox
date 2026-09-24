@@ -95,7 +95,7 @@ const (
 // a shell in the listing, so every window that draws a workspace has to read
 // the same key — which is why it is spelled once, here, at the wire. Unlike the
 // service keys it is this client's own: the sandbox knows nothing about tools.
-// See ADR 0071 on tool sessions.
+// See ADR 26-08-27-302 on tool sessions.
 const execToolMetadataKey = "tool"
 
 // legacyDiffToolID is the label a diff session carries when a launcher from

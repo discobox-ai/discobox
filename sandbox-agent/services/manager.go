@@ -163,7 +163,7 @@ func declaredProtocol(declared string) ports.Protocol {
 // port matters.
 //
 // A declaration that states a protocol is believed rather than measured, and
-// the port is never connected to (ADR 0094, image-declared services). One that
+// the port is never connected to (ADR 26-09-05-409, image-declared services). One that
 // states none is probed, as
 // every port was before. That is the whole difference, and it matters most for
 // a socket-activated service, where connecting to the port is what starts it.

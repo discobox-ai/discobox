@@ -538,7 +538,7 @@ COPY sandbox-agent/image/desktop/launchers /usr/local/share/discobox/desktop/lau
 # The desktop's own service declaration, in the same format a repository's
 # `.discobox/services` uses and read from the same code. It declares the port
 # and what it speaks so the port watcher never has to connect to it — which for
-# a socket-activated service is what would start it (ADR 0094, image-declared
+# a socket-activated service is what would start it (ADR 26-09-05-409, image-declared
 # services).
 COPY sandbox-agent/image/services /usr/local/share/discobox/services
 # The tools the image ships — discobox-review as diff, and fresh — declared in

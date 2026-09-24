@@ -263,7 +263,7 @@ func declareSources(t *testing.T, root string, declared map[string]string) {
 //
 // It is registered because every source here is built under t.TempDir(), which
 // is /tmp — the one root this package deliberately refuses to mirror into a
-// sandbox, because the sandbox's own systemd owns that directory (ADR 0096 on
+// sandbox, because the sandbox's own systemd owns that directory (ADR 26-09-09-044 on
 // source host paths). Registering it keeps these tests about what each of them
 // is about; the clamp itself is asserted from an unregistered path, in
 // source_test.go.

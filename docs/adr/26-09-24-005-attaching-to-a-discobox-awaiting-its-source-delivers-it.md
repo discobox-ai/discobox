@@ -6,9 +6,9 @@
   delivers only a discobox with no delivery reported (`sourceDeliveredAt`),
   not every parked one. A refused push in any delivery is re-read and made
   once more, and a second attach in one process joins the first.
-- **Supersedes**: [0095](0095-an-attached-client-pushes-the-commits-made-where-it-runs.md)
+- **Supersedes**: [26-09-05-008](26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md)
   §2's rule that delivering a parked discobox "stays a thing a person asks for
-  by name" at `discobox push`. The rest of 0095 stands, including that the
+  by name" at `discobox push`. The rest of 26-09-05-008 stands, including that the
   automatic push's beat never delivers.
 - **Relates to**: [ADR 0058](0058-a-push-delivered-source-has-a-pool-side-origin.md),
   the origin a delivery pushes into;
@@ -32,7 +32,7 @@ Attaching to it again does nothing about that:
   it gives up only when its stall budget runs out.
 - The status line says "waiting for its source to be pushed", which reads as
   though somebody is pushing it. Nobody is.
-- The automatic push excludes a parked discobox by rule (0095 §2), because a
+- The automatic push excludes a parked discobox by rule (26-09-05-008 §2), because a
   push to one is its create's delivery — "a state-machine transition and a
   decision about a create that failed; it stays a thing a person asks for by
   name."
@@ -40,7 +40,7 @@ Attaching to it again does nothing about that:
 So the one fix is a command the window never mentions, and the server fails
 the discobox after `sourcePushTimeout` if nobody runs it.
 
-0095's reason for keeping delivery a named action was the beat: a push nobody
+26-09-05-008's reason for keeping delivery a named action was the beat: a push nobody
 asked for at that moment must not start a discobox. That reason does not cover
 an attach. Attaching to a discobox *is* asking for it by name, and asking to
 use it. What a parked discobox needs for that is exactly one thing, and it is
@@ -123,7 +123,7 @@ leaves nothing better. Opening the workspace again joins it.
 
 ### 4. The beat still never delivers
 
-0095 §2's exclusion stays for the automatic push's 5s beat: it runs while a
+26-09-05-008 §2's exclusion stays for the automatic push's 5s beat: it runs while a
 terminal is attached, and by then the attach has delivered. A beat that meets a
 parked discobox is one whose delivery is somebody else's (§2) or already failed
 and was reported (§2). Either way, repeating it every five seconds adds nothing.
@@ -140,7 +140,7 @@ it is a step, not a choice.
 dial. The attach wait would be counting down its stall budget while the push
 ran, with nothing it watches moving, so a large first push would fail the
 attach it was meant to rescue. It would also merge "push new commits into a
-running discobox" with "start a parked one", which 0095 kept apart for good
+running discobox" with "start a parked one", which 26-09-05-008 kept apart for good
 reason.
 
 **Have the server deliver.** It cannot. A push-delivered source is one the

@@ -362,7 +362,7 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 	// repository's, which services.Discover already merges. A declaration that
 	// states a protocol keeps its port out of the probe queue entirely, which
 	// is what stops a classification probe from socket-activating the desktop
-	// (ADR 0094, image-declared services).
+	// (ADR 26-09-05-409, image-declared services).
 	if serviceManager != nil {
 		watcher.Declared = serviceManager.Declarations
 	}

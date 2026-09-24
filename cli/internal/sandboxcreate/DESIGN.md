@@ -48,11 +48,11 @@ sandbox create requests.
   `/tmp` is mounted onto a tmpfs systemd puts there during boot, so the discobox
   comes up healthy with nothing in it. It is a placement rule and not a refusal,
   because the host directory is the caller's and the mount point is ours; see
-  [ADR 0096](../../../docs/adr/0096-a-source-keeps-its-host-path-only-where-a-sandbox-may-hold-it.md).
+  [ADR 26-09-09-044](../../../docs/adr/26-09-09-044-a-source-keeps-its-host-path-only-where-a-sandbox-may-hold-it.md).
   The roots are not a guarantee: a repository rooted exactly at the sandbox
   user's home (`/home/<name>`) is mirrored over it and the harness volumes
   under it, a known collision the client cannot see because it does not know
-  which user the image resolves to (ADR 0096 §1).
+  which user the image resolves to (ADR 26-09-09-044 §1).
   On Windows it keeps that path in
   the spelling WSL gives it: `E:\src\project` becomes `/mnt/e/src/project`, the
   drive letter lowercased because that is how `/mnt` is spelled and the rest left

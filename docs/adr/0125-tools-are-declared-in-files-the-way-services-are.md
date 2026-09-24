@@ -5,11 +5,11 @@
   [0142](0142-a-host-tool-with-no-working-tree-opens-the-working-root.md);
   everything else stands)
 - **Date**: 2026-09-16
-- **Supersedes**: [ADR 0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md)
+- **Supersedes**: [26-08-27-302](26-08-27-302-a-tool-session-is-an-exec-the-launcher-labeled.md)
   §6 (the catalog is the launcher's table), the part of §7 that makes a
   tool file's default a Go constant, and §11 (`{workspace}` in a file's
   destination). §1–5, §8–10 and §12 stand.
-- **Extends**: [ADR 0094](0094-an-image-declares-services-in-the-format-a-repository-does.md),
+- **Extends**: [26-09-05-409](26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md),
   whose declaration format this gives a metadata-only form.
 
 ## Context
@@ -33,7 +33,7 @@ not by the image that ships `fresh`, not by a repository whose team uses a
 different reviewer, and not by a person who uses an editor nobody listed.
 
 Services already solved the adjacent problem — declared-by-file things, from
-the image and from the repository, in one format (ADR 0070, ADR 0094). Some
+the image and from the repository, in one format (ADR 0070, ADR 26-09-05-409). Some
 service declarations are not scripts at all (`start: never`, the desktop), and
 are written as a comment block in a file that is not otherwise a script.
 
@@ -86,7 +86,7 @@ run by id, or by a name exactly one tool wears (`discobox tools diff`).
 | **sandbox** | `program` + `args`, exec'd in the primary source directory | the script; by its path for image and source, written to a private temporary directory for the run for user |
 | **host** | the first `program` on PATH (or `$<program-env>`, or `--program`) + `args` | the script; a `.ps1` through PowerShell |
 
-In the TUI a sandbox tool is a labeled session (ADR 0071 §1–5, unchanged) and a
+In the TUI a sandbox tool is a labeled session (ADR 26-08-27-302 §1–5, unchanged) and a
 host tool is a request that returns; both are reached only from the tools
 picker inside a discobox, not from the list of boxes. On the CLI both are
 `discobox tools <id>`.
@@ -137,10 +137,10 @@ files:
 
 The default is `<dir>/<id>/<name>` beside the declaration, sent with it. The
 local copy stays `<user config dir>/discobox/tools/<id>/<name>` — for a
-user-declared tool, that is the default itself. Delivery is ADR 0071 §8–10
+user-declared tool, that is the default itself. Delivery is ADR 26-08-27-302 §8–10
 unchanged. A host tool carries no files.
 
-A destination is a fixed path under the run user's home. ADR 0071 §11's
+A destination is a fixed path under the run user's home. ADR 26-08-27-302 §11's
 `{workspace}` — the working directory in fresh's own filename encoding — is
 gone from delivery: it was one tool's rule in the generic mechanism. State keyed
 on something only the discobox knows is the tool's own script's to write, so
@@ -187,7 +187,7 @@ declaring one is listed with a problem.
   boundary is where the sandbox already draws it.
 - **Source over user.** A repository's choice of reviewer is a reasonable
   default, but the person at the keyboard is the last word about their tools,
-  as they are about a tool's config (ADR 0071 §7).
+  as they are about a tool's config (ADR 26-08-27-302 §7).
 - **The CLI reads `.discobox/tools` with an exec.** Discovery, parsing and
   problems would live in two places. Services already put discovery in the
   sandbox agent behind a route.

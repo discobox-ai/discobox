@@ -1,4 +1,4 @@
-# 0094 — An image declares services in the format a repository does
+# 26-09-05-409 — An image declares services in the format a repository does
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
@@ -8,7 +8,7 @@
   whose declaration format this reuses and extends;
   [ADR 0076](0076-a-service-may-declare-a-port-discovery-cannot-see.md),
   which added the first declared-port input; and
-  [ADR 0080](0080-a-skill-ships-with-the-interface-it-documents.md),
+  [ADR 0080](0080-the-image-ships-the-skills-for-what-it-installs.md),
   whose image/repository directory pairing this copies.
 
 ## Context

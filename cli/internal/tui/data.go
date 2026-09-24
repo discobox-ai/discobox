@@ -280,7 +280,7 @@ type Sandbox struct {
 	// Pushable reports that new local commits here are this window's to send:
 	// the discobox has a source delivered by pushing it, this machine is the
 	// one it was pushed from, and it is in a state to take another push (ADR
-	// 0095 §2 on automatic push). Whether there are any new commits is a local
+	// 26-09-05-008 §2 on automatic push). Whether there are any new commits is a local
 	// question, asked by the push itself and never by the listing.
 	//
 	// It is on the row because it is the gate the workspace's automatic push
@@ -833,7 +833,7 @@ type Exec struct {
 	// for every session that is not one. A tool session is neither a terminal
 	// nor a shell: it is a window of its own, and the id is what reopens the
 	// right one after a minimize or a restart. It is a label the launcher put
-	// on the exec when it created it (ADR 0071 on tool sessions); the sandbox
+	// on the exec when it created it (ADR 26-08-27-302 on tool sessions); the sandbox
 	// knows nothing about tools.
 	Tool string
 
@@ -1575,7 +1575,7 @@ type DataSource interface {
 
 	// PushSources sends this machine's new commits into the origin repositories
 	// the discobox's push-delivered sources fetch from — the transport
-	// `discobox push` performs, with no flags (ADR 0058 §5, ADR 0095 §3 on
+	// `discobox push` performs, with no flags (ADR 0058 §5, ADR 26-09-05-008 §3 on
 	// automatic push). Nothing in the discobox moves: it gains origin/<branch>,
 	// and whoever is working in it rebases when they choose.
 	//

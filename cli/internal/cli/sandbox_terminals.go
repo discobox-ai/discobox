@@ -342,7 +342,7 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, opts execAttachOptions, stdin io.Reader, stdout, stderr io.Writer) error {
 	opts.replay = true
 	// Going to work in a discobox is when the commits made here belong in its
-	// origin, and attaching a terminal is that moment (ADR 0095 §1 on automatic
+	// origin, and attaching a terminal is that moment (ADR 26-09-05-008 §1 on automatic
 	// push). It runs beside the attach rather than before it: the dial below
 	// can block for minutes behind a cold image pull, and a push is not a
 	// reason to wait longer to see the terminal. Everything it does is silent

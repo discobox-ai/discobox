@@ -1,4 +1,4 @@
-# 0096 — A source keeps its host path inside the sandbox only where a sandbox may hold it
+# 26-09-09-044 — A source keeps its host path inside the sandbox only where a sandbox may hold it
 
 - **Status**: Accepted
 - **Date**: 2026-09-09

@@ -28,7 +28,7 @@ import (
 // sessions are tools and which tool each one is. That is what lets a window
 // that has never seen this discobox before — a second `discobox tui`, this one
 // restarted — pick a running diff back up instead of drawing it as a stray
-// shell. See ADR 0071 on tool sessions.
+// shell. See ADR 26-08-27-302 on tool sessions.
 
 const (
 	// toolsKey opens the picker behind the leader. Not t, which is stop in the
@@ -811,7 +811,7 @@ func (m *Model) minimizeTool() tea.Cmd {
 }
 
 // toolExec reports whether a session is a tool's. It is the exec's own label
-// that answers, so every window agrees — see ADR 0071 on tool sessions — and it
+// that answers, so every window agrees — see ADR 26-08-27-302 on tool sessions — and it
 // is checked before the terminal/shell question, because a tool is neither.
 func toolExec(exec Exec) bool { return exec.Tool != "" }
 

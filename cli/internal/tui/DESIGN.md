@@ -519,7 +519,7 @@ what the overlay under it is already doing is the window talking about itself.
 ## The desktop is a link, not a port
 
 A sandbox that ships a graphical desktop declares it as a service with the id
-`sandboxservices.DesktopID` ([ADR 0094](../../../docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md)),
+`sandboxservices.DesktopID` ([ADR 26-09-05-409](../../../docs/adr/26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)),
 and the workspace header draws it as its own field — the declaration's own name,
 hyperlinked to the local end of its forward — rather than as a number in
 `portsField`'s protocol groups.
@@ -543,7 +543,7 @@ offer.
 The other direction from apply, and deliberately not shaped like it. While a
 workspace is open on a discobox, the window sends whatever has been committed
 here since it was created into the origin that discobox fetches from
-([ADR 0095](../../../docs/adr/0095-an-attached-client-pushes-the-commits-made-where-it-runs.md)).
+([ADR 26-09-05-008](../../../docs/adr/26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md)).
 Nobody presses anything. See `push.go`.
 
 **It is safe to do unasked because of what the target is.** The origin of a
@@ -1139,7 +1139,7 @@ emulating off-screen at their drawn size, so flipping to one shows where it is
 now.
 
 **The tools are a third kind of pane, and the only one that outlives being
-looked at** (`tools.go`, ADR-0071, ADR-0134). A tool's pane lives in the shells
+looked at** (`tools.go`, ADR-26-08-27-302, ADR-0134). A tool's pane lives in the shells
 column, sorted after every shell (`execBefore`), and `Model.toolShown` is the one
 with the whole window, if any; `screenPane` is the one pane with the whole
 screen, the apply overlay or the showing tool, and every place that asked
@@ -1211,7 +1211,7 @@ screen, the apply overlay or the showing tool, and every place that asked
   `config.jsonc` locally and `config.json` in the box, because the tool dictates
   where it reads from while the local extension is what makes editors color it
   — and the delivered copy carries a vim modeline for the copy whose name is not
-  ours. See ADR 0071.
+  ours. See ADR 26-08-27-302.
 - Not every carried file is configuration. fresh takes two: its config, and a
   seed for the live-diff plugin's *state* (`orchestrator/state/live_diff.json`),
   which is how a plugin that is off by default arrives on. The mechanism does

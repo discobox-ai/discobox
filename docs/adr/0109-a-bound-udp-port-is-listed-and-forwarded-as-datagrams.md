@@ -6,7 +6,7 @@
   whose deferred "Unix domain sockets and UDP" this settles for UDP;
   [ADR 0049](0049-forwarded-ports-are-bound-near-their-number-and-held.md),
   whose forwarder this extends; and
-  [ADR 0094](0094-an-image-declares-services-in-the-format-a-repository-does.md),
+  [26-09-05-409](26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md),
   whose stated `protocol:` gains a value.
 
 ## Context
@@ -55,7 +55,7 @@ Its protocol is `udp` from the tick it appears, so it is never queued for the
 probe. What it carries is not classifiable without sending a datagram a live
 service would act on, and the answer would usually be silence.
 
-A declaration may state `protocol: udp` (ADR 0094). That is how a UDP server
+A declaration may state `protocol: udp` (ADR 26-09-05-409). That is how a UDP server
 discovery cannot see reaches the listing: one root holds, or one that bound a
 number inside the ephemeral range. A declaration that states nothing is still a
 TCP port, probed as before. A declaration names one transport for all its

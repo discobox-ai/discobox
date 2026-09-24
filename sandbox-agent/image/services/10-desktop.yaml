@@ -19,7 +19,7 @@
 # as an HTTP port on 6900. Renaming this file must not change it, and the
 # `ai.discobox.` namespace is reserved so a repository cannot declare it.
 #
-# See docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md
+# See docs/adr/26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md
 # and docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md.
 id: ai.discobox.desktop
 name: Desktop

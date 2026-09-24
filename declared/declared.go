@@ -1,6 +1,6 @@
 // Package declared reads a directory of declared-by-file things: the services
 // and tools a sandbox image, a repository, or a person declares by dropping a
-// file in a directory (ADR 0094, ADR 0125).
+// file in a directory (ADR 26-09-05-409, ADR 0125).
 //
 // A file is one of two shapes, and which one is decided by its name:
 //

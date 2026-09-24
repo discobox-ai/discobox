@@ -78,7 +78,7 @@ func (l Layer) InSandbox() bool { return l == LayerImage || l == LayerSource }
 
 // File is one file a tool carries into the discobox: its name on this machine,
 // where it lands under the run user's home, and what the local copy starts as.
-// See ADR 0071 §7–12 for how it is delivered.
+// See ADR 26-08-27-302 §7–12 for how it is delivered.
 type File struct {
 	Name    string
 	Home    string

@@ -14,7 +14,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxapply` | `discobox apply`'s fetch: a source's sandbox commits fetched into the local repository under `refs/discobox/apply/<sandbox>/<slug>` (ADR 0014). |
 | `internal/gitapply` | Landing a fetched range on the local branch by cherry-pick in a disposable worktree (`Attempt`), and onto a repository with no commits (`AttemptRoot`, ADR 0084). |
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
-| `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 0095). |
+| `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). |
 | `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
 | `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
@@ -986,7 +986,7 @@ flowchart LR
   into a `mktemp -d` of its own under `${TMPDIR:-/tmp}`, runs it as a child and
   removes the directory — not the run user's `~/.cache`, which is a pool-shared
   volume another discobox as the same user could write into. Files are delivered
-  first (`installToolFiles`, ADR 0071 §8–10); the local copy is
+  first (`installToolFiles`, ADR 26-08-27-302 §8–10); the local copy is
   `<config dir>/discobox/tools/<id>/<name>`, seeded from the declaration's
   default.
 - **Host tools** (`tool_run.go`): the program is resolved *before* anything is
@@ -2086,7 +2086,7 @@ stream that is the discobox's, and reports what could not be pushed once the
 stream is over.
 
 See [ADR 0058](../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md)
-and [ADR 0095](../docs/adr/0095-an-attached-client-pushes-the-commits-made-where-it-runs.md).
+and [ADR 26-09-05-008](../docs/adr/26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md).
 
 ## Saying What a Wait Is For
 

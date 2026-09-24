@@ -1,4 +1,4 @@
-# 0095 — An attached client pushes the commits made where it is running
+# 26-09-05-008 — An attached client pushes the commits made where it is running
 
 - **Status**: Accepted
 - **§2's parked-discobox rule superseded by**: [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)

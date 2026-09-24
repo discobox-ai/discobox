@@ -378,7 +378,7 @@ func runTestSandboxJSON(sandboxID, phase string) string {
 //
 // Their repositories are built under t.TempDir(), which is /tmp — a directory
 // the sandbox's own systemd owns, so a source is never placed there and is
-// clamped to the default location instead (ADR 0096 on source host paths). What
+// clamped to the default location instead (ADR 26-09-09-044 on source host paths). What
 // each of these tests is about is the request the create sends, not the
 // mirroring rule, which is asserted where it lives, in internal/sandboxcreate.
 func wantSourceDirectory(t *testing.T, repoRoot string) string {

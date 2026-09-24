@@ -312,7 +312,7 @@ the viewer, in every sandbox, whether or not anybody wanted a desktop.
 
 So the port is neither discovered nor probed. The image declares it, in the same
 format a repository's `.discobox/services` uses and read by the same code
-([ADR 0094](../../docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md)) —
+([ADR 26-09-05-409](../../docs/adr/26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)) —
 `sandbox-agent/image/services/10-desktop.yaml`, installed at
 `/usr/local/share/discobox/services`:
 

@@ -11,7 +11,7 @@
 # recording that the source directory is trusted.
 #
 # `files` is what fresh carries in, each copied to the run user's home the first
-# time fresh runs in a discobox that has none (ADR 0071 §7–10), from the defaults
+# time fresh runs in a discobox that has none (ADR 26-08-27-302 §7–10), from the defaults
 # beside this file under fresh/. It is a flow mapping because a commented
 # front-matter block loses indentation, so a nested one cannot be written.
 #

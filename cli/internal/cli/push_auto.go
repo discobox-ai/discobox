@@ -16,7 +16,7 @@ import (
 	"github.com/discobox-ai/x/gitutil"
 )
 
-// The automatic push (ADR 0095 on automatic push): `discobox push`, run for an
+// The automatic push (ADR 26-09-05-008 on automatic push): `discobox push`, run for an
 // attached client rather than by a person, for as long as a terminal attach
 // lasts.
 //
@@ -32,7 +32,7 @@ import (
 // pushable reports that new commits made here are an attached client's to send
 // into the discobox's origin: it has a source an automatic push may send, this
 // machine is the one it was pushed from, and it is in a state to take another
-// push (ADR 0095 §2 on automatic push).
+// push (ADR 26-09-05-008 §2 on automatic push).
 //
 // It is two questions, because only one of them keeps its answer: see
 // pushableSource and pushableNow.
@@ -166,7 +166,7 @@ type pushTargets struct {
 // The order is deliberate: every source is resolved first, and only if
 // something actually moved is the git route opened. Resolving is two ref reads
 // in a repository this machine already has, so the ordinary beat — nothing
-// committed since the last one — dials nothing at all (ADR 0095 §4 on automatic
+// committed since the last one — dials nothing at all (ADR 26-09-05-008 §4 on automatic
 // push).
 func (a *App) pushSandboxSources(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, held map[string]string) ([]sourcePush, error) {
 	// Counted for the whole look, not only for the transfer: a caller that
@@ -225,7 +225,7 @@ func (a *App) pushSandboxSources(ctx context.Context, client *apiclientgen.Clien
 	// is only written once the push returns (pushTo). A client that detached,
 	// or a window that quit, in that window would leave the discobox's origin
 	// ahead of its own lease and refuse its next push — manufacturing exactly
-	// the refusal that ADR 0095 §5 on automatic push treats as somebody else's
+	// the refusal that ADR 26-09-05-008 §5 on automatic push treats as somebody else's
 	// doing. Everything above is cancellable, which is where a caller in a
 	// hurry gets to stop; a transfer that has started finishes.
 	//
@@ -267,7 +267,7 @@ func (a *App) pushSandboxSources(ctx context.Context, client *apiclientgen.Clien
 // delivery and the directories they came from are fixed at create, and so is
 // "none of them is this machine's to push" — those are worth holding, and
 // holding them is what keeps a beat with nothing to send from making a request
-// (ADR 0095 §4 on automatic push). Everything else that can say no here says it
+// (ADR 26-09-05-008 §4 on automatic push). Everything else that can say no here says it
 // about right now: a discobox still awaiting its source or being archived, a
 // directory not mounted yet, a repository nobody has run `git init` in. Those
 // are asked again on the next beat, because a client that cached the first no
@@ -369,7 +369,7 @@ const pushWaitNotice = 300 * time.Millisecond
 
 // waitForPushes blocks until every look this invocation started has finished,
 // so a front end can leave without ending a transfer between receive-pack and
-// the lease that guards it (ADR 0095 §6 on automatic push).
+// the lease that guards it (ADR 26-09-05-008 §6 on automatic push).
 //
 // The raw attach's stop already waits for its own loop; this is for the
 // launcher, whose Bubble Tea program returns on Quit without waiting for the
@@ -403,7 +403,7 @@ func waitSaying(stderr io.Writer, what string, wait func()) {
 
 // autoPushWhileAttached pushes the discobox's push-delivered sources for as
 // long as a terminal attach lasts: once at the start, and again on every beat
-// (ADR 0095 §1 on automatic push). Attaching is the trigger, so this runs for
+// (ADR 26-09-05-008 §1 on automatic push). Attaching is the trigger, so this runs for
 // `discobox attach --raw`, `discobox new --raw` and `discobox admin terminal
 // attach` alike.
 //
@@ -413,7 +413,7 @@ func waitSaying(stderr io.Writer, what string, wait func()) {
 // the harness is drawing. The returned stop ends the loop and reports what
 // could not be pushed, on a terminal that is the client's again by then; a push
 // that worked says nothing, because it is visible in git and nobody asked for
-// it (ADR 0095 §5 on automatic push).
+// it (ADR 26-09-05-008 §5 on automatic push).
 //
 // **A detach never interrupts a push that is already running**, and never
 // reports one as failed. pushSandboxSources finishes a transfer it has started
@@ -426,7 +426,7 @@ func waitSaying(stderr io.Writer, what string, wait func()) {
 // about the stop — nothing could have interrupted it — so it is reported even
 // when it lands after the detach. That is the case worth getting right: commit,
 // detach a second later, and the push that goes out in between is exactly the
-// one whose refusal somebody has to act on (ADR 0095 §5 on automatic push).
+// one whose refusal somebody has to act on (ADR 26-09-05-008 §5 on automatic push).
 func (a *App) autoPushWhileAttached(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string) (stop func(io.Writer)) {
 	beating, stopBeating := context.WithCancel(ctx)
 	done := make(chan map[string]sourcePush, 1)

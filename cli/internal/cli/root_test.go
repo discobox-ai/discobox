@@ -415,7 +415,7 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 	var attachPath string
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		// Every terminal attach asks what the discobox's sources are, to push
-		// the commits made here into its origin (ADR 0095 on automatic push).
+		// the commits made here into its origin (ADR 26-09-05-008 on automatic push).
 		// This one has none.
 		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sandbox-1") {
 			w.Header().Set("Content-Type", "application/json")
@@ -456,7 +456,7 @@ func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 	var attachPath string
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		// Every terminal attach asks what the discobox's sources are, to push
-		// the commits made here into its origin (ADR 0095 on automatic push).
+		// the commits made here into its origin (ADR 26-09-05-008 on automatic push).
 		// This one has none.
 		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sandbox-1") {
 			w.Header().Set("Content-Type", "application/json")

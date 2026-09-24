@@ -87,7 +87,7 @@ var NoPromptEnv = map[string]string{"GIT_TERMINAL_PROMPT": "0"}
 // StallArgs make git give up on a transfer that has stopped moving, and only
 // on one that has stopped moving.
 //
-// A caller that cannot interrupt a push still needs it to end (ADR 0095 §6 on
+// A caller that cannot interrupt a push still needs it to end (ADR 26-09-05-008 §6 on
 // automatic push), and a wall clock is the wrong instrument: the largest
 // transfer this client ever makes is a first push carrying everything committed
 // since it last pushed, which is exactly the one a deadline would cut in half —

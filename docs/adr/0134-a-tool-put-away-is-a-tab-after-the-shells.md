@@ -2,13 +2,13 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-18
-- **Supersedes**: [ADR 0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md)
+- **Supersedes**: [26-08-27-302](26-08-27-302-a-tool-session-is-an-exec-the-launcher-labeled.md)
   §3 (a tool session is never a tab). §1–2 and §4–5 stand; §4's "puts it away"
   now means into the strip described here.
 
 ## Context
 
-ADR 0071 took a tool session out of the workspace's strip entirely: it is a
+ADR 26-08-27-302 took a tool session out of the workspace's strip entirely: it is a
 window over the workspace while it is showing, and nothing at all while it is
 put away. The only way to know a diff or an editor is still running was to open
 the tools picker and read `· running` on its row.
