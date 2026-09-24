@@ -2,6 +2,7 @@ package services
 
 import (
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -159,6 +160,40 @@ func TestSandboxToAPIOmitsUnobservedRuntimeState(t *testing.T) {
 	displayState, _ := out.Runtime.DisplayState.Get()
 	if got := string(displayState); got != "starting" {
 		t.Fatalf("displayState = %q, want starting", got)
+	}
+}
+
+// A reported delivery is on the runtime, because a parked sandbox stays
+// awaiting_source until the reconciler acts on the report, and a client
+// deciding whether a delivery is still owed cannot tell the two apart from the
+// state alone (ADR 26-09-24-005).
+func TestSandboxToAPIReportsASourceDelivery(t *testing.T) {
+	sandbox := &model.Sandbox{
+		ID:              "sb_1",
+		ProjectID:       "p1",
+		CreatedByUserID: "u1",
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState: model.DesiredStatePresent,
+			State:        model.SandboxStateAwaitingSource,
+			Generation:   2,
+		},
+	}
+	out, err := SandboxToAPI(sandbox, nil)
+	if err != nil {
+		t.Fatalf("SandboxToAPI: %v", err)
+	}
+	if out.Runtime.SourceDeliveredAt.IsSet() {
+		t.Fatal("sourceDeliveredAt is present before any delivery was reported")
+	}
+
+	delivered := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	sandbox.SourceDeliveredAt = &delivered
+	out, err = SandboxToAPI(sandbox, nil)
+	if err != nil {
+		t.Fatalf("SandboxToAPI: %v", err)
+	}
+	if got, ok := out.Runtime.SourceDeliveredAt.Get(); !ok || !got.Equal(delivered) {
+		t.Fatalf("sourceDeliveredAt = %v (set %v), want %v", got, ok, delivered)
 	}
 }
 

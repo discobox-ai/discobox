@@ -102,7 +102,10 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 	// The origin repositories only exist once the sandbox is provisioned, so
 	// there is nothing to push into until it parks.
 	report.step(StepAwaitingSource)
-	if err := awaitSourceRequested(ctx, client, projectID, sandbox.ID, report); err != nil {
+	delivered, err := awaitSourceRequested(ctx, client, projectID, sandbox.ID, report)
+	if err != nil || delivered {
+		// Delivered already is delivered: whoever reported it pushed the same
+		// pinned commits this would (ADR 26-09-24-005).
 		return err
 	}
 	// One step for the push as a whole rather than one per repository: a
@@ -128,7 +131,23 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 			return err
 		}
 		if err := pushSource(ctx, repoRoot, originURL, token, commit, branch, snapshotRef); err != nil {
-			return err
+			// Another client can be delivering this discobox at the same time:
+			// an attach to it from a second terminal while this create pushes,
+			// or the other way round (ADR 26-09-24-005 §3). Both send the same pinned
+			// commit, but each expects the branch it creates not to exist yet,
+			// so the one that loses the ref update is refused. A delivery is
+			// idempotent, so a refused push is not believed until it has been
+			// read against the discobox and made once more: by then either the
+			// other delivery has been reported, and there is nothing left to
+			// do, or the branch holds exactly this commit and the push is a
+			// no-op.
+			delivered, readErr := sourceDelivered(ctx, client, projectID, sandbox.ID)
+			if readErr == nil && delivered {
+				return nil
+			}
+			if err := pushSource(ctx, repoRoot, originURL, token, commit, branch, snapshotRef); err != nil {
+				return err
+			}
 		}
 		// The commit just delivered is the lease every later `discobox push` of this
 		// source leases against (ADR 0058 §6). A failure to record it must not
@@ -137,7 +156,31 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		_ = gitutil.UpdateRef(ctx, repoRoot, sandboxgit.OriginLeaseRef(sandbox.ID, slug, pushBranch(branch)), commit)
 		pushed[slug] = commit
 	}
-	return completeSourcePush(ctx, client, projectID, sandbox.ID, pushed)
+	if err := completeSourcePush(ctx, client, projectID, sandbox.ID, pushed); err != nil {
+		// The same overlap as a refused push, one step later: the other
+		// delivery reported first and the discobox has moved on, so this
+		// report is refused as not awaiting its source. That is a delivery
+		// made, not a failed one.
+		if delivered, readErr := sourceDelivered(ctx, client, projectID, sandbox.ID); readErr == nil && delivered {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// sourceDelivered reports whether a delivery of the sandbox's sources has been
+// reported, by this client or any other.
+func sourceDelivered(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string) (bool, error) {
+	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+	if err != nil {
+		return false, err
+	}
+	sandbox, err := expectSandbox(res)
+	if err != nil {
+		return false, err
+	}
+	return sandbox.Runtime.SourceDeliveredAt.IsSet(), nil
 }
 
 // pushRefs reads what to push from the source the server recorded. The commit
@@ -187,6 +230,11 @@ func (s *LocalSources) pushRoot(key string) (string, error) {
 // awaitSourceRequested waits until the sandbox is parked waiting for its
 // source. Pushing earlier would race the repository into existence.
 //
+// It also answers whether somebody else's delivery has been reported in the
+// meantime — another client attaching to the same parked discobox — in which
+// case there is nothing left to push, and the state it would otherwise wait
+// for may already be gone.
+//
 // The wait narrates itself out of the reads it is already making. What it is
 // waiting for is the provisioning that has to finish before the sandbox can
 // park — the image pull above all — and the pool agent records that on the
@@ -194,7 +242,7 @@ func (s *LocalSources) pushRoot(key string) (string, error) {
 // so saying what the wait is for costs nothing but reading a field that arrived
 // anyway; without it, the longest wait in a create is the one that says the
 // least about itself.
-func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string, report Report) error {
+func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string, report Report) (delivered bool, err error) {
 	stall := NewStallClock(awaitSourceStall)
 	// last is what the caller's line says, which starting out is the step
 	// reported just above. Comparing against that rather than against nothing is
@@ -203,17 +251,20 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 	for {
 		res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return false, err
 		}
 		sandbox, err := expectSandbox(res)
 		if err != nil {
-			return err
+			return false, err
+		}
+		if sandbox.Runtime.SourceDeliveredAt.IsSet() {
+			return true, nil
 		}
 		switch sandbox.Runtime.State {
 		case apiclientgen.SandboxRuntimeStateAwaitingSource:
-			return nil
+			return false, nil
 		case apiclientgen.SandboxRuntimeStateFailed:
-			return fmt.Errorf("discobox failed before it could receive its source: %s", sandbox.Runtime.ErrorMessage.Or("unknown error"))
+			return false, fmt.Errorf("discobox failed before it could receive its source: %s", sandbox.Runtime.ErrorMessage.Or("unknown error"))
 		}
 		// A sandbox with nothing left to provision reports no phase, which
 		// leaves the previous line standing rather than blanking it: the wait is
@@ -225,11 +276,11 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 			stall.Progressed()
 		}
 		if stall.Expired() {
-			return fmt.Errorf("gave up after %s with no further progress toward the discobox being ready for its source (last: %s)", awaitSourceStall, last)
+			return false, fmt.Errorf("gave up after %s with no further progress toward the discobox being ready for its source (last: %s)", awaitSourceStall, last)
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return false, ctx.Err()
 		case <-time.After(awaitSourcePollInterval):
 		}
 	}

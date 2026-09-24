@@ -87,6 +87,11 @@ type App struct {
 	// ending one between receive-pack and the lease that guards it. See
 	// App.waitForPushes.
 	pushInFlight sync.WaitGroup
+	// deliveries are the deliveries to parked discoboxes in flight, by
+	// discobox, guarded by pushMu, so a second attach to the same one joins
+	// the first instead of pushing the same refs beside it. See
+	// push_attach.go.
+	deliveries map[string]*delivery
 }
 
 // commandName is the name this binary was invoked as, which is what every

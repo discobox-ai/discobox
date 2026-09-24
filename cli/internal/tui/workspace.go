@@ -154,11 +154,17 @@ type sourceDeliveredMsg struct {
 }
 
 // deliverSource hands a discobox the source it is still waiting for, and only
-// then attaches (ADR 0150). Its create stopped after it parked and before the
+// then attaches (ADR 26-09-24-005). Its create stopped after it parked and before the
 // push was reported, so attaching alone would wait on a push nobody is making.
 //
 // Before the attach, not beside it: the attach wait gives up after a stall
 // budget, and nothing it watches moves while this client pushes.
+//
+// It outlives a workspace left while it runs, on purpose. A push cut off
+// part way leaves nothing better than one that finishes, and the discobox is
+// still owed it; opening the workspace again joins the delivery still running
+// rather than starting a second beside it (deliverBeforeAttach), and takes its
+// answer, failure included.
 func (m *Model) deliverSource(gen int, sandbox Sandbox, freshShell bool) tea.Cmd {
 	feed, next := m.narrate()
 	ctx, ds := m.ctx, m.ds

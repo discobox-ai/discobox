@@ -9,7 +9,7 @@ import (
 
 // A discobox whose create stopped after it parked and before its source was
 // pushed waits for a push nobody is making. Attaching to it delivers first and
-// attaches after (ADR 0150).
+// attaches after (ADR 26-09-24-005).
 
 // parkedSandbox is a discobox parked waiting for a source this machine can
 // deliver.

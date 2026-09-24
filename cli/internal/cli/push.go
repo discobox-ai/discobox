@@ -309,7 +309,7 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 }
 
 // deliverParkedSource is the delivery itself, shared by `discobox push` and by
-// an attach to a discobox still waiting for its source (ADR 0150): every
+// an attach to a discobox still waiting for its source (ADR 26-09-24-005): every
 // pending source resolved out of the directory it came from, checked, pushed at
 // the commit it was pinned to, and the set reported complete.
 //

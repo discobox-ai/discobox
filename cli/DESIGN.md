@@ -2013,18 +2013,33 @@ throwaway repository was deleted when that run ended (ADR 0045) and took the
 only copy of those commits with it. `--source`, `--branch`, and `--force` all
 describe a rebase-time push and are refused here rather than ignored.
 
-**Attaching delivers it too** (`internal/cli/push_attach.go`, ADR 0150).
+**Attaching delivers it too** (`internal/cli/push_attach.go`, ADR 26-09-24-005).
 Attaching to a discobox is asking for it by name, and a parked one waits on a
-push nobody is making. So when the discobox is parked and this machine created
-it (`deliverableHere`), an attach runs the same delivery with no overrides
+push nobody is making. An attach runs the same delivery with no overrides
 (`deliverParkedSource`) **before** it dials. It cannot run beside the dial: the
 attach wait gives up after a stall budget, and nothing it watches moves while
-the client pushes. The launcher's workspace does this when the row says
-`AwaitsDelivery` (`DataSource.DeliverSource`), and a raw attach does it from
-`attachSandboxTerminal`. A delivery it cannot make fails the attach at once and
-names `discobox push --dir`. A discobox created on another machine is left to
-wait for that machine. A failed delivery whose discobox is no longer parked
-means somebody else's delivery finished first, and the attach carries on.
+the client pushes.
+
+It delivers only when the delivery is owed and this machine created the
+discobox (`deliverableHere`). Owed means parked with no `runtime.sourceDeliveredAt`.
+A discobox stays parked after its delivery is reported, until the reconciler
+acts on the report, which is exactly what `new --raw` attaches to. The same
+field ends `DeliverSource`'s wait early when somebody else's delivery was
+reported.
+
+The launcher's workspace delivers when the row says `AwaitsDelivery`
+(`DataSource.DeliverSource`), and a raw attach delivers from
+`attachSandboxTerminal`.
+
+- **A refused push is not believed straight away.** Overlapping deliveries (a
+  create and an attach, or two attaches) can refuse each other's ref update,
+  and a delivery is idempotent. `DeliverSource` re-reads the discobox, stops if
+  a delivery has been reported, and otherwise pushes once more.
+- **Within a process, an attach joins another attach's delivery in flight**
+  (`App.deliveries`) rather than pushing beside it.
+- **A delivery that still cannot be made fails the attach** and names
+  `discobox push --dir`.
+- **A discobox created on another machine** is left to wait for that machine.
 
 **An attached client pushes on its own** (`internal/cli/push_auto.go`). Going to
 work in a discobox is when the commits made here belong in its origin, and

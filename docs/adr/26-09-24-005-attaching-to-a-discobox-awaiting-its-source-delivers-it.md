@@ -1,7 +1,11 @@
-# 0150 — Attaching to a discobox still awaiting its source delivers it
+# 26-09-24-005 — Attaching to a discobox still awaiting its source delivers it
 
 - **Status**: Accepted
 - **Date**: 2026-09-24
+- **§§2–3 amended**: 2026-09-24, before anything shipped against it. An attach
+  delivers only a discobox with no delivery reported (`sourceDeliveredAt`),
+  not every parked one. A refused push in any delivery is re-read and made
+  once more, and a second attach in one process joins the first.
 - **Supersedes**: [0095](0095-an-attached-client-pushes-the-commits-made-where-it-runs.md)
   §2's rule that delivering a parked discobox "stays a thing a person asks for
   by name" at `discobox push`. The rest of 0095 stands, including that the
@@ -71,7 +75,16 @@ Both ways of attaching do it:
   the wait. The attach that is not somebody working in a discobox (a harness's
   configure flow, `notWorkingHere`) is not asked, as for the automatic push.
 
-### 2. Only a delivery this machine can make, and a clear refusal otherwise
+### 2. Only a delivery that is owed, that this machine can make
+
+**Parked is not the signal; owed is.** A discobox stays in `awaiting_source`
+after its delivery is reported, until the reconciler acts on the report. That
+is the discobox `discobox new --raw` attaches to the moment its own delivery
+returns. So the sandbox's runtime gains `sourceDeliveredAt`, which the server
+already records when a completion is reported, and an attach delivers only a
+discobox that is parked **and** has none. The same field ends a delivery's wait
+for the discobox to park: one that finds a delivery already reported has
+nothing left to push, whatever state the discobox has moved on to.
 
 The attach delivers only when the discobox's origin host is this machine. A
 discobox created on another machine is left to wait as it does today: that
@@ -83,14 +96,30 @@ repository of its own (ADR 0045) — the attach fails immediately with that
 reason and names `discobox push --dir`. Waiting would end the same way, only
 later and with less to say.
 
-### 3. A delivery someone else finished is not a failure
+### 3. Two deliveries of one discobox
 
-The delivery can race another one: the create that parked the discobox may
-still be running, or a second window attached at the same moment. Both push the
-same pinned commit, so the second push changes nothing. The completion that
-loses may be refused because the discobox is no longer parked. An attach whose
-delivery fails re-reads the discobox, and if it is no longer awaiting its
-source, carries on with the attach instead of reporting the failure.
+A delivery can still meet another one: the create that parked the discobox may
+be pushing in another terminal, or a launcher row opened again while its first
+delivery runs.
+
+- **Across processes, and between a create and an attach, pushes that overlap
+  can refuse each other.** Each expects the branch it creates not to exist
+  yet. The server does not refuse a second completion either: it accepts
+  completions while the discobox is still parked, and records the same intent
+  again. A delivery is idempotent, so the shared delivery code
+  (`sandboxcreate.DeliverSource`, which the create and the attach both run)
+  does not believe a refused push straight away. It first re-reads the
+  discobox. If a delivery has been reported by then, there is nothing left to
+  do. Otherwise it makes the push once more, to a branch that now holds exactly
+  the commit it sends.
+- **Within one process, an attach joins another attach's delivery in flight**
+  and takes its answer, rather than pushing the same refs beside it. A create's
+  own delivery is not joined this way. One that overlaps it is handled by the
+  point above.
+
+A delivery started from the launcher's workspace outlives that workspace if it
+is left mid-push. The discobox is still owed the push, and one cut off part way
+leaves nothing better. Opening the workspace again joins it.
 
 ### 4. The beat still never delivers
 

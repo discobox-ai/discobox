@@ -3886,6 +3886,13 @@ components:
                     description: When state last changed to its current value
                     format: date-time
                     type: string
+                sourceDeliveredAt:
+                    description: |-
+                        When a client reported the sandbox's push-delivered sources complete. Absent while
+                        nothing has reported them, which for a sandbox in awaiting_source means its delivery
+                        is still owed; state stays awaiting_source until the reconciler acts on the report.
+                    format: date-time
+                    type: string
                 stateReportedAt:
                     description: |-
                         When the hosting pool agent last reported this sandbox's runtime state. A runtime

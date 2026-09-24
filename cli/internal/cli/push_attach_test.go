@@ -2,11 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -14,7 +16,7 @@ import (
 )
 
 // An attach delivers a parked discobox only when this machine is the one that
-// can: it created it, and the discobox is waiting on a push (ADR 0150).
+// can: it created it, and the discobox is waiting on a push (ADR 26-09-24-005).
 func TestDeliverableHereIsThisMachinesParkedDiscoboxes(t *testing.T) {
 	parked := pushDeliveredSandbox()
 	parked.Runtime.State = apiclientgen.SandboxRuntimeStateAwaitingSource
@@ -26,6 +28,10 @@ func TestDeliverableHereIsThisMachinesParkedDiscoboxes(t *testing.T) {
 	noOrigin := pushDeliveredSandbox()
 	noOrigin.Runtime.State = apiclientgen.SandboxRuntimeStateAwaitingSource
 	noOrigin.Origin.Reset()
+
+	reported := pushDeliveredSandbox()
+	reported.Runtime.State = apiclientgen.SandboxRuntimeStateAwaitingSource
+	reported.Runtime.SourceDeliveredAt = apiclientgen.NewOptDateTime(time.Now())
 
 	bound := pushDeliveredSandbox()
 	bound.Runtime.State = apiclientgen.SandboxRuntimeStateAwaitingSource
@@ -41,6 +47,9 @@ func TestDeliverableHereIsThisMachinesParkedDiscoboxes(t *testing.T) {
 	}{
 		{"parked, created here", parked, thisHost, true},
 		{"running", pushDeliveredSandbox(), thisHost, false},
+		// Still parked because the reconciler has not caught up, but the
+		// delivery is reported: what `discobox new --raw` attaches to.
+		{"parked, delivery already reported", reported, thisHost, false},
 		{"parked, created on another machine", elsewhere, thisHost, false},
 		{"parked, no recorded origin", noOrigin, thisHost, false},
 		{"parked with nothing to push", bound, thisHost, false},
@@ -143,12 +152,24 @@ func TestDeliverBeforeAttachRefusesADeliveryItCannotFinish(t *testing.T) {
 	}
 }
 
-// A delivery that fails because somebody else's finished first is not the
-// attach's failure: the discobox is no longer parked, and the attach goes on.
-func TestDeliverBeforeAttachCarriesOnWhenTheDiscoboxWasDeliveredElsewhere(t *testing.T) {
-	dir, _ := pushRepo(t)
-	app, client, _ := parkedSourceServer(t, dir, thisHost, "0123456789abcdef0123456789abcdef01234567", 1)
-	if err := app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", nil); err != nil {
-		t.Fatalf("deliverBeforeAttach: %v, want the attach to carry on", err)
+// A second attach to a discobox this process is already delivering waits for
+// that delivery and takes its answer, rather than pushing the same refs beside
+// it and asking the server anything.
+func TestDeliverBeforeAttachJoinsADeliveryInFlight(t *testing.T) {
+	dir, commit := pushRepo(t)
+	app, client, paths := parkedSourceServer(t, dir, thisHost, commit, 100)
+	running := &delivery{done: make(chan struct{})}
+	app.deliveries = map[string]*delivery{"sbx_1": running}
+
+	answer := make(chan error, 1)
+	go func() { answer <- app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", nil) }()
+	running.err = errors.New("the first delivery failed")
+	close(running.done)
+
+	if err := <-answer; err == nil || err.Error() != "the first delivery failed" {
+		t.Fatalf("deliverBeforeAttach = %v, want the first delivery's own answer", err)
+	}
+	if got := paths.all(); len(got) != 0 {
+		t.Fatalf("requests = %v, want none from an attach that joined", got)
 	}
 }

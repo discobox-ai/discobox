@@ -18969,6 +18969,10 @@ type SandboxRuntime struct {
 	State SandboxRuntimeState `json:"state"`
 	// When state last changed to its current value.
 	StateChangedAt OptDateTime `json:"stateChangedAt"`
+	// When a client reported the sandbox's push-delivered sources complete. Absent while
+	// nothing has reported them, which for a sandbox in awaiting_source means its delivery
+	// is still owed; state stays awaiting_source until the reconciler acts on the report.
+	SourceDeliveredAt OptDateTime `json:"sourceDeliveredAt"`
 	// When the hosting pool agent last reported this sandbox's runtime state. A runtime
 	// state whose report is old is one nobody has confirmed recently.
 	StateReportedAt OptDateTime       `json:"stateReportedAt"`
@@ -19063,6 +19067,11 @@ func (s *SandboxRuntime) GetState() SandboxRuntimeState {
 // GetStateChangedAt returns the value of StateChangedAt.
 func (s *SandboxRuntime) GetStateChangedAt() OptDateTime {
 	return s.StateChangedAt
+}
+
+// GetSourceDeliveredAt returns the value of SourceDeliveredAt.
+func (s *SandboxRuntime) GetSourceDeliveredAt() OptDateTime {
+	return s.SourceDeliveredAt
 }
 
 // GetStateReportedAt returns the value of StateReportedAt.
@@ -19163,6 +19172,11 @@ func (s *SandboxRuntime) SetState(val SandboxRuntimeState) {
 // SetStateChangedAt sets the value of StateChangedAt.
 func (s *SandboxRuntime) SetStateChangedAt(val OptDateTime) {
 	s.StateChangedAt = val
+}
+
+// SetSourceDeliveredAt sets the value of SourceDeliveredAt.
+func (s *SandboxRuntime) SetSourceDeliveredAt(val OptDateTime) {
+	s.SourceDeliveredAt = val
 }
 
 // SetStateReportedAt sets the value of StateReportedAt.

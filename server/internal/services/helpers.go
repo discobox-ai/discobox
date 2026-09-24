@@ -275,6 +275,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.StateReportedAt != nil {
 		runtime["stateReportedAt"] = *sandbox.StateReportedAt
 	}
+	if sandbox.SourceDeliveredAt != nil {
+		runtime["sourceDeliveredAt"] = *sandbox.SourceDeliveredAt
+	}
 	if len(sandbox.AppliedCommits) > 0 {
 		runtime["appliedCommits"] = sandbox.AppliedCommits
 	}

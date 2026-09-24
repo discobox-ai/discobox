@@ -1189,7 +1189,7 @@ func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string,
 }
 
 // DeliverSource delivers the source a parked discobox is waiting for before
-// the workspace attaches to it (ADR 0150); see deliverBeforeAttach.
+// the workspace attaches to it (ADR 26-09-24-005); see deliverBeforeAttach.
 func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string)) error {
 	d = d.at(sandboxID)
 	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report)

@@ -68,7 +68,7 @@ func pushableSource(sb apimodel.Sandbox, hostID string) bool {
 //
 // Awaiting its source is refused rather than merely unsupported. A push to a
 // parked discobox is its create's delivery, which starts it, and that is the
-// attach's to make before it dials (deliverBeforeAttach, ADR 0150), not a
+// attach's to make before it dials (deliverBeforeAttach, ADR 26-09-24-005), not a
 // beat's.
 func pushableNow(sb apimodel.Sandbox) bool {
 	if sandboxAwaitingSource(sb) {

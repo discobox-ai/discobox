@@ -32744,6 +32744,12 @@ func (s *SandboxRuntime) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SourceDeliveredAt.Set {
+			e.FieldStart("sourceDeliveredAt")
+			s.SourceDeliveredAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
 		if s.StateReportedAt.Set {
 			e.FieldStart("stateReportedAt")
 			s.StateReportedAt.Encode(e, json.EncodeDateTime)
@@ -32757,7 +32763,7 @@ func (s *SandboxRuntime) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxRuntime = [20]string{
+var jsonFieldsNameOfSandboxRuntime = [21]string{
 	0:  "agentStatus",
 	1:  "agentStatusObservedAt",
 	2:  "resources",
@@ -32776,8 +32782,9 @@ var jsonFieldsNameOfSandboxRuntime = [20]string{
 	15: "runtimeStateChangedAt",
 	16: "state",
 	17: "stateChangedAt",
-	18: "stateReportedAt",
-	19: "upgrade",
+	18: "sourceDeliveredAt",
+	19: "stateReportedAt",
+	20: "upgrade",
 }
 
 // Decode decodes SandboxRuntime from json.
@@ -32972,6 +32979,16 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"stateChangedAt\"")
+			}
+		case "sourceDeliveredAt":
+			if err := func() error {
+				s.SourceDeliveredAt.Reset()
+				if err := s.SourceDeliveredAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sourceDeliveredAt\"")
 			}
 		case "stateReportedAt":
 			if err := func() error {
