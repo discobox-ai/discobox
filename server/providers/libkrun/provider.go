@@ -78,7 +78,7 @@ var runtimeArtifacts = []string{kernelArtifact, libraryArtifact, passtArtifact}
 // three. `task vm:publish-krun` reports the digest to pin here, and a digest
 // is what belongs here: a tag would let whoever runs the server decide which
 // kernel and which libkrun they boot.
-const DefaultImage = "ghcr.io/discobox-ai/discobox-vm-krun:v1"
+const DefaultImage = "ghcr.io/discobox-ai/discobox-vm-krun@sha256:6c6895e58cbee261505406a0f84eeb4dc0d64f2762dc3e5a9a159358a0a5e229"
 
 // guestImageDockerfile is the Dockerfile in a discobox checkout that produces
 // the guest artifact set, in the path form BuildKit's frontend wants. Its
