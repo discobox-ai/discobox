@@ -234,8 +234,9 @@ Key properties:
   request to a trusted host is authorized against the uses the pin was granted
   for, whether or not it carries a credential, and those come from the pin
   rather than from anything the request said. The pool agent asks the project's
-  judge about a request spending an approved use and allows one that spends
-  none; the destination host is held at resolve time either way.
+  judge about every use a request spends — the ones bound from its sentinels
+  and the ones its destination was pinned for — and allows a request that
+  spends none; the destination host is held at resolve time either way.
 - **The gate host never reaches the internet** (`Secrets.GateHost`,
   `Resolver.Gate`; [ADR 0140](../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) §2).
   A CONNECT to it is intercepted whatever the allowlist says, and a request for

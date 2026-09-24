@@ -820,29 +820,16 @@ func TestApprovedUseNamesAHostTrustsUse(t *testing.T) {
 	svc, st := newAgentCredentialService(t)
 	// Through the path a person's approval takes, so the row is the one the
 	// real flow writes.
-	req := &model.HostTrustRequest{
-		ProjectID: "project-1", SandboxID: testSandboxID, RequestedBy: "agent:" + testSandboxID,
-		Host: "kube.internal:6443", Status: model.HostTrustRequestStatusPending,
-		Uses: []model.SecretUse{{Description: "read the pods in the prod namespace"}},
-	}
-	if err := st.CreateHostTrustRequest(ctx, req); err != nil {
-		t.Fatalf("create trust request: %v", err)
-	}
-	trust := &model.HostTrust{
-		ProjectID: "project-1",
-		SandboxID: testSandboxID,
-		Host:      "kube.internal:6443",
-		Pin:       model.TrustPin{Kind: "leaf-spki", SHA256: strings.Repeat("ab", 32)},
-		Uses:      []model.SecretUse{{UseID: "use_kube", Description: "read the pods in the prod namespace"}},
-		ExpiresAt: time.Now().Add(time.Hour),
-		GrantedBy: "user-1",
-		RequestID: req.ID,
-	}
-	if err := st.ApproveHostTrustRequest(ctx, req, trust); err != nil {
-		t.Fatalf("approve trust request: %v", err)
+	// Approved the way a person approves one, so the use ID the judge is asked
+	// about is the one approval minted rather than one this test chose.
+	trust := approveHostTrust(ctx, t, svc, st, testSandboxID, "kube.internal:6443",
+		"read the pods in the prod namespace", time.Hour)
+	useID := trust.Uses[0].UseID
+	if useID == "" {
+		t.Fatal("approval minted no use ID")
 	}
 
-	use, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, "use_kube", "kube.internal")
+	use, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, useID, "kube.internal")
 	if err != nil {
 		t.Fatalf("ApprovedUse() error = %v", err)
 	}
@@ -854,7 +841,68 @@ func TestApprovedUseNamesAHostTrustsUse(t *testing.T) {
 	}
 	// A pin is for one endpoint, so it does not reach beneath it the way a
 	// credential's grant does.
-	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, "use_kube", "api.kube.internal"); err == nil {
+	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, useID, "api.kube.internal"); err == nil {
 		t.Fatal("ApprovedUse() named a trust's use for a host it is not pinned to")
+	}
+}
+
+// approveHostTrust puts a trust ask and approves it the way a person does, so
+// the uses carry the IDs approval mints.
+func approveHostTrust(ctx context.Context, t *testing.T, svc *resourcesecrets.Service, st *store.Store,
+	sandboxID, host, use string, ttl time.Duration,
+) *model.HostTrust {
+	t.Helper()
+	req := &model.HostTrustRequest{
+		ProjectID: "project-1", SandboxID: sandboxID, RequestedBy: "agent:" + sandboxID,
+		Host: host, Status: model.HostTrustRequestStatusPending,
+		Uses:          []model.SecretUse{{Description: use}},
+		ObservedChain: []model.ObservedCertificate{{SHA256: strings.Repeat("cd", 32), SPKISHA256: strings.Repeat("ef", 32)}},
+	}
+	if err := st.CreateHostTrustRequest(ctx, req); err != nil {
+		t.Fatalf("create trust request: %v", err)
+	}
+	if _, err := svc.ApproveTrustRequest(ctx, "project-1", req.ID, services.ApproveTrustRequestBody{
+		GrantTTLSeconds: serverapi.NewOptInt64(int64(ttl.Seconds())),
+	}); err != nil {
+		t.Fatalf("approve trust request: %v", err)
+	}
+	trusts, err := st.ListLiveSandboxHostTrusts(ctx, "project-1", sandboxID, time.Now().UTC())
+	if err != nil || len(trusts) == 0 {
+		t.Fatalf("list host trusts: %v (%d)", err, len(trusts))
+	}
+	return &trusts[len(trusts)-1]
+}
+
+// A trust names a use only while it is this discobox's, and only while it is
+// live. Neither had a test, which is the kind of guarantee that stays quietly
+// true until it is not.
+func TestATrustNamesNoUseOfAnotherDiscoboxOrOnceItLapses(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+
+	// A second discobox on the same pool, with its own trust for the same
+	// host. Neither may name the other's use.
+	other := &model.Sandbox{ID: "sbx_other", ProjectID: "project-1", Name: "other", PoolID: testPoolID}
+	if err := st.CreateSandbox(ctx, other); err != nil {
+		t.Fatalf("create the other discobox: %v", err)
+	}
+	theirs := approveHostTrust(ctx, t, svc, st, other.ID, "kube.internal:6443", "read their pods", time.Hour)
+	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, theirs.Uses[0].UseID, "kube.internal"); err == nil {
+		t.Fatal("ApprovedUse() named another discobox's trust use")
+	}
+	// And it names it for the discobox it belongs to, so the refusal above is
+	// about whose it is rather than about the trust being unusable.
+	if _, err := svc.ApprovedUse(ctx, testPoolID, other.ID, theirs.Uses[0].UseID, "kube.internal"); err != nil {
+		t.Fatalf("ApprovedUse() for the discobox that holds the trust: %v", err)
+	}
+
+	// Lapsing is the store's to enforce, and ApprovedUse reads it with the
+	// clock rather than a time it chooses, so this is where it can be shown.
+	live, err := st.ListLiveSandboxHostTrusts(ctx, "project-1", other.ID, theirs.ExpiresAt.Add(time.Second))
+	if err != nil {
+		t.Fatalf("list host trusts: %v", err)
+	}
+	if len(live) != 0 {
+		t.Fatalf("a trust past its expiry is still listed live: %+v", live)
 	}
 }

@@ -543,3 +543,53 @@ func TestACredentialToATrustedHostIsJudgedAgainstBoth(t *testing.T) {
 		t.Fatalf("asked about %v, want both the trust's use and the credential's", seen)
 	}
 }
+
+// One use saying no is the answer, whichever it is. A request that spends a
+// credential and goes to a pinned host asks about both, and the request goes
+// nowhere if either refuses — which is the property "every applicable use must
+// pass" actually means.
+func TestEitherUseRefusingRefusesTheRequest(t *testing.T) {
+	for _, tc := range []struct{ name, deny string }{
+		{"the trust's use refuses", "use_kube"},
+		{"the credential's use refuses", "use_abc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver, _ := judgingPoolFunc(t, func() response { return response{status: http.StatusOK, body: nil} })
+			// Answer per use: the named one refuses, the other allows.
+			resolver.judge.plane.client = denyingClient(t, resolver, tc.deny)
+
+			req := authorizeRequest()
+			req.TrustUseIDs = []string{"use_kube"}
+			verdict, err := resolver.Authorize(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Authorize() error = %v", err)
+			}
+			if verdict.Allow {
+				t.Fatalf("verdict = %+v, want %s to have refused the request", verdict, tc.deny)
+			}
+		})
+	}
+}
+
+// denyingClient answers a judging ask by refusing exactly one use and allowing
+// every other.
+func denyingClient(t *testing.T, resolver *secretResolver, deny string) *http.Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ask judgeAsk
+		_ = json.NewDecoder(r.Body).Decode(&ask)
+		w.Header().Set("Content-Type", "application/json")
+		if ask.UseID == deny {
+			_, _ = w.Write([]byte(`{"allow":false,"reason":"that is not what ` + deny + ` is for"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"allow":true,"reason":"fine"}`))
+	}))
+	t.Cleanup(server.Close)
+	if err := writeJSONAtomic(resolver.contextPath, resolveContext{
+		ControlPlaneURL: server.URL, PoolID: "pool-1", Token: "token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return server.Client()
+}
