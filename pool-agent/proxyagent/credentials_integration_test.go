@@ -52,6 +52,11 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 	// through.
 	var sawSentinel string
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The request spends an approved use, so it is judged before anything
+		// is resolved. What the judge decides is its own test; here it allows.
+		if allowJudgingAsk(w, r) {
+			return
+		}
 		var body resolveRequestBody
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		sawSentinel = body.Sentinel

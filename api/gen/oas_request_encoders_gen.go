@@ -273,7 +273,7 @@ func encodeCreateSecretRequestRequest(
 }
 
 func encodeJudgeForPoolRequest(
-	req *JudgeJob,
+	req *PoolJudgeAsk,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

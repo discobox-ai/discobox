@@ -85,6 +85,7 @@ type Peer = apigen.Peer
 type Pool = apigen.Pool
 type PoolCPUUsage = apigen.PoolCPUUsage
 type PoolFilesystemUsage = apigen.PoolFilesystemUsage
+type PoolJudgeAsk = apigen.PoolJudgeAsk
 type PoolMemoryUsage = apigen.PoolMemoryUsage
 type PoolProvisionPhase = apigen.PoolProvisionPhase
 type PoolProvisionProgress = apigen.PoolProvisionProgress

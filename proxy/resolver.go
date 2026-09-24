@@ -55,3 +55,11 @@ const (
 	// SecretAccepted clears a rejection this proxy reported earlier.
 	SecretAccepted = secrets.OutcomeAccepted
 )
+
+// RedactSentinels replaces every sentinel in value with marker, including one
+// hidden inside a base64 token. It is what a resolver uses to show a request
+// to something outside the proxy without showing what stands for a credential
+// in it.
+func RedactSentinels(value string, sentinels []string, marker string) string {
+	return secrets.Redact(value, sentinels, marker)
+}

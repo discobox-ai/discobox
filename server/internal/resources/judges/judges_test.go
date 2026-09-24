@@ -2,16 +2,23 @@ package judges
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 // fakeSandboxes stands in for the sandbox service: it records what the judge's
@@ -97,7 +104,9 @@ func newJudgeTest(t *testing.T) (*Service, *store.Store, *fakeSandboxes) {
 		t.Fatalf("create pool: %v", err)
 	}
 	sandboxes := &fakeSandboxes{store: appStore}
-	return New(appStore, sandboxes, nil), appStore, sandboxes
+	// Enabled: every test below is about what a server that judges does. The
+	// server that has not opted in is its own test.
+	return New(appStore, sandboxes, nil, true), appStore, sandboxes
 }
 
 // harness records a configured harness and makes it the project's default.
@@ -504,13 +513,9 @@ func TestAFailedJudgeRefusesWithoutQuotingItsOwnError(t *testing.T) {
 		t.Fatalf("mark the judge failed: %v", err)
 	}
 	service.SetLeases(refusingLeases{})
+	service.SetUses(approvedUses{})
 
-	job := judge.Job{
-		Kind: judge.KindRequest, Purpose: "open a pull request in org/repo",
-		Host: "api.github.com", Round: 1,
-		Request: &judge.Request{Method: "POST", URL: "https://api.github.com/repos/org/repo/pulls"},
-	}
-	_, err := service.Judge(ctx, "pool-1", job)
+	_, err := service.Judge(ctx, "pool-1", requestAsk())
 	if err == nil {
 		t.Fatal("a failed judge answered")
 	}
@@ -528,4 +533,266 @@ type refusingLeases struct{}
 
 func (refusingLeases) AcquireSandboxHTTPClientForServer(context.Context, string, string, []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	return nil, nil, errors.New("the judge should not have been reached")
+}
+
+// approvedUses stands in for the credential broker: what a use approves is its
+// answer, and the tests that care about the answer say what it is.
+type approvedUses struct {
+	use services.ApprovedUse
+	err error
+	// asked counts the calls, because the use is resolved once to build the
+	// question and once after the verdict.
+	asked *int
+}
+
+func (a approvedUses) ApprovedUse(context.Context, string, string, string, string) (services.ApprovedUse, error) {
+	if a.asked != nil {
+		*a.asked++
+	}
+	if a.err != nil {
+		return services.ApprovedUse{}, a.err
+	}
+	if a.use.Purpose == "" {
+		return services.ApprovedUse{Purpose: "open a pull request in org/repo", Host: "api.github.com", Credential: "GitHub token"}, nil
+	}
+	return a.use, nil
+}
+
+// requestAsk is a pool asking about an ordinary observed request.
+func requestAsk() services.JudgeAsk {
+	return services.JudgeAsk{
+		SandboxID: "sandbox-1", UseID: "use_abc", Round: 1,
+		Request: &judge.Request{Method: http.MethodPost, URL: "https://api.github.com/repos/org/repo/pulls"},
+	}
+}
+
+// Judging is a server's decision and it is off until one is made. A server
+// that has not opted in makes no judge for a project that could have one,
+// which is the whole of what it costs such a server: nothing.
+func TestAServerThatDoesNotJudgeMakesNoJudge(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	service.enabled = false
+	defaultHarness(t, appStore, "codex", "sha256:one")
+
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if len(sandboxes.created) != 0 {
+		t.Fatalf("created %d discoboxes, want none on a server that does not judge", len(sandboxes.created))
+	}
+	project, err := appStore.GetProject(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.JudgeSandboxID != "" {
+		t.Fatalf("the project points at %s as its judge", project.JudgeSandboxID)
+	}
+}
+
+// Turning it off takes the judge away, through the same convergence that takes
+// one away when the project's default harness goes. A judge nobody asks is a
+// discobox holding a pool open for nothing.
+func TestTurningJudgingOffTakesTheJudgeAway(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	defaultHarness(t, appStore, "codex", "sha256:one")
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if len(sandboxes.created) != 1 {
+		t.Fatalf("created %d discoboxes, want the judge", len(sandboxes.created))
+	}
+	judge := sandboxes.created[0].ID
+
+	service.enabled = false
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if len(sandboxes.deleted) != 1 || sandboxes.deleted[0] != judge {
+		t.Fatalf("deleted = %v, want the judge taken away", sandboxes.deleted)
+	}
+	project, err := appStore.GetProject(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.JudgeSandboxID != "" {
+		t.Fatalf("the project still points at %s as its judge", project.JudgeSandboxID)
+	}
+}
+
+// And a pool that asks anyway is answered without a judge being looked for. It
+// is no verdict, which is a refusal — the pool is told not to ask, so one that
+// does is asking a question this server does not answer.
+func TestAServerThatDoesNotJudgeRefusesToBeAsked(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, _ := newJudgeTest(t)
+	service.enabled = false
+	defaultHarness(t, appStore, "codex", "sha256:one")
+
+	_, err := service.Judge(ctx, "pool-1", requestAsk())
+	if err == nil {
+		t.Fatal("Judge() allowed a request on a server that does not judge")
+	}
+	if !strings.Contains(err.Error(), "does not judge") {
+		t.Fatalf("Judge() error = %v, want it to say this server does not judge", err)
+	}
+}
+
+// answeringJudge stands in for the judge's own agent, recording the job it was
+// given and answering with what the test set.
+type answeringJudge struct {
+	server *httptest.Server
+	mu     sync.Mutex
+	jobs   []sandboxapi.JudgeJob
+	answer sandboxapi.JudgeAnswer
+}
+
+func newAnsweringJudge(t *testing.T, answer sandboxapi.JudgeAnswer) *answeringJudge {
+	t.Helper()
+	fake := &answeringJudge{answer: answer}
+	fake.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var job sandboxapi.JudgeJob
+		if err := json.NewDecoder(r.Body).Decode(&job); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		fake.mu.Lock()
+		fake.jobs = append(fake.jobs, job)
+		fake.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		// Through the pointer: by value, an unset optional field marshals to
+		// nothing and takes the whole encode with it.
+		answer := fake.answer
+		_ = json.NewEncoder(w).Encode(&answer)
+	}))
+	t.Cleanup(fake.server.Close)
+	return fake
+}
+
+func (f *answeringJudge) asked() []sandboxapi.JudgeJob {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]sandboxapi.JudgeJob(nil), f.jobs...)
+}
+
+// AcquireSandboxHTTPClientForServer hands out a lease pointed at the fake.
+func (f *answeringJudge) AcquireSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	lease := transport.NewHTTPClientLeaseWithBaseURL(f.server.Client(), f.server.URL, func() {})
+	return lease, &model.Sandbox{ID: sandboxID, ProjectID: projectID, PoolID: "pool-1"}, nil
+}
+
+// The question a judge is put is the control plane's, not the asking pool's.
+// The pool says which discobox is spending which use; the sentence that use
+// approves, the credential behind it and the host it is approved for are read
+// from the live grant, so nothing a pool sends can widen its own question.
+func TestTheQuestionIsReadFromTheGrantAndNotFromTheAsk(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	defaultHarness(t, appStore, "codex", "sha256:one")
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	ready(t, appStore, sandboxes.created[0])
+
+	fake := newAnsweringJudge(t, sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "that is the approved use"})
+	service.SetLeases(fake)
+	asked := 0
+	service.SetUses(approvedUses{asked: &asked, use: services.ApprovedUse{
+		Purpose: "open a pull request in org/repo", Host: "github.com", Credential: "GitHub token",
+	}})
+
+	answer, err := service.Judge(ctx, "pool-1", requestAsk())
+	if err != nil {
+		t.Fatalf("Judge() error = %v", err)
+	}
+	if !answer.Allow {
+		t.Fatalf("answer = %+v, want the judge's allow", answer)
+	}
+	jobs := fake.asked()
+	if len(jobs) != 1 {
+		t.Fatalf("the judge was asked %d times, want once", len(jobs))
+	}
+	if jobs[0].Purpose != "open a pull request in org/repo" || jobs[0].Host != "github.com" {
+		t.Fatalf("job = %+v, want the sentence and host from the grant", jobs[0])
+	}
+	if jobs[0].Credential.Or("") != "GitHub token" {
+		t.Fatalf("job named the credential %q, want the words a person reads", jobs[0].Credential.Or(""))
+	}
+	// Once to build the question, once after the verdict.
+	if asked != 2 {
+		t.Fatalf("the use was resolved %d times, want it asked again after the verdict", asked)
+	}
+}
+
+// A grant revoked while the judge was thinking is a request that is not
+// allowed, whatever the judge said. The verdict was about a use that no longer
+// exists (ADR 0141 §4).
+func TestAUseRevokedWhileTheJudgeThoughtIsNotAllowed(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	defaultHarness(t, appStore, "codex", "sha256:one")
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	ready(t, appStore, sandboxes.created[0])
+
+	fake := newAnsweringJudge(t, sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "that is the approved use"})
+	service.SetLeases(fake)
+	service.SetUses(&revokedAfterFirst{})
+
+	_, err := service.Judge(ctx, "pool-1", requestAsk())
+	if err == nil {
+		t.Fatal("Judge() allowed a request whose use was revoked while it was being judged")
+	}
+	if !strings.Contains(err.Error(), "no live approved use") {
+		t.Fatalf("Judge() error = %v, want it to say the use is gone", err)
+	}
+}
+
+// revokedAfterFirst answers once and is gone by the time it is asked again.
+type revokedAfterFirst struct{ asked int }
+
+func (r *revokedAfterFirst) ApprovedUse(context.Context, string, string, string, string) (services.ApprovedUse, error) {
+	r.asked++
+	if r.asked > 1 {
+		return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden, "no live approved use by that ID")
+	}
+	return services.ApprovedUse{Purpose: "open a pull request in org/repo", Host: "github.com", Credential: "GitHub token"}, nil
+}
+
+// ready marks the judge as up, since a judge that could not be brought up is
+// refused before anything is asked of it.
+func ready(t *testing.T, appStore *store.Store, judge *model.Sandbox) {
+	t.Helper()
+	judge.State = model.SandboxStateReady
+	if err := appStore.UpdateSandbox(context.Background(), judge); err != nil {
+		t.Fatalf("mark the judge running: %v", err)
+	}
+}
+
+// The rules about the evidence are the trusted side's, and they are checked
+// once the question is composed. A first ask that carries the body has skipped
+// the step the rounds exist for: the judge asks to be shown it.
+func TestAFirstAskCarryingTheBodyIsRefused(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	defaultHarness(t, appStore, "codex", "sha256:one")
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	ready(t, appStore, sandboxes.created[0])
+	fake := newAnsweringJudge(t, sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true)})
+	service.SetLeases(fake)
+	service.SetUses(approvedUses{})
+
+	ask := requestAsk()
+	ask.Request.Body = &judge.Body{MediaType: "application/json", Length: 2, Form: judge.FormJSON, Content: "{}"}
+	_, err := service.Judge(ctx, "pool-1", ask)
+	if err == nil {
+		t.Fatal("a first ask carrying the body was judged")
+	}
+	if len(fake.asked()) != 0 {
+		t.Fatalf("the judge was asked %d times, want a malformed ask refused before it", len(fake.asked()))
+	}
 }

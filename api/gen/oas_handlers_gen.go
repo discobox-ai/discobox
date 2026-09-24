@@ -9054,7 +9054,7 @@ func (s *Server) handleJudgeForPoolRequest(args [1]string, argsEscaped bool, w h
 		}
 
 		type (
-			Request  = *JudgeJob
+			Request  = *PoolJudgeAsk
 			Params   = JudgeForPoolParams
 			Response = JudgeForPoolRes
 		)

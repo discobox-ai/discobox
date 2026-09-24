@@ -626,3 +626,17 @@ func (r *hostRecordingResolver) Authorize(_ context.Context, req AuthorizeReques
 	r.host = req.Host
 	return Verdict{Allow: true}, nil
 }
+
+// An empty sentinel is not a sentinel. The resolving scan never substitutes
+// for one because it never resolves; the redacting scan cannot decline, so it
+// has to refuse the empty string itself or it would rewrite every value into
+// markers.
+func TestRedactIgnoresAnEmptySentinel(t *testing.T) {
+	const value = "Bearer sk-ant-oat01-SENTINEL"
+	if got := Redact(value, []string{""}, "<redacted>"); got != value {
+		t.Fatalf("Redact() = %q, want the value untouched", got)
+	}
+	if got := Redact(value, []string{"", "sk-ant-oat01-SENTINEL"}, "<redacted>"); got != "Bearer <redacted>" {
+		t.Fatalf("Redact() = %q, want the real sentinel still redacted", got)
+	}
+}

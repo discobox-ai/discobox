@@ -120,6 +120,14 @@
 # Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST
 #defaultSandboxImageDigest:
 
+# Run a judge for each project: a discobox that decides whether a
+# credential-bearing request is part of what the credential's approved
+# use allows. Off by default. While it is off no judge is created, and
+# credentials are resolved for whatever asks for them, held only to the
+# host and grant they were approved for.
+# Environment: DISCOBOX_JUDGE_CREDENTIALS
+#judgeCredentials: false
+
 # How long an archived sandbox is kept before purging, for projects with
 # no retention of their own, as a Go duration. Defaults to 24h.
 # Example: archiveRetention: 168h

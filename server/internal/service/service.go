@@ -87,6 +87,9 @@ type Options struct {
 	// a sandbox is started with. Empty when the server does not listen on iroh,
 	// where that address would reach nothing; sandboxes then get none.
 	ServerPeerID string
+	// JudgeCredentials turns the judge on. It is off unless a server opted in,
+	// and while it is off no project has a judge and nothing is asked one.
+	JudgeCredentials bool
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options) *Service {
@@ -121,10 +124,15 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// The project's judge is converged like any other resource (ADR 0141 §1):
 	// it exists when the project has a pool for it and a configured default
 	// harness, and is replaced when that harness is.
-	judgeService := judges.New(store, sandboxService, nil)
+	judgeService := judges.New(store, sandboxService, nil, options.JudgeCredentials)
 	// Reaching the judge's own agent is the sandbox service's to do; which
 	// discobox is the judge is this one's (ADR 0141 §2).
 	judgeService.SetLeases(sandboxService)
+	// What an approved use allows is the credential broker's to say, so the
+	// question a judge is put is composed from the live grant rather than from
+	// what the asking pool sent (ADR 0141 §4).
+	secretService := secrets.NewService(store)
+	judgeService.SetUses(secretService)
 	return &Service{
 		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService),
 		HarnessConfigService:           harnessConfigService,

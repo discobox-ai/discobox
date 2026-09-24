@@ -134,6 +134,17 @@ type Config struct {
 	// simply means those sandboxes report no upgrade.
 	DefaultSandboxImageDigest string `yaml:"defaultSandboxImageDigest" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST" doc:"Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown." example:"sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"`
 
+	// JudgeCredentials turns on the judge: the discobox a project runs to
+	// decide whether a credential-bearing request is part of what its use was
+	// approved for (ADR 0141).
+	//
+	// It is off by default and opted into, because it is being built out: a
+	// server that has not opted in behaves exactly as it did before it existed.
+	// No judge is created — and one already created is taken away, the same way
+	// removing the project's default harness takes it away — and nothing asks
+	// one anything, so no request waits on a model to be allowed through.
+	JudgeCredentials bool `yaml:"judgeCredentials" env:"DISCOBOX_JUDGE_CREDENTIALS" doc:"Run a judge for each project: a discobox that decides whether a credential-bearing request is part of what the credential's approved use allows. Off by default. While it is off no judge is created, and credentials are resolved for whatever asks for them, held only to the host and grant they were approved for."`
+
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own retention. Zero means
 	// nothing configured it and sandboxes.DefaultArchiveRetention applies; a

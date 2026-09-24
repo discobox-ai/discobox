@@ -543,7 +543,35 @@ type Services struct {
 	Judges JudgeService
 }
 
-// JudgeService puts a job to the judge of the project that owns a pool.
+// JudgeService puts a pool's ask to the judge of the project that owns it.
 type JudgeService interface {
-	Judge(ctx context.Context, poolID string, job judge.Job) (judge.Answer, error)
+	Judge(ctx context.Context, poolID string, ask JudgeAsk) (judge.Answer, error)
+}
+
+// JudgeAsk is a pool asking about one of its discoboxes' requests: which
+// discobox, which approved use it is spending, and what the proxy observed.
+//
+// What that use authorizes is deliberately not in here. The sentence, the
+// credential's name and the host are read from the live grant the use belongs
+// to, so that nothing a pool or a sandbox sends can widen the question its own
+// request is judged against (ADR 0141 §4).
+type JudgeAsk struct {
+	SandboxID string
+	UseID     string
+	// Round is which ask this is, from 1. A later round exists because the
+	// judge asked to be shown the body.
+	Round int
+	// Command is what the discobox declared it was running, which is context
+	// and not authority.
+	Command []string
+	Request *judge.Request
+}
+
+// ApprovedUse is what a request is judged against: the sentence a person
+// approved, the credential in the words they read it as, and the host the
+// grant is limited to.
+type ApprovedUse struct {
+	Purpose    string
+	Credential string
+	Host       string
 }

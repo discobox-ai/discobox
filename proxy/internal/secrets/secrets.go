@@ -342,6 +342,34 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 	return res
 }
 
+// Redact replaces every sentinel in value with marker, wherever the scan finds
+// one — literally, and inside a base64 token, where it is re-encoded so the
+// token stays a token.
+//
+// It exists because the values a sentinel hides in are the same ones a swap
+// would substitute, and something that shows a request to somebody else has to
+// cover exactly that set. Going through the same scan is what keeps the two
+// from drifting (proxy/REVIEW.md).
+func Redact(value string, sentinels []string, marker string) string {
+	// An empty sentinel matches between every byte, and this lookup — unlike
+	// the resolving one — can never decline, so it would rewrite the value
+	// into nothing but markers. Apply is safe from that only because an empty
+	// sentinel never resolves.
+	usable := make([]string, 0, len(sentinels))
+	for _, sentinel := range sentinels {
+		if sentinel != "" {
+			usable = append(usable, sentinel)
+		}
+	}
+	if len(usable) == 0 {
+		return value
+	}
+	out := swapSentinels(value, usable, func(string) (string, bool) {
+		return marker, true
+	})
+	return out.value
+}
+
 // Match reports which of clientID's sentinels req carries, literally or inside
 // a base64 token, and resolves none of them.
 //

@@ -588,7 +588,7 @@ func (UnimplementedHandler) GetTrustRequest(ctx context.Context, params GetTrust
 // that will not come up, a pool that cannot be reached.
 //
 // POST /api/pools/{poolId}/judge
-func (UnimplementedHandler) JudgeForPool(ctx context.Context, req *JudgeJob, params JudgeForPoolParams) (r JudgeForPoolRes, _ error) {
+func (UnimplementedHandler) JudgeForPool(ctx context.Context, req *PoolJudgeAsk, params JudgeForPoolParams) (r JudgeForPoolRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

@@ -14,6 +14,7 @@ import (
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/wellknown"
 )
 
 const (
@@ -715,4 +716,95 @@ func createBoundSecret(ctx context.Context, t *testing.T, svc *resourcesecrets.S
 		t.Fatalf("create secret: %v", err)
 	}
 	return secret
+}
+
+// A use is named to the judge only when the use, the credential, the discobox
+// and the destination all still belong to one live grant. What that check
+// reads is the current grant, not what the activation was minted against, so a
+// sentence edited at approval time is the sentence the request is judged by.
+func TestApprovedUseNamesWhatTheGrantSaysNow(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	req := createAgentRequest(ctx, t, svc)
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID),
+	})
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+	if err != nil {
+		t.Fatalf("get grant: %v", err)
+	}
+	if len(grant.Uses) != 1 || grant.Uses[0].UseID == "" {
+		t.Fatalf("grant uses = %+v, want one with an ID", grant.Uses)
+	}
+	useID := grant.Uses[0].UseID
+
+	use, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, useID, "api.github.com")
+	if err != nil {
+		t.Fatalf("ApprovedUse() error = %v", err)
+	}
+	if use.Purpose != "open a pull request" {
+		t.Fatalf("purpose = %q, want the sentence somebody approved", use.Purpose)
+	}
+	if use.Host != "api.github.com" || use.Credential != "github" {
+		t.Fatalf("use = %+v, want the grant's host and the credential's name", use)
+	}
+
+	// A destination the grant does not cover is refused rather than answered
+	// with a use that says nothing about it.
+	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, useID, "evil.example"); err == nil {
+		t.Fatal("ApprovedUse() named a use for a host the grant does not cover")
+	}
+	// And a use nobody granted is refused whatever else is live.
+	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, "use_nobodys", "api.github.com"); err == nil {
+		t.Fatal("ApprovedUse() named a use that does not exist")
+	}
+	// A pool may only ever speak for its own discoboxes.
+	if _, err := svc.ApprovedUse(ctx, "pool-somebody-else", testSandboxID, useID, "api.github.com"); err == nil {
+		t.Fatal("ApprovedUse() answered a pool that does not host the discobox")
+	}
+}
+
+// The gate is the case nothing else covers: a sandbox's calls to the discobox
+// API are judged like any other use-scoped request, and the host they go to is
+// the well-known one. If that did not satisfy the grant's own host check, every
+// gate call would be refused the moment judging is turned on — and the pool
+// side cannot show it, because there the control plane is a stub.
+func TestApprovedUseCoversTheDiscoboxAPIHost(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	known, ok := wellknown.Lookup(wellknown.DiscoboxSandbox)
+	if !ok {
+		t.Fatal("the discobox API credential is not in the registry")
+	}
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId:     testSandboxID,
+		ID:            serverapi.NewOptString(wellknown.DiscoboxSandbox),
+		Justification: serverapi.NewOptString("the task asks me to start a worker"),
+		Uses:          []apimodel.SecretUse{{Description: "create a discobox to run the tests in"}},
+	})
+	if err != nil {
+		t.Fatalf("ask for the discobox API credential: %v", err)
+	}
+	// Approved without naming a secret: this credential is the server's own to
+	// mint, which is the whole point of it being well known.
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{})
+	if err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+	if err != nil {
+		t.Fatalf("get grant: %v", err)
+	}
+
+	use, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, grant.Uses[0].UseID, known.Host())
+	if err != nil {
+		t.Fatalf("ApprovedUse() for %s error = %v", known.Host(), err)
+	}
+	if use.Purpose != "create a discobox to run the tests in" {
+		t.Fatalf("purpose = %q, want the approved sentence", use.Purpose)
+	}
 }

@@ -870,8 +870,50 @@ flowchart LR
   policy it already has: an injected static sentinel is held to its grant and
   host by the control plane at resolve time, while one this process minted
   whose activation has lapsed — or whose host the use does not cover — never
-  reaches the control plane at all, because `Resolve` refuses it here. It
-  allows every request today.
+  reaches the control plane at all, because `Resolve` refuses it here.
+- **A use-scoped request is put to the project's judge** (`judge.go`), one ask
+  per approved use it spends, and every one of them has to allow before
+  anything is substituted. The ask is synchronous on the proxy's request path:
+  the discobox's request waits for a model to answer, which is why only a
+  request spending an approved use is asked about and an ordinary injected
+  sentinel never is. The pool sends which discobox and which use, never what
+  the use allows; the control plane reads that from the live grant. Anything
+  that is not an explicit allow refuses, including the judge asking to be shown
+  the body, which is the round this does not run yet. This also covers a
+  sandbox's own calls to the discobox API, which the gate admits through the
+  same contract.
+- **What the judge is shown is not what was sent.** Every sentinel is taken out
+  through the proxy's own scan (`proxy.RedactSentinels`), so the base64 form
+  goes too. Headers are an allowlist: the ones that say what an operation is
+  keep their values, and every other header is reported by name with its value
+  replaced — a denylist would only ever cover the credential headers somebody
+  thought of. The query string cannot be treated that way, since it is half of
+  what identifies an operation, so its credential-ish parameters are a denylist
+  and the rest is shown. The body is described only when the request declared a
+  length: the contract counts bytes and cannot say "unknown", so a chunked
+  upload is not described at all rather than described as empty.
+- **A server that does not judge is not a refusal.** It says so with a problem
+  type a program can recognize, and the pool remembers that for a few minutes
+  and allows in the meantime, so an opted-out server does not put a
+  control-plane call in front of every credential its discoboxes spend. That
+  one answer is the only thing that claims judging is off; a status on its own
+  claims nothing, because most of the ones a pool sees are written by something
+  between it and the handler.
+- **Only this server's own refusal refuses.** A 4xx carrying a problem document
+  from the control plane is it declining the ask, and the request goes nowhere.
+  A 4xx from an ingress, a gateway's 502, a proxy's plain-text 404: nobody has
+  said whether this server judges, so those fall to the rule below rather than
+  refusing every discobox on a server that never turned judging on.
+- **An ask that gets no answer refuses only once this pool knows the server
+  judges.** The two look identical at the moment of asking — a server that does
+  not judge and one that does and cannot be reached — and they call for
+  opposite behavior. A pool that has never had an answer has no reason to
+  believe judging is on, so it allows and waits a moment before asking again;
+  a server that never turned judging on cannot break its discoboxes through a
+  feature it is not using. The first answer from a server that judges flips
+  that for good, and from then on no answer means no credential. The gap is a
+  pool that restarts while its control plane is unreachable, which allows until
+  its first answered ask.
 
 ## Agent Credentials
 

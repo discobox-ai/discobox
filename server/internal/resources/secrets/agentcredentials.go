@@ -9,6 +9,7 @@ import (
 
 	"github.com/discobox-ai/discobox/agentcreds"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -395,4 +396,53 @@ func AgentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretG
 	default:
 		return model.SecretRequestStatusPending
 	}
+}
+
+// ApprovedUse names what a request carrying this use may be judged against:
+// the sentence a person approved, the credential in the words they read it as,
+// and the host the grant is limited to.
+//
+// It is the control plane's to answer and not the pool's to assert (ADR 0141
+// §4). It refuses unless the use, the credential, the discobox and the
+// destination all still belong to one live grant — the same listing a resolve
+// is matched against, so a use that can be judged is a use that could be
+// spent. Everything it reads is current: a grant edited or revoked since the
+// activation was minted is read as it is now, which is what makes asking again
+// after a verdict worth anything.
+func (s *Service) ApprovedUse(ctx context.Context, poolID, sandboxID, useID, host string) (services.ApprovedUse, error) {
+	useID = strings.TrimSpace(useID)
+	if useID == "" {
+		return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, "use ID is required")
+	}
+	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
+	if err != nil {
+		return services.ApprovedUse{}, err
+	}
+	credentials, err := s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID, agentGrantScopes(sandbox))
+	if err != nil {
+		return services.ApprovedUse{}, err
+	}
+	host = normalizeHost(host)
+	for _, credential := range credentials {
+		use, ok := credential.Grant.FindUse(useID)
+		if !ok {
+			continue
+		}
+		// The use is live. Whether it covers where this request is going is a
+		// separate question, and the answer is no rather than a different use:
+		// an approved use is approved for somewhere.
+		if !hostscope.Covers(credential.Grant.Host, host) {
+			return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden,
+				fmt.Sprintf("that use is not approved for %s", host))
+		}
+		return services.ApprovedUse{
+			Purpose:    use.Description,
+			Credential: credential.Name,
+			Host:       credential.Grant.Host,
+		}, nil
+	}
+	// Revoked, expired, edited away, or never this discobox's. They are one
+	// answer here on purpose: which it was is the approval trail's to say, and
+	// saying it back to a pool would describe grants it is not party to.
+	return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden, "no live approved use by that ID")
 }

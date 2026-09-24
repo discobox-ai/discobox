@@ -46,14 +46,20 @@ type Service struct {
 	store     *store.Store
 	sandboxes Sandboxes
 	leases    Leases
+	uses      Uses
 	logger    *slog.Logger
+	// enabled is whether this server judges at all. It is a server's decision
+	// rather than a project's: judging puts a model in front of every
+	// credential-bearing request, and a server that has not asked for that
+	// keeps resolving credentials the way it always did.
+	enabled bool
 }
 
-func New(appStore *store.Store, sandboxes Sandboxes, logger *slog.Logger) *Service {
+func New(appStore *store.Store, sandboxes Sandboxes, logger *slog.Logger, enabled bool) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{store: appStore, sandboxes: sandboxes, logger: logger}
+	return &Service{store: appStore, sandboxes: sandboxes, logger: logger, enabled: enabled}
 }
 
 // Reconcile brings one project's judge to what the project says it should be.
@@ -185,6 +191,12 @@ type judgeSpec struct {
 // project wants, and treating it as "gone" would take a working judge away on
 // a moment's database trouble.
 func (s *Service) wanted(ctx context.Context, project *model.Project, record bool) (*judgeSpec, string, error) {
+	// Off is off everywhere, and it reads the same as any other reason a
+	// project has no judge: nothing is created, and a judge created while it
+	// was on is taken away by the convergence that finds none wanted.
+	if !s.enabled {
+		return nil, "this server does not judge credential use", nil
+	}
 	poolID, err := s.judgePool(ctx, project, record)
 	if err != nil {
 		return nil, "", err

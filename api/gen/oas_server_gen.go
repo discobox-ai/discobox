@@ -406,7 +406,7 @@ type Handler interface {
 	// that will not come up, a pool that cannot be reached.
 	//
 	// POST /api/pools/{poolId}/judge
-	JudgeForPool(ctx context.Context, req *JudgeJob, params JudgeForPoolParams) (JudgeForPoolRes, error)
+	JudgeForPool(ctx context.Context, req *PoolJudgeAsk, params JudgeForPoolParams) (JudgeForPoolRes, error)
 	// JudgeSandbox implements judge-sandbox operation.
 	//
 	// Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in

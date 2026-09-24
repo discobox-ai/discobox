@@ -13007,6 +13007,75 @@ func (s *PoolHealth) UnmarshalText(data []byte) error {
 	}
 }
 
+// One ask from a pool: which discobox is spending which approved use, and the request its proxy
+// observed. A pool does not say what the use authorizes. The control plane reads the sentence, the
+// credential's name and the host from the live grant the use belongs to, so nothing a pool or a
+// sandbox sends can widen what its own request is judged against.
+// Ref: #/components/schemas/PoolJudgeAsk
+type PoolJudgeAsk struct {
+	// What the discobox declared it was running. It is context and not authority: a declaration cannot
+	// override the request observed.
+	Command []string             `json:"command"`
+	Request JudgeRequestEvidence `json:"request"`
+	// Which ask this is, from 1. A round after the first exists because the judge asked to be shown the
+	// body.
+	Round int64 `json:"round"`
+	// The discobox whose request this is. It must belong to the asking pool.
+	SandboxId string `json:"sandboxId"`
+	// The approved use the credential is being spent under.
+	UseId string `json:"useId"`
+}
+
+// GetCommand returns the value of Command.
+func (s *PoolJudgeAsk) GetCommand() []string {
+	return s.Command
+}
+
+// GetRequest returns the value of Request.
+func (s *PoolJudgeAsk) GetRequest() JudgeRequestEvidence {
+	return s.Request
+}
+
+// GetRound returns the value of Round.
+func (s *PoolJudgeAsk) GetRound() int64 {
+	return s.Round
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolJudgeAsk) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetUseId returns the value of UseId.
+func (s *PoolJudgeAsk) GetUseId() string {
+	return s.UseId
+}
+
+// SetCommand sets the value of Command.
+func (s *PoolJudgeAsk) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetRequest sets the value of Request.
+func (s *PoolJudgeAsk) SetRequest(val JudgeRequestEvidence) {
+	s.Request = val
+}
+
+// SetRound sets the value of Round.
+func (s *PoolJudgeAsk) SetRound(val int64) {
+	s.Round = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolJudgeAsk) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *PoolJudgeAsk) SetUseId(val string) {
+	s.UseId = val
+}
+
 // What the pool's own services hold, from the pool container's own cgroup. Excludes the sandboxes,
 // which are charged to their own cgroups outside this subtree.
 // Ref: #/components/schemas/PoolMemoryUsage

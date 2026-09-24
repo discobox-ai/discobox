@@ -192,6 +192,7 @@ func Run(ctx context.Context) error {
 		HarnessImages:                  cfg.HarnessImages,
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,
+		JudgeCredentials:               cfg.JudgeCredentials,
 		ServerDefaults: dockerworker.ServerDefaults{
 			PoolImage:      cfg.DockerPoolImage,
 			Release:        cfg.Release,

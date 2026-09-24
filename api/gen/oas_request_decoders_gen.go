@@ -1451,7 +1451,7 @@ func (s *Server) decodeCreateSecretRequestRequest(r *http.Request) (
 }
 
 func (s *Server) decodeJudgeForPoolRequest(r *http.Request) (
-	req *JudgeJob,
+	req *PoolJudgeAsk,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -1498,7 +1498,7 @@ func (s *Server) decodeJudgeForPoolRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request JudgeJob
+		var request PoolJudgeAsk
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err

@@ -98,6 +98,11 @@ type AppOptions struct {
 	// than defaulted here: DefaultAppOptions is production wiring, and the
 	// package default is the production answer. See config.Config.
 	ArchiveRetention time.Duration
+
+	// JudgeCredentials turns the judge on. False is the default everywhere,
+	// including here: a server judges credential-bearing requests only when
+	// its configuration says to. See config.Config.
+	JudgeCredentials bool
 }
 
 // DefaultAppOptions returns the production defaults for the app.
@@ -185,6 +190,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ListenEndpoints:                opts.ListenEndpoints,
 		ArchiveRetention:               opts.ArchiveRetention,
 		ServerPeerID:                   addressPeerID,
+		JudgeCredentials:               opts.JudgeCredentials,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
 	})

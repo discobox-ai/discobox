@@ -125,14 +125,26 @@ type secretResolver struct {
 	// control plane knows. Nil disables the agent credentials path entirely,
 	// which is what a resolver built without a broker gets.
 	activations *activations
+	// judge asks the project's judge whether a request may carry what its
+	// sentinels stand for. Nil asks nobody, which allows every request that
+	// reaches it.
+	judge *judgeClient
 }
 
 func newSecretResolver(projectID, poolID string, live *activations) *secretResolver {
+	contextPath := layout.ProxyResolveContextFile(projectID, poolID)
+	client := controlPlaneHTTPClient()
 	return &secretResolver{
-		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
-		client:      controlPlaneHTTPClient(),
+		contextPath: contextPath,
+		client:      client,
 		gateClient:  gateHTTPClient(),
 		activations: live,
+		// Its own client: a verdict takes as long as a model takes, which is
+		// nothing like the time a resolve takes.
+		judge: &judgeClient{plane: &controlPlaneCredentials{
+			contextPath: contextPath,
+			client:      judgeHTTPClient(),
+		}},
 	}
 }
 
@@ -327,8 +339,8 @@ func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
 // against: a request says nothing about which use it is spending, and nothing
 // it said about one could be believed.
 //
-// It is where the project's judge will read the request against those uses;
-// until then every request that reaches it is allowed.
+// The project's judge reads the request against those uses, one ask per use,
+// and every one of them has to allow before anything is substituted.
 //
 // A sentinel with no live activation is spending no approved use and keeps the
 // policy it already has, which is not one policy but two. An injected harness
@@ -339,8 +351,88 @@ func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
 // what keeps the use window and the host scope from being advisory. Either
 // way that check now runs second rather than alone, because resolution happens
 // only for a request this allowed.
-func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
-	return proxy.SecretVerdict{Allow: true, UseIDs: r.uses(req)}, nil
+func (r *secretResolver) Authorize(ctx context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
+	uses := r.uses(req)
+	if len(uses) == 0 {
+		// Nothing here is being spent under an approved use, so there is no
+		// sentence to judge it against and nothing to ask about.
+		return proxy.SecretVerdict{Allow: true}, nil
+	}
+	if r.judge == nil || !r.judge.asking(time.Now()) {
+		return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+	}
+	evidence := evidenceOf(req)
+	for _, useID := range uses {
+		// Every applicable use has to pass before anything is substituted
+		// (ADR 0141 §4): a request spending two credentials is two questions,
+		// and one of them saying no is the answer.
+		answer, err := r.judge.ask(ctx, judgeAsk{
+			SandboxID: req.ClientID,
+			UseID:     useID,
+			Round:     1,
+			Request:   evidence,
+		})
+		switch {
+		case err == nil:
+			// A judge answered, which is the only thing that proves this
+			// server judges. From here on a silence refuses.
+			r.judge.answered()
+		case ctx.Err() != nil:
+			// The discobox hung up, or its own deadline passed, while the
+			// judge was thinking. Nothing is substituted and there is nobody
+			// left to answer, and it says nothing about the control plane —
+			// so it must not silence the next request, which a sandbox could
+			// otherwise arrange one aborted connection at a time.
+			return proxy.SecretVerdict{UseIDs: uses}, err
+		case outcomeOf(err) == outcomeNobodyJudges:
+			// There is nobody to ask, which is not a refusal. Remembered for a
+			// few minutes so a server that does not judge is asked once in a
+			// while rather than once a request.
+			r.judge.disabled(time.Now())
+			return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+		case outcomeOf(err) == outcomeRefused:
+			// The control plane would not take this ask. That refuses the
+			// request and nothing else: it neither proves the server judges
+			// nor silences the next question, so a request shaped to be
+			// refused costs the discobox that sent it and no one else.
+			return proxy.SecretVerdict{UseIDs: uses}, err
+		default:
+			// Nobody answered at all. Whether that refuses depends on
+			// something this request cannot see: whether this pool has ever
+			// been told the server judges. It must not be the thing that
+			// breaks a discobox on a server that never turned judging on.
+			if r.judge.unanswered(time.Now()) {
+				return proxy.SecretVerdict{UseIDs: uses}, err
+			}
+			return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+		}
+		if verdict, ok := refusalFrom(answer, useID); !ok {
+			return verdict, nil
+		}
+	}
+	return proxy.SecretVerdict{Allow: true, UseIDs: uses}, nil
+}
+
+// refusalFrom reads one answer. It reports ok only for an explicit allow:
+// everything else — a deny, an answer that decided nothing, or the judge
+// asking to be shown the body — is a request that goes no further.
+func refusalFrom(answer judgeAnswer, useID string) (proxy.SecretVerdict, bool) {
+	if answer.Need != nil {
+		// The judge wants the body. Supplying it is the round the proxy does
+		// not run yet, and a question left unanswered is not permission.
+		return proxy.SecretVerdict{
+			Reason: "the judge asked to see the request body, which this proxy cannot show it yet",
+			UseIDs: []string{useID},
+		}, false
+	}
+	if answer.Allow != nil && *answer.Allow {
+		return proxy.SecretVerdict{Allow: true, UseIDs: []string{useID}}, true
+	}
+	reason := strings.TrimSpace(answer.Reason)
+	if reason == "" {
+		reason = "not an approved use of this credential"
+	}
+	return proxy.SecretVerdict{Reason: reason, UseIDs: []string{useID}}, false
 }
 
 // uses names the approved uses a request's sentinels are being spent under,

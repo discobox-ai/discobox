@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/go-faster/jx"
 	"github.com/ogen-go/ogen/ogenerrors"
@@ -62,9 +64,18 @@ func statusCodeForError(err error) int {
 }
 
 func errorModel(status int, err error) apimodel.ErrorModel {
-	return apimodel.ErrorModel{
+	model := apimodel.ErrorModel{
 		Status: serverapi.NewOptInt64(int64(status)),
 		Title:  serverapi.NewOptString(http.StatusText(status)),
 		Detail: serverapi.NewOptString(err.Error()),
 	}
+	// A problem a caller has to act on differently says so in `type`, which is
+	// what a program reads: the sentence in `detail` is written for a person
+	// and is free to be reworded.
+	if kind, ok := apperrors.KindOf(err); ok {
+		if parsed, err := url.Parse(string(kind)); err == nil {
+			model.Type = serverapi.NewOptURI(*parsed)
+		}
+	}
+	return model
 }

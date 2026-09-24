@@ -425,7 +425,7 @@ type Invoker interface {
 	// that will not come up, a pool that cannot be reached.
 	//
 	// POST /api/pools/{poolId}/judge
-	JudgeForPool(ctx context.Context, request *JudgeJob, params JudgeForPoolParams) (JudgeForPoolRes, error)
+	JudgeForPool(ctx context.Context, request *PoolJudgeAsk, params JudgeForPoolParams) (JudgeForPoolRes, error)
 	// JudgeSandbox invokes judge-sandbox operation.
 	//
 	// Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in
@@ -7489,12 +7489,12 @@ func (c *Client) sendGetTrustRequest(ctx context.Context, params GetTrustRequest
 // that will not come up, a pool that cannot be reached.
 //
 // POST /api/pools/{poolId}/judge
-func (c *Client) JudgeForPool(ctx context.Context, request *JudgeJob, params JudgeForPoolParams) (JudgeForPoolRes, error) {
+func (c *Client) JudgeForPool(ctx context.Context, request *PoolJudgeAsk, params JudgeForPoolParams) (JudgeForPoolRes, error) {
 	res, err := c.sendJudgeForPool(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendJudgeForPool(ctx context.Context, request *JudgeJob, params JudgeForPoolParams) (res JudgeForPoolRes, err error) {
+func (c *Client) sendJudgeForPool(ctx context.Context, request *PoolJudgeAsk, params JudgeForPoolParams) (res JudgeForPoolRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("judge-for-pool"),
 		semconv.HTTPRequestMethodKey.String("POST"),

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
@@ -27,6 +28,9 @@ func TestTheGateForwardsALiveUseAsThePoolsWord(t *testing.T) {
 	withTestRoot(t)
 	var seen []gateCall
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if allowJudgingAsk(w, r) {
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		seen = append(seen, gateCall{
 			method: r.Method, uri: r.URL.RequestURI(), auth: r.Header.Get("Authorization"),
@@ -156,6 +160,12 @@ func TestAGateCallThatFailsKeepsItsUse(t *testing.T) {
 	}
 	live := newActivations()
 	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	// This is about the hop after the gate let the call in, so there is no
+	// judge in the way. With one, the ask to an unreachable control plane
+	// would be answered by nobody — which on a pool that has never had a
+	// verdict allows the call rather than refusing it, and the test would pass
+	// for a reason that has nothing to do with what it is checking.
+	resolver.judge = nil
 	use, err := live.mint("sb-1", "STABLE", "use-1", GateHost(), "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
@@ -169,5 +179,53 @@ func TestAGateCallThatFailsKeepsItsUse(t *testing.T) {
 	}
 	if admitted.UseID != "use-1" {
 		t.Fatalf("admission names %q, want the use the call went under", admitted.UseID)
+	}
+}
+
+// A sandbox's call to the discobox API spends an approved use like any other
+// credential-bearing request, so it is judged, and a refusal is what the
+// sandbox is told. The gate reaches the judge by a different path than the
+// proxy's swap does, so it is worth its own test.
+func TestTheGateRefusesACallTheJudgeDoesNot(t *testing.T) {
+	withTestRoot(t)
+	// Written by the server's goroutine and read by the test, which is a race
+	// precisely when the test is about to fail.
+	var reached atomic.Bool
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/judge") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"allow":false,"reason":"deleting a discobox is not what that use is for"}`)
+			return
+		}
+		reached.Store(true)
+	}))
+	defer controlPlane.Close()
+	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
+		t.Fatal(err)
+	}
+	live := newActivations()
+	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	use, err := live.mint("sb-1", "STABLE", "use-1", GateHost(), "", nil)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete,
+		"https://"+GateHost()+"/projects/default/sandboxes/sbx_other", nil)
+	req.Header.Set("Authorization", "Bearer "+use.Sentinel)
+	_, err = resolver.Gate(context.Background(), proxy.SecretGateRequest{ClientID: "sb-1", Request: req})
+
+	var refusal *proxy.SecretGateRefusal
+	if !errors.As(err, &refusal) {
+		t.Fatalf("err = %v, want the gate refusing the call", err)
+	}
+	if refusal.Reason != "deleting a discobox is not what that use is for" {
+		t.Fatalf("reason = %q, want the judge's own words", refusal.Reason)
+	}
+	if refusal.UseID != "use-1" {
+		t.Fatalf("useID = %q, want the use it was refused under", refusal.UseID)
+	}
+	if reached.Load() {
+		t.Fatal("a call the judge refused reached the control plane")
 	}
 }

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
@@ -36,18 +38,36 @@ type Leases interface {
 // refuses, so this is required before Judge answers anything.
 func (s *Service) SetLeases(leases Leases) { s.leases = leases }
 
+// Uses is the secrets service's half of saying what an approved use allows.
+// It is named here for the same reason Leases is: this package makes one call,
+// twice.
+type Uses interface {
+	ApprovedUse(ctx context.Context, poolID, sandboxID, useID, host string) (services.ApprovedUse, error)
+}
+
+// SetUses installs it. A judge with no question to put has nothing to answer,
+// so this is required before Judge answers anything.
+func (s *Service) SetUses(uses Uses) { s.uses = uses }
+
 // Judge puts one job to the judge of the project that owns the asking pool.
 //
 // Every refusal here is the same answer: no verdict. A project with no judge, a
 // judge that will not come up, a pool that cannot be reached — none of them
 // allow anything, and the reason travels back so the pool can say why the
 // credential its discobox asked for is not coming (ADR 0141 §1).
-func (s *Service) Judge(ctx context.Context, poolID string, job judge.Job) (judge.Answer, error) {
-	if s.leases == nil {
-		return judge.Answer{}, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server cannot reach a judge")
+func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAsk) (judge.Answer, error) {
+	// A pool that asks a server which does not judge is answered before
+	// anything is looked up. Nothing should be asking — the pool is told
+	// whether to — so this is the backstop, not the path.
+	if !s.enabled {
+		// Said in a way a program can recognize, because a pool has to tell it
+		// apart from a judge that failed: one means stop asking, the other
+		// means no credential goes out (ADR 0141 §4).
+		return judge.Answer{}, apperrors.NewStatusErrorOfKind(http.StatusServiceUnavailable,
+			apperrors.KindJudgingDisabled, "this server does not judge credential use")
 	}
-	if err := job.Validate(); err != nil {
-		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	if s.leases == nil || s.uses == nil {
+		return judge.Answer{}, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server cannot reach a judge")
 	}
 	pool, err := s.store.GetPoolByID(ctx, poolID)
 	if err != nil {
@@ -92,6 +112,14 @@ func (s *Service) Judge(ctx context.Context, poolID string, job judge.Job) (judg
 			"this project's judge could not be brought up; the server's log says why")
 	}
 
+	// The question is composed once there is something that could answer it:
+	// reading a use out of the grants is work, and a project with no judge
+	// refuses whatever the use turns out to say.
+	job, err := s.job(ctx, poolID, ask)
+	if err != nil {
+		return judge.Answer{}, err
+	}
+
 	// One ask is bounded here as well as at the judge (ADR 0141 §2): a caller
 	// that passed no deadline must not be able to hold this goroutine, the
 	// lease, and the judge's only slot for as long as the judge is willing to
@@ -109,7 +137,13 @@ func (s *Service) Judge(ctx context.Context, poolID string, job judge.Job) (judg
 	if err != nil {
 		return judge.Answer{}, err
 	}
-	body, err := json.Marshal(judgeJobBody(job))
+	// Marshaled through the pointer, which is what reaches the generated
+	// MarshalJSON. By value, encoding/json walks the struct itself and asks
+	// each unset optional field to marshal — and an unset one writes nothing,
+	// which fails the whole encode. The generated encoder is the only one that
+	// knows to leave an unset field out.
+	jobBody := judgeJobBody(job)
+	body, err := json.Marshal(&jobBody)
 	if err != nil {
 		return judge.Answer{}, err
 	}
@@ -132,7 +166,56 @@ func (s *Service) Judge(ctx context.Context, poolID string, job judge.Job) (judg
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadGateway,
 			fmt.Sprintf("the project's judge answered with something unreadable: %v", err))
 	}
+	// Asked again after the verdict, because a verdict takes a while and a
+	// grant can be revoked inside it (ADR 0141 §4). The check is the same one
+	// the question was built from, so what it rules out is a use that stopped
+	// being approved while a model was reading the request it authorized.
+	if _, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask)); err != nil {
+		return judge.Answer{}, err
+	}
 	return answer(answered), nil
+}
+
+// job is the question this server puts, built from what the pool sent and what
+// the control plane knows. The pool names the discobox and the use; the
+// sentence that use approves, the credential behind it and the host it is
+// approved for are read here, so a pool cannot widen its own question
+// (ADR 0141 §4).
+func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk) (judge.Job, error) {
+	if ask.Request == nil {
+		return judge.Job{}, apperrors.NewStatusError(http.StatusBadRequest, "a request to judge is required")
+	}
+	use, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask))
+	if err != nil {
+		return judge.Job{}, err
+	}
+	job := judge.Job{
+		Kind:       judge.KindRequest,
+		Purpose:    use.Purpose,
+		Host:       use.Host,
+		Credential: use.Credential,
+		Round:      ask.Round,
+		Command:    ask.Command,
+		Request:    ask.Request,
+	}
+	if err := job.Validate(); err != nil {
+		return judge.Job{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return job, nil
+}
+
+// judgedHost is where the request the pool observed is going, which is what
+// the use has to cover. It is read off the URL rather than taken as a field of
+// its own: the destination and the evidence must be the same destination.
+func judgedHost(ask services.JudgeAsk) string {
+	if ask.Request == nil {
+		return ""
+	}
+	target, err := url.Parse(ask.Request.URL)
+	if err != nil || target.Host == "" {
+		return ""
+	}
+	return hostscope.Normalize(target.Host)
 }
 
 // judgeRoutingGrace is what this hop allows on top of the judge's own bound:

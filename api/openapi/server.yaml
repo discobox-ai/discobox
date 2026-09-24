@@ -4210,6 +4210,33 @@ components:
                 - round
             type: object
             x-sandbox-agent-component: true
+        PoolJudgeAsk:
+            additionalProperties: false
+            description: 'One ask from a pool: which discobox is spending which approved use, and the request its proxy observed. A pool does not say what the use authorizes. The control plane reads the sentence, the credential''s name and the host from the live grant the use belongs to, so nothing a pool or a sandbox sends can widen what its own request is judged against.'
+            properties:
+                command:
+                    description: 'What the discobox declared it was running. It is context and not authority: a declaration cannot override the request observed.'
+                    items:
+                        type: string
+                    type: array
+                request:
+                    $ref: '#/components/schemas/JudgeRequestEvidence'
+                round:
+                    description: Which ask this is, from 1. A round after the first exists because the judge asked to be shown the body.
+                    format: int64
+                    type: integer
+                sandboxId:
+                    description: The discobox whose request this is. It must belong to the asking pool.
+                    type: string
+                useId:
+                    description: The approved use the credential is being spent under.
+                    type: string
+            required:
+                - sandboxId
+                - useId
+                - round
+                - request
+            type: object
         JudgeRequestEvidence:
             additionalProperties: false
             description: A request as the proxy saw it, before any credential was substituted into it and with every credential-bearing value redacted.
@@ -6439,7 +6466,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/JudgeJob'
+                            $ref: '#/components/schemas/PoolJudgeAsk'
                 required: true
             responses:
                 200:

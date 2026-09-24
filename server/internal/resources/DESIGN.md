@@ -30,6 +30,14 @@ and is marked by whatever changes those. Its reconcile id is a project ID,
 because a project has one judge, and its scan names every project so a judge
 converges even when whatever changed did not think to say so.
 
+Judging is off until a server opts in (`judgeCredentials`). It is a server's
+decision rather than a project's, because it puts a model in front of every
+credential-bearing request, and a server that has not asked for that keeps
+resolving credentials as it always did. While it is off, no project wants a
+judge, so the convergence makes none and takes away any made while it was on —
+the same path as removing the project's default harness. A pool that asks
+anyway is refused before a judge is looked for.
+
 A judge is an ordinary discobox in judge mode. Judge mode is a create body's to
 ask for like any other, so what makes one *the project's* judge is that the
 project points at it (`Project.JudgeSandboxID`), written by this package and by
@@ -40,8 +48,19 @@ the control plane — `POST /api/pools/{poolId}/judge`, on the credential
 broker's own scope, since deciding whether a credential may be used is what
 that scope is for — and the control plane forwards to the pool hosting the
 project's judge over the channel it already uses to create and start
-discoboxes there. Pools never call each other: they sit behind NAT, in clouds,
-and inside VMs, and the only thing every pool can reach is the control plane.
+discoboxes there.
+
+What a pool asks with is which discobox is spending which approved use, and
+what its proxy observed. It does not say what that use allows. The sentence
+being judged against, the credential's name and the host it is approved for are
+read here from the live grant the use belongs to (`secrets.ApprovedUse`), so
+nothing a pool or a sandbox sends can widen its own question. The same read
+happens again after the verdict, because a verdict takes a while and a grant can
+be revoked inside one. The question is composed only once a judge is found: a
+project with no judge refuses whatever the use turns out to say.
+
+Pools never call each other: they sit behind NAT, in clouds, and inside VMs,
+and the only thing every pool can reach is the control plane.
 That is what lets a pool whose own discoboxes are whole VMs of another
 operating system judge at all. Every refusal on that path is the same answer —
 no verdict — and the reason travels back so the pool can say why.

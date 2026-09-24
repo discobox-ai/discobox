@@ -193,6 +193,10 @@
         "null"
       ]
     },
+    "judgeCredentials": {
+      "description": "Run a judge for each project: a discobox that decides whether a credential-bearing request is part of what the credential's approved use allows. Off by default. While it is off no judge is created, and credentials are resolved for whatever asks for them, held only to the host and grant they were approved for. Environment: DISCOBOX_JUDGE_CREDENTIALS (takes precedence over this file).",
+      "type": "boolean"
+    },
     "listen": {
       "description": "Endpoints to listen on, from unix:// (npipe:// on Windows), http://\u003chost\u003e:\u003cport\u003e and iroh://. Bare unix://, npipe:// and iroh:// mean this machine's default socket, pipe and iroh identity; an iroh listener logs the discobox:// address clients use. Local IPC is added when none is named, so the CLI can always reach the server. The environment variable takes a comma-separated list. Environment: DISCOBOX_SERVER_LISTEN (takes precedence over this file).",
       "examples": [
