@@ -38,7 +38,7 @@ if err != nil {
 `git remote get-url origin` printed the URL, the reaper took its status, the
 create concluded the remote was missing, and `git remote add` answered
 truthfully — `error: remote origin already exists.`, exit 3 — which failed the
-create. The sandbox settled into `error`, which by design ([0017](0017-desired-state-orchestration.md))
+create. The sandbox settled into `error`, which by design ([0017](0017-resource-state-is-desired-and-observed-with-no-operations.md))
 is converged until new intent, so it stayed there with one source's `origin`
 still pointing at the pool-agent-local clone path that means nothing inside the
 container. Three sandboxes created at once is enough `SIGCHLD` traffic to lose

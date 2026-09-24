@@ -12,9 +12,9 @@
   [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md),
   [0107](0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md),
   [0123](0123-a-discobox-is-exported-as-its-spec-and-its-durable-tree.md), and
-  [0126](0126-remote-sandboxes-connect-out-to-their-pool.md).
+  [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md).
   On acceptance, this narrows 0123 §1's `tree/data/` to what the image lets
-  travel, and answers 0126 §6's open question of how a stopped sandbox's tree
+  travel, and answers 0126 §8's open question of how a stopped sandbox's tree
   is read. The `.dbox` format and its version do not change.
   It also narrows what ADR 0075 §2 and ADR 0107 keep per-sandbox: they persist
   across restarts but no longer across an export.
@@ -43,7 +43,7 @@ party that knows what the tree is.
   stated it, so a pool-side reader cannot reliably locate a declared
   `%HOME%/...` path in the tree at all.
 - **ADR 0126's pool cannot see the tree.** A remote compute sandbox keeps
-  `data` and `sources` on its own private disk. 0126 §6 keeps the export
+  `data` and `sources` on its own private disk. 0126 §8 keeps the export
   contract and the stopped-sandbox guarantee but leaves how the stopped tree
   is read to each backend.
 
@@ -83,7 +83,7 @@ the pool agent is unchanged.
   its config root read-only, no cache, secrets, origins or source-data mounts,
   no network, and not privileged. The tar is the container's stdout.
 - **Remote runtime (0126).** The same subcommand, started by the backend
-  against the stopped disk, is the "quiesced transfer" 0126 §6 asks a backend
+  against the stopped disk, is the "quiesced transfer" 0126 §8 asks a backend
   to provide. How its stdout reaches the pool agent is the backend's
   transport; the producer and its format are fixed here.
 
@@ -217,6 +217,6 @@ walkers and two exclusion implementations, one of which cannot exist under
 - **Restore through the sandbox agent.** Import keeps the pool-side restore
   confined by `os.Root`, which is sound for the Docker runtime. Revisit when
   the first ADR 0126 backend is built, since that pool cannot write the tree
-  either and 0126 §6 requires both halves restored before start.
+  either and 0126 §8 requires both halves restored before start.
 - **Excluding paths that are not declared volumes.** Revisit if an image
   needs to exclude a path it cannot reasonably declare as a `data` volume.

@@ -7,7 +7,7 @@
   [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md),
   [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md),
   [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md), and
-  [0126](0126-remote-sandboxes-connect-out-to-their-pool.md).
+  [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md).
 
 ## Context
 
