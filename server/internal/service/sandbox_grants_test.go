@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -315,5 +317,33 @@ func TestASandboxsOriginDoesNotDecideDelivery(t *testing.T) {
 	}
 	if forged.Source.Delivery != model.GitSourceDeliveryPush {
 		t.Fatalf("sandbox's source delivered by %q, want push", forged.Source.Delivery)
+	}
+
+	// Nor may it name a host path by URL, which the pool agent would clone
+	// as itself — as its source, or as a source beside it.
+	hostURL := func(raw string) serverapi.GitSource {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return serverapi.GitSource{Kind: serverapi.GitSourceKindGit, URL: serverapi.NewOptURI(*u)}
+	}
+	for name, raw := range map[string]string{"file": "file:///home/user/.password-store", "bare path": "/home/user/.password-store"} {
+		source := body("url-" + strings.ReplaceAll(name, " ", "-"))
+		source.Config.Source = serverapi.NewOptGitSource(hostURL(raw))
+		_, err := svc.CreateSandbox(lead, projectID, source)
+		requireStatus(t, err, http.StatusForbidden)
+
+		beside := body("ref-" + strings.ReplaceAll(name, " ", "-"))
+		beside.Config.Source = serverapi.OptGitSource{}
+		beside.Config.SourceCodeReferences = serverapi.NewOptSandboxCreateConfigSourceCodeReferences(
+			serverapi.SandboxCreateConfigSourceCodeReferences{"/workspace/secrets": hostURL(raw)})
+		_, err = svc.CreateSandbox(lead, projectID, beside)
+		requireStatus(t, err, http.StatusForbidden)
+	}
+	remote := body("remote")
+	remote.Config.Source = serverapi.NewOptGitSource(hostURL("https://github.com/org/repo.git"))
+	if _, err := svc.CreateSandbox(lead, projectID, remote); err != nil {
+		t.Fatalf("create from a network URL: %v", err)
 	}
 }

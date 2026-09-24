@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 
 	"github.com/discobox-ai/discobox/server/internal/auth"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
@@ -224,9 +225,13 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	// can read the user's off any discobox's record; believed, it would have a
 	// source cloned from the server's filesystem. Its sources are pushed
 	// (ADR 0149 §3). The origin is still recorded, for listings.
+	// Nor may it name a host path by URL, which the pool agent would clone.
 	deliveryOrigin := origin
 	if createdBySandboxID != nil {
 		deliveryOrigin = nil
+		if err := refuseHostURLs(source, sourceCodeReferences); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.resolveSourceDelivery(ctx, source, sourceCodeReferences, deliveryOrigin, provider); err != nil {
 		return nil, err
@@ -470,9 +475,15 @@ func authorizeRequestedScopes(ctx context.Context, scopes []string) error {
 	}
 	principal, ok := auth.PrincipalFromContext(ctx)
 	if ok && principal.Type == auth.PrincipalTypeSandbox {
-		// A sandbox holds no scopes: the sandbox role decided which of its
-		// calls reach a sandbox, and admits only the push into the origin of a
-		// discobox it created (ADR 0149 §2).
+		// A sandbox holds no scopes. The sandbox role admits one call of its
+		// that reaches a sandbox — the push into the origin of a discobox it
+		// created (ADR 0149 §2) — and that push is all this allows, so a route
+		// added to the role by mistake does not reach terminals or execs too.
+		for _, scope := range scopes {
+			if scope != poolagentauth.ScopeSandboxWrite {
+				return apperrors.NewStatusError(http.StatusForbidden, "a discobox may only push source into another: "+scope)
+			}
+		}
 		return nil
 	}
 	if !ok || principal.Type != auth.PrincipalTypeUser || principal.UserID == "" {

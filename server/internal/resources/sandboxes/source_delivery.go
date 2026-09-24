@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -73,6 +74,31 @@ func (s *Service) resolveSourceDelivery(ctx context.Context, source *model.GitSo
 			entry.source.Delivery = model.GitSourceDeliveryClone
 		}
 		entry.store()
+	}
+	return nil
+}
+
+// refuseHostURLs refuses a sandbox's create whose sources name a URL the pool
+// agent would clone off its own host: `file://`, or a bare path. The agent
+// clones a URL as itself, so such a source would put any repository it can read
+// into a discobox a sandbox made, which ADR 0149 §3 exists to prevent. Only
+// the network schemes Git clones over are a remote.
+func refuseHostURLs(source *model.GitSource, refs model.SourceCodeReferences) error {
+	for _, entry := range sandboxGitSources(source, refs) {
+		if entry.source.URL == nil {
+			continue
+		}
+		raw := strings.TrimSpace(*entry.source.URL)
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("source URL %q is not a URL", raw))
+		}
+		switch strings.ToLower(parsed.Scheme) {
+		case "https", "http", "ssh", "git":
+		default:
+			return apperrors.NewStatusError(http.StatusForbidden,
+				fmt.Sprintf("a discobox names a source for a discobox it creates by a network URL or pushes it; %q is neither", raw))
+		}
 	}
 	return nil
 }
