@@ -48,7 +48,7 @@ func TestAuthorizeRequestedScopesAllowsAllScope(t *testing.T) {
 }
 
 // A sandbox holds no scopes. The one call of its the sandbox role lets reach a
-// sandbox is a push into the origin of a discobox it created (ADR 0149 §2), so
+// sandbox is a push into the origin of a discobox it created (ADR 26-09-24-630 §2), so
 // that is all it is allowed here: a route admitted by mistake still reaches no
 // terminal, exec, or tunnel.
 func TestAuthorizeRequestedScopesAllowsASandboxOnlyAPush(t *testing.T) {

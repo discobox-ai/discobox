@@ -186,7 +186,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if actingUserID, err := auth.ActingUserID(ctx); err == nil {
 		userID = actingUserID
 	}
-	// The sandbox creating this one, when a sandbox is (ADR 0149 §1).
+	// The sandbox creating this one, when a sandbox is (ADR 26-09-24-630 §1).
 	var createdBySandboxID *string
 	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
 		if len(config.Secrets) > 0 {
@@ -224,7 +224,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	// A sandbox's origin is its own claim about which machine it is on, and it
 	// can read the user's off any discobox's record; believed, it would have a
 	// source cloned from the server's filesystem. Its sources are pushed
-	// (ADR 0149 §3). The origin is still recorded, for listings.
+	// (ADR 26-09-24-630 §3). The origin is still recorded, for listings.
 	// Nor may it name a host path by URL, which the pool agent would clone.
 	deliveryOrigin := origin
 	if createdBySandboxID != nil {
@@ -477,7 +477,7 @@ func authorizeRequestedScopes(ctx context.Context, scopes []string) error {
 	if ok && principal.Type == auth.PrincipalTypeSandbox {
 		// A sandbox holds no scopes. The sandbox role admits one call of its
 		// that reaches a sandbox — the push into the origin of a discobox it
-		// created (ADR 0149 §2) — and that push is all this allows, so a route
+		// created (ADR 26-09-24-630 §2) — and that push is all this allows, so a route
 		// added to the role by mistake does not reach terminals or execs too.
 		for _, scope := range scopes {
 			if scope != poolagentauth.ScopeSandboxWrite {

@@ -58,7 +58,7 @@ func (a ProjectAuthorizer) Authorize(r *http.Request) (bool, error) {
 // SandboxRoleAuthorizer authorizes a sandbox's own calls against the sandbox
 // role (ADR 0140 §4): a fixed list of routes, in the sandbox's own project, and
 // nothing else. It is decided by the route, and for source delivery by whether
-// the sandbox created the discobox the route names (ADR 0149 §2). No grant,
+// the sandbox created the discobox the route names (ADR 26-09-24-630 §2). No grant,
 // and no use's text, is read here: what a call is for is the judge's question,
 // asked in the pool.
 //
@@ -79,7 +79,7 @@ type sandboxRoleRoute struct {
 	// parameter may have: Git's info/refs answers both push and fetch.
 	service string
 	// created allows the route only on a discobox the calling sandbox
-	// created, named by the path's first "*" (ADR 0149 §2).
+	// created, named by the path's first "*" (ADR 26-09-24-630 §2).
 	created bool
 }
 
@@ -91,7 +91,7 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPost, path: "sandboxes"},
 	{method: http.MethodGet, path: "sandboxes/*"},
 	// Delivering a source into a discobox the sandbox created: the push into
-	// its origin, and the report that ends its wait (ADR 0149 §2). Fetching
+	// its origin, and the report that ends its wait (ADR 26-09-24-630 §2). Fetching
 	// from an origin is not delivery, and is not here.
 	{method: http.MethodGet, path: "sandboxes/*/git-origins/*/info/refs", service: "git-receive-pack", created: true},
 	{method: http.MethodPost, path: "sandboxes/*/git-origins/*/git-receive-pack", created: true},

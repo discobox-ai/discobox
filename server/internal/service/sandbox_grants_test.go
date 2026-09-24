@@ -94,7 +94,7 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testi
 		t.Fatalf("created by %q, want the lead's user", created.CreatedByUserID)
 	}
 	if created.CreatedBySandboxID == nil || *created.CreatedBySandboxID != "sbx-lead" {
-		t.Fatalf("created by sandbox %v, want the lead (ADR 0149 §1)", created.CreatedBySandboxID)
+		t.Fatalf("created by sandbox %v, want the lead (ADR 26-09-24-630 §1)", created.CreatedBySandboxID)
 	}
 	grants, err := svc.ListSecretGrants(ctx, projectID, secret.ID)
 	if err != nil || len(grants) != 1 || grants[0].GrantedBy != "sbx-lead" || grants[0].ScopeKey != created.ID {
@@ -280,7 +280,7 @@ func (hostPathProvider) Definition() sandboxes.ProviderDefinition {
 
 // A sandbox can read the user's origin off any discobox's record. Claiming it
 // must not get a source cloned from the server's filesystem: a create from a
-// sandbox is always push-delivered (ADR 0149 §3).
+// sandbox is always push-delivered (ADR 26-09-24-630 §3).
 func TestASandboxsOriginDoesNotDecideDelivery(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)

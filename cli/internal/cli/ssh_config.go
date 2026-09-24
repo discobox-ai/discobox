@@ -199,7 +199,7 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 // `ssh` to the discobox they just made. A caller the server refuses it (403) —
 // a discobox creating another, which may not enroll a key that would reach
 // every discobox in the project — has no use for it, and the create stands
-// (ADR 0149 §4). `admin ssh-config --write` calls writeProjectSSHConfig
+// (ADR 26-09-24-630 §4). `admin ssh-config --write` calls writeProjectSSHConfig
 // directly: there the sync is what was asked for, and a refusal is its answer.
 func (a *App) syncSSHConfigAfterCreate(ctx context.Context, client *apiclientgen.Client, projectID string, notes noteFunc) error {
 	err := a.writeProjectSSHConfig(ctx, client, projectID, "", notes)

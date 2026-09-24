@@ -94,7 +94,7 @@ Current authorizers:
   `complete-source-push` — is the one exception, and only on a discobox the
   caller created: the route is `created`, and the authorizer loads the target
   and compares its recorded `CreatedBySandboxID` to the caller
-  ([ADR 0149](../../../docs/adr/0149-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
+  ([ADR 26-09-24-630](../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
   §2). `ActingUserID` is the user such a call acts as: the sandbox's
   creator.
 - `ProjectAuthorizer` authorizes `/projects/{projectId}/...` and

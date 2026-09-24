@@ -2421,7 +2421,7 @@ since the file that declares them lives in a checkout there is none of.
 In the launcher this is the Source row's last entry rather than a flag of its
 own; see the launcher design doc.
 
-## Grants and a Request as JSON (ADR 0149)
+## Grants and a Request as JSON (ADR 26-09-24-630)
 
 `discobox new --grant` gives the new discobox uses of credentials in
 `admin box create --grant`'s form. Both parse through

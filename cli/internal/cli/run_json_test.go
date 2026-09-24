@@ -60,7 +60,7 @@ func grantUses(grant map[string]any) []string {
 
 // `new --grant` gives the new discobox what `admin box create --grant` does, a
 // secret named by name reaching the server by its ID. A discobox making
-// another is refused the SSH sync, and the create stands (ADR 0149 §4).
+// another is refused the SSH sync, and the create stands (ADR 26-09-24-630 §4).
 func TestRunGivesItsGrants(t *testing.T) {
 	setHome(t, t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())

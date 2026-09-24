@@ -81,7 +81,7 @@ func (s *Service) resolveSourceDelivery(ctx context.Context, source *model.GitSo
 // refuseHostURLs refuses a sandbox's create whose sources name a URL the pool
 // agent would clone off its own host: `file://`, or a bare path. The agent
 // clones a URL as itself, so such a source would put any repository it can read
-// into a discobox a sandbox made, which ADR 0149 §3 exists to prevent. Only
+// into a discobox a sandbox made, which ADR 26-09-24-630 §3 exists to prevent. Only
 // the network schemes Git clones over are a remote.
 func refuseHostURLs(source *model.GitSource, refs model.SourceCodeReferences) error {
 	for _, entry := range sandboxGitSources(source, refs) {

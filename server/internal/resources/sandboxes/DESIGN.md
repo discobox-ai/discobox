@@ -437,7 +437,7 @@ hold, and `sourceNeedsPush` answers `push` otherwise:
   `internal/hostid`) — and is not a sandbox. A sandbox's origin is its own
   claim, and it can read the user's off any discobox's record, so a create
   from a sandbox decides delivery with no origin at all: its local sources are
-  always pushed ([ADR 0149](../../../../docs/adr/0149-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md) §3).
+  always pushed ([ADR 26-09-24-630](../../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md) §3).
   For the same reason it may not name a host path by URL — `file://` or a bare
   path, which the pool agent would clone as itself (`refuseHostURLs`); only
   network schemes are a remote.

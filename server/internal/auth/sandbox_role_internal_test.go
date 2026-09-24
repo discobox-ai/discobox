@@ -49,7 +49,7 @@ func roleStore(t *testing.T) *store.Store {
 }
 
 // A sandbox delivers source only into a discobox it created, only by pushing,
-// and only in its own project (ADR 0149 §2).
+// and only in its own project (ADR 26-09-24-630 §2).
 func TestSandboxRoleDeliversSourceOnlyToWhatItCreated(t *testing.T) {
 	authorizer := SandboxRoleAuthorizer{Store: roleStore(t)}
 	lead := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: "proj-1", UserID: "user-1"}

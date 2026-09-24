@@ -14880,7 +14880,7 @@ type Sandbox struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Creating user.
 	CreatedBy OptUser `json:"createdBy"`
-	// Sandbox that created this one, when a sandbox did (ADR 0149). Immutable after create.
+	// Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create.
 	CreatedBySandboxId OptString `json:"createdBySandboxId"`
 	// Creating user ID.
 	CreatedByUserId string `json:"createdByUserId"`

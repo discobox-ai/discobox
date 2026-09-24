@@ -16,7 +16,7 @@ import (
 
 // runJSONRequest is `discobox new --json`: the command's request as one JSON
 // object on stdin, for a caller — an agent, above all — that would otherwise
-// have to quote a prompt and each use's sentence through a shell (ADR 0149 §4).
+// have to quote a prompt and each use's sentence through a shell (ADR 26-09-24-630 §4).
 // Its fields are the run flags', and mean what they mean; -d and --raw have
 // none, because a JSON run creates, prints, and returns.
 type runJSONRequest struct {

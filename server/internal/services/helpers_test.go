@@ -190,7 +190,7 @@ func TestDefaultGitSourceSlugsReservePrimaryForThePrimary(t *testing.T) {
 }
 
 // Who made a discobox reaches the API: the user always, and the sandbox when
-// one did (ADR 0149 §1). A person's discobox says no sandbox at all.
+// one did (ADR 26-09-24-630 §1). A person's discobox says no sandbox at all.
 func TestSandboxToAPIIncludesTheCreatingSandbox(t *testing.T) {
 	lead := "sbx-lead"
 	for _, tc := range []struct {

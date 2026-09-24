@@ -3923,7 +3923,7 @@ components:
                     $ref: '#/components/schemas/User'
                     description: Creating user
                 createdBySandboxId:
-                    description: Sandbox that created this one, when a sandbox did (ADR 0149). Immutable after create.
+                    description: Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create.
                     type: string
                 createdByUserId:
                     description: Creating user ID
