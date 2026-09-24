@@ -19,6 +19,7 @@ COPY controlplane ./controlplane
 COPY fsdurable ./fsdurable
 COPY harness ./harness
 COPY hostscope ./hostscope
+COPY judge ./judge
 COPY layout ./layout
 COPY proxy ./proxy
 COPY runcca ./runcca
