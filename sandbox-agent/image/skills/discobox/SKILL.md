@@ -425,12 +425,13 @@ a person for with `discobox-access` — the `discobox-access` skill says how —
 and run under: `discobox-access run --use <id> -- discobox …`. Without one,
 every call is refused by the pool.
 
-With it, you may create discoboxes (`discobox admin box create`, which can
-give the new box uses of project secrets with `--grant`), list and read them
+With it, you may create discoboxes with `discobox new --json` — cut from the
+directory you run it in, and given uses of project secrets through its
+`"grants"`; the `discobox-access` skill shows the request — list and read them
 (`admin box ls`, `admin box get`), and list and answer credential requests
 (`discobox secret request ls`, `approve`, `deny`). Nothing else: the user's
-commands above need their machine or reach further than a box may, and are
-refused. A box you create is the user's, and cannot be given
+other commands above need their machine or reach further than a box may, and
+are refused. A box you create is the user's, and cannot be given
 `ai.discobox.sandbox` by you — a person approves that when it asks.
 
 For the threat model and what discobox does not defend against, point at

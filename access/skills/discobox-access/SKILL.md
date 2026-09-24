@@ -92,22 +92,50 @@ For anything not in this table, spell out `name`, `envVar`, and `host`.
 
 `ai.discobox.sandbox` is how you drive other discoboxes. The `discobox` CLI is
 installed and already pointed at the API; run it under an approved use, as
-with any credential:
+with any credential.
+
+Make a discobox with `discobox new --json`, the request on stdin:
 
 ```bash
-discobox-access run --use <id> -- discobox admin box create --name worker-1 --harness claude-code \
-  --grant 'com.github.api=push a branch to org/repo for issue 42'
+discobox-access run --use <id> -- discobox new --json <<'EOF'
+{
+  "prompt": "Fix issue 42 in org/repo, then push the branch fix-42.",
+  "grants": [
+    {"id": "com.github.api", "uses": [{"description": "push the branch fix-42 to org/repo"}]}
+  ]
+}
+EOF
+```
+
+- It is cut from the directory you run it in: your repository, at its current
+  commit. `"includeDirty": true` carries your uncommitted work too;
+  `"noSource": true` gives it nothing checked out; `"include": ["../other"]`
+  brings in another source beside it.
+- It runs the project's default harness. Leave `"harness"` out unless the
+  person asked for a particular one.
+- It runs as your user, with your Git identity, like a discobox a person
+  starts with `discobox new`.
+- `"grants"` gives it uses of credentials: a well-known one by `"id"`, or any
+  other project secret as `"secret"` (its name) and `"envVar"`, with an
+  optional `"host"` to narrow it. Write each use as the command it will run,
+  exactly as you would ask for one yourself — its agent is judged against
+  that sentence when it runs it.
+- It answers with the new discobox as JSON. Its `"id"` is how you read it
+  again: `discobox admin box get <id>`.
+
+`discobox new --help` lists every field. The rest of what you may do:
+
+```bash
 discobox-access run --use <id> -- discobox admin box ls
+discobox-access run --use <id> -- discobox admin box get <discobox-id>
 discobox-access run --use <id> -- discobox secret request ls --status pending
 discobox-access run --use <id> -- discobox secret request approve <request-id> --secret-id github
 ```
 
-`--grant ID[@HOST]=USE` gives the new discobox a use of a well-known
-credential, and `--grant SECRET[@HOST]:ENV_VAR=USE` a use of any other project
-secret; repeat either for more. You cannot give it `ai.discobox.sandbox`: a
-person grants that, when the new discobox asks for it itself. It is created as the user who created you, and what
-you give it is recorded as given by you. Anything outside those commands is
-refused.
+You cannot give a discobox `ai.discobox.sandbox`: a person grants that, when
+the new discobox asks for it itself. What you give is recorded as given by
+you. Anything outside those commands is refused — you cannot attach to,
+stop, or delete a discobox you made.
 
 Use `--json` with a heredoc rather than flags: your justification will contain
 apostrophes and quotes, and the shell would eat them. Unknown JSON fields are
