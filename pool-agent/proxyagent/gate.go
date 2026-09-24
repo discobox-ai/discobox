@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/proxy"
@@ -58,20 +59,30 @@ func (r *secretResolver) Gate(ctx context.Context, req proxy.SecretGateRequest) 
 		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: fmt.Sprintf(
 			"the call carries no live use of %s; run it under one: discobox-access run --use <id> -- discobox …", wellknown.DiscoboxSandbox)}
 	}
-	verdict, err := r.Judge(ctx, proxy.SecretJudgeRequest{
+	verdict, err := r.Authorize(ctx, proxy.SecretAuthorizeRequest{
 		ClientID:  req.ClientID,
-		UseIDs:    []string{record.UseID},
 		Sentinels: []string{sentinel},
 		Method:    in.Method,
-		Host:      in.Host,
-		URL:       in.URL.String(),
-		Header:    in.Header,
+		// The host without its port, which is what the contract says this
+		// field is and what the proxy's own caller states. The gate reaches
+		// Authorize directly rather than through the swapper, so the one
+		// normalization there is this one.
+		Host:   hostscope.Normalize(in.Host),
+		URL:    in.URL.String(),
+		Header: in.Header,
 	})
 	if err != nil {
 		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: "the judge could not decide: " + err.Error(), UseID: record.UseID}
 	}
 	if !verdict.Allow {
-		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: verdict.Reason, UseID: record.UseID}
+		// A verdict that refuses and says nothing still owes the caller a
+		// sentence: a refusal nobody can read is indistinguishable from a
+		// broken credential (ADR 0141 §1).
+		reason := verdict.Reason
+		if reason == "" {
+			reason = "not an approved use of this credential"
+		}
+		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: reason, UseID: record.UseID}
 	}
 
 	target, err := gateTarget(rc.ControlPlaneURL, in.URL)

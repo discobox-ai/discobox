@@ -29,11 +29,11 @@ type SecretGateAdmission = secrets.GateAdmission
 // SecretGateRefusal is a SecretResolver's gate declining a request, and why.
 type SecretGateRefusal = secrets.GateRefusal
 
-// SecretJudgeRequest is a request about to leave carrying swapped credentials,
-// as a SecretResolver judges it.
-type SecretJudgeRequest = secrets.JudgeRequest
+// SecretAuthorizeRequest is a request carrying sentinels, as a SecretResolver
+// authorizes it before resolving any of them.
+type SecretAuthorizeRequest = secrets.AuthorizeRequest
 
-// SecretVerdict is a SecretResolver's answer to a SecretJudgeRequest.
+// SecretVerdict is a SecretResolver's answer to a SecretAuthorizeRequest.
 type SecretVerdict = secrets.Verdict
 
 // SecretReportRequest tells a SecretResolver what an upstream made of a value

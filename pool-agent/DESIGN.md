@@ -859,11 +859,19 @@ flowchart LR
   ID, which is what the control plane takes as the caller. Every sandbox is
   given `DISCOBOX_API_URL` and `DISCOBOX_SERVER` for that host with its proxy
   environment, so the `discobox` CLI in the image calls it.
-- The same resolver is the proxy's judge (`Judge`): asked, per request and
-  after the swap, whether the request may leave carrying those credentials
+- The same resolver authorizes the proxy's requests (`Authorize`): asked, per
+  request and before anything in it is resolved, whether the request may carry
+  what its sentinels stand for
   (see [`proxy/DESIGN.md`](../proxy/DESIGN.md#sentinel-secret-swapping)). It
-  allows every request today. What is enforced is the destination host, which
-  `activation` holds an activation to before a value is ever resolved.
+  binds each sentinel the proxy matched to a live activation of the sending
+  sandbox — the same binding `Resolve` makes — and answers with the uses those
+  activations name, so a refusal is recorded against the use it was about. A
+  sentinel with no live activation is spending no approved use and keeps the
+  policy it already has: an injected static sentinel is held to its grant and
+  host by the control plane at resolve time, while one this process minted
+  whose activation has lapsed — or whose host the use does not cover — never
+  reaches the control plane at all, because `Resolve` refuses it here. It
+  allows every request today.
 
 ## Agent Credentials
 

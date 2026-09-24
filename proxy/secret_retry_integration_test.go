@@ -2,17 +2,21 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/discobox-ai/discobox/proxy/internal/secrets"
+	"github.com/discobox-ai/x/gormdb"
 )
 
 // rotatingResolver hands out the next value on every resolve, so a retry that
@@ -73,13 +77,13 @@ func waitForReports(t *testing.T, log *reportLog, want int) []secrets.ReportRequ
 	}
 }
 
-// Judge allows every request: these tests are about what an upstream makes of a
-// credential, which only a request that was sent can show.
 func (r *rotatingResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
 	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
 }
 
-func (r *rotatingResolver) Judge(context.Context, secrets.JudgeRequest) (secrets.Verdict, error) {
+// Authorize allows every request: these tests are about what an upstream makes
+// of a credential, which only a request that was sent can show.
+func (r *rotatingResolver) Authorize(context.Context, secrets.AuthorizeRequest) (secrets.Verdict, error) {
 	return secrets.Verdict{Allow: true}, nil
 }
 
@@ -299,13 +303,12 @@ func (r *settableResolver) set(value string) {
 	r.value = value
 }
 
-// Judge allows every request: these tests are about what an upstream makes of a
-// credential, which only a request that was sent can show.
 func (r *settableResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
 	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
 }
 
-func (r *settableResolver) Judge(context.Context, secrets.JudgeRequest) (secrets.Verdict, error) {
+// Authorize allows every request, as rotatingResolver's does.
+func (r *settableResolver) Authorize(context.Context, secrets.AuthorizeRequest) (secrets.Verdict, error) {
 	return secrets.Verdict{Allow: true}, nil
 }
 
@@ -378,5 +381,269 @@ func TestHTTPProxyRetriesWithTheDisplacedCredential(t *testing.T) {
 	}
 	if n := attempts.Load(); n != 3 {
 		t.Fatalf("upstream attempts = %d, want the first request, its rejection, and one retry", n)
+	}
+}
+
+// revokingResolver allows the first request and refuses every one after it,
+// standing in for a grant revoked while the upstream was answering.
+type revokingResolver struct {
+	reportLog
+	mu       sync.Mutex
+	value    string
+	asks     int
+	resolves int
+}
+
+func (r *revokingResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
+	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
+}
+
+func (r *revokingResolver) Authorize(context.Context, secrets.AuthorizeRequest) (secrets.Verdict, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.asks++
+	if r.asks > 1 {
+		return secrets.Verdict{Reason: "that use was revoked"}, nil
+	}
+	return secrets.Verdict{Allow: true}, nil
+}
+
+func (r *revokingResolver) Resolve(context.Context, secrets.ResolveRequest) (secrets.ResolveResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.resolves++
+	return secrets.ResolveResult{Value: r.value, ExpiresAt: time.Now().Add(time.Second)}, nil
+}
+
+func (r *revokingResolver) counts() (asks, resolves int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.asks, r.resolves
+}
+
+// A retry carries a credential the first attempt did not, so it is authorized
+// the way the first attempt was (ADR 0141 §4). A grant revoked while the
+// upstream was refusing means there is no second attempt: the upstream's own
+// 401 is what the sandbox gets, and no further credential is resolved.
+func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
+	const value = "sk-ant-oat01-REALVALUE00000000000000000000000"
+
+	var attempts atomic.Int32
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":"authentication_error"}`)
+	})
+	defer origin.Close()
+
+	resolver := &revokingResolver{value: value}
+	var dsn string
+	client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) { dsn = cfg.DatabaseDSN })
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want the upstream's own 401 passed through", resp.StatusCode)
+	}
+	if n := attempts.Load(); n != 1 {
+		t.Fatalf("upstream attempts = %d, want the retry not to have been sent", n)
+	}
+	asks, resolves := resolver.counts()
+	if asks != 2 {
+		t.Fatalf("authorized %d times, want the request and the retry each asked about", asks)
+	}
+	if resolves != 1 {
+		t.Fatalf("resolved %d credentials, want nothing fetched for the refused retry", resolves)
+	}
+	// The refusal still has to say the credential was refused upstream, which
+	// is the whole point of the retry existing (ADR 0132 §1).
+	reports := waitForReports(t, &resolver.reportLog, 1)
+	if reports[0].Outcome != secrets.OutcomeRejected || reports[0].Sentinel != sentinel {
+		t.Fatalf("report = %+v, want the sentinel reported as rejected", reports[0])
+	}
+
+	// And the trail has to show a verdict refused the retry, rather than
+	// leaving it indistinguishable from having had nothing new to send
+	// (ADR 0141 §8).
+	blocked := waitForBlockedRows(t, dsn, 1)
+	if len(blocked) != 1 {
+		t.Fatalf("blocked rows = %d, want the refused retry recorded once", len(blocked))
+	}
+	if blocked[0].BlockedReason != "judge: that use was revoked" {
+		t.Fatalf("blocked row reason = %q, want the verdict's own words", blocked[0].BlockedReason)
+	}
+	// The refusal was not the answer: the sandbox got the upstream's 401, so
+	// the row says 401 rather than claiming a 403 nobody received.
+	if blocked[0].Status != http.StatusUnauthorized {
+		t.Fatalf("blocked row status = %d, want the status the sandbox actually got", blocked[0].Status)
+	}
+}
+
+// waitForBlockedRows polls the proxy's audit database for blocked rows. The
+// recorder writes off the request path, so a row can land after the response
+// the test already has.
+func waitForBlockedRows(t *testing.T, dsn string, want int) []audit.HTTPExchange {
+	t.Helper()
+	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	t.Cleanup(func() { _ = pools.Close() })
+	read := func() []audit.HTTPExchange {
+		var rows []audit.HTTPExchange
+		if err := pools.Read.Where("blocked = ?", true).Find(&rows).Error; err != nil {
+			t.Fatalf("read audit exchanges: %v", err)
+		}
+		return rows
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rows := read()
+		if len(rows) >= want {
+			// Settle before answering: a caller asserting a row was written
+			// once has to be given the chance to see a second one.
+			time.Sleep(50 * time.Millisecond)
+			return read()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("blocked audit rows = %d, want %d", len(rows), want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// flakyResolver rotates one sentinel's value and fails another's first resolve
+// with a transient error, which is what leaves a sentinel in place on the first
+// attempt and resolvable on the retry.
+type flakyResolver struct {
+	reportLog
+	mu        sync.Mutex
+	values    map[string][]string
+	calls     map[string]int
+	transient string
+	asked     [][]string
+}
+
+func (r *flakyResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
+	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
+}
+
+func (r *flakyResolver) Authorize(_ context.Context, req secrets.AuthorizeRequest) (secrets.Verdict, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	asked := append([]string(nil), req.Sentinels...)
+	slices.Sort(asked)
+	r.asked = append(r.asked, asked)
+	return secrets.Verdict{Allow: true}, nil
+}
+
+func (r *flakyResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (secrets.ResolveResult, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := r.calls[req.Sentinel]
+	r.calls[req.Sentinel]++
+	if req.Sentinel == r.transient && n == 0 {
+		// Not ErrDenied: a transient failure leaves the sentinel in place
+		// without being cached as a denial, so the retry resolves it.
+		return secrets.ResolveResult{}, errors.New("the control plane is unreachable")
+	}
+	values := r.values[req.Sentinel]
+	return secrets.ResolveResult{Value: values[min(n, len(values)-1)], ExpiresAt: time.Now().Add(time.Second)}, nil
+}
+
+func (r *flakyResolver) authorized() [][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([][]string(nil), r.asked...)
+}
+
+// The retry is authorized over what the request carries, not over what the
+// first attempt happened to resolve (ADR 0141 §4). A sentinel whose resolve
+// failed transiently is still in the request, resolves on the retry, and so
+// must be named in the verdict that lets the retry go.
+func TestHTTPProxyAuthorizesEverySentinelTheRetryCarries(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const rotating = "sk-ant-oat01-ROTATINGSENTINEL0000000000000000"
+	const flaky = "sk-ant-oat01-FLAKYSENTINEL000000000000000000"
+	const stale = "sk-ant-oat01-STALEVALUE0000000000000000000000"
+	const rotated = "sk-ant-oat01-ROTATEDVALUE00000000000000000000"
+	const second = "sk-ant-oat01-SECONDVALUE000000000000000000000"
+
+	var attempts atomic.Int32
+	var sawSecond []string
+	var mu sync.Mutex
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+		if n > 1 {
+			mu.Lock()
+			sawSecond = append(sawSecond, r.Header.Get("X-Other"))
+			mu.Unlock()
+		}
+		if r.Header.Get("Authorization") != "Bearer "+rotated {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, "ok")
+	})
+	defer origin.Close()
+
+	resolver := &flakyResolver{
+		values:    map[string][]string{rotating: {stale, rotated}, flaky: {second}},
+		calls:     map[string]int{},
+		transient: flaky,
+	}
+	client := startSecretProxy(ctx, t, rotating, resolver, func(cfg *Config) {
+		cfg.Secrets.Clients = []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{rotating, flaky}}}
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+rotating)
+	req.Header.Set("X-Other", "Bearer "+flaky)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if attempts.Load() != 2 {
+		t.Fatalf("upstream attempts = %d, want the original and one retry", attempts.Load())
+	}
+	// The retry did carry the credential the first attempt could not resolve,
+	// which is what makes the verdict's set matter.
+	mu.Lock()
+	carried := sawSecond
+	mu.Unlock()
+	if len(carried) != 1 || carried[0] != "Bearer "+second {
+		t.Fatalf("retry sent X-Other %q, want the value that resolved the second time", carried)
+	}
+
+	asked := resolver.authorized()
+	if len(asked) != 2 {
+		t.Fatalf("authorized %d times, want the request and the retry", len(asked))
+	}
+	want := []string{flaky, rotating}
+	slices.Sort(want)
+	if !slices.Equal(asked[1], want) {
+		t.Fatalf("the retry was authorized over %v, want every sentinel it carries %v", asked[1], want)
 	}
 }

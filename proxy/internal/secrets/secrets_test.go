@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -26,7 +27,7 @@ func (f *fakeResolver) Gate(context.Context, GateRequest) (GateAdmission, error)
 	return GateAdmission{}, &GateRefusal{Reason: "no gate here"}
 }
 
-func (f *fakeResolver) Judge(context.Context, JudgeRequest) (Verdict, error) {
+func (f *fakeResolver) Authorize(context.Context, AuthorizeRequest) (Verdict, error) {
 	return Verdict{Allow: true}, nil
 }
 
@@ -525,4 +526,103 @@ func TestSwapReportsEveryUseID(t *testing.T) {
 	if !slices.Equal(res.UseIDs, []string{"use_pass", "use_user"}) {
 		t.Fatalf("UseIDs = %v, want [use_pass use_user]", res.UseIDs)
 	}
+}
+
+// What Match reports is what Apply would swap. The two walk the same surface
+// through the same scan, and a sentinel Apply substitutes without Match having
+// named it would be a credential sent on a request nothing authorized
+// (ADR 0141 §4).
+func TestMatchReportsEverythingApplyWouldSwap(t *testing.T) {
+	const (
+		header = "sk-ant-oat01-HEADER"
+		query  = "sk-ant-oat01-QUERY"
+		basic  = "sk-ant-oat01-BASIC"
+		unused = "sk-ant-oat01-UNUSED"
+	)
+	sentinels := []string{header, query, basic, unused}
+	build := func(t *testing.T) *http.Request {
+		t.Helper()
+		req := newRequest(t, http.MethodPost, "https://api.github.com/repos?token="+query)
+		req.Header.Set("Authorization", "Bearer "+header)
+		req.Header.Set("X-Other", "Basic "+base64.StdEncoding.EncodeToString([]byte("git:"+basic)))
+		return req
+	}
+
+	resolver := &fakeResolver{fn: func(req ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: "real-" + req.Sentinel, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{ScanQuery: true, Sentinels: map[string][]string{"sandbox-1": sentinels}})
+
+	matched := sw.Match(build(t), "sandbox-1")
+	slices.Sort(matched)
+	want := []string{basic, header, query}
+	slices.Sort(want)
+	if !slices.Equal(matched, want) {
+		t.Fatalf("Match() = %v, want the three sentinels the request carries", matched)
+	}
+	if resolver.calls.Load() != 0 {
+		t.Fatalf("Match() resolved %d sentinels, want a read that resolves nothing", resolver.calls.Load())
+	}
+
+	swapped := build(t)
+	res := sw.Apply(context.Background(), swapped, "sandbox-1")
+	slices.Sort(res.Sentinels)
+	if !slices.Equal(res.Sentinels, want) {
+		t.Fatalf("Apply() swapped %v, want the same set Match reported", res.Sentinels)
+	}
+}
+
+// Match leaves the request exactly as it found it: it is asked before anything
+// is authorized, on a request that may yet be refused.
+func TestMatchDoesNotTouchTheRequest(t *testing.T) {
+	const sentinel = "sk-ant-oat01-SENTINEL"
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: "sk-real-secret", ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{ScanQuery: true, Sentinels: map[string][]string{"sandbox-1": {sentinel}}})
+
+	req := newRequest(t, http.MethodGet, "https://api.github.com/user?token="+sentinel)
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	encoded := base64.StdEncoding.EncodeToString([]byte("git:" + sentinel))
+	req.Header.Set("X-Other", "Basic "+encoded)
+
+	if got := sw.Match(req, "sandbox-1"); len(got) != 1 || got[0] != sentinel {
+		t.Fatalf("Match() = %v, want the one sentinel", got)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer "+sentinel {
+		t.Fatalf("Authorization = %q, want it untouched", got)
+	}
+	if got := req.Header.Get("X-Other"); got != "Basic "+encoded {
+		t.Fatalf("X-Other = %q, want the token byte-for-byte", got)
+	}
+	if got := req.URL.Query().Get("token"); got != sentinel {
+		t.Fatalf("token = %q, want it untouched", got)
+	}
+}
+
+// A destination with a port is bound to the same use as one without: the
+// authorizer is told the host resolution will ask about.
+func TestAuthorizeStatesTheHostResolutionWill(t *testing.T) {
+	resolver := &hostRecordingResolver{}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"sk-ant-oat01-SENTINEL"}}})
+	if _, err := sw.Authorize(context.Background(), AuthorizeRequest{
+		ClientID: "sandbox-1",
+		Host:     "api.github.com:8443",
+		URL:      "https://api.github.com:8443/user",
+	}); err != nil {
+		t.Fatalf("Authorize() error = %v", err)
+	}
+	if resolver.host != "api.github.com" {
+		t.Fatalf("authorizer was told host %q, want it without the port", resolver.host)
+	}
+}
+
+type hostRecordingResolver struct {
+	fakeResolver
+	host string
+}
+
+func (r *hostRecordingResolver) Authorize(_ context.Context, req AuthorizeRequest) (Verdict, error) {
+	r.host = req.Host
+	return Verdict{Allow: true}, nil
 }

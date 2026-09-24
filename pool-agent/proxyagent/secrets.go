@@ -320,18 +320,51 @@ func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
 	return r.activations.lookupAny(sentinel)
 }
 
-// Judge decides whether a request may leave carrying the credentials the proxy
-// just swapped into it. It is where the pool judge will read the request
-// against the uses those credentials were approved for; until then every
-// request that reaches it is allowed.
+// Authorize decides whether a request may carry the credentials its sentinels
+// stand for, before any of them is resolved (ADR 0141 §4). It binds every
+// sentinel the proxy matched to a live activation of the sandbox that sent the
+// request, and those bindings name the approved uses the request is authorized
+// against: a request says nothing about which use it is spending, and nothing
+// it said about one could be believed.
 //
-// It is not the only check a credential passes. By the time a request is
-// judged, its destination has already been held to the host the credential was
-// approved for — an activation's here (activation, below), any other
-// sentinel's by the control plane's grant match — so the host is enforced
-// whatever this answers.
-func (r *secretResolver) Judge(context.Context, proxy.SecretJudgeRequest) (proxy.SecretVerdict, error) {
-	return proxy.SecretVerdict{Allow: true}, nil
+// It is where the project's judge will read the request against those uses;
+// until then every request that reaches it is allowed.
+//
+// A sentinel with no live activation is spending no approved use and keeps the
+// policy it already has, which is not one policy but two. An injected harness
+// credential goes to the control plane at resolve time and is held to its
+// grant and host there. One this process minted whose activation has lapsed,
+// or that is being spent against a host the use does not cover, never gets
+// that far: Resolve refuses it here (isEphemeralCandidate, below), which is
+// what keeps the use window and the host scope from being advisory. Either
+// way that check now runs second rather than alone, because resolution happens
+// only for a request this allowed.
+func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
+	return proxy.SecretVerdict{Allow: true, UseIDs: r.uses(req)}, nil
+}
+
+// uses names the approved uses a request's sentinels are being spent under,
+// through the same binding resolution makes: this sandbox's activation, live,
+// for a host the use covers.
+func (r *secretResolver) uses(req proxy.SecretAuthorizeRequest) []string {
+	var ids []string
+	seen := make(map[string]struct{}, len(req.Sentinels))
+	for _, sentinel := range req.Sentinels {
+		record, ok := r.activation(proxy.SecretResolveRequest{
+			ClientID: req.ClientID,
+			Sentinel: sentinel,
+			Host:     req.Host,
+		})
+		if !ok || record.UseID == "" {
+			continue
+		}
+		if _, ok := seen[record.UseID]; ok {
+			continue
+		}
+		seen[record.UseID] = struct{}{}
+		ids = append(ids, record.UseID)
+	}
+	return ids
 }
 
 // activation returns the live activation for a resolve request, if the sentinel

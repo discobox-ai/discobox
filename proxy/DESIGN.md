@@ -182,12 +182,12 @@ never persisted by the proxy.
 flowchart LR
     req["outbound request\nAuthorization: Bearer <sentinel>"] --> scan["match against client's sentinel set"]
     scan -->|no match| fwd["forward unchanged"]
-    scan -->|match| resolve["Resolver.Resolve(sentinel, host, clientID)"]
+    scan -->|match| judge["Resolver.Authorize(request as sent, sentinels)"]
+    judge -->|deny / error| refuse["403 from the proxy, audited once as blocked"]
+    judge -->|allow| resolve["Resolver.Resolve(sentinel, host, clientID)"]
     resolve -->|approved| swap["substitute real value + redact from audit"]
     resolve -->|denied / pending / error| leave["leave sentinel in place → upstream 401"]
-    swap --> judge["Resolver.Judge(request as sent, use IDs)"]
-    judge -->|allow| fwd
-    judge -->|deny / error| refuse["403 from the proxy, audited once as blocked"]
+    swap --> fwd
     leave --> fwd
 ```
 
@@ -209,16 +209,30 @@ Key properties:
 - **Fail-closed on the secret, fail-open on the request.** On denial, pending
   approval, or resolver error, the sentinel is left in place; the upstream
   receives the placeholder and rejects it. The real value is never leaked.
-- **A request carrying swapped credentials is judged before it leaves** — as is
-  every request to a host the client trusts by a pin ([Host Trust](#host-trust))
-  (`Resolver.Judge`). Resolution decides whether a credential may go to a host
-  and is cached; the judge decides whether *this* request may carry it, so it
-  runs per request, after the swap. It is shown the request as the sandbox sent
-  it — the pre-swap URL and headers, sentinels and never credentials — with the
-  use IDs the values were taken under. A request it does not allow, or cannot
-  answer for, is refused by the proxy with a 403, never sent, and audited once
-  as blocked (`judge: <reason>`). The pool agent's judge allows every request
-  today; the destination host is held at resolve time either way.
+- **A request carrying sentinels is authorized before any of them is resolved**,
+  as is every request to a host the client trusts by a pin ([Host Trust](#host-trust)),
+  (`Resolver.Authorize`, `Swapper.Match`; [ADR 0150](../docs/adr/0150-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
+  Resolution decides whether a credential may go to a host and is cached; the
+  judge decides whether *this* request may carry it, so it runs per request —
+  and it runs first, because a refused request must not decrypt a credential
+  and a value already in the cache must not carry a new operation through on
+  the strength of an older one. What it is shown is the request as the sandbox
+  sent it, nothing yet substituted: sentinels and never credentials. The uses
+  come back with the verdict, since binding a sentinel to a use is the
+  resolver's to do and nothing the request says about one could be believed. A
+  request it does not allow, or cannot answer for, is refused by the proxy with
+  a 403, never sent, and audited once as blocked (`judge: <reason>`) against
+  the uses the verdict named. `Match` reports every sentinel the request
+  carries, which is a superset of what `Apply` substitutes — an unresolvable
+  one is authorized and then left in place — so nothing is substituted without
+  having been authorized, which is the direction that matters. The two share
+  one definition of the surface they walk (`eachValue`) but walk it twice, so a
+  request carrying a sentinel pays the base64 scan over its header values
+  twice; for a harness that is every call to its model API, and it is the price
+  of not resolving a credential before something agreed to the request. A request to a trusted host is authorized
+  against the uses the pin was granted for, whether or not it carries a
+  credential, and those come from the pin rather than from anything the request
+  said. The destination host is held at resolve time either way.
 - **The gate host never reaches the internet** (`Secrets.GateHost`,
   `Resolver.Gate`; [ADR 0140](../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) §2).
   A CONNECT to it is intercepted whatever the allowlist says, and a request for
@@ -285,6 +299,13 @@ Key properties:
   neither differs from what was rejected there is nothing new to send, and the
   401 is passed through. Only header swaps with a body small enough to hold
   (8 MiB) are retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
+  The retry is a credential the first attempt did not carry, so it is
+  authorized before it is sent, over `Match` of the request about to go — not
+  over what the first attempt managed to resolve, since a sentinel that failed
+  transiently resolves on the retry. A refusal there is the third outcome
+  beside the two above: nothing is re-sent, the upstream's own 401 is what the
+  sandbox gets, and the refusal is recorded as a blocked row carrying that same
+  status, because no 403 was ever sent for it.
 - **A credential the retry could not save is reported back.** The response path
   is the only place that learns a credential has stopped working, so it tells
   the resolver: `rejected` when there was nothing different to send, and

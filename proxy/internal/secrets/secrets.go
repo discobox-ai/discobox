@@ -74,32 +74,42 @@ type ReportRequest struct {
 	Outcome  Outcome
 }
 
-// JudgeRequest is a request the proxy has just put credentials into, or one
-// bound for a host the client trusts by a pin, as the judge reads it before it
-// is sent. Everything in it is what the sandbox sent:
-// the URL and headers are the ones from before the swap, so a judge sees the
-// sentinels and never a credential.
-type JudgeRequest struct {
+// AuthorizeRequest is a request carrying sentinels, or one bound for a host
+// the client trusts by a pin, as it is authorized before anything in it is
+// resolved. Everything in it is what the sandbox sent — nothing has been
+// substituted yet — so it holds sentinels and never a credential
+// (ADR 0150 §4).
+type AuthorizeRequest struct {
 	ClientID string
-	// UseIDs are the approved uses the substituted values were taken under,
-	// empty for a credential with no use. They are what a request is judged
-	// against: whether sending it is what those uses were approved for.
-	UseIDs []string
+	// Sentinels are the client's sentinels found in this request, literally or
+	// inside a base64 token. They are what the resolver binds to the uses the
+	// request is authorized against; the request itself says nothing about
+	// which use it is spending, and could not be believed if it did.
+	Sentinels []string
 	// TrustUseIDs are the uses the destination was trusted for, when the
 	// client reaches it by a pin (ADR 0149 §5). A request to a trusted host is
-	// judged against them whether or not it carries a credential.
+	// authorized against them whether or not it carries a credential, and they
+	// come from the pin rather than from anything the request said.
 	TrustUseIDs []string
-	Sentinels   []string
 	Method      string
-	Host        string
-	URL         string
-	Header      http.Header
+	// Host is the destination without its port, stated the way Resolve states
+	// it, so that a use bound here is the use the value is taken under. The
+	// port, where there was one, is still in URL.
+	Host   string
+	URL    string
+	Header http.Header
 }
 
-// Verdict is a judge's answer. A request it does not allow is never sent.
+// Verdict is an authorizer's answer. A request it does not allow is never
+// sent, and nothing in it is resolved.
 type Verdict struct {
 	Allow  bool
 	Reason string
+	// UseIDs are the approved uses the resolver bound this request's sentinels
+	// to, empty for sentinels that carry no use. They name what the request
+	// was authorized — or refused — under, so a refusal that resolved nothing
+	// is still recorded against the use it was about.
+	UseIDs []string
 }
 
 // Resolver resolves a sentinel to its real credential value, and hears back
@@ -112,13 +122,13 @@ type Resolver interface {
 	// a rejection would be indistinguishable from a credential that never
 	// failed, which is the state ADR 0132 exists to end.
 	Report(ctx context.Context, req ReportRequest) error
-	// Judge decides whether a request may be sent carrying the credentials
-	// just swapped into it: whether sending it is what their uses were
-	// approved for. It runs for every request, after the swap and before the
-	// request leaves, because a resolved value is cached and reused while
-	// every request it goes out on is a different one. A resolver that cannot
-	// answer returns an error, and the request is not sent.
-	Judge(ctx context.Context, req JudgeRequest) (Verdict, error)
+	// Authorize decides whether a request may carry the credentials its
+	// sentinels stand for: whether sending it is what their uses were approved
+	// for. It runs for every request that matched a sentinel, and it runs
+	// before Resolve, so a refused request never decrypts a credential and a
+	// cached value never authorizes a new operation (ADR 0141 §4). A resolver
+	// that cannot answer returns an error, and nothing is resolved or sent.
+	Authorize(ctx context.Context, req AuthorizeRequest) (Verdict, error)
 	// Gate answers a request for the gate host, which never goes to the
 	// internet (Config.GateHost). It admits the request only when it carries
 	// a live use of the credential that opens the gate and the judge allows
@@ -321,13 +331,61 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 	host := extractHost(req.Host)
 	var res Result
 
+	res.Headers, res.QueryParams = s.eachValue(req, func(value string) (string, bool) {
+		return s.swapValue(ctx, clientID, host, value, sentinels, &res)
+	})
+
+	dedupe(&res.Headers)
+	dedupe(&res.QueryParams)
+	dedupe(&res.UseIDs)
+	dedupe(&res.Sentinels)
+	return res
+}
+
+// Match reports which of clientID's sentinels req carries, literally or inside
+// a base64 token, and resolves none of them.
+//
+// It is what lets a request be authorized before anything in it is resolved
+// (ADR 0141 §4). It walks exactly the surface Apply swaps, through the same
+// scan, because the two drifting apart would be a credential going out on a
+// request nothing authorized.
+func (s *Swapper) Match(req *http.Request, clientID string) []string {
+	if req == nil || !s.Active(clientID) {
+		return nil
+	}
+	sentinels := s.sentinels[clientID]
+	var found []string
+	s.eachValue(req, func(value string) (string, bool) {
+		swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
+			found = append(found, sentinel)
+			// Substituting nothing is what keeps this a read: the value the
+			// scan rebuilds is discarded, and eachValue writes back only what
+			// a visit claims to have changed.
+			return "", false
+		})
+		return "", false
+	})
+	dedupe(&found)
+	return found
+}
+
+// eachValue calls visit with every header value, and with every query value
+// when query scanning is on, writing back the ones visit says it changed. It
+// returns the header names and query parameters that were written.
+//
+// It is the one definition of the surface Match and Apply share, so that what
+// is authorized and what is substituted cannot come apart. ApplyPrevious scans
+// a subset of it — headers only, from its own loop, because a request whose
+// query was swapped is never retried at all.
+func (s *Swapper) eachValue(req *http.Request, visit func(value string) (string, bool)) (headers, params []string) {
 	for name, values := range req.Header {
 		for i, value := range values {
-			swapped, ok := s.swapValue(ctx, clientID, host, value, sentinels, &res)
-			if ok {
-				req.Header[name][i] = swapped
-				res.Headers = append(res.Headers, http.CanonicalHeaderKey(name))
+			swapped, ok := visit(value)
+			if !ok {
+				continue
 			}
+			req.Header[name][i] = swapped
+			headers = append(headers, http.CanonicalHeaderKey(name))
 		}
 	}
 
@@ -336,24 +394,20 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 		changed := false
 		for name, values := range query {
 			for i, value := range values {
-				swapped, ok := s.swapValue(ctx, clientID, host, value, sentinels, &res)
-				if ok {
-					query[name][i] = swapped
-					changed = true
-					res.QueryParams = append(res.QueryParams, name)
+				swapped, ok := visit(value)
+				if !ok {
+					continue
 				}
+				query[name][i] = swapped
+				changed = true
+				params = append(params, name)
 			}
 		}
 		if changed {
 			req.URL.RawQuery = query.Encode()
 		}
 	}
-
-	dedupe(&res.Headers)
-	dedupe(&res.QueryParams)
-	dedupe(&res.UseIDs)
-	dedupe(&res.Sentinels)
-	return res
+	return headers, params
 }
 
 func (s *Swapper) swapValue(ctx context.Context, clientID, host, value string, sentinels []string, res *Result) (string, bool) {
@@ -629,14 +683,17 @@ func (s *Swapper) Gate(ctx context.Context, req GateRequest) (GateAdmission, err
 	return s.resolver.Gate(ctx, req)
 }
 
-// Judge asks the resolver whether a request may leave with what was just
-// swapped into it. A Swapper built without a resolver swaps nothing, so it has
-// nothing to judge.
-func (s *Swapper) Judge(ctx context.Context, req JudgeRequest) (Verdict, error) {
+// Authorize asks the resolver whether a request may carry what its sentinels
+// stand for. A Swapper built without a resolver swaps nothing, so there is
+// nothing to authorize.
+func (s *Swapper) Authorize(ctx context.Context, req AuthorizeRequest) (Verdict, error) {
 	if s == nil || s.resolver == nil {
 		return Verdict{Allow: true}, nil
 	}
-	return s.resolver.Judge(ctx, req)
+	// The destination as Resolve will state it, so that a sentinel bound to a
+	// use here is bound to the same one when its value is fetched.
+	req.Host = extractHost(req.Host)
+	return s.resolver.Authorize(ctx, req)
 }
 
 // Invalidate drops whatever this client's sentinels resolved to for host, so

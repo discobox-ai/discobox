@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,9 +40,13 @@ type stubResolver struct {
 	// value, for the tests that assert on it. Nil discards.
 	reports *reportLog
 	// deny, when set, is the reason every request is refused with; empty
-	// allows them all. judged, when set, collects what the judge was shown.
+	// allows them all. judged, when set, collects what the authorizer was
+	// shown.
 	deny   string
-	judged *[]secrets.JudgeRequest
+	judged *[]secrets.AuthorizeRequest
+	// resolved, when set, counts the sentinels this resolver was asked to
+	// resolve. A refused request must leave it at zero.
+	resolved *atomic.Int64
 }
 
 func TestMergeResponseBodyErrorRecordsUnexpectedEOF(t *testing.T) {
@@ -70,14 +75,21 @@ func (stubResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmi
 	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
 }
 
-func (r stubResolver) Judge(_ context.Context, req secrets.JudgeRequest) (secrets.Verdict, error) {
+func (r stubResolver) Authorize(_ context.Context, req secrets.AuthorizeRequest) (secrets.Verdict, error) {
 	if r.judged != nil {
 		*r.judged = append(*r.judged, req)
 	}
-	return secrets.Verdict{Allow: r.deny == "", Reason: r.deny}, nil
+	verdict := secrets.Verdict{Allow: r.deny == "", Reason: r.deny}
+	if r.useID != "" {
+		verdict.UseIDs = []string{r.useID}
+	}
+	return verdict, nil
 }
 
 func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (secrets.ResolveResult, error) {
+	if r.resolved != nil {
+		r.resolved.Add(1)
+	}
 	if r.host != "" && req.Host != r.host {
 		return secrets.ResolveResult{}, secrets.ErrDenied
 	}
@@ -360,6 +372,10 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 // with the credential it would have carried going nowhere: not upstream, not
 // into the judge's view of the request, and not into the audit row that
 // records the refusal.
+//
+// It is also never fetched. Authorization runs before resolution (ADR 0141
+// §4), so a refusal is a credential that stayed where it was rather than one
+// that was retrieved and then withheld.
 func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -389,7 +405,8 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
-	var judged []secrets.JudgeRequest
+	var judged []secrets.AuthorizeRequest
+	var resolved atomic.Int64
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
 		ListenAddress: "127.0.0.1:0",
@@ -400,7 +417,7 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 			ClientID:  "sandbox-1",
 			Sentinels: []string{sentinel},
 		}}},
-	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname(), useID: "use_abc", deny: reason, judged: &judged})
+	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname(), useID: "use_abc", deny: reason, judged: &judged, resolved: &resolved})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -448,11 +465,15 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 		t.Fatalf("judged %d requests, want 1", len(judged))
 	}
 	shown := judged[0]
-	if shown.ClientID != "sandbox-1" || shown.Method != http.MethodDelete || len(shown.UseIDs) != 1 || shown.UseIDs[0] != "use_abc" {
-		t.Fatalf("judge was shown %+v, want the sandbox, the method, and the use", shown)
+	if shown.ClientID != "sandbox-1" || shown.Method != http.MethodDelete ||
+		len(shown.Sentinels) != 1 || shown.Sentinels[0] != sentinel {
+		t.Fatalf("judge was shown %+v, want the sandbox, the method, and the sentinel it carried", shown)
 	}
 	if got := shown.Header.Get("Authorization"); got != "Bearer "+sentinel {
 		t.Fatalf("judge saw Authorization %q, want the sentinel and never the credential", got)
+	}
+	if got := resolved.Load(); got != 0 {
+		t.Fatalf("a refused request resolved %d credentials, want none fetched at all", got)
 	}
 
 	closeServer()
@@ -478,6 +499,13 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 			blocked++
 			if exchange.BlockedReason != "judge: "+reason || exchange.Status != http.StatusForbidden {
 				t.Fatalf("blocked row = %+v, want the judge's reason and a 403", exchange)
+			}
+			// A refusal names the use it was about, though this assertion
+			// alone does not say where the name came from: the row carried the
+			// use before this change too, off the swap rather than off the
+			// verdict. What proves the new path is resolved.Load() above.
+			if exchange.SwappedUseIDs != "use_abc" {
+				t.Fatalf("blocked row named use %q, want the use the request was refused under", exchange.SwappedUseIDs)
 			}
 		}
 	}
