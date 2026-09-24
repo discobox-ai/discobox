@@ -551,6 +551,14 @@ COPY sandbox-agent/image/desktop/mimeapps.list /etc/xdg/mimeapps.list
 COPY sandbox-agent/image/desktop/helpers.rc /etc/xdg/xfce4/helpers.rc
 # Chromium's own scale, which it otherwise infers twice over. See the file.
 COPY sandbox-agent/image/desktop/chromium.d /etc/chromium.d
+# Browser sign-in is turned off by machine policy. Without this, every new
+# profile opens on the full-window "Sign in to Chromium" first-run page rather
+# than a tab, which is the first thing a person sees after opening the browser
+# from the desktop. Sign-in could not work here anyway: Debian's Chromium has no
+# Google API keys, so there is no sync to sign in to. A policy rather than
+# --no-first-run in /etc/chromium.d, because that flag also skips applying
+# initial_preferences (below).
+COPY sandbox-agent/image/desktop/chromium-policies /etc/chromium/policies/managed
 COPY --chmod=0755 sandbox-agent/image/desktop/brand-theme /usr/local/libexec/discobox/brand-theme
 COPY sandbox-agent/image/desktop/wallpaper.svg /usr/local/libexec/discobox/wallpaper.svg
 # The theme is derived from Debian's Greybird-dark rather than authored, and the
