@@ -202,3 +202,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0145](0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md) | A sandbox declares its platform, and a non-Linux one is a VM template | Accepted |
 | [0146](0146-a-hook-keeps-the-name-its-harness-used-and-gains-a-canonical-one.md) | A hook keeps the name its harness used, and gains a canonical one | Accepted |
 | [0147](0147-opencode-publishes-its-lifecycle-through-an-image-owned-plugin.md) | opencode publishes its lifecycle through an image-owned plugin | Accepted |
+| [0148](0148-a-sandbox-resolves-names-through-its-pool-over-mtls.md) | A sandbox resolves names through its pool, over mTLS | Accepted |
