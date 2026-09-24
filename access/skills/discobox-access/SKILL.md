@@ -107,10 +107,10 @@ discobox-access run --use <id> -- discobox new --json <<'EOF'
 EOF
 ```
 
-- It is cut from the directory you run it in: your repository, at its current
-  commit. `"includeDirty": true` carries your uncommitted work too;
-  `"noSource": true` gives it nothing checked out; `"include": ["../other"]`
-  brings in another source beside it.
+- It is cut from the directory you run it in: your repository at its current
+  commit, **with your uncommitted work on top**. Set `"includeDirty": false`
+  to hand over only what is committed. `"noSource": true` gives it nothing
+  checked out; `"include": ["../other"]` brings in another source beside it.
 - It runs the project's default harness. Leave `"harness"` out unless the
   person asked for a particular one.
 - It runs as your user, with your Git identity, like a discobox a person
