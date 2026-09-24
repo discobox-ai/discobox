@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Judging is its own authority (ADR 0141 §2): a token for a discobox's own
+// Judging is its own authority (ADR 0148 §2): a token for a discobox's own
 // work cannot ask the judge anything, whatever else it may do.
 func TestJudgeRequiresItsOwnScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)

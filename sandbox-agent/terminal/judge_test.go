@@ -16,7 +16,7 @@ import (
 )
 
 // newJudgeService is the project's judge: a discobox that answers judging asks
-// from its pool and is worked in by nobody (ADR 0141 §1). wrapper stands in for
+// from its pool and is worked in by nobody (ADR 0148 §1). wrapper stands in for
 // the image's discobox-prompt, which the judge resolves on the harness
 // environment's PATH.
 func newJudgeService(t *testing.T, mode, wrapper string) *Service {

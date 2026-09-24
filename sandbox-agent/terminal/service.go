@@ -249,7 +249,7 @@ func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, error) {
 	// A judge has no terminal, and starting the harness in one would run the
 	// project's agent — with the judge's own credential — in the sandbox whose
-	// whole purpose is to have no work in it (ADR 0141 §1). Nothing in the
+	// whole purpose is to have no work in it (ADR 0148 §1). Nothing in the
 	// agent asks for one, and this is what keeps an attach from asking.
 	if s.harnessMode == config.HarnessModeJudge {
 		return execs.Exec{}, errors.New("a judge runs no terminal")

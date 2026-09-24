@@ -4714,7 +4714,7 @@ func (s *SandboxToolsResponse) SetTools(val []SandboxTool) {
 // creates: a user that gives name or homeDirectory must give uid, and uid
 // and gid must each be 0 (root) or within 1000-60000, the range a Linux
 // guest gives ordinary accounts. Anything else is refused with 400, never
-// clamped (ADR 0141).
+// clamped (ADR 0148).
 // Ref: #/components/schemas/SandboxUser
 type SandboxUser struct {
 	// Supplementary groups, each a group name or a numeric GID, resolved inside

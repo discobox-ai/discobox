@@ -11,7 +11,7 @@ import (
 )
 
 // JudgeForPool puts a job to the judge of the project that owns the asking
-// pool (ADR 0141 §2). The pool is authenticated as itself; which judge answers
+// pool (ADR 0148 §2). The pool is authenticated as itself; which judge answers
 // is the control plane's to decide, not the pool's to name.
 func (h *Handler) JudgeForPool(ctx context.Context, req *serverapi.PoolJudgeAsk, params serverapi.JudgeForPoolParams) (serverapi.JudgeForPoolRes, error) {
 	principal, err := credentialBrokerPrincipal(ctx)
@@ -45,7 +45,7 @@ func (h *Handler) JudgeForPool(ctx context.Context, req *serverapi.PoolJudgeAsk,
 //
 // Nothing here says what the use approves. The ask carries the discobox, the
 // use and the evidence; the sentence being judged against is read from the
-// live grant by the service (ADR 0141 §4).
+// live grant by the service (ADR 0148 §4).
 func judgeAskFrom(in *serverapi.PoolJudgeAsk) services.JudgeAsk {
 	ask := services.JudgeAsk{
 		SandboxID: in.SandboxId,

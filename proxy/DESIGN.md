@@ -209,9 +209,14 @@ Key properties:
 - **Fail-closed on the secret, fail-open on the request.** On denial, pending
   approval, or resolver error, the sentinel is left in place; the upstream
   receives the placeholder and rejects it. The real value is never leaked.
+<<<<<<< HEAD
 - **A request carrying sentinels is authorized before any of them is resolved**,
   as is every request to a host the client trusts by a pin ([Host Trust](#host-trust)),
   (`Resolver.Authorize`, `Swapper.Match`; [ADR 0150](../docs/adr/0150-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
+=======
+- **A request carrying sentinels is authorized before any of them is resolved**
+  (`Resolver.Authorize`, `Swapper.Match`; [ADR 0148](../docs/adr/0148-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
+>>>>>>> c12e9e6d (docs(adr): the judge ADR is 0148, because 0141 was taken)
   Resolution decides whether a credential may go to a host and is cached; the
   judge decides whether *this* request may carry it, so it runs per request —
   and it runs first, because a refused request must not decrypt a credential

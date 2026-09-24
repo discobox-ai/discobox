@@ -21,7 +21,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
-// Routing a job to the judge (ADR 0141 §2).
+// Routing a job to the judge (ADR 0148 §2).
 //
 // A pool asks the control plane, and the control plane forwards to the pool
 // hosting the project's judge, over the channel it already uses to create and
@@ -54,7 +54,7 @@ func (s *Service) SetUses(uses Uses) { s.uses = uses }
 // Every refusal here is the same answer: no verdict. A project with no judge, a
 // judge that will not come up, a pool that cannot be reached — none of them
 // allow anything, and the reason travels back so the pool can say why the
-// credential its discobox asked for is not coming (ADR 0141 §1).
+// credential its discobox asked for is not coming (ADR 0148 §1).
 func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAsk) (judge.Answer, error) {
 	// A pool that asks a server which does not judge is answered before
 	// anything is looked up. Nothing should be asking — the pool is told
@@ -62,7 +62,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	if !s.enabled {
 		// Said in a way a program can recognize, because a pool has to tell it
 		// apart from a judge that failed: one means stop asking, the other
-		// means no credential goes out (ADR 0141 §4).
+		// means no credential goes out (ADR 0148 §4).
 		return judge.Answer{}, apperrors.NewStatusErrorOfKind(http.StatusServiceUnavailable,
 			apperrors.KindJudgingDisabled, "this server does not judge credential use")
 	}
@@ -97,7 +97,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	//
 	// The judge is in no listing, so this is the only place its failure is
 	// mentioned at all — but it travels to the pool, and from there to the
-	// discobox that asked (ADR 0141 §4: the reason is what a discobox learns).
+	// discobox that asked (ADR 0148 §4: the reason is what a discobox learns).
 	// A sandbox's own reconcile error is written for whoever runs the server:
 	// it carries pool host paths, image references and whatever a provider's
 	// API said. That is an operator's to read, in the operator's log.
@@ -120,7 +120,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 		return judge.Answer{}, err
 	}
 
-	// One ask is bounded here as well as at the judge (ADR 0141 §2): a caller
+	// One ask is bounded here as well as at the judge (ADR 0148 §2): a caller
 	// that passed no deadline must not be able to hold this goroutine, the
 	// lease, and the judge's only slot for as long as the judge is willing to
 	// think. Whichever deadline is sooner wins.
@@ -167,7 +167,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 			fmt.Sprintf("the project's judge answered with something unreadable: %v", err))
 	}
 	// Asked again after the verdict, because a verdict takes a while and a
-	// grant can be revoked inside it (ADR 0141 §4). The check is the same one
+	// grant can be revoked inside it (ADR 0148 §4). The check is the same one
 	// the question was built from, so what it rules out is a use that stopped
 	// being approved while a model was reading the request it authorized.
 	if _, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask)); err != nil {
@@ -180,7 +180,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 // the control plane knows. The pool names the discobox and the use; the
 // sentence that use approves, the credential behind it and the host it is
 // approved for are read here, so a pool cannot widen its own question
-// (ADR 0141 §4).
+// (ADR 0148 §4).
 func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk) (judge.Job, error) {
 	if ask.Request == nil {
 		return judge.Job{}, apperrors.NewStatusError(http.StatusBadRequest, "a request to judge is required")

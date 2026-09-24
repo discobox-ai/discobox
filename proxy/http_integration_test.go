@@ -373,7 +373,7 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 // into the judge's view of the request, and not into the audit row that
 // records the refusal.
 //
-// It is also never fetched. Authorization runs before resolution (ADR 0141
+// It is also never fetched. Authorization runs before resolution (ADR 0148
 // §4), so a refusal is a credential that stayed where it was rather than one
 // that was retrieved and then withheld.
 func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {

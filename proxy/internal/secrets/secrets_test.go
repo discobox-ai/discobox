@@ -531,7 +531,7 @@ func TestSwapReportsEveryUseID(t *testing.T) {
 // What Match reports is what Apply would swap. The two walk the same surface
 // through the same scan, and a sentinel Apply substitutes without Match having
 // named it would be a credential sent on a request nothing authorized
-// (ADR 0141 §4).
+// (ADR 0148 §4).
 func TestMatchReportsEverythingApplyWouldSwap(t *testing.T) {
 	const (
 		header = "sk-ant-oat01-HEADER"

@@ -119,7 +119,7 @@ type SandboxProviderCatalogItem struct {
 
 // ListSandboxes answers with the project's discoboxes. A judge is not one of
 // them unless it is asked for: it runs no terminal and holds no work, so it is
-// not what asking what is in a project means (ADR 0141 §1).
+// not what asking what is in a project means (ADR 0148 §1).
 func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, listOptions ...store.SandboxListOption) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
@@ -166,7 +166,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	// The account boot creates, and the one the pool agent chowns a source tree
 	// to before the sandbox exists; a user it cannot create with a usable uid
-	// is refused here rather than failing, or landing on root, later (ADR 0141).
+	// is refused here rather than failing, or landing on root, later (ADR 0148).
 	user := services.SandboxUserToModel(config.User)
 	if err := user.ValidateAccount(); err != nil {
 		return nil, err
@@ -431,7 +431,7 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 
 // AcquireSandboxHTTPClientForServer is the same lease for a call Discobox
 // makes itself rather than on behalf of somebody: putting a job to the
-// project's judge (ADR 0141 §2). There are no caller scopes to check, because
+// project's judge (ADR 0148 §2). There are no caller scopes to check, because
 // there is no caller — the scopes are this code's own, and the route they
 // reach is the one they name.
 func (s *Service) AcquireSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {

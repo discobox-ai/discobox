@@ -402,7 +402,7 @@ func AgentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretG
 // the sentence a person approved, the credential in the words they read it as,
 // and the host the grant is limited to.
 //
-// It is the control plane's to answer and not the pool's to assert (ADR 0141
+// It is the control plane's to answer and not the pool's to assert (ADR 0148
 // §4). It refuses unless the use, the credential, the discobox and the
 // destination all still belong to one live grant — the same listing a resolve
 // is matched against, so a use that can be judged is a use that could be

@@ -2,7 +2,7 @@ package judge
 
 // System is what the judge is told it is doing. It is the trusted side's
 // alone: no caller supplies it, and PromptVersion changes with it so a stored
-// verdict can be read against the words that produced it (ADR 0141 §2).
+// verdict can be read against the words that produced it (ADR 0148 §2).
 //
 // Every rule in it is here because its absence is an exploit. Evidence is
 // data, so a request body saying it was approved says nothing. The purpose and

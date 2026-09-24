@@ -1,5 +1,5 @@
 // Package judge is the question Discobox puts to a model before a credential
-// is used, and the answer it will accept back (ADR 0141).
+// is used, and the answer it will accept back (ADR 0148).
 //
 // It holds the contract and nothing that runs it: the job a caller may ask,
 // the system prompt and schema the trusted side supplies, and the strict
@@ -120,7 +120,7 @@ type Request struct {
 // The first ask describes it and does not carry it: most requests are decided
 // by what they are and where they go, and a body sent every time is tokens
 // spent answering a question the URL has already settled. The judge asks to be
-// shown it when the operation lives in there (ADR 0141 §6).
+// shown it when the operation lives in there (ADR 0148 §6).
 type Body struct {
 	// MediaType is the content type as declared, if it was.
 	MediaType string `json:"mediaType,omitempty"`
@@ -135,7 +135,7 @@ type Body struct {
 	// Missing says, in a sentence for the judge, why Content is not the whole
 	// body: larger than may be shown, not text, an encoding that could not be
 	// decoded. It is said rather than hidden, so the judge decides knowing
-	// what it is not being shown (ADR 0141 §6).
+	// what it is not being shown (ADR 0148 §6).
 	//
 	// It is an answer to having been asked, never part of the first
 	// description: with Form set when that form showed some of the body, or

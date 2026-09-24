@@ -11,7 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
-// The judge runtime's one job (ADR 0141 §1): a sandbox in judge mode answers
+// The judge runtime's one job (ADR 0148 §1): a sandbox in judge mode answers
 // judging asks from its pool, and is worked in by nobody.
 //
 // The ask reaches the harness through the image's own discobox-prompt, with
@@ -81,7 +81,7 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 		// runs with the project's harness credential in its environment, and
 		// a CLI that cannot authenticate prints back what it tried. It is
 		// recorded here, where the sandbox's own log is, rather than sent to
-		// whoever asked (ADR 0141 §8).
+		// whoever asked (ADR 0148 §8).
 		var failure *execs.OnceFailure
 		if errors.As(err, &failure) && failure.Stderr != "" {
 			slog.DebugContext(ctx, "the judge's wrapper failed", "stderr", failure.Stderr)
