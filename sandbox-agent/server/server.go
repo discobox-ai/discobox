@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -646,7 +647,7 @@ func startDeclaredServices(ctx context.Context, logger *slog.Logger, await func(
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	var body []byte
-	if enc, ok := value.(interface{ Encode(*jx.Encoder) }); ok {
+	if enc, ok := jxEncoder(value); ok {
 		// ogen types must be encoded via jx: encoding/json mis-serializes their
 		// optional fields (an unset OptString's MarshalJSON returns empty bytes,
 		// which fails json.Marshal with "unexpected end of JSON input").
@@ -664,6 +665,29 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
+}
+
+// jxEncoder finds the generated encoder for value, including when value is a
+// struct rather than a pointer to one.
+//
+// The generated Encode has a pointer receiver, so a value never satisfies the
+// interface and would fall through to encoding/json — which is the thing that
+// cannot encode an unset optional field. A caller that writes
+// `writeJSON(w, status, sandboxapi.ErrorResponse{...})` is not making a
+// mistake it could see, so the copy is taken here rather than asked for at
+// every call site.
+func jxEncoder(value any) (interface{ Encode(*jx.Encoder) }, bool) {
+	if enc, ok := value.(interface{ Encode(*jx.Encoder) }); ok {
+		return enc, true
+	}
+	held := reflect.ValueOf(value)
+	if held.Kind() != reflect.Struct {
+		return nil, false
+	}
+	addressable := reflect.New(held.Type())
+	addressable.Elem().Set(held)
+	enc, ok := addressable.Interface().(interface{ Encode(*jx.Encoder) })
+	return enc, ok
 }
 
 type statusError struct {
