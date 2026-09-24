@@ -14,9 +14,9 @@
 # two on the same digest unless a guest change is deliberately reaching one
 # backend first.
 ARG GUEST_IMAGE=ghcr.io/discobox-ai/discobox-vm@sha256:af1d6ee4ac0b833c7432f61651b29dacaad7a9c71e7e080ac3dfcdc1c8e46a48
-# Not yet a digest: re-pinned to one once libkrun-runtime/v1 publishes, which
-# `task vm:publish-libkrun-runtime` reports.
-ARG RUNTIME_IMAGE=ghcr.io/discobox-ai/discobox-libkrun-runtime:v1
+# libkrun-runtime/v1. `task vm:publish-libkrun-runtime` reports the digest to
+# pin here.
+ARG RUNTIME_IMAGE=ghcr.io/discobox-ai/discobox-libkrun-runtime@sha256:fb0ab3825860052ad38ac1256f139bb0f296390f175cc51c329de3dc28ade114
 
 FROM --platform=linux/amd64 ${GUEST_IMAGE} AS guest
 FROM --platform=linux/amd64 ${RUNTIME_IMAGE} AS runtime
