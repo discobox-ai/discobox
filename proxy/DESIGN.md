@@ -212,7 +212,7 @@ Key properties:
 - **A request carrying sentinels is authorized before any of them is resolved**,
   as is every request to a host the client trusts by a pin
   ([Host Trust](#host-trust))
-  (`Resolver.Authorize`, `Swapper.Match`; [ADR 0150](../docs/adr/0150-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
+  (`Resolver.Authorize`, `Swapper.Match`; [ADR 26-09-22-838](../docs/adr/26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
   Resolution decides whether a credential may go to a host and is cached; the
   judge decides whether *this* request may carry it, so it runs per request —
   and it runs first, because a refused request must not decrypt a credential

@@ -134,7 +134,7 @@ func (s *Service) SetDirtier(dirtier Dirtier) { s.dirtier = dirtier }
 
 // markJudge says the project's judge may no longer be the right one: its
 // harness is what it runs, and this package owns which harness that is
-// (ADR 0150 §1). Failing to say so is not worth failing the change that
+// (ADR 26-09-22-838 §1). Failing to say so is not worth failing the change that
 // prompted it — the judge's own scan finds it either way — so it is logged.
 func (s *Service) markJudge(ctx context.Context, projectID string) {
 	if s.dirtier == nil || strings.TrimSpace(projectID) == "" {

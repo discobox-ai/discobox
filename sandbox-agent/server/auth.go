@@ -29,7 +29,7 @@ const (
 	// (ADR 0109 §4).
 	ScopeUDPConnect = "udp:connect"
 	// ScopeJudgeRun gates putting a job to the judge, and nothing else
-	// (ADR 0150 §2). It is its own scope because it is its own authority: a
+	// (ADR 26-09-22-838 §2). It is its own scope because it is its own authority: a
 	// token that may ask the judge may read and write nothing in the sandbox,
 	// and a token for a discobox's own work cannot ask.
 	ScopeJudgeRun = "judge:run"

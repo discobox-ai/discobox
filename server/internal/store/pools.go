@@ -89,7 +89,7 @@ func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error 
 
 // CountWorkSandboxesForPool counts what somebody would lose if this pool went:
 // its discoboxes, except the project's own judge, which Discobox put there and
-// makes again wherever the project's judge belongs (ADR 0150 §1). Only a delete
+// makes again wherever the project's judge belongs (ADR 26-09-22-838 §1). Only a delete
 // gate asks this. The reconcilers count every discobox, because a judge is as
 // real to a pool host as anything else it runs.
 func (s *Store) CountWorkSandboxesForPool(ctx context.Context, projectID, poolID string) (int64, error) {

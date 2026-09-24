@@ -16,7 +16,7 @@ import (
 
 // Asking for a verdict is the credential broker's authority, and a pool that
 // holds it still gets no verdict where there is no judge — which is the
-// answer, not an error to route around (ADR 0150 §1).
+// answer, not an error to route around (ADR 26-09-22-838 §1).
 func TestJudgeRouteIsTheBrokersAndAnswersNothingWithoutAJudge(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()

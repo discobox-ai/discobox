@@ -20,7 +20,7 @@ const Schema = `{"type":"object","properties":{` +
 	`},"required":["reason"],"additionalProperties":false}`
 
 // Answer is one round's reply. A judge either decides — allow, or not — or
-// asks to be shown one more thing (ADR 0150 §6). Asking is not allowing: a
+// asks to be shown one more thing (ADR 26-09-22-838 §6). Asking is not allowing: a
 // job whose rounds run out without a decision is refused, like any other
 // answer that is not an explicit allow.
 type Answer struct {

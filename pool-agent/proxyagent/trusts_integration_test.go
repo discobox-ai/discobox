@@ -56,7 +56,7 @@ func (f *fakeTrustControlPlane) ServeHTTP(w http.ResponseWriter, r *http.Request
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/judge"):
 		// A request to a trusted host is judged against the trust's uses
 		// (ADR 0149 §5), which this branch asks before resolving anything
-		// (ADR 0150 §4), so the control plane this fixture stands in for has
+		// (ADR 26-09-22-838 §4), so the control plane this fixture stands in for has
 		// to answer one. What the judge decides is its own test; here it
 		// allows, so this stays a test about the pin taking effect.
 		f.write(w, map[string]any{"allow": true, "reason": "that is the approved use"})

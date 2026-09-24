@@ -1,5 +1,5 @@
 // Package judges keeps a project's judge converged: the discobox that answers
-// judging asks and nothing else (ADR 0150 §1).
+// judging asks and nothing else (ADR 26-09-22-838 §1).
 //
 // A judge is Discobox's own. It is not the project's work, it is not listed
 // with it, and it exists exactly when the project can have one: a pool to run

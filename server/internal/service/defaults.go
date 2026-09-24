@@ -168,7 +168,7 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 		return err
 	}
 	project.DefaultPoolID = pool.ID
-	// The same pool runs the project's judge (ADR 0150 §1). It is recorded
+	// The same pool runs the project's judge (ADR 26-09-22-838 §1). It is recorded
 	// here, once, because this is the pool the environment chose — docker on
 	// Linux, a Linux VM on macOS and Windows — and all three run Linux
 	// containers, which is what a judge is. A pool added later for another

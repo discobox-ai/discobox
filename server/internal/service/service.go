@@ -121,16 +121,16 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// One service answers both: host trust is the credential broker's act
 	// about a different thing (ADR 0149), and shares its pool-ownership check.
 	secretService := secrets.NewService(store)
-	// The project's judge is converged like any other resource (ADR 0150 §1):
+	// The project's judge is converged like any other resource (ADR 26-09-22-838 §1):
 	// it exists when the project has a pool for it and a configured default
 	// harness, and is replaced when that harness is.
 	judgeService := judges.New(store, sandboxService, nil, options.JudgeCredentials)
 	// Reaching the judge's own agent is the sandbox service's to do; which
-	// discobox is the judge is this one's (ADR 0150 §2).
+	// discobox is the judge is this one's (ADR 26-09-22-838 §2).
 	judgeService.SetLeases(sandboxService)
 	// What an approved use allows is the credential broker's to say, so the
 	// question a judge is put is composed from the live grant rather than from
-	// what the asking pool sent (ADR 0150 §4). It is the same service that
+	// what the asking pool sent (ADR 26-09-22-838 §4). It is the same service that
 	// answers for host trust, built above.
 	judgeService.SetUses(secretService)
 	return &Service{

@@ -333,7 +333,7 @@ func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
 }
 
 // Authorize decides whether a request may carry the credentials its sentinels
-// stand for, before any of them is resolved (ADR 0150 §4). It binds every
+// stand for, before any of them is resolved (ADR 26-09-22-838 §4). It binds every
 // sentinel the proxy matched to a live activation of the sandbox that sent the
 // request, and those bindings name the approved uses the request is authorized
 // against: a request says nothing about which use it is spending, and nothing
@@ -364,7 +364,7 @@ func (r *secretResolver) Authorize(ctx context.Context, req proxy.SecretAuthoriz
 	evidence := evidenceOf(req)
 	for _, useID := range uses {
 		// Every applicable use has to pass before anything is substituted
-		// (ADR 0150 §4): a request spending two credentials is two questions,
+		// (ADR 26-09-22-838 §4): a request spending two credentials is two questions,
 		// and one of them saying no is the answer.
 		answer, err := r.judge.ask(ctx, judgeAsk{
 			SandboxID: req.ClientID,

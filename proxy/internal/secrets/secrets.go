@@ -78,7 +78,7 @@ type ReportRequest struct {
 // the client trusts by a pin, as it is authorized before anything in it is
 // resolved. Everything in it is what the sandbox sent — nothing has been
 // substituted yet — so it holds sentinels and never a credential
-// (ADR 0150 §4).
+// (ADR 26-09-22-838 §4).
 type AuthorizeRequest struct {
 	ClientID string
 	// Sentinels are the client's sentinels found in this request, literally or
@@ -126,7 +126,7 @@ type Resolver interface {
 	// sentinels stand for: whether sending it is what their uses were approved
 	// for. It runs for every request that matched a sentinel, and it runs
 	// before Resolve, so a refused request never decrypts a credential and a
-	// cached value never authorizes a new operation (ADR 0150 §4). A resolver
+	// cached value never authorizes a new operation (ADR 26-09-22-838 §4). A resolver
 	// that cannot answer returns an error, and nothing is resolved or sent.
 	Authorize(ctx context.Context, req AuthorizeRequest) (Verdict, error)
 	// Gate answers a request for the gate host, which never goes to the
@@ -374,7 +374,7 @@ func Redact(value string, sentinels []string, marker string) string {
 // a base64 token, and resolves none of them.
 //
 // It is what lets a request be authorized before anything in it is resolved
-// (ADR 0150 §4). It walks exactly the surface Apply swaps, through the same
+// (ADR 26-09-22-838 §4). It walks exactly the surface Apply swaps, through the same
 // scan, because the two drifting apart would be a credential going out on a
 // request nothing authorized.
 func (s *Swapper) Match(req *http.Request, clientID string) []string {

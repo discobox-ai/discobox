@@ -119,7 +119,7 @@ type SandboxProviderCatalogItem struct {
 
 // ListSandboxes answers with the project's discoboxes. A judge is not one of
 // them unless it is asked for: it runs no terminal and holds no work, so it is
-// not what asking what is in a project means (ADR 0150 §1).
+// not what asking what is in a project means (ADR 26-09-22-838 §1).
 func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, listOptions ...store.SandboxListOption) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
@@ -431,7 +431,7 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 
 // AcquireSandboxHTTPClientForServer is the same lease for a call Discobox
 // makes itself rather than on behalf of somebody: putting a job to the
-// project's judge (ADR 0150 §2). There are no caller scopes to check, because
+// project's judge (ADR 26-09-22-838 §2). There are no caller scopes to check, because
 // there is no caller — the scopes are this code's own, and the route they
 // reach is the one they name.
 func (s *Service) AcquireSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {

@@ -136,7 +136,7 @@ type Config struct {
 
 	// JudgeCredentials turns on the judge: the discobox a project runs to
 	// decide whether a credential-bearing request is part of what its use was
-	// approved for (ADR 0150).
+	// approved for (ADR 26-09-22-838).
 	//
 	// It is off by default and opted into, because it is being built out: a
 	// server that has not opted in behaves exactly as it did before it existed.
