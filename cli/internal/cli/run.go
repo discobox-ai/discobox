@@ -30,6 +30,15 @@ type runCommandOptions struct {
 	// raw attaches this terminal to the discobox's terminal directly, instead
 	// of opening the window on it.
 	raw bool
+	// grant is --grant as given, and grants what the create is given: parsed
+	// from it, or read from a --json request.
+	grant  []string
+	grants []apimodel.SandboxGrant
+	// json reads the request from stdin instead of the command line, and
+	// prints the created discobox as JSON (runJSONRequest).
+	json bool
+	// flags is every flag a run takes, which --json refuses beside it.
+	flags *pflag.FlagSet
 }
 
 // newRunCommand builds the command that makes a discobox, under one of its two
@@ -138,7 +147,34 @@ Each is brought in the way -i would: the ../foo you already have checked out
 when there is one, and a clone of the URL when there is not. Either way it lands
 beside the source -- at the same path when the source kept its own, under
 /workspace when it did not -- so ../foo means the same thing inside the
-discobox as it does here. --declared-sources=false leaves them out.`
+discobox as it does here. --declared-sources=false leaves them out.
+
+--grant gives the new discobox a use of a credential: a well-known one by its
+ID, ID[@HOST]=USE, or a project secret, SECRET[@HOST]:ENV_VAR=USE. Its agent
+takes it with discobox-access, one use at a time, and nothing in the discobox
+can read it. Repeat a credential to give it several uses.
+
+--json reads the whole request from stdin as one JSON object instead, creates
+the discobox without attaching, and prints it as JSON. It is for a caller that
+would rather not quote a prompt and each use's sentence through a shell — an
+agent in a discobox making another, above all. Every field is optional; each
+means what its flag does, and no other run flag may be given beside it:
+
+  {
+    "prompt": "fix the failing tests in pkg/foo",
+    "harness": "codex",
+    "grants": [
+      {"id": "com.github.api", "uses": [{"description": "push a branch to org/repo"}]},
+      {"secret": "npm", "envVar": "NPM_TOKEN", "host": "registry.npmjs.org",
+       "uses": [{"description": "publish @org/pkg"}]}
+    ],
+    "env": ["MODE=test"],
+    "secrets": ["OPENAI_API_KEY=<sec_123>"],
+    "include": ["../foo"],
+    "noSource": false,
+    "includeDirty": true,
+    "declaredSources": true
+  }`
 
 const runCommandExample = `  discobox -p 'fix the failing tests'
   discobox -H codex -d -p 'fix the failing tests'
@@ -149,6 +185,8 @@ const runCommandExample = `  discobox -p 'fix the failing tests'
   discobox new -e GITHUB_TOKEN -e MODE=test -p 'fix the failing tests'
   discobox new -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> -p 'fix the failing tests'
   discobox new -d -p 'fix the failing tests'
+  discobox new -d --grant 'com.github.api=push a branch to org/repo' -p 'fix issue 42'
+  echo '{"prompt": "fix the failing tests"}' | discobox new --json
   discobox new --raw -p 'fix the failing tests'
   discobox new fix the failing tests
   discobox new -- prompt starting with --flag-like text`
@@ -162,6 +200,18 @@ const runCommandExample = `  discobox -p 'fix the failing tests'
 // given as one argument. Only `new` has trailing words to pass; the bare
 // command's prompt is -p and nothing else, so it passes none.
 func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
+	if opts.json {
+		if err := opts.readJSONRequest(cmd, args); err != nil {
+			return err
+		}
+		args = nil
+	} else {
+		grants, err := sandboxcreate.ParseGrants(opts.grant)
+		if err != nil {
+			return err
+		}
+		opts.grants = grants
+	}
 	// Creating and delivering a source are this client's own work, so
 	// nothing but this process can say which of them is underway
 	// (ADR 0060). The line comes back down before anything else is
@@ -189,8 +239,12 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	prompt := append(append([]string(nil), opts.promptFlag...), args...)
 	opts.prompt.Source = a.source
 	opts.prompt.NoSource = opts.noSource
-	opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd, status)
-	opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
+	// A JSON request came in on stdin, so there is nobody on it to ask: the
+	// request answers --include-dirty, or leaves it to include the work.
+	if !opts.json {
+		opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd, status)
+		opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
+	}
 	opts.prompt.SkipDeclaredSources = !opts.declaredSources
 	opts.prompt.ReportDeclaredSource = reportDeclaredSource(notes)
 	parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, prompt)
@@ -219,6 +273,10 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if err != nil {
 		return err
 	}
+	if err := a.resolveGrantSecrets(cmd.Context(), client, projectID, opts.grants); err != nil {
+		return err
+	}
+	parsedOpts.Grants = opts.grants
 	report := func(step sandboxcreate.Step) { status.set(string(step)) }
 	sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
 	if err != nil {
@@ -246,10 +304,13 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// same step in the same words. The line comes down before either of the two
 	// things that follow — printing the discobox, or attaching to it.
 	status.set("syncing SSH config")
-	err = a.writeProjectSSHConfig(cmd.Context(), client, projectID, "", notes)
+	err = a.syncSSHConfigAfterCreate(cmd.Context(), client, projectID, notes)
 	status.clear()
 	if err != nil {
-		return fmt.Errorf("sync SSH config: %w", err)
+		return err
+	}
+	if opts.json {
+		return writeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	if opts.detach {
 		return a.writeSandbox(cmd, sandbox)
@@ -275,7 +336,10 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
 	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
 	flags.Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
 	flags.Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
+	flags.StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST]:ENV_VAR=USE, or ID[@HOST]=USE for a well-known credential such as com.github.api; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, and nothing in the discobox can read it")
+	flags.BoolVar(&opts.json, "json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
+	opts.flags = flags
 	return flags
 }
 
@@ -468,6 +532,7 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Harness:             opts.prompt.Harness,
 		Env:                 opts.prompt.Env,
 		Secret:              opts.prompt.Secret,
+		Grant:               opts.grant,
 		Include:             opts.prompt.Include,
 		SkipDeclaredSources: !opts.declaredSources,
 	}

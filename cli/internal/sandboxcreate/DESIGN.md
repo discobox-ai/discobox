@@ -7,7 +7,7 @@ sandbox create requests.
   dirty local workspaces, captures local user identity, captures the local Git
   authorship, derives the origin keys `discobox ls` filters on (`OriginKeys`,
   over the root a create records for its source, `SourceRoot`), classifies
-  environment and secret inputs, builds the API body, and submits prompt sandbox
+  environment and secret inputs, parses `--grant` (`ParseGrants`), builds the API body, and submits prompt sandbox
   creates.
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is

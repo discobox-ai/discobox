@@ -2421,6 +2421,31 @@ since the file that declares them lives in a checkout there is none of.
 In the launcher this is the Source row's last entry rather than a flag of its
 own; see the launcher design doc.
 
+## Grants and a Request as JSON (ADR 0149)
+
+`discobox new --grant` gives the new discobox uses of credentials in
+`admin box create --grant`'s form. Both parse through
+`sandboxcreate.ParseGrants` and resolve a secret's name to its ID through
+`App.resolveGrantSecrets`; `PromptOptions.Grants` carries the result, and the
+window, handed `--grant` as given (`RunRequest.Grant`), parses and resolves in
+its own create.
+
+`--json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin
+as one object whose fields are the run flags', with grants spelled the way
+`discobox-access request --json` asks for a credential. It fills the same
+`runCommandOptions` the flags do, so one validation and one create path serve
+both; it refuses any run flag or word beside it rather than merging two
+answers, forces `-d`, asks nothing (stdin is the request), and prints the
+created discobox as JSON. It exists for an agent in a discobox making another,
+which would otherwise quote a prompt and each use's sentence through a shell,
+and it is what the in-box skills teach.
+
+The SSH sync every create ends with (`syncSSHConfigAfterCreate`) is skipped,
+with a note, when the server refuses it with a 403: a discobox creating
+another may not enroll a key, which would reach every discobox in the
+project, and has no use for an `ssh_config`. `admin ssh-config --write` calls
+`writeProjectSSHConfig` itself, where a refusal is the answer.
+
 ## The Two IDs an Enrollment Is Made Of (`discobox id`)
 
 Enrolling a client is two peer IDs meeting: this machine's, which a server

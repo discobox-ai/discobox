@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -191,6 +193,25 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 		notes:             notes,
 	}, targets.all)
 	return err
+}
+
+// syncSSHConfigAfterCreate is the sync a create ends with, so that a person can
+// `ssh` to the discobox they just made. A caller the server refuses it (403) —
+// a discobox creating another, which may not enroll a key that would reach
+// every discobox in the project — has no use for it, and the create stands
+// (ADR 0149 §4). `admin ssh-config --write` calls writeProjectSSHConfig
+// directly: there the sync is what was asked for, and a refusal is its answer.
+func (a *App) syncSSHConfigAfterCreate(ctx context.Context, client *apiclientgen.Client, projectID string, notes noteFunc) error {
+	err := a.writeProjectSSHConfig(ctx, client, projectID, "", notes)
+	var refused *plainStatusError
+	if errors.As(err, &refused) && refused.code == http.StatusForbidden {
+		notes("SSH config not synced: the server refused it (%s)", refused.body)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("sync SSH config: %w", err)
+	}
+	return nil
 }
 
 // managedSSHConfigRequest is what rendering a project's stanzas needs that the

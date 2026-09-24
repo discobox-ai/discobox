@@ -1126,6 +1126,12 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
+	if opts.Grants, err = sandboxcreate.ParseGrants(req.Grant); err != nil {
+		return tui.Sandbox{}, err
+	}
+	if err := d.app.resolveGrantSecrets(ctx, d.client, d.projectID, opts.Grants); err != nil {
+		return tui.Sandbox{}, err
+	}
 
 	step := func(step sandboxcreate.Step) {
 		if report != nil {
@@ -1167,8 +1173,8 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 			report(fmt.Sprintf(format, args...))
 		}
 	})
-	if err := d.app.writeProjectSSHConfig(ctx, d.client, d.projectID, "", notes); err != nil {
-		return tui.Sandbox{}, fmt.Errorf("sync SSH config: %w", err)
+	if err := d.app.syncSSHConfigAfterCreate(ctx, d.client, d.projectID, notes); err != nil {
+		return tui.Sandbox{}, err
 	}
 	hostID, _ := hostid.Get()
 	return toTUISandbox(*sandbox, hostID), nil

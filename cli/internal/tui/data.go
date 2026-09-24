@@ -987,6 +987,10 @@ type RunRequest struct {
 	// request is the whole command (WithRun).
 	Include []string
 
+	// Grant is `--grant`, as given: the uses of credentials the new discobox
+	// is given. Like Include, only `discobox new`'s own request carries one.
+	Grant []string
+
 	// SkipDeclaredSources is `--declared-sources=false`: leave out the sources
 	// the primary source's repository declares in .discobox/sources.json. The
 	// zero value brings them in, which is what both frontends do by default.

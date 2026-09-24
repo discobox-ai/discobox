@@ -40,7 +40,11 @@ type PromptOptions struct {
 	Prompt               []string
 	Env                  []string
 	Secret               []string
-	Harness              string
+	// Grants are the uses of credentials the new discobox is given, already
+	// resolved to what the server takes: a secret by its ID, or a well-known
+	// credential by its own. ParseGrants reads them from --grant.
+	Grants  []apimodel.SandboxGrant
+	Harness string
 	// IncludeDirty decides what happens to uncommitted work in a local source.
 	// The zero value is "auto": ask through ConfirmIncludeDirty when there is
 	// one, and otherwise include it.
@@ -122,6 +126,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if len(secrets) > 0 {
 		body.Config.SetSecrets(secrets)
 	}
+	body.Grants = opts.Grants
 	userIdentity, userNamed, err := resolveRunUserIdentity()
 	if err != nil {
 		return nil, nil, err

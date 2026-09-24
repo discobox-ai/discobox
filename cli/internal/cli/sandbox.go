@@ -163,16 +163,8 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for i := range body.Grants {
-				ref, named := body.Grants[i].SecretId.Get()
-				if !named {
-					continue // A well-known ID, whose secret the server knows.
-				}
-				secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, ref)
-				if err != nil {
-					return err
-				}
-				body.Grants[i].SetSecretId(apiclientgen.NewOptString(secretID))
+			if err := a.resolveGrantSecrets(cmd.Context(), client, projectID, body.Grants); err != nil {
+				return err
 			}
 			sandboxRes, err := client.CreateSandbox(cmd.Context(), body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 			if err != nil {
@@ -558,6 +550,25 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
 
+// resolveGrantSecrets turns the secrets grants name by name into their IDs, in
+// place, which is what the server takes. A grant naming a well-known ID is left
+// alone: the server knows which secret answers it. Every create that gives
+// grants resolves them here — `admin box create`, and both frontends of `new`.
+func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Client, projectID string, grants []apimodel.SandboxGrant) error {
+	for i := range grants {
+		ref, named := grants[i].SecretId.Get()
+		if !named {
+			continue
+		}
+		secretID, err := a.resolveSecretID(ctx, client, projectID, ref)
+		if err != nil {
+			return err
+		}
+		grants[i].SetSecretId(apiclientgen.NewOptString(secretID))
+	}
+	return nil
+}
+
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
 }
@@ -586,7 +597,7 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if len(secrets) > 0 {
 		config.SetSecrets(secrets)
 	}
-	grants, err := sandboxGrants(opts.grant)
+	grants, err := sandboxcreate.ParseGrants(opts.grant)
 	if err != nil {
 		return nil, err
 	}
@@ -773,44 +784,4 @@ func sourceCodeReferences(value string) (apiclientgen.SandboxCreateConfigSourceC
 		return nil, fmt.Errorf("source code references must be valid JSON: %w", err)
 	}
 	return refs, nil
-}
-
-// sandboxGrants reads --grant values into the grants a create gives the new
-// discobox. A value is SECRET[@HOST]:ENV_VAR=USE, or ID[@HOST]=USE for a
-// well-known credential, whose ID carries its secret and variable; the first
-// has a ":" before the "=" and the second does not. Values naming the same
-// credential, host, and variable are one grant with several uses, in the order
-// given. A secret is left as written, for the caller to resolve to an ID.
-func sandboxGrants(values []string) ([]apimodel.SandboxGrant, error) {
-	var grants []apimodel.SandboxGrant
-	index := map[string]int{}
-	for _, value := range values {
-		spec, use, ok := strings.Cut(value, "=")
-		use = strings.TrimSpace(use)
-		target, envVar, named := strings.Cut(spec, ":")
-		credential, host, _ := strings.Cut(target, "@")
-		credential, host, envVar = strings.TrimSpace(credential), strings.TrimSpace(host), strings.TrimSpace(envVar)
-		if !ok || credential == "" || use == "" || (named && envVar == "") {
-			return nil, fmt.Errorf("--grant %q: want SECRET[@HOST]:ENV_VAR=USE, such as github@github.com:GH_TOKEN=\"push a branch to org/repo\", or ID[@HOST]=USE for a well-known credential, such as com.github.api=\"push a branch to org/repo\"", value)
-		}
-		key := credential + "@" + host + ":" + envVar
-		i, seen := index[key]
-		if !seen {
-			var grant apimodel.SandboxGrant
-			if named {
-				grant.SetSecretId(apiclientgen.NewOptString(credential))
-				grant.SetEnvVar(apiclientgen.NewOptString(envVar))
-			} else {
-				grant.SetWellKnownId(apiclientgen.NewOptString(credential))
-			}
-			if host != "" {
-				grant.SetHost(apiclientgen.NewOptString(host))
-			}
-			grants = append(grants, grant)
-			i = len(grants) - 1
-			index[key] = i
-		}
-		grants[i].Uses = append(grants[i].Uses, apimodel.SecretUse{Description: use})
-	}
-	return grants, nil
 }

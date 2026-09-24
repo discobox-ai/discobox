@@ -414,6 +414,7 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	opts.prompt.Env = []string{"MODE=test"}
 	opts.prompt.Secret = []string{"OPENAI_API_KEY=sk-x"}
 	opts.prompt.Include = []string{"../bar"}
+	opts.grant = []string{"com.github.api=push a branch to org/repo"}
 
 	req := app.runWindowRequest(&opts, []string{"fix", "the", "tests"})
 
@@ -424,7 +425,8 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 		t.Fatalf("source = %q, want -C as it was given, ref and all", req.Source)
 	}
 	if req.Harness != "codex" || !slices.Equal(req.Env, []string{"MODE=test"}) ||
-		!slices.Equal(req.Secret, []string{"OPENAI_API_KEY=sk-x"}) || !slices.Equal(req.Include, []string{"../bar"}) {
+		!slices.Equal(req.Secret, []string{"OPENAI_API_KEY=sk-x"}) || !slices.Equal(req.Include, []string{"../bar"}) ||
+		!slices.Equal(req.Grant, []string{"com.github.api=push a branch to org/repo"}) {
 		t.Fatalf("request = %+v, want every flag that describes the create", req)
 	}
 	if !req.SkipDeclaredSources {
