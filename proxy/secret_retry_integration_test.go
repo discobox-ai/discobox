@@ -422,7 +422,7 @@ func (r *revokingResolver) counts() (asks, resolves int) {
 }
 
 // A retry carries a credential the first attempt did not, so it is authorized
-// the way the first attempt was (ADR 0148 §4). A grant revoked while the
+// the way the first attempt was (ADR 0149 §4). A grant revoked while the
 // upstream was refusing means there is no second attempt: the upstream's own
 // 401 is what the sandbox gets, and no further credential is resolved.
 func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
@@ -478,7 +478,7 @@ func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
 
 	// And the trail has to show a verdict refused the retry, rather than
 	// leaving it indistinguishable from having had nothing new to send
-	// (ADR 0148 §8).
+	// (ADR 0149 §8).
 	blocked := waitForBlockedRows(t, dsn, 1)
 	if len(blocked) != 1 {
 		t.Fatalf("blocked rows = %d, want the refused retry recorded once", len(blocked))
@@ -572,7 +572,7 @@ func (r *flakyResolver) authorized() [][]string {
 }
 
 // The retry is authorized over what the request carries, not over what the
-// first attempt happened to resolve (ADR 0148 §4). A sentinel whose resolve
+// first attempt happened to resolve (ADR 0149 §4). A sentinel whose resolve
 // failed transiently is still in the request, resolves on the retry, and so
 // must be named in the verdict that lets the retry go.
 func TestHTTPProxyAuthorizesEverySentinelTheRetryCarries(t *testing.T) {

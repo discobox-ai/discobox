@@ -9,7 +9,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 )
 
-// JudgeSandbox puts one judging job to this discobox's harness (ADR 0148).
+// JudgeSandbox puts one judging job to this discobox's harness (ADR 0149).
 //
 // The job arrives as evidence and an approved use, and nothing else: the
 // prompt, the schema, the model role and the tools restriction are the

@@ -82,7 +82,7 @@ bounded events to a background writer (`Recording.QueueSize`, shared by HTTP and
 SOCKS rows). If the queue is full, the recorder drops the event and increments
 its drop counter instead of stalling network traffic. DNS rows are recorded
 through `Server.RecordDNS` by the pool's sandbox DNS server, which runs in the
-same process and has no recorder of its own (ADR 0148). They share the
+same process and has no recorder of its own (ADR 0149). They share the
 database's client identity, retention and write-ordered cursor (`dns_<row>`),
 but not the queue: lookups have one of their own, the single writer takes from
 it only when the HTTP and SOCKS queue is empty, and each sandbox has a budget in
@@ -215,8 +215,12 @@ Key properties:
   (`Resolver.Authorize`, `Swapper.Match`; [ADR 0150](../docs/adr/0150-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
 =======
 - **A request carrying sentinels is authorized before any of them is resolved**
+<<<<<<< HEAD
   (`Resolver.Authorize`, `Swapper.Match`; [ADR 0148](../docs/adr/0148-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
 >>>>>>> c12e9e6d (docs(adr): the judge ADR is 0148, because 0141 was taken)
+=======
+  (`Resolver.Authorize`, `Swapper.Match`; [ADR 0149](../docs/adr/0149-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
+>>>>>>> 200b3030 (docs(adr): the judge ADR is 0149, and 0141 goes back where it belongs)
   Resolution decides whether a credential may go to a host and is cached; the
   judge decides whether *this* request may carry it, so it runs per request —
   and it runs first, because a refused request must not decrypt a credential

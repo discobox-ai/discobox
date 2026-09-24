@@ -209,7 +209,7 @@ type sandboxListOptions struct {
 }
 
 // IncludingJudges lists the project's judge alongside its discoboxes. It is
-// left out otherwise (ADR 0148 §1): a judge runs no terminal and holds no
+// left out otherwise (ADR 0149 §1): a judge runs no terminal and holds no
 // work, so it is not what somebody asking what is in their project means.
 func IncludingJudges() SandboxListOption {
 	return func(options *sandboxListOptions) { options.judges = true }
@@ -221,7 +221,7 @@ func IncludingJudges() SandboxListOption {
 // origin keys (ADR 0111). The two filters are independent: sourceRoot asks what
 // a sandbox runs against, originKeys ask where on which client it belongs.
 //
-// A judge is left out unless IncludingJudges asks for it (ADR 0148 §1).
+// A judge is left out unless IncludingJudges asks for it (ADR 0149 §1).
 func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, listOptions ...SandboxListOption) ([]model.Sandbox, error) {
 	var options sandboxListOptions
 	for _, option := range listOptions {
@@ -241,7 +241,7 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 		Where("project_id = ?", projectID)
 	if !options.judges {
 		// A judge is not what somebody asking what is in their project means
-		// (ADR 0148 §1): it runs no terminal, holds no work, and is answering
+		// (ADR 0149 §1): it runs no terminal, holds no work, and is answering
 		// asks rather than being worked in. Asking for it says so.
 		query = query.Where("harness_mode <> ?", sandboxconfig.HarnessModeJudge)
 	}

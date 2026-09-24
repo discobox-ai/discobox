@@ -503,7 +503,7 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 // allowed is answered here, with the response swapSecrets returns, and never
 // sent. Authorizing before resolving is the point: a refused request decrypts
 // nothing, and a value already in the cache does not carry a new operation
-// through on the strength of an older one (ADR 0148 §4).
+// through on the strength of an older one (ADR 0149 §4).
 func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client clientIdentity) *http.Response {
 	swapper := h.secretSwapper()
 	if !swapper.Active(client.ID) {
@@ -650,7 +650,7 @@ func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client c
 // refusalReason is what a refused request is answered with, whichever way the
 // ask ended. A verdict that refuses and says nothing still has to say
 // something: a refusal nobody can read is indistinguishable from a broken
-// credential (ADR 0148 §1).
+// credential (ADR 0149 §1).
 func refusalReason(verdict secrets.Verdict, err error) string {
 	switch {
 	case err != nil:
@@ -681,7 +681,7 @@ type refusalRecord struct {
 
 // recordRefusal writes the blocked row a refusal leaves behind. Nothing was
 // substituted, so the uses come from the verdict — a refusal is still recorded
-// against what it was about (ADR 0148 §8).
+// against what it was about (ADR 0149 §8).
 func (h *httpProxy) recordRefusal(req *http.Request, meta *requestMeta, client clientIdentity, rec refusalRecord) {
 	h.audit.RecordHTTP(audit.HTTPEvent{
 		Context:        meta.ctx,
@@ -792,7 +792,7 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	defer span.End()
 
 	// A retry carries a credential the first attempt did not, so it is
-	// authorized the way the first attempt was (ADR 0148 §4): the same
+	// authorized the way the first attempt was (ADR 0149 §4): the same
 	// derivation, over the request about to be sent, because the grant behind
 	// it can have been revoked in the time the upstream took to refuse.
 	//
@@ -814,7 +814,7 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 		// Not an answer to the sandbox: the request has already been sent and
 		// answered, so the upstream's own 401 stands. What the refusal owes is
 		// the trail — the retry is refused where the first attempt was allowed,
-		// and ADR 0148 §8 wants that recorded rather than only traced.
+		// and ADR 0149 §8 wants that recorded rather than only traced.
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.retry.authorized", false))
 		h.recordRefusal(req, meta, meta.client, refusalRecord{
 			url:    meta.url(req),
