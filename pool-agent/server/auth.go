@@ -42,7 +42,7 @@ const (
 	// ScopePoolCacheClear authorizes stopping every sandbox on the pool and
 	// emptying its cache.
 	ScopePoolCacheClear = "pool:cache-clear"
-	// ScopeJudgeRun puts a job to the judge running in this pool (ADR 0149 §2).
+	// ScopeJudgeRun puts a job to the judge running in this pool (ADR 0150 §2).
 	// It reaches one route and nothing else: a token that may ask the judge
 	// may read and write nothing in the sandbox it asks.
 	ScopeJudgeRun = "judge:run"

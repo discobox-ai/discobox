@@ -75,9 +75,9 @@ var yamlOwnedEnums = map[string]string{
 	"PoolSandboxState.state":             "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
 	"SandboxConfig.harnessMode":          "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
 	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
-	"JudgeJob.kind":                      "what a judge is asked about, owned by the root judge package and never stored (ADR 0149)",
-	"JudgeNeed.body":                     "how a judge may ask to be shown a body, owned by the root judge package (ADR 0149 §6)",
-	"JudgeRequestBody.form":              "how a body is written when a judge is shown one, owned by the root judge package (ADR 0149 §6)",
+	"JudgeJob.kind":                      "what a judge is asked about, owned by the root judge package and never stored (ADR 0150)",
+	"JudgeNeed.body":                     "how a judge may ask to be shown a body, owned by the root judge package (ADR 0150 §6)",
+	"JudgeRequestBody.form":              "how a body is written when a judge is shown one, owned by the root judge package (ADR 0150 §6)",
 	"SandboxTool.runs":                   "a declaration's vocabulary, owned by the root tools package and listed by the sandbox agent; no model stores it (ADR 0125)",
 	"SandboxTool.layer":                  "the sandbox's two declaration directories, owned by the root tools package; no model stores it (ADR 0125)",
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
@@ -101,8 +101,8 @@ var yamlOwnedEnums = map[string]string{
 	// no. secrets.AgentCredentialRequestStatus is the one place that maps
 	// between them (ADR 0031).
 	"SandboxCredentialRequestStatus.status": "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus grant liveness",
-	"SandboxTrustRequestStatus.status":      "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus trust liveness (ADR 0149)",
-	"ApprovalRequest.kind":                  "which resource an inbox item is, set by the approval-requests read model; no model stores it (ADR 0149 §7)",
+	"SandboxTrustRequestStatus.status":      "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus trust liveness (ADR 0150)",
+	"ApprovalRequest.kind":                  "which resource an inbox item is, set by the approval-requests read model; no model stores it (ADR 0150 §7)",
 	// The proxy's observation vocabulary, not the control plane's judgment.
 	// What is stored is SecretRejection.reason, which these three outcomes are
 	// an input to rather than a spelling of: `accepted` stores nothing at all,

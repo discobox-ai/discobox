@@ -181,7 +181,7 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 			return fmt.Errorf("%s: %w", sourcePool.Name, err)
 		}
 		// The copy's judge runs in the copy's own pool, not the one it was
-		// copied from (ADR 0149 §1).
+		// copied from (ADR 0150 §1).
 		changed := false
 		if source.DefaultPoolID == sourcePool.ID {
 			project.DefaultPoolID = created.ID

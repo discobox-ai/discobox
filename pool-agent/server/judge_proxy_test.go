@@ -12,7 +12,7 @@ import (
 
 // Judging is its own authority on the way through the pool as well: a token
 // that may ask the judge may read and write nothing in the sandbox it asks,
-// and the ordinary sandbox scopes do not reach it (ADR 0149 §2).
+// and the ordinary sandbox scopes do not reach it (ADR 0150 §2).
 func TestJudgeIsForwardedOnItsOwnScope(t *testing.T) {
 	const path = "/api/project/project-1/pool/pool-1/sandboxes/sb_judge/judge"
 

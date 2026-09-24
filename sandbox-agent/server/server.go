@@ -521,7 +521,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// virtual primary exec id launches it (see terminal.ResolvePrimary).
 	//
 	// A judge launches no terminal at all: it answers its pool and is worked in
-	// by nobody (ADR 0149 §1).
+	// by nobody (ADR 0150 §1).
 	if config.WorkedIn(cfg.HarnessMode) {
 		go func() {
 			switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {

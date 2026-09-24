@@ -354,7 +354,7 @@ const (
 	// HarnessModeConfig exists to run a harness's setup command once, driven
 	// by the control plane, rather than to be worked in.
 	HarnessModeConfig = "config"
-	// HarnessModeJudge is the project's judge (ADR 0149 §1): it answers
+	// HarnessModeJudge is the project's judge (ADR 0150 §1): it answers
 	// judging asks and nothing else. No terminal is launched in it, no
 	// repository services start, and it is not powered off when idle, since
 	// being ready is the whole of what it is for.

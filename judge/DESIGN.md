@@ -2,7 +2,7 @@
 
 The question Discobox puts to a model before a credential is used, and the
 answer it will accept back. See
-[ADR 0149](../docs/adr/0149-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
+[ADR 0150](../docs/adr/0150-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
 for the whole design; this package is its contract, and holds nothing that runs
 it.
 

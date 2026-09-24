@@ -539,7 +539,7 @@ type Services struct {
 	SSHKeys        SSHKeyService
 	Peers          PeerService
 	// Judges answers a pool asking for a verdict from the project's judge
-	// (ADR 0149 §2). It has no other route: nothing a person calls reaches it.
+	// (ADR 0150 §2). It has no other route: nothing a person calls reaches it.
 	Judges JudgeService
 }
 
@@ -554,7 +554,7 @@ type JudgeService interface {
 // What that use authorizes is deliberately not in here. The sentence, the
 // credential's name and the host are read from the live grant the use belongs
 // to, so that nothing a pool or a sandbox sends can widen the question its own
-// request is judged against (ADR 0149 §4).
+// request is judged against (ADR 0150 §4).
 type JudgeAsk struct {
 	SandboxID string
 	UseID     string

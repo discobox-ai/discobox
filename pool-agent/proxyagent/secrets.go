@@ -333,7 +333,7 @@ func (r *secretResolver) mintedActivation(sentinel string) (activation, bool) {
 }
 
 // Authorize decides whether a request may carry the credentials its sentinels
-// stand for, before any of them is resolved (ADR 0149 §4). It binds every
+// stand for, before any of them is resolved (ADR 0150 §4). It binds every
 // sentinel the proxy matched to a live activation of the sandbox that sent the
 // request, and those bindings name the approved uses the request is authorized
 // against: a request says nothing about which use it is spending, and nothing
@@ -364,7 +364,7 @@ func (r *secretResolver) Authorize(ctx context.Context, req proxy.SecretAuthoriz
 	evidence := evidenceOf(req)
 	for _, useID := range uses {
 		// Every applicable use has to pass before anything is substituted
-		// (ADR 0149 §4): a request spending two credentials is two questions,
+		// (ADR 0150 §4): a request spending two credentials is two questions,
 		// and one of them saying no is the answer.
 		answer, err := r.judge.ask(ctx, judgeAsk{
 			SandboxID: req.ClientID,
@@ -520,7 +520,7 @@ func readResolveContext(path string) (resolveContext, error) {
 //     process as sandboxes come and go.
 //   - live activations, the ephemeral sentinels this process mints per use.
 //   - host trusts, the pins people approved for this pool's sandboxes
-//     (hostTrusts, ADR 0149).
+//     (hostTrusts, ADR 0150).
 //
 // Holding them here is what lets an activation or a newly approved pin take
 // effect the instant it is known: publishing is a function call rather than a

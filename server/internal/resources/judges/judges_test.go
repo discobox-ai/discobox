@@ -496,7 +496,7 @@ func TestScanNamesEveryProject(t *testing.T) {
 // A judge that could not be brought up refuses with a sentence that says so
 // and nothing else. Its own error names pool host paths, image references and
 // whatever a provider's API said, and in unit 4 this string is what the
-// discobox that asked is told (ADR 0149 §4); the detail is the operator's, in
+// discobox that asked is told (ADR 0150 §4); the detail is the operator's, in
 // the operator's log.
 func TestAFailedJudgeRefusesWithoutQuotingItsOwnError(t *testing.T) {
 	ctx := context.Background()
@@ -727,7 +727,7 @@ func TestTheQuestionIsReadFromTheGrantAndNotFromTheAsk(t *testing.T) {
 
 // A grant revoked while the judge was thinking is a request that is not
 // allowed, whatever the judge said. The verdict was about a use that no longer
-// exists (ADR 0149 §4).
+// exists (ADR 0150 §4).
 func TestAUseRevokedWhileTheJudgeThoughtIsNotAllowed(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, sandboxes := newJudgeTest(t)

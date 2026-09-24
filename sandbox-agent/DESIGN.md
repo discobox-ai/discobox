@@ -550,7 +550,7 @@ development images without a registry.
   repository's declared services, and powers itself off when idle. Two modes
   answer no, each existing to do one thing for somebody else: `config`, which
   runs a harness's setup command once for a flow the control plane drives, and
-  `judge`, the project's judge ([ADR 0149](../docs/adr/0149-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)).
+  `judge`, the project's judge ([ADR 0150](../docs/adr/0150-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)).
   The three places that would otherwise have to agree read the predicate rather
   than naming a mode.
 - **A judge answers its pool and nothing else** (`terminal.Judge`,

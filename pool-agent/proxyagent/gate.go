@@ -77,7 +77,7 @@ func (r *secretResolver) Gate(ctx context.Context, req proxy.SecretGateRequest) 
 	if !verdict.Allow {
 		// A verdict that refuses and says nothing still owes the caller a
 		// sentence: a refusal nobody can read is indistinguishable from a
-		// broken credential (ADR 0149 §1).
+		// broken credential (ADR 0150 §1).
 		reason := verdict.Reason
 		if reason == "" {
 			reason = "not an approved use of this credential"

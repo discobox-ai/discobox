@@ -20,7 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/proxy"
 )
 
-// Asking the project's judge (ADR 0149 §4).
+// Asking the project's judge (ADR 0150 §4).
 //
 // A request carrying a credential is authorized before any of it is resolved,
 // and what authorizes it is a model reading the request against the sentence
@@ -285,7 +285,7 @@ func judgeRefusal(resp *http.Response) error {
 // evidenceOf is the request as the judge is shown it: what identifies the
 // operation, with everything that could carry a credential taken out.
 //
-// The body is described and not carried (ADR 0149 §6). What can be said about
+// The body is described and not carried (ADR 0150 §6). What can be said about
 // it without reading it is what the request declared, and only a request that
 // declared a length is described at all: the contract says a body's length in
 // bytes, with no way to spell "some unknown number of them", so a chunked
@@ -313,7 +313,7 @@ func evidenceOf(req proxy.SecretAuthorizeRequest) *judgeEvidence {
 // It is an allowlist because the alternative cannot be got right: a list of
 // the headers that carry credentials is a list of the ones somebody thought
 // of, and every API invents another (`Private-Token`, `X-Goog-Api-Key`,
-// `X-Functions-Key`). ADR 0149 §6 asks for the headers worth weighing, and
+// `X-Functions-Key`). ADR 0150 §6 asks for the headers worth weighing, and
 // these are the ones that say what an operation is rather than who is making
 // it. A header not here is still reported, by name, so the judge knows it was
 // sent.

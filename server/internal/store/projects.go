@@ -164,7 +164,7 @@ func (s *Store) CountSandboxesForProject(ctx context.Context, projectID string) 
 
 // CountWorkSandboxesForProject counts what somebody would lose with the
 // project: its discoboxes, except its own judge, which Discobox made and would
-// make again (ADR 0149 §1). A project holding nothing but its judge is a
+// make again (ADR 0150 §1). A project holding nothing but its judge is a
 // project with nothing in it.
 func (s *Store) CountWorkSandboxesForProject(ctx context.Context, projectID string) (int64, error) {
 	read, err := s.getRead(ctx)

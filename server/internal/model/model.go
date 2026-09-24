@@ -217,7 +217,7 @@ type Project struct {
 	Default                bool   `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
 	DefaultPoolID          string `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
 	DefaultHarnessConfigID string `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
-	// JudgePoolID is the pool the project's judge runs in (ADR 0149 §1). It is
+	// JudgePoolID is the pool the project's judge runs in (ADR 0150 §1). It is
 	// recorded when the project's first pool is made, because that pool runs
 	// Linux containers on every platform Discobox supports, and a judge is one.
 	// It is not chosen again afterwards: a pool whose discoboxes are whole VMs

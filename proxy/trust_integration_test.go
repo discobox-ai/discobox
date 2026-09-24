@@ -29,7 +29,7 @@ type trustFixture struct {
 	origin  *httptest.Server
 	dsn     string
 	clients map[string]*http.Client
-	judged  *[]secrets.JudgeRequest
+	judged  *[]secrets.AuthorizeRequest
 	cfg     Config
 }
 
@@ -55,7 +55,7 @@ func newTrustFixture(t *testing.T, deny string) *trustFixture {
 	if err != nil {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
-	judged := &[]secrets.JudgeRequest{}
+	judged := &[]secrets.AuthorizeRequest{}
 	cfg := Config{
 		ListenAddress: "127.0.0.1:0",
 		CertDir:       prepared.Bundle.Dir,
@@ -224,7 +224,7 @@ func TestHTTPProxyJudgesRequestsToATrustedHost(t *testing.T) {
 		t.Fatalf("judged %d requests, want 1", len(*f.judged))
 	}
 	got := (*f.judged)[0]
-	if len(got.TrustUseIDs) != 1 || got.TrustUseIDs[0] != "use_kube" || len(got.UseIDs) != 0 || got.Method != http.MethodGet {
+	if len(got.TrustUseIDs) != 1 || got.TrustUseIDs[0] != "use_kube" || len(got.Sentinels) != 0 || got.Method != http.MethodGet {
 		t.Fatalf("judge saw %+v", got)
 	}
 
