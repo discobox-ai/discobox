@@ -16,7 +16,8 @@ need one.
 ## Rules
 
 - **Immutable.** Never edit an accepted ADR. Superseded by a new one that links
-  back; mark the old one `Superseded by NNNN`.
+  back; mark the old one `Superseded by <id>`. An ADR's ID is as immutable as
+  its text — never renumber one.
 - **Outside the drill-down hierarchy.** ADRs live here, never next to code.
   `DESIGN.md`/`REVIEW.md` are read root-down by agents on every task; ADRs are
   not, and must not be, because they are history rather than current state.
@@ -26,9 +27,31 @@ need one.
 
 ## Status lifecycle
 
-`Proposed` → `Accepted` → (`Superseded by NNNN`)
+`Proposed` → `Accepted` → (`Superseded by <id>`)
 
 Use `Rejected` for decisions considered and declined; keep the file.
+
+## Identifiers
+
+An ADR's ID is `YY-MM-DD-RRR` — the date it was written, plus three random
+decimal digits ([ADR 26-09-24-458](26-09-24-458-adr-ids-are-a-date-and-a-random-suffix.md)).
+It is generated, never allocated from a sequence, so two branches in flight
+cannot claim the same one.
+
+```bash
+python3 -c "import secrets; print(f'{secrets.randbelow(1000):03d}')"
+```
+
+- Filename `YY-MM-DD-RRR-<slug>.md`, heading `# YY-MM-DD-RRR — Title`, cited in
+  prose and code comments as `ADR 26-09-24-458` or `ADR 26-09-24-458 §3`.
+- The date is fixed when the file is created. Where it and the `Date` header
+  disagree — an ADR written before a long review — the header is authoritative.
+- If two branches somehow draw the same ID, **re-roll the suffix** on one of
+  them. Nothing outside that branch cites it yet, and no value is the "correct"
+  one to fight over.
+- ADRs `0001`–`0149` predate this scheme and keep their four-digit numbers,
+  which are cited across the tree. Both forms are permanent; the old ones sort
+  first.
 
 ## Workflow
 
@@ -50,6 +73,9 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
    has shipped against it. Once implementation has landed, supersede instead.
 
 ## Index
+
+Both ID forms appear here: four-digit numbers up to `0149`, then
+`YY-MM-DD-RRR`.
 
 | ADR | Title | Status |
 | --- | --- | --- |
@@ -207,3 +233,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) | A dedicated pool harness judges commands and credential-bearing requests | Accepted (amends [0079](0079-a-local-judge-gates-every-wrapped-credential-use.md), [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md), [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md); settles [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) §6) |
 | [26-09-24-630](26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md) | A discobox delivers the source of the discoboxes it creates | Accepted (supersedes [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)'s rejection of authority by creator, for source delivery) |
 | [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md) | Attaching to a discobox still awaiting its source delivers it | Accepted (supersedes [0095](0095-an-attached-client-pushes-the-commits-made-where-it-runs.md) §2's parked-discobox rule) |
+| [26-09-24-458](26-09-24-458-adr-ids-are-a-date-and-a-random-suffix.md) | ADR IDs are a date and a random suffix | Accepted |

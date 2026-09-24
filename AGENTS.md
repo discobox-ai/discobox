@@ -165,6 +165,12 @@ ADRs are immutable once accepted — supersede, never edit. They live outside th
 `DESIGN.md`/`REVIEW.md` drill-down hierarchy and are not read root-down: they
 are history, while `DESIGN.md` is current state.
 
+An ADR's ID is `YY-MM-DD-RRR`: the date it is written plus three random decimal
+digits, generated rather than taken from a sequence, so concurrent branches
+cannot collide. Never renumber an ADR, and never pick "the next number" — ADRs
+`0001`–`0149` predate the scheme and keep their four-digit numbers, except four
+renumbered to resolve a duplicated number. See `docs/adr/README.md`.
+
 The process is Nygard-style ADRs plus current-state design docs:
 
 1. Draft the ADR as `Proposed` and land it on its own before implementation.
