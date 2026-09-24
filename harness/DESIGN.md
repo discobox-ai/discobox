@@ -340,15 +340,24 @@ or an audit filter then matches either.
 ## Source-scoped memory
 
 The runtime exposes opaque durable data for the primary source at
-`/.discobox/data-per-source/primary`; only harness images interpret anything
-beneath it. Claude Code and Codex launch through small image-owned wrappers and
-keep their memory in separate namespaces; opencode has no memory feature to
-point at it:
+`/.discobox/data-per-source/primary` in every sandbox — shared by source key,
+or private to the sandbox when there is no key to share it under (see
+[`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md)); only harness images
+interpret anything beneath it. Claude Code and Codex keep their memory there in
+separate namespaces; opencode has no memory feature to point at it:
 
-- Claude Code passes its supported `autoMemoryDirectory` launch setting as
-  `.../harnesses/claude-code/memories`. Supplying it at launch keeps this
-  storage invariant out of `.claude/settings.json`, which the configure flow
-  deliberately replaces with the user's captured settings.
+- Claude Code's `autoMemoryDirectory` is `.../harnesses/claude-code/memories`,
+  set in the image's managed settings (`/etc/claude-code/managed-settings.json`).
+  It is the sandbox's environment rather than a launch flag, so a `claude`
+  typed into any shell finds the same memory the harness terminal does. The
+  policy layer also keeps it out of `.claude/settings.json`, which the
+  configure flow deliberately replaces with the user's captured settings, and
+  outranks anything that file says. Claude Code's temp tree — session
+  scratchpads among it — follows the same rule: the image's env sets
+  `CLAUDE_CODE_TMPDIR=/var/lib/claude-code` and declares that path a `data`
+  volume owned by the sandbox user, so scratchpads survive an upgrade and
+  travel with an export. Claude Code adds `claude-<uid>` beneath it and
+  refuses a directory another uid owns.
 - Codex enables its `memories` feature in the system config and bind-mounts
   `.../harnesses/codex/memories` onto `$CODEX_HOME/memories`. Codex rejects a
   symlinked memory root, so the launcher creates a real target directory and
@@ -362,10 +371,8 @@ point at it:
   ownership boundaries. A pre-existing real memories directory is preserved
   and reported rather than overwritten.
 
-When the primary source-data mount is absent — configure sandboxes and
-source-less sandboxes — each wrapper launches the CLI unchanged. Pool-agent and
-sandbox-agent know only the generic source-data mount and never a harness memory
-format.
+Pool-agent and sandbox-agent know only the generic source-data mount and never
+a harness memory format.
 
 The same preference decides where a harness image's *policy* baseline goes when
 the CLI has a system layer for it. The codex image bakes

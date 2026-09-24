@@ -53,9 +53,6 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 	}
 	script := string(scriptBytes)
 	for _, required := range []string{
-		"/.discobox/data-per-source/primary",
-		"harnesses/claude-code/memories",
-		"autoMemoryDirectory",
 		`exec claude "$@"`,
 		// The resume half of the convention, and the prompt that trails it
 		// on every launch (ADR 0086 §4): a resumed session already carries
@@ -65,6 +62,57 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("launch script is missing %q", required)
+		}
+	}
+}
+
+// Where Claude Code keeps its memory and its temp tree is the sandbox's
+// environment, not the launcher's: a `claude` typed into any shell has to find
+// the same memory and the same scratchpads as the harness terminal does.
+func TestClaudeStorageIsEnvironmental(t *testing.T) {
+	raw, err := os.ReadFile("managed-settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		AutoMemoryDirectory string `json:"autoMemoryDirectory"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if want := "/.discobox/data-per-source/primary/harnesses/claude-code/memories"; settings.AutoMemoryDirectory != want {
+		t.Errorf("managed autoMemoryDirectory = %q, want %q", settings.AutoMemoryDirectory, want)
+	}
+
+	raw, err = os.ReadFile("image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var image harness.ImageMetadata
+	if err := json.Unmarshal(raw, &image); err != nil {
+		t.Fatal(err)
+	}
+	tmp := image.Env["CLAUDE_CODE_TMPDIR"]
+	if tmp == "" {
+		t.Fatal("image env does not set CLAUDE_CODE_TMPDIR")
+	}
+	var persisted bool
+	for _, volume := range image.Volumes {
+		if volume.Path == tmp && volume.Volume == harness.VolumeData && !volume.ExcludeFromExport {
+			persisted = true
+		}
+	}
+	if !persisted {
+		t.Errorf("CLAUDE_CODE_TMPDIR %q is not a data volume that travels on export: %#v", tmp, image.Volumes)
+	}
+
+	launcher, err := os.ReadFile("launch.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, launchOnly := range []string{"autoMemoryDirectory", "CLAUDE_CODE_TMPDIR", "--settings"} {
+		if strings.Contains(string(launcher), launchOnly) {
+			t.Errorf("launch.sh sets %s, which a plain `claude` would not get", launchOnly)
 		}
 	}
 }

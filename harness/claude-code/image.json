@@ -1,8 +1,12 @@
 {
   "apiVersion": "discobox.dev/image/v1",
   "env": {
+    "CLAUDE_CODE_TMPDIR": "/var/lib/claude-code",
     "DISABLE_AUTOUPDATER": "1"
   },
+  "volumes": [
+    { "path": "/var/lib/claude-code", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0700" }
+  ],
   "harness": {
     "id": "claude-code",
     "name": "Claude Code",
