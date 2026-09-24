@@ -82,9 +82,7 @@ jobs:
 
       - uses: ./.github/actions/task
         with:
-          target: vm:build VM_PLATFORM=${{ matrix.platform }}
-
-      - run: nix develop -c go tool task vm:verify VM_PLATFORM=${{ matrix.platform }}
+          target: ci:vm-guest VM_PLATFORM=${{ matrix.platform }}
 
   publish-guest:
     needs: guest

@@ -47,9 +47,7 @@ jobs:
 
       - uses: ./.github/actions/task
         with:
-          target: vm:build-libkrun-runtime
-
-      - run: nix develop -c go tool task vm:verify-libkrun-runtime
+          target: ci:libkrun-runtime
 
   publish:
     needs: build

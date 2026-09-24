@@ -182,10 +182,11 @@ both support it; the runtime is not buildable this way. See
 [`server/providers/vz/DESIGN.md`](../server/providers/vz/DESIGN.md) and
 [`server/providers/libkrun/DESIGN.md`](../server/providers/libkrun/DESIGN.md).
 
-CI runs `task vm:build` / `vm:verify` into `build/vm`,
-`vm:build-libkrun-runtime` / `vm:verify-libkrun-runtime` into
-`build/libkrun-runtime`, and `vm:build-krun` / `vm:verify-krun` into
-`build/vm-krun`. Verification is not optional politeness: a guest that
+CI runs one target per build, each building and then verifying:
+`ci:vm-guest` (`vm:build` / `vm:verify`, into `build/vm`), `ci:libkrun-runtime`
+(`vm:build-libkrun-runtime` / `vm:verify-libkrun-runtime`, into
+`build/libkrun-runtime`), and `ci:vm-krun` (`vm:build-krun` / `vm:verify-krun`,
+into `build/vm-krun`). Verification is not optional politeness: a guest that
 publishes a kernel the hypervisor cannot load, or a root filesystem that will
 not mount, fails as a blank console with nothing to read. `vm:verify` checks
 the kernel format per architecture, the root label, the hostname, and the

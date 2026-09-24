@@ -68,29 +68,21 @@ jobs:
     permissions:
       contents: read
     env:
-      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.2
-      # The only place the tag itself is judged, and it comes first: nothing
-      # below should run for a tag that cannot be promoted. The rule is the
-      # Taskfile's, since a GitHub expression cannot express it (ADR 0066 §1).
-      - uses: ./.github/actions/task
-        with:
-          target: release:require-dot
-      # Nothing else updates the tap — it has no cron any more — so a missing
-      # token means `brew install discobox` silently stays on the previous
-      # version. Fail instead.
-      - if: env.GH_TOKEN == ''
-        run: |
-          echo "::error::HOMEBREW_TAP_TOKEN is not set, so the tap was not told about $RELEASE_TAG"
-          exit 1
-      # A plain run, because Nix is already installed by the step above
-      # (ADR 0066 §2). One dispatch updates both formulae; only `discobox` can
+      # The tag is judged first — nothing should run for one that cannot be
+      # promoted, and a GitHub expression cannot express the rule — and then
+      # the tap is told, which refuses a missing token rather than leaving
+      # `brew install discobox` on the previous version. Both are ci:promote's
+      # (ADR 0066 §1). One dispatch updates both formulae; only `discobox` can
       # have moved here, since the release that just became stable was already
       # the newest dot release when it was cut — unless it was not, which is
       # exactly the case where letting the tap recompute both beats telling it
       # which one to write.
-      - run: nix develop -c go tool task brew:refresh
+      - uses: ./.github/actions/task
+        with:
+          target: ci:promote
 
   # The winget submission is switched off, deliberately and temporarily.
   #
@@ -103,8 +95,10 @@ jobs:
   # there is no published version going stale.
   #
   # To restore it, put back the `winget` job removed in this commit — `needs:
-  # brew`, `GH_TOKEN: ${{ secrets.WINGET_TOKEN }}`, a guard for the empty token,
-  # and `uses: ./.github/actions/task` with `target: winget:publish`. Do that
+  # brew`, `GH_TOKEN: ${{ secrets.WINGET_TOKEN }}`, and `uses:
+  # ./.github/actions/task` with `target: winget:publish` — with the check for
+  # an empty token as a precondition of winget:publish, not a YAML step
+  # (ADR 0066 §1). Do that
   # once 432935 has merged, so the submission after it is a "New version:" onto
   # a package that exists.
   #

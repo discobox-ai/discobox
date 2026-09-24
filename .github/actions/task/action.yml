@@ -8,10 +8,10 @@ description: Run one Taskfile target in the repository's Nix devShell (plain Go 
 # The one thing this cannot do that ADR 0066 §2 describes is check out the
 # repository: a local composite action is only resolvable once the repository is
 # already on disk, so every job runs actions/checkout first. A job that needs a
-# second target adds a plain `run: nix develop -c go tool task <target>` step —
-# Nix is already installed by then, though not on Windows. The caches are saved
-# by this action's last step, not when the job ends, so what such a step builds
-# is not kept for the next run.
+# second target gets a `ci:*` target that runs both, not a second step: what a
+# job does is the Taskfile's (ADR 0066 §1). A second step would not be cached
+# either: the caches are saved by this action's last step, not when the job
+# ends.
 
 inputs:
   target:

@@ -36,9 +36,7 @@ jobs:
 
       - uses: ./.github/actions/task
         with:
-          target: vm:build-krun
-
-      - run: nix develop -c go tool task vm:verify-krun
+          target: ci:vm-krun
 
   publish:
     needs: build

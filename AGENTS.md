@@ -82,6 +82,8 @@ go tool task check-hooks # wait for background hook work and report what failed
 go tool task rerun-hooks # re-run failed or never-run hooks
 go tool task generate   # regenerate generated files
 go tool task build      # build all binaries and local Docker images
+go tool task release -- v0.0.0-dev   # a release build of this checkout, to try locally
+go tool task release:try             # run it as a new user would (release:try:reset starts over)
 ```
 
 What CI runs, and what to run before pushing something build-related:
