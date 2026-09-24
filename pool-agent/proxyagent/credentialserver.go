@@ -63,15 +63,7 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 	}
 	handler := &credentialsHandler{controlPlane: broker, activations: live}
 
-	listener := tls.NewListener(tcp, &tls.Config{
-		Certificates: []tls.Certificate{bundle.ServerCert},
-		ClientCAs:    bundle.ClientCAPool,
-		// The client certificate is the identity, so an unverified client is not
-		// an anonymous caller to be authenticated some other way — it is no
-		// caller at all.
-		ClientAuth: tls.RequireAndVerifyClientCert,
-		MinVersion: tls.VersionTLS12,
-	})
+	listener := tls.NewListener(tcp, sandboxTLSConfig(bundle))
 	server := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,

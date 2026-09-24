@@ -146,7 +146,8 @@ func PoolSandboxMaterialRoot(projectID, poolID string) string {
 // sandbox egress to the pool proxy. Sandboxes join it (and only it) and
 // resolve ServerName via Docker's embedded DNS; the pool joins it aliased as
 // ServerName, in addition to its egress network. Being internal, the network
-// has no route off-box, so a sandbox can reach only the proxy and DNS.
+// has no route off-box, so a sandbox can reach only the pool: its proxy, and
+// the DNS forwarder its external names are resolved through.
 func SandboxNetworkName(poolID string) string {
 	return "discobox-sbnet-" + poolID
 }
@@ -344,6 +345,14 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	go func() {
 		errCh <- serveCredentials(ctx, logger, bundle, projectID, poolID, live)
 	}()
+	go func() {
+		// Logged, not sent to errCh, for the control API's reason: a sandbox
+		// that cannot resolve names can still reach everything through the
+		// proxy, which must not stop with it.
+		if err := serveDNS(ctx, logger, bundle); err != nil {
+			logger.Warn("pool sandbox dns stopped", "error", err)
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		_ = server.Close()
@@ -370,16 +379,20 @@ type SandboxMaterial struct {
 // bridgeConfig is the on-disk config read by the sandbox proxy-bridge service.
 // Paths are expressed as seen inside the sandbox container.
 //
-// It also carries the pool's agent credentials endpoint, because that endpoint
-// authenticates with the same client keypair named here: one file, one set of
-// material, both things the sandbox reaches the pool with (ADR 0031 §2).
+// It also carries the pool's agent credentials endpoint and DNS server, because
+// both authenticate with the same client keypair named here: one file, one set
+// of material, every thing the sandbox reaches the pool with (ADR 0031 §2).
+// DNSListenAddress is where the sandbox's DNS stub listens: the address its
+// container was created with as DNS server.
 type bridgeConfig struct {
-	ListenAddress  string `json:"listenAddress"`
-	PoolProxyURL   string `json:"workerProxyUrl"`
-	CredentialsURL string `json:"credentialsUrl,omitempty"`
-	MTLSCAPath     string `json:"mtlsCaPath"`
-	ClientCertPath string `json:"clientCertPath"`
-	ClientKeyPath  string `json:"clientKeyPath"`
+	ListenAddress    string `json:"listenAddress"`
+	PoolProxyURL     string `json:"workerProxyUrl"`
+	CredentialsURL   string `json:"credentialsUrl,omitempty"`
+	DNSServer        string `json:"dnsServer,omitempty"`
+	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
+	MTLSCAPath       string `json:"mtlsCaPath"`
+	ClientCertPath   string `json:"clientCertPath"`
+	ClientKeyPath    string `json:"clientKeyPath"`
 }
 
 // validateIDSegment rejects IDs that could escape the directories they become
@@ -563,12 +576,14 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	}
 
 	bridge := bridgeConfig{
-		ListenAddress:  SandboxForwarderListen,
-		PoolProxyURL:   PoolProxyURL,
-		CredentialsURL: CredentialsURL,
-		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
-		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
-		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),
+		ListenAddress:    SandboxForwarderListen,
+		PoolProxyURL:     PoolProxyURL,
+		CredentialsURL:   CredentialsURL,
+		DNSServer:        DNSServerAddress,
+		DNSListenAddress: sandboxDNSListenAddress,
+		MTLSCAPath:       filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
+		ClientCertPath:   filepath.Join(SandboxProxyMount, "client.crt"),
+		ClientKeyPath:    filepath.Join(SandboxProxyMount, "client.key"),
 	}
 	bridgeJSON, err := json.MarshalIndent(&bridge, "", "  ")
 	if err != nil {

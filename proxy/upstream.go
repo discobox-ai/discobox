@@ -24,9 +24,9 @@ var UpstreamProxyEnvVars = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", 
 //
 // A pool proxy normally has direct egress and needs none of this. It matters
 // when a pool runs *inside* a sandbox — the nested case — because a sandbox has
-// no route off-box by design: every origin dial and even DNS resolution fails
-// there ("lookup ...: server misbehaving"), so the inner proxy has to hand its
-// traffic to the outer one rather than resolve anything itself.
+// no route off-box by design: every origin dial fails there, so the inner proxy
+// has to hand its traffic to the outer one. A sandbox can resolve names through
+// its pool's DNS forwarder, but resolving is not reaching.
 func upstreamProxyURL(cfg Config) (*url.URL, error) {
 	raw := strings.TrimSpace(cfg.UpstreamProxy)
 	if raw == "" {

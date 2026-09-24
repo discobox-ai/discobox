@@ -20,6 +20,7 @@ func TestPoolListenAddressesAreDistinct(t *testing.T) {
 	}{
 		{"pool proxy", proxyagent.ListenAddress},
 		{"agent credentials endpoint", proxyagent.CredentialsListenAddress},
+		{"sandbox DNS", proxyagent.DNSListenAddress},
 		{"proxy control API", proxyagent.ControlListenAddress},
 		{"BuildKit mediator", buildkitagent.MediatorListen},
 		{"build registry", buildkitagent.RegistryListen},

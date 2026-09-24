@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -507,13 +508,20 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		// the desktop's 3840x2432 display one frame is ~37 MiB, so VS Code's
 		// renderer dies on start. The size is a tmpfs cap, not a reservation.
 		ShmSize: r.sharedMemoryBytes,
+		// Docker's embedded resolver answers container names itself and
+		// forwards every other name here. On an internal network it forwards
+		// nowhere else, so without this no external name resolves. The
+		// address is the sandbox's own: its DNS stub claims it on loopback
+		// and carries each query to the pool over mTLS.
+		DNS: []netip.Addr{proxyagent.SandboxDNSAddress},
 	}
 	// No CPU/memory limit is set here: a sandbox container shares its pool
 	// container's cgroup rather than reserving a nested slice of it
 	// (ADR 0029).
 	// Attach the sandbox to the per-pool internal network only: it reaches the
 	// pool proxy (resolved as discobox-pool-proxy via Docker embedded DNS)
-	// and DNS, but has no route off-box, so all egress is forced through the proxy.
+	// and the pool's DNS forwarder, but has no route off-box, so all egress is
+	// forced through the proxy.
 	netCfg := &network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
 			proxyagent.SandboxNetworkName(r.poolID): {},

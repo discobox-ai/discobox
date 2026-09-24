@@ -1,6 +1,7 @@
 package proxyagent
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -56,6 +57,34 @@ func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
 	}
 	if got := material.Env["PIP_CERT"]; got != SystemCABundle {
 		t.Fatalf("PIP_CERT = %q, want system CA bundle", got)
+	}
+}
+
+// The sandbox's DNS stub reads these two fields from bridge.json: where to
+// listen (the DNS server its container was created with) and where to dial.
+func TestEnsureSandboxMaterialStagesDNS(t *testing.T) {
+	withTestRoot(t)
+
+	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	if err != nil {
+		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+	}
+	data, err := os.ReadFile(resolve(filepath.Join(material.MountSource, "bridge.json")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bridge struct {
+		DNSServer        string `json:"dnsServer"`
+		DNSListenAddress string `json:"dnsListenAddress"`
+	}
+	if err := json.Unmarshal(data, &bridge); err != nil {
+		t.Fatal(err)
+	}
+	if bridge.DNSServer != "discobox-pool-proxy:17085" {
+		t.Fatalf("dnsServer = %q", bridge.DNSServer)
+	}
+	if bridge.DNSListenAddress != "169.254.53.53:53" {
+		t.Fatalf("dnsListenAddress = %q", bridge.DNSListenAddress)
 	}
 }
 

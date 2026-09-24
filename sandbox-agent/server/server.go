@@ -407,9 +407,7 @@ func newMetaFile(execManager *execs.Manager) (*meta.File, error) {
 func agentListenPorts(listenAddress string, bridgeConfigs ...string) []int {
 	addresses := []string{listenAddress, credentials.ListenAddress}
 	for _, path := range bridgeConfigs {
-		if address := bridgeListenAddress(path); address != "" {
-			addresses = append(addresses, address)
-		}
+		addresses = append(addresses, bridgeListenAddresses(path)...)
 	}
 	var out []int
 	for _, address := range addresses {
@@ -418,20 +416,28 @@ func agentListenPorts(listenAddress string, bridgeConfigs ...string) []int {
 	return out
 }
 
-// bridgeListenAddress is the address a pool-staged bridge config tells its
-// forwarder to listen on, or empty when there is no such config.
-func bridgeListenAddress(path string) string {
+// bridgeListenAddresses are the addresses a pool-staged bridge config tells
+// the sandbox's own services to listen on — its forwarder's and, in the egress
+// bridge's config, the DNS stub's — or none when there is no such config.
+func bridgeListenAddresses(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return nil
 	}
 	var bridge struct {
-		ListenAddress string `json:"listenAddress"`
+		ListenAddress    string `json:"listenAddress"`
+		DNSListenAddress string `json:"dnsListenAddress"`
 	}
 	if json.Unmarshal(data, &bridge) != nil {
-		return ""
+		return nil
 	}
-	return strings.TrimSpace(bridge.ListenAddress)
+	var out []string
+	for _, address := range []string{bridge.ListenAddress, bridge.DNSListenAddress} {
+		if address = strings.TrimSpace(address); address != "" {
+			out = append(out, address)
+		}
+	}
+	return out
 }
 
 // bridgeConfigPath is the egress bridge config the agent reads, defaulted the

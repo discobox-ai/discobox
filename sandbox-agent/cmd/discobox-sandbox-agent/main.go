@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/boot"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
+	"github.com/discobox-ai/discobox/sandbox-agent/dnsstub"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
@@ -141,11 +142,13 @@ type bridgeConfig struct {
 func runProxyBridge(args []string) int {
 	var configPath, bridgeInterface, publishPath string
 	var bridgeTimeout time.Duration
+	var dns bool
 	flags := flag.NewFlagSet("discobox-sandbox-agent proxy-bridge", flag.ContinueOnError)
 	flags.StringVar(&configPath, "config", "/etc/discobox/proxy/bridge.json", "path to proxy bridge config")
 	flags.StringVar(&bridgeInterface, "bridge-interface", "", "discover the listen address from this interface instead of the config (e.g. docker0)")
 	flags.StringVar(&publishPath, "publish", nestedbridge.DefaultPublishPath, "where to publish the discovered listen address")
 	flags.DurationVar(&bridgeTimeout, "bridge-timeout", 2*time.Minute, "how long to wait for the bridge interface to get an address")
+	flags.BoolVar(&dns, "dns", false, "also run the sandbox's DNS stub, at the dnsListenAddress the config names")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -161,6 +164,22 @@ func runProxyBridge(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// The sandbox's DNS stub rides the sandbox's own instance (--dns), not the
+	// nested-Docker one, since both reach the pool with this keypair. Its
+	// failing is logged, never fatal: a sandbox that cannot resolve external
+	// names can still reach everything through here.
+	switch dnsConfig, err := dnsstub.LoadConfig(configPath); {
+	case !dns:
+	case errors.Is(err, dnsstub.ErrNoDNS):
+		// A pool from before sandbox DNS set no DNS server on this container
+		// either, so there is nothing to answer for.
+		slog.Info("sandbox dns stub not started", "reason", err)
+	case err != nil:
+		slog.Error("load sandbox dns config", "error", err)
+	default:
+		go runDNSStub(ctx, dnsConfig)
+	}
 
 	// The bridge-facing instance binds whatever subnet dockerd chose for its
 	// default bridge, rather than a pinned address: daemon.json sets no "bip",
@@ -223,6 +242,28 @@ func runProxyBridge(args []string) int {
 			return 1
 		}
 		return 0
+	}
+}
+
+// runDNSStub keeps the sandbox's DNS stub running until ctx ends. A failed
+// start is retried with backoff, as systemd would restart a unit of its own:
+// nothing else notices a sandbox without DNS, since its egress still works.
+func runDNSStub(ctx context.Context, cfg dnsstub.Config) {
+	delay := time.Second
+	for {
+		err := dnsstub.Run(ctx, slog.Default(), cfg)
+		if ctx.Err() != nil {
+			return
+		}
+		slog.Error("sandbox dns stub failed; retrying", "error", err, "in", delay)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		delay = min(2*delay, 30*time.Second)
 	}
 }
 

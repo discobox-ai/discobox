@@ -29,6 +29,7 @@ from the in-sandbox `sandbox-agent` API.
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server, including the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
+| `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, and the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
@@ -567,6 +568,51 @@ namespace, not this one, so `localhost` in a forwarded connection means what
 the user meant. `.../udp/attach` (scope `udp:connect`) is registered the same
 way for the datagram tunnel
 ([ADR 0109](../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)).
+
+## Sandbox DNS
+
+A sandbox is on its pool's internal network only, where Docker's embedded
+resolver answers container names but forwards nothing else, so without help
+no external name resolves
+([ADR 0148](../docs/adr/0148-a-sandbox-resolves-names-through-its-pool-over-mtls.md)).
+
+Plain DNS on that network would be answerable by any sandbox that claimed the
+pool's address — every sandbox is root in a privileged container on the same
+segment — so it travels the way the proxy and the credentials endpoint do:
+over TLS, authenticated both ways by the pool's certificates.
+
+```mermaid
+flowchart LR
+    app["sandbox process"] -->|"127.0.0.11"| docker["Docker embedded DNS"]
+    docker -->|"container names"| app
+    docker -->|"everything else, to 169.254.53.53 on lo"| stub["sandbox proxy bridge (dnsstub)"]
+    stub -->|"DNS over TLS, client cert = sandbox"| fwd["proxy unit :17085 (dnsforward)"]
+    fwd -->|"UDP, TCP on truncation"| up["pool's resolver"]
+```
+
+- `sandboxruntime` creates each sandbox container with the DNS server
+  `proxyagent.SandboxDNSAddress` (`169.254.53.53`). It is the sandbox's own:
+  the stub claims it on the sandbox's loopback, so Docker's resolver, which
+  forwards from inside the sandbox's network namespace, delivers locally and
+  nothing crosses the network in the clear. It drops anything for that address
+  arriving off `lo`, which a neighbor could otherwise route there. The sandbox's `nameserver` stays
+  `127.0.0.11`, so container names resolve as before.
+- `proxyagent` stages the stub's two settings in `bridge.json` beside the
+  credentials endpoint, since all three reach the pool with the same keypair:
+  `dnsListenAddress` (that address, port 53) and `dnsServer`
+  (`discobox-pool-proxy:17085`).
+- The proxy unit serves `dnsforward` on `0.0.0.0:17085` with the server
+  configuration it shares with the credentials endpoint (`sandboxTLSConfig`),
+  and answers from the first `nameserver` in the pool container's
+  `resolv.conf` — Docker's embedded resolver, which forwards because the pool
+  is also on a network with a route out. Its failing is logged and does not
+  stop the proxy. Connections are capped in total and per source address at
+  accept, before any handshake, since the process also carries every
+  sandbox's egress; and per sandbox after it, by certificate name.
+- The upstream is the pool's own resolver, so a sandbox can resolve the names
+  of containers on the pool's egress network too. It cannot reach them.
+- The server relays messages and decides nothing: DNS is not subject to the
+  proxy's allowlist and is not audited.
 
 ## Worker Proxy Integration
 
