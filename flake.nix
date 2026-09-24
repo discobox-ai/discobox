@@ -119,6 +119,13 @@
               # `task build` writes here, and the built CLI is what a developer
               # runs against `task dev`.
               export PATH="$DISCOBOX_ROOT/build:$PATH"
+              # Inside a discobox, DISCOBOX_SERVER names the server that runs
+              # the box (api.discobox.internal). In this checkout, the CLI
+              # should reach the local `task dev` server instead. Only there: a
+              # developer's own DISCOBOX_SERVER on their machine is theirs.
+              if [ -e /etc/discobox/sandbox.json ]; then
+                unset DISCOBOX_SERVER
+              fi
 
               # Completions come out of the CLI itself, so they are refreshed
               # whenever one has been built and skipped silently before the

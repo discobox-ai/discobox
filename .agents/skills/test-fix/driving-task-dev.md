@@ -37,9 +37,10 @@ switch` — so checking out a commit *is* building it:
   restarted on `http://127.0.0.1:8080` with its data under `.tmp/discobox`.
 - The pool, sandbox, and harness images are rebuilt by the image watcher.
 - **Always pass `--server http://127.0.0.1:8080`.** The box sets
-  `DISCOBOX_SERVER=https://api.discobox.internal`, so a CLI without the flag
-  talks to the *outer* discobox API — the one running this box — not the build
-  under test. A shell function keeps it honest:
+  `DISCOBOX_SERVER=https://api.discobox.internal`. The flake's dev shell unsets
+  it, but a shell that has not loaded the dev shell (an agent's tool shell,
+  usually) still has it, and a CLI there without the flag talks to the *outer*
+  discobox API — the one running this box — not the build under test. A shell function keeps it honest:
 
   ```bash
   d() { ./build/discobox --server http://127.0.0.1:8080 "$@"; }
