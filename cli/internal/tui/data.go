@@ -288,6 +288,12 @@ type Sandbox struct {
 	// delivery, the origin host and the state are all already in the response.
 	Pushable bool
 
+	// AwaitsDelivery reports that the discobox is parked waiting for a source
+	// this machine can deliver: its create stopped after it parked and before
+	// the push was reported, and this machine is the one it was created on.
+	// Opening the workspace delivers it first (ADR 0150).
+	AwaitsDelivery bool
+
 	// Git is where the work sits now, when the sandbox's agent has reported;
 	// the spawn fields above are the fallback until it does.
 	Git GitState
@@ -1516,6 +1522,13 @@ type DataSource interface {
 	// It reports nothing for a sandbox with nothing left to provision, so a
 	// window that starts one against a running discobox draws no line at all.
 	WatchProvisioning(ctx context.Context, sandboxID string, report func(string))
+
+	// DeliverSource delivers the source a discobox is still waiting for, when
+	// this machine can, and does nothing otherwise: the delivery `discobox push`
+	// performs against a parked discobox, run by an attach before it dials
+	// (ADR 0150). report is told each step as it begins. It returns once the
+	// discobox is free to start, or with why it could not be delivered.
+	DeliverSource(ctx context.Context, sandboxID string, report func(string)) error
 
 	// Workspace reports what a create would carry in from the source directory,
 	// so the window can settle --include-dirty=auto before it creates anything.

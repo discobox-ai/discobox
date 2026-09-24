@@ -127,6 +127,15 @@ type fakeSource struct {
 	provisionLines []string
 	watched        []string
 
+	// delivered records which discoboxes the window asked to deliver the
+	// source of before attaching, deliverSteps what that delivery reports, and
+	// awaitedErr fails it. execOpensAtDelivery is how many sessions had been
+	// opened when it was asked, which is none if it came first.
+	delivered           []string
+	execOpensAtDelivery []int
+	deliverSteps        []string
+	awaitedErr          error
+
 	openErr   error
 	renameErr error
 	// hostToolErr fails RunHostTool, and toolsErr the catalog lookup.
@@ -410,6 +419,19 @@ func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, repo
 	for _, line := range lines {
 		report(line)
 	}
+}
+
+func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report func(string)) error {
+	f.mu.Lock()
+	f.delivered = append(f.delivered, sandboxID)
+	f.execOpensAtDelivery = append(f.execOpensAtDelivery, len(f.execOpens))
+	steps := append([]string(nil), f.deliverSteps...)
+	err := f.awaitedErr
+	f.mu.Unlock()
+	for _, step := range steps {
+		report(step)
+	}
+	return err
 }
 
 func (f *fakeSource) Workspace(context.Context, string) (SourceWorkspace, error) {

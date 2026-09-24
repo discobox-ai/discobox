@@ -62,7 +62,9 @@ onto: every source it waits for is pushed at the commit it was created from,
 with any uncommitted work that create captured, and reported complete, which
 starts it. That needs the repositories those sources came from to still hold
 those commits; --source, --branch, and --force describe a push to a running
-discobox and do not apply.
+discobox and do not apply. Attaching to it from the machine that created it
+delivers it the same way, so this is for delivering it from a directory that
+has moved (--dir), or from another machine.
 
 The launcher pushes for you while its window is open on a discobox, so most of
 the time there is nothing to run here. This command is what covers the rest: a
@@ -286,46 +288,17 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 	case force:
 		return fmt.Errorf("the discobox is still waiting for its source, so its origin holds nothing to force past")
 	}
-	roots := make(map[string]string, len(pending))
-	report := pushReport{SandboxID: sandbox.ID, SandboxName: sandbox.Config.Name}
-	// Every source is resolved and checked before any of them is pushed: a
-	// delivery the server would refuse halfway through leaves the discobox
-	// parked with a partly written origin.
-	for _, entry := range pending {
-		hostDir, _, err := resolveApplyHostDir(sandbox, hostID, applySourceEntry{slug: entry.Slug, source: entry.Source}, dirOverrides)
-		if err != nil {
-			return err
-		}
-		repoRoot, err := gitutil.Root(ctx, hostDir)
-		if errors.Is(err, gitutil.ErrNotARepository) {
-			return fmt.Errorf("source %q came from %s, which is not a Git repository now, so the commit the discobox is waiting for is not there to send", entry.Slug, hostDir)
-		}
-		if err != nil {
-			return fmt.Errorf("read the Git repository at %s: %w", hostDir, err)
-		}
-		if err := sandboxcreate.CheckDeliverable(ctx, repoRoot, entry.Source); err != nil {
-			return err
-		}
-		roots[entry.Key] = repoRoot
-		commit, deliveredBranch := deliveredRefs(entry.Source)
-		report.Sources = append(report.Sources, pushSourceReport{
-			Slug:     entry.Slug,
-			Status:   pushStatusDelivered,
-			HostPath: repoRoot,
-			Branch:   deliveredBranch,
-			Commit:   commit,
-		})
-	}
 	// Delivering is this process's own work, so nothing but this process can
 	// say which part of it is underway (ADR 0060).
 	status := newStatusLine(cmd.ErrOrStderr())
 	defer status.clear()
 	step := func(step sandboxcreate.Step) { status.set(string(step)) }
-	err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, sandboxcreate.NewLocalSources(roots), gitServerURL, a.token, step)
+	sources, err := a.deliverParkedSource(ctx, client, projectID, sandbox, pending, hostID, gitServerURL, dirOverrides, step)
 	status.clear()
 	if err != nil {
 		return err
 	}
+	report := pushReport{SandboxID: sandbox.ID, SandboxName: sandbox.Config.Name, Sources: sources}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), report)
 	}
@@ -333,6 +306,48 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 		printPushSource(cmd, source)
 	}
 	return nil
+}
+
+// deliverParkedSource is the delivery itself, shared by `discobox push` and by
+// an attach to a discobox still waiting for its source (ADR 0150): every
+// pending source resolved out of the directory it came from, checked, pushed at
+// the commit it was pinned to, and the set reported complete.
+//
+// Every source is resolved and checked before any of them is pushed: a
+// delivery the server would refuse halfway through leaves the discobox parked
+// with a partly written origin.
+func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox, pending []sandboxcreate.PendingSourcePush, hostID, gitServerURL string, dirOverrides map[string]string, step sandboxcreate.Report) ([]pushSourceReport, error) {
+	roots := make(map[string]string, len(pending))
+	sources := make([]pushSourceReport, 0, len(pending))
+	for _, entry := range pending {
+		hostDir, _, err := resolveApplyHostDir(sandbox, hostID, applySourceEntry{slug: entry.Slug, source: entry.Source}, dirOverrides)
+		if err != nil {
+			return nil, err
+		}
+		repoRoot, err := gitutil.Root(ctx, hostDir)
+		if errors.Is(err, gitutil.ErrNotARepository) {
+			return nil, fmt.Errorf("source %q came from %s, which is not a Git repository now, so the commit the discobox is waiting for is not there to send", entry.Slug, hostDir)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read the Git repository at %s: %w", hostDir, err)
+		}
+		if err := sandboxcreate.CheckDeliverable(ctx, repoRoot, entry.Source); err != nil {
+			return nil, err
+		}
+		roots[entry.Key] = repoRoot
+		commit, deliveredBranch := deliveredRefs(entry.Source)
+		sources = append(sources, pushSourceReport{
+			Slug:     entry.Slug,
+			Status:   pushStatusDelivered,
+			HostPath: repoRoot,
+			Branch:   deliveredBranch,
+			Commit:   commit,
+		})
+	}
+	if err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, sandboxcreate.NewLocalSources(roots), gitServerURL, a.token, step); err != nil {
+		return nil, err
+	}
+	return sources, nil
 }
 
 // deliveredRefs are the commit a source is delivered at and the branch it lands

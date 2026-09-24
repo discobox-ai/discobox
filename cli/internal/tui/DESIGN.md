@@ -568,9 +568,13 @@ every other poll there.
 **The row says whether the discobox is worth asking about** (`Sandbox.Pushable`,
 `pushable` in `internal/cli/push_auto.go`): a source delivered by pushing it,
 this machine recorded as the origin host, and a state that can take one. A
-discobox still awaiting its source is excluded on purpose — a push to a parked
-one is its create's delivery, which starts it, and that stays something asked
-for by name at `discobox push`.
+discobox still awaiting its source is excluded on purpose: a push to a parked
+one is its create's delivery, which starts it. That delivery happens when the
+workspace opens instead (`Sandbox.AwaitsDelivery`, `deliverSource`), before
+anything attaches
+([ADR 0150](../../../docs/adr/0150-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)).
+A delivery that fails closes the workspace the way a primary that never came up
+does.
 
 **The idle beat costs two ref reads** (`sandboxpush.Resolve`): the branch tip
 against the lease this client last pushed. No transport, no control-plane

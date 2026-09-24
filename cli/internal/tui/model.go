@@ -1080,6 +1080,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case workspaceTermMsg:
 		return m.workspaceTermOpened(msg)
 
+	case sourceDeliveredMsg:
+		return m.sourceDelivered(msg)
+
 	case toolTermMsg:
 		return m.toolOpened(msg)
 

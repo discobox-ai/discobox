@@ -2013,6 +2013,19 @@ throwaway repository was deleted when that run ended (ADR 0045) and took the
 only copy of those commits with it. `--source`, `--branch`, and `--force` all
 describe a rebase-time push and are refused here rather than ignored.
 
+**Attaching delivers it too** (`internal/cli/push_attach.go`, ADR 0150).
+Attaching to a discobox is asking for it by name, and a parked one waits on a
+push nobody is making. So when the discobox is parked and this machine created
+it (`deliverableHere`), an attach runs the same delivery with no overrides
+(`deliverParkedSource`) **before** it dials. It cannot run beside the dial: the
+attach wait gives up after a stall budget, and nothing it watches moves while
+the client pushes. The launcher's workspace does this when the row says
+`AwaitsDelivery` (`DataSource.DeliverSource`), and a raw attach does it from
+`attachSandboxTerminal`. A delivery it cannot make fails the attach at once and
+names `discobox push --dir`. A discobox created on another machine is left to
+wait for that machine. A failed delivery whose discobox is no longer parked
+means somebody else's delivery finished first, and the attach carries on.
+
 **An attached client pushes on its own** (`internal/cli/push_auto.go`). Going to
 work in a discobox is when the commits made here belong in its origin, and
 attaching a terminal is that moment — so for as long as an attach lasts, its

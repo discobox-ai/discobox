@@ -357,6 +357,15 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		if err != nil {
 			return err
 		}
+		// A discobox still waiting for its source from this machine gets it
+		// first, and the dial below then waits on a discobox that is starting
+		// rather than on a push nobody is making (ADR 0150).
+		delivering := newStatusLine(stderr)
+		err = a.deliverBeforeAttach(ctx, apiClient, projectID, sandboxID, delivering.set)
+		delivering.clear()
+		if err != nil {
+			return err
+		}
 		stopPushing := a.autoPushWhileAttached(ctx, apiClient, projectID, sandboxID)
 		defer stopPushing(stderr)
 	}

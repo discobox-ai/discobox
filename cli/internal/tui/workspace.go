@@ -125,6 +125,15 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	// is try again. See push.go.
 	m.pushHeld = map[string]string{}
 	gen := m.wsGen
+	if sandbox.AwaitsDelivery {
+		return m.deliverSource(gen, sandbox, freshShell)
+	}
+	return m.attachWorkspace(gen, sandbox, freshShell)
+}
+
+// attachWorkspace starts everything an open workspace runs: the listings, the
+// attach they lead to, the port forward, and the automatic push.
+func (m *Model) attachWorkspace(gen int, sandbox Sandbox, freshShell bool) tea.Cmd {
 	// The attach waits for the discobox to become attachable, which behind a
 	// cold image pull is minutes (ADR 0039). Say what it is waiting for while
 	// it does; the watch reports nothing for a discobox that is already up, so
@@ -134,6 +143,50 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 		cmds = append(cmds, m.newShell())
 	}
 	return tea.Batch(cmds...)
+}
+
+// sourceDeliveredMsg is the delivery a workspace ran before attaching, done.
+type sourceDeliveredMsg struct {
+	gen        int
+	sandbox    Sandbox
+	freshShell bool
+	err        error
+}
+
+// deliverSource hands a discobox the source it is still waiting for, and only
+// then attaches (ADR 0150). Its create stopped after it parked and before the
+// push was reported, so attaching alone would wait on a push nobody is making.
+//
+// Before the attach, not beside it: the attach wait gives up after a stall
+// budget, and nothing it watches moves while this client pushes.
+func (m *Model) deliverSource(gen int, sandbox Sandbox, freshShell bool) tea.Cmd {
+	feed, next := m.narrate()
+	ctx, ds := m.ctx, m.ds
+	deliver := func() tea.Msg {
+		defer feed.close()
+		err := ds.DeliverSource(ctx, sandbox.ID, feed.report)
+		return sourceDeliveredMsg{gen: gen, sandbox: sandbox, freshShell: freshShell, err: err}
+	}
+	return tea.Batch(deliver, next)
+}
+
+// sourceDelivered attaches once the source is in, or closes the workspace the
+// way a primary that never came up closes it.
+func (m *Model) sourceDelivered(msg sourceDeliveredMsg) tea.Cmd {
+	if msg.gen != m.wsGen {
+		return nil
+	}
+	if msg.err != nil {
+		m.endNarration()
+		m.busy = ""
+		m.closeWorkspace()
+		if m.attach != nil {
+			return m.exit(fmt.Errorf("%s: %w", InteractAttach, msg.err))
+		}
+		m.layout()
+		return tea.Batch(m.refresh(), m.report(true, "%s: %v", InteractAttach, msg.err))
+	}
+	return m.attachWorkspace(msg.gen, msg.sandbox, msg.freshShell)
 }
 
 // startForward opens the workspace's port forward. It is opened with the

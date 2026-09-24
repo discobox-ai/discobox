@@ -856,6 +856,7 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		row.SourceOriginKey = originkey.Of(hostID, row.Source)
 	}
 	row.Pushable = pushable(sb, hostID)
+	row.AwaitsDelivery = deliverableHere(sb, hostID)
 	row.Ports = sandboxListeningPorts(sb)
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
@@ -1185,6 +1186,13 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, report func(string)) {
 	d = d.at(sandboxID)
 	d.app.watchProvisioning(ctx, d.projectID, sandboxID, report)
+}
+
+// DeliverSource delivers the source a parked discobox is waiting for before
+// the workspace attaches to it (ADR 0150); see deliverBeforeAttach.
+func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string)) error {
+	d = d.at(sandboxID)
+	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report)
 }
 
 // Do runs a lifecycle verb against one sandbox. These go straight to the API
