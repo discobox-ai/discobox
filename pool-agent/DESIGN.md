@@ -30,7 +30,7 @@ from the in-sandbox `sandbox-agent` API.
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server, including the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
-| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, and the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031). |
+| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs. |
@@ -870,6 +870,7 @@ flowchart LR
     relay -->|"mTLS client cert = sandbox ID"| broker["proxy unit :17083"]
     broker -->|"scoped pool token"| cp["control plane"]
     broker -->|"mint + register"| live["activations"]
+    broker -->|"probe host, apply pins"| proxy["pool proxy"]
     live --> swap["resolver: ephemeral → stable"]
     swap --> cp
 ```
@@ -896,9 +897,24 @@ proxy would recognize it.
   destination matches the host its use was approved for; only then is it
   translated to the stable sentinel and resolved normally. The control plane
   never learns ephemeral sentinels exist.
-- **`sentinelPublisher` owns the proxy's match set**, merging the stable
-  sentinels from SecretsFile with live ephemeral ones. Both sources have to be
-  applied together because `ApplyConfig` replaces the whole per-client set.
+- **`policyPublisher` owns the proxy's per-client policy**, merging the stable
+  sentinels from SecretsFile, live ephemeral ones, and the pool's host trusts.
+  They have to be applied together because `ApplyConfig` replaces the whole of
+  it, and each publish is one read-and-apply so two that race cannot land an
+  older reading over a newer one.
+- **Host trust** (`trusts.go`, [ADR 0149](../docs/adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md))
+  is the protocol's trust verb. `RequestTrust` probes the host through the
+  proxy (`proxy.Server.ProbeTLS`), so the chain a person pins from is the one
+  the proxy meets; answers `unneeded` itself for a chain that already
+  verifies — naming the upstream proxy when the probe went through one, since
+  a pool nested in a discobox sees that proxy's certificate and the host can
+  only be trusted at the outermost proxy; checks a supplied CA against the observed chain; and only then
+  records the ask with that chain on the control plane. `hostTrusts` keeps the
+  proxy's pins in step with the pool's live trusts
+  (`GET /api/pools/{poolId}/sandbox-host-trusts`): at start, every 30 seconds,
+  on every `trusts` list, and — before it answers — on a poll that reads
+  `granted`, so the agent's next request finds the pin in force. A trust the
+  proxy would refuse is reported and skipped, never allowed to fail the rest.
 - The token in the resolve-context file carries `secret:resolve` and
   `credential:broker`. They stay separate scopes so splitting these roles across
   processes later is a change of who holds which token, not of what one means.

@@ -90,6 +90,8 @@ type fakeSource struct {
 	requestsErr     error
 	secretsErr      error
 	approvals       []Approval
+	trustApprovals  []TrustApproval
+	trustDenials    []string
 	denials         []string
 	createdSecrets  []NewSecret
 	approveErr      error
@@ -1417,6 +1419,27 @@ func (f *fakeSource) DenyCredentialRequest(_ context.Context, server, requestID 
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "DenyCredentialRequest@"+server)
 	f.denials = append(f.denials, requestID)
+	f.dropRequestLocked(requestID)
+	return nil
+}
+
+func (f *fakeSource) ApproveTrustRequest(_ context.Context, server string, approval TrustApproval) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "ApproveTrustRequest@"+server)
+	if f.approveErr != nil {
+		return f.approveErr
+	}
+	f.trustApprovals = append(f.trustApprovals, approval)
+	f.dropRequestLocked(approval.RequestID)
+	return nil
+}
+
+func (f *fakeSource) DenyTrustRequest(_ context.Context, server, requestID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DenyTrustRequest@"+server)
+	f.trustDenials = append(f.trustDenials, requestID)
 	f.dropRequestLocked(requestID)
 	return nil
 }

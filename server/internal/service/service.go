@@ -41,6 +41,7 @@ type Service struct {
 	services.PoolService
 	services.JobService
 	services.SecretService
+	services.HostTrustService
 	services.SSHKeyService
 	services.PeerService
 
@@ -112,6 +113,9 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// reconcile engine, so it needs both.
 	harnessConfigService.SetSandboxRuntime(sandboxService)
 	harnessConfigService.SetDirtier(engine)
+	// One service answers both: host trust is the credential broker's act
+	// about a different thing (ADR 0149), and shares its pool-ownership check.
+	secretService := secrets.NewService(store)
 	return &Service{
 		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService),
 		HarnessConfigService:           harnessConfigService,
@@ -119,7 +123,8 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		SandboxProviderInstanceService: providerService,
 		PoolService:                    poolService,
 		JobService:                     jobsService,
-		SecretService:                  secrets.NewService(store),
+		SecretService:                  secretService,
+		HostTrustService:               secretService,
 		SSHKeyService:                  sshkeys.NewService(store),
 		PeerService:                    peers.NewService(store),
 

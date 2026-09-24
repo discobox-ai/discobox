@@ -167,6 +167,88 @@ func (s *AppliedSourceCommit) SetSlug(val string) {
 	s.Slug = val
 }
 
+// One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential or trust is set,
+// as kind says; each is answered on its own resource's approve and deny routes.
+// Ref: #/components/schemas/ApprovalRequest
+type ApprovalRequest struct {
+	Credential OptSecretRequest `json:"credential"`
+	// Which kind of ask this is.
+	Kind  ApprovalRequestKind `json:"kind"`
+	Trust OptHostTrustRequest `json:"trust"`
+}
+
+// GetCredential returns the value of Credential.
+func (s *ApprovalRequest) GetCredential() OptSecretRequest {
+	return s.Credential
+}
+
+// GetKind returns the value of Kind.
+func (s *ApprovalRequest) GetKind() ApprovalRequestKind {
+	return s.Kind
+}
+
+// GetTrust returns the value of Trust.
+func (s *ApprovalRequest) GetTrust() OptHostTrustRequest {
+	return s.Trust
+}
+
+// SetCredential sets the value of Credential.
+func (s *ApprovalRequest) SetCredential(val OptSecretRequest) {
+	s.Credential = val
+}
+
+// SetKind sets the value of Kind.
+func (s *ApprovalRequest) SetKind(val ApprovalRequestKind) {
+	s.Kind = val
+}
+
+// SetTrust sets the value of Trust.
+func (s *ApprovalRequest) SetTrust(val OptHostTrustRequest) {
+	s.Trust = val
+}
+
+// Which kind of ask this is.
+type ApprovalRequestKind string
+
+const (
+	ApprovalRequestKindCredential ApprovalRequestKind = "credential"
+	ApprovalRequestKindTrust      ApprovalRequestKind = "trust"
+)
+
+// AllValues returns all ApprovalRequestKind values.
+func (ApprovalRequestKind) AllValues() []ApprovalRequestKind {
+	return []ApprovalRequestKind{
+		ApprovalRequestKindCredential,
+		ApprovalRequestKindTrust,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApprovalRequestKind) MarshalText() ([]byte, error) {
+	switch s {
+	case ApprovalRequestKindCredential:
+		return []byte(s), nil
+	case ApprovalRequestKindTrust:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
+	switch ApprovalRequestKind(data) {
+	case ApprovalRequestKindCredential:
+		*s = ApprovalRequestKindCredential
+		return nil
+	case ApprovalRequestKindTrust:
+		*s = ApprovalRequestKindTrust
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ApproveSecretRequestBody
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
@@ -325,6 +407,59 @@ func (s *ApproveSecretRequestBodyScope) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/ApproveTrustRequestBody
+type ApproveTrustRequestBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// How long the trust lasts, in seconds, from 1 to 2592000 (thirty days). Defaults to what the agent
+	// asked for, or an hour when it asked for nothing in particular. A trust always lapses.
+	GrantTTLSeconds OptInt64    `json:"grantTTLSeconds"`
+	Pin             OptTrustPin `json:"pin"`
+	// Approved uses, replacing the ones the agent asked for. Omit to approve the requested uses as
+	// written. Use IDs are always minted here.
+	Uses OptNilSecretUseArray `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ApproveTrustRequestBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
+func (s *ApproveTrustRequestBody) GetGrantTTLSeconds() OptInt64 {
+	return s.GrantTTLSeconds
+}
+
+// GetPin returns the value of Pin.
+func (s *ApproveTrustRequestBody) GetPin() OptTrustPin {
+	return s.Pin
+}
+
+// GetUses returns the value of Uses.
+func (s *ApproveTrustRequestBody) GetUses() OptNilSecretUseArray {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *ApproveTrustRequestBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
+func (s *ApproveTrustRequestBody) SetGrantTTLSeconds(val OptInt64) {
+	s.GrantTTLSeconds = val
+}
+
+// SetPin sets the value of Pin.
+func (s *ApproveTrustRequestBody) SetPin(val OptTrustPin) {
+	s.Pin = val
+}
+
+// SetUses sets the value of Uses.
+func (s *ApproveTrustRequestBody) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
 }
 
 // Ref: #/components/schemas/AssignSandboxHarnessSecretsBody
@@ -1441,6 +1576,106 @@ func (s *CreateSandboxProviderInstanceBody) SetType(val string) {
 	s.Type = val
 }
 
+// Ref: #/components/schemas/CreateSandboxTrustRequestBody
+type CreateSandboxTrustRequestBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// How long the agent asks the trust to last, in seconds, from 1 to 2592000; omit to ask for nothing
+	// in particular.
+	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
+	// The endpoint to trust, host:port.
+	Host string `json:"host"`
+	// Why the agent says it needs to reach the host.
+	Justification OptString `json:"justification"`
+	// The chain the pool's egress was shown when it connected to the host, leaf first.
+	ObservedChain []ObservedCertificate `json:"observedChain"`
+	// Sandbox asking for the trust.
+	SandboxId  string                 `json:"sandboxId"`
+	SuppliedCA OptObservedCertificate `json:"suppliedCA"`
+	// What the agent says it will send the host.
+	Uses []SecretUse `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateSandboxTrustRequestBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
+func (s *CreateSandboxTrustRequestBody) GetGrantTTLSeconds() OptInt64 {
+	return s.GrantTTLSeconds
+}
+
+// GetHost returns the value of Host.
+func (s *CreateSandboxTrustRequestBody) GetHost() string {
+	return s.Host
+}
+
+// GetJustification returns the value of Justification.
+func (s *CreateSandboxTrustRequestBody) GetJustification() OptString {
+	return s.Justification
+}
+
+// GetObservedChain returns the value of ObservedChain.
+func (s *CreateSandboxTrustRequestBody) GetObservedChain() []ObservedCertificate {
+	return s.ObservedChain
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *CreateSandboxTrustRequestBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetSuppliedCA returns the value of SuppliedCA.
+func (s *CreateSandboxTrustRequestBody) GetSuppliedCA() OptObservedCertificate {
+	return s.SuppliedCA
+}
+
+// GetUses returns the value of Uses.
+func (s *CreateSandboxTrustRequestBody) GetUses() []SecretUse {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateSandboxTrustRequestBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
+func (s *CreateSandboxTrustRequestBody) SetGrantTTLSeconds(val OptInt64) {
+	s.GrantTTLSeconds = val
+}
+
+// SetHost sets the value of Host.
+func (s *CreateSandboxTrustRequestBody) SetHost(val string) {
+	s.Host = val
+}
+
+// SetJustification sets the value of Justification.
+func (s *CreateSandboxTrustRequestBody) SetJustification(val OptString) {
+	s.Justification = val
+}
+
+// SetObservedChain sets the value of ObservedChain.
+func (s *CreateSandboxTrustRequestBody) SetObservedChain(val []ObservedCertificate) {
+	s.ObservedChain = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *CreateSandboxTrustRequestBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetSuppliedCA sets the value of SuppliedCA.
+func (s *CreateSandboxTrustRequestBody) SetSuppliedCA(val OptObservedCertificate) {
+	s.SuppliedCA = val
+}
+
+// SetUses sets the value of Uses.
+func (s *CreateSandboxTrustRequestBody) SetUses(val []SecretUse) {
+	s.Uses = val
+}
+
 // Ref: #/components/schemas/CreateSecretBody
 type CreateSecretBody struct {
 	// A URL to the JSON Schema for this object.
@@ -2212,6 +2447,11 @@ type DeleteSandboxExecNoContent struct{}
 
 func (*DeleteSandboxExecNoContent) deleteSandboxExecRes() {}
 
+// DeleteSandboxHostTrustNoContent is response for DeleteSandboxHostTrust operation.
+type DeleteSandboxHostTrustNoContent struct{}
+
+func (*DeleteSandboxHostTrustNoContent) deleteSandboxHostTrustRes() {}
+
 // DeleteSandboxProviderInstanceNoContent is response for DeleteSandboxProviderInstance operation.
 type DeleteSandboxProviderInstanceNoContent struct{}
 
@@ -2226,6 +2466,11 @@ func (*DeleteSecretNoContent) deleteSecretRes() {}
 type DenySecretRequestNoContent struct{}
 
 func (*DenySecretRequestNoContent) denySecretRequestRes() {}
+
+// DenyTrustRequestNoContent is response for DenyTrustRequest operation.
+type DenyTrustRequestNoContent struct{}
+
+func (*DenyTrustRequestNoContent) denyTrustRequestRes() {}
 
 // Ref: #/components/schemas/ErrorDetail
 type ErrorDetail struct {
@@ -2383,6 +2628,7 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 }
 
 func (*ErrorModelStatusCode) approveSecretRequestRes()             {}
+func (*ErrorModelStatusCode) approveTrustRequestRes()              {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()      {}
 func (*ErrorModelStatusCode) attachHarnessConfigConfigureRes()     {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                   {}
@@ -2398,6 +2644,7 @@ func (*ErrorModelStatusCode) createSSHKeyRes()                     {}
 func (*ErrorModelStatusCode) createSandboxCredentialRequestRes()   {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) createSandboxRes()                    {}
+func (*ErrorModelStatusCode) createSandboxTrustRequestRes()        {}
 func (*ErrorModelStatusCode) createSecretGrantRes()                {}
 func (*ErrorModelStatusCode) createSecretRequestRes()              {}
 func (*ErrorModelStatusCode) createSecretRes()                     {}
@@ -2408,10 +2655,12 @@ func (*ErrorModelStatusCode) deletePeerRes()                       {}
 func (*ErrorModelStatusCode) deletePoolRes()                       {}
 func (*ErrorModelStatusCode) deleteProjectRes()                    {}
 func (*ErrorModelStatusCode) deleteSSHKeyRes()                     {}
+func (*ErrorModelStatusCode) deleteSandboxHostTrustRes()           {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                    {}
 func (*ErrorModelStatusCode) deleteSecretRes()                     {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                {}
+func (*ErrorModelStatusCode) denyTrustRequestRes()                 {}
 func (*ErrorModelStatusCode) forceJobRes()                         {}
 func (*ErrorModelStatusCode) getHTTPAuditRes()                     {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
@@ -2422,10 +2671,13 @@ func (*ErrorModelStatusCode) getSSHIngressRes()                    {}
 func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()      {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
 func (*ErrorModelStatusCode) getSandboxRes()                       {}
+func (*ErrorModelStatusCode) getSandboxTrustRequestRes()           {}
 func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
 func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) getServerInfoRes()                    {}
 func (*ErrorModelStatusCode) getServerPeerRes()                    {}
+func (*ErrorModelStatusCode) getTrustRequestRes()                  {}
+func (*ErrorModelStatusCode) listApprovalRequestsRes()             {}
 func (*ErrorModelStatusCode) listCredentialVerdictsRes()           {}
 func (*ErrorModelStatusCode) listDNSAuditRes()                     {}
 func (*ErrorModelStatusCode) listHTTPAuditRes()                    {}
@@ -2433,10 +2685,12 @@ func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
 func (*ErrorModelStatusCode) listPeersRes()                        {}
+func (*ErrorModelStatusCode) listPoolHostTrustsRes()               {}
 func (*ErrorModelStatusCode) listPoolsRes()                        {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
 func (*ErrorModelStatusCode) listSandboxCredentialsRes()           {}
+func (*ErrorModelStatusCode) listSandboxHostTrustsRes()            {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
 func (*ErrorModelStatusCode) listSandboxesRes()                    {}
@@ -2444,6 +2698,7 @@ func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
 func (*ErrorModelStatusCode) listSecretRejectionsRes()             {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
+func (*ErrorModelStatusCode) listTrustRequestsRes()                {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
@@ -4581,6 +4836,392 @@ func (s *HarnessVolumeVolume) UnmarshalText(data []byte) error {
 	}
 }
 
+// A host one sandbox trusts by a pin (ADR 0149). Every request the sandbox sends the host is judged
+// against its uses.
+// Ref: #/components/schemas/HostTrust
+type HostTrust struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// When the trust lapses.
+	ExpiresAt time.Time `json:"expiresAt"`
+	// Principal ID of the approver.
+	GrantedBy string `json:"grantedBy"`
+	// The trusted endpoint, host:port.
+	Host string `json:"host"`
+	// Stable host trust ID.
+	ID  string   `json:"id"`
+	Pin TrustPin `json:"pin"`
+	// The pinned CA, PEM-encoded; absent for a leaf-spki pin.
+	PinPem OptString `json:"pinPem"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Trust request the trust was approved from.
+	RequestId OptString `json:"requestId"`
+	// The one sandbox that trusts the host.
+	SandboxId string `json:"sandboxId"`
+	// Approved uses, with the IDs the judge is given.
+	Uses OptNilSecretUseArray `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *HostTrust) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HostTrust) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *HostTrust) GetExpiresAt() time.Time {
+	return s.ExpiresAt
+}
+
+// GetGrantedBy returns the value of GrantedBy.
+func (s *HostTrust) GetGrantedBy() string {
+	return s.GrantedBy
+}
+
+// GetHost returns the value of Host.
+func (s *HostTrust) GetHost() string {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *HostTrust) GetID() string {
+	return s.ID
+}
+
+// GetPin returns the value of Pin.
+func (s *HostTrust) GetPin() TrustPin {
+	return s.Pin
+}
+
+// GetPinPem returns the value of PinPem.
+func (s *HostTrust) GetPinPem() OptString {
+	return s.PinPem
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *HostTrust) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRequestId returns the value of RequestId.
+func (s *HostTrust) GetRequestId() OptString {
+	return s.RequestId
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *HostTrust) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetUses returns the value of Uses.
+func (s *HostTrust) GetUses() OptNilSecretUseArray {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *HostTrust) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HostTrust) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *HostTrust) SetExpiresAt(val time.Time) {
+	s.ExpiresAt = val
+}
+
+// SetGrantedBy sets the value of GrantedBy.
+func (s *HostTrust) SetGrantedBy(val string) {
+	s.GrantedBy = val
+}
+
+// SetHost sets the value of Host.
+func (s *HostTrust) SetHost(val string) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *HostTrust) SetID(val string) {
+	s.ID = val
+}
+
+// SetPin sets the value of Pin.
+func (s *HostTrust) SetPin(val TrustPin) {
+	s.Pin = val
+}
+
+// SetPinPem sets the value of PinPem.
+func (s *HostTrust) SetPinPem(val OptString) {
+	s.PinPem = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *HostTrust) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRequestId sets the value of RequestId.
+func (s *HostTrust) SetRequestId(val OptString) {
+	s.RequestId = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *HostTrust) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetUses sets the value of Uses.
+func (s *HostTrust) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
+}
+
+// An agent's ask to trust a host whose certificate the pool's egress refuses, for its own sandbox
+// (ADR 0149).
+// Ref: #/components/schemas/HostTrustRequest
+type HostTrustRequest struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// How long the agent asked the trust to last, in seconds; absent when it named nothing in particular.
+	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
+	// The endpoint to trust, host:port.
+	Host string `json:"host"`
+	// Stable request ID.
+	ID string `json:"id"`
+	// Why the agent says it needs to reach the host.
+	Justification OptString `json:"justification"`
+	// The chain the pool's egress was shown, leaf first.
+	ObservedChain OptNilObservedCertificateArray `json:"observedChain"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Principal ID of the requestor.
+	RequestedBy string `json:"requestedBy"`
+	// Sandbox the trust is asked for.
+	SandboxId string `json:"sandboxId"`
+	// Request status.
+	Status     HostTrustRequestStatus `json:"status"`
+	SuppliedCA OptObservedCertificate `json:"suppliedCA"`
+	// Host trust that satisfied this request; set when approved.
+	TrustId OptString `json:"trustId"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// What the agent says it will send the host.
+	Uses OptNilSecretUseArray `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *HostTrustRequest) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HostTrustRequest) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
+func (s *HostTrustRequest) GetGrantTTLSeconds() OptInt64 {
+	return s.GrantTTLSeconds
+}
+
+// GetHost returns the value of Host.
+func (s *HostTrustRequest) GetHost() string {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *HostTrustRequest) GetID() string {
+	return s.ID
+}
+
+// GetJustification returns the value of Justification.
+func (s *HostTrustRequest) GetJustification() OptString {
+	return s.Justification
+}
+
+// GetObservedChain returns the value of ObservedChain.
+func (s *HostTrustRequest) GetObservedChain() OptNilObservedCertificateArray {
+	return s.ObservedChain
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *HostTrustRequest) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRequestedBy returns the value of RequestedBy.
+func (s *HostTrustRequest) GetRequestedBy() string {
+	return s.RequestedBy
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *HostTrustRequest) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetStatus returns the value of Status.
+func (s *HostTrustRequest) GetStatus() HostTrustRequestStatus {
+	return s.Status
+}
+
+// GetSuppliedCA returns the value of SuppliedCA.
+func (s *HostTrustRequest) GetSuppliedCA() OptObservedCertificate {
+	return s.SuppliedCA
+}
+
+// GetTrustId returns the value of TrustId.
+func (s *HostTrustRequest) GetTrustId() OptString {
+	return s.TrustId
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *HostTrustRequest) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// GetUses returns the value of Uses.
+func (s *HostTrustRequest) GetUses() OptNilSecretUseArray {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *HostTrustRequest) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HostTrustRequest) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
+func (s *HostTrustRequest) SetGrantTTLSeconds(val OptInt64) {
+	s.GrantTTLSeconds = val
+}
+
+// SetHost sets the value of Host.
+func (s *HostTrustRequest) SetHost(val string) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *HostTrustRequest) SetID(val string) {
+	s.ID = val
+}
+
+// SetJustification sets the value of Justification.
+func (s *HostTrustRequest) SetJustification(val OptString) {
+	s.Justification = val
+}
+
+// SetObservedChain sets the value of ObservedChain.
+func (s *HostTrustRequest) SetObservedChain(val OptNilObservedCertificateArray) {
+	s.ObservedChain = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *HostTrustRequest) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRequestedBy sets the value of RequestedBy.
+func (s *HostTrustRequest) SetRequestedBy(val string) {
+	s.RequestedBy = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *HostTrustRequest) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *HostTrustRequest) SetStatus(val HostTrustRequestStatus) {
+	s.Status = val
+}
+
+// SetSuppliedCA sets the value of SuppliedCA.
+func (s *HostTrustRequest) SetSuppliedCA(val OptObservedCertificate) {
+	s.SuppliedCA = val
+}
+
+// SetTrustId sets the value of TrustId.
+func (s *HostTrustRequest) SetTrustId(val OptString) {
+	s.TrustId = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *HostTrustRequest) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// SetUses sets the value of Uses.
+func (s *HostTrustRequest) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
+}
+
+func (*HostTrustRequest) approveTrustRequestRes() {}
+func (*HostTrustRequest) getTrustRequestRes()     {}
+
+// Request status.
+type HostTrustRequestStatus string
+
+const (
+	HostTrustRequestStatusPending  HostTrustRequestStatus = "pending"
+	HostTrustRequestStatusApproved HostTrustRequestStatus = "approved"
+	HostTrustRequestStatusDenied   HostTrustRequestStatus = "denied"
+)
+
+// AllValues returns all HostTrustRequestStatus values.
+func (HostTrustRequestStatus) AllValues() []HostTrustRequestStatus {
+	return []HostTrustRequestStatus{
+		HostTrustRequestStatusPending,
+		HostTrustRequestStatusApproved,
+		HostTrustRequestStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s HostTrustRequestStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case HostTrustRequestStatusPending:
+		return []byte(s), nil
+	case HostTrustRequestStatusApproved:
+		return []byte(s), nil
+	case HostTrustRequestStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *HostTrustRequestStatus) UnmarshalText(data []byte) error {
+	switch HostTrustRequestStatus(data) {
+	case HostTrustRequestStatusPending:
+		*s = HostTrustRequestStatusPending
+		return nil
+	case HostTrustRequestStatusApproved:
+		*s = HostTrustRequestStatusApproved
+		return nil
+	case HostTrustRequestStatusDenied:
+		*s = HostTrustRequestStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // What this server's iroh listener is doing right now, as opposed to who it is. A listener that has
 // lost its relay leaves the process up, its socket answering and /healthz reporting ready, while
 // every client dialing its peer ID times out; this is what makes that visible to an operator who can
@@ -4915,6 +5556,84 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 		return nil
 	case JobStatusCanceled:
 		*s = JobStatusCanceled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/ListApprovalRequestsBody
+type ListApprovalRequestsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema           OptURI            `json:"$schema"`
+	ApprovalRequests []ApprovalRequest `json:"approvalRequests"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListApprovalRequestsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetApprovalRequests returns the value of ApprovalRequests.
+func (s *ListApprovalRequestsBody) GetApprovalRequests() []ApprovalRequest {
+	return s.ApprovalRequests
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListApprovalRequestsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetApprovalRequests sets the value of ApprovalRequests.
+func (s *ListApprovalRequestsBody) SetApprovalRequests(val []ApprovalRequest) {
+	s.ApprovalRequests = val
+}
+
+func (*ListApprovalRequestsBody) listApprovalRequestsRes() {}
+
+// Filter by request status.
+type ListApprovalRequestsStatus string
+
+const (
+	ListApprovalRequestsStatusPending  ListApprovalRequestsStatus = "pending"
+	ListApprovalRequestsStatusApproved ListApprovalRequestsStatus = "approved"
+	ListApprovalRequestsStatusDenied   ListApprovalRequestsStatus = "denied"
+)
+
+// AllValues returns all ListApprovalRequestsStatus values.
+func (ListApprovalRequestsStatus) AllValues() []ListApprovalRequestsStatus {
+	return []ListApprovalRequestsStatus{
+		ListApprovalRequestsStatusPending,
+		ListApprovalRequestsStatusApproved,
+		ListApprovalRequestsStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListApprovalRequestsStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ListApprovalRequestsStatusPending:
+		return []byte(s), nil
+	case ListApprovalRequestsStatusApproved:
+		return []byte(s), nil
+	case ListApprovalRequestsStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListApprovalRequestsStatus) UnmarshalText(data []byte) error {
+	switch ListApprovalRequestsStatus(data) {
+	case ListApprovalRequestsStatusPending:
+		*s = ListApprovalRequestsStatusPending
+		return nil
+	case ListApprovalRequestsStatusApproved:
+		*s = ListApprovalRequestsStatusApproved
+		return nil
+	case ListApprovalRequestsStatusDenied:
+		*s = ListApprovalRequestsStatusDenied
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -5304,6 +6023,36 @@ func (s *ListHarnessHooksOrder) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+// Ref: #/components/schemas/ListHostTrustsBody
+type ListHostTrustsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema     OptURI      `json:"$schema"`
+	HostTrusts []HostTrust `json:"hostTrusts"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListHostTrustsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHostTrusts returns the value of HostTrusts.
+func (s *ListHostTrustsBody) GetHostTrusts() []HostTrust {
+	return s.HostTrusts
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListHostTrustsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHostTrusts sets the value of HostTrusts.
+func (s *ListHostTrustsBody) SetHostTrusts(val []HostTrust) {
+	s.HostTrusts = val
+}
+
+func (*ListHostTrustsBody) listPoolHostTrustsRes()    {}
+func (*ListHostTrustsBody) listSandboxHostTrustsRes() {}
 
 // Ref: #/components/schemas/ListJobsBody
 type ListJobsBody struct {
@@ -5724,6 +6473,84 @@ func (s *ListSecretsBody) SetSecrets(val []Secret) {
 
 func (*ListSecretsBody) listSecretsRes() {}
 
+// Ref: #/components/schemas/ListTrustRequestsBody
+type ListTrustRequestsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema        OptURI             `json:"$schema"`
+	TrustRequests []HostTrustRequest `json:"trustRequests"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListTrustRequestsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetTrustRequests returns the value of TrustRequests.
+func (s *ListTrustRequestsBody) GetTrustRequests() []HostTrustRequest {
+	return s.TrustRequests
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListTrustRequestsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetTrustRequests sets the value of TrustRequests.
+func (s *ListTrustRequestsBody) SetTrustRequests(val []HostTrustRequest) {
+	s.TrustRequests = val
+}
+
+func (*ListTrustRequestsBody) listTrustRequestsRes() {}
+
+// Filter by request status.
+type ListTrustRequestsStatus string
+
+const (
+	ListTrustRequestsStatusPending  ListTrustRequestsStatus = "pending"
+	ListTrustRequestsStatusApproved ListTrustRequestsStatus = "approved"
+	ListTrustRequestsStatusDenied   ListTrustRequestsStatus = "denied"
+)
+
+// AllValues returns all ListTrustRequestsStatus values.
+func (ListTrustRequestsStatus) AllValues() []ListTrustRequestsStatus {
+	return []ListTrustRequestsStatus{
+		ListTrustRequestsStatusPending,
+		ListTrustRequestsStatusApproved,
+		ListTrustRequestsStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListTrustRequestsStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ListTrustRequestsStatusPending:
+		return []byte(s), nil
+	case ListTrustRequestsStatusApproved:
+		return []byte(s), nil
+	case ListTrustRequestsStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListTrustRequestsStatus) UnmarshalText(data []byte) error {
+	switch ListTrustRequestsStatus(data) {
+	case ListTrustRequestsStatusPending:
+		*s = ListTrustRequestsStatusPending
+		return nil
+	case ListTrustRequestsStatusApproved:
+		*s = ListTrustRequestsStatusApproved
+		return nil
+	case ListTrustRequestsStatusDenied:
+		*s = ListTrustRequestsStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/MintSandboxAgentStatusTokensBody
 type MintSandboxAgentStatusTokensBody struct {
 	// A URL to the JSON Schema for this object.
@@ -5780,6 +6607,144 @@ func (s *MintSandboxAgentStatusTokensResponseBody) SetTokens(val []SandboxAgentS
 }
 
 func (*MintSandboxAgentStatusTokensResponseBody) mintSandboxAgentStatusTokensRes() {}
+
+// One certificate a host presented to the pool's egress, as a person reads it to decide whether to
+// trust the host. Public material only.
+// Ref: #/components/schemas/ObservedCertificate
+type ObservedCertificate struct {
+	// DNS names the certificate is valid for.
+	DnsNames OptNilStringArray `json:"dnsNames"`
+	// IP addresses the certificate is valid for.
+	Ips OptNilStringArray `json:"ips"`
+	// Whether the certificate is a CA.
+	IsCA OptBool `json:"isCA"`
+	// Issuer distinguished name.
+	Issuer string `json:"issuer"`
+	// End of the validity window.
+	NotAfter time.Time `json:"notAfter"`
+	// Start of the validity window.
+	NotBefore time.Time `json:"notBefore"`
+	// The certificate, PEM-encoded.
+	Pem string `json:"pem"`
+	// Whether the certificate is signed by its own key.
+	SelfSigned OptBool `json:"selfSigned"`
+	// Hex SHA-256 of the certificate's DER, what a ca pin names.
+	SHA256 string `json:"sha256"`
+	// Hex SHA-256 of its SubjectPublicKeyInfo, what a leaf-spki pin names.
+	SpkiSha256 string `json:"spkiSha256"`
+	// Subject distinguished name.
+	Subject string `json:"subject"`
+}
+
+// GetDnsNames returns the value of DnsNames.
+func (s *ObservedCertificate) GetDnsNames() OptNilStringArray {
+	return s.DnsNames
+}
+
+// GetIps returns the value of Ips.
+func (s *ObservedCertificate) GetIps() OptNilStringArray {
+	return s.Ips
+}
+
+// GetIsCA returns the value of IsCA.
+func (s *ObservedCertificate) GetIsCA() OptBool {
+	return s.IsCA
+}
+
+// GetIssuer returns the value of Issuer.
+func (s *ObservedCertificate) GetIssuer() string {
+	return s.Issuer
+}
+
+// GetNotAfter returns the value of NotAfter.
+func (s *ObservedCertificate) GetNotAfter() time.Time {
+	return s.NotAfter
+}
+
+// GetNotBefore returns the value of NotBefore.
+func (s *ObservedCertificate) GetNotBefore() time.Time {
+	return s.NotBefore
+}
+
+// GetPem returns the value of Pem.
+func (s *ObservedCertificate) GetPem() string {
+	return s.Pem
+}
+
+// GetSelfSigned returns the value of SelfSigned.
+func (s *ObservedCertificate) GetSelfSigned() OptBool {
+	return s.SelfSigned
+}
+
+// GetSHA256 returns the value of SHA256.
+func (s *ObservedCertificate) GetSHA256() string {
+	return s.SHA256
+}
+
+// GetSpkiSha256 returns the value of SpkiSha256.
+func (s *ObservedCertificate) GetSpkiSha256() string {
+	return s.SpkiSha256
+}
+
+// GetSubject returns the value of Subject.
+func (s *ObservedCertificate) GetSubject() string {
+	return s.Subject
+}
+
+// SetDnsNames sets the value of DnsNames.
+func (s *ObservedCertificate) SetDnsNames(val OptNilStringArray) {
+	s.DnsNames = val
+}
+
+// SetIps sets the value of Ips.
+func (s *ObservedCertificate) SetIps(val OptNilStringArray) {
+	s.Ips = val
+}
+
+// SetIsCA sets the value of IsCA.
+func (s *ObservedCertificate) SetIsCA(val OptBool) {
+	s.IsCA = val
+}
+
+// SetIssuer sets the value of Issuer.
+func (s *ObservedCertificate) SetIssuer(val string) {
+	s.Issuer = val
+}
+
+// SetNotAfter sets the value of NotAfter.
+func (s *ObservedCertificate) SetNotAfter(val time.Time) {
+	s.NotAfter = val
+}
+
+// SetNotBefore sets the value of NotBefore.
+func (s *ObservedCertificate) SetNotBefore(val time.Time) {
+	s.NotBefore = val
+}
+
+// SetPem sets the value of Pem.
+func (s *ObservedCertificate) SetPem(val string) {
+	s.Pem = val
+}
+
+// SetSelfSigned sets the value of SelfSigned.
+func (s *ObservedCertificate) SetSelfSigned(val OptBool) {
+	s.SelfSigned = val
+}
+
+// SetSHA256 sets the value of SHA256.
+func (s *ObservedCertificate) SetSHA256(val string) {
+	s.SHA256 = val
+}
+
+// SetSpkiSha256 sets the value of SpkiSha256.
+func (s *ObservedCertificate) SetSpkiSha256(val string) {
+	s.SpkiSha256 = val
+}
+
+// SetSubject sets the value of Subject.
+func (s *ObservedCertificate) SetSubject(val string) {
+	s.Subject = val
+}
 
 // NewOptApproveSecretRequestBodyScope returns new OptApproveSecretRequestBodyScope with value set to v.
 func NewOptApproveSecretRequestBodyScope(v ApproveSecretRequestBodyScope) OptApproveSecretRequestBodyScope {
@@ -6655,6 +7620,52 @@ func (o OptHarnessVolumeScope) Or(d HarnessVolumeScope) HarnessVolumeScope {
 	return d
 }
 
+// NewOptHostTrustRequest returns new OptHostTrustRequest with value set to v.
+func NewOptHostTrustRequest(v HostTrustRequest) OptHostTrustRequest {
+	return OptHostTrustRequest{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHostTrustRequest is optional HostTrustRequest.
+type OptHostTrustRequest struct {
+	Value HostTrustRequest
+	Set   bool
+}
+
+// IsSet returns true if OptHostTrustRequest was set.
+func (o OptHostTrustRequest) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHostTrustRequest) Reset() {
+	var v HostTrustRequest
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHostTrustRequest) SetTo(v HostTrustRequest) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHostTrustRequest) Get() (v HostTrustRequest, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHostTrustRequest) Or(d HostTrustRequest) HostTrustRequest {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptInt returns new OptInt with value set to v.
 func NewOptInt(v int) OptInt {
 	return OptInt{
@@ -6787,6 +7798,52 @@ func (o OptIrohListener) Get() (v IrohListener, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptIrohListener) Or(d IrohListener) IrohListener {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListApprovalRequestsStatus returns new OptListApprovalRequestsStatus with value set to v.
+func NewOptListApprovalRequestsStatus(v ListApprovalRequestsStatus) OptListApprovalRequestsStatus {
+	return OptListApprovalRequestsStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListApprovalRequestsStatus is optional ListApprovalRequestsStatus.
+type OptListApprovalRequestsStatus struct {
+	Value ListApprovalRequestsStatus
+	Set   bool
+}
+
+// IsSet returns true if OptListApprovalRequestsStatus was set.
+func (o OptListApprovalRequestsStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListApprovalRequestsStatus) Reset() {
+	var v ListApprovalRequestsStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListApprovalRequestsStatus) SetTo(v ListApprovalRequestsStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListApprovalRequestsStatus) Get() (v ListApprovalRequestsStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListApprovalRequestsStatus) Or(d ListApprovalRequestsStatus) ListApprovalRequestsStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -7063,6 +8120,52 @@ func (o OptListSecretRequestsStatus) Get() (v ListSecretRequestsStatus, ok bool)
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListSecretRequestsStatus) Or(d ListSecretRequestsStatus) ListSecretRequestsStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListTrustRequestsStatus returns new OptListTrustRequestsStatus with value set to v.
+func NewOptListTrustRequestsStatus(v ListTrustRequestsStatus) OptListTrustRequestsStatus {
+	return OptListTrustRequestsStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListTrustRequestsStatus is optional ListTrustRequestsStatus.
+type OptListTrustRequestsStatus struct {
+	Value ListTrustRequestsStatus
+	Set   bool
+}
+
+// IsSet returns true if OptListTrustRequestsStatus was set.
+func (o OptListTrustRequestsStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListTrustRequestsStatus) Reset() {
+	var v ListTrustRequestsStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListTrustRequestsStatus) SetTo(v ListTrustRequestsStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListTrustRequestsStatus) Get() (v ListTrustRequestsStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListTrustRequestsStatus) Or(d ListTrustRequestsStatus) ListTrustRequestsStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -7630,6 +8733,69 @@ func (o OptNilHarnessVolumeArray) Get() (v []HarnessVolume, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilHarnessVolumeArray) Or(d []HarnessVolume) []HarnessVolume {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilObservedCertificateArray returns new OptNilObservedCertificateArray with value set to v.
+func NewOptNilObservedCertificateArray(v []ObservedCertificate) OptNilObservedCertificateArray {
+	return OptNilObservedCertificateArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilObservedCertificateArray is optional nullable []ObservedCertificate.
+type OptNilObservedCertificateArray struct {
+	Value []ObservedCertificate
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilObservedCertificateArray was set.
+func (o OptNilObservedCertificateArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilObservedCertificateArray) Reset() {
+	var v []ObservedCertificate
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilObservedCertificateArray) SetTo(v []ObservedCertificate) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilObservedCertificateArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilObservedCertificateArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []ObservedCertificate
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilObservedCertificateArray) Get() (v []ObservedCertificate, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilObservedCertificateArray) Or(d []ObservedCertificate) []ObservedCertificate {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -8260,6 +9426,52 @@ func (o OptNilStringArray) Get() (v []string, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilStringArray) Or(d []string) []string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptObservedCertificate returns new OptObservedCertificate with value set to v.
+func NewOptObservedCertificate(v ObservedCertificate) OptObservedCertificate {
+	return OptObservedCertificate{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptObservedCertificate is optional ObservedCertificate.
+type OptObservedCertificate struct {
+	Value ObservedCertificate
+	Set   bool
+}
+
+// IsSet returns true if OptObservedCertificate was set.
+func (o OptObservedCertificate) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptObservedCertificate) Reset() {
+	var v ObservedCertificate
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptObservedCertificate) SetTo(v ObservedCertificate) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptObservedCertificate) Get() (v ObservedCertificate, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptObservedCertificate) Or(d ObservedCertificate) ObservedCertificate {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -9876,6 +11088,52 @@ func (o OptSecretRejectionSecretType) Or(d SecretRejectionSecretType) SecretReje
 	return d
 }
 
+// NewOptSecretRequest returns new OptSecretRequest with value set to v.
+func NewOptSecretRequest(v SecretRequest) OptSecretRequest {
+	return OptSecretRequest{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequest is optional SecretRequest.
+type OptSecretRequest struct {
+	Value SecretRequest
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequest was set.
+func (o OptSecretRequest) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequest) Reset() {
+	var v SecretRequest
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequest) SetTo(v SecretRequest) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequest) Get() (v SecretRequest, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequest) Or(d SecretRequest) SecretRequest {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSecretRequestPurpose returns new OptSecretRequestPurpose with value set to v.
 func NewOptSecretRequestPurpose(v SecretRequestPurpose) OptSecretRequestPurpose {
 	return OptSecretRequestPurpose{
@@ -10054,6 +11312,52 @@ func (o OptString) Get() (v string, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptString) Or(d string) string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptTrustPin returns new OptTrustPin with value set to v.
+func NewOptTrustPin(v TrustPin) OptTrustPin {
+	return OptTrustPin{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptTrustPin is optional TrustPin.
+type OptTrustPin struct {
+	Value TrustPin
+	Set   bool
+}
+
+// IsSet returns true if OptTrustPin was set.
+func (o OptTrustPin) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptTrustPin) Reset() {
+	var v TrustPin
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptTrustPin) SetTo(v TrustPin) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptTrustPin) Get() (v TrustPin, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptTrustPin) Or(d TrustPin) TrustPin {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -18960,6 +20264,133 @@ func (s *SandboxToolsResponse) SetTools(val []SandboxTool) {
 
 func (*SandboxToolsResponse) listSandboxToolsRes() {}
 
+// Ref: #/components/schemas/SandboxTrustRequestStatus
+type SandboxTrustRequestStatus struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The endpoint asked for, host:port.
+	Host string      `json:"host"`
+	Pin  OptTrustPin `json:"pin"`
+	// Request ID to poll.
+	RequestId string `json:"requestId"`
+	// Request status.
+	Status SandboxTrustRequestStatusStatus `json:"status"`
+	// Approved uses; present once granted, and authoritative over the requested ones.
+	Uses OptNilSecretUseArray `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SandboxTrustRequestStatus) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHost returns the value of Host.
+func (s *SandboxTrustRequestStatus) GetHost() string {
+	return s.Host
+}
+
+// GetPin returns the value of Pin.
+func (s *SandboxTrustRequestStatus) GetPin() OptTrustPin {
+	return s.Pin
+}
+
+// GetRequestId returns the value of RequestId.
+func (s *SandboxTrustRequestStatus) GetRequestId() string {
+	return s.RequestId
+}
+
+// GetStatus returns the value of Status.
+func (s *SandboxTrustRequestStatus) GetStatus() SandboxTrustRequestStatusStatus {
+	return s.Status
+}
+
+// GetUses returns the value of Uses.
+func (s *SandboxTrustRequestStatus) GetUses() OptNilSecretUseArray {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *SandboxTrustRequestStatus) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHost sets the value of Host.
+func (s *SandboxTrustRequestStatus) SetHost(val string) {
+	s.Host = val
+}
+
+// SetPin sets the value of Pin.
+func (s *SandboxTrustRequestStatus) SetPin(val OptTrustPin) {
+	s.Pin = val
+}
+
+// SetRequestId sets the value of RequestId.
+func (s *SandboxTrustRequestStatus) SetRequestId(val string) {
+	s.RequestId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SandboxTrustRequestStatus) SetStatus(val SandboxTrustRequestStatusStatus) {
+	s.Status = val
+}
+
+// SetUses sets the value of Uses.
+func (s *SandboxTrustRequestStatus) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
+}
+
+func (*SandboxTrustRequestStatus) createSandboxTrustRequestRes() {}
+func (*SandboxTrustRequestStatus) getSandboxTrustRequestRes()    {}
+
+// Request status.
+type SandboxTrustRequestStatusStatus string
+
+const (
+	SandboxTrustRequestStatusStatusPending SandboxTrustRequestStatusStatus = "pending"
+	SandboxTrustRequestStatusStatusGranted SandboxTrustRequestStatusStatus = "granted"
+	SandboxTrustRequestStatusStatusDenied  SandboxTrustRequestStatusStatus = "denied"
+)
+
+// AllValues returns all SandboxTrustRequestStatusStatus values.
+func (SandboxTrustRequestStatusStatus) AllValues() []SandboxTrustRequestStatusStatus {
+	return []SandboxTrustRequestStatusStatus{
+		SandboxTrustRequestStatusStatusPending,
+		SandboxTrustRequestStatusStatusGranted,
+		SandboxTrustRequestStatusStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxTrustRequestStatusStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxTrustRequestStatusStatusPending:
+		return []byte(s), nil
+	case SandboxTrustRequestStatusStatusGranted:
+		return []byte(s), nil
+	case SandboxTrustRequestStatusStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxTrustRequestStatusStatus) UnmarshalText(data []byte) error {
+	switch SandboxTrustRequestStatusStatus(data) {
+	case SandboxTrustRequestStatusStatusPending:
+		*s = SandboxTrustRequestStatusStatusPending
+		return nil
+	case SandboxTrustRequestStatusStatusGranted:
+		*s = SandboxTrustRequestStatusStatusGranted
+		return nil
+	case SandboxTrustRequestStatusStatusDenied:
+		*s = SandboxTrustRequestStatusStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/SandboxUpdateConfig
 type SandboxUpdateConfig struct {
 	// Sandbox name.
@@ -20743,6 +22174,79 @@ func (s StreamSandboxExecResourcesOK) Read(p []byte) (n int, err error) {
 }
 
 func (*StreamSandboxExecResourcesOK) streamSandboxExecResourcesRes() {}
+
+// The certificate a host trust verifies the host against. ca pins a CA the chain must verify to,
+// with the name checked as usual; leaf-spki pins the server certificate's public key exactly, for a
+// chain that carries no CA.
+// Ref: #/components/schemas/TrustPin
+type TrustPin struct {
+	// What is pinned.
+	Kind TrustPinKind `json:"kind"`
+	// Hex SHA-256 of the pinned CA's DER, or of the leaf's SubjectPublicKeyInfo.
+	SHA256 string `json:"sha256"`
+}
+
+// GetKind returns the value of Kind.
+func (s *TrustPin) GetKind() TrustPinKind {
+	return s.Kind
+}
+
+// GetSHA256 returns the value of SHA256.
+func (s *TrustPin) GetSHA256() string {
+	return s.SHA256
+}
+
+// SetKind sets the value of Kind.
+func (s *TrustPin) SetKind(val TrustPinKind) {
+	s.Kind = val
+}
+
+// SetSHA256 sets the value of SHA256.
+func (s *TrustPin) SetSHA256(val string) {
+	s.SHA256 = val
+}
+
+// What is pinned.
+type TrustPinKind string
+
+const (
+	TrustPinKindCa       TrustPinKind = "ca"
+	TrustPinKindLeafSpki TrustPinKind = "leaf-spki"
+)
+
+// AllValues returns all TrustPinKind values.
+func (TrustPinKind) AllValues() []TrustPinKind {
+	return []TrustPinKind{
+		TrustPinKindCa,
+		TrustPinKindLeafSpki,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s TrustPinKind) MarshalText() ([]byte, error) {
+	switch s {
+	case TrustPinKindCa:
+		return []byte(s), nil
+	case TrustPinKindLeafSpki:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *TrustPinKind) UnmarshalText(data []byte) error {
+	switch TrustPinKind(data) {
+	case TrustPinKindCa:
+		*s = TrustPinKindCa
+		return nil
+	case TrustPinKindLeafSpki:
+		*s = TrustPinKindLeafSpki
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // UnarchiveSandboxAccepted is response for UnarchiveSandbox operation.
 type UnarchiveSandboxAccepted struct{}

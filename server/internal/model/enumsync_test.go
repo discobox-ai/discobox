@@ -98,6 +98,8 @@ var yamlOwnedEnums = map[string]string{
 	// no. secrets.AgentCredentialRequestStatus is the one place that maps
 	// between them (ADR 0031).
 	"SandboxCredentialRequestStatus.status": "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus grant liveness",
+	"SandboxTrustRequestStatus.status":      "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus trust liveness (ADR 0149)",
+	"ApprovalRequest.kind":                  "which resource an inbox item is, set by the approval-requests read model; no model stores it (ADR 0149 §7)",
 	// The proxy's observation vocabulary, not the control plane's judgment.
 	// What is stored is SecretRejection.reason, which these three outcomes are
 	// an input to rather than a spelling of: `accepted` stores nothing at all,

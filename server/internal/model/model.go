@@ -1392,5 +1392,7 @@ func AllModels() []any {
 		&Peer{},
 		&CredentialVerdict{},
 		&SecretRejection{},
+		&HostTrustRequest{},
+		&HostTrust{},
 	}
 }

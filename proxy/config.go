@@ -23,6 +23,9 @@ type Config struct {
 	Allowlist     AllowlistConfig
 	Headers       []HeaderRule
 	Secrets       SecretsConfig
+	// Trusts are the host pins in force, each one client's (ADR 0149). They
+	// are runtime policy: ApplyConfig replaces them whole.
+	Trusts []HostTrust
 
 	// UpstreamProxy forwards this proxy's own egress through another proxy.
 	// Empty means direct, and falls back to the standard proxy environment
@@ -240,6 +243,11 @@ func (c Config) Validate() error {
 		}
 		if c.Cache.MaxSizeBytes <= 0 {
 			return errors.New("cache max size must be positive when cache is enabled")
+		}
+	}
+	for _, trust := range c.Trusts {
+		if err := trust.Validate(); err != nil {
+			return err
 		}
 	}
 	for _, rule := range c.Allowlist.Rules {

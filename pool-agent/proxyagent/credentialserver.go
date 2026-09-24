@@ -43,25 +43,30 @@ const (
 // is done. Every request is served for the sandbox named by the verified client
 // certificate, so a sandbox cannot ask about another sandbox's credentials by
 // saying so in a body (ADR 0031 §2).
-func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, projectID, poolID string, live *activations) error {
+func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts) error {
 	var listenConfig net.ListenConfig
 	tcp, err := listenConfig.Listen(ctx, "tcp", CredentialsListenAddress)
 	if err != nil {
 		return err
 	}
-	return serveCredentialsOn(ctx, logger, tcp, bundle, projectID, poolID, live)
+	return serveCredentialsOn(ctx, logger, tcp, bundle, controlPlane, live, trusts)
+}
+
+// newControlPlaneCredentials is the broker's client of the control plane for
+// one pool, authenticated by the scoped token the pool agent writes.
+func newControlPlaneCredentials(projectID, poolID string) *controlPlaneCredentials {
+	return &controlPlaneCredentials{
+		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
+		client:      controlPlaneHTTPClient(),
+	}
 }
 
 // serveCredentialsOn serves on an already-bound listener. The seam exists so a
 // test can drive the real mTLS stack on an ephemeral port — the certificate
 // handling and identity derivation are the parts worth testing, and they are
 // exactly what a fake listener would skip.
-func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, projectID, poolID string, live *activations) error {
-	broker := &controlPlaneCredentials{
-		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
-		client:      controlPlaneHTTPClient(),
-	}
-	handler := &credentialsHandler{controlPlane: broker, activations: live}
+func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts) error {
+	handler := &credentialsHandler{controlPlane: controlPlane, activations: live, trusts: trusts}
 
 	listener := tls.NewListener(tcp, sandboxTLSConfig(bundle))
 	server := &http.Server{
@@ -109,6 +114,7 @@ func sweepActivations(ctx context.Context, live *activations) {
 type credentialsHandler struct {
 	controlPlane *controlPlaneCredentials
 	activations  *activations
+	trusts       *hostTrusts
 }
 
 func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +129,7 @@ func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sandboxID:   sandboxID,
 		controlPlan: h.controlPlane,
 		activations: h.activations,
+		trusts:      h.trusts,
 	}).ServeHTTP(w, r.WithContext(ctx))
 }
 

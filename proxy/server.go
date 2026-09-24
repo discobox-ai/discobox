@@ -100,6 +100,13 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		return nil, err
 	}
 	applyUpstreamProxy(s.http, upstream, upstreamNoProxy(cfg))
+	// After the upstream is applied: a pinned transport is a clone of the
+	// proxy's own, and must leave the way it does.
+	trusts, err := buildTrustTable(cfg.Trusts, s.http.proxy.Tr, nil)
+	if err != nil {
+		return nil, err
+	}
+	s.http.setTrusts(trusts)
 	s.socks = newSOCKSProxy(s.filter, recorder)
 	return s, nil
 }
@@ -130,14 +137,20 @@ func (s *Server) ApplyConfig(cfg Config) error {
 	}
 	flt, rewriter := buildPolicy(cfg)
 	swapper := buildSwapper(cfg, s.resolver)
+	trusts, err := buildTrustTable(cfg.Trusts, s.http.proxy.Tr, s.http.trustTable())
+	if err != nil {
+		return err
+	}
 	s.filter = flt
 	s.rewriter = rewriter
 	s.swapper = swapper
 	s.cfg.Allowlist = cfg.Allowlist
 	s.cfg.Headers = cfg.Headers
 	s.cfg.Secrets = cfg.Secrets
+	s.cfg.Trusts = cfg.Trusts
 	s.http.setPolicy(flt, rewriter)
 	s.http.setSwapper(swapper)
+	s.http.setTrusts(trusts)
 	s.socks.setFilter(flt)
 	return nil
 }

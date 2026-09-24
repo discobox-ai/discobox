@@ -36,7 +36,7 @@ to the runtime that happens to serve it today.
 
 ## Interface shape
 
-The primary consumer is an LLM agent. The three operations do not have the same
+The primary consumer is an LLM agent. The operations do not have the same
 shape, so they deliberately do not get the same interface.
 
 | Operation | Input | Why |
@@ -44,6 +44,8 @@ shape, so they deliberately do not get the same interface.
 | `run` | argv after `--` | The declared command **is** the argv executed. Encoding it as JSON inserts a translation step between what the model wrote and what runs, and costs the child's exit status. |
 | `request` | JSON on stdin (`--json`), or flags, after an optional well-known ID | Nested, and carries free text — a justification and use descriptions — through a shell that reads quotes and apostrophes as syntax. A well-known ID (`com.github.api`) stands in for the name, variable, and host, which the implementation fills from the root `wellknown` registry. |
 | `list` | nothing | — |
+| `trust` | a host argument and flags, or JSON on stdin (`--json`) | The protocol's trust verb (ADR 0149): ask for a host whose certificate the egress refuses to be trusted for this sandbox. It carries free text for the reason `request` does. Nothing is run under it, so there is nothing to judge here; the proxy judges every request to the trusted host against its uses. |
+| `trusts` | nothing | — |
 
 There is no command that takes a use id and prints the bare value
 ([ADR 0092](../docs/adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md)):

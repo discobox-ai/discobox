@@ -1,6 +1,6 @@
 ---
 name: discobox-access
-description: Ask a human for a credential this sandbox was not given, and run one command with it. Use when a command fails with 401/403, when a CLI says it is not logged in or has no token (gh, npm, docker, curl against a private API), or to check which credentials you may already use.
+description: Ask a human for a credential this sandbox was not given, and run one command with it; or ask for a host whose certificate is refused to be trusted. Use when a command fails with 401/403, when a CLI says it is not logged in or has no token (gh, npm, docker, curl against a private API), when a request answers 502 with an X-Discobox-Untrusted-Host header (a Kubernetes API server, an internal service with its own CA), or to check which credentials you may already use.
 allowed-tools: Bash
 ---
 
@@ -134,6 +134,65 @@ discobox-access run --use use_7f3a2b -- gh pr create --fill
 There is no command that prints the value on its own. `run` is the only way to
 use one — if what you need to run cannot be `exec`'d directly, wrap it in a
 shell: `discobox-access run --use use_7f3a2b -- sh -c '...'`.
+
+## 4. A host whose certificate is refused
+
+A host with its own CA — a Kubernetes API server, an internal service — is
+refused by this sandbox's egress. You see it as a `502` whose
+`X-Discobox-Untrusted-Host` header names the host (`curl -i`, or
+`kubectl -v=8`). No credential fixes that; ask for the host to be trusted:
+
+```bash
+discobox-access trust 34.70.64.109:443 \
+  --use "read-only kubectl: get/list/describe pods, deployments, events" \
+  --why "the user's GKE cluster; its API server uses the cluster's own CA" \
+  --wait
+```
+
+- The pool connects to the host itself and shows the person the certificates
+  it was given; they pin one. A host that already verifies answers `unneeded`.
+- `--ca-file` offers a CA you already have from a source you trust — for GKE,
+  `gcloud container clusters describe NAME --format='value(masterAuth.clusterCaCertificate)' | base64 -d`.
+  It is refused unless the host's chain verifies against it.
+- The trust is this sandbox's alone, for exactly that `host:port`, and it
+  lapses. **Every request you then send the host is judged against the uses
+  you name**, so write them as what you will actually send.
+- Trusting a host is not authenticating to it: a token for it is still a
+  credential, asked for with `request` for that host — the cluster's own
+  host, since a token approved for `googleapis.com` is never sent to
+  `34.70.64.109`.
+- **A client that carries its own CA must trust this sandbox's instead.**
+  Every HTTPS connection here ends at the egress proxy, which presents a
+  certificate signed by `/etc/discobox/proxy/mitm-ca.crt`; the proxy is what
+  checks the host's real certificate against the pin. kubectl trusts only the
+  CA in its kubeconfig, so it fails with `x509: certificate signed by unknown
+  authority` until it is pointed at the proxy's:
+
+  ```bash
+  kubectl config set-cluster "$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')" \
+    --certificate-authority=/etc/discobox/proxy/mitm-ca.crt --embed-certs
+  ```
+
+  This is not skipping verification — the cluster's certificate is still
+  verified, by the proxy, against the pin a person approved. Never set
+  `insecure-skip-tls-verify`.
+- **GKE with gcloud** needs both halves for the cluster's endpoint IP (from
+  `gcloud container clusters describe NAME --format='value(endpoint)'`):
+  1. `trust` that IP, with `--ca-file` holding the cluster CA from the same
+     `describe` (`masterAuth.clusterCaCertificate`, base64-decoded).
+  2. `request` the Google access token (`CLOUDSDK_AUTH_ACCESS_TOKEN`) with
+     `host` set to that IP, not `googleapis.com`: kubectl sends it to the
+     cluster, and a sentinel approved for another host is never swapped
+     there. Name the kubectl commands in its uses.
+
+  Then point the kubeconfig at the MITM CA (above) and run kubectl under that
+  use: `discobox-access run --use <id> -- kubectl get pods`.
+- An `unneeded` answer whose reason names an upstream proxy means this
+  sandbox's egress goes through another proxy that checks the host itself;
+  if the host is still refused, it has to be trusted where that proxy runs.
+- `discobox-access trusts` lists what this sandbox trusts. `--json` reads the
+  same fields from stdin as `request` does: `host`, `justification`, `uses`,
+  `suppliedCA`, `grantTTLSeconds`, `wait`, `timeoutSeconds`.
 
 ## Never do this with the value
 

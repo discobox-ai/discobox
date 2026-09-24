@@ -322,10 +322,17 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create proxy server: %w", err)
 	}
-	sentinels := newSentinelPublisher(server, cfg, live, func(err error) {
-		logger.Warn("apply proxy sentinel config", "error", err)
+	policy := newPolicyPublisher(server, cfg, live, func(err error) {
+		logger.Warn("apply proxy policy", "error", err)
 	})
-	go watchSecretsFile(ctx, sentinels, resolve(layout.ProxySecretsFile(projectID, poolID)))
+	go watchSecretsFile(ctx, policy, resolve(layout.ProxySecretsFile(projectID, poolID)))
+	// The pins people approved for this pool's sandboxes, kept in step with
+	// the control plane (ADR 0149).
+	controlPlane := newControlPlaneCredentials(projectID, poolID)
+	trusts := newHostTrusts(server, controlPlane, policy, func(err error) {
+		logger.Warn("host trusts", "error", err)
+	})
+	go trusts.run(ctx)
 	errCh := make(chan error, 2)
 	go func() {
 		logger.Info("pool proxy serving", "addr", ListenAddress)
@@ -343,7 +350,7 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 		}()
 	}
 	go func() {
-		errCh <- serveCredentials(ctx, logger, bundle, projectID, poolID, live)
+		errCh <- serveCredentials(ctx, logger, bundle, controlPlane, live, trusts)
 	}()
 	go func() {
 		// Logged, not sent to errCh, for the control API's reason: a sandbox

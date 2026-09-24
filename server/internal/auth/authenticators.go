@@ -182,6 +182,10 @@ var poolRuntimeActions = map[string]bool{
 	// The judge's verdict trail (ADR 0091). It addresses no resource of its
 	// own — one call records one verdict — so it takes no trailing ID.
 	"sandbox-credential-verdicts": false,
+	// Host trust (ADR 0149): an agent's ask, polled by its ID, and the pool's
+	// read of every live trust its proxy enforces.
+	"sandbox-trust-requests": true, // .../{requestId} polls one request
+	"sandbox-host-trusts":    false,
 }
 
 func isPoolRuntimePath(path string) bool {

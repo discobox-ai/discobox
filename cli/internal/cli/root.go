@@ -279,6 +279,7 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newIDCommand())
 	cmd.AddCommand(app.newSecretCommand())
+	cmd.AddCommand(app.newTrustCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
 	cmd.AddCommand(app.newAdminCommand())

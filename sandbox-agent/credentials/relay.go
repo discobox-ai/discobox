@@ -126,6 +126,18 @@ func (r *Relay) ReportDenial(ctx context.Context, body agentcreds.DenialReport) 
 	return r.client.ReportDenial(ctx, body)
 }
 
+func (r *Relay) Trusts(ctx context.Context) ([]agentcreds.Trust, error) {
+	return r.client.Trusts(ctx)
+}
+
+func (r *Relay) RequestTrust(ctx context.Context, body agentcreds.TrustRequestBody) (agentcreds.TrustRequestStatus, error) {
+	return r.client.RequestTrust(ctx, body)
+}
+
+func (r *Relay) TrustRequestStatus(ctx context.Context, requestID string) (agentcreds.TrustRequestStatus, error) {
+	return r.client.TrustRequestStatus(ctx, requestID)
+}
+
 // Serve runs the loopback protocol endpoint until ctx is done.
 //
 // There is no token on this listener, for the same reason the hook socket has

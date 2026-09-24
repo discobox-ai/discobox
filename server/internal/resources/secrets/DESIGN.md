@@ -1,7 +1,8 @@
 # Secrets Design
 
 This package owns credentials: their storage, the approval lifecycle that
-authorizes them, and the two ways a sandbox comes to use one.
+authorizes them, and the two ways a sandbox comes to use one. It also owns host
+trust ([below](#host-trust)), the other thing an agent asks a person for.
 
 Cleartext leaves the control plane through exactly one door — `ResolveSandboxSecret`,
 called by a pool agent's proxy for one sentinel and one destination host. Every
@@ -226,6 +227,41 @@ The entry points:
 A protocol request is always recorded as type `token`. Both types carry their
 current value in `Value.Token`, the one field `ResolveSandboxSecret` emits, so
 either works through this flow.
+
+## Host trust
+
+`hosttrusts.go` is the control-plane half of
+[ADR 0149](../../../../docs/adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md):
+an agent's ask, relayed by its pool, to trust a host whose certificate the
+pool's egress refuses. It sits here because it is the broker's act — an ask, a
+person's approval, uses the judge reads — about a different thing, and it
+reuses the broker's pool-ownership check and use minting. It is its own
+resource all the same: `HostTrustRequest` and `HostTrust` are their own
+tables, served through `services.HostTrustService`, and nothing in a
+credential path reads them.
+
+- **The chain is the pool's.** `CreateSandboxTrustRequest` records the chain
+  the pool observed and a CA the agent supplied, which the pool has already
+  checked the chain verifies against. The sandbox's word about the host is
+  never stored.
+- **A pin names something the request offers.** `ApproveTrustRequest` refuses
+  a `ca` pin that is not a CA in the chain or the supplied one, and a
+  `leaf-spki` pin that is not the leaf's key; with none named it takes
+  `DefaultTrustPin` — the supplied CA, then a self-signed CA in the chain,
+  then the leaf's key. The trust carries the pinned CA's PEM for the proxy.
+- **Only a person approves one**: a sandbox principal is refused, since a pin
+  decides who the sandbox's credentials for that host are handed to.
+- **A trust is one sandbox's and always lapses.** Its routes are under the
+  sandbox, it is deleted with the sandbox (`deleteSandboxHostTrustsTx`), and
+  its lifetime runs from an hour by default to thirty days at most.
+- **`ListPoolHostTrusts`** is what a pool's proxy enforces: the live trusts of
+  every sandbox on it. A revoked or lapsed trust leaves it, and a poll of the
+  request that minted it answers `denied`, as a revoked grant does.
+
+The window's inbox is `GET /projects/{projectId}/approval-requests`, a read
+model in the handlers over this resource's `ListSecretRequests` and
+`ListTrustRequests`: one call per server per beat, each item answered on its
+own resource's routes.
 
 ## Two types, both doing work
 

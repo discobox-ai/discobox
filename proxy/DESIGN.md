@@ -209,7 +209,8 @@ Key properties:
 - **Fail-closed on the secret, fail-open on the request.** On denial, pending
   approval, or resolver error, the sentinel is left in place; the upstream
   receives the placeholder and rejects it. The real value is never leaked.
-- **A request carrying swapped credentials is judged before it leaves**
+- **A request carrying swapped credentials is judged before it leaves** — as is
+  every request to a host the client trusts by a pin ([Host Trust](#host-trust))
   (`Resolver.Judge`). Resolution decides whether a credential may go to a host
   and is cached; the judge decides whether *this* request may carry it, so it
   runs per request, after the swap. It is shown the request as the sandbox sent
@@ -393,9 +394,10 @@ denies everything. HTTP requests it denies are answered `403`; denied `CONNECT`s
 and SOCKS connects are refused. All are audited as `host denied`.
 
 Runtime policy changes only through `ApplyConfig`, which hot-swaps the allowlist,
-header rules, and the sentinel set with its swap tuning. `WatchConfigFile` polls
+header rules, the sentinel set with its swap tuning, and the host trusts
+([Host Trust](#host-trust)). `WatchConfigFile` polls
 a JSON config file into it; pool-agent instead calls it directly to publish
-sentinel sets. The proxy does not expose an HTTP configuration API; listener,
+sentinel sets and trusts. The proxy does not expose an HTTP configuration API; listener,
 certificate, audit database, recording, cache, control, and upstream settings
 remain startup-only.
 
@@ -473,6 +475,66 @@ and the pool agent is its only reader
 SOCKS5 is a TCP tunnel (no-auth method). It is authenticated by the same mTLS
 listener and records connect attempts, destination, allow/deny, and client
 identity, but it does not inspect tunneled payloads.
+
+## Host Trust
+
+Upstream TLS is verified against the system roots, so a host whose chain ends in
+a private CA — a Kubernetes API server, an internal service — is one no client
+can reach until a person pins a certificate for it
+([ADR 0149](../docs/adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md)).
+`Config.Trusts` carries the pins in force, each a `HostTrust` for exactly one
+client and one `host:port`. A pin changes only what the proxy accepts
+upstream: the sandbox talks only to the proxy and its trust store holds the
+MITM CA already. A client that carries its own CA — kubectl's kubeconfig — is
+pointed at the MITM CA instead, which moves that client's check of the host to
+the proxy rather than removing it.
+
+```mermaid
+flowchart LR
+    req["MITM'd request"] --> lookup{"client holds a pin\nfor host:port?"}
+    lookup -->|yes| judge["Judge(TrustUseIDs)"] --> pinned["the trust's own transport\n(verifies the pin)"]
+    lookup -->|no| default["proxy transport\n(system roots)"]
+    pinned --> refused{"certificate\nrefused?"}
+    default --> refused
+    refused -->|no| upstream["upstream"]
+    refused -->|yes| bad["502 + X-Discobox-Untrusted-Host,\naudited as blocked"]
+```
+
+- **A pin is verified, never a switch.** A `ca` pin builds a root set of
+  exactly that CA and verifies as usual, name included — an IP endpoint needs
+  an IP SAN. A `leaf-spki` pin, for a chain with no CA in it, matches the
+  leaf's public key exactly and its validity window, and nothing else.
+- **Every request goes through `roundTrip`** (goproxy's per-request
+  `RoundTripper`), which picks the pin's transport or the proxy's own. A
+  certificate refused either way is answered here as a `502` naming the
+  endpoint in `X-Discobox-Untrusted-Host` and the remedy in the body, and
+  audited once as blocked (`upstream certificate not trusted: …`), instead of
+  the connection being dropped, which the sandbox saw as an empty reply.
+- **An upstream that never answers is a `502` too.** The host unreachable, or
+  it — or an upstream proxy in between — closing the connection, used to drop
+  the client's connection, which a sandbox saw as an empty reply. `roundTrip`
+  answers it with a `502` saying what failed and, behind an upstream proxy,
+  naming it in `X-Discobox-Upstream-Proxy`: a pool nested in a discobox is
+  refused by its outer proxy, and the remedy is there. It is recorded by the
+  response path as an exchange the upstream failed, not as a refusal — the
+  request may have gone out — as the gate's failures are.
+- **A pinned transport is per `(client, trust)`.** `http.Transport` pools
+  connections by host, so a connection verified under one client's pin must
+  never serve another client's request for the same host. `buildTrustTable`
+  clones the proxy's transport — so a pin leaves through the same upstream
+  proxy and exemptions — per trust, keeps a trust's transport across
+  `ApplyConfig` while its pin is unchanged, and closes the idle connections of
+  one that is gone.
+- **A request to a trusted host is judged** against the trust's uses
+  (`JudgeRequest.TrustUseIDs`), whether or not it carries a credential; one
+  that does is judged against both.
+- **`ProbeTLS`** connects to a host the way a client's traffic would, completes
+  a handshake with verification off, and returns the chain and whether it
+  verifies against the system roots, and which upstream proxy it went through
+  (`Via`): behind one that intercepts TLS the chain is that proxy's, not the
+  host's. It sends no request, and refuses a host the allowlist denies that
+  client (`ErrProbeHostDenied`). The pool agent is
+  its caller: the chain a person pins from is the one this proxy meets.
 
 ## Upstream Egress
 

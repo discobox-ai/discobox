@@ -27,6 +27,14 @@ type Service interface {
 	// ReportDenial records a verdict for a command the judge refused, which
 	// never reached Get (ADR 0091 §3).
 	ReportDenial(ctx context.Context, body DenialReport) error
+	// Trusts returns the host trusts the caller holds (ADR 0149).
+	Trusts(ctx context.Context) ([]Trust, error)
+	// RequestTrust records an ask to trust a host and returns immediately:
+	// pending when a human must answer, or already settled as StatusUnneeded
+	// when the host's chain verifies without a pin.
+	RequestTrust(ctx context.Context, body TrustRequestBody) (TrustRequestStatus, error)
+	// TrustRequestStatus reads a trust request's current status.
+	TrustRequestStatus(ctx context.Context, requestID string) (TrustRequestStatus, error)
 }
 
 // ErrNotFound makes a handler answer 404. It is the "this id means nothing to
@@ -100,6 +108,43 @@ func NewHandler(svc Service) http.Handler {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET "+PathTrusts, func(w http.ResponseWriter, r *http.Request) {
+		trusts, err := svc.Trusts(r.Context())
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if trusts == nil {
+			trusts = []Trust{}
+		}
+		writeJSON(w, http.StatusOK, TrustListResponse{Trusts: trusts})
+	})
+	mux.HandleFunc("POST "+PathTrustRequests, func(w http.ResponseWriter, r *http.Request) {
+		var body TrustRequestBody
+		if !decode(w, r, &body) {
+			return
+		}
+		status, err := svc.RequestTrust(r.Context(), body)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		// 202 while a human has yet to answer; 200 for an ask that settled
+		// on the spot because it needed no one.
+		code := http.StatusAccepted
+		if status.Settled() {
+			code = http.StatusOK
+		}
+		writeJSON(w, code, status)
+	})
+	mux.HandleFunc("GET "+PathTrustRequests+"/{requestId}", func(w http.ResponseWriter, r *http.Request) {
+		status, err := svc.TrustRequestStatus(r.Context(), r.PathValue("requestId"))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
 	})
 	return mux
 }

@@ -82,24 +82,31 @@ func (d *apiDataSource) answered(server, requestID string) {
 	}
 }
 
-// requestsHere is this data source's own server's pending requests.
+// requestsHere is this data source's own server's pending requests, credential
+// and trust alike: the server's inbox read (ADR 0149 §7), so each beat still
+// makes one call to it.
 func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialRequest, error) {
-	res, err := d.client.ListSecretRequests(ctx, apiclientgen.ListSecretRequestsParams{
+	res, err := d.client.ListApprovalRequests(ctx, apiclientgen.ListApprovalRequestsParams{
 		ProjectId: d.projectID,
-		Status:    apiclientgen.NewOptListSecretRequestsStatus(apiclientgen.ListSecretRequestsStatusPending),
+		Status:    apiclientgen.NewOptListApprovalRequestsStatus(apiclientgen.ListApprovalRequestsStatusPending),
 	})
 	if err != nil {
 		return nil, err
 	}
-	body, err := expectResponse[apimodel.ListSecretRequestsBody](res)
+	body, err := expectResponse[apimodel.ListApprovalRequestsBody](res)
 	if err != nil {
 		return nil, err
 	}
-	requests := sortedByRecency(body.GetSecretRequests(), func(r apimodel.SecretRequest) time.Time { return r.CreatedAt })
-	out := make([]tui.CredentialRequest, 0, len(requests))
-	for _, r := range requests {
-		out = append(out, toTUICredentialRequest(r))
+	out := make([]tui.CredentialRequest, 0, len(body.GetApprovalRequests()))
+	for _, item := range body.GetApprovalRequests() {
+		if credential, ok := item.Credential.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindCredential {
+			out = append(out, toTUICredentialRequest(credential))
+		}
+		if trust, ok := item.Trust.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindTrust {
+			out = append(out, toTUITrustRequest(trust))
+		}
 	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
 	return out, nil
 }
 
@@ -189,6 +196,114 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		}
 	}
 	return req
+}
+
+// toTUITrustRequest is a trust request as the inbox holds it: an item whose
+// answer is a pin rather than a secret.
+func toTUITrustRequest(r apimodel.HostTrustRequest) tui.CredentialRequest {
+	ask := &tui.TrustAsk{}
+	for _, cert := range r.ObservedChain.Or(nil) {
+		ask.Chain = append(ask.Chain, toTUITrustCertificate(cert))
+	}
+	if supplied, ok := r.SuppliedCA.Get(); ok {
+		ca := toTUITrustCertificate(supplied)
+		ask.SuppliedCA = &ca
+	}
+	ask.DefaultPin = defaultTrustPin(*ask)
+	req := tui.CredentialRequest{
+		ID:            r.ID,
+		SandboxID:     r.SandboxId,
+		Host:          r.Host,
+		Justification: strings.TrimSpace(r.Justification.Or("")),
+		GrantTTL:      lifetime.FromRequest(r.GrantTTLSeconds.Or(0)),
+		Created:       r.CreatedAt,
+		Trust:         ask,
+	}
+	for _, use := range r.Uses.Or(nil) {
+		if description := strings.TrimSpace(use.Description); description != "" {
+			req.Uses = append(req.Uses, description)
+		}
+	}
+	return req
+}
+
+func toTUITrustCertificate(cert apimodel.ObservedCertificate) tui.TrustCertificate {
+	return tui.TrustCertificate{
+		Subject:    cert.Subject,
+		Issuer:     cert.Issuer,
+		Names:      append(cert.DnsNames.Or(nil), cert.Ips.Or(nil)...),
+		NotBefore:  cert.NotBefore,
+		NotAfter:   cert.NotAfter,
+		SHA256:     cert.SHA256,
+		SPKISHA256: cert.SpkiSha256,
+		IsCA:       cert.IsCA.Or(false),
+		SelfSigned: cert.SelfSigned.Or(false),
+	}
+}
+
+// defaultTrustPin is the pin the server takes when an approval names none —
+// the supplied CA, then a self-signed CA in the chain, then the leaf's key —
+// so the window offers first what `discobox trust request approve` would
+// pin without --pin.
+func defaultTrustPin(ask tui.TrustAsk) tui.TrustPin {
+	if ask.SuppliedCA != nil {
+		return tui.TrustPin{Kind: tui.TrustPinCA, SHA256: ask.SuppliedCA.SHA256}
+	}
+	for i := len(ask.Chain) - 1; i >= 0; i-- {
+		if cert := ask.Chain[i]; cert.IsCA && cert.SelfSigned {
+			return tui.TrustPin{Kind: tui.TrustPinCA, SHA256: cert.SHA256}
+		}
+	}
+	if len(ask.Chain) == 0 {
+		return tui.TrustPin{}
+	}
+	return tui.TrustPin{Kind: tui.TrustPinLeafSPKI, SHA256: ask.Chain[0].SPKISHA256}
+}
+
+// ApproveTrustRequest pins the chosen certificate for the asking discobox.
+// The lifetime is always sent: a trust always lapses.
+func (d *apiDataSource) ApproveTrustRequest(ctx context.Context, server string, approval tui.TrustApproval) error {
+	window := d
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	body := &apimodel.ApproveTrustRequestBody{}
+	body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
+	body.SetPin(apiclientgen.NewOptTrustPin(apimodel.TrustPin{Kind: apiclientgen.TrustPinKind(approval.Pin.Kind), SHA256: approval.Pin.SHA256}))
+	res, err := d.client.ApproveTrustRequest(ctx, body, apiclientgen.ApproveTrustRequestParams{
+		ProjectId: d.projectID,
+		RequestId: approval.RequestID,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := expectResponse[apimodel.HostTrustRequest](res); err != nil {
+		return err
+	}
+	window.answered(server, approval.RequestID)
+	return nil
+}
+
+// DenyTrustRequest answers a trust request no.
+func (d *apiDataSource) DenyTrustRequest(ctx context.Context, server, requestID string) error {
+	window := d
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	res, err := d.client.DenyTrustRequest(ctx, apiclientgen.DenyTrustRequestParams{
+		ProjectId: d.projectID,
+		RequestId: requestID,
+	})
+	if err != nil {
+		return err
+	}
+	if err := expectNoContent[apiclientgen.DenyTrustRequestNoContent](res); err != nil {
+		return err
+	}
+	window.answered(server, requestID)
+	return nil
 }
 
 // Secrets returns one server's secrets, without values.

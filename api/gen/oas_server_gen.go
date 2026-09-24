@@ -14,6 +14,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/approve
 	ApproveSecretRequest(ctx context.Context, req *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
+	// ApproveTrustRequest implements approve-trust-request operation.
+	//
+	// Approve a host trust request.
+	//
+	// POST /projects/{projectId}/trust-requests/{requestId}/approve
+	ApproveTrustRequest(ctx context.Context, req *ApproveTrustRequestBody, params ApproveTrustRequestParams) (ApproveTrustRequestRes, error)
 	// AssignSandboxHarnessSecrets implements assign-sandbox-harness-secrets operation.
 	//
 	// Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
@@ -149,6 +155,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/providers
 	CreateSandboxProviderInstance(ctx context.Context, req *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (CreateSandboxProviderInstanceRes, error)
+	// CreateSandboxTrustRequest implements create-sandbox-trust-request operation.
+	//
+	// Record an agent's host trust request.
+	//
+	// POST /api/pools/{poolId}/sandbox-trust-requests
+	CreateSandboxTrustRequest(ctx context.Context, req *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (CreateSandboxTrustRequestRes, error)
 	// CreateSecret implements create-secret operation.
 	//
 	// Create a secret.
@@ -226,6 +238,12 @@ type Handler interface {
 	//
 	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
 	DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) (DeleteSandboxExecRes, error)
+	// DeleteSandboxHostTrust implements delete-sandbox-host-trust operation.
+	//
+	// Revoke a sandbox's trust of a host.
+	//
+	// DELETE /projects/{projectId}/sandboxes/{sandboxId}/host-trusts/{trustId}
+	DeleteSandboxHostTrust(ctx context.Context, params DeleteSandboxHostTrustParams) (DeleteSandboxHostTrustRes, error)
 	// DeleteSandboxProviderInstance implements delete-sandbox-provider-instance operation.
 	//
 	// Delete a sandbox provider instance.
@@ -244,6 +262,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/deny
 	DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (DenySecretRequestRes, error)
+	// DenyTrustRequest implements deny-trust-request operation.
+	//
+	// Deny a host trust request.
+	//
+	// POST /projects/{projectId}/trust-requests/{requestId}/deny
+	DenyTrustRequest(ctx context.Context, params DenyTrustRequestParams) (DenyTrustRequestRes, error)
 	// ForceJob implements force-job operation.
 	//
 	// Force a pending, scheduled, or backoff job to run immediately.
@@ -338,6 +362,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
+	// GetSandboxTrustRequest implements get-sandbox-trust-request operation.
+	//
+	// Poll an agent host trust request.
+	//
+	// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+	GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (GetSandboxTrustRequestRes, error)
 	// GetSecret implements get-secret operation.
 	//
 	// Get a secret.
@@ -362,6 +392,18 @@ type Handler interface {
 	//
 	// GET /peer
 	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
+	// GetTrustRequest implements get-trust-request operation.
+	//
+	// Get a host trust request.
+	//
+	// GET /projects/{projectId}/trust-requests/{requestId}
+	GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error)
+	// ListApprovalRequests implements list-approval-requests operation.
+	//
+	// List the project's credential and trust requests as one inbox.
+	//
+	// GET /projects/{projectId}/approval-requests
+	ListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (ListApprovalRequestsRes, error)
 	// ListCredentialVerdicts implements list-credential-verdicts operation.
 	//
 	// The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091).
@@ -426,6 +468,12 @@ type Handler interface {
 	//
 	// GET /peers
 	ListPeers(ctx context.Context) (ListPeersRes, error)
+	// ListPoolHostTrusts implements list-pool-host-trusts operation.
+	//
+	// List the live host trusts of every sandbox on the pool.
+	//
+	// GET /api/pools/{poolId}/sandbox-host-trusts
+	ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (ListPoolHostTrustsRes, error)
 	// ListPools implements list-pools operation.
 	//
 	// List pools.
@@ -474,6 +522,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
 	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (ListSandboxExecsRes, error)
+	// ListSandboxHostTrusts implements list-sandbox-host-trusts operation.
+	//
+	// List the hosts a sandbox trusts.
+	//
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/host-trusts
+	ListSandboxHostTrusts(ctx context.Context, params ListSandboxHostTrustsParams) (ListSandboxHostTrustsRes, error)
 	// ListSandboxProviderCatalog implements list-sandbox-provider-catalog operation.
 	//
 	// List sandbox provider catalog.
@@ -538,6 +592,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
+	// ListTrustRequests implements list-trust-requests operation.
+	//
+	// List host trust requests.
+	//
+	// GET /projects/{projectId}/trust-requests
+	ListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (ListTrustRequestsRes, error)
 	// MintSandboxAgentStatusTokens implements mint-sandbox-agent-status-tokens operation.
 	//
 	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.

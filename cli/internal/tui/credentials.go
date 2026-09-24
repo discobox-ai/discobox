@@ -161,6 +161,11 @@ func (m *Model) openCredentialDialog(sandboxID string) tea.Cmd {
 // and whether it came from one at all. It reads the secrets first, because the
 // question it asks is which of them answers this.
 func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
+	// A trust request is answered with a pin, not a secret: there is nothing
+	// to read first.
+	if req.Trust != nil {
+		return m.askAboutTrust(req)
+	}
 	m.dialog = statusDialog("Credential request", "reading the project's secrets…")
 	return func() tea.Msg {
 		secrets, err := m.ds.Secrets(m.ctx, req.Server)
@@ -502,6 +507,9 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 }
 
 func credentialName(req CredentialRequest) string {
+	if req.Trust != nil {
+		return "trust of " + req.Host
+	}
 	if req.Name != "" {
 		return req.Name
 	}
@@ -923,6 +931,13 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 }
 
 func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {
+	if req.Trust != nil {
+		m.dialog = statusDialog("Trust request", "denying…")
+		return func() tea.Msg {
+			err := m.ds.DenyTrustRequest(m.ctx, req.Server, req.ID)
+			return credentialAnsweredMsg{request: req, approved: false, err: err}
+		}
+	}
 	m.dialog = statusDialog("Credential request", "denying…")
 	return func() tea.Msg {
 		err := m.ds.DenyCredentialRequest(m.ctx, req.Server, req.ID)
@@ -982,12 +997,29 @@ func (m *Model) viewCredentialBanner(width int) string {
 	}
 	st := m.st
 	subject := credentialName(pending[0])
-	if host := pending[0].Host; host != "" {
+	what := "credential request"
+	if pending[0].Trust != nil {
+		// The name already says the host, so it is not said twice.
+		what = "trust request"
+	} else if host := pending[0].Host; host != "" {
 		subject += " for " + host
 	}
-	what := "credential request"
 	if len(pending) > 1 {
-		what, subject = plural(len(pending), "credential request", "credential requests"), "oldest: "+subject
+		one, many := "credential request", "credential requests"
+		trusts := 0
+		for _, req := range pending {
+			if req.Trust != nil {
+				trusts++
+			}
+		}
+		switch trusts {
+		case 0:
+		case len(pending):
+			one, many = "trust request", "trust requests"
+		default:
+			one, many = "request", "requests"
+		}
+		what, subject = plural(len(pending), one, many), "oldest: "+subject
 	}
 	body := st.attentionText.Render(what) +
 		st.attentionHint.Render("  ·  ") + st.attentionText.Render(subject)
@@ -999,6 +1031,9 @@ func (m *Model) viewCredentialBanner(width int) string {
 // server's own wording of the refusal: that wording is the half that says what
 // to do next, so it is left whole as the dialog's body and this stands under it.
 func credentialErrorSection(req CredentialRequest) section {
+	if req.Trust != nil {
+		return section{label: "still waiting", fields: []field{{label: "trust", value: req.Host, tone: toneAccent}}}
+	}
 	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
 	if req.Host != "" {
 		fields = append(fields, field{label: "for", value: req.Host, tone: toneAccent})

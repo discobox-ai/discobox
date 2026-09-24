@@ -22,6 +22,15 @@ func (UnimplementedHandler) ApproveSecretRequest(ctx context.Context, req *Appro
 	return r, ht.ErrNotImplemented
 }
 
+// ApproveTrustRequest implements approve-trust-request operation.
+//
+// Approve a host trust request.
+//
+// POST /projects/{projectId}/trust-requests/{requestId}/approve
+func (UnimplementedHandler) ApproveTrustRequest(ctx context.Context, req *ApproveTrustRequestBody, params ApproveTrustRequestParams) (r ApproveTrustRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // AssignSandboxHarnessSecrets implements assign-sandbox-harness-secrets operation.
 //
 // Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
@@ -211,6 +220,15 @@ func (UnimplementedHandler) CreateSandboxProviderInstance(ctx context.Context, r
 	return r, ht.ErrNotImplemented
 }
 
+// CreateSandboxTrustRequest implements create-sandbox-trust-request operation.
+//
+// Record an agent's host trust request.
+//
+// POST /api/pools/{poolId}/sandbox-trust-requests
+func (UnimplementedHandler) CreateSandboxTrustRequest(ctx context.Context, req *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (r CreateSandboxTrustRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSecret implements create-secret operation.
 //
 // Create a secret.
@@ -324,6 +342,15 @@ func (UnimplementedHandler) DeleteSandboxExec(ctx context.Context, params Delete
 	return r, ht.ErrNotImplemented
 }
 
+// DeleteSandboxHostTrust implements delete-sandbox-host-trust operation.
+//
+// Revoke a sandbox's trust of a host.
+//
+// DELETE /projects/{projectId}/sandboxes/{sandboxId}/host-trusts/{trustId}
+func (UnimplementedHandler) DeleteSandboxHostTrust(ctx context.Context, params DeleteSandboxHostTrustParams) (r DeleteSandboxHostTrustRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DeleteSandboxProviderInstance implements delete-sandbox-provider-instance operation.
 //
 // Delete a sandbox provider instance.
@@ -348,6 +375,15 @@ func (UnimplementedHandler) DeleteSecret(ctx context.Context, params DeleteSecre
 //
 // POST /projects/{projectId}/secret-requests/{requestId}/deny
 func (UnimplementedHandler) DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (r DenySecretRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DenyTrustRequest implements deny-trust-request operation.
+//
+// Deny a host trust request.
+//
+// POST /projects/{projectId}/trust-requests/{requestId}/deny
+func (UnimplementedHandler) DenyTrustRequest(ctx context.Context, params DenyTrustRequestParams) (r DenyTrustRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -490,6 +526,15 @@ func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSan
 	return r, ht.ErrNotImplemented
 }
 
+// GetSandboxTrustRequest implements get-sandbox-trust-request operation.
+//
+// Poll an agent host trust request.
+//
+// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+func (UnimplementedHandler) GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (r GetSandboxTrustRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSecret implements get-secret operation.
 //
 // Get a secret.
@@ -523,6 +568,24 @@ func (UnimplementedHandler) GetServerInfo(ctx context.Context) (r GetServerInfoR
 //
 // GET /peer
 func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetTrustRequest implements get-trust-request operation.
+//
+// Get a host trust request.
+//
+// GET /projects/{projectId}/trust-requests/{requestId}
+func (UnimplementedHandler) GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (r GetTrustRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListApprovalRequests implements list-approval-requests operation.
+//
+// List the project's credential and trust requests as one inbox.
+//
+// GET /projects/{projectId}/approval-requests
+func (UnimplementedHandler) ListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (r ListApprovalRequestsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -619,6 +682,15 @@ func (UnimplementedHandler) ListPeers(ctx context.Context) (r ListPeersRes, _ er
 	return r, ht.ErrNotImplemented
 }
 
+// ListPoolHostTrusts implements list-pool-host-trusts operation.
+//
+// List the live host trusts of every sandbox on the pool.
+//
+// GET /api/pools/{poolId}/sandbox-host-trusts
+func (UnimplementedHandler) ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (r ListPoolHostTrustsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListPools implements list-pools operation.
 //
 // List pools.
@@ -688,6 +760,15 @@ func (UnimplementedHandler) ListSandboxExecResourceHistory(ctx context.Context, 
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
 func (UnimplementedHandler) ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (r ListSandboxExecsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSandboxHostTrusts implements list-sandbox-host-trusts operation.
+//
+// List the hosts a sandbox trusts.
+//
+// GET /projects/{projectId}/sandboxes/{sandboxId}/host-trusts
+func (UnimplementedHandler) ListSandboxHostTrusts(ctx context.Context, params ListSandboxHostTrustsParams) (r ListSandboxHostTrustsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -782,6 +863,15 @@ func (UnimplementedHandler) ListSecretRequests(ctx context.Context, params ListS
 //
 // GET /projects/{projectId}/secrets
 func (UnimplementedHandler) ListSecrets(ctx context.Context, params ListSecretsParams) (r ListSecretsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListTrustRequests implements list-trust-requests operation.
+//
+// List host trust requests.
+//
+// GET /projects/{projectId}/trust-requests
+func (UnimplementedHandler) ListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (r ListTrustRequestsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

@@ -5,6 +5,10 @@ type ApproveSecretRequestRes interface {
 	approveSecretRequestRes()
 }
 
+type ApproveTrustRequestRes interface {
+	approveTrustRequestRes()
+}
+
 type AssignSandboxHarnessSecretsRes interface {
 	assignSandboxHarnessSecretsRes()
 }
@@ -77,6 +81,10 @@ type CreateSandboxRes interface {
 	createSandboxRes()
 }
 
+type CreateSandboxTrustRequestRes interface {
+	createSandboxTrustRequestRes()
+}
+
 type CreateSecretGrantRes interface {
 	createSecretGrantRes()
 }
@@ -121,6 +129,10 @@ type DeleteSandboxExecRes interface {
 	deleteSandboxExecRes()
 }
 
+type DeleteSandboxHostTrustRes interface {
+	deleteSandboxHostTrustRes()
+}
+
 type DeleteSandboxProviderInstanceRes interface {
 	deleteSandboxProviderInstanceRes()
 }
@@ -135,6 +147,10 @@ type DeleteSecretRes interface {
 
 type DenySecretRequestRes interface {
 	denySecretRequestRes()
+}
+
+type DenyTrustRequestRes interface {
+	denyTrustRequestRes()
 }
 
 type ForceJobRes interface {
@@ -197,6 +213,10 @@ type GetSandboxServiceRes interface {
 	getSandboxServiceRes()
 }
 
+type GetSandboxTrustRequestRes interface {
+	getSandboxTrustRequestRes()
+}
+
 type GetSecretRequestRes interface {
 	getSecretRequestRes()
 }
@@ -211,6 +231,14 @@ type GetServerInfoRes interface {
 
 type GetServerPeerRes interface {
 	getServerPeerRes()
+}
+
+type GetTrustRequestRes interface {
+	getTrustRequestRes()
+}
+
+type ListApprovalRequestsRes interface {
+	listApprovalRequestsRes()
 }
 
 type ListCredentialVerdictsRes interface {
@@ -249,6 +277,10 @@ type ListPeersRes interface {
 	listPeersRes()
 }
 
+type ListPoolHostTrustsRes interface {
+	listPoolHostTrustsRes()
+}
+
 type ListPoolsRes interface {
 	listPoolsRes()
 }
@@ -279,6 +311,10 @@ type ListSandboxExecResourceHistoryRes interface {
 
 type ListSandboxExecsRes interface {
 	listSandboxExecsRes()
+}
+
+type ListSandboxHostTrustsRes interface {
+	listSandboxHostTrustsRes()
 }
 
 type ListSandboxProviderCatalogRes interface {
@@ -319,6 +355,10 @@ type ListSecretRequestsRes interface {
 
 type ListSecretsRes interface {
 	listSecretsRes()
+}
+
+type ListTrustRequestsRes interface {
+	listTrustRequestsRes()
 }
 
 type MintSandboxAgentStatusTokensRes interface {

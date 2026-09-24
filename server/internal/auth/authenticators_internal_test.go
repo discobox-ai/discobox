@@ -18,6 +18,10 @@ func TestPoolRuntimePathAllowlist(t *testing.T) {
 		{"listing agent credentials", "/api/pools/pool-1/sandbox-credentials", true},
 		{"recording a credential request", "/api/pools/pool-1/sandbox-credential-requests", true},
 		{"polling one credential request", "/api/pools/pool-1/sandbox-credential-requests/sreq_abc", true},
+		{"recording a trust request", "/api/pools/pool-1/sandbox-trust-requests", true},
+		{"polling one trust request", "/api/pools/pool-1/sandbox-trust-requests/treq_abc", true},
+		{"reading the pool's host trusts", "/api/pools/pool-1/sandbox-host-trusts", true},
+		{"a subroute below the pool's host trusts", "/api/pools/pool-1/sandbox-host-trusts/trust_abc", false},
 
 		{"an unlisted action", "/api/pools/pool-1/secrets", false},
 		{"a misspelled action", "/api/pools/pool-1/sandbox-credential", false},

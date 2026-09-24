@@ -243,6 +243,14 @@ provisioned with ([ADR 0031](../../../docs/adr/0031-agent-credentials-are-a-port
 and until somebody answers, it is blocked. The window's job is to make that
 visible without letting it take the screen. See `credentials.go`.
 
+**It holds trust requests too** ([ADR 0149](../../../docs/adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md)).
+The poll reads the server's `approval-requests`, which lists credential and
+trust asks together, so each beat is still one inbox call per server. A trust
+ask is a `CredentialRequest` with `Trust` set — marked, bannered, and listed
+like any other — whose dialog (`trusts.go`) asks which certificate from the
+chain the pool was shown to pin, the server's default first and the leaf's key
+last, then how long, from an hour to a month: a trust always lapses.
+
 **It is polled, not pushed.** The requests are read on the same 5s tick as the
 listing; there is no client-facing event stream to subscribe to
 ([ADR 0061](../../../docs/adr/0061-the-client-facing-project-event-stream-is-removed.md)),
@@ -2542,6 +2550,7 @@ the newest one where the busy line goes.
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
+| `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `apply.go` | apply: the ready band, the question a click asks, and what is offered when it succeeds |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |

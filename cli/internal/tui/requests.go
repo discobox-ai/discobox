@@ -155,6 +155,9 @@ func (l *requestList) row(st *styles, r CredentialRequest, i int, focused bool) 
 // wants; the proxy's reactive path names nothing, because all it saw was a
 // sentinel it could not resolve — and saying so is more use than a blank.
 func requestSubject(r CredentialRequest) string {
+	if r.Trust != nil {
+		return "trust this host"
+	}
 	// An ask to delegate and an ask to use the same credential may both be
 	// waiting, and are different questions.
 	if r.Delegate {

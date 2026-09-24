@@ -1209,6 +1209,58 @@ type CredentialRequest struct {
 	// which secret answers it once one is marked.
 	WellKnownID string
 	Created     time.Time
+	// Trust is set on an item that asks to trust a host for its discobox
+	// rather than for a credential (ADR 0149). Host is then the endpoint,
+	// Uses and Justification are what the agent said it will send there, and
+	// Name, EnvVar, and Type are empty: the answer is not a secret but which
+	// certificate to pin.
+	Trust *TrustAsk
+}
+
+// TrustAsk is what a trust request offers to pin: the chain the pool's egress
+// was shown, leaf first, and a CA the agent supplied, already checked by the
+// pool to be one that chain verifies against.
+type TrustAsk struct {
+	Chain      []TrustCertificate
+	SuppliedCA *TrustCertificate
+	// DefaultPin is what the server pins when the approver names none, and
+	// what the dialog offers first.
+	DefaultPin TrustPin
+}
+
+// TrustCertificate is one certificate as a person reads it to decide.
+type TrustCertificate struct {
+	Subject    string
+	Issuer     string
+	Names      []string
+	NotBefore  time.Time
+	NotAfter   time.Time
+	SHA256     string
+	SPKISHA256 string
+	IsCA       bool
+	SelfSigned bool
+}
+
+// TrustPin names the certificate a trust verifies its host against: a CA the
+// chain must verify to, or the host certificate's own public key.
+type TrustPin struct {
+	Kind   string
+	SHA256 string
+}
+
+// Pin kinds, as the server names them.
+const (
+	TrustPinCA       = "ca"
+	TrustPinLeafSPKI = "leaf-spki"
+)
+
+// TrustApproval is what a person decided about a trust request: which
+// certificate to pin, and for how long. A trust always lapses, so TTLSeconds
+// is never zero.
+type TrustApproval struct {
+	RequestID  string
+	Pin        TrustPin
+	TTLSeconds int64
 }
 
 // FromAgent reports whether a person is being asked a question with reasons
@@ -1653,8 +1705,9 @@ type DataSource interface {
 	// of a listing nor on every poll.
 	Addresses(ctx context.Context, sandboxID string) (Addresses, error)
 
-	// CredentialRequests is every credential request in the project still
-	// waiting on a person, on every server the window lists, newest first,
+	// CredentialRequests is every request in the project still waiting on a
+	// person — for a credential, or to trust a host (ADR 0149 §7) — on every
+	// server the window lists, newest first,
 	// each naming its server (ADR 0131 §1). A server that did not answer
 	// contributes none. It is polled with the listing rather
 	// than streamed: the client-facing event stream is gone (ADR 0061), and a
@@ -1711,4 +1764,11 @@ type DataSource interface {
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
 	// a dismissal: the asking agent is waiting on one.
 	DenyCredentialRequest(ctx context.Context, server, requestID string) error
+
+	// ApproveTrustRequest answers a trust request yes, pinning the chosen
+	// certificate for the asking discobox alone (ADR 0149).
+	ApproveTrustRequest(ctx context.Context, server string, approval TrustApproval) error
+
+	// DenyTrustRequest answers a trust request no.
+	DenyTrustRequest(ctx context.Context, server, requestID string) error
 }

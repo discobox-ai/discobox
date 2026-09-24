@@ -12,7 +12,7 @@ import (
 )
 
 // Client speaks the protocol to a base URL. It is the only thing the in-sandbox
-// CLI knows: a URL, an optional bearer token, and these five calls.
+// CLI knows: a URL, an optional bearer token, and the protocol's calls.
 type Client struct {
 	baseURL string
 	token   string
@@ -90,21 +90,59 @@ func (c *Client) ReportDenial(ctx context.Context, body DenialReport) error {
 	return c.do(ctx, http.MethodPost, PathDenials, body, nil)
 }
 
+// Trusts returns the host trusts the caller holds.
+func (c *Client) Trusts(ctx context.Context) ([]Trust, error) {
+	var out TrustListResponse
+	if err := c.do(ctx, http.MethodGet, PathTrusts, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Trusts, nil
+}
+
+// RequestTrust asks for a host to be trusted and returns immediately.
+func (c *Client) RequestTrust(ctx context.Context, body TrustRequestBody) (TrustRequestStatus, error) {
+	var out TrustRequestStatus
+	err := c.do(ctx, http.MethodPost, PathTrustRequests, body, &out)
+	return out, err
+}
+
+// TrustRequestStatus reads a trust request's current status.
+func (c *Client) TrustRequestStatus(ctx context.Context, requestID string) (TrustRequestStatus, error) {
+	var out TrustRequestStatus
+	err := c.do(ctx, http.MethodGet, PathTrustRequests+"/"+requestID, nil, &out)
+	return out, err
+}
+
+// WaitForTrustRequest polls a trust request until it settles or ctx is done,
+// for the reason WaitForRequest polls.
+func (c *Client) WaitForTrustRequest(ctx context.Context, requestID string, interval time.Duration) (TrustRequestStatus, error) {
+	return waitFor(ctx, interval, func() (TrustRequestStatus, bool, error) {
+		status, err := c.TrustRequestStatus(ctx, requestID)
+		return status, status.Settled(), err
+	})
+}
+
 // WaitForRequest polls a request until it settles or ctx is done. Blocking is
 // the client's job, not the protocol's: approval can take minutes or never
 // come, so a long-held connection through the relay chain would be the fragile
 // part rather than the poll.
 func (c *Client) WaitForRequest(ctx context.Context, requestID string, interval time.Duration) (RequestStatus, error) {
+	return waitFor(ctx, interval, func() (RequestStatus, bool, error) {
+		status, err := c.RequestStatus(ctx, requestID)
+		return status, status.Settled(), err
+	})
+}
+
+// waitFor polls until poll reports a settled answer, poll fails, or ctx is
+// done.
+func waitFor[T any](ctx context.Context, interval time.Duration, poll func() (T, bool, error)) (T, error) {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
 	for {
-		status, err := c.RequestStatus(ctx, requestID)
-		if err != nil {
+		status, settled, err := poll()
+		if err != nil || settled {
 			return status, err
-		}
-		if status.Settled() {
-			return status, nil
 		}
 		select {
 		case <-ctx.Done():

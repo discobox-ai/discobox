@@ -22,6 +22,8 @@ type SetHarnessConfigSecretBindingBody = apimodel.SetHarnessConfigSecretBindingB
 type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
 type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialRequestBody
+type CreateSandboxTrustRequestBody = apimodel.CreateSandboxTrustRequestBody
+type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
 type RecordCredentialVerdictBody = apimodel.RecordCredentialVerdictBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
@@ -403,6 +405,24 @@ type SecretService interface {
 	ListCredentialVerdicts(ctx context.Context, projectID string, filter CredentialVerdictFilter) ([]model.CredentialVerdict, error)
 }
 
+// HostTrustService is host trust (ADR 0149): an agent's ask, relayed by its
+// pool, to trust a host whose certificate the pool's egress refuses, and the
+// pins a person approves for one sandbox. The pool calls take the calling
+// pool's ID and verify the sandbox belongs to it, as the broker's do.
+type HostTrustService interface {
+	CreateSandboxTrustRequest(ctx context.Context, poolID string, input CreateSandboxTrustRequestBody) (*model.HostTrustRequest, error)
+	GetSandboxTrustRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.HostTrustRequest, *model.HostTrust, error)
+	ListPoolHostTrusts(ctx context.Context, poolID string) ([]model.HostTrust, error)
+
+	ListTrustRequests(ctx context.Context, projectID, status string) ([]model.HostTrustRequest, error)
+	GetTrustRequest(ctx context.Context, projectID, requestID string) (*model.HostTrustRequest, error)
+	ApproveTrustRequest(ctx context.Context, projectID, requestID string, input ApproveTrustRequestBody) (*model.HostTrustRequest, error)
+	DenyTrustRequest(ctx context.Context, projectID, requestID string) error
+
+	ListSandboxHostTrusts(ctx context.Context, projectID, sandboxID string) ([]model.HostTrust, error)
+	DeleteSandboxHostTrust(ctx context.Context, projectID, sandboxID, trustID string) error
+}
+
 // CredentialVerdictFilter is the store's filter, named here so a handler builds
 // it through its services dependency rather than importing internal/store.
 type CredentialVerdictFilter = store.CredentialVerdictFilter
@@ -514,6 +534,7 @@ type Services struct {
 	Pools          PoolService
 	Jobs           JobService
 	Secrets        SecretService
+	HostTrusts     HostTrustService
 	SSHKeys        SSHKeyService
 	Peers          PeerService
 }

@@ -40,6 +40,8 @@ type httpProxy struct {
 	reports *credentialReporter
 	mu      sync.RWMutex
 	ids     map[string]clientIdentity
+	// trusts is the pins in force (ADR 0149), replaced whole by ApplyConfig.
+	trusts *trustTable
 }
 
 type requestMeta struct {
@@ -88,6 +90,10 @@ type requestMeta struct {
 	retryBody []byte
 	retryable bool
 	retried   bool
+	// trust is the client's pin for this request's endpoint, when it holds
+	// one: the request goes out on the trust's own transport, and is judged
+	// against the uses the host was trusted for.
+	trust *pinnedTrust
 }
 
 type responseStream struct {
@@ -240,6 +246,9 @@ func (h *httpProxy) setupHandlers() {
 		*req = *req.WithContext(traceCtx)
 		meta := &requestMeta{ctx: traceCtx, span: span, start: time.Now(), client: client}
 		ctx.UserData = meta
+		// Every request leaves through roundTrip, which picks the transport a
+		// pin calls for and answers a refused upstream certificate itself.
+		ctx.RoundTripper = goproxy.RoundTripperFunc(h.roundTrip)
 
 		if swapper := h.secretSwapper(); swapper.IsGate(req.Host) {
 			return req, h.serveGate(req, meta, client, swapper)
@@ -266,6 +275,7 @@ func (h *httpProxy) setupHandlers() {
 			span.End()
 			return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "blocked by proxy")
 		}
+		meta.trust = h.trustTable().lookup(client.ID, requestEndpoint(req), time.Now())
 
 		if matcher := h.cache.Matcher(); matcher != nil && matcher.ShouldCache(req) {
 			key := matcher.GenerateKey(req)
@@ -326,6 +336,14 @@ func (h *httpProxy) setupHandlers() {
 		if refused := h.swapSecrets(req, meta, client); refused != nil {
 			span.End()
 			return req, refused
+		}
+		// A request to a trusted host is judged whether or not it carries a
+		// credential; one that did was judged against both in swapSecrets.
+		if meta.trust != nil && meta.preSwapHeader == nil {
+			if refused := h.judge(req, meta, client, requestURL(req), req.Header.Clone(), secrets.Result{}); refused != nil {
+				span.End()
+				return req, refused
+			}
 		}
 		h.bufferRetryBody(req, meta)
 		h.captureRequestBody(req, meta)
@@ -513,7 +531,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		attribute.Int("proxy.secret_swap.query_params", len(result.QueryParams)),
 		attribute.Bool("proxy.secret_swap.encoded", result.Encoded),
 	)
-	return h.judgeSwap(req, meta, client, preURL, preSwapHeader, result)
+	return h.judge(req, meta, client, preURL, preSwapHeader, result)
 }
 
 // serveGate answers a request for the gate host, which is never sent to the
@@ -574,15 +592,20 @@ func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clien
 // reads sentinels and never a credential, and the refusal is audited the same
 // way. A judge that cannot answer refuses: a credential goes out only on a
 // request something agreed to.
-func (h *httpProxy) judgeSwap(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, result secrets.Result) *http.Response {
+func (h *httpProxy) judge(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, result secrets.Result) *http.Response {
+	var trustUseIDs []string
+	if meta.trust != nil {
+		trustUseIDs = meta.trust.UseIDs
+	}
 	verdict, err := h.secretSwapper().Judge(meta.ctx, secrets.JudgeRequest{
-		ClientID:  client.ID,
-		UseIDs:    result.UseIDs,
-		Sentinels: result.Sentinels,
-		Method:    req.Method,
-		Host:      req.Host,
-		URL:       preURL,
-		Header:    preSwapHeader,
+		ClientID:    client.ID,
+		UseIDs:      result.UseIDs,
+		TrustUseIDs: trustUseIDs,
+		Sentinels:   result.Sentinels,
+		Method:      req.Method,
+		Host:        req.Host,
+		URL:         preURL,
+		Header:      preSwapHeader,
 	})
 	if err == nil && verdict.Allow {
 		return nil
@@ -593,6 +616,9 @@ func (h *httpProxy) judgeSwap(req *http.Request, meta *requestMeta, client clien
 	}
 	if reason == "" {
 		reason = "not an approved use of this credential"
+		if len(result.UseIDs) == 0 {
+			reason = "not an approved use of this host"
+		}
 	}
 	meta.answered = true
 	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", http.StatusForbidden))

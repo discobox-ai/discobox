@@ -87,7 +87,7 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	newSentinelPublisher(server, cfg, live, func(err error) { t.Errorf("apply proxy config: %v", err) })
+	newPolicyPublisher(server, cfg, live, func(err error) { t.Errorf("apply proxy config: %v", err) })
 	go func() { _ = server.ListenAndServe() }()
 
 	// Minting is what registers the sentinel. It happens before any request,
@@ -161,7 +161,7 @@ func TestMintedSentinelIsNotSwappedForAnotherHost(t *testing.T) {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	newSentinelPublisher(server, cfg, live, func(err error) { t.Errorf("apply proxy config: %v", err) })
+	newPolicyPublisher(server, cfg, live, func(err error) { t.Errorf("apply proxy config: %v", err) })
 	go func() { _ = server.ListenAndServe() }()
 
 	// Approved for somewhere the request is not going.
@@ -222,7 +222,7 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 	live := newActivations()
 	listener := listenLocal(t)
 	go func() {
-		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, testProjectID, testPoolID, live)
+		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(testProjectID, testPoolID), live, nil)
 	}()
 
 	client := agentcreds.NewClient("https://"+listener.Addr().String(), agentcreds.WithHTTPClient(mtlsClient(t, bundle, material)))
@@ -280,7 +280,7 @@ func TestCredentialsEndpointRefusesAnUnknownCertificate(t *testing.T) {
 	}
 	listener := listenLocal(t)
 	go func() {
-		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, testProjectID, testPoolID, newActivations())
+		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(testProjectID, testPoolID), newActivations(), nil)
 	}()
 
 	// A client that trusts the server but presents nothing of its own.

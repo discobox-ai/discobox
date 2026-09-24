@@ -74,8 +74,9 @@ type ReportRequest struct {
 	Outcome  Outcome
 }
 
-// JudgeRequest is a request the proxy has just put credentials into, as the
-// judge reads it before it is sent. Everything in it is what the sandbox sent:
+// JudgeRequest is a request the proxy has just put credentials into, or one
+// bound for a host the client trusts by a pin, as the judge reads it before it
+// is sent. Everything in it is what the sandbox sent:
 // the URL and headers are the ones from before the swap, so a judge sees the
 // sentinels and never a credential.
 type JudgeRequest struct {
@@ -83,12 +84,16 @@ type JudgeRequest struct {
 	// UseIDs are the approved uses the substituted values were taken under,
 	// empty for a credential with no use. They are what a request is judged
 	// against: whether sending it is what those uses were approved for.
-	UseIDs    []string
-	Sentinels []string
-	Method    string
-	Host      string
-	URL       string
-	Header    http.Header
+	UseIDs []string
+	// TrustUseIDs are the uses the destination was trusted for, when the
+	// client reaches it by a pin (ADR 0149 §5). A request to a trusted host is
+	// judged against them whether or not it carries a credential.
+	TrustUseIDs []string
+	Sentinels   []string
+	Method      string
+	Host        string
+	URL         string
+	Header      http.Header
 }
 
 // Verdict is a judge's answer. A request it does not allow is never sent.

@@ -24,6 +24,20 @@ func encodeApproveSecretRequestRequest(
 	return nil
 }
 
+func encodeApproveTrustRequestRequest(
+	req *ApproveTrustRequestBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeAssignSandboxHarnessSecretsRequest(
 	req *AssignSandboxHarnessSecretsBody,
 	r *http.Request,
@@ -190,6 +204,20 @@ func encodeCreateSandboxExecRequest(
 
 func encodeCreateSandboxProviderInstanceRequest(
 	req *CreateSandboxProviderInstanceBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeCreateSandboxTrustRequestRequest(
+	req *CreateSandboxTrustRequestBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

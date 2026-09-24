@@ -5498,6 +5498,370 @@ components:
             required:
                 - hostKey
             type: object
+        ApprovalRequest:
+            additionalProperties: false
+            description: One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential or trust is set, as kind says; each is answered on its own resource's approve and deny routes.
+            properties:
+                credential:
+                    $ref: '#/components/schemas/SecretRequest'
+                kind:
+                    description: Which kind of ask this is
+                    enum:
+                        - credential
+                        - trust
+                    type: string
+                trust:
+                    $ref: '#/components/schemas/HostTrustRequest'
+            required:
+                - kind
+            type: object
+        ListApprovalRequestsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListApprovalRequestsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                approvalRequests:
+                    items:
+                        $ref: '#/components/schemas/ApprovalRequest'
+                    type: array
+            required:
+                - approvalRequests
+            type: object
+        ObservedCertificate:
+            additionalProperties: false
+            description: One certificate a host presented to the pool's egress, as a person reads it to decide whether to trust the host. Public material only.
+            properties:
+                dnsNames:
+                    description: DNS names the certificate is valid for
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                ips:
+                    description: IP addresses the certificate is valid for
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                isCA:
+                    description: Whether the certificate is a CA
+                    type: boolean
+                issuer:
+                    description: Issuer distinguished name
+                    type: string
+                notAfter:
+                    description: End of the validity window
+                    format: date-time
+                    type: string
+                notBefore:
+                    description: Start of the validity window
+                    format: date-time
+                    type: string
+                pem:
+                    description: The certificate, PEM-encoded
+                    type: string
+                selfSigned:
+                    description: Whether the certificate is signed by its own key
+                    type: boolean
+                sha256:
+                    description: Hex SHA-256 of the certificate's DER, what a ca pin names
+                    type: string
+                spkiSha256:
+                    description: Hex SHA-256 of its SubjectPublicKeyInfo, what a leaf-spki pin names
+                    type: string
+                subject:
+                    description: Subject distinguished name
+                    type: string
+            required:
+                - subject
+                - issuer
+                - notBefore
+                - notAfter
+                - sha256
+                - spkiSha256
+                - pem
+            type: object
+        TrustPin:
+            additionalProperties: false
+            description: The certificate a host trust verifies the host against. ca pins a CA the chain must verify to, with the name checked as usual; leaf-spki pins the server certificate's public key exactly, for a chain that carries no CA.
+            properties:
+                kind:
+                    description: What is pinned
+                    enum:
+                        - ca
+                        - leaf-spki
+                    type: string
+                sha256:
+                    description: Hex SHA-256 of the pinned CA's DER, or of the leaf's SubjectPublicKeyInfo
+                    type: string
+            required:
+                - kind
+                - sha256
+            type: object
+        HostTrustRequest:
+            additionalProperties: false
+            description: An agent's ask to trust a host whose certificate the pool's egress refuses, for its own sandbox (ADR 0149).
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/HostTrustRequest.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                grantTTLSeconds:
+                    description: How long the agent asked the trust to last, in seconds; absent when it named nothing in particular
+                    format: int64
+                    type: integer
+                host:
+                    description: The endpoint to trust, host:port
+                    type: string
+                id:
+                    description: Stable request ID
+                    type: string
+                justification:
+                    description: Why the agent says it needs to reach the host
+                    type: string
+                observedChain:
+                    description: The chain the pool's egress was shown, leaf first
+                    items:
+                        $ref: '#/components/schemas/ObservedCertificate'
+                    nullable: true
+                    type: array
+                projectId:
+                    description: Project ID
+                    type: string
+                requestedBy:
+                    description: Principal ID of the requestor
+                    type: string
+                sandboxId:
+                    description: Sandbox the trust is asked for
+                    type: string
+                status:
+                    description: Request status
+                    enum:
+                        - pending
+                        - approved
+                        - denied
+                    type: string
+                suppliedCA:
+                    $ref: '#/components/schemas/ObservedCertificate'
+                trustId:
+                    description: Host trust that satisfied this request; set when approved
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+                uses:
+                    description: What the agent says it will send the host
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
+            required:
+                - id
+                - projectId
+                - sandboxId
+                - host
+                - status
+                - requestedBy
+                - createdAt
+                - updatedAt
+            type: object
+        ListTrustRequestsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListTrustRequestsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                trustRequests:
+                    items:
+                        $ref: '#/components/schemas/HostTrustRequest'
+                    type: array
+            required:
+                - trustRequests
+            type: object
+        ApproveTrustRequestBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ApproveTrustRequestBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                grantTTLSeconds:
+                    description: How long the trust lasts, in seconds, from 1 to 2592000 (thirty days). Defaults to what the agent asked for, or an hour when it asked for nothing in particular. A trust always lapses.
+                    format: int64
+                    type: integer
+                pin:
+                    $ref: '#/components/schemas/TrustPin'
+                uses:
+                    description: Approved uses, replacing the ones the agent asked for. Omit to approve the requested uses as written. Use IDs are always minted here.
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
+            type: object
+        HostTrust:
+            additionalProperties: false
+            description: A host one sandbox trusts by a pin (ADR 0149). Every request the sandbox sends the host is judged against its uses.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/HostTrust.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                expiresAt:
+                    description: When the trust lapses
+                    format: date-time
+                    type: string
+                grantedBy:
+                    description: Principal ID of the approver
+                    type: string
+                host:
+                    description: The trusted endpoint, host:port
+                    type: string
+                id:
+                    description: Stable host trust ID
+                    type: string
+                pin:
+                    $ref: '#/components/schemas/TrustPin'
+                pinPem:
+                    description: The pinned CA, PEM-encoded; absent for a leaf-spki pin
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                requestId:
+                    description: Trust request the trust was approved from
+                    type: string
+                sandboxId:
+                    description: The one sandbox that trusts the host
+                    type: string
+                uses:
+                    description: Approved uses, with the IDs the judge is given
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
+            required:
+                - id
+                - projectId
+                - sandboxId
+                - host
+                - pin
+                - expiresAt
+                - grantedBy
+                - createdAt
+            type: object
+        ListHostTrustsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListHostTrustsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                hostTrusts:
+                    items:
+                        $ref: '#/components/schemas/HostTrust'
+                    type: array
+            required:
+                - hostTrusts
+            type: object
+        CreateSandboxTrustRequestBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSandboxTrustRequestBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                grantTTLSeconds:
+                    description: How long the agent asks the trust to last, in seconds, from 1 to 2592000; omit to ask for nothing in particular
+                    format: int64
+                    type: integer
+                host:
+                    description: The endpoint to trust, host:port
+                    type: string
+                justification:
+                    description: Why the agent says it needs to reach the host
+                    type: string
+                observedChain:
+                    description: The chain the pool's egress was shown when it connected to the host, leaf first
+                    items:
+                        $ref: '#/components/schemas/ObservedCertificate'
+                    type: array
+                sandboxId:
+                    description: Sandbox asking for the trust
+                    type: string
+                suppliedCA:
+                    $ref: '#/components/schemas/ObservedCertificate'
+                uses:
+                    description: What the agent says it will send the host
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    type: array
+            required:
+                - sandboxId
+                - host
+                - observedChain
+                - uses
+            type: object
+        SandboxTrustRequestStatus:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SandboxTrustRequestStatus.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                host:
+                    description: The endpoint asked for, host:port
+                    type: string
+                pin:
+                    $ref: '#/components/schemas/TrustPin'
+                requestId:
+                    description: Request ID to poll
+                    type: string
+                status:
+                    description: Request status
+                    enum:
+                        - pending
+                        - granted
+                        - denied
+                    type: string
+                uses:
+                    description: Approved uses; present once granted, and authoritative over the requested ones
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
+            required:
+                - requestId
+                - status
+                - host
+            type: object
 info:
     title: Discobox Sandbox Manager
     version: 0.1.0
@@ -10057,3 +10421,378 @@ paths:
             summary: Revoke an SSH key
             tags:
                 - SSHKeys
+    /projects/{projectId}/approval-requests:
+        get:
+            operationId: list-approval-requests
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Filter by request status
+                  in: query
+                  name: status
+                  schema:
+                    description: Filter by request status
+                    enum:
+                        - pending
+                        - approved
+                        - denied
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListApprovalRequestsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the project's credential and trust requests as one inbox
+            tags:
+                - Secrets
+    /projects/{projectId}/trust-requests:
+        get:
+            operationId: list-trust-requests
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Filter by request status
+                  in: query
+                  name: status
+                  schema:
+                    description: Filter by request status
+                    enum:
+                        - pending
+                        - approved
+                        - denied
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListTrustRequestsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List host trust requests
+            tags:
+                - HostTrusts
+    /projects/{projectId}/trust-requests/{requestId}:
+        get:
+            operationId: get-trust-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Trust request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Trust request ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HostTrustRequest'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a host trust request
+            tags:
+                - HostTrusts
+    /projects/{projectId}/trust-requests/{requestId}/approve:
+        post:
+            operationId: approve-trust-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Trust request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Trust request ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ApproveTrustRequestBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HostTrustRequest'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Approve a host trust request
+            tags:
+                - HostTrusts
+    /projects/{projectId}/trust-requests/{requestId}/deny:
+        post:
+            operationId: deny-trust-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Trust request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Trust request ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Deny a host trust request
+            tags:
+                - HostTrusts
+    /projects/{projectId}/sandboxes/{sandboxId}/host-trusts:
+        get:
+            operationId: list-sandbox-host-trusts
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListHostTrustsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the hosts a sandbox trusts
+            tags:
+                - HostTrusts
+    /projects/{projectId}/sandboxes/{sandboxId}/host-trusts/{trustId}:
+        delete:
+            operationId: delete-sandbox-host-trust
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+                - description: Host trust ID
+                  in: path
+                  name: trustId
+                  required: true
+                  schema:
+                    description: Host trust ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Revoke a sandbox's trust of a host
+            tags:
+                - HostTrusts
+    /api/pools/{poolId}/sandbox-trust-requests:
+        post:
+            operationId: create-sandbox-trust-request
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSandboxTrustRequestBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxTrustRequestStatus'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Record an agent's host trust request
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-trust-requests/{requestId}:
+        get:
+            operationId: get-sandbox-trust-request
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Trust request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Trust request ID
+                    type: string
+                - description: Sandbox the request was made from
+                  in: query
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox the request was made from
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxTrustRequestStatus'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Poll an agent host trust request
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-host-trusts:
+        get:
+            operationId: list-pool-host-trusts
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListHostTrustsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the live host trusts of every sandbox on the pool
+            tags:
+                - Pools

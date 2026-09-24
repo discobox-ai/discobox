@@ -33,6 +33,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/approve
 	ApproveSecretRequest(ctx context.Context, request *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
+	// ApproveTrustRequest invokes approve-trust-request operation.
+	//
+	// Approve a host trust request.
+	//
+	// POST /projects/{projectId}/trust-requests/{requestId}/approve
+	ApproveTrustRequest(ctx context.Context, request *ApproveTrustRequestBody, params ApproveTrustRequestParams) (ApproveTrustRequestRes, error)
 	// AssignSandboxHarnessSecrets invokes assign-sandbox-harness-secrets operation.
 	//
 	// Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
@@ -168,6 +174,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/providers
 	CreateSandboxProviderInstance(ctx context.Context, request *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (CreateSandboxProviderInstanceRes, error)
+	// CreateSandboxTrustRequest invokes create-sandbox-trust-request operation.
+	//
+	// Record an agent's host trust request.
+	//
+	// POST /api/pools/{poolId}/sandbox-trust-requests
+	CreateSandboxTrustRequest(ctx context.Context, request *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (CreateSandboxTrustRequestRes, error)
 	// CreateSecret invokes create-secret operation.
 	//
 	// Create a secret.
@@ -245,6 +257,12 @@ type Invoker interface {
 	//
 	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
 	DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) (DeleteSandboxExecRes, error)
+	// DeleteSandboxHostTrust invokes delete-sandbox-host-trust operation.
+	//
+	// Revoke a sandbox's trust of a host.
+	//
+	// DELETE /projects/{projectId}/sandboxes/{sandboxId}/host-trusts/{trustId}
+	DeleteSandboxHostTrust(ctx context.Context, params DeleteSandboxHostTrustParams) (DeleteSandboxHostTrustRes, error)
 	// DeleteSandboxProviderInstance invokes delete-sandbox-provider-instance operation.
 	//
 	// Delete a sandbox provider instance.
@@ -263,6 +281,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/deny
 	DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (DenySecretRequestRes, error)
+	// DenyTrustRequest invokes deny-trust-request operation.
+	//
+	// Deny a host trust request.
+	//
+	// POST /projects/{projectId}/trust-requests/{requestId}/deny
+	DenyTrustRequest(ctx context.Context, params DenyTrustRequestParams) (DenyTrustRequestRes, error)
 	// ForceJob invokes force-job operation.
 	//
 	// Force a pending, scheduled, or backoff job to run immediately.
@@ -357,6 +381,12 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
+	// GetSandboxTrustRequest invokes get-sandbox-trust-request operation.
+	//
+	// Poll an agent host trust request.
+	//
+	// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+	GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (GetSandboxTrustRequestRes, error)
 	// GetSecret invokes get-secret operation.
 	//
 	// Get a secret.
@@ -381,6 +411,18 @@ type Invoker interface {
 	//
 	// GET /peer
 	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
+	// GetTrustRequest invokes get-trust-request operation.
+	//
+	// Get a host trust request.
+	//
+	// GET /projects/{projectId}/trust-requests/{requestId}
+	GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error)
+	// ListApprovalRequests invokes list-approval-requests operation.
+	//
+	// List the project's credential and trust requests as one inbox.
+	//
+	// GET /projects/{projectId}/approval-requests
+	ListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (ListApprovalRequestsRes, error)
 	// ListCredentialVerdicts invokes list-credential-verdicts operation.
 	//
 	// The recorded judge verdicts for agent credential uses in a project, newest first (ADR 0091).
@@ -445,6 +487,12 @@ type Invoker interface {
 	//
 	// GET /peers
 	ListPeers(ctx context.Context) (ListPeersRes, error)
+	// ListPoolHostTrusts invokes list-pool-host-trusts operation.
+	//
+	// List the live host trusts of every sandbox on the pool.
+	//
+	// GET /api/pools/{poolId}/sandbox-host-trusts
+	ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (ListPoolHostTrustsRes, error)
 	// ListPools invokes list-pools operation.
 	//
 	// List pools.
@@ -493,6 +541,12 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
 	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (ListSandboxExecsRes, error)
+	// ListSandboxHostTrusts invokes list-sandbox-host-trusts operation.
+	//
+	// List the hosts a sandbox trusts.
+	//
+	// GET /projects/{projectId}/sandboxes/{sandboxId}/host-trusts
+	ListSandboxHostTrusts(ctx context.Context, params ListSandboxHostTrustsParams) (ListSandboxHostTrustsRes, error)
 	// ListSandboxProviderCatalog invokes list-sandbox-provider-catalog operation.
 	//
 	// List sandbox provider catalog.
@@ -557,6 +611,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
+	// ListTrustRequests invokes list-trust-requests operation.
+	//
+	// List host trust requests.
+	//
+	// GET /projects/{projectId}/trust-requests
+	ListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (ListTrustRequestsRes, error)
 	// MintSandboxAgentStatusTokens invokes mint-sandbox-agent-status-tokens operation.
 	//
 	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
@@ -984,6 +1044,121 @@ func (c *Client) sendApproveSecretRequest(ctx context.Context, request *ApproveS
 
 	stage = "DecodeResponse"
 	result, err := decodeApproveSecretRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ApproveTrustRequest invokes approve-trust-request operation.
+//
+// Approve a host trust request.
+//
+// POST /projects/{projectId}/trust-requests/{requestId}/approve
+func (c *Client) ApproveTrustRequest(ctx context.Context, request *ApproveTrustRequestBody, params ApproveTrustRequestParams) (ApproveTrustRequestRes, error) {
+	res, err := c.sendApproveTrustRequest(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendApproveTrustRequest(ctx context.Context, request *ApproveTrustRequestBody, params ApproveTrustRequestParams) (res ApproveTrustRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("approve-trust-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/trust-requests/{requestId}/approve"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ApproveTrustRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/trust-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/approve"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeApproveTrustRequestRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeApproveTrustRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2942,6 +3117,102 @@ func (c *Client) sendCreateSandboxProviderInstance(ctx context.Context, request 
 	return result, nil
 }
 
+// CreateSandboxTrustRequest invokes create-sandbox-trust-request operation.
+//
+// Record an agent's host trust request.
+//
+// POST /api/pools/{poolId}/sandbox-trust-requests
+func (c *Client) CreateSandboxTrustRequest(ctx context.Context, request *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (CreateSandboxTrustRequestRes, error) {
+	res, err := c.sendCreateSandboxTrustRequest(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateSandboxTrustRequest(ctx context.Context, request *CreateSandboxTrustRequestBody, params CreateSandboxTrustRequestParams) (res CreateSandboxTrustRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-sandbox-trust-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-trust-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateSandboxTrustRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-trust-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateSandboxTrustRequestRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateSandboxTrustRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // CreateSecret invokes create-secret operation.
 //
 // Create a secret.
@@ -4235,6 +4506,136 @@ func (c *Client) sendDeleteSandboxExec(ctx context.Context, params DeleteSandbox
 	return result, nil
 }
 
+// DeleteSandboxHostTrust invokes delete-sandbox-host-trust operation.
+//
+// Revoke a sandbox's trust of a host.
+//
+// DELETE /projects/{projectId}/sandboxes/{sandboxId}/host-trusts/{trustId}
+func (c *Client) DeleteSandboxHostTrust(ctx context.Context, params DeleteSandboxHostTrustParams) (DeleteSandboxHostTrustRes, error) {
+	res, err := c.sendDeleteSandboxHostTrust(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeleteSandboxHostTrust(ctx context.Context, params DeleteSandboxHostTrustParams) (res DeleteSandboxHostTrustRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-sandbox-host-trust"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/host-trusts/{trustId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteSandboxHostTrustOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [6]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/host-trusts/"
+	{
+		// Encode "trustId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "trustId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.TrustId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteSandboxHostTrustResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DeleteSandboxProviderInstance invokes delete-sandbox-provider-instance operation.
 //
 // Delete a sandbox provider instance.
@@ -4562,6 +4963,118 @@ func (c *Client) sendDenySecretRequest(ctx context.Context, params DenySecretReq
 
 	stage = "DecodeResponse"
 	result, err := decodeDenySecretRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DenyTrustRequest invokes deny-trust-request operation.
+//
+// Deny a host trust request.
+//
+// POST /projects/{projectId}/trust-requests/{requestId}/deny
+func (c *Client) DenyTrustRequest(ctx context.Context, params DenyTrustRequestParams) (DenyTrustRequestRes, error) {
+	res, err := c.sendDenyTrustRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDenyTrustRequest(ctx context.Context, params DenyTrustRequestParams) (res DenyTrustRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("deny-trust-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/trust-requests/{requestId}/deny"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DenyTrustRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/trust-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/deny"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDenyTrustRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -6341,6 +6854,135 @@ func (c *Client) sendGetSandboxService(ctx context.Context, params GetSandboxSer
 	return result, nil
 }
 
+// GetSandboxTrustRequest invokes get-sandbox-trust-request operation.
+//
+// Poll an agent host trust request.
+//
+// GET /api/pools/{poolId}/sandbox-trust-requests/{requestId}
+func (c *Client) GetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (GetSandboxTrustRequestRes, error) {
+	res, err := c.sendGetSandboxTrustRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSandboxTrustRequest(ctx context.Context, params GetSandboxTrustRequestParams) (res GetSandboxTrustRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-sandbox-trust-request"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-trust-requests/{requestId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSandboxTrustRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-trust-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSandboxTrustRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetSecret invokes get-secret operation.
 //
 // Get a secret.
@@ -6704,6 +7346,231 @@ func (c *Client) sendGetServerPeer(ctx context.Context) (res GetServerPeerRes, e
 
 	stage = "DecodeResponse"
 	result, err := decodeGetServerPeerResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetTrustRequest invokes get-trust-request operation.
+//
+// Get a host trust request.
+//
+// GET /projects/{projectId}/trust-requests/{requestId}
+func (c *Client) GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error) {
+	res, err := c.sendGetTrustRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetTrustRequest(ctx context.Context, params GetTrustRequestParams) (res GetTrustRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-trust-request"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/trust-requests/{requestId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetTrustRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/trust-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetTrustRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListApprovalRequests invokes list-approval-requests operation.
+//
+// List the project's credential and trust requests as one inbox.
+//
+// GET /projects/{projectId}/approval-requests
+func (c *Client) ListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (ListApprovalRequestsRes, error) {
+	res, err := c.sendListApprovalRequests(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (res ListApprovalRequestsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-approval-requests"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/approval-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListApprovalRequestsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/approval-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "status" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "status",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Status.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListApprovalRequestsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -8316,6 +9183,99 @@ func (c *Client) sendListPeers(ctx context.Context) (res ListPeersRes, err error
 	return result, nil
 }
 
+// ListPoolHostTrusts invokes list-pool-host-trusts operation.
+//
+// List the live host trusts of every sandbox on the pool.
+//
+// GET /api/pools/{poolId}/sandbox-host-trusts
+func (c *Client) ListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (ListPoolHostTrustsRes, error) {
+	res, err := c.sendListPoolHostTrusts(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListPoolHostTrusts(ctx context.Context, params ListPoolHostTrustsParams) (res ListPoolHostTrustsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-pool-host-trusts"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-host-trusts"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListPoolHostTrustsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-host-trusts"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListPoolHostTrustsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListPools invokes list-pools operation.
 //
 // List pools.
@@ -9227,6 +10187,118 @@ func (c *Client) sendListSandboxExecs(ctx context.Context, params ListSandboxExe
 
 	stage = "DecodeResponse"
 	result, err := decodeListSandboxExecsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListSandboxHostTrusts invokes list-sandbox-host-trusts operation.
+//
+// List the hosts a sandbox trusts.
+//
+// GET /projects/{projectId}/sandboxes/{sandboxId}/host-trusts
+func (c *Client) ListSandboxHostTrusts(ctx context.Context, params ListSandboxHostTrustsParams) (ListSandboxHostTrustsRes, error) {
+	res, err := c.sendListSandboxHostTrusts(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListSandboxHostTrusts(ctx context.Context, params ListSandboxHostTrustsParams) (res ListSandboxHostTrustsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-sandbox-host-trusts"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/host-trusts"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSandboxHostTrustsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/host-trusts"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSandboxHostTrustsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -10333,6 +11405,120 @@ func (c *Client) sendListSecrets(ctx context.Context, params ListSecretsParams) 
 
 	stage = "DecodeResponse"
 	result, err := decodeListSecretsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListTrustRequests invokes list-trust-requests operation.
+//
+// List host trust requests.
+//
+// GET /projects/{projectId}/trust-requests
+func (c *Client) ListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (ListTrustRequestsRes, error) {
+	res, err := c.sendListTrustRequests(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListTrustRequests(ctx context.Context, params ListTrustRequestsParams) (res ListTrustRequestsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-trust-requests"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/trust-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListTrustRequestsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/trust-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "status" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "status",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Status.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListTrustRequestsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

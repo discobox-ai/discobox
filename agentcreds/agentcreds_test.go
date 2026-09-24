@@ -20,6 +20,9 @@ type fakeService struct {
 	getErr      error
 	gotDenial   agentcreds.DenialReport
 	denialErr   error
+	trusts      []agentcreds.Trust
+	gotTrust    agentcreds.TrustRequestBody
+	trustStatus agentcreds.TrustRequestStatus
 }
 
 func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
@@ -50,6 +53,19 @@ func (f *fakeService) Get(_ context.Context, body agentcreds.UseBody) (agentcred
 func (f *fakeService) ReportDenial(_ context.Context, body agentcreds.DenialReport) error {
 	f.gotDenial = body
 	return f.denialErr
+}
+
+func (f *fakeService) Trusts(context.Context) ([]agentcreds.Trust, error) {
+	return f.trusts, nil
+}
+
+func (f *fakeService) RequestTrust(_ context.Context, body agentcreds.TrustRequestBody) (agentcreds.TrustRequestStatus, error) {
+	f.gotTrust = body
+	return f.trustStatus, nil
+}
+
+func (f *fakeService) TrustRequestStatus(context.Context, string) (agentcreds.TrustRequestStatus, error) {
+	return f.trustStatus, nil
 }
 
 func newTestClient(t *testing.T, svc agentcreds.Service) *agentcreds.Client {

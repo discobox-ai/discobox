@@ -82,6 +82,10 @@ func Run(args []string) int {
 		return runRequest(ctx, rest)
 	case "run":
 		return runWrapped(ctx, rest)
+	case "trust":
+		return runTrust(ctx, rest)
+	case "trusts":
+		return runTrusts(ctx, rest)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return exitOK
@@ -154,6 +158,25 @@ func usage(w io.Writer) {
       --grant-ttl, --delegate, --wait, --timeout. --grant-ttl takes a Go
       duration -- "30m", "4h", "96h" for four days -- and the same thirty-day
       ceiling.
+
+  %[1]s trust HOST[:PORT] --use "..." --why "..." [--ca-file CA.pem] [--wait]
+      Ask a human to trust a host whose certificate this sandbox's egress
+      refuses — a Kubernetes API server, an internal service with its own CA.
+      You meet that refusal as a 502 with an X-Discobox-Untrusted-Host
+      header. The pool connects to HOST itself and shows the human the chain
+      it was given; with --ca-file, the CA you already have from a source you
+      trust (e.g. gcloud container clusters describe) is offered as the pin,
+      and refused unless the chain verifies against it. A host that already
+      verifies answers "unneeded" at once.
+
+      The trust is this sandbox's alone, for exactly HOST:PORT, and every
+      request you then send there is judged against the uses you name —
+      write them as what you will actually send. --json reads the same
+      fields from stdin: host, justification, uses, suppliedCA,
+      grantTTLSeconds, wait, timeoutSeconds.
+
+  %[1]s trusts [--json]
+      Show the hosts this sandbox trusts and what each was trusted for.
 
 There is no command that prints a credential's value on its own. "run" is the
 only way to use one — the value goes straight into the child it names and

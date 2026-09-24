@@ -2,7 +2,9 @@
 
 A small HTTP protocol an agent inside a sandbox uses to **ask a human** for a
 credential it was not provisioned with, and then **use** it. Four operations:
-`list`, `request`, `get`, and reporting a denial `get` never saw.
+`list`, `request`, `get`, and reporting a denial `get` never saw. A second
+verb, [trust](#trust--ask-for-a-host-to-be-trusted), asks for a host whose
+certificate the sandbox's egress refuses to be trusted for it.
 
 The protocol knows nothing about Discobox. It is the contract between the
 in-sandbox CLI (`discobox-access`) and whatever serves it, so the same CLI
@@ -248,6 +250,81 @@ to treat this call's own failure as unremarkable — it is what a caller
 volunteers about a decision made before this protocol was ever asked to act on
 it, not a correction to something `get` returned.
 
+## `trust` — ask for a host to be trusted
+
+An implementation's egress verifies every host it connects to. A host whose
+certificate chains to a private CA — a Kubernetes API server, an internal
+service — is refused, and there is no credential that fixes that. The trust
+verb asks a human to pin one certificate from the chain the implementation
+observed, for the caller's sandbox alone. Decision record:
+[ADR 0149](adr/0149-a-host-certificate-is-trusted-for-one-sandbox-when-a-person-pins-it.md).
+
+```
+POST /v1/trusts/requests
+```
+
+```json
+{
+  "host": "34.70.64.109:443",
+  "justification": "The user's GKE cluster; its API server uses the cluster's own CA.",
+  "uses": [{ "description": "Read-only kubectl: get/list/describe pods, deployments, events" }],
+  "suppliedCA": "-----BEGIN CERTIFICATE-----…",
+  "grantTTLSeconds": 14400
+}
+```
+
+`host` is `host:port`, `:443` when no port is named; a trust covers exactly that
+endpoint and nothing beneath it. `uses` say what the sandbox will send the host,
+and every request it then sends there is judged against them. `suppliedCA` is
+optional: a CA the caller already has from a source it trusts. It is refused as
+`invalid` unless the chain the implementation observes verifies against it.
+`grantTTLSeconds` is read as a credential request's is.
+
+The implementation connects to the host itself and answers with what it was
+shown. A chain that already verifies needs no one, and settles at once:
+
+```json
+{ "requestId": "", "status": "unneeded", "host": "34.70.64.109:443", "reason": "…", "observedChain": [ … ] }
+```
+
+Otherwise the ask is recorded — `202`, `pending` — and polled as a credential
+request is:
+
+```
+GET /v1/trusts/requests/{requestId}
+```
+
+```json
+{ "requestId": "treq_…", "status": "granted", "host": "34.70.64.109:443",
+  "pin": { "kind": "ca", "sha256": "…" }, "uses": [{ "useId": "use_…", "description": "…" }] }
+```
+
+`status` is `pending`, `granted`, `denied`, or `unneeded`. Each certificate in
+`observedChain` carries `subject`, `issuer`, `dnsNames`, `ips`, `notBefore`,
+`notAfter`, `sha256` (of the DER, what a `ca` pin names), `spkiSha256` (of the
+public key, what a `leaf-spki` pin names), `isCA`, `selfSigned`, and `pem`.
+
+```
+GET /v1/trusts
+```
+
+```json
+{ "trusts": [ { "host": "34.70.64.109:443", "pin": { "kind": "ca", "sha256": "…" },
+                "uses": [ … ], "expiresAt": "2026-09-25T00:00:00Z" } ] }
+```
+
+There is no use call: a trust hands nothing to a process. It changes what the
+implementation's egress accepts, for every process in the sandbox.
+A client that carries its own CA rather than the sandbox's trust store still
+has to be pointed at whatever the egress presents; in Discobox that is the
+MITM CA at `/etc/discobox/proxy/mitm-ca.crt`.
+
+In Discobox the pool's proxy unit probes the host through the proxy's own
+upstream path, so the chain a person is shown is the one the proxy will meet,
+and a poll that reads `granted` has already put the pin in the proxy. A host
+the proxy refuses answers `502` with `X-Discobox-Untrusted-Host: <host:port>`,
+which is how an agent learns to ask.
+
 ## The client shape that fits it best
 
 The reference client is `discobox-access`. Its primary consumer is an LLM
@@ -308,7 +385,8 @@ place.
 
 ## Implementing the server side
 
-An implementation owns four decisions the protocol does not make:
+An implementation owns four decisions the protocol does not make (and, for
+the trust verb, what its egress verifies and how a pin reaches it):
 
 1. **Who may call it.** The protocol carries no identity beyond the optional
    bearer token; the transport decides whose credentials these are.

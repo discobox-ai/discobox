@@ -387,48 +387,65 @@ func readResolveContext(path string) (resolveContext, error) {
 	return rc, nil
 }
 
-// sentinelPublisher owns what the running proxy watches for. Two sources feed
-// it and neither can be applied alone, because ApplyConfig replaces the whole
-// per-client set:
+// policyPublisher owns the per-client policy the running proxy enforces.
+// Three sources feed it and none can be applied alone, because ApplyConfig
+// replaces the whole of it:
 //
 //   - SecretsFile, the sandbox's stable sentinels, written by the pool-agent
 //     process as sandboxes come and go.
 //   - live activations, the ephemeral sentinels this process mints per use.
+//   - host trusts, the pins people approved for this pool's sandboxes
+//     (hostTrusts, ADR 0149).
 //
-// Holding both here is what lets an activation take effect the instant it is
-// minted: publishing is a function call rather than a file the proxy has to
-// notice.
-type sentinelPublisher struct {
+// Holding them here is what lets an activation or a newly approved pin take
+// effect the instant it is known: publishing is a function call rather than a
+// file the proxy has to notice.
+type policyPublisher struct {
 	server  *proxy.Server
 	base    proxy.Config
 	live    *activations
 	onError func(error)
 
-	mu   sync.Mutex
-	file map[string][]string
+	mu     sync.Mutex
+	file   map[string][]string
+	trusts []proxy.HostTrust
+	// applyMu makes each publish one read-and-apply, so two that race cannot
+	// land an older reading of the sources over a newer one.
+	applyMu sync.Mutex
 }
 
-func newSentinelPublisher(server *proxy.Server, base proxy.Config, live *activations, onError func(error)) *sentinelPublisher {
-	p := &sentinelPublisher{server: server, base: base, live: live, onError: onError, file: map[string][]string{}}
+func newPolicyPublisher(server *proxy.Server, base proxy.Config, live *activations, onError func(error)) *policyPublisher {
+	p := &policyPublisher{server: server, base: base, live: live, onError: onError, file: map[string][]string{}}
 	live.setChangeHandler(p.publish)
 	return p
 }
 
 // setFileSentinels records the stable sentinel set and republishes.
-func (p *sentinelPublisher) setFileSentinels(clients map[string][]string) {
+func (p *policyPublisher) setFileSentinels(clients map[string][]string) {
 	p.mu.Lock()
 	p.file = clients
 	p.mu.Unlock()
 	p.publish()
 }
 
-// publish applies the union of both sources to the running proxy.
-func (p *sentinelPublisher) publish() {
+// setTrusts records the pool's live host trusts and republishes.
+func (p *policyPublisher) setTrusts(trusts []proxy.HostTrust) {
+	p.mu.Lock()
+	p.trusts = trusts
+	p.mu.Unlock()
+	p.publish()
+}
+
+// publish applies every source to the running proxy.
+func (p *policyPublisher) publish() {
+	p.applyMu.Lock()
+	defer p.applyMu.Unlock()
 	p.mu.Lock()
 	merged := make(map[string][]string, len(p.file))
 	for clientID, sentinels := range p.file {
 		merged[clientID] = append([]string(nil), sentinels...)
 	}
+	trusts := p.trusts
 	p.mu.Unlock()
 	for clientID, sentinels := range p.live.sentinelsByClient() {
 		merged[clientID] = append(merged[clientID], sentinels...)
@@ -439,6 +456,7 @@ func (p *sentinelPublisher) publish() {
 	// startup config; only the sentinel client set changes per apply.
 	cfg.Secrets = p.base.Secrets
 	cfg.Secrets.Clients = secretClients(merged)
+	cfg.Trusts = trusts
 	if err := p.server.ApplyConfig(cfg); err != nil && p.onError != nil {
 		p.onError(err)
 	}
@@ -448,7 +466,7 @@ func (p *sentinelPublisher) publish() {
 // publisher. It uses fsnotify so a sentinel push takes effect immediately
 // (rather than after a poll interval), with a slow ticker backstop in case an
 // event is missed.
-func watchSecretsFile(ctx context.Context, publisher *sentinelPublisher, path string) {
+func watchSecretsFile(ctx context.Context, publisher *policyPublisher, path string) {
 	onError := publisher.onError
 	var lastMod time.Time
 	apply := func() {

@@ -225,6 +225,7 @@ type credentialBroker struct {
 	sandboxID   string
 	controlPlan *controlPlaneCredentials
 	activations *activations
+	trusts      *hostTrusts
 }
 
 var _ agentcreds.Service = (*credentialBroker)(nil)

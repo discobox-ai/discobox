@@ -76,15 +76,15 @@ func fakePeerServerHandler(name, peerID string, sandboxIDs ...string) http.Handl
 			// sync writes are named by what the server says it is.
 			_, _ = fmt.Fprintf(w, `{"id":%q,"name":"P","ownerUserId":"user-1","default":false,"welcomed":true,`+
 				`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, fakeProjectID(name))
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/secret-requests"):
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/approval-requests"):
 			// One request waiting on each discobox, named for the server, so a
 			// test can tell whose inbox a request came from.
 			rows := make([]string, 0, len(sandboxIDs))
 			for _, id := range sandboxIDs {
-				rows = append(rows, fmt.Sprintf(`{"id":"sreq_%s_%s","projectId":%q,"sandboxId":%q,"requestedBy":"agent","type":"token","status":"pending",`+
-					`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, name, id, fakeProjectID(name), id))
+				rows = append(rows, fmt.Sprintf(`{"kind":"credential","credential":{"id":"sreq_%s_%s","projectId":%q,"sandboxId":%q,"requestedBy":"agent","type":"token","status":"pending",`+
+					`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}}`, name, id, fakeProjectID(name), id))
 			}
-			_, _ = fmt.Fprintf(w, `{"secretRequests":[%s]}`, strings.Join(rows, ","))
+			_, _ = fmt.Fprintf(w, `{"approvalRequests":[%s]}`, strings.Join(rows, ","))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/sandboxes"):
 			rows := make([]string, 0, len(sandboxIDs))
 			for i, id := range sandboxIDs {
