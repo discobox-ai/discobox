@@ -574,4 +574,7 @@ type ApprovedUse struct {
 	Purpose    string
 	Credential string
 	Host       string
+	// GrantID is the grant the use belongs to, which a verdict is recorded
+	// against. A use a host trust was granted for has none.
+	GrantID string
 }

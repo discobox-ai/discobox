@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"gorm.io/gorm"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/judge"
@@ -48,6 +51,7 @@ func (f *fakeSandboxes) CreateSandbox(ctx context.Context, projectID string, inp
 	}
 	if sandbox.HarnessConfigID != nil {
 		if config, err := f.store.GetHarnessConfig(ctx, projectID, *sandbox.HarnessConfigID); err == nil {
+			sandbox.Image = config.Image
 			sandbox.ImageDigest = config.ImageDigest
 		}
 	}
@@ -646,12 +650,15 @@ type answeringJudge struct {
 	mu     sync.Mutex
 	jobs   []sandboxapi.JudgeJob
 	answer sandboxapi.JudgeAnswer
+	// delay is how long it thinks before answering.
+	delay time.Duration
 }
 
 func newAnsweringJudge(t *testing.T, answer sandboxapi.JudgeAnswer) *answeringJudge {
 	t.Helper()
 	fake := &answeringJudge{answer: answer}
 	fake.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(fake.delay)
 		var job sandboxapi.JudgeJob
 		if err := json.NewDecoder(r.Body).Decode(&job); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -748,6 +755,15 @@ func TestAUseRevokedWhileTheJudgeThoughtIsNotAllowed(t *testing.T) {
 	if !strings.Contains(err.Error(), "no live approved use") {
 		t.Fatalf("Judge() error = %v, want it to say the use is gone", err)
 	}
+	// And the judge's allow is not on record: it is not what the request was
+	// refused on, and the proxy's blocked row already says what was.
+	verdicts, err := appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verdicts) != 0 {
+		t.Fatalf("recorded %+v for a request refused on a revoked use", verdicts)
+	}
 }
 
 // revokedAfterFirst answers once and is gone by the time it is asked again.
@@ -794,5 +810,109 @@ func TestAFirstAskCarryingTheBodyIsRefused(t *testing.T) {
 	}
 	if len(fake.asked()) != 0 {
 		t.Fatalf("the judge was asked %d times, want a malformed ask refused before it", len(fake.asked()))
+	}
+}
+
+// Every answer the judge gives is recorded before it goes back to the pool,
+// whichever way it went: a request that carried a credential has a verdict on
+// record, and it says which judge gave it and how long the round trip took
+// (ADR 26-09-22-838 §8).
+func TestEveryAnswerIsRecordedBeforeItGoesBack(t *testing.T) {
+	cases := []struct {
+		name   string
+		answer sandboxapi.JudgeAnswer
+		allow  bool
+		need   *judge.Need
+	}{
+		{"allow", sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "that is the approved use"}, true, nil},
+		{"deny", sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(false), Reason: "deleting a repository is not opening a pull request"}, false, nil},
+		{"need", sandboxapi.JudgeAnswer{
+			Need:   sandboxapi.NewOptJudgeNeed(sandboxapi.JudgeNeed{Body: sandboxapi.JudgeNeedBodyJSON}),
+			Reason: "the operation is in the body",
+		}, false, &judge.Need{Body: judge.FormJSON}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			service, appStore, sandboxes := newJudgeTest(t)
+			config := defaultHarness(t, appStore, "codex", "sha256:one")
+			if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+				t.Fatalf("Reconcile() error = %v", err)
+			}
+			judgeSandbox := sandboxes.created[0]
+			ready(t, appStore, judgeSandbox)
+			fake := newAnsweringJudge(t, tc.answer)
+			fake.delay = 20 * time.Millisecond
+			service.SetLeases(fake)
+			service.SetUses(approvedUses{use: services.ApprovedUse{
+				Purpose: "open a pull request in org/repo", Host: "api.github.com", Credential: "GitHub token", GrantID: "grant-1",
+			}})
+
+			ask := requestAsk()
+			ask.Command = []string{"gh", "pr", "create"}
+			if _, err := service.Judge(ctx, "pool-1", ask); err != nil {
+				t.Fatalf("Judge() error = %v", err)
+			}
+
+			verdicts, err := appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(verdicts) != 1 {
+				t.Fatalf("recorded %d verdicts, want the one answer", len(verdicts))
+			}
+			v := verdicts[0]
+			if v.Kind != model.CredentialVerdictKindRequest || v.Origin != model.CredentialVerdictOriginJudge {
+				t.Fatalf("kind, origin = %q, %q, want a request verdict from the judge", v.Kind, v.Origin)
+			}
+			if v.SandboxID != "sandbox-1" || v.UseID != "use_abc" || v.GrantID != "grant-1" {
+				t.Fatalf("verdict = %+v, want it against the asking discobox's use and its grant", v)
+			}
+			if v.Allow != tc.allow || v.Reason != tc.answer.Reason {
+				t.Fatalf("allow, reason = %v, %q, want the judge's answer", v.Allow, v.Reason)
+			}
+			if (v.Need == nil) != (tc.need == nil) || (v.Need != nil && *v.Need != *tc.need) {
+				t.Fatalf("need = %+v, want %+v", v.Need, tc.need)
+			}
+			if v.Request == nil || v.Request.Method != http.MethodPost || v.Request.URL != ask.Request.URL || v.Round != 1 {
+				t.Fatalf("request, round = %+v, %d, want the evidence the judge was shown", v.Request, v.Round)
+			}
+			if len(v.Command) != 3 || v.Command[0] != "gh" {
+				t.Fatalf("command = %v, want the declared command kept as context", v.Command)
+			}
+			if v.Role != judge.Role || v.PromptVersion != judge.PromptVersion || !strings.Contains(v.Prompt, "open a pull request in org/repo") {
+				t.Fatalf("role, version, prompt = %q, %q, %q, want the question as it was put", v.Role, v.PromptVersion, v.Prompt)
+			}
+			if v.JudgeSandboxID != judgeSandbox.ID || v.HarnessConfigID != config.ID || v.Image != config.Image || v.ImageDigest != "sha256:one" {
+				t.Fatalf("judge = %q %q %q %q, want the discobox that answered and what it ran",
+					v.JudgeSandboxID, v.HarnessConfigID, v.Image, v.ImageDigest)
+			}
+			if v.LatencyMS < fake.delay.Milliseconds() {
+				t.Fatalf("latency = %dms, want the round trip, at least the %s the judge thought", v.LatencyMS, fake.delay)
+			}
+		})
+	}
+}
+
+// An answer that cannot be recorded is no verdict. A credential must not go
+// out on a decision nobody can read back (ADR 26-09-22-838 §4).
+func TestAnAnswerThatCannotBeRecordedIsNoVerdict(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	defaultHarness(t, appStore, "codex", "sha256:one")
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	ready(t, appStore, sandboxes.created[0])
+	service.SetLeases(newAnsweringJudge(t, sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "that is the approved use"}))
+	service.SetUses(approvedUses{})
+	if err := appStore.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
+		return tx.Exec("DROP TABLE credential_verdicts").Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.Judge(ctx, "pool-1", requestAsk()); err == nil {
+		t.Fatal("Judge() answered with a verdict it could not record")
 	}
 }

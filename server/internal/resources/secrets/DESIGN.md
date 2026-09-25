@@ -210,14 +210,17 @@ The entry points:
 - **`GetSandboxCredentialRequest`** — a sandbox's own protocol request and, once
   approved, its grant. `AgentCredentialRequestStatus` reports an approval whose
   grant has since been revoked as `denied`.
-- **`RecordCredentialVerdict`** — persists the pool agent's judge verdict on one
-  use as a `CredentialVerdict` row, linked best-effort to the grant owning the
+- **`RecordCredentialVerdict`** — persists the pool agent's relay of a
+  discobox's own judge's verdict on one command as a `CredentialVerdict` row
+  (kind `command`, origin `sandbox`), linked best-effort to the grant owning the
   use ID. The pool agent records before it issues, and a store failure stops the
   issue, so no credential goes out without a verdict on record (ADR 0091). A
-  refused use is reported too, best-effort, and flagged `Volunteered`.
+  refused use is reported too, best-effort, and flagged `Volunteered`. The
+  project's judge's verdicts on requests are recorded by `judges`, not here;
+  `ApprovedUse` hands it the grant to record them against.
 - **`ListCredentialVerdicts`** — the read side, for a project's members rather
-  than a pool: every recorded verdict in the project, newest first, narrowed by
-  sandbox, use, grant, allow/deny and a start time. It never looks the sandbox
+  than a pool: every recorded verdict in the project, of both kinds, newest
+  first, narrowed by kind, sandbox, use, grant, allow/deny and a start time. It never looks the sandbox
   up. A verdict outlives its sandbox's purge, and the sandboxes whose trail is
   worth reading are often the ones already gone, so the sandbox is a filter on
   the recorded ID and the route is `/projects/{projectId}/credential-verdicts`

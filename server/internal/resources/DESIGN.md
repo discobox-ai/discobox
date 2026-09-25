@@ -59,6 +59,22 @@ happens again after the verdict, because a verdict takes a while and a grant can
 be revoked inside one. The question is composed only once a judge is found: a
 project with no judge refuses whatever the use turns out to say.
 
+Every answer the judge gives is recorded before it goes back to the pool — an
+allow, a refusal, or an ask to be shown the body — as a request
+`CredentialVerdict` (kind `request`, origin `judge`): the evidence, the exact
+prompt and its `judge.PromptVersion`, the use and its grant, the judge discobox
+with the harness and image it ran, and the round trip from reaching for the
+judge to its answer, which includes bringing up a stopped one. A failure to
+record is no verdict (ADR 26-09-22-838 §§4, 8). The re-check of the use runs
+before the write, so a row is only ever the answer the pool was given. An ask
+that got no answer, or whose use was revoked while it was judged, leaves no row;
+the proxy's blocked audit row is its record.
+
+The row does not yet carry §8's request correlation. The proxy numbers an
+exchange when it writes the audit row, after the judge has answered, so there
+is no ID to send with the ask; a verdict joins the http trail by use, discobox
+and time, which is ambiguous for a use that made several requests at once.
+
 Pools never call each other: they sit behind NAT, in clouds, and inside VMs,
 and the only thing every pool can reach is the control plane.
 That is what lets a pool whose own discoboxes are whole VMs of another

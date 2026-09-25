@@ -24,7 +24,7 @@ Public REST API schema types live under the root `api/model` package.
 | `SecretRequest` | Approval-inbox item for a secret use with no covering grant (reactive or agent-protocol originated). `WellKnownID` is the well-known credential an agent asked for by ID. |
 | `SecretGrant` | Standing authorization on a secret, scoped to a sandbox, harness config, or project; optionally carries approved uses. `Purpose` is `use` (every grant before delegation, by the column's default) or `delegate`, never both. |
 | `SandboxSecret` | Binds a sandbox env var to a secret through a sentinel placeholder. |
-| `CredentialVerdict` | One judge decision about a command run under an agent credential use (ADR 0091). |
+| `CredentialVerdict` | One judge decision about an agent credential use: a discobox's own judge on a command (ADR 0091), or the project's judge on a request (ADR 26-09-22-838 §8). |
 | `SSHKey` | Project-scoped public key authorizing SSH to the project's sandboxes (ADR 0024). |
 | `Peer` | Machine permitted to connect to this server, keyed by peer ID (ADR 0095). Not project-scoped. |
 | `Job` | Non-persisted, read-only API view of a pending reconcile mark. |

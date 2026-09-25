@@ -4354,13 +4354,55 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.HarnessConfigId.Set {
+			e.FieldStart("harnessConfigId")
+			s.HarnessConfigId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("id")
 		e.Str(s.ID)
+	}
+	{
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
+	}
+	{
+		if s.ImageDigest.Set {
+			e.FieldStart("imageDigest")
+			s.ImageDigest.Encode(e)
+		}
+	}
+	{
+		if s.JudgeSandboxId.Set {
+			e.FieldStart("judgeSandboxId")
+			s.JudgeSandboxId.Encode(e)
+		}
+	}
+	{
+		if s.Kind.Set {
+			e.FieldStart("kind")
+			s.Kind.Encode(e)
+		}
 	}
 	{
 		if s.LatencyMs.Set {
 			e.FieldStart("latencyMs")
 			s.LatencyMs.Encode(e)
+		}
+	}
+	{
+		if s.Need.Set {
+			e.FieldStart("need")
+			s.Need.Encode(e)
+		}
+	}
+	{
+		if s.Origin.Set {
+			e.FieldStart("origin")
+			s.Origin.Encode(e)
 		}
 	}
 	{
@@ -4374,15 +4416,33 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.PromptVersion.Set {
+			e.FieldStart("promptVersion")
+			s.PromptVersion.Encode(e)
+		}
+	}
+	{
 		if s.Reason.Set {
 			e.FieldStart("reason")
 			s.Reason.Encode(e)
 		}
 	}
 	{
+		if s.Request.Set {
+			e.FieldStart("request")
+			s.Request.Encode(e)
+		}
+	}
+	{
 		if s.Role.Set {
 			e.FieldStart("role")
 			s.Role.Encode(e)
+		}
+	}
+	{
+		if s.Round.Set {
+			e.FieldStart("round")
+			s.Round.Encode(e)
 		}
 	}
 	{
@@ -4399,21 +4459,31 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCredentialVerdict = [14]string{
+var jsonFieldsNameOfCredentialVerdict = [24]string{
 	0:  "$schema",
 	1:  "allow",
 	2:  "command",
 	3:  "createdAt",
 	4:  "grantId",
-	5:  "id",
-	6:  "latencyMs",
-	7:  "projectId",
-	8:  "prompt",
-	9:  "reason",
-	10: "role",
-	11: "sandboxId",
-	12: "useId",
-	13: "volunteered",
+	5:  "harnessConfigId",
+	6:  "id",
+	7:  "image",
+	8:  "imageDigest",
+	9:  "judgeSandboxId",
+	10: "kind",
+	11: "latencyMs",
+	12: "need",
+	13: "origin",
+	14: "projectId",
+	15: "prompt",
+	16: "promptVersion",
+	17: "reason",
+	18: "request",
+	19: "role",
+	20: "round",
+	21: "sandboxId",
+	22: "useId",
+	23: "volunteered",
 }
 
 // Decode decodes CredentialVerdict from json.
@@ -4421,7 +4491,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CredentialVerdict to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -4488,8 +4558,18 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"grantId\"")
 			}
+		case "harnessConfigId":
+			if err := func() error {
+				s.HarnessConfigId.Reset()
+				if err := s.HarnessConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harnessConfigId\"")
+			}
 		case "id":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -4499,6 +4579,46 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"id\"")
+			}
+		case "image":
+			if err := func() error {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
+		case "imageDigest":
+			if err := func() error {
+				s.ImageDigest.Reset()
+				if err := s.ImageDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"imageDigest\"")
+			}
+		case "judgeSandboxId":
+			if err := func() error {
+				s.JudgeSandboxId.Reset()
+				if err := s.JudgeSandboxId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"judgeSandboxId\"")
+			}
+		case "kind":
+			if err := func() error {
+				s.Kind.Reset()
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
 			}
 		case "latencyMs":
 			if err := func() error {
@@ -4510,8 +4630,28 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"latencyMs\"")
 			}
+		case "need":
+			if err := func() error {
+				s.Need.Reset()
+				if err := s.Need.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"need\"")
+			}
+		case "origin":
+			if err := func() error {
+				s.Origin.Reset()
+				if err := s.Origin.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"origin\"")
+			}
 		case "projectId":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -4532,6 +4672,16 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"prompt\"")
 			}
+		case "promptVersion":
+			if err := func() error {
+				s.PromptVersion.Reset()
+				if err := s.PromptVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"promptVersion\"")
+			}
 		case "reason":
 			if err := func() error {
 				s.Reason.Reset()
@@ -4541,6 +4691,16 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "request":
+			if err := func() error {
+				s.Request.Reset()
+				if err := s.Request.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"request\"")
 			}
 		case "role":
 			if err := func() error {
@@ -4552,8 +4712,18 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"role\"")
 			}
+		case "round":
+			if err := func() error {
+				s.Round.Reset()
+				if err := s.Round.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"round\"")
+			}
 		case "sandboxId":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -4565,7 +4735,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
 		case "useId":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.UseId = string(v)
@@ -4577,7 +4747,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"useId\"")
 			}
 		case "volunteered":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Bool()
 				s.Volunteered = bool(v)
@@ -4597,9 +4767,10 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
-		0b10101010,
-		0b00111000,
+	for i, mask := range [3]uint8{
+		0b01001010,
+		0b01000000,
+		0b11100000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -4641,6 +4812,86 @@ func (s *CredentialVerdict) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CredentialVerdict) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CredentialVerdictKind as json.
+func (s CredentialVerdictKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes CredentialVerdictKind from json.
+func (s *CredentialVerdictKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CredentialVerdictKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch CredentialVerdictKind(v) {
+	case CredentialVerdictKindCommand:
+		*s = CredentialVerdictKindCommand
+	case CredentialVerdictKindRequest:
+		*s = CredentialVerdictKindRequest
+	default:
+		*s = CredentialVerdictKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s CredentialVerdictKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CredentialVerdictKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CredentialVerdictOrigin as json.
+func (s CredentialVerdictOrigin) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes CredentialVerdictOrigin from json.
+func (s *CredentialVerdictOrigin) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CredentialVerdictOrigin to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch CredentialVerdictOrigin(v) {
+	case CredentialVerdictOriginSandbox:
+		*s = CredentialVerdictOriginSandbox
+	case CredentialVerdictOriginJudge:
+		*s = CredentialVerdictOriginJudge
+	default:
+		*s = CredentialVerdictOrigin(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s CredentialVerdictOrigin) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CredentialVerdictOrigin) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -14644,6 +14895,72 @@ func (s OptCreateSecretGrantBodyPurpose) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptCreateSecretGrantBodyPurpose) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CredentialVerdictKind as json.
+func (o OptCredentialVerdictKind) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes CredentialVerdictKind from json.
+func (o *OptCredentialVerdictKind) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptCredentialVerdictKind to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptCredentialVerdictKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptCredentialVerdictKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes CredentialVerdictOrigin as json.
+func (o OptCredentialVerdictOrigin) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes CredentialVerdictOrigin from json.
+func (o *OptCredentialVerdictOrigin) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptCredentialVerdictOrigin to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptCredentialVerdictOrigin) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptCredentialVerdictOrigin) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

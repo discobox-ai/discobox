@@ -16,6 +16,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -1277,22 +1278,32 @@ func (s *SandboxSecret) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// CredentialVerdict is one judge decision about a command run under an agent
-// credentials use, recorded on the call that takes a value for it so that no
-// value is issued without one (ADR 0091): the call that mints the value is
-// the call that carries the verdict.
+// CredentialVerdict is one judge decision about an agent credential use. It
+// is either of two kinds, recorded by two different parties.
 //
-// A denied command never reaches that call — ADR 0079 §1 judges before the
-// value is taken, so a refusal mints nothing — and so leaves no row here on
-// its own. Volunteered distinguishes the two provenances: false for a verdict
-// that rode an issued credential, true for one a sandbox chose to report
-// after a denial that would otherwise leave no trace at all. A row is
-// complete for every credential this control plane ever handed out; it is
-// present for a denial only when the sandbox sent it.
+// A command verdict (ADR 0091) is the discobox's own judge's decision about a
+// command, recorded on the call that takes a value for it so that no value is
+// issued without one: the call that mints the value is the call that carries
+// the verdict. Its origin is the sandbox, and everything in it is that
+// sandbox's word. A denied command never reaches that call — ADR 0079 §1
+// judges before the value is taken, so a refusal mints nothing — and so leaves
+// no row here on its own. Volunteered distinguishes the two provenances: false
+// for a verdict that rode an issued credential, true for one a sandbox chose
+// to report after a denial that would otherwise leave no trace at all.
+//
+// A request verdict (ADR 26-09-22-838 §8) is the project's judge's answer
+// about one request the proxy observed, recorded by the control plane before
+// the answer goes back to the pool, so a request that carried a credential
+// has one whichever way it was decided. Its origin is the judge, which a
+// sandbox can never claim: nothing a pool relays writes one.
 type CredentialVerdict struct {
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable verdict ID"`
 	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the command ran in"`
+	// Kind and Origin default to what every row written before request
+	// verdicts existed was, so adding the columns is the whole upgrade.
+	Kind      string `gorm:"column:kind;not null;type:text;default:'command';index" json:"kind" doc:"What was judged: command or request" enum:"command,request"`
+	Origin    string `gorm:"column:origin;not null;type:text;default:'sandbox'" json:"origin" doc:"Who judged: sandbox, for a discobox's own judge, or judge, for the project's" enum:"sandbox,judge"`
+	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the command ran in, or the request came from"`
 	// GrantID is resolved from UseID against the sandbox's live grants at
 	// record time, best-effort: a grant revoked in the moment between judging
 	// and recording leaves this empty rather than failing the write, because
@@ -1304,19 +1315,48 @@ type CredentialVerdict struct {
 	// argv elements distinct is what let the judge — and lets a reader of this
 	// row later — see the command the way it was executed rather than a shell's
 	// guess at where it would have split.
-	Command     []string  `gorm:"column:command;type:text;serializer:json" json:"command,omitempty" doc:"The argv the judge was shown"`
-	Allow       bool      `gorm:"column:allow;not null" json:"allow" doc:"What the judge decided"`
-	Reason      string    `gorm:"column:reason;not null;type:text;default:''" json:"reason,omitempty" doc:"The judge's own sentence"`
-	Role        string    `gorm:"column:role;not null;type:text;default:''" json:"role,omitempty" doc:"The role discobox-prompt was asked for (e.g. judge), never a vendor model id"`
-	Prompt      string    `gorm:"column:prompt;not null;type:text;default:''" json:"prompt,omitempty" doc:"The exact prompt the judge was given, including the facts block"`
-	LatencyMS   int64     `gorm:"column:latency_ms;not null;default:0" json:"latencyMs,omitempty" doc:"How long the judge took to answer, in milliseconds"`
-	Volunteered bool      `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
-	CreatedAt   time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	Command []string `gorm:"column:command;type:text;serializer:json" json:"command,omitempty" doc:"The argv the judge was shown"`
+	// Request is the evidence as the judge was shown it: redacted before it
+	// left the pool, so nothing here needs redacting again.
+	Request *judge.Request `gorm:"column:request;type:text;serializer:json" json:"request,omitempty" doc:"The request the judge was shown, redacted"`
+	// Round is which ask about one request this answered. Zero on a command
+	// verdict, which is asked once.
+	Round int  `gorm:"column:round;not null;default:0" json:"round,omitempty" doc:"Which ask about the request this answered, from 1"`
+	Allow bool `gorm:"column:allow;not null" json:"allow" doc:"What the judge decided"`
+	// Need is set when the judge asked to be shown the body instead of
+	// deciding. Allow is false then, because asking is not allowing.
+	Need          *judge.Need `gorm:"column:need;type:text;serializer:json" json:"need,omitempty" doc:"What the judge asked to be shown instead of deciding"`
+	Reason        string      `gorm:"column:reason;not null;type:text;default:''" json:"reason,omitempty" doc:"The judge's own sentence"`
+	Role          string      `gorm:"column:role;not null;type:text;default:''" json:"role,omitempty" doc:"The role discobox-prompt was asked for (e.g. judge), never a vendor model id"`
+	Prompt        string      `gorm:"column:prompt;not null;type:text;default:''" json:"prompt,omitempty" doc:"The exact prompt the judge was given, including the facts block"`
+	PromptVersion string      `gorm:"column:prompt_version;not null;type:text;default:''" json:"promptVersion,omitempty" doc:"The version of the system prompt the judge was given"`
+	// LatencyMS is the round trip, timed by whoever asked: discobox-access
+	// around its wrapper for a command verdict, the control plane around the
+	// call to the judge's discobox for a request verdict.
+	LatencyMS int64 `gorm:"column:latency_ms;not null;default:0" json:"latencyMs,omitempty" doc:"Round trip from asking the judge to its answer, in milliseconds"`
+	// The judge that answered a request verdict: the discobox, and the harness
+	// and image it ran, read when it was asked. Empty on a command verdict,
+	// whose judge is the discobox itself.
+	JudgeSandboxID  string    `gorm:"column:judge_sandbox_id;not null;type:text;default:''" json:"judgeSandboxId,omitempty" doc:"The project judge that answered"`
+	HarnessConfigID string    `gorm:"column:harness_config_id;not null;type:text;default:''" json:"harnessConfigId,omitempty" doc:"Harness config the judge ran"`
+	Image           string    `gorm:"column:image;not null;type:text;default:''" json:"image,omitempty" doc:"Image the judge ran"`
+	ImageDigest     string    `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Digest of the image the judge ran"`
+	Volunteered     bool      `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
+	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
 
 func (CredentialVerdict) TableName() string { return "credential_verdicts" }
+
+// The kinds and origins a CredentialVerdict records.
+const (
+	CredentialVerdictKindCommand = judge.KindCommand
+	CredentialVerdictKindRequest = judge.KindRequest
+
+	CredentialVerdictOriginSandbox = "sandbox"
+	CredentialVerdictOriginJudge   = "judge"
+)
 
 func (c *CredentialVerdict) BeforeCreate(_ *gorm.DB) error {
 	if c.ID == "" {

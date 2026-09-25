@@ -7905,6 +7905,23 @@ func (c *Client) sendListCredentialVerdicts(ctx context.Context, params ListCred
 		}
 	}
 	{
+		// Encode "kind" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "kind",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Kind.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
 		// Encode "sandboxId" parameter.
 		cfg := uri.QueryParameterEncodingConfig{
 			Name:    "sandboxId",

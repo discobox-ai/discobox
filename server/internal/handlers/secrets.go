@@ -317,6 +317,7 @@ func apiSecretUses(uses []model.SecretUse) []apimodel.SecretUse {
 func (h *Handler) ListCredentialVerdicts(ctx context.Context, params serverapi.ListCredentialVerdictsParams) (serverapi.ListCredentialVerdictsRes, error) {
 	filter := services.CredentialVerdictFilter{
 		ID:        params.ID.Or(""),
+		Kind:      string(params.Kind.Or("")),
 		SandboxID: params.SandboxId.Or(""),
 		UseID:     params.UseId.Or(""),
 		GrantID:   params.GrantId.Or(""),

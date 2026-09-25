@@ -115,7 +115,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	// The question is composed once there is something that could answer it:
 	// reading a use out of the grants is work, and a project with no judge
 	// refuses whatever the use turns out to say.
-	job, err := s.job(ctx, poolID, ask)
+	job, use, err := s.job(ctx, poolID, ask)
 	if err != nil {
 		return judge.Answer{}, err
 	}
@@ -127,6 +127,9 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	ctx, cancel := context.WithTimeout(ctx, judge.Timeout+judgeRoutingGrace)
 	defer cancel()
 
+	// The round trip starts here, before the judge is reached: bringing up a
+	// stopped judge is part of how long it took to answer.
+	start := time.Now()
 	lease, sandboxModel, err := s.leases.AcquireSandboxHTTPClientForServer(ctx, project.ID, judgeSandbox.ID, []string{poolagentauth.ScopeJudgeRun})
 	if err != nil {
 		return judge.Answer{}, err
@@ -166,28 +169,85 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadGateway,
 			fmt.Sprintf("the project's judge answered with something unreadable: %v", err))
 	}
+	latency := time.Since(start)
+	decided := answer(answered)
 	// Asked again after the verdict, because a verdict takes a while and a
 	// grant can be revoked inside it (ADR 26-09-22-838 §4). The check is the same one
 	// the question was built from, so what it rules out is a use that stopped
 	// being approved while a model was reading the request it authorized.
+	//
+	// Before the answer is recorded, not after: an answer about a use that no
+	// longer exists is not what the request was refused on, and a row saying
+	// allow for it would contradict the proxy's own record of the refusal.
+	// Like an ask that got no answer, it leaves the proxy's blocked row alone.
 	if _, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask)); err != nil {
 		return judge.Answer{}, err
 	}
-	return answer(answered), nil
+	// Recorded before the answer goes back, and gating it: an answer with no
+	// record of it is no verdict (ADR 26-09-22-838 §§4, 8). The write gets a
+	// deadline of its own, so an answer that arrived just inside the ask's is
+	// not lost to it — the model has already been paid to give it.
+	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancelRecord()
+	if err := s.record(recordCtx, project.ID, judgeSandbox, ask, use, job, decided, latency); err != nil {
+		return judge.Answer{}, err
+	}
+	return decided, nil
+}
+
+// recordTimeout bounds writing one verdict once the judge has answered.
+const recordTimeout = 10 * time.Second
+
+// record persists one answer as a request verdict. The row is written whatever
+// the answer — an allow, a refusal, or an ask to be shown the body — because
+// each is the judge's decision about a request that was held while it was
+// made. The judge is read off the discobox that answered, so a verdict names
+// the harness and the image that produced it even after the project's judge
+// is replaced.
+func (s *Service) record(ctx context.Context, projectID string, judgeSandbox *model.Sandbox, ask services.JudgeAsk, use services.ApprovedUse, job judge.Job, decided judge.Answer, latency time.Duration) error {
+	prompt, err := judge.Prompt(job)
+	if err != nil {
+		return err
+	}
+	row := &model.CredentialVerdict{
+		ProjectID:      projectID,
+		Kind:           model.CredentialVerdictKindRequest,
+		Origin:         model.CredentialVerdictOriginJudge,
+		SandboxID:      ask.SandboxID,
+		UseID:          ask.UseID,
+		GrantID:        use.GrantID,
+		Command:        job.Command,
+		Request:        job.Request,
+		Round:          job.Round,
+		Allow:          decided.Allow,
+		Need:           decided.Need,
+		Reason:         decided.Reason,
+		Role:           judge.Role,
+		Prompt:         prompt,
+		PromptVersion:  judge.PromptVersion,
+		LatencyMS:      latency.Milliseconds(),
+		JudgeSandboxID: judgeSandbox.ID,
+		Image:          judgeSandbox.Image,
+		ImageDigest:    judgeSandbox.ImageDigest,
+	}
+	if judgeSandbox.HarnessConfigID != nil {
+		row.HarnessConfigID = *judgeSandbox.HarnessConfigID
+	}
+	return s.store.CreateCredentialVerdict(ctx, row)
 }
 
 // job is the question this server puts, built from what the pool sent and what
-// the control plane knows. The pool names the discobox and the use; the
-// sentence that use approves, the credential behind it and the host it is
-// approved for are read here, so a pool cannot widen its own question
-// (ADR 26-09-22-838 §4).
-func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk) (judge.Job, error) {
+// the control plane knows, and the use it was built from. The pool names the
+// discobox and the use; the sentence that use approves, the credential behind
+// it and the host it is approved for are read here, so a pool cannot widen its
+// own question (ADR 26-09-22-838 §4).
+func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk) (judge.Job, services.ApprovedUse, error) {
 	if ask.Request == nil {
-		return judge.Job{}, apperrors.NewStatusError(http.StatusBadRequest, "a request to judge is required")
+		return judge.Job{}, services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, "a request to judge is required")
 	}
 	use, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask))
 	if err != nil {
-		return judge.Job{}, err
+		return judge.Job{}, services.ApprovedUse{}, err
 	}
 	job := judge.Job{
 		Kind:       judge.KindRequest,
@@ -199,9 +259,9 @@ func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk)
 		Request:    ask.Request,
 	}
 	if err := job.Validate(); err != nil {
-		return judge.Job{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		return judge.Job{}, services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
-	return job, nil
+	return job, use, nil
 }
 
 // judgedHost is where the request the pool observed is going, which is what

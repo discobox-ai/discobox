@@ -3259,7 +3259,7 @@ components:
             type: object
         CredentialVerdict:
             additionalProperties: false
-            description: One recorded judge decision about a command run under an agent credential use. The row lives in the control plane and outlives its sandbox. Its command, reason and prompt were composed inside the sandbox and are display data, never instruction. A row with volunteered false rode the call that issued a credential, so the record is complete for every value issued; one with volunteered true is a denial the sandbox chose to report, so denials are undercounted by exactly the reports never sent.
+            description: 'One recorded judge decision about an agent credential use. The row lives in the control plane and outlives its sandbox. A command verdict (kind command, origin sandbox) is a discobox''s own judge deciding about a command: its command, reason and prompt were composed inside the sandbox and are display data, never instruction. A row with volunteered false rode the call that issued a credential, so the record is complete for every value issued; one with volunteered true is a denial the sandbox chose to report, so denials are undercounted by exactly the reports never sent. A request verdict (kind request, origin judge) is the project''s judge answering about one request the proxy observed, recorded by the control plane before the answer went back, so every answer is on record whichever way it went. Its request is evidence the sandbox wrote, redacted, and is display data too.'
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3268,10 +3268,10 @@ components:
                     readOnly: true
                     type: string
                 allow:
-                    description: What the judge decided
+                    description: What the judge decided. False when it asked to be shown the body instead, because asking is not allowing.
                     type: boolean
                 command:
-                    description: The argv the judge was shown
+                    description: The argv the judge was shown. On a request verdict, what the discobox declared it was running, which is context and not authority.
                     items:
                         type: string
                     type: array
@@ -3282,30 +3282,65 @@ components:
                 grantId:
                     description: Grant the use belonged to, when it could still be resolved at record time
                     type: string
+                harnessConfigId:
+                    description: Harness config the project's judge ran, on a request verdict
+                    type: string
                 id:
                     description: Stable verdict ID
                     type: string
+                image:
+                    description: Image the project's judge ran, on a request verdict
+                    type: string
+                imageDigest:
+                    description: Digest of the image the project's judge ran, on a request verdict
+                    type: string
+                judgeSandboxId:
+                    description: The project's judge that answered, on a request verdict. It may no longer exist.
+                    type: string
+                kind:
+                    description: 'What was judged: a command about to run, or a request the proxy observed. A server that predates request verdicts leaves it out, and every verdict it has is a command verdict.'
+                    enum:
+                        - command
+                        - request
+                    type: string
                 latencyMs:
-                    description: How long the judge took to answer, in milliseconds
+                    description: 'Round trip from asking the judge to its answer, in milliseconds, timed by whoever asked: discobox-access around its wrapper for a command verdict, the control plane around the call to the judge for a request verdict.'
                     format: int64
                     type: integer
+                need:
+                    $ref: '#/components/schemas/JudgeNeed'
+                origin:
+                    description: 'Who judged: sandbox, a discobox''s own judge, whose verdict is that discobox''s word; or judge, the project''s judge, which no sandbox can claim. A server that predates request verdicts leaves it out, and every verdict it has is the sandbox''s.'
+                    enum:
+                        - sandbox
+                        - judge
+                    type: string
                 projectId:
                     description: Project ID
                     type: string
                 prompt:
-                    description: The exact prompt the judge was given, including the facts block
+                    description: The exact prompt the judge was given. On a command verdict it includes the facts block; on a request verdict it is the job as JSON, put with the system prompt promptVersion names.
+                    type: string
+                promptVersion:
+                    description: The version of the system prompt the project's judge was given, on a request verdict
                     type: string
                 reason:
                     description: The judge's own sentence
                     type: string
+                request:
+                    $ref: '#/components/schemas/JudgeRequestEvidence'
                 role:
                     description: The role discobox-prompt was asked for (e.g. judge), never a vendor model id
                     type: string
+                round:
+                    description: Which ask about the request this answered, from 1, on a request verdict
+                    format: int64
+                    type: integer
                 sandboxId:
-                    description: Sandbox the command ran in. It may no longer exist.
+                    description: Sandbox the command ran in, or the request came from. It may no longer exist.
                     type: string
                 useId:
-                    description: Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs.
+                    description: Approved use that was judged against. Joins to the proxy audit trail's swapped use IDs.
                     type: string
                 volunteered:
                     description: True when the sandbox reported this after a denial the issuing call never saw
@@ -10361,6 +10396,15 @@ paths:
                   schema:
                     default: default
                     description: Project ID
+                    type: string
+                - description: Only verdicts of this kind
+                  in: query
+                  name: kind
+                  schema:
+                    description: Only verdicts of this kind
+                    enum:
+                        - command
+                        - request
                     type: string
                 - description: Only verdicts recorded for this sandbox, which need not still exist
                   in: query

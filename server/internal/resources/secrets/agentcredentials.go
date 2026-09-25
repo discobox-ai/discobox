@@ -199,6 +199,8 @@ func (s *Service) RecordCredentialVerdict(ctx context.Context, poolID string, in
 	verdict := input.Verdict
 	row := &model.CredentialVerdict{
 		ProjectID:   sandbox.ProjectID,
+		Kind:        model.CredentialVerdictKindCommand,
+		Origin:      model.CredentialVerdictOriginSandbox,
 		SandboxID:   sandbox.ID,
 		UseID:       strings.TrimSpace(input.UseId),
 		Command:     input.Command,
@@ -440,6 +442,7 @@ func (s *Service) ApprovedUse(ctx context.Context, poolID, sandboxID, useID, hos
 			Purpose:    use.Description,
 			Credential: credential.Name,
 			Host:       credential.Grant.Host,
+			GrantID:    credential.Grant.ID,
 		}, nil
 	}
 	// Not a credential's use. It may still be a host trust's: a person who

@@ -9512,6 +9512,10 @@ func (s *Server) handleListCredentialVerdictsRequest(args [1]string, argsEscaped
 					In:   "path",
 				}: params.ProjectId,
 				{
+					Name: "kind",
+					In:   "query",
+				}: params.Kind,
+				{
 					Name: "sandboxId",
 					In:   "query",
 				}: params.SandboxId,

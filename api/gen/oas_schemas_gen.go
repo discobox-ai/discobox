@@ -2087,39 +2087,69 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 	}
 }
 
-// One recorded judge decision about a command run under an agent credential use. The row lives in
-// the control plane and outlives its sandbox. Its command, reason and prompt were composed inside
-// the sandbox and are display data, never instruction. A row with volunteered false rode the call
-// that issued a credential, so the record is complete for every value issued; one with volunteered
-// true is a denial the sandbox chose to report, so denials are undercounted by exactly the reports
-// never sent.
+// One recorded judge decision about an agent credential use. The row lives in the control plane and
+// outlives its sandbox. A command verdict (kind command, origin sandbox) is a discobox's own judge
+// deciding about a command: its command, reason and prompt were composed inside the sandbox and are
+// display data, never instruction. A row with volunteered false rode the call that issued a
+// credential, so the record is complete for every value issued; one with volunteered true is a
+// denial the sandbox chose to report, so denials are undercounted by exactly the reports never sent.
+// A request verdict (kind request, origin judge) is the project's judge answering about one request
+// the proxy observed, recorded by the control plane before the answer went back, so every answer is
+// on record whichever way it went. Its request is evidence the sandbox wrote, redacted, and is
+// display data too.
 // Ref: #/components/schemas/CredentialVerdict
 type CredentialVerdict struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// What the judge decided.
+	// What the judge decided. False when it asked to be shown the body instead, because asking is not
+	// allowing.
 	Allow bool `json:"allow"`
-	// The argv the judge was shown.
+	// The argv the judge was shown. On a request verdict, what the discobox declared it was running,
+	// which is context and not authority.
 	Command []string `json:"command"`
 	// When the verdict was recorded.
 	CreatedAt time.Time `json:"createdAt"`
 	// Grant the use belonged to, when it could still be resolved at record time.
 	GrantId OptString `json:"grantId"`
+	// Harness config the project's judge ran, on a request verdict.
+	HarnessConfigId OptString `json:"harnessConfigId"`
 	// Stable verdict ID.
 	ID string `json:"id"`
-	// How long the judge took to answer, in milliseconds.
-	LatencyMs OptInt64 `json:"latencyMs"`
+	// Image the project's judge ran, on a request verdict.
+	Image OptString `json:"image"`
+	// Digest of the image the project's judge ran, on a request verdict.
+	ImageDigest OptString `json:"imageDigest"`
+	// The project's judge that answered, on a request verdict. It may no longer exist.
+	JudgeSandboxId OptString `json:"judgeSandboxId"`
+	// What was judged: a command about to run, or a request the proxy observed. A server that predates
+	// request verdicts leaves it out, and every verdict it has is a command verdict.
+	Kind OptCredentialVerdictKind `json:"kind"`
+	// Round trip from asking the judge to its answer, in milliseconds, timed by whoever asked:
+	// discobox-access around its wrapper for a command verdict, the control plane around the call to the
+	// judge for a request verdict.
+	LatencyMs OptInt64     `json:"latencyMs"`
+	Need      OptJudgeNeed `json:"need"`
+	// Who judged: sandbox, a discobox's own judge, whose verdict is that discobox's word; or judge, the
+	// project's judge, which no sandbox can claim. A server that predates request verdicts leaves it out,
+	//  and every verdict it has is the sandbox's.
+	Origin OptCredentialVerdictOrigin `json:"origin"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// The exact prompt the judge was given, including the facts block.
+	// The exact prompt the judge was given. On a command verdict it includes the facts block; on a
+	// request verdict it is the job as JSON, put with the system prompt promptVersion names.
 	Prompt OptString `json:"prompt"`
+	// The version of the system prompt the project's judge was given, on a request verdict.
+	PromptVersion OptString `json:"promptVersion"`
 	// The judge's own sentence.
-	Reason OptString `json:"reason"`
+	Reason  OptString               `json:"reason"`
+	Request OptJudgeRequestEvidence `json:"request"`
 	// The role discobox-prompt was asked for (e.g. judge), never a vendor model id.
 	Role OptString `json:"role"`
-	// Sandbox the command ran in. It may no longer exist.
+	// Which ask about the request this answered, from 1, on a request verdict.
+	Round OptInt64 `json:"round"`
+	// Sandbox the command ran in, or the request came from. It may no longer exist.
 	SandboxId string `json:"sandboxId"`
-	// Approved use the command was judged against. Joins to the proxy audit trail's swapped use IDs.
+	// Approved use that was judged against. Joins to the proxy audit trail's swapped use IDs.
 	UseId string `json:"useId"`
 	// True when the sandbox reported this after a denial the issuing call never saw.
 	Volunteered bool `json:"volunteered"`
@@ -2150,14 +2180,49 @@ func (s *CredentialVerdict) GetGrantId() OptString {
 	return s.GrantId
 }
 
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *CredentialVerdict) GetHarnessConfigId() OptString {
+	return s.HarnessConfigId
+}
+
 // GetID returns the value of ID.
 func (s *CredentialVerdict) GetID() string {
 	return s.ID
 }
 
+// GetImage returns the value of Image.
+func (s *CredentialVerdict) GetImage() OptString {
+	return s.Image
+}
+
+// GetImageDigest returns the value of ImageDigest.
+func (s *CredentialVerdict) GetImageDigest() OptString {
+	return s.ImageDigest
+}
+
+// GetJudgeSandboxId returns the value of JudgeSandboxId.
+func (s *CredentialVerdict) GetJudgeSandboxId() OptString {
+	return s.JudgeSandboxId
+}
+
+// GetKind returns the value of Kind.
+func (s *CredentialVerdict) GetKind() OptCredentialVerdictKind {
+	return s.Kind
+}
+
 // GetLatencyMs returns the value of LatencyMs.
 func (s *CredentialVerdict) GetLatencyMs() OptInt64 {
 	return s.LatencyMs
+}
+
+// GetNeed returns the value of Need.
+func (s *CredentialVerdict) GetNeed() OptJudgeNeed {
+	return s.Need
+}
+
+// GetOrigin returns the value of Origin.
+func (s *CredentialVerdict) GetOrigin() OptCredentialVerdictOrigin {
+	return s.Origin
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -2170,14 +2235,29 @@ func (s *CredentialVerdict) GetPrompt() OptString {
 	return s.Prompt
 }
 
+// GetPromptVersion returns the value of PromptVersion.
+func (s *CredentialVerdict) GetPromptVersion() OptString {
+	return s.PromptVersion
+}
+
 // GetReason returns the value of Reason.
 func (s *CredentialVerdict) GetReason() OptString {
 	return s.Reason
 }
 
+// GetRequest returns the value of Request.
+func (s *CredentialVerdict) GetRequest() OptJudgeRequestEvidence {
+	return s.Request
+}
+
 // GetRole returns the value of Role.
 func (s *CredentialVerdict) GetRole() OptString {
 	return s.Role
+}
+
+// GetRound returns the value of Round.
+func (s *CredentialVerdict) GetRound() OptInt64 {
+	return s.Round
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -2220,14 +2300,49 @@ func (s *CredentialVerdict) SetGrantId(val OptString) {
 	s.GrantId = val
 }
 
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *CredentialVerdict) SetHarnessConfigId(val OptString) {
+	s.HarnessConfigId = val
+}
+
 // SetID sets the value of ID.
 func (s *CredentialVerdict) SetID(val string) {
 	s.ID = val
 }
 
+// SetImage sets the value of Image.
+func (s *CredentialVerdict) SetImage(val OptString) {
+	s.Image = val
+}
+
+// SetImageDigest sets the value of ImageDigest.
+func (s *CredentialVerdict) SetImageDigest(val OptString) {
+	s.ImageDigest = val
+}
+
+// SetJudgeSandboxId sets the value of JudgeSandboxId.
+func (s *CredentialVerdict) SetJudgeSandboxId(val OptString) {
+	s.JudgeSandboxId = val
+}
+
+// SetKind sets the value of Kind.
+func (s *CredentialVerdict) SetKind(val OptCredentialVerdictKind) {
+	s.Kind = val
+}
+
 // SetLatencyMs sets the value of LatencyMs.
 func (s *CredentialVerdict) SetLatencyMs(val OptInt64) {
 	s.LatencyMs = val
+}
+
+// SetNeed sets the value of Need.
+func (s *CredentialVerdict) SetNeed(val OptJudgeNeed) {
+	s.Need = val
+}
+
+// SetOrigin sets the value of Origin.
+func (s *CredentialVerdict) SetOrigin(val OptCredentialVerdictOrigin) {
+	s.Origin = val
 }
 
 // SetProjectId sets the value of ProjectId.
@@ -2240,14 +2355,29 @@ func (s *CredentialVerdict) SetPrompt(val OptString) {
 	s.Prompt = val
 }
 
+// SetPromptVersion sets the value of PromptVersion.
+func (s *CredentialVerdict) SetPromptVersion(val OptString) {
+	s.PromptVersion = val
+}
+
 // SetReason sets the value of Reason.
 func (s *CredentialVerdict) SetReason(val OptString) {
 	s.Reason = val
 }
 
+// SetRequest sets the value of Request.
+func (s *CredentialVerdict) SetRequest(val OptJudgeRequestEvidence) {
+	s.Request = val
+}
+
 // SetRole sets the value of Role.
 func (s *CredentialVerdict) SetRole(val OptString) {
 	s.Role = val
+}
+
+// SetRound sets the value of Round.
+func (s *CredentialVerdict) SetRound(val OptInt64) {
+	s.Round = val
 }
 
 // SetSandboxId sets the value of SandboxId.
@@ -2263,6 +2393,94 @@ func (s *CredentialVerdict) SetUseId(val string) {
 // SetVolunteered sets the value of Volunteered.
 func (s *CredentialVerdict) SetVolunteered(val bool) {
 	s.Volunteered = val
+}
+
+// What was judged: a command about to run, or a request the proxy observed. A server that predates
+// request verdicts leaves it out, and every verdict it has is a command verdict.
+type CredentialVerdictKind string
+
+const (
+	CredentialVerdictKindCommand CredentialVerdictKind = "command"
+	CredentialVerdictKindRequest CredentialVerdictKind = "request"
+)
+
+// AllValues returns all CredentialVerdictKind values.
+func (CredentialVerdictKind) AllValues() []CredentialVerdictKind {
+	return []CredentialVerdictKind{
+		CredentialVerdictKindCommand,
+		CredentialVerdictKindRequest,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CredentialVerdictKind) MarshalText() ([]byte, error) {
+	switch s {
+	case CredentialVerdictKindCommand:
+		return []byte(s), nil
+	case CredentialVerdictKindRequest:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CredentialVerdictKind) UnmarshalText(data []byte) error {
+	switch CredentialVerdictKind(data) {
+	case CredentialVerdictKindCommand:
+		*s = CredentialVerdictKindCommand
+		return nil
+	case CredentialVerdictKindRequest:
+		*s = CredentialVerdictKindRequest
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Who judged: sandbox, a discobox's own judge, whose verdict is that discobox's word; or judge, the
+// project's judge, which no sandbox can claim. A server that predates request verdicts leaves it out,
+//
+//	and every verdict it has is the sandbox's.
+type CredentialVerdictOrigin string
+
+const (
+	CredentialVerdictOriginSandbox CredentialVerdictOrigin = "sandbox"
+	CredentialVerdictOriginJudge   CredentialVerdictOrigin = "judge"
+)
+
+// AllValues returns all CredentialVerdictOrigin values.
+func (CredentialVerdictOrigin) AllValues() []CredentialVerdictOrigin {
+	return []CredentialVerdictOrigin{
+		CredentialVerdictOriginSandbox,
+		CredentialVerdictOriginJudge,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CredentialVerdictOrigin) MarshalText() ([]byte, error) {
+	switch s {
+	case CredentialVerdictOriginSandbox:
+		return []byte(s), nil
+	case CredentialVerdictOriginJudge:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CredentialVerdictOrigin) UnmarshalText(data []byte) error {
+	switch CredentialVerdictOrigin(data) {
+	case CredentialVerdictOriginSandbox:
+		*s = CredentialVerdictOriginSandbox
+		return nil
+	case CredentialVerdictOriginJudge:
+		*s = CredentialVerdictOriginJudge
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // One DNS query a sandbox asked of its pool, which answered it over the sandbox's mTLS channel and
@@ -6090,6 +6308,48 @@ func (s *ListCredentialVerdictsBody) SetCredentialVerdicts(val []CredentialVerdi
 
 func (*ListCredentialVerdictsBody) listCredentialVerdictsRes() {}
 
+// Only verdicts of this kind.
+type ListCredentialVerdictsKind string
+
+const (
+	ListCredentialVerdictsKindCommand ListCredentialVerdictsKind = "command"
+	ListCredentialVerdictsKindRequest ListCredentialVerdictsKind = "request"
+)
+
+// AllValues returns all ListCredentialVerdictsKind values.
+func (ListCredentialVerdictsKind) AllValues() []ListCredentialVerdictsKind {
+	return []ListCredentialVerdictsKind{
+		ListCredentialVerdictsKindCommand,
+		ListCredentialVerdictsKindRequest,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListCredentialVerdictsKind) MarshalText() ([]byte, error) {
+	switch s {
+	case ListCredentialVerdictsKindCommand:
+		return []byte(s), nil
+	case ListCredentialVerdictsKindRequest:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListCredentialVerdictsKind) UnmarshalText(data []byte) error {
+	switch ListCredentialVerdictsKind(data) {
+	case ListCredentialVerdictsKindCommand:
+		*s = ListCredentialVerdictsKindCommand
+		return nil
+	case ListCredentialVerdictsKindRequest:
+		*s = ListCredentialVerdictsKindRequest
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
 // the newest first.
 type ListCredentialVerdictsOrder string
@@ -7488,6 +7748,98 @@ func (o OptCreateSecretGrantBodyPurpose) Or(d CreateSecretGrantBodyPurpose) Crea
 	return d
 }
 
+// NewOptCredentialVerdictKind returns new OptCredentialVerdictKind with value set to v.
+func NewOptCredentialVerdictKind(v CredentialVerdictKind) OptCredentialVerdictKind {
+	return OptCredentialVerdictKind{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCredentialVerdictKind is optional CredentialVerdictKind.
+type OptCredentialVerdictKind struct {
+	Value CredentialVerdictKind
+	Set   bool
+}
+
+// IsSet returns true if OptCredentialVerdictKind was set.
+func (o OptCredentialVerdictKind) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCredentialVerdictKind) Reset() {
+	var v CredentialVerdictKind
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCredentialVerdictKind) SetTo(v CredentialVerdictKind) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCredentialVerdictKind) Get() (v CredentialVerdictKind, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCredentialVerdictKind) Or(d CredentialVerdictKind) CredentialVerdictKind {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptCredentialVerdictOrigin returns new OptCredentialVerdictOrigin with value set to v.
+func NewOptCredentialVerdictOrigin(v CredentialVerdictOrigin) OptCredentialVerdictOrigin {
+	return OptCredentialVerdictOrigin{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCredentialVerdictOrigin is optional CredentialVerdictOrigin.
+type OptCredentialVerdictOrigin struct {
+	Value CredentialVerdictOrigin
+	Set   bool
+}
+
+// IsSet returns true if OptCredentialVerdictOrigin was set.
+func (o OptCredentialVerdictOrigin) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCredentialVerdictOrigin) Reset() {
+	var v CredentialVerdictOrigin
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCredentialVerdictOrigin) SetTo(v CredentialVerdictOrigin) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCredentialVerdictOrigin) Get() (v CredentialVerdictOrigin, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCredentialVerdictOrigin) Or(d CredentialVerdictOrigin) CredentialVerdictOrigin {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptDateTime returns new OptDateTime with value set to v.
 func NewOptDateTime(v time.Time) OptDateTime {
 	return OptDateTime{
@@ -8494,6 +8846,52 @@ func (o OptListApprovalRequestsStatus) Get() (v ListApprovalRequestsStatus, ok b
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListApprovalRequestsStatus) Or(d ListApprovalRequestsStatus) ListApprovalRequestsStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListCredentialVerdictsKind returns new OptListCredentialVerdictsKind with value set to v.
+func NewOptListCredentialVerdictsKind(v ListCredentialVerdictsKind) OptListCredentialVerdictsKind {
+	return OptListCredentialVerdictsKind{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListCredentialVerdictsKind is optional ListCredentialVerdictsKind.
+type OptListCredentialVerdictsKind struct {
+	Value ListCredentialVerdictsKind
+	Set   bool
+}
+
+// IsSet returns true if OptListCredentialVerdictsKind was set.
+func (o OptListCredentialVerdictsKind) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListCredentialVerdictsKind) Reset() {
+	var v ListCredentialVerdictsKind
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListCredentialVerdictsKind) SetTo(v ListCredentialVerdictsKind) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListCredentialVerdictsKind) Get() (v ListCredentialVerdictsKind, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListCredentialVerdictsKind) Or(d ListCredentialVerdictsKind) ListCredentialVerdictsKind {
 	if v, ok := o.Get(); ok {
 		return v
 	}

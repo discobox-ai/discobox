@@ -8,6 +8,7 @@ import (
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	svcapi "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -265,6 +266,19 @@ func TestListCredentialVerdictsReadsForwardWhenAsked(t *testing.T) {
 	}
 }
 
+func TestListCredentialVerdictsFiltersByKind(t *testing.T) {
+	var got store.CredentialVerdictFilter
+	h := New(svcapi.Services{Secrets: capturingVerdictService{filter: &got}})
+	if _, err := h.ListCredentialVerdicts(context.Background(), serverapi.ListCredentialVerdictsParams{
+		ProjectId: "project-1", Kind: serverapi.NewOptListCredentialVerdictsKind(serverapi.ListCredentialVerdictsKindRequest),
+	}); err != nil {
+		t.Fatalf("ListCredentialVerdicts() error = %v", err)
+	}
+	if got.Kind != model.CredentialVerdictKindRequest {
+		t.Fatalf("Kind = %q, want kind=request to reach the store", got.Kind)
+	}
+}
+
 // A query that matches nothing is an empty list, not an error. A nil slice from
 // the service would otherwise encode as null and fail the required array.
 func TestListCredentialVerdictsEmptyIsAnEmptyList(t *testing.T) {
@@ -308,5 +322,41 @@ func TestListCredentialVerdictsReturnsEveryField(t *testing.T) {
 		v.Reason.Or("") != "not what was approved" || v.Role.Or("") != "judge" || v.Prompt.Or("") != "the facts block" ||
 		v.LatencyMs.Or(0) != 812 || !v.Volunteered || !v.CreatedAt.Equal(createdAt) {
 		t.Fatalf("verdict lost a field on the way out: %+v", v)
+	}
+}
+
+// A request verdict's own fields reach the response too: the evidence, the
+// answer that asked rather than decided, and the judge that gave it.
+func TestListCredentialVerdictsReturnsARequestVerdictsFields(t *testing.T) {
+	var got store.CredentialVerdictFilter
+	h := New(svcapi.Services{Secrets: capturingVerdictService{filter: &got, rows: []model.CredentialVerdict{{
+		ID: "cv_2", ProjectID: "project-1", Kind: model.CredentialVerdictKindRequest, Origin: model.CredentialVerdictOriginJudge,
+		SandboxID: "sbx_a", UseID: "use_1",
+		Request: &judge.Request{Method: "POST", URL: "https://api.github.com/repos/org/repo/pulls",
+			Body: &judge.Body{MediaType: "application/json", Length: 42}},
+		Round: 1, Need: &judge.Need{Body: judge.FormJSON, Bytes: 512}, Reason: "the operation is in the body",
+		Role: judge.Role, Prompt: "{}", PromptVersion: judge.PromptVersion, LatencyMS: 1500,
+		JudgeSandboxID: "sbx_judge", HarnessConfigID: "hc_1", Image: "harness:1", ImageDigest: "sha256:one",
+	}}}})
+	res, err := h.ListCredentialVerdicts(context.Background(), serverapi.ListCredentialVerdictsParams{ProjectId: "project-1"})
+	if err != nil {
+		t.Fatalf("ListCredentialVerdicts() error = %v", err)
+	}
+	body, ok := res.(*serverapi.ListCredentialVerdictsBody)
+	if !ok || len(body.CredentialVerdicts) != 1 {
+		t.Fatalf("response = %#v, want the one verdict", res)
+	}
+	v := body.CredentialVerdicts[0]
+	request, hasRequest := v.Request.Get()
+	requestBody, hasBody := request.Body.Get()
+	need, hasNeed := v.Need.Get()
+	if v.Kind.Or("") != serverapi.CredentialVerdictKindRequest || v.Origin.Or("") != serverapi.CredentialVerdictOriginJudge ||
+		!hasRequest || request.Method != "POST" || request.URL != "https://api.github.com/repos/org/repo/pulls" ||
+		!hasBody || requestBody.Length.Or(0) != 42 || v.Round.Or(0) != 1 ||
+		!hasNeed || need.Body != serverapi.JudgeNeedBodyJSON || need.Bytes.Or(0) != 512 ||
+		v.PromptVersion.Or("") != judge.PromptVersion || v.LatencyMs.Or(0) != 1500 ||
+		v.JudgeSandboxId.Or("") != "sbx_judge" || v.HarnessConfigId.Or("") != "hc_1" ||
+		v.Image.Or("") != "harness:1" || v.ImageDigest.Or("") != "sha256:one" {
+		t.Fatalf("request verdict lost a field on the way out: %+v", v)
 	}
 }

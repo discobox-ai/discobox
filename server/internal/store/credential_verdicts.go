@@ -8,9 +8,10 @@ import (
 )
 
 // CreateCredentialVerdict persists one judge decision about an agent
-// credential use (ADR 0091). It is called from the same code path that mints
-// a value — before the mint, in the issuing case — so a write failure here
-// must stop that path rather than let a credential out with no record of why.
+// credential use. It is called on the path that releases a credential — before
+// the mint for a command (ADR 0091), before the answer goes back to the pool
+// for a request (ADR 26-09-22-838 §8) — so a write failure here must stop that
+// path rather than let a credential out with no record of why.
 func (s *Store) CreateCredentialVerdict(ctx context.Context, verdict *model.CredentialVerdict) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -25,6 +26,8 @@ type CredentialVerdictFilter struct {
 	// ID reads the one verdict it names, which is how a caller holding an ID
 	// from a listing reads that verdict in full.
 	ID string
+	// Kind keeps one kind of verdict, command or request.
+	Kind string
 	// SandboxID is matched against the recorded ID, never resolved through the
 	// sandboxes table: the trail outlives the sandbox it describes, and the
 	// sandboxes most worth asking about are often already purged.
@@ -53,6 +56,9 @@ func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, fi
 	query := read.Where("project_id = ?", projectID)
 	if filter.ID != "" {
 		query = query.Where("id = ?", filter.ID)
+	}
+	if filter.Kind != "" {
+		query = query.Where("kind = ?", filter.Kind)
 	}
 	if filter.SandboxID != "" {
 		query = query.Where("sandbox_id = ?", filter.SandboxID)

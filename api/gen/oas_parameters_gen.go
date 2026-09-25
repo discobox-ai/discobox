@@ -7162,6 +7162,8 @@ type ListCredentialVerdictsParams struct {
 	ID OptString `json:",omitempty,omitzero"`
 	// Project ID.
 	ProjectId string
+	// Only verdicts of this kind.
+	Kind OptListCredentialVerdictsKind `json:",omitempty,omitzero"`
 	// Only verdicts recorded for this sandbox, which need not still exist.
 	SandboxId OptString `json:",omitempty,omitzero"`
 	// Only verdicts judged against this approved use.
@@ -7195,6 +7197,15 @@ func unpackListCredentialVerdictsParams(packed middleware.Parameters) (params Li
 			In:   "path",
 		}
 		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "kind",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Kind = v.(OptListCredentialVerdictsKind)
+		}
 	}
 	{
 		key := middleware.ParameterKey{
@@ -7352,6 +7363,62 @@ func decodeListCredentialVerdictsParams(args [1]string, argsEscaped bool, r *htt
 		return params, &ogenerrors.DecodeParamError{
 			Name: "projectId",
 			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: kind.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "kind",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotKindVal ListCredentialVerdictsKind
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotKindVal = ListCredentialVerdictsKind(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Kind.SetTo(paramsDotKindVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Kind.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "kind",
+			In:   "query",
 			Err:  err,
 		}
 	}

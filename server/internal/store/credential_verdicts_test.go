@@ -28,7 +28,7 @@ func verdictFixture(t *testing.T) (*store.Store, string) {
 		// must not need them to.
 		{ID: "cv_1", ProjectID: project.ID, SandboxID: "sbx_a", GrantID: "grant_1", UseID: "use_1", Allow: true, Role: "judge", Prompt: "p", CreatedAt: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)},
 		{ID: "cv_2", ProjectID: project.ID, SandboxID: "sbx_a", GrantID: "grant_1", UseID: "use_1", Allow: false, Volunteered: true, Role: "judge", Prompt: "p", CreatedAt: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)},
-		{ID: "cv_3", ProjectID: project.ID, SandboxID: "sbx_b", GrantID: "grant_2", UseID: "use_2", Allow: true, Role: "judge", Prompt: "p", CreatedAt: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)},
+		{ID: "cv_3", ProjectID: project.ID, Kind: model.CredentialVerdictKindRequest, Origin: model.CredentialVerdictOriginJudge, SandboxID: "sbx_b", GrantID: "grant_2", UseID: "use_2", Allow: true, Role: "judge", Prompt: "p", CreatedAt: time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)},
 		{ID: "cv_4", ProjectID: other.ID, SandboxID: "sbx_a", GrantID: "grant_1", UseID: "use_1", Allow: true, Role: "judge", Prompt: "p", CreatedAt: time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)},
 	} {
 		if err := st.CreateCredentialVerdict(ctx, &v); err != nil {
@@ -66,6 +66,8 @@ func TestListCredentialVerdictsFilters(t *testing.T) {
 		{name: "limit keeps the newest", filter: store.CredentialVerdictFilter{Limit: 2}, want: []string{"cv_3", "cv_2"}},
 		{name: "forward keeps the oldest", filter: store.CredentialVerdictFilter{Ascending: true, Limit: 2}, want: []string{"cv_1", "cv_2"}},
 		{name: "forward from a cursor", filter: store.CredentialVerdictFilter{Ascending: true, Since: time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)}, want: []string{"cv_2", "cv_3"}},
+		{name: "requests", filter: store.CredentialVerdictFilter{Kind: model.CredentialVerdictKindRequest}, want: []string{"cv_3"}},
+		{name: "commands", filter: store.CredentialVerdictFilter{Kind: model.CredentialVerdictKindCommand}, want: []string{"cv_2", "cv_1"}},
 		{name: "filters compose", filter: store.CredentialVerdictFilter{SandboxID: "sbx_a", Allow: &allowed}, want: []string{"cv_1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,6 +98,20 @@ func TestListCredentialVerdictsKeepsProvenance(t *testing.T) {
 	}
 	if len(rows) != 2 || rows[0].ID != "cv_2" || !rows[0].Volunteered || rows[1].Volunteered {
 		t.Fatalf("provenance lost: %+v", rows)
+	}
+}
+
+// A verdict written without a kind is a command verdict from the sandbox, which
+// is what every row recorded before request verdicts existed was. The columns'
+// defaults are the whole upgrade, so they are what this holds to.
+func TestAVerdictWithNoKindIsTheSandboxsCommandVerdict(t *testing.T) {
+	st, projectID := verdictFixture(t)
+	rows, err := st.ListCredentialVerdicts(context.Background(), projectID, store.CredentialVerdictFilter{ID: "cv_1"})
+	if err != nil {
+		t.Fatalf("ListCredentialVerdicts() error = %v", err)
+	}
+	if len(rows) != 1 || rows[0].Kind != model.CredentialVerdictKindCommand || rows[0].Origin != model.CredentialVerdictOriginSandbox {
+		t.Fatalf("rows = %+v, want cv_1 read back as the sandbox's command verdict", rows)
 	}
 }
 
