@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -122,9 +123,24 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 
 	// One ask is bounded here as well as at the judge (ADR 26-09-22-838 §2): a caller
 	// that passed no deadline must not be able to hold this goroutine, the
-	// lease, and the judge's only slot for as long as the judge is willing to
-	// think. Whichever deadline is sooner wins.
-	ctx, cancel := context.WithTimeout(ctx, judge.Timeout+judgeRoutingGrace)
+	// lease, and one of the judge's runs for as long as the judge is willing
+	// to think. The sandbox agent bounds how long an ask waits for a run, and
+	// the run itself, inside this.
+	//
+	// A pool says how long it will wait, and that is a bound too. Its rounds
+	// share one deadline, so a later round comes with less time than this
+	// hop's own; answered inside what the pool has left, the refusal arrives
+	// with its sentence rather than as the pool giving up on a silence.
+	bound := judge.Timeout + judgeRoutingGrace
+	if ask.Timeout > 0 {
+		left := ask.Timeout - judgeReplyMargin
+		if left <= 0 {
+			return judge.Answer{}, apperrors.NewStatusError(http.StatusGatewayTimeout,
+				"the request had no time left to be judged in")
+		}
+		bound = min(bound, left)
+	}
+	ctx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
 
 	// The round trip starts here, before the judge is reached: bringing up a
@@ -157,6 +173,10 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	request.Header.Set("Content-Type", "application/json")
 	response, err := sandboxagentclient.HTTPClient(lease).Do(request)
 	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return judge.Answer{}, apperrors.NewStatusError(http.StatusGatewayTimeout,
+				fmt.Sprintf("the project's judge did not answer inside the %s the request had", bound.Round(time.Second)))
+		}
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadGateway,
 			fmt.Sprintf("the project's judge could not be reached: %v", err))
 	}
@@ -283,6 +303,10 @@ func judgedHost(ask services.JudgeAsk) string {
 // It is generous on purpose — the deadline here is a backstop against a caller
 // with none, not the one that should normally fire.
 const judgeRoutingGrace = 30 * time.Second
+
+// judgeReplyMargin is what this hop leaves of a pool's own deadline for the
+// answer to travel back in, so the pool reads it rather than timing out first.
+const judgeReplyMargin = 5 * time.Second
 
 // judgeJobBody is the job on the wire to the judge's agent.
 func judgeJobBody(job judge.Job) sandboxapi.JudgeJob {

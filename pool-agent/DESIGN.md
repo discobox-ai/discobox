@@ -889,7 +889,10 @@ flowchart LR
   than gzip, too large to parse, or not arrived within `bodyArrivalWait`. A
   judge still asking on round `judge.MaxRounds`, or asking again for what
   `Body.Answers` says it was already shown, has decided nothing, and that
-  refuses. The rounds for one use share one deadline, `judgeHTTPTimeout`.
+  refuses. The rounds for one use share one deadline, `judgeHTTPTimeout`, and
+  each ask carries what is left of it (`timeoutMillis`), which the control
+  plane bounds that ask by — so a slow later round is refused with a sentence,
+  not cut off here as a silence.
 - **What the judge is shown is not what was sent.** Every sentinel is taken out
   through the proxy's own scan (`proxy.RedactSentinels`), so the base64 form
   goes too. Headers are an allowlist: the ones that say what an operation is

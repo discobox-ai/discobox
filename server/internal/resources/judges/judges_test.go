@@ -916,3 +916,65 @@ func TestAnAnswerThatCannotBeRecordedIsNoVerdict(t *testing.T) {
 		t.Fatal("Judge() answered with a verdict it could not record")
 	}
 }
+
+// silentJudge stands in for a judge that is still thinking when its caller
+// gives up: it answers nothing until the request is abandoned.
+type silentJudge struct{ server *httptest.Server }
+
+func newSilentJudge(t *testing.T) *silentJudge {
+	t.Helper()
+	released := make(chan struct{})
+	fake := &silentJudge{server: httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-released:
+		}
+	}))}
+	t.Cleanup(fake.server.Close)
+	// First, since cleanups run last-registered first: Close waits for the
+	// handler, and a caller that gave up is not always noticed by it.
+	t.Cleanup(func() { close(released) })
+	return fake
+}
+
+func (f *silentJudge) AcquireSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	lease := transport.NewHTTPClientLeaseWithBaseURL(f.server.Client(), f.server.URL, func() {})
+	return lease, &model.Sandbox{ID: sandboxID, ProjectID: projectID, PoolID: "pool-1"}, nil
+}
+
+// A pool says how long it will wait, and a later round of one request has
+// less than the first had (ADR 26-09-22-838 §6). The ask is answered inside
+// that, with a sentence, rather than left for the pool to give up on — which
+// it could not tell from a control plane that never replied.
+func TestAnAskIsAnsweredInsideThePoolsDeadline(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	defaultHarness(t, appStore, "codex", "sha256:one")
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	ready(t, appStore, sandboxes.created[0])
+	service.SetLeases(newSilentJudge(t))
+	service.SetUses(approvedUses{use: services.ApprovedUse{Purpose: "open a pull request in org/repo", Host: "github.com"}})
+
+	t.Run("a judge still thinking at the deadline", func(t *testing.T) {
+		ask := requestAsk()
+		ask.Timeout = judgeReplyMargin + 300*time.Millisecond
+		started := time.Now()
+		_, err := service.Judge(ctx, "pool-1", ask)
+		if err == nil || !strings.Contains(err.Error(), "did not answer inside") {
+			t.Fatalf("Judge() error = %v, want the judge's silence said in a sentence", err)
+		}
+		if took := time.Since(started); took >= ask.Timeout {
+			t.Fatalf("Judge() took %s, which is past the %s the pool would wait", took, ask.Timeout)
+		}
+	})
+	t.Run("no time left to ask in", func(t *testing.T) {
+		ask := requestAsk()
+		ask.Timeout = judgeReplyMargin / 2
+		_, err := service.Judge(ctx, "pool-1", ask)
+		if err == nil || !strings.Contains(err.Error(), "no time left") {
+			t.Fatalf("Judge() error = %v, want it refused for want of time", err)
+		}
+	})
+}

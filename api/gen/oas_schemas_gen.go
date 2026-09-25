@@ -13420,6 +13420,11 @@ type PoolJudgeAsk struct {
 	Round int64 `json:"round"`
 	// The discobox whose request this is. It must belong to the asking pool.
 	SandboxId string `json:"sandboxId"`
+	// How long the pool will wait for this answer, in milliseconds. Every round of one request shares
+	// one deadline, so a later round has less than the first; the control plane bounds the ask by this
+	// as well as by its own limit, and answers before it runs out rather than being cut off. Left out,
+	// only the control plane's own limit applies.
+	TimeoutMillis OptInt64 `json:"timeoutMillis"`
 	// The approved use the credential is being spent under.
 	UseId string `json:"useId"`
 }
@@ -13442,6 +13447,11 @@ func (s *PoolJudgeAsk) GetRound() int64 {
 // GetSandboxId returns the value of SandboxId.
 func (s *PoolJudgeAsk) GetSandboxId() string {
 	return s.SandboxId
+}
+
+// GetTimeoutMillis returns the value of TimeoutMillis.
+func (s *PoolJudgeAsk) GetTimeoutMillis() OptInt64 {
+	return s.TimeoutMillis
 }
 
 // GetUseId returns the value of UseId.
@@ -13467,6 +13477,11 @@ func (s *PoolJudgeAsk) SetRound(val int64) {
 // SetSandboxId sets the value of SandboxId.
 func (s *PoolJudgeAsk) SetSandboxId(val string) {
 	s.SandboxId = val
+}
+
+// SetTimeoutMillis sets the value of TimeoutMillis.
+func (s *PoolJudgeAsk) SetTimeoutMillis(val OptInt64) {
+	s.TimeoutMillis = val
 }
 
 // SetUseId sets the value of UseId.

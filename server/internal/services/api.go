@@ -569,6 +569,10 @@ type JudgeAsk struct {
 	// and not authority.
 	Command []string
 	Request *judge.Request
+	// Timeout is how long the asker will wait for the answer, or zero when it
+	// did not say. The rounds of one request share one deadline, so a later
+	// round arrives with less than the first had.
+	Timeout time.Duration
 }
 
 // ApprovedUse is what a request is judged against: the sentence a person

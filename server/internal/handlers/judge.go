@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/judge"
@@ -52,6 +53,9 @@ func judgeAskFrom(in *serverapi.PoolJudgeAsk) services.JudgeAsk {
 		UseID:     in.UseId,
 		Round:     int(in.Round),
 		Command:   in.Command,
+	}
+	if millis, ok := in.TimeoutMillis.Get(); ok && millis > 0 {
+		ask.Timeout = time.Duration(millis) * time.Millisecond
 	}
 	evidence := in.Request
 	ask.Request = &judge.Request{Method: evidence.Method, URL: evidence.URL}

@@ -19908,17 +19908,24 @@ func (s *PoolJudgeAsk) encodeFields(e *jx.Encoder) {
 		e.Str(s.SandboxId)
 	}
 	{
+		if s.TimeoutMillis.Set {
+			e.FieldStart("timeoutMillis")
+			s.TimeoutMillis.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("useId")
 		e.Str(s.UseId)
 	}
 }
 
-var jsonFieldsNameOfPoolJudgeAsk = [5]string{
+var jsonFieldsNameOfPoolJudgeAsk = [6]string{
 	0: "command",
 	1: "request",
 	2: "round",
 	3: "sandboxId",
-	4: "useId",
+	4: "timeoutMillis",
+	5: "useId",
 }
 
 // Decode decodes PoolJudgeAsk from json.
@@ -19983,8 +19990,18 @@ func (s *PoolJudgeAsk) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
+		case "timeoutMillis":
+			if err := func() error {
+				s.TimeoutMillis.Reset()
+				if err := s.TimeoutMillis.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"timeoutMillis\"")
+			}
 		case "useId":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.UseId = string(v)
@@ -20005,7 +20022,7 @@ func (s *PoolJudgeAsk) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011110,
+		0b00101110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

@@ -4263,6 +4263,10 @@ components:
                 sandboxId:
                     description: The discobox whose request this is. It must belong to the asking pool.
                     type: string
+                timeoutMillis:
+                    description: How long the pool will wait for this answer, in milliseconds. Every round of one request shares one deadline, so a later round has less than the first; the control plane bounds the ask by this as well as by its own limit, and answers before it runs out rather than being cut off. Left out, only the control plane's own limit applies.
+                    format: int64
+                    type: integer
                 useId:
                     description: The approved use the credential is being spent under.
                     type: string

@@ -39,6 +39,9 @@ type judgeAsk struct {
 	UseID     string         `json:"useId"`
 	Round     int            `json:"round"`
 	Request   *judge.Request `json:"request"`
+	// TimeoutMillis is what is left of the exchange's deadline, so the
+	// control plane answers inside it (judgeHTTPTimeout).
+	TimeoutMillis int64 `json:"timeoutMillis,omitempty"`
 }
 
 // judgeAnswer is what came back.
@@ -118,12 +121,15 @@ func outcomeOf(err error) outcome {
 	return outcomeUnknown
 }
 
-// judgeHTTPTimeout is what a pool waits for a verdict. It is deliberately
-// longer than the bound the control plane puts on the same exchange
-// (judge.Timeout plus its own routing grace), so that a judge which takes its
-// time is answered by the deadline nearest it rather than cut off here — where
-// the answer would be indistinguishable from a control plane that never
-// replied.
+// judgeHTTPTimeout is what a pool waits for a verdict: one deadline for every
+// round of asking about one use (ADR 26-09-22-838 §6). It is deliberately
+// longer than the bound the control plane puts on one ask (judge.Timeout plus
+// its own routing grace), and every ask says how much of it is left
+// (judgeAsk.TimeoutMillis), which the control plane bounds that ask by too. A
+// judge that takes its time is therefore answered by the deadline nearest it,
+// with a sentence saying so, rather than cut off here — where the answer would
+// be indistinguishable from a control plane that never replied. That holds for
+// a later round as much as the first, though a later round has less time.
 const judgeHTTPTimeout = judge.Timeout + 45*time.Second
 
 // judgeClient asks the control plane for a verdict, and remembers what it has

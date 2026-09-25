@@ -380,17 +380,20 @@ func (r *secretResolver) Authorize(ctx context.Context, req proxy.SecretAuthoriz
 //
 // The rounds share one deadline, because the request is held open while the
 // judge thinks: a judge that keeps asking spends the time the first ask had,
-// not three times it.
+// not three times it. Each ask says how much is left, so the control plane
+// answers a later round inside it (judgeHTTPTimeout).
 func (r *secretResolver) judgeUse(ctx context.Context, req proxy.SecretAuthorizeRequest, uses []string, useID string) (proxy.SecretVerdict, bool, error) {
 	exchange, cancel := context.WithTimeout(ctx, judgeHTTPTimeout)
 	defer cancel()
 	evidence := evidenceOf(req)
 	for round := 1; ; round++ {
+		deadline, _ := exchange.Deadline()
 		answer, err := r.judge.ask(exchange, judgeAsk{
-			SandboxID: req.ClientID,
-			UseID:     useID,
-			Round:     round,
-			Request:   evidence,
+			SandboxID:     req.ClientID,
+			UseID:         useID,
+			Round:         round,
+			Request:       evidence,
+			TimeoutMillis: max(time.Until(deadline).Milliseconds(), 1),
 		})
 		switch {
 		case err == nil:
