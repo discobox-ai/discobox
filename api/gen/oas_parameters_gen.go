@@ -7174,6 +7174,8 @@ type ListCredentialVerdictsParams struct {
 	Allow OptBool `json:",omitempty,omitzero"`
 	// Only verdicts recorded at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`
+	// Only verdicts recorded at or before this time, for paging back newest first.
+	Until OptDateTime `json:",omitempty,omitzero"`
 	// Maximum number of verdicts to return.
 	Limit OptInt `json:",omitempty,omitzero"`
 	// Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
@@ -7250,6 +7252,15 @@ func unpackListCredentialVerdictsParams(packed middleware.Parameters) (params Li
 		}
 		if v, ok := packed[key]; ok {
 			params.Since = v.(OptDateTime)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "until",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Until = v.(OptDateTime)
 		}
 	}
 	{
@@ -7603,7 +7614,7 @@ func decodeListCredentialVerdictsParams(args [1]string, argsEscaped bool, r *htt
 						return err
 					}
 
-					c, err := conv.ToDateTime(val)
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
 					if err != nil {
 						return err
 					}
@@ -7623,6 +7634,47 @@ func decodeListCredentialVerdictsParams(args [1]string, argsEscaped bool, r *htt
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "since",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: until.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotUntilVal time.Time
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotUntilVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Until.SetTo(paramsDotUntilVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "until",
 			In:   "query",
 			Err:  err,
 		}
@@ -7776,6 +7828,8 @@ type ListDNSAuditParams struct {
 	ID OptString `json:",omitempty,omitzero"`
 	// Only queries asked at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`
+	// Only queries asked at or before this time, for paging back newest first.
+	Until OptDateTime `json:",omitempty,omitzero"`
 	// Maximum number of queries to return.
 	Limit OptInt `json:",omitempty,omitzero"`
 	// Read forward from a cursor instead of a time, one per pool, as poolId:dns_<row>. A pool named here
@@ -7837,6 +7891,15 @@ func unpackListDNSAuditParams(packed middleware.Parameters) (params ListDNSAudit
 		}
 		if v, ok := packed[key]; ok {
 			params.Since = v.(OptDateTime)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "until",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Until = v.(OptDateTime)
 		}
 	}
 	{
@@ -8129,7 +8192,7 @@ func decodeListDNSAuditParams(args [1]string, argsEscaped bool, r *http.Request)
 						return err
 					}
 
-					c, err := conv.ToDateTime(val)
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
 					if err != nil {
 						return err
 					}
@@ -8149,6 +8212,47 @@ func decodeListDNSAuditParams(args [1]string, argsEscaped bool, r *http.Request)
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "since",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: until.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotUntilVal time.Time
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotUntilVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Until.SetTo(paramsDotUntilVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "until",
 			In:   "query",
 			Err:  err,
 		}
@@ -8390,6 +8494,8 @@ type ListExecEventsParams struct {
 	Type OptString `json:",omitempty,omitzero"`
 	// Only events recorded at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`
+	// Only events recorded at or before this time, for paging back newest first.
+	Until OptDateTime `json:",omitempty,omitzero"`
 	// Asc returns the earliest matching events at or after since, for reading forward; desc, the default,
 	//  returns the most recent.
 	Order OptListExecEventsOrder `json:",omitempty,omitzero"`
@@ -8446,6 +8552,15 @@ func unpackListExecEventsParams(packed middleware.Parameters) (params ListExecEv
 		}
 		if v, ok := packed[key]; ok {
 			params.Since = v.(OptDateTime)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "until",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Until = v.(OptDateTime)
 		}
 	}
 	{
@@ -8701,7 +8816,7 @@ func decodeListExecEventsParams(args [2]string, argsEscaped bool, r *http.Reques
 						return err
 					}
 
-					c, err := conv.ToDateTime(val)
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
 					if err != nil {
 						return err
 					}
@@ -8721,6 +8836,47 @@ func decodeListExecEventsParams(args [2]string, argsEscaped bool, r *http.Reques
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "since",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: until.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotUntilVal time.Time
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotUntilVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Until.SetTo(paramsDotUntilVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "until",
 			In:   "query",
 			Err:  err,
 		}
@@ -8869,6 +9025,8 @@ type ListHTTPAuditParams struct {
 	UseId OptString `json:",omitempty,omitzero"`
 	// Only exchanges recorded at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`
+	// Only exchanges recorded at or before this time, for paging back newest first.
+	Until OptDateTime `json:",omitempty,omitzero"`
 	// Maximum number of exchanges to return.
 	Limit OptInt `json:",omitempty,omitzero"`
 	// Read forward from a cursor instead of a time, one per pool, as poolId:http_<row>. A pool named
@@ -8936,6 +9094,15 @@ func unpackListHTTPAuditParams(packed middleware.Parameters) (params ListHTTPAud
 		}
 		if v, ok := packed[key]; ok {
 			params.Since = v.(OptDateTime)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "until",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Until = v.(OptDateTime)
 		}
 	}
 	{
@@ -9228,7 +9395,7 @@ func decodeListHTTPAuditParams(args [1]string, argsEscaped bool, r *http.Request
 						return err
 					}
 
-					c, err := conv.ToDateTime(val)
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
 					if err != nil {
 						return err
 					}
@@ -9248,6 +9415,47 @@ func decodeListHTTPAuditParams(args [1]string, argsEscaped bool, r *http.Request
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "since",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: until.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotUntilVal time.Time
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotUntilVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Until.SetTo(paramsDotUntilVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "until",
 			In:   "query",
 			Err:  err,
 		}
@@ -9862,6 +10070,8 @@ type ListHarnessHooksParams struct {
 	Event OptString `json:",omitempty,omitzero"`
 	// Only hooks recorded at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`
+	// Only hooks recorded at or before this time, for paging back newest first.
+	Until OptDateTime `json:",omitempty,omitzero"`
 	// Asc returns the earliest matching hooks at or after since, for reading forward; desc, the default,
 	// returns the most recent.
 	Order OptListHarnessHooksOrder `json:",omitempty,omitzero"`
@@ -9934,6 +10144,15 @@ func unpackListHarnessHooksParams(packed middleware.Parameters) (params ListHarn
 		}
 		if v, ok := packed[key]; ok {
 			params.Since = v.(OptDateTime)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "until",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Until = v.(OptDateTime)
 		}
 	}
 	{
@@ -10287,7 +10506,7 @@ func decodeListHarnessHooksParams(args [2]string, argsEscaped bool, r *http.Requ
 						return err
 					}
 
-					c, err := conv.ToDateTime(val)
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
 					if err != nil {
 						return err
 					}
@@ -10307,6 +10526,47 @@ func decodeListHarnessHooksParams(args [2]string, argsEscaped bool, r *http.Requ
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "since",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: until.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotUntilVal time.Time
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotUntilVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Until.SetTo(paramsDotUntilVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "until",
 			In:   "query",
 			Err:  err,
 		}

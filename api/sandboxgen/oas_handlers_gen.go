@@ -1838,6 +1838,10 @@ func (s *Server) handleListExecEventsRequest(args [2]string, argsEscaped bool, w
 					In:   "query",
 				}: params.Since,
 				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
+				{
 					Name: "order",
 					In:   "query",
 				}: params.Order,
@@ -2027,6 +2031,10 @@ func (s *Server) handleListHarnessHooksRequest(args [2]string, argsEscaped bool,
 					Name: "since",
 					In:   "query",
 				}: params.Since,
+				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
 				{
 					Name: "order",
 					In:   "query",

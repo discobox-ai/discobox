@@ -303,6 +303,14 @@ func TestListHTTPCursorReadsRowsWrittenOutOfTimeOrder(t *testing.T) {
 			t.Fatal("reading forward by time returned the late row; this test no longer proves anything")
 		}
 	}
+	// Paging back is by time, newest first and inclusive of its bound.
+	back, err := read(context.Background(), QueryOptions{Until: base.Add(time.Minute), Limit: 1})
+	if err != nil {
+		t.Fatalf("ListHTTP() error = %v", err)
+	}
+	if len(back) != 1 || back[0].URL != "https://slow.example.com" {
+		t.Fatalf("read back from the slow row = %+v", back)
+	}
 
 	// By cursor it is the next row, because it was written next.
 	all, err := read(context.Background(), QueryOptions{Ascending: true})

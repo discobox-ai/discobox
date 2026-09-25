@@ -8529,6 +8529,15 @@ paths:
                   required: false
                   schema:
                     format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+                - description: Only hooks recorded at or before this time, for paging back newest first.
+                  in: query
+                  name: until
+                  required: false
+                  schema:
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                     type: string
                 - description: asc returns the earliest matching hooks at or after since, for reading forward; desc, the default, returns the most recent.
                   in: query
@@ -8598,6 +8607,15 @@ paths:
                   required: false
                   schema:
                     format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+                - description: Only events recorded at or before this time, for paging back newest first.
+                  in: query
+                  name: until
+                  required: false
+                  schema:
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                     type: string
                 - description: asc returns the earliest matching events at or after since, for reading forward; desc, the default, returns the most recent.
                   in: query
@@ -10172,6 +10190,15 @@ paths:
                   schema:
                     description: Only queries asked at or after this time
                     format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+                - description: Only queries asked at or before this time, for paging back newest first
+                  in: query
+                  name: until
+                  schema:
+                    description: Only queries asked at or before this time, for paging back newest first
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                     type: string
                 - description: Maximum number of queries to return.
                   in: query
@@ -10261,6 +10288,15 @@ paths:
                   schema:
                     description: Only exchanges recorded at or after this time
                     format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+                - description: Only exchanges recorded at or before this time, for paging back newest first
+                  in: query
+                  name: until
+                  schema:
+                    description: Only exchanges recorded at or before this time, for paging back newest first
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                     type: string
                 - description: Maximum number of exchanges to return.
                   in: query
@@ -10436,6 +10472,15 @@ paths:
                   schema:
                     description: Only verdicts recorded at or after this time
                     format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+                - description: Only verdicts recorded at or before this time, for paging back newest first
+                  in: query
+                  name: until
+                  schema:
+                    description: Only verdicts recorded at or before this time, for paging back newest first
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                     type: string
                 - description: Maximum number of verdicts to return.
                   in: query

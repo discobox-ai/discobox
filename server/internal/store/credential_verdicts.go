@@ -38,6 +38,9 @@ type CredentialVerdictFilter struct {
 	Allow *bool
 	// Since keeps verdicts recorded at or after it.
 	Since time.Time
+	// Until keeps verdicts recorded at or before it, for a reader paging back
+	// newest first.
+	Until time.Time
 	// Ascending returns the oldest matches first, so a follower reading from
 	// Since takes the rows right after its cursor rather than the newest ones.
 	Ascending bool
@@ -77,6 +80,10 @@ func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, fi
 		// BeforeCreate). On SQLite both sides are text with an offset and are
 		// compared as text, so a bound in any other zone is off by its offset.
 		query = query.Where("created_at >= ?", filter.Since.UTC())
+	}
+	if !filter.Until.IsZero() {
+		// UTC for the reason given for Since.
+		query = query.Where("created_at <= ?", filter.Until.UTC())
 	}
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)

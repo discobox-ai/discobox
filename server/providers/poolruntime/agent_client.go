@@ -117,6 +117,9 @@ func (p *poolAgentClient) ListDNSAudit(ctx context.Context, projectID string, fi
 	if !filter.Since.IsZero() {
 		params.Since = poolclient.NewOptDateTime(filter.Since)
 	}
+	if !filter.Until.IsZero() {
+		params.Until = poolclient.NewOptDateTime(filter.Until)
+	}
 	if filter.Limit > 0 {
 		params.Limit = poolclient.NewOptInt(filter.Limit)
 	}
@@ -172,6 +175,9 @@ func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, q
 	}
 	if !query.Since.IsZero() {
 		params.Since = poolclient.NewOptDateTime(query.Since)
+	}
+	if !query.Until.IsZero() {
+		params.Until = poolclient.NewOptDateTime(query.Until)
 	}
 	if query.Limit > 0 {
 		params.Limit = poolclient.NewOptInt(query.Limit)

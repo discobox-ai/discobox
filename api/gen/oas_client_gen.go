@@ -7999,7 +7999,24 @@ func (c *Client) sendListCredentialVerdicts(ctx context.Context, params ListCred
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Since.Get(); ok {
-				return e.EncodeValue(conv.DateTimeToString(val))
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "until" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Until.Get(); ok {
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
 			}
 			return nil
 		}); err != nil {
@@ -8217,7 +8234,24 @@ func (c *Client) sendListDNSAudit(ctx context.Context, params ListDNSAuditParams
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Since.Get(); ok {
-				return e.EncodeValue(conv.DateTimeToString(val))
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "until" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Until.Get(); ok {
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
 			}
 			return nil
 		}); err != nil {
@@ -8465,7 +8499,24 @@ func (c *Client) sendListExecEvents(ctx context.Context, params ListExecEventsPa
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Since.Get(); ok {
-				return e.EncodeValue(conv.DateTimeToString(val))
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "until" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Until.Get(); ok {
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
 			}
 			return nil
 		}); err != nil {
@@ -8684,7 +8735,24 @@ func (c *Client) sendListHTTPAudit(ctx context.Context, params ListHTTPAuditPara
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Since.Get(); ok {
-				return e.EncodeValue(conv.DateTimeToString(val))
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "until" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Until.Get(); ok {
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
 			}
 			return nil
 		}); err != nil {
@@ -9218,7 +9286,24 @@ func (c *Client) sendListHarnessHooks(ctx context.Context, params ListHarnessHoo
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Since.Get(); ok {
-				return e.EncodeValue(conv.DateTimeToString(val))
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "until" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Until.Get(); ok {
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
 			}
 			return nil
 		}); err != nil {

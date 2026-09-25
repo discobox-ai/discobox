@@ -1228,6 +1228,15 @@ paths:
                   schema:
                     format: date-time
                     type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                - description: Only events recorded at or before this time, for paging back newest first.
+                  in: query
+                  name: until
+                  required: false
+                  schema:
+                    format: date-time
+                    type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                 - description: asc returns the earliest matching events at or after since, for reading forward; desc, the default, returns the most recent.
                   in: query
                   name: order
@@ -1946,6 +1955,15 @@ paths:
                   schema:
                     format: date-time
                     type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                - description: Only hooks recorded at or before this time, for paging back newest first.
+                  in: query
+                  name: until
+                  required: false
+                  schema:
+                    format: date-time
+                    type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                 - description: asc returns the earliest matching hooks at or after since, for reading forward; desc, the default, returns the most recent.
                   in: query
                   name: order

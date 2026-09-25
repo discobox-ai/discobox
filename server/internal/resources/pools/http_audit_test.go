@@ -451,3 +451,31 @@ func TestListDNSAuditAsksOnlyTheLiveSandboxesPool(t *testing.T) {
 		t.Fatalf("asked %v, want only pool-b for sandbox-live", provider.dnsFilters)
 	}
 }
+
+// A pool agent that predates until ignores it and answers its newest page. Its
+// older records are what that page is missing, so the pool is named rather
+// than merged as a page that looks complete; a pool that honored the bound is
+// merged as usual.
+func TestListHTTPAuditNamesAPoolThatIgnoredUntil(t *testing.T) {
+	svc, provider := newAuditService(t)
+	until := time.Now().UTC().Add(-2 * time.Minute)
+	// pool-a answers a record from a minute ago, past the bound; pool-b's
+	// only record is from three minutes ago.
+	result, err := svc.ListHTTPAudit(context.Background(), "project-1", services.HTTPAuditFilter{Until: until, Limit: 100})
+	if err != nil {
+		t.Fatalf("ListHTTPAudit() error = %v", err)
+	}
+	if got := provider.queries["pool-b"].Until; !got.Equal(until) {
+		t.Fatalf("pool-b asked until %v, want %v", got, until)
+	}
+	if len(result.Exchanges) != 1 || result.Exchanges[0].PoolID != "pool-b" {
+		t.Fatalf("exchanges = %+v, want only pool-b's", result.Exchanges)
+	}
+	var named bool
+	for _, pool := range result.UnavailablePools {
+		named = named || (pool.PoolID == "pool-a" && strings.Contains(pool.Reason, "reading back by time"))
+	}
+	if !named {
+		t.Fatalf("unavailable = %+v, want pool-a named as ignoring until", result.UnavailablePools)
+	}
+}

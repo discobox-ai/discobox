@@ -9536,6 +9536,10 @@ func (s *Server) handleListCredentialVerdictsRequest(args [1]string, argsEscaped
 					In:   "query",
 				}: params.Since,
 				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
+				{
 					Name: "limit",
 					In:   "query",
 				}: params.Limit,
@@ -9708,6 +9712,10 @@ func (s *Server) handleListDNSAuditRequest(args [1]string, argsEscaped bool, w h
 					Name: "since",
 					In:   "query",
 				}: params.Since,
+				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
 				{
 					Name: "limit",
 					In:   "query",
@@ -9888,6 +9896,10 @@ func (s *Server) handleListExecEventsRequest(args [2]string, argsEscaped bool, w
 					In:   "query",
 				}: params.Since,
 				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
+				{
 					Name: "order",
 					In:   "query",
 				}: params.Order,
@@ -10061,6 +10073,10 @@ func (s *Server) handleListHTTPAuditRequest(args [1]string, argsEscaped bool, w 
 					Name: "since",
 					In:   "query",
 				}: params.Since,
+				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
 				{
 					Name: "limit",
 					In:   "query",
@@ -10546,6 +10562,10 @@ func (s *Server) handleListHarnessHooksRequest(args [2]string, argsEscaped bool,
 					Name: "since",
 					In:   "query",
 				}: params.Since,
+				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
 				{
 					Name: "order",
 					In:   "query",

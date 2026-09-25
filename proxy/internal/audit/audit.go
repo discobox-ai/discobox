@@ -256,6 +256,11 @@ type QueryOptions struct {
 	// (nonZeroTime), and SQLite compares times as text carrying their offset,
 	// so the bound is compared in UTC too.
 	Since time.Time
+	// Until keeps rows written at or before it, compared in UTC as Since is.
+	// It is how a reader pages back through history newest first: each page
+	// is read up to the oldest row of the one before it, inclusively, so rows
+	// sharing that instant are read again rather than skipped.
+	Until time.Time
 	// MinStatus and MaxStatus bound the response status, inclusive; zero leaves
 	// that side open. HTTP reads only.
 	MinStatus int
@@ -276,8 +281,8 @@ type QueryOptions struct {
 	// window on every poll to catch those, or loses them. Reading by id needs
 	// neither.
 	//
-	// It takes precedence over Since and Ascending: with a cursor there is
-	// nothing for a time bound to add, and the write order is forward by
+	// It takes precedence over Since, Until and Ascending: with a cursor there
+	// is nothing for a time bound to add, and the write order is forward by
 	// definition.
 	AfterID auditid.ExchangeID
 	Limit   int
@@ -292,6 +297,7 @@ type DNSQueryOptions struct {
 	ClientID  string
 	Name      string
 	Since     time.Time
+	Until     time.Time
 	Ascending bool
 	AfterID   auditid.DNSQueryID
 	Limit     int
@@ -491,7 +497,7 @@ func (r *Recorder) ListDNS(ctx context.Context, opts DNSQueryOptions) ([]DNSQuer
 		return nil, nil
 	}
 	var rows []DNSQuery
-	query := applyCursor(r.db.WithContext(contextOrBackground(ctx)).Model(&DNSQuery{}), uint64(opts.AfterID), opts.Since)
+	query := applyCursor(r.db.WithContext(contextOrBackground(ctx)).Model(&DNSQuery{}), uint64(opts.AfterID), opts.Since, opts.Until)
 	if opts.ClientID != "" {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
@@ -800,7 +806,7 @@ func marshalHeaders(headers http.Header, redactedHeaders []string) string {
 }
 
 func applyHTTPQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
-	query = applyCursor(query, uint64(opts.AfterID), opts.Since)
+	query = applyCursor(query, uint64(opts.AfterID), opts.Since, opts.Until)
 	if opts.ClientID != "" {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
@@ -838,7 +844,7 @@ func escapeLike(value string) string {
 }
 
 func applySOCKSQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
-	query = applyCursor(query, uint64(opts.AfterID), opts.Since)
+	query = applyCursor(query, uint64(opts.AfterID), opts.Since, opts.Until)
 	if opts.ClientID != "" {
 		query = query.Where("client_id = ?", opts.ClientID)
 	}
@@ -849,14 +855,18 @@ func applySOCKSQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
 }
 
 // applyCursor bounds a read by where the reader left off: after a row id, or
-// at a time. Rows are written in UTC (nonZeroTime), and SQLite compares times
-// as text carrying their offset, so a time bound is compared in UTC too.
-func applyCursor(query *gorm.DB, after uint64, since time.Time) *gorm.DB {
-	switch {
-	case after > 0:
+// within a time window. Rows are written in UTC (nonZeroTime), and SQLite
+// compares times as text carrying their offset, so a time bound is compared in
+// UTC too.
+func applyCursor(query *gorm.DB, after uint64, since, until time.Time) *gorm.DB {
+	if after > 0 {
 		return query.Where("id > ?", after)
-	case !since.IsZero():
-		return query.Where("created_at >= ?", since.UTC())
+	}
+	if !since.IsZero() {
+		query = query.Where("created_at >= ?", since.UTC())
+	}
+	if !until.IsZero() {
+		query = query.Where("created_at <= ?", until.UTC())
 	}
 	return query
 }

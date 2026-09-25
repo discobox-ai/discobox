@@ -448,10 +448,10 @@ which is the ordinary injected-sentinel case rather than a gap.
 The control API (`ControlHandler`, served by `ListenAndServeControl` only when
 `Control.ListenAddress` is set) is read-only. It lists HTTP and SOCKS audit rows
 (`GET /audit/http`, `/audit/socks`, filtered by `client_id`, `host`, `since`
-(RFC 3339, compared in UTC because rows are written in UTC) and `limit` up to
-1000; HTTP also takes `use_id`, which the SOCKS route rejects rather than
+and `until` (RFC 3339, both inclusive, compared in UTC because rows are written
+in UTC) and `limit` up to 1000; HTTP also takes `use_id`, which the SOCKS route rejects rather than
 ignores, because a tunnel the proxy never reads can have spent no credential)
-and DNS rows (`GET /audit/dns`, by `client_id`, `name`, `since`, `order`,
+and DNS rows (`GET /audit/dns`, by `client_id`, `name`, `since`, `until`, `order`,
 `limit`, and a `dns_` `after_id` or exact `id`, refusing every exchange-only filter and an
 `http_` cursor),
 reports the dropped-event counter (`/audit/dropped`), and serves
@@ -475,7 +475,8 @@ and as `client_id`: an authenticated proxy narrows by the token (and the two
 agree), and a proxy serving the control API without authentication, which
 ignores the token, is still narrowed by the query. It also reads recorded
 bodies and upgraded streams (`OpenHTTPArtifact`), scoped the same way, and
-passes `order=asc` for a follower reading forward from a `since` bound;
+passes `order=asc` for a follower reading forward from a `since` bound and
+`until` for a reader paging back newest first;
 `min_status`, `max_status` and `blocked` filter HTTP rows, and the SOCKS route
 refuses them.
 
@@ -492,7 +493,7 @@ they happened: the recorder stamps an exchange when it ends and writes it from a
 queue, so a slow write lands behind a faster one. A reader paging by time has to
 re-read a window on every poll to catch those and can still miss one; reading
 after an id needs neither, and orders by the primary key. It takes precedence
-over `since` and `order`. A Discobox pool proxy
+over `since`, `until` and `order`. A Discobox pool proxy
 serves the control API on loopback only, trusting a key the pool agent holds,
 and the pool agent is its only reader
 ([`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md#reading-the-proxys-audit)).

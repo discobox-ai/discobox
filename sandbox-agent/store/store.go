@@ -423,6 +423,9 @@ type ExecEventFilter struct {
 	// Since keeps events recorded at or after it, compared in UTC as the
 	// events are recorded.
 	Since time.Time
+	// Until keeps events recorded at or before it, compared as Since is, for a
+	// reader paging back newest first.
+	Until time.Time
 	// Ascending returns the earliest Limit matches from Since, oldest first,
 	// for a reader following forward. Without it the most recent Limit come
 	// back newest first.
@@ -454,6 +457,9 @@ func (s *Store) ListEvents(ctx context.Context, filter ExecEventFilter) ([]Event
 	}
 	if !filter.Since.IsZero() {
 		query = query.Where("created_at >= ?", filter.Since.UTC())
+	}
+	if !filter.Until.IsZero() {
+		query = query.Where("created_at <= ?", filter.Until.UTC())
 	}
 	var rows []ExecEvent
 	if err := query.Find(&rows).Error; err != nil {
@@ -717,6 +723,9 @@ type HarnessHookFilter struct {
 	// SQLite compares times as text carrying their offset, so the bound is
 	// compared in UTC.
 	Since time.Time
+	// Until keeps hooks recorded at or before it, compared as Since is, for a
+	// reader paging back newest first.
+	Until time.Time
 	// Ascending takes the earliest Limit matches from Since, for a reader
 	// following the log forward. Without it the most recent Limit are taken.
 	// Either way they come back oldest first.
@@ -751,6 +760,9 @@ func (s *Store) ListHarnessHooks(ctx context.Context, filter HarnessHookFilter) 
 	}
 	if !filter.Since.IsZero() {
 		query = query.Where("created_at >= ?", filter.Since.UTC())
+	}
+	if !filter.Until.IsZero() {
+		query = query.Where("created_at <= ?", filter.Until.UTC())
 	}
 	var rows []HarnessHookLog
 	if err := query.Find(&rows).Error; err != nil {

@@ -322,6 +322,7 @@ func (h *Handler) ListCredentialVerdicts(ctx context.Context, params serverapi.L
 		UseID:     params.UseId.Or(""),
 		GrantID:   params.GrantId.Or(""),
 		Since:     params.Since.Or(time.Time{}),
+		Until:     params.Until.Or(time.Time{}),
 		Ascending: params.Order.Or(serverapi.ListCredentialVerdictsOrderDesc) == serverapi.ListCredentialVerdictsOrderAsc,
 		Limit:     params.Limit.Or(100),
 	}

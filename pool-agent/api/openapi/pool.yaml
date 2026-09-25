@@ -1408,6 +1408,15 @@ paths:
                 schema:
                     description: Only queries asked at or after this time
                     format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+            -   description: Only queries asked at or before this time, for paging back newest first
+                in: query
+                name: until
+                schema:
+                    description: Only queries asked at or before this time, for paging back newest first
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                     type: string
             -   description: Maximum number of queries to return
                 in: query
@@ -1417,11 +1426,11 @@ paths:
                     maximum: 1000
                     minimum: 1
                     type: integer
-            -   description: Only queries written after this record, in write order; takes precedence over since and order
+            -   description: Only queries written after this record, in write order; takes precedence over since, until and order
                 in: query
                 name: afterId
                 schema:
-                    description: Only queries written after this record, in write order; takes precedence over since and order
+                    description: Only queries written after this record, in write order; takes precedence over since, until and order
                     pattern: ^dns_[0-9]+$
                     type: string
             -   description: asc returns the oldest matches first, for reading forward from a since bound
@@ -1498,6 +1507,15 @@ paths:
                 schema:
                     description: Only exchanges recorded at or after this time
                     format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+            -   description: Only exchanges recorded at or before this time, for paging back newest first
+                in: query
+                name: until
+                schema:
+                    description: Only exchanges recorded at or before this time, for paging back newest first
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                     type: string
             -   description: Maximum number of exchanges to return
                 in: query
@@ -1507,11 +1525,11 @@ paths:
                     maximum: 1000
                     minimum: 1
                     type: integer
-            -   description: Only exchanges written after this record, in write order; takes precedence over since and order
+            -   description: Only exchanges written after this record, in write order; takes precedence over since, until and order
                 in: query
                 name: afterId
                 schema:
-                    description: Only exchanges written after this record, in write order; takes precedence over since and order
+                    description: Only exchanges written after this record, in write order; takes precedence over since, until and order
                     pattern: ^http_[0-9]+$
                     type: string
             -   description: Only exchanges whose response status is at least this

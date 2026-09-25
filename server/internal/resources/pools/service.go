@@ -276,6 +276,7 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 		Host:      filter.Host,
 		UseID:     filter.UseID,
 		Since:     filter.Since,
+		Until:     filter.Until,
 		MinStatus: filter.MinStatus,
 		MaxStatus: filter.MaxStatus,
 		Blocked:   filter.Blocked,
@@ -294,6 +295,11 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 		exchanges, err := runtime.ListHTTPAudit(ctx, pool, poolQuery)
 		if err != nil {
 			return nil, auditReadError(err)
+		}
+		if poolQuery.AfterID == 0 {
+			if err := checkAuditUntil(exchanges, poolQuery.Until, func(e sandbox.HTTPAuditExchange) time.Time { return e.CreatedAt }); err != nil {
+				return nil, err
+			}
 		}
 		page := make([]services.PoolHTTPAuditExchange, 0, len(exchanges))
 		for _, exchange := range exchanges {
@@ -323,6 +329,7 @@ func (s *Service) ListDNSAudit(ctx context.Context, projectID string, filter ser
 		SandboxID: filter.SandboxID,
 		Name:      filter.Name,
 		Since:     filter.Since,
+		Until:     filter.Until,
 		Ascending: filter.Ascending,
 		Limit:     filter.Limit,
 	}
@@ -336,6 +343,11 @@ func (s *Service) ListDNSAudit(ctx context.Context, projectID string, filter ser
 		queries, err := runtime.ListDNSAudit(ctx, pool, poolQuery)
 		if err != nil {
 			return nil, auditReadError(err)
+		}
+		if poolQuery.AfterID == 0 {
+			if err := checkAuditUntil(queries, poolQuery.Until, func(q sandbox.DNSAuditQuery) time.Time { return q.CreatedAt }); err != nil {
+				return nil, err
+			}
 		}
 		page := make([]services.PoolDNSAuditQuery, 0, len(queries))
 		for _, q := range queries {
@@ -498,6 +510,24 @@ func (s *Service) auditPools(ctx context.Context, projectID, poolID, sandboxID s
 }
 
 // auditReadError is how one pool's failed audit read is reported.
+// checkAuditUntil refuses a pool's page that holds a record newer than the
+// until it was asked for, which is how a pool agent that predates until
+// answers: it ignores the bound and returns its newest page. That page cannot
+// be trimmed into the right answer — what it is missing is older than
+// everything in it — so the pool is named unavailable rather than merged as a
+// page that silently skips its older records.
+func checkAuditUntil[T any](rows []T, until time.Time, at func(T) time.Time) error {
+	if until.IsZero() {
+		return nil
+	}
+	for _, row := range rows {
+		if at(row).After(until) {
+			return errors.New("its pool agent predates reading back by time, so its older records cannot be paged to; the pool moves onto the current agent when it is next reconciled")
+		}
+	}
+	return nil
+}
+
 func auditReadError(err error) error {
 	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
 		return errors.New("its pool agent predates the audit read; the pool moves onto the current agent when it is next reconciled")

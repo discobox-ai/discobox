@@ -1471,6 +1471,10 @@ func (s *Server) handlePoolListDNSAuditRequest(args [2]string, argsEscaped bool,
 					In:   "query",
 				}: params.Since,
 				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
+				{
 					Name: "limit",
 					In:   "query",
 				}: params.Limit,
@@ -1705,6 +1709,10 @@ func (s *Server) handlePoolListHTTPAuditRequest(args [2]string, argsEscaped bool
 					Name: "since",
 					In:   "query",
 				}: params.Since,
+				{
+					Name: "until",
+					In:   "query",
+				}: params.Until,
 				{
 					Name: "limit",
 					In:   "query",

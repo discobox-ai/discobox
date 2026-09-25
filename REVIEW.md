@@ -27,4 +27,10 @@ Global review expectations:
   the whole workspace for aix; the `go-lsp` hook then fails on `syscall.Flock`
   and `modernc.org/libc`. Nothing here builds for another OS, so write the
   darwin, linux, and windows halves and no fallback.
+- A `date-time` query parameter that a reader pages by needs
+  `x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00`. ogen's default
+  encodes it with `time.RFC3339`, whole seconds. An upper bound truncated below
+  a page's oldest record skips the rest of that second; a lower bound truncated
+  below a page's newest re-reads the page, and when one second holds more than
+  a page the reader never gets past it (the audit lists' `until` and `since`).
 - Update package-local design docs when changing architecture or data model.

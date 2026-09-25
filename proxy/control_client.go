@@ -83,6 +83,9 @@ func (c *ControlClient) ListHTTP(ctx context.Context, sandboxID string, query Au
 	if !query.Since.IsZero() {
 		params.Set("since", query.Since.UTC().Format(time.RFC3339Nano))
 	}
+	if !query.Until.IsZero() {
+		params.Set("until", query.Until.UTC().Format(time.RFC3339Nano))
+	}
 	if query.Limit > 0 {
 		params.Set("limit", strconv.Itoa(query.Limit))
 	}
@@ -136,6 +139,9 @@ func (c *ControlClient) ListDNS(ctx context.Context, sandboxID string, query Aud
 	}
 	if !query.Since.IsZero() {
 		params.Set("since", query.Since.UTC().Format(time.RFC3339Nano))
+	}
+	if !query.Until.IsZero() {
+		params.Set("until", query.Until.UTC().Format(time.RFC3339Nano))
 	}
 	if query.Limit > 0 {
 		params.Set("limit", strconv.Itoa(query.Limit))

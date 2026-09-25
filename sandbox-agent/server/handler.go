@@ -435,6 +435,7 @@ func (h *handler) ListExecEvents(ctx context.Context, params sandboxapi.ListExec
 		ExecID:    params.ExecId.Or(""),
 		Type:      params.Type.Or(""),
 		Since:     params.Since.Or(time.Time{}),
+		Until:     params.Until.Or(time.Time{}),
 		Ascending: params.Order.Or(sandboxapi.ListExecEventsOrderDesc) == sandboxapi.ListExecEventsOrderAsc,
 		Limit:     params.Limit.Or(100),
 	})
@@ -492,6 +493,7 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 		Provider:   params.Provider.Or(""),
 		Event:      params.Event.Or(""),
 		Since:      params.Since.Or(time.Time{}),
+		Until:      params.Until.Or(time.Time{}),
 		Ascending:  params.Order.Or(sandboxapi.ListHarnessHooksOrderDesc) == sandboxapi.ListHarnessHooksOrderAsc,
 		Limit:      params.Limit.Or(100),
 	})

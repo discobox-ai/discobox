@@ -555,6 +555,8 @@ func TestListHarnessHooksFiltersAndReadsForward(t *testing.T) {
 		{name: "forward from the second", filter: HarnessHookFilter{Since: first.CreatedAt.Add(time.Nanosecond), Ascending: true, Limit: 2}, want: []string{"claude-code/PreToolUse", "codex-cli/PreToolUse"}},
 		// Inclusive, and in a zone far from UTC: rows are recorded in UTC.
 		{name: "since is inclusive in any zone", filter: HarnessHookFilter{Since: third.CreatedAt.In(time.FixedZone("UTC+14", 14*60*60)), Ascending: true}, want: []string{"codex-cli/PreToolUse", "claude-code/Stop"}},
+		// Paging back: the latest N at or before a bound, inclusive.
+		{name: "back from the third", filter: HarnessHookFilter{Until: third.CreatedAt.In(time.FixedZone("UTC+14", 14*60*60)), Limit: 2}, want: []string{"claude-code/PreToolUse", "codex-cli/PreToolUse"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hooks, err := st.ListHarnessHooks(ctx, tc.filter)
@@ -607,6 +609,13 @@ func TestListEventsAcrossExecsFiltersAndReadsForward(t *testing.T) {
 	}
 	if got := names(forward); !slices.Equal(got, []string{"ex_2/exec.created", "ex_2/exec.stopped"}) {
 		t.Fatalf("forward from ex_2's create = %v", got)
+	}
+	back, err := st.ListEvents(ctx, ExecEventFilter{Until: all[1].CreatedAt, Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(back); !slices.Equal(got, []string{"ex_2/exec.created", "ex_1/exec.started"}) {
+		t.Fatalf("back from ex_2's create = %v", got)
 	}
 }
 

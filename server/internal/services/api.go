@@ -220,6 +220,9 @@ type HTTPAuditFilter struct {
 	Host      string
 	UseID     string
 	Since     time.Time
+	// Until keeps records written at or before it, for a reader paging back
+	// newest first.
+	Until time.Time
 	// MinStatus and MaxStatus bound the response status, inclusive; zero
 	// leaves that side open.
 	MinStatus int
@@ -272,6 +275,7 @@ type DNSAuditFilter struct {
 	PoolID    string
 	Name      string
 	Since     time.Time
+	Until     time.Time
 	Ascending bool
 	After     map[string]auditid.DNSQueryID
 	Limit     int

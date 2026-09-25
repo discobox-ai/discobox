@@ -236,6 +236,9 @@ type HTTPAuditQuery struct {
 	Host      string
 	UseID     string
 	Since     time.Time
+	// Until keeps records written at or before it, for a reader paging back
+	// newest first.
+	Until time.Time
 	// MinStatus and MaxStatus bound the response status, inclusive; zero
 	// leaves that side open.
 	MinStatus int
@@ -246,7 +249,7 @@ type HTTPAuditQuery struct {
 	// Ascending reads oldest first, for a follower reading forward from Since.
 	Ascending bool
 	// AfterID reads the records this pool wrote after one already read, in
-	// write order, and takes precedence over Since: it is the cursor a follower
+	// write order, and takes precedence over Since and Until: it is the cursor a follower
 	// of this pool's trail uses. IDs are per pool, so it is only meaningful
 	// with the pool it came from.
 	AfterID auditid.ExchangeID
@@ -262,6 +265,7 @@ type DNSAuditFilter struct {
 	SandboxID string
 	Name      string
 	Since     time.Time
+	Until     time.Time
 	Ascending bool
 	AfterID   auditid.DNSQueryID
 	Limit     int

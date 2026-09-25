@@ -101,7 +101,7 @@ func (s *Server) handleControlListDNS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	query := r.URL.Query()
-	since, ascending, limit, err := controlWindow(query)
+	since, until, ascending, limit, err := controlWindow(query)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -110,6 +110,7 @@ func (s *Server) handleControlListDNS(w http.ResponseWriter, r *http.Request) {
 		ClientID:  query.Get("client_id"),
 		Name:      query.Get("name"),
 		Since:     since,
+		Until:     until,
 		Ascending: ascending,
 		Limit:     limit,
 	}
@@ -213,7 +214,7 @@ var httpOnlyControlParams = []string{"use_id", "min_status", "max_status", "bloc
 
 func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 	query := r.URL.Query()
-	since, ascending, limit, err := controlWindow(query)
+	since, until, ascending, limit, err := controlWindow(query)
 	if err != nil {
 		return audit.QueryOptions{}, err
 	}
@@ -222,6 +223,7 @@ func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 		Host:      query.Get("host"),
 		UseID:     query.Get("use_id"),
 		Since:     since,
+		Until:     until,
 		Ascending: ascending,
 		Limit:     limit,
 	}
@@ -251,13 +253,15 @@ func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 	return opts, nil
 }
 
-// controlWindow reads the parameters every audit list shares: where the read
-// starts in time, which way it runs, and how many rows it returns.
-func controlWindow(query url.Values) (since time.Time, ascending bool, limit int, err error) {
+// controlWindow reads the parameters every audit list shares: the time window
+// the read covers, which way it runs, and how many rows it returns.
+func controlWindow(query url.Values) (since, until time.Time, ascending bool, limit int, err error) {
 	limit, _ = strconv.Atoi(query.Get("limit"))
-	if raw := query.Get("since"); raw != "" {
-		if since, err = time.Parse(time.RFC3339Nano, raw); err != nil {
-			return time.Time{}, false, 0, fmt.Errorf("since %q is not an RFC 3339 time", raw)
+	for param, field := range map[string]*time.Time{"since": &since, "until": &until} {
+		if raw := query.Get(param); raw != "" {
+			if *field, err = time.Parse(time.RFC3339Nano, raw); err != nil {
+				return time.Time{}, time.Time{}, false, 0, fmt.Errorf("%s %q is not an RFC 3339 time", param, raw)
+			}
 		}
 	}
 	switch order := query.Get("order"); order {
@@ -265,9 +269,9 @@ func controlWindow(query url.Values) (since time.Time, ascending bool, limit int
 	case "asc":
 		ascending = true
 	default:
-		return time.Time{}, false, 0, fmt.Errorf("order %q is not asc or desc", order)
+		return time.Time{}, time.Time{}, false, 0, fmt.Errorf("order %q is not asc or desc", order)
 	}
-	return since, ascending, limit, nil
+	return since, until, ascending, limit, nil
 }
 
 // controlHTTPArtifact reads /audit/http/{id}, whose artifact is empty and

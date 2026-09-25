@@ -48,6 +48,7 @@ func (s *sandboxService) PoolListHTTPAudit(ctx context.Context, params workerapi
 		Host:      params.Host.Or(""),
 		UseID:     params.UseId.Or(""),
 		Since:     params.Since.Or(time.Time{}),
+		Until:     params.Until.Or(time.Time{}),
 		MinStatus: params.MinStatus.Or(0),
 		MaxStatus: params.MaxStatus.Or(0),
 		Ascending: params.Order.Or(workerapi.PoolListHTTPAuditOrderDesc) == workerapi.PoolListHTTPAuditOrderAsc,
@@ -90,6 +91,7 @@ func (s *sandboxService) PoolListDNSAudit(ctx context.Context, params workerapi.
 	query := proxy.AuditDNSQueryOptions{
 		Name:      params.Name.Or(""),
 		Since:     params.Since.Or(time.Time{}),
+		Until:     params.Until.Or(time.Time{}),
 		Ascending: params.Order.Or(workerapi.PoolListDNSAuditOrderDesc) == workerapi.PoolListDNSAuditOrderAsc,
 		Limit:     params.Limit.Or(100),
 	}
