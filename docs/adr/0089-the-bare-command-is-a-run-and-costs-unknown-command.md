@@ -2,9 +2,11 @@
 
 - **Status**: Accepted (§4's positional prompt and §5's `cobra.ArbitraryArgs`
   superseded by
-  [ADR 0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md); §§1–3
-  stand)
-- **The `discobox run` spelling superseded by**: [0133](0133-the-command-that-makes-a-discobox-is-new.md) — the command is `discobox new`, with `run` kept as an alias. What §§1–3 decide stands.
+  [ADR 0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md); §3's
+  root half and §4 superseded by
+  [ADR 26-09-25-027](26-09-25-027-only-new-makes-a-discobox.md); §§1–2 stand)
+- **The `discobox run` spelling superseded by**: [0133](0133-the-command-that-makes-a-discobox-is-new.md) — the command is `discobox new`, with `run` kept as an alias.
+- **§3's root half and §4 superseded by**: [26-09-25-027](26-09-25-027-only-new-makes-a-discobox.md) — the bare command takes none of `new`'s flags and is never a run.
 - **Date**: 2026-09-03
 
 ## Context

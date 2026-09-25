@@ -2,6 +2,7 @@
 
 - **Status**: Accepted (§1's mechanism superseded by [0103](0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md))
 - **§§3–4's command spelling superseded by**: [0133](0133-the-command-that-makes-a-discobox-is-new.md) — the command that keeps a trailing prompt is `discobox new`, with `run` kept as an alias, and §4's preview fallback names `new` too. What §3 and §4 decide stands.
+- **§2 and §4's lead spelling superseded by**: [26-09-25-027](26-09-25-027-only-new-makes-a-discobox.md) — the bare command takes no `-p`; documents and the preview spell `discobox new`.
 - **Date**: 2026-09-07
 - **Supersedes**: [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md)
   §4's positional half and §5 ("the root command's `Args` becomes
