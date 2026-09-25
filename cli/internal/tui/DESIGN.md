@@ -1761,15 +1761,15 @@ press that uses them. Both columns are marked on every stepping row, lit or
 not: a target that only exists once the pointer has stopped is one the first
 click misses.
 
-**The panel shows the command it describes, spelled `discobox -p '...'`**
+**The panel shows the command it describes, spelled `discobox new -p '...'`**
 (`optionSet.command`). What is on screen has to be reproducible from a shell —
-a panel offering something the command cannot is the thing to avoid — and the
-spelling is the one the CLI's help leads with: the prompt as `-p`, with no
-`new` in front. That is also the truer rendering of what Enter does, since the
-composer holds one piece of text and sends it as one argument, which is exactly
-what `-p` is. Only a preview carrying neither a prompt nor a run flag names
-`new`, because `discobox -C dir` on its own is the launcher
-([ADR 0100](../../../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md)).
+a panel offering something the command cannot is the thing to avoid — and
+`new` is the only command that makes a discobox
+([ADR 26-09-25-027](../../../docs/adr/26-09-25-027-only-new-makes-a-discobox.md)).
+Global flags (`--server`, `--project`, `-C`) go in front of `new`, its own
+after it. The prompt is `-p` rather than trailing words because the composer
+holds one piece of text and sends it as one argument, which is exactly what
+`-p` is.
 
 A card's text field takes a caret from a press (`hitInput`, `pressInput`) — the
 dialog's own field, and a form's typed rows, which take the form cursor with

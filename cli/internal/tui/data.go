@@ -319,7 +319,7 @@ type Sandbox struct {
 // the directory every command it runs inherits.
 //
 // It is read once at startup. The project is a property of the session the way
-// `discobox -p` is a property of a shell, not something the window changes. What
+// DISCOBOX_PROJECT is a property of a shell, not something the window changes. What
 // the run options offer as a harness is not here — that is the harnesses, which
 // are read on their own and change while the window is up.
 type Session struct {

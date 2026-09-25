@@ -77,7 +77,7 @@ launchers, and configure scripts.
 - **A wrapper joins its prompt words back into one prompt.** The command is
   *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
   `discobox new fix the failing tests` reaches `discobox-harness-run` as four
-  arguments, not one. A prompt given as one argument — `discobox -p 'fix the
+  arguments, not one. A prompt given as one argument — `discobox new 'fix the
   failing tests'`, and everything the launcher creates — arrives as one, which
   the same joining leaves alone. Every wrapper joins everything after the flags with
   single spaces and hands its agent that single string — an agent CLI takes its

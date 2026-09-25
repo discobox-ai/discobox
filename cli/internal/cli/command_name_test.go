@@ -43,7 +43,7 @@ func TestCommandNameReachesHelp(t *testing.T) {
 	if got := root.Name(); got != "discobox-dev" {
 		t.Fatalf("root command name = %q, want discobox-dev", got)
 	}
-	if !strings.Contains(root.Long, "discobox-dev -p 'fix the failing tests'") {
+	if !strings.Contains(root.Long, "discobox-dev new 'fix the failing tests'") {
 		t.Fatalf("long help does not name the binary it was run as:\n%s", root.Long)
 	}
 

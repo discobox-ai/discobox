@@ -1865,8 +1865,8 @@ func TestGlobalFlagsReachCommandsThatParseNoFlags(t *testing.T) {
 	}
 }
 
-// A word after the bare command is a subcommand, not a prompt: the prompt is
-// -p. Nothing can tell a misspelled subcommand from the first word of a prompt
+// A word after the bare command is a subcommand, not a prompt: a prompt goes
+// after new. Nothing can tell a misspelled subcommand from the first word of a prompt
 // — a prompt is words — so the two are not asked to share a spelling, and a
 // misspelling says what it was near instead of quietly costing a discobox.
 func TestBareWordsAreNotAPrompt(t *testing.T) {
@@ -1896,10 +1896,8 @@ func TestBareWordsAreNotAPrompt(t *testing.T) {
 }
 
 // A `--` does not smuggle a prompt past that. It is the likeliest way to
-// mistype this, since `run --` is what run's own help teaches, and dropping the
-// words is worse than either failure above: `discobox -d -- fix the failing
-// tests` would otherwise create a discobox with an empty prompt and say nothing
-// about the four words it lost.
+// mistype this, since `new --` is what new's own help teaches with the command
+// name left out.
 //
 // The words after a `--` are the ones nothing else catches. Cobra's scan for
 // the command name does not stop there — it reads `--` as a flag awaiting a
@@ -1907,7 +1905,7 @@ func TestBareWordsAreNotAPrompt(t *testing.T) {
 // further along that happens to name a command is dispatched to, and only
 // refuseRootOnlyArguments notices. The table carries a prompt of each shape for
 // that reason: one whose words name nothing, ones that reach `run` and `push`
-// in the middle of a sentence, and one that reaches a command by an alias —
+// in the middle of a sentence (with a global flag in front, for the second), and one that reaches a command by an alias —
 // the spelling most likely to read as an ordinary word.
 //
 // What the refusal says back is the sentence, put together again from the two
@@ -1919,9 +1917,8 @@ func TestBareWordsAfterADashDashAreRefused(t *testing.T) {
 		prompt string
 	}{
 		{args: []string{"--", "fix", "the", "failing", "tests"}, prompt: "fix the failing tests"},
-		{args: []string{"-d", "--", "fix", "the", "failing", "tests"}, prompt: "fix the failing tests"},
 		{args: []string{"--", "please", "run", "the", "tests"}, prompt: "please run the tests"},
-		{args: []string{"-d", "--", "update", "push", "docs"}, prompt: "update push docs"},
+		{args: []string{"--debug", "--", "update", "push", "docs"}, prompt: "update push docs"},
 		{args: []string{"--", "rewrite", "r", "harness"}, prompt: "rewrite r harness"},
 	} {
 		args := tc.args
@@ -1938,35 +1935,34 @@ func TestBareWordsAfterADashDashAreRefused(t *testing.T) {
 		}
 		// And it says what to type instead, since the words were a prompt —
 		// with the words themselves, as they were typed.
-		if !strings.Contains(err.Error(), "-p") {
-			t.Fatalf("error = %q, want it to name -p", err)
+		if !strings.Contains(err.Error(), "discobox new ") {
+			t.Fatalf("error = %q, want it to name discobox new", err)
 		}
 		if !strings.Contains(err.Error(), tc.prompt) {
 			t.Fatalf("error = %q, want it to quote %q", err, tc.prompt)
 		}
-		// Nothing was created on the way to refusing: the -d form would
-		// otherwise have gone all the way to a discobox.
+		// Nothing was created on the way to refusing.
 		if strings.Contains(out.String(), "preparing source") {
 			t.Fatalf("`discobox %s` started a create:\n%s", strings.Join(args, " "), out.String())
 		}
 	}
 }
 
-// Run's flags are the root's own, and in front of a subcommand they are parsed
-// into a run that never happens. Silently: the subcommand runs, and the flag is
-// dropped — `discobox -p 'fix the failing tests' run` would create a discobox
-// with an empty prompt, since run has its own copy of those flags and nothing
-// was written after the name. Before the root parsed the flags in front of a
-// command, cobra rejected them as unknown flags for that command; this is that
-// loudness kept.
-func TestRunFlagsInFrontOfACommandAreRefused(t *testing.T) {
+// The bare command takes none of new's flags, wherever they are written: only
+// `discobox new` makes a discobox (ADR 26-09-25-027). In front of a subcommand
+// they are unknown to the root that parses them, so they fail as loudly as they
+// would anywhere else rather than being dropped on the way to that subcommand.
+func TestRunFlagsAtTheRootAreUnknown(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		flag string
 	}{
-		{args: []string{"-p", "fix the failing tests", "ls"}, flag: "--prompt"},
-		{args: []string{"-p", "fix the failing tests", "new"}, flag: "--prompt"},
-		{args: []string{"-H", "codex", "tools", "ssh", "mybox"}, flag: "--harness"},
+		{args: []string{"-p", "fix the failing tests"}, flag: "-p"},
+		{args: []string{"-H", "codex", "-d"}, flag: "-H"},
+		{args: []string{"--detach"}, flag: "--detach"},
+		{args: []string{"-p", "fix the failing tests", "ls"}, flag: "-p"},
+		{args: []string{"-p", "fix the failing tests", "new"}, flag: "-p"},
+		{args: []string{"-H", "codex", "tools", "ssh", "mybox"}, flag: "-H"},
 		{args: []string{"--detach", "ls"}, flag: "--detach"},
 	} {
 		cmd := NewRootCommand()
@@ -1976,26 +1972,26 @@ func TestRunFlagsInFrontOfACommandAreRefused(t *testing.T) {
 		cmd.SetIn(&bytes.Buffer{})
 		cmd.SetArgs(tc.args)
 
-		err := cmd.Execute()
+		found, err := cmd.ExecuteC()
 		if err == nil {
 			t.Fatalf("`discobox %s` was accepted, output:\n%s", strings.Join(tc.args, " "), out.String())
 		}
-		// It names the flag that did nothing, since which one it was is the
-		// whole content of the mistake.
-		if !strings.Contains(err.Error(), tc.flag) {
-			t.Fatalf("error = %q, want it to name %s", err, tc.flag)
+		if !strings.Contains(err.Error(), "unknown") || !strings.Contains(err.Error(), strings.TrimLeft(tc.flag, "-")) {
+			t.Fatalf("error = %q, want it to call %s unknown", err, tc.flag)
 		}
-		// And nothing ran: neither the command that was named nor the run that
-		// was not.
+		// And it says where the flag went, since `discobox -p` is what the
+		// bare command used to take.
+		if hinted := withNewFlagHint(found, err); !strings.Contains(hinted.Error(), "discobox new "+tc.flag) {
+			t.Fatalf("error = %q, want it to point at discobox new %s", hinted, tc.flag)
+		}
 		if strings.Contains(out.String(), "preparing source") {
 			t.Fatalf("`discobox %s` started a create:\n%s", strings.Join(tc.args, " "), out.String())
 		}
 	}
 }
 
-// -p is the prompt the bare command takes, and it reaches the same run
-// `discobox new` does.
-func TestPromptFlagIsARun(t *testing.T) {
+// -p is new's prompt as one argument, however many words it holds.
+func TestPromptFlagIsOneArgument(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	var posted map[string]any
@@ -2019,7 +2015,7 @@ func TestPromptFlagIsARun(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "-d", "-p", "version bump the go modules"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "new", "-d", "-p", "version bump the go modules"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
@@ -2274,5 +2270,33 @@ func TestASecretIsNamedByItsName(t *testing.T) {
 	err := approve("twin")
 	if err == nil || !strings.Contains(err.Error(), "sec_2twin") || !strings.Contains(err.Error(), "sec_3twin") {
 		t.Fatalf("approve by a shared name = %v, want it refused naming both", err)
+	}
+}
+
+// A flag that is nobody's gets cobra's answer and nothing more: pointing it at
+// new would send somebody to a command that does not know it either. Nor does
+// one of new's flags written after another command: cobra reports the root for
+// that failure too, but nobody writing `discobox tools -H ...` was trying to
+// make a discobox.
+func TestUnknownFlagsThatAreNotABareRunAreNotPointedAtNew(t *testing.T) {
+	for _, args := range [][]string{
+		{"--no-such-flag"},
+		{"tools", "-H", "codex", "ssh", "mybox"},
+		{"admin", "--prompt", "x", "server", "status"},
+	} {
+		cmd := NewRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs(args)
+
+		found, err := cmd.ExecuteC()
+		if err == nil {
+			t.Fatalf("`discobox %s` was accepted", strings.Join(args, " "))
+		}
+		if hinted := withNewFlagHint(found, err); hinted.Error() != err.Error() {
+			t.Fatalf("`discobox %s`: error = %q, want cobra's own %q", strings.Join(args, " "), hinted, err)
+		}
 	}
 }

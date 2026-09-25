@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
@@ -126,26 +125,20 @@ func newRootCommand() (*cobra.Command, *App) {
 	cobra.EnableCommandSorting = false
 
 	app := &App{autoStart: autoStartServerAuto}
-	var run runCommandOptions
 	var showVersion bool
-	var runFlags *pflag.FlagSet
 	name := commandName()
 	cmd := &cobra.Command{
 		Use:   name + " [flags]",
 		Short: "Discobox command line client",
 		Long: fmt.Sprintf(`Discobox runs coding agents in isolated sandboxes on this machine.
 
-Given a prompt, or any of the flags "new" takes, this is "%[1]s new": the
-command name can be left out of the thing you do most.
+Make a discobox with "%[1]s new":
 
-  %[1]s -p 'fix the failing tests'
-  %[1]s -H codex -d -p 'fix the failing tests'
+  %[1]s new 'fix the failing tests'
+  %[1]s new -H codex -d 'fix the failing tests'
 
-The prompt is -p here, and only -p: a word on its own is still a subcommand, so
-a misspelled one says so rather than quietly becoming a prompt.
-
-With nothing at all it opens the launcher, where the same thing is one prompt
-and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
+With no command at all it opens the launcher, where the same thing is one prompt
+and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// The flags in front of a subcommand are parsed by the command they
@@ -169,7 +162,7 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 			if showVersion && cmd == cmd.Root() {
 				return nil
 			}
-			if err := refuseRootOnlyArguments(cmd, args, runFlags); err != nil {
+			if err := refuseRootOnlyArguments(cmd, args); err != nil {
 				return err
 			}
 			if err := app.validate(); err != nil {
@@ -187,23 +180,18 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 		// The words a bare `discobox` is given are refused, so nothing below
 		// has any to consider.
 		Args: rootArgs,
-		// Any of run's own flags makes this command a run: it is the one thing
-		// anybody does often enough to resent typing the name of, and
-		// `discobox` is already what you type to reach the same run in the
-		// launcher.
+		// Bare `discobox` is never a run: that is `discobox new` and nothing
+		// else, so the only way to make a discobox is to name the command that
+		// does (ADR 26-09-25-027).
 		//
 		// Bare `discobox` at a terminal opens the launcher: it is the one thing
 		// you can ask for without knowing a subcommand, and typing the name of
 		// a program is how you ask for it. Anywhere else — a pipe, a script,
 		// CI — it prints its help, because a full-screen window is not an
-		// answer to a program that expected output. A run says where its output
-		// goes for itself, so this only covers the launcher.
+		// answer to a program that expected output.
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if showVersion {
 				return app.printVersion(cmd)
-			}
-			if runRequested(runFlags) {
-				return app.runPrompt(cmd, &run, nil)
 			}
 			if !isTerminalStream(cmd.OutOrStdout()) || !isTerminalStream(cmd.InOrStdin()) {
 				return cmd.Help()
@@ -227,9 +215,8 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 	// server status` answers the same question after the fact; this one answers
 	// it for the command that is failing.
 	cmd.PersistentFlags().StringVar(&app.irohLogLevel, "iroh-log", envOrDefault(endpoint.IrohLogEnv, ""), "Log the iroh transport as it connects: off, error, warn, info, debug, or trace")
-	// Long form only: -p is the prompt, on this command and on run, because a
-	// prompt is what somebody typing `discobox -p ...` means every time and a
-	// project is what a script names in full.
+	// Long form only: -p is new's prompt, and a persistent -p here would be
+	// new's too.
 	cmd.PersistentFlags().StringVar(&app.projectID, "project", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
 	// Advanced: everything a project is for lives under `discobox admin`, and a
 	// user with one project — which is everyone until they make a second —
@@ -263,10 +250,6 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 	// before has to ask differently now.
 	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print the client and server versions")
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
-	// The run's own flags, on the command that stands in for it. They are local
-	// rather than persistent, so `discobox ls --help` is still a list's flags
-	// and nothing else: only the bare form is a run.
-	runFlags = addRunFlags(cmd, &run)
 
 	cmd.AddCommand(app.newRunCommand("new", "n", false))
 	// The same command under the name it had first, hidden so that nothing
@@ -299,22 +282,19 @@ and an Enter. See "%[1]s new --help" for what the flags below mean.`, name),
 // rootArgs refuses the words that follow a bare `discobox`, which are never a
 // prompt and never anything else this command can run.
 //
-// The prompt is -p, and words after the command are not a prompt. Taking them
-// as one (ADR 0089, superseded by ADR 0100) makes every subcommand name one
-// typo away from a sandbox: `discobox lst` would create a discobox prompted
-// "lst" rather than saying what was misspelled. Nothing can tell a typo from
-// the first word of a prompt — a prompt is words — so the prompt takes a flag
-// and the words are subcommands (ADR 0100). New keeps its trailing
-// prompt, where the name in front of it says what the words are.
+// Words after the bare command are not a prompt. Taking them as one (ADR 0089,
+// superseded by ADR 0100) makes every subcommand name one typo away from a
+// sandbox: `discobox lst` would create a discobox prompted "lst" rather than
+// saying what was misspelled. Nothing can tell a typo from the first word of a
+// prompt — a prompt is words — so a prompt goes after `new`, where the name in
+// front of it says what the words are (ADR 26-09-25-027).
 //
 // The word that named no command is reported here rather than by cobra, whose
 // own check runs from Find and so not at all under TraverseChildren. Two kinds
 // of word arrive, and they are told different things. A word past a `--` is a
-// prompt written the way run's help teaches, and is answered with -p: dropping
-// it silently is the worse failure, since `discobox -d -- fix the failing
-// tests` would otherwise create a discobox with an empty prompt and say
-// nothing about the four words it lost. Anything else is a command that does
-// not exist, and is answered with the ones it was near.
+// prompt written the way new's help teaches with the name left out, and is
+// answered with `new`. Anything else is a command that does not exist, and is
+// answered with the ones it was near.
 func rootArgs(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return nil
@@ -330,7 +310,7 @@ func rootArgs(cmd *cobra.Command, args []string) error {
 }
 
 func wordsAreNotAPrompt(cmd *cobra.Command, words []string) error {
-	return fmt.Errorf("%s takes no arguments; the prompt is -p: discobox -p %q", cmd.CommandPath(), strings.Join(words, " "))
+	return fmt.Errorf("%s takes no arguments; a prompt goes to new: %s new %q", cmd.CommandPath(), cmd.Root().Name(), strings.Join(words, " "))
 }
 
 // commandWords is the command's name as it was typed, for putting back into a
@@ -354,33 +334,24 @@ func commandWords(cmd *cobra.Command) []string {
 	return words
 }
 
-// refuseRootOnlyArguments refuses what was written in front of a subcommand
-// and means nothing there. Both kinds are silent failures rather than wrong
-// answers, which is why they are worth a check of their own.
+// refuseRootOnlyArguments refuses the words written in front of a subcommand,
+// which mean nothing there. They are a silent failure rather than a wrong
+// answer, which is why they are worth a check of their own.
 //
-// Words are the first kind. A `--` in front of a subcommand ends the root's
-// flags, and cobra's scan for the command name does not stop at one — it reads
-// `--` as a flag awaiting a value, eats the word after it, and carries on
-// looking. So `discobox -- please run the tests` finds `run` in the middle of a
-// sentence and creates a discobox prompted "the tests". What gives it away is
-// that the root parsed a positional word while a subcommand was found, which
-// nothing else does: the words in front of a command name are only ever this.
-// They get the same answer `discobox -- fix the tests` gets, reassembled from
-// the root's leftovers, the command path, and what reached the command.
+// A `--` in front of a subcommand ends the root's flags, and cobra's scan for
+// the command name does not stop at one — it reads `--` as a flag awaiting a
+// value, eats the word after it, and carries on looking. So `discobox --
+// please run the tests` finds `run` in the middle of a sentence and creates a
+// discobox prompted "the tests". What gives it away is that the root parsed a
+// positional word while a subcommand was found, which nothing else does: the
+// words in front of a command name are only ever this. They get the same answer
+// `discobox -- fix the tests` gets, reassembled from the root's leftovers, the
+// command path, and what reached the command.
 //
-// Run's own flags are the second. They are the root's local flags, so
-// TraverseChildren parses them wherever they stand — and in front of a
-// subcommand they are parsed into a run that never happens. `discobox -p 'fix
-// the tests' ls` would list, silently, with the prompt dropped; `discobox -p
-// 'fix the tests' new` would create a discobox with an empty prompt, since new
-// has its own copy of those flags and nothing was written after the name.
-// Without TraverseChildren, Cobra would reject these as unknown flags for the
-// subcommand, and this keeps that loudness.
-//
-// `version` carries its own PersistentPreRunE and so reaches neither check, on
+// `version` carries its own PersistentPreRunE and so does not reach this, on
 // purpose: what somebody diagnosing a broken environment asks first is what
 // they are running, and printing it is not something a smuggled word can spoil.
-func refuseRootOnlyArguments(cmd *cobra.Command, args []string, runFlags *pflag.FlagSet) error {
+func refuseRootOnlyArguments(cmd *cobra.Command, args []string) error {
 	root := cmd.Root()
 	if cmd == root {
 		// rootArgs has already refused anything there is to refuse here.
@@ -388,16 +359,6 @@ func refuseRootOnlyArguments(cmd *cobra.Command, args []string, runFlags *pflag.
 	}
 	if words := root.Flags().Args(); len(words) > 0 {
 		return wordsAreNotAPrompt(root, slices.Concat(words, commandWords(cmd), args))
-	}
-	var given *pflag.Flag
-	runFlags.VisitAll(func(flag *pflag.Flag) {
-		if given == nil && flag.Changed {
-			given = flag
-		}
-	})
-	if given != nil {
-		return fmt.Errorf("--%s is a run's own flag and does nothing in front of %s: a run is `discobox new --%s ...`, or `discobox --%s ...` with no command name at all",
-			given.Name, cmd.CommandPath(), given.Name, given.Name)
 	}
 	return nil
 }

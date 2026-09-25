@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Execute runs the Discobox CLI root command.
@@ -14,7 +15,46 @@ func Execute(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	return withUnreachableServerHint(cmd, err)
+	return withNewFlagHint(cmd, withUnreachableServerHint(cmd, err))
+}
+
+// withNewFlagHint points a flag of new's that was written without new at the
+// command it belongs to. The bare command took them once (ADR 0089) and no
+// longer does (ADR 26-09-25-027), so `discobox -p '...'` is in scripts and in
+// fingers, and cobra's own answer — an unknown flag — says nothing about where
+// it went.
+//
+// Only for a flag the root itself failed to parse: a flag unknown to any other
+// command is that command's business. Cobra hands back the root for a parse
+// that failed anywhere on the way down (TraverseChildren), so the root being
+// returned is not enough. What tells them apart is that Traverse parses a
+// command's flags before it descends into one of its children: a failure below
+// the root has always parsed a child of it first.
+func withNewFlagHint(cmd *cobra.Command, err error) error {
+	var unknown *pflag.NotExistError
+	if cmd == nil || cmd != cmd.Root() || !errors.As(err, &unknown) {
+		return err
+	}
+	for _, child := range cmd.Commands() {
+		if child.Flags().Parsed() {
+			return err
+		}
+	}
+	create, _, findErr := cmd.Find([]string{"new"})
+	if findErr != nil || create == cmd {
+		return err
+	}
+	name := unknown.GetSpecifiedName()
+	spelled := "--" + name
+	flag := create.Flags().Lookup(name)
+	if unknown.GetSpecifiedShortnames() != "" {
+		spelled = "-" + name
+		flag = create.Flags().ShorthandLookup(name)
+	}
+	if flag == nil {
+		return err
+	}
+	return fmt.Errorf("%w\n%s is new's flag, and only new makes a discobox: %s new %s", err, spelled, cmd.Name(), spelled)
 }
 
 // withUnreachableServerHint names the command that says where a connection

@@ -14,10 +14,8 @@ import (
 
 type runCommandOptions struct {
 	prompt sandboxcreate.PromptOptions
-	// promptFlag is -p: the prompt as one argument, and the only way to spell
-	// one to the bare `discobox`, where a word on its own is a subcommand. The
-	// words after `new` are the same prompt as the shell split it, kept because
-	// the name in front of them says what they are.
+	// promptFlag is -p: the prompt as one argument. The words after `new` are
+	// the same prompt as the shell split it.
 	promptFlag []string
 	detach     bool
 	// noSource creates the discobox with nothing materialized in it. -C still
@@ -77,11 +75,10 @@ const runCommandShort = "Launch prompt in new discobox"
 
 const runCommandLong = `Launch a prompt in a new discobox against the current directory.
 
-The prompt is -p, which is also how the bare "discobox" takes one — that is this
-command in every way that matters (see "discobox --help"), so "discobox -p '...'"
-and "discobox new -p '...'" are the same thing. The words after this command are
-a prompt too, for a shell where quoting is the awkward part; use -- when they
-need to be separated from command flags explicitly.
+The prompt is the words after this command, or -p to give it as one argument.
+Use -- when the words need to be separated from command flags explicitly. This is
+the only command that makes a discobox: the bare "discobox" takes no prompt and
+none of these flags.
 
 By default new opens the launcher's window and makes the discobox there: the
 question about uncommitted work is asked on it, the wait is drawn on it, and
@@ -176,8 +173,8 @@ means what its flag does, and no other run flag may be given beside it:
     "declaredSources": true
   }`
 
-const runCommandExample = `  discobox -p 'fix the failing tests'
-  discobox -H codex -d -p 'fix the failing tests'
+const runCommandExample = `  discobox new 'fix the failing tests'
+  discobox new -H codex -d 'fix the failing tests'
   discobox new -p 'fix the failing tests'
   discobox new --include-dirty=false -p 'fix the failing tests'
   discobox new -i ../foo -i ../bar -p 'make them share one client'
@@ -192,13 +189,10 @@ const runCommandExample = `  discobox -p 'fix the failing tests'
   discobox new -- prompt starting with --flag-like text`
 
 // runPrompt creates the discobox a run describes. It is the body of `discobox
-// new` and of the bare `discobox` that stands in for it: the shortcut is the
-// same command reached without its name, not a second one that has to be kept
-// in step with it.
+// new`, under both of its registrations.
 //
 // args is the prompt as the shell split it, after -p, which is the same prompt
-// given as one argument. Only `new` has trailing words to pass; the bare
-// command's prompt is -p and nothing else, so it passes none.
+// given as one argument.
 func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
 	if opts.json {
 		if err := opts.readJSONRequest(cmd, args); err != nil {
@@ -318,14 +312,12 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	return a.attachRunSandbox(cmd, projectID, sandbox)
 }
 
-// addRunFlags gives cmd everything a run takes, and hands back the set it
-// added. Both spellings of a run register them from here — `discobox new` and
-// the bare `discobox` that stands in for it — so the two cannot drift into
-// taking different flags, and the returned set is how the bare one asks whether
-// any of them was given at all.
-func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
+// addRunFlags gives cmd everything a run takes, and keeps the set in opts for
+// --json to check against. Both registrations of `new` take their flags from
+// here, so the two cannot drift into taking different ones.
+func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags := pflag.NewFlagSet("new", pflag.ContinueOnError)
-	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"new\", and the only spelling the bare \"discobox\" has for a prompt")
+	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"new\"")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under /workspace where it cannot; either way it is named after itself, so -i ../foo is the source foo")
@@ -340,19 +332,6 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
 	flags.BoolVar(&opts.json, "json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
 	opts.flags = flags
-	return flags
-}
-
-// runRequested reports whether an invocation of the bare `discobox` is a run
-// rather than a launcher. Any of run's own flags makes it one — -p above all,
-// but `discobox -d` has said enough about what it wants for a window to be the
-// wrong answer too — while `discobox` with nothing at all is the launcher it has
-// always been. There are no positional words to consider: at this command they
-// are subcommands, not a prompt (see newRootCommand).
-func runRequested(flags *pflag.FlagSet) bool {
-	given := false
-	flags.VisitAll(func(flag *pflag.Flag) { given = given || flag.Changed })
-	return given
 }
 
 // confirmIncludeDirty asks whether uncommitted local work should be carried

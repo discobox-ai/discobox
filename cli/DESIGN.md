@@ -90,18 +90,15 @@ transport helpers where OpenAPI does not model the stream.
   §§3–4's and [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
   spelling of the command those two decide about — §4 being the rule these
   examples and the preview answer to: no example may spell a form that is gone.
-- Bare `discobox` given any flag `new` takes *is* `discobox new`
-  (`runRequested`, checked first in the root command's `RunE`, dispatching to
-  the shared `App.runPrompt`). `addRunFlags` registers run's flags once and is
-  called for both the `new` subcommand and the root command, so the two cannot
-  drift into taking different flags. `-p`/`--prompt` is the prompt there, and
-  the form the documents lead with: `discobox -p '...'`. Not every example is
-  that one — an example whose point is that a shell splits the words, such as
-  the wrapper convention in [`harness/DESIGN.md`](../harness/DESIGN.md), says
-  `discobox new <words>`, which is where those words still exist. What no
-  example may spell is a form that is gone. `-p` is therefore not `--project`'s
-  shorthand: `--project` has a long form only.
-- Otherwise, bare `discobox` runs the launcher when stdin and stdout are both
+- **Only `new` makes a discobox.** The root registers none of its flags, so
+  `discobox -p '...'` or `discobox -d` is an unknown flag, and `Execute`
+  (`withNewFlagHint`) adds a line pointing a flag `new` takes at `discobox new`.
+  `new`'s prompt is the words after it, or `-p`/`--prompt` for one argument;
+  examples lead with `discobox new '...'`, and no example may spell a form that
+  is gone. `-p` is therefore not `--project`'s shorthand: `--project` is
+  persistent and would reach `new`, so it has a long form only. See
+  [ADR 26-09-25-027](../docs/adr/26-09-25-027-only-new-makes-a-discobox.md).
+- Bare `discobox` runs the launcher when stdin and stdout are both
   terminals, and prints its help when they are not (`App.runTUI`, also reached
   from `discobox tui`). Typing a program's name is how you ask for it, and the
   launcher is the one thing you can ask for without knowing a subcommand; a
@@ -111,13 +108,11 @@ transport helpers where OpenAPI does not model the stream.
   one that means nothing to it.
 - **Words after the bare command are subcommands, not a prompt.** A prompt is
   words and a misspelling is a word, so nothing can tell the two apart once
-  they share a spelling — the prompt takes a flag instead, and the words name
-  commands. The root's `Args` is `rootArgs` (`internal/cli/root.go`):
+  they share a spelling — a prompt goes after `new`, and the words at the root
+  name commands. The root's `Args` is `rootArgs` (`internal/cli/root.go`):
   `discobox lst` reports `unknown command "lst"` and suggests `ls`, and a word
-  past a `--` is refused naming `-p`. Dropping those would put the silent
-  create back — `discobox -d -- fix the failing tests` with an empty prompt —
-  by the one spelling `new`'s help teaches. Cobra's own check does not run
-  under `TraverseChildren`; see
+  past a `--` is refused naming `discobox new` with the words. Cobra's own
+  check does not run under `TraverseChildren`; see
   [Where a Global Flag Is Parsed](#where-a-global-flag-is-parsed). See
   [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
   which supersedes [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
@@ -1036,13 +1031,12 @@ Three things follow, all worth knowing before adding a command:
   which `TraverseChildren` replaces, so without this `discobox lst` would reach
   the root's `RunE` as a stray argument rather than saying what it was near.
 - What is written in front of a subcommand and belongs only to the root is
-  refused by `refuseRootOnlyArguments`, from the root's `PersistentPreRunE`.
-  Two things land there, both otherwise silent: the words a `--` hides from the
-  command scan, which does not stop at one, and run's
-  own flags, which are the root's *local* flags and are parsed wherever they
-  stand. `discobox -- please run the tests` would otherwise dispatch to a
-  command found in the middle of a sentence, and `discobox -p '…' ls` would
-  list with the prompt dropped.
+  refused by `refuseRootOnlyArguments`, from the root's `PersistentPreRunE`:
+  the words a `--` hides from the command scan, which does not stop at one.
+  `discobox -- please run the tests` would otherwise dispatch to a command
+  found in the middle of a sentence. Keep the root's own local flags to the
+  few that mean something with no command (`--version`): any other is parsed
+  in front of every subcommand and silently dropped there.
 - A flag belonging to a subcommand must be written after it. Cobra's default
   accepts `discobox --wait admin server shutdown`; here the root parses that
   `--wait` and does not know it.

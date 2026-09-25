@@ -64,9 +64,9 @@ You can start a bug fix, a feature, and an experiment you may throw away, each i
 its own box, and keep working in your own checkout while they run.
 
 ```bash
-discobox -d -p 'fix the flaky retry test'
-discobox -d -p 'add pagination to the users endpoint'
-discobox -d -p 'try replacing the ORM with sqlc'
+discobox new -d 'fix the flaky retry test'
+discobox new -d 'add pagination to the users endpoint'
+discobox new -d 'try replacing the ORM with sqlc'
 discobox ls
 ```
 

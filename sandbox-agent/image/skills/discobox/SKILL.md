@@ -406,9 +406,9 @@ discobox id         print this machine's peer ID and the server's
 discobox admin      pools, projects, harness images, the server and its status
 ```
 
-A prompt at the bare command is `-p` and only `-p` — `discobox -p '...'`. After
-`new` it can be trailing words. Bare `discobox` with loose words is an unknown
-command, not a prompt.
+Only `discobox new` makes a box: its prompt is the words after it, or `-p` for
+one argument — `discobox new 'fix the failing tests'`. Bare `discobox` takes no
+prompt and none of `new`'s flags.
 
 `discobox rm BOX...` archives boxes, by the NAME `ls` lists or by ID, and
 `delete` is an alias for it. A NAME two boxes share is refused rather than
