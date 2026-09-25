@@ -67,12 +67,12 @@ fi
 
 # The role, mapped onto a model this image can name.
 #
-# "judge" is not a cheap classification, however short its answer is. It is the
-# only thing standing between a granted credential and a command that misuses
-# it, and it reads an argv written by the agent it is judging, so it is named
-# rather than left to whatever the account happens to be configured with — a
-# gate whose model is a user preference is not a gate. Terra is the middle tier
-# of its generation, which is the same choice the claude-code wrapper makes.
+# "judge" is the only thing standing between a granted credential and a command
+# that misuses it, and it reads an argv written by the agent it is judging, so
+# it is named rather than left to whatever the account happens to be configured
+# with — a gate whose model is a user preference is not a gate. Luna is the
+# small tier of its generation, since the judge's latency is paid on every
+# credentialed command — the same choice the claude-code wrapper makes.
 #
 # The risk this accepts: an id Codex has retired fails the call, and a judge
 # that cannot answer refuses the command. That is the safe direction, but it
@@ -81,7 +81,7 @@ fi
 # Anything else is left to the account's configured model.
 set -- codex exec --skip-git-repo-check --color never
 case "$model" in
-judge) set -- "$@" --model gpt-5.6-terra ;;
+judge) set -- "$@" --model gpt-6-luna ;;
 fast | "") ;;
 *) set -- "$@" --model "$model" ;;
 esac

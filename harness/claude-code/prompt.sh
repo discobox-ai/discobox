@@ -58,19 +58,15 @@ fi
 
 # The role, mapped onto a model this image installed.
 #
-# "judge" is not a cheap classification, however short its answer is. It is the
-# only thing standing between a granted credential and a command that misuses
-# it, and it reads an argv written by the agent it is judging — so it takes the
-# strongest model here, not the fastest. A wrong "allow" costs a credential;
-# a wrong "deny" costs a retry.
+# "judge" sits in front of every credentialed command, so its latency is paid
+# on each one; it takes the small model, which answers a short allow/deny well
+# enough and fast enough not to stall the agent it is judging.
 #
-# The id rather than the `sonnet` alias: the alias moves with the CLI, and the
+# The id rather than the `haiku` alias: the alias moves with the CLI, and the
 # model a security gate runs on should change when someone decides it changes,
 # not when an image is rebuilt. Bump it deliberately.
-#
-# "fast" keeps the small model, for callers that ask for speed and mean it.
 case "$model" in
-judge) model=claude-sonnet-5 ;;
+judge) model=claude-haiku-4-5 ;;
 fast | "") model=haiku ;;
 esac
 

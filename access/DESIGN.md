@@ -96,8 +96,8 @@ discobox-prompt --model judge --system <instructions> --prompt <use + argv + fac
 `--model judge` names a role. The CLI never learns a model id; mapping the role
 onto a model is the wrapper's job, because the wrapper is the half that knows
 what its image installed. What the role is worth spending is its decision too:
-claude-code sends `judge` to Sonnet and keeps the small model for `fast`, since
-a wrong `allow` costs a credential and a wrong `deny` costs a retry.
+claude-code sends `judge` to Haiku and codex-cli to Luna, the small tier of
+each line, since a verdict's latency is paid on every credentialed command.
 
 `DISCOBOX_PROMPT` names a different wrapper, for running this CLI outside a
 Discobox sandbox. One verdict is bounded at 90 seconds (`judgeTimeout`); the

@@ -27,7 +27,7 @@ func TestPromptNoToolsUsesSupportedCodexApprovalConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(args)
-	for _, want := range []string{"exec\n", "--model\ngpt-5.6-terra\n", "--sandbox\nread-only\n", "--config\napproval_policy=never\n"} {
+	for _, want := range []string{"exec\n", "--model\ngpt-6-luna\n", "--sandbox\nread-only\n", "--config\napproval_policy=never\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("codex args missing %q:\n%s", want, got)
 		}
