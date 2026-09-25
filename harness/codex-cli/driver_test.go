@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -373,6 +374,9 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 // partition existed are carried over to the uid that owns them. The bind itself
 // needs root, so the stubbed sudo fails it and Codex still launches.
 func TestLaunchKeysMemoriesByUID(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the partition is named by a POSIX uid, and os.Getuid is -1 on Windows")
+	}
 	sourceData := t.TempDir()
 	legacy := filepath.Join(sourceData, "harnesses", "codex", "memories")
 	if err := os.MkdirAll(legacy, 0o755); err != nil {

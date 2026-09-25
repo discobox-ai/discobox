@@ -93,7 +93,7 @@ func TestRequireRunningRefusesASandboxStillBooting(t *testing.T) {
 			router := chi.NewRouter()
 			router.Handle("/sandboxes/{sandboxId}/screen", service.requireRunning(next))
 			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/sandboxes/sbx_1/screen", nil))
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sandboxes/sbx_1/screen", nil))
 			if served != tc.wantServed {
 				t.Fatalf("served = %v, want %v (status %d, body %q)", served, tc.wantServed, rec.Code, rec.Body.String())
 			}

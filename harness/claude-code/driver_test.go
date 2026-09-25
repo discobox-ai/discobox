@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -357,6 +358,9 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 // recorded as a managed-settings drop-in rather than passed to this one
 // `claude`, so every later `claude` in the sandbox gets it too.
 func TestLaunchKeysMemoriesByUID(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the partition is named by a POSIX uid, and os.Getuid is -1 on Windows")
+	}
 	sourceData := t.TempDir()
 	dropIns := filepath.Join(t.TempDir(), "managed-settings.d")
 	paths := map[string]string{

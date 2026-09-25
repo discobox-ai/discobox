@@ -125,7 +125,7 @@ func TestEnsureSandboxRunningDoesNotWaitOnARunningSandbox(t *testing.T) {
 }
 
 // A boot belongs to the sandbox, not to the request that began it. An attach
-// canceled mid-start must not end the mark while the agent is still not
+// cancelled mid-start must not end the mark while the agent is still not
 // listening, or every request behind it would be proxied into a 502; the mark
 // lasts until the wait for the agent itself ends.
 func TestABootOutlivesTheRequestThatBeganIt(t *testing.T) {
