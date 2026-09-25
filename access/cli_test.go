@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -105,17 +106,18 @@ func capture(t *testing.T, stdin string, run func() int) (stdout, stderr string,
 		_, _ = inW.WriteString(stdin)
 		inW.Close()
 	}()
+	// Both streams drain while the command runs: a pipe buffer is small (4KiB
+	// on Windows), and a command that writes past it would block forever.
+	outC, errC := make(chan []byte, 1), make(chan []byte, 1)
+	go func() { b, _ := io.ReadAll(outR); outC <- b }()
+	go func() { b, _ := io.ReadAll(errR); errC <- b }()
 
 	code = run()
 
 	os.Stdout, os.Stderr, os.Stdin = realOut, realErr, realIn
 	outW.Close()
 	errW.Close()
-	outBytes := make([]byte, 64<<10)
-	n, _ := outR.Read(outBytes)
-	errBytes := make([]byte, 64<<10)
-	m, _ := errR.Read(errBytes)
-	return string(outBytes[:n]), string(errBytes[:m]), code
+	return string(<-outC), string(<-errC), code
 }
 
 func TestListJSONCarriesUseIDsForTheNextCall(t *testing.T) {
