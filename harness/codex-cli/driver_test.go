@@ -3,7 +3,9 @@ package codexcli
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -307,6 +309,7 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 		harness.ResumeFlag,
 		"set -- resume --last",
 		"/.discobox/data-per-source/primary",
+		"users/$(id -u)",
 		"harnesses/codex/memories",
 		`${CODEX_HOME:-$HOME/.codex}`,
 		`mountpoint -q "$LOCAL_MEMORIES"`,
@@ -356,11 +359,36 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"resume", "--last"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := launchertest.RunLauncher(t, "codex", tc.args)
+			got := launchertest.RunLauncher(t, "codex", nil, tc.args)
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("codex argv = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestLaunchKeysMemoriesByUID runs the launcher against a source-data mount:
+// memories land in the running uid's partition, so sandboxes on one source
+// share them only when they agree on a uid, and memories written before the
+// partition existed are carried over to the uid that owns them. The bind itself
+// needs root, so the stubbed sudo fails it and Codex still launches.
+func TestLaunchKeysMemoriesByUID(t *testing.T) {
+	sourceData := t.TempDir()
+	legacy := filepath.Join(sourceData, "harnesses", "codex", "memories")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "memory.md"), []byte("remembered\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	memories := filepath.Join(sourceData, "users", strconv.Itoa(os.Getuid()), "harnesses", "codex", "memories")
+
+	if got, want := launchertest.RunLauncher(t, "codex", map[string]string{launchertest.SourceDataPath: sourceData}, []string{"hi"}), []string{"hi"}; !slices.Equal(got, want) {
+		t.Fatalf("codex argv = %#v, want %#v", got, want)
+	}
+	carried, err := os.ReadFile(filepath.Join(memories, "memory.md"))
+	if err != nil || string(carried) != "remembered\n" {
+		t.Fatalf("legacy memories were not carried over: %q, %v", carried, err)
 	}
 }
 

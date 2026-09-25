@@ -1,5 +1,4 @@
 {
-  "autoMemoryDirectory": "/.discobox/data-per-source/primary/harnesses/claude-code/memories",
   "hooks": {
     "SessionStart": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event SessionStart", "timeout": 10 }] }],
     "Setup": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider claude-code --event Setup", "timeout": 10 }] }],

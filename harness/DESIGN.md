@@ -368,22 +368,36 @@ or private to the sandbox when there is no key to share it under (see
 interpret anything beneath it. Claude Code and Codex keep their memory there in
 separate namespaces; opencode has no memory feature to point at it:
 
-- Claude Code's `autoMemoryDirectory` is `.../harnesses/claude-code/memories`,
-  set in the image's managed settings (`/etc/claude-code/managed-settings.json`).
-  It is the sandbox's environment rather than a launch flag, so a `claude`
-  typed into any shell finds the same memory the harness terminal does. The
-  policy layer also keeps it out of `.claude/settings.json`, which the
-  configure flow deliberately replaces with the user's captured settings, and
-  outranks anything that file says. Claude Code's temp tree — session
-  scratchpads among it — follows the same rule: the image's env sets
+- **Memories are keyed by the sandbox user's uid**, as the pool cache is (ADR
+  0094): each harness stores them under `.../users/<uid>/harnesses/<name>/`.
+  Every sandbox on a source mounts the same tree whatever uid it runs as, so
+  sandboxes that agree on a uid share memories and ones that do not neither
+  share nor collide. Pool-agent chowns the mount root to the latest creator,
+  so the launcher makes `users` (root-owned) and its own `users/<uid>` (0700)
+  through the sandbox user's sudo grant rather than relying on who owns the
+  parent. Memories written before the partition, at `.../harnesses/<name>/`,
+  are copied into it once, and only for the uid that owns them. A launcher
+  that cannot make the partition leaves the CLI on its local default.
+- Claude Code's `autoMemoryDirectory` is
+  `.../users/<uid>/harnesses/claude-code/memories`. A path naming the uid
+  cannot be baked into the image's `/etc/claude-code/managed-settings.json`,
+  so the launcher records it as the managed drop-in
+  `/etc/claude-code/managed-settings.d/discobox-memory.json` before starting
+  `claude`. That makes it the sandbox's environment rather than a launch flag:
+  the harness terminal launches at sandbox start, and a `claude` typed into
+  any shell afterwards finds the same memory. The policy layer also keeps it
+  out of `.claude/settings.json`, which the configure flow deliberately
+  replaces with the user's captured settings, and outranks anything that file
+  says. Claude Code's temp tree — session scratchpads among it — is
+  environmental too: the image's env sets
   `CLAUDE_CODE_TMPDIR=/var/lib/claude-code` and declares that path a `data`
   volume owned by the sandbox user, so scratchpads survive an upgrade and
   travel with an export. Claude Code adds `claude-<uid>` beneath it and
   refuses a directory another uid owns.
 - Codex enables its `memories` feature in the system config and bind-mounts
-  `.../harnesses/codex/memories` onto `$CODEX_HOME/memories`. Codex rejects a
-  symlinked memory root, so the launcher creates a real target directory and
-  uses the sandbox user's passwordless mount grant. The same system layer
+  `.../users/<uid>/harnesses/codex/memories` onto `$CODEX_HOME/memories`.
+  Codex rejects a symlinked memory root, so the launcher creates a real
+  target directory and uses the sandbox user's passwordless mount grant. The same system layer
   enables both generation and use for new chats and sets the generation rate-
   limit threshold to zero; a sandbox is short-lived enough that silently
   skipping its only background consolidation window would otherwise defeat

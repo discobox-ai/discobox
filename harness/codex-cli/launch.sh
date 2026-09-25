@@ -30,22 +30,47 @@ fi
 # workspace, and deliberately rejects a symlinked memory root. Keep CODEX_HOME
 # (auth, config, sessions, and SQLite coordination) sandbox-local and bind the
 # source-scoped backing directory onto a real memories directory.
+#
+# Source data is shared by every sandbox on the source, whatever uid each runs
+# as, so memories are keyed by the uid the way the pool cache is (ADR 0094):
+# sandboxes that agree on a uid share them, and one that does not can neither
+# write the other's files nor take them over. The mount's root is chowned to
+# whoever created a sandbox last, so the partition is made through sudo rather
+# than depending on who owns its parent.
 SOURCE_DATA=/.discobox/data-per-source/primary
-SHARED_MEMORIES="$SOURCE_DATA/harnesses/codex/memories"
+USER_DATA="$SOURCE_DATA/users/$(id -u)"
+SHARED_MEMORIES="$USER_DATA/harnesses/codex/memories"
+# Where memories lived before they were keyed by uid. They are carried over
+# only to the uid that owns them, never claimed by another.
+LEGACY_MEMORIES="$SOURCE_DATA/harnesses/codex/memories"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 LOCAL_MEMORIES="$CODEX_HOME_DIR/memories"
 
 if [ -d "$SOURCE_DATA" ]; then
+	if ! sudo -n install -d -m 0755 "$SOURCE_DATA/users" ||
+		! sudo -n install -d -o "$(id -u)" -g "$(id -g)" -m 0700 "$USER_DATA"; then
+		printf '%s\n' "discobox: could not prepare source-scoped Codex memories; using local storage" >&2
+		exec codex "$@"
+	fi
+	if [ ! -e "$SHARED_MEMORIES" ] && [ -d "$LEGACY_MEMORIES" ] &&
+		[ "$(stat -c %u "$LEGACY_MEMORIES")" = "$(id -u)" ]; then
+		mkdir -p "$(dirname "$SHARED_MEMORIES")"
+		cp -a "$LEGACY_MEMORIES" "$SHARED_MEMORIES" ||
+			printf '%s\n' "discobox: could not carry over Codex memories from $LEGACY_MEMORIES" >&2
+	fi
 	mkdir -p "$SHARED_MEMORIES" "$CODEX_HOME_DIR"
 	# Replace links made by the older launcher, but never follow or replace a
 	# link owned by something else.
 	if [ -L "$LOCAL_MEMORIES" ]; then
-		if [ "$(readlink "$LOCAL_MEMORIES")" = "$SHARED_MEMORIES" ]; then
+		case "$(readlink "$LOCAL_MEMORIES")" in
+		"$SHARED_MEMORIES" | "$LEGACY_MEMORIES")
 			unlink "$LOCAL_MEMORIES"
-		else
+			;;
+		*)
 			printf '%s\n' "discobox: Codex memories already link elsewhere; leaving them unchanged" >&2
 			exec codex "$@"
-		fi
+			;;
+		esac
 	fi
 	mkdir -p "$LOCAL_MEMORIES"
 	if ! mountpoint -q "$LOCAL_MEMORIES"; then

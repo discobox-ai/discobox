@@ -8,6 +8,7 @@
 package launchertest
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,16 +16,22 @@ import (
 	"testing"
 )
 
-// sourceDataPath is the mount the launchers look for before wiring up
-// source-scoped memory. A test points it at a path that does not exist, so the
-// run is hermetic: no directory is created, nothing is mounted, and the script
-// reaches its `exec <agent> "$@"` the way a source-less sandbox does.
-const sourceDataPath = "/.discobox/data-per-source/primary"
+// SourceDataPath is the mount the launchers look for before wiring up
+// source-scoped memory.
+const SourceDataPath = "/.discobox/data-per-source/primary"
 
 // RunLauncher runs ./launch.sh with args and returns the argv the named agent
 // was executed with. The agent is stubbed, so nothing installed on the machine
 // running the test is invoked.
-func RunLauncher(t *testing.T, agent string, args []string) []string {
+//
+// paths maps absolute paths the script names to the test directories standing
+// in for them. SourceDataPath is pointed at a path that does not exist unless
+// paths says otherwise, so by default the script takes the branch a
+// source-less sandbox does. `sudo` is stubbed to run its command as the test's
+// own user, which is enough for the directories and files a launcher makes; a
+// mount it attempts fails, and the launcher falls back the way it would in a
+// sandbox without the grant.
+func RunLauncher(t *testing.T, agent string, paths map[string]string, args []string) []string {
 	t.Helper()
 	shell, err := exec.LookPath("sh")
 	if err != nil {
@@ -35,8 +42,14 @@ func RunLauncher(t *testing.T, agent string, args []string) []string {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	rewrites := map[string]string{SourceDataPath: filepath.Join(dir, "no-source-data")}
+	maps.Copy(rewrites, paths)
+	rewritten := string(script)
+	for from, to := range rewrites {
+		rewritten = strings.ReplaceAll(rewritten, from, to)
+	}
 	launcher := filepath.Join(dir, "launch.sh")
-	if err := os.WriteFile(launcher, []byte(strings.ReplaceAll(string(script), sourceDataPath, filepath.Join(dir, "no-source-data"))), 0o600); err != nil {
+	if err := os.WriteFile(launcher, []byte(rewritten), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// The stub prints one argument per line, which is unambiguous for the
@@ -45,6 +58,10 @@ func RunLauncher(t *testing.T, agent string, args []string) []string {
 	// would be testing the printf rather than the launcher.
 	stub := filepath.Join(dir, agent)
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n"), 0o755); err != nil { //nolint:gosec // The stub is the agent the launcher execs; it has to be executable.
+		t.Fatal(err)
+	}
+	sudo := filepath.Join(dir, "sudo")
+	if err := os.WriteFile(sudo, []byte("#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n"), 0o755); err != nil { //nolint:gosec // The stub stands in for sudo; it has to be executable.
 		t.Fatal(err)
 	}
 	cmd := exec.CommandContext(t.Context(), shell, append([]string{launcher}, args...)...)

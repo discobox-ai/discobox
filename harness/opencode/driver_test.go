@@ -172,7 +172,7 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"--auto", "--continue"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := launchertest.RunLauncher(t, "opencode", tc.args)
+			got := launchertest.RunLauncher(t, "opencode", nil, tc.args)
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("opencode argv = %#v, want %#v", got, tc.want)
 			}

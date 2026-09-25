@@ -3,7 +3,9 @@ package claudecode
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -68,20 +70,23 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 
 // Where Claude Code keeps its memory and its temp tree is the sandbox's
 // environment, not the launcher's: a `claude` typed into any shell has to find
-// the same memory and the same scratchpads as the harness terminal does.
+// the same memory and the same scratchpads as the harness terminal does. The
+// memory path names the uid, so the image's static managed settings leave it
+// to the drop-in the launcher records (TestLaunchKeysMemoriesByUID); an
+// unkeyed path there would be the one every uid collides on.
 func TestClaudeStorageIsEnvironmental(t *testing.T) {
 	raw, err := os.ReadFile("managed-settings.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var settings struct {
-		AutoMemoryDirectory string `json:"autoMemoryDirectory"`
+		AutoMemoryDirectory *string `json:"autoMemoryDirectory"`
 	}
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		t.Fatal(err)
 	}
-	if want := "/.discobox/data-per-source/primary/harnesses/claude-code/memories"; settings.AutoMemoryDirectory != want {
-		t.Errorf("managed autoMemoryDirectory = %q, want %q", settings.AutoMemoryDirectory, want)
+	if settings.AutoMemoryDirectory != nil {
+		t.Errorf("managed-settings.json sets autoMemoryDirectory %q, which no uid partition can be named in", *settings.AutoMemoryDirectory)
 	}
 
 	raw, err = os.ReadFile("image.json")
@@ -110,7 +115,7 @@ func TestClaudeStorageIsEnvironmental(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, launchOnly := range []string{"autoMemoryDirectory", "CLAUDE_CODE_TMPDIR", "--settings"} {
+	for _, launchOnly := range []string{"CLAUDE_CODE_TMPDIR", "--settings"} {
 		if strings.Contains(string(launcher), launchOnly) {
 			t.Errorf("launch.sh sets %s, which a plain `claude` would not get", launchOnly)
 		}
@@ -337,11 +342,72 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"--continue"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := launchertest.RunLauncher(t, "claude", tc.args)
+			got := launchertest.RunLauncher(t, "claude", nil, tc.args)
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("claude argv = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestLaunchKeysMemoriesByUID runs the launcher against a source-data mount:
+// memories land in the running uid's partition, so sandboxes on one source
+// share them only when they agree on a uid, and memories written before the
+// partition existed are carried over to the uid that owns them. The path is
+// recorded as a managed-settings drop-in rather than passed to this one
+// `claude`, so every later `claude` in the sandbox gets it too.
+func TestLaunchKeysMemoriesByUID(t *testing.T) {
+	sourceData := t.TempDir()
+	dropIns := filepath.Join(t.TempDir(), "managed-settings.d")
+	paths := map[string]string{
+		launchertest.SourceDataPath:           sourceData,
+		"/etc/claude-code/managed-settings.d": dropIns,
+	}
+	legacy := filepath.Join(sourceData, "harnesses", "claude-code", "memories")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "MEMORY.md"), []byte("- remembered\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	partition := filepath.Join(sourceData, "users", strconv.Itoa(os.Getuid()))
+	memories := filepath.Join(partition, "harnesses", "claude-code", "memories")
+
+	if got, want := launchertest.RunLauncher(t, "claude", paths, []string{"hi"}), []string{"hi"}; !slices.Equal(got, want) {
+		t.Fatalf("claude argv = %#v, want %#v", got, want)
+	}
+	raw, err := os.ReadFile(filepath.Join(dropIns, "discobox-memory.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		AutoMemoryDirectory string `json:"autoMemoryDirectory"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatalf("drop-in %q: %v", raw, err)
+	}
+	if settings.AutoMemoryDirectory != memories {
+		t.Fatalf("drop-in autoMemoryDirectory = %q, want %q", settings.AutoMemoryDirectory, memories)
+	}
+	carried, err := os.ReadFile(filepath.Join(memories, "MEMORY.md"))
+	if err != nil || string(carried) != "- remembered\n" {
+		t.Fatalf("legacy memories were not carried over: %q, %v", carried, err)
+	}
+	info, err := os.Stat(partition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("uid partition mode = %v, want 0700", perm)
+	}
+	// A later launch finds the partition and does not carry the legacy tree
+	// over a second time on top of what it has since written.
+	if err := os.WriteFile(filepath.Join(legacy, "MEMORY.md"), []byte("- stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launchertest.RunLauncher(t, "claude", paths, nil)
+	if carried, _ := os.ReadFile(filepath.Join(memories, "MEMORY.md")); string(carried) != "- remembered\n" {
+		t.Fatalf("second launch rewrote the partition: %q", carried)
 	}
 }
 
