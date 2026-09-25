@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	idpkg "github.com/discobox-ai/x/id"
 )
@@ -462,5 +463,52 @@ func TestTheTimelineSaysWhyARequestWasRefused(t *testing.T) {
 	}
 	if summary := httpAuditRecord(exchange).summary; !strings.Contains(summary, "refused: gate: the call carries no live use") {
 		t.Fatalf("summary = %q, want what refused it and why", summary)
+	}
+}
+
+func TestHookSummaryNamesThePromptOrTheToolAndWhatItRanOn(t *testing.T) {
+	for name, tc := range map[string]struct{ payload, want string }{
+		"claude-code bash":    {`{"tool_name":"Bash","tool_input":{"command":"git status","description":"Show status"}}`, "Bash: git status"},
+		"claude-code edit":    {`{"tool_name":"Edit","tool_input":{"file_path":"/src/a.go","old_string":"x"}}`, "Edit: /src/a.go"},
+		"claude-code batch":   {`{"tool_calls":[{"tool_name":"Bash"},{"tool_name":"Read"}]}`, "Bash,Read"},
+		"codex apply_patch":   {`{"tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: a.go\n@@\n*** Add File: b.go\n*** End Patch"}}`, "apply_patch: a.go b.go"},
+		"search in a path":    {`{"tool_name":"Grep","tool_input":{"pattern":"TODO","path":"/src"}}`, "Grep: TODO"},
+		"batch without names": {`{"tool_calls":[{"tool_name":"Bash"},{"other":1}]}`, "Bash"},
+		"codex mcp":           {`{"tool_name":"mcp__fs__read","tool_input":{"path":"/etc/hosts"}}`, "mcp__fs__read: /etc/hosts"},
+		"opencode before":     {`{"tool":"read","args":{"filePath":"/src/a.go"}}`, "read: /src/a.go"},
+		"opencode after":      {`{"tool":"bash","title":"ls -la"}`, "bash: ls -la"},
+		"no subject":          {`{"tool_name":"TodoWrite","tool_input":{"todos":[]}}`, "TodoWrite"},
+		"prompt":              {`{"hook_event_name":"UserPromptSubmit","prompt":"fix the\n\n  audit\tlist"}`, "prompt: fix the audit list"},
+		"long prompt":         {`{"prompt":"` + strings.Repeat("a", 150) + `"}`, "prompt: " + strings.Repeat("a", hookSummaryMaxText-1) + "…"},
+		"multi-line command":  {`{"tool_name":"Bash","tool_input":{"command":"cd x &&\n  make"}}`, "Bash: cd x && make"},
+		"not a tool hook":     {`{"hook_event_name":"Stop"}`, ""},
+		"not json":            {`not json`, ""},
+		"empty payload":       {``, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := hookSummary([]byte(tc.payload)); got != tc.want {
+				t.Fatalf("hookSummary = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExecEventRecordLeadsWithTheMessage(t *testing.T) {
+	event := apimodel.SandboxExecEvent{ID: "e1", ExecId: apiclientgen.NewOptString("ex_1"), Type: "exec.attach.opened", Message: apiclientgen.NewOptString("attach opened: claude \"fix it\"")}
+	if got := execEventRecord("sbx_1")(event).summary; got != `ex_1 attach opened: claude "fix it"` {
+		t.Fatalf("summary = %q", got)
+	}
+	event.Message = apiclientgen.OptString{}
+	if got := execEventRecord("sbx_1")(event).summary; got != "ex_1 exec.attach.opened" {
+		t.Fatalf("summary without a message = %q", got)
+	}
+}
+
+func TestHarnessHookRecordEscapesThePrompt(t *testing.T) {
+	hook := apimodel.HarnessHookLog{ID: "h1", Provider: "codex-cli", Event: "UserPromptSubmit",
+		Payload: []byte(`{"prompt":"clear\u001b[2J\r\nnext\u202eline"}`)}
+	got := harnessHookRecord("sbx_1")(hook).summary
+	if strings.ContainsAny(got, "\x1b\r\n\u202e") || !strings.Contains(got, "prompt: clear") || !strings.Contains(got, "next") {
+		t.Fatalf("summary = %q, want the prompt on one line with its controls escaped", got)
 	}
 }

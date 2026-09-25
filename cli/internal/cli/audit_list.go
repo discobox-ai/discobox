@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -300,18 +301,116 @@ func harnessHookRecord(sandboxID string) func(apimodel.HarnessHookLog) auditReco
 		if terminal := h.TerminalId.Or(""); terminal != "" {
 			summary += " terminal=" + terminalSafe(terminal)
 		}
+		if what := hookSummary(h.Payload); what != "" {
+			summary += " " + terminalSafe(what)
+		}
 		return auditRecord{ID: h.ID, Attestor: auditAttestorSandbox, DiscoboxID: sandboxID, Record: &h, summary: summary}
 	}
 }
 
+// hookPayload is the part of a hook's payload that says what it was about.
+// Claude Code and Codex send tool_name and tool_input; the opencode image's
+// plugin sends tool and args, and only a title after the tool ran. Claude
+// Code's PostToolBatch names every call of a batch in tool_calls. Claude Code
+// and Codex send a UserPromptSubmit's text as prompt.
+type hookPayload struct {
+	Prompt    string         `json:"prompt"`
+	ToolName  string         `json:"tool_name"`
+	ToolInput map[string]any `json:"tool_input"`
+	Tool      string         `json:"tool"`
+	Args      map[string]any `json:"args"`
+	Title     string         `json:"title"`
+	ToolCalls []struct {
+		ToolName string `json:"tool_name"`
+	} `json:"tool_calls"`
+}
+
+// hookToolInputSubjects are the argument names, most telling first, that say
+// what a tool call was about: a shell command, the file an edit or read names
+// (file_path in Claude Code, filePath in opencode), what a search looked for.
+// A search's path is only where it looked, so it comes after the pattern and
+// is the subject only of a tool that names nothing else.
+var hookToolInputSubjects = []string{"command", "file_path", "filePath", "pattern", "url", "query", "path", "description", "prompt"}
+
+// hookSummaryMaxText bounds the prompt or tool argument a timeline row quotes;
+// `audit get` shows the whole payload.
+const hookSummaryMaxText = 100
+
+// hookSummary says what a hook is about — the prompt submitted, or the tool
+// run and what it was run on — as one line, or "" for any other hook. The
+// payload is whatever the harness sent, so any shape it does not recognize is
+// simply not summarized. The text is the harness's, and a prompt or command is
+// free to span lines, so it is folded onto one line here; the caller still
+// escapes what is left.
+func hookSummary(payload []byte) string {
+	var p hookPayload
+	if len(payload) == 0 || json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	if prompt := truncateTableValue(p.Prompt, hookSummaryMaxText); prompt != "" {
+		return "prompt: " + prompt
+	}
+	if len(p.ToolCalls) > 0 {
+		names := make([]string, 0, len(p.ToolCalls))
+		for _, call := range p.ToolCalls {
+			if call.ToolName != "" {
+				names = append(names, call.ToolName)
+			}
+		}
+		return strings.Join(names, ",")
+	}
+	tool, input := p.ToolName, p.ToolInput
+	if tool == "" {
+		tool, input = p.Tool, p.Args
+	}
+	if tool == "" {
+		return ""
+	}
+	subject := p.Title
+	if tool == "apply_patch" {
+		// Codex's patch is the whole diff; the files it touches are what
+		// tells one apart from the next.
+		command, _ := input["command"].(string)
+		subject = patchFiles(command)
+	} else {
+		for _, key := range hookToolInputSubjects {
+			if value, ok := input[key].(string); ok && strings.TrimSpace(value) != "" {
+				subject = value
+				break
+			}
+		}
+	}
+	if subject = truncateTableValue(subject, hookSummaryMaxText); subject == "" {
+		return tool
+	}
+	return tool + ": " + subject
+}
+
+// patchFiles lists the files an apply_patch envelope adds, updates, or deletes.
+func patchFiles(patch string) string {
+	var files []string
+	for _, line := range strings.Split(patch, "\n") {
+		for _, marker := range []string{"*** Add File: ", "*** Update File: ", "*** Delete File: "} {
+			if file, ok := strings.CutPrefix(strings.TrimSpace(line), marker); ok {
+				files = append(files, file)
+			}
+		}
+	}
+	return strings.Join(files, " ")
+}
+
 func execEventRecord(sandboxID string) func(apimodel.SandboxExecEvent) auditRecord {
 	return func(e apimodel.SandboxExecEvent) auditRecord {
-		summary := terminalSafe(e.Type)
-		if exec := e.ExecId.Or(""); exec != "" {
-			summary += " " + terminalSafe(exec)
+		// The message says what happened and to which exec, in the discobox's
+		// words; the type is only the same thing as a key, so it is the
+		// fallback rather than a prefix.
+		what := e.Message.Or("")
+		if what == "" {
+			what = e.Type
 		}
-		if message := e.Message.Or(""); message != "" {
-			summary += ": " + terminalSafe(message)
+		summary := terminalSafe(what)
+		if exec := e.ExecId.Or(""); exec != "" {
+			summary = terminalSafe(exec) + " " + summary
 		}
 		return auditRecord{ID: e.ID, Attestor: auditAttestorSandbox, DiscoboxID: sandboxID, Record: &e, summary: summary}
 	}
