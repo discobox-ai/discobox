@@ -479,7 +479,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	// Persist the immutable identity/metadata durably before the shim starts, so
 	// it is never lost to a metadata-less shim runtime write or a reboot.
 	_ = m.saveRecord(ctx, exec)
-	_ = m.recordEvent(ctx, id, "exec.created", "exec created", map[string]any{
+	_ = m.recordEvent(ctx, exec, "exec.created", "created", map[string]any{
 		"unit":    unit,
 		"workdir": workdir,
 		"command": exec.Command,
@@ -509,14 +509,14 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		exitedAt := time.Now().UTC()
 		current.ExitedAt = &exitedAt
 		_ = m.writeRecord(ctx, current)
-		_ = m.recordEvent(ctx, id, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
+		_ = m.recordEvent(ctx, current, "exec.start.failed", "start failed ("+err.Error()+")", map[string]any{"error": err.Error()})
 		return current, err
 	}
 	if result.Unit != "" {
 		current.Unit = result.Unit
 	}
 	_ = m.writeRecord(ctx, current)
-	_ = m.recordEvent(ctx, id, "exec.prepared", "exec prepared", map[string]any{"unit": current.Unit})
+	_ = m.recordEvent(ctx, current, "exec.prepared", "prepared", map[string]any{"unit": current.Unit})
 	return current, nil
 }
 
@@ -709,7 +709,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	if err := m.units.Stop(ctx, exec.Unit); err != nil {
 		return err
 	}
-	_ = m.recordEvent(ctx, id, "exec.stop.requested", "exec stop requested", map[string]any{"unit": exec.Unit})
+	_ = m.recordEvent(ctx, exec, "exec.stop.requested", "stop requested", map[string]any{"unit": exec.Unit})
 	record := m.lockRecord(id)
 	if m.audit != nil {
 		if err := m.audit.DeleteExecRecord(ctx, id); err != nil {
@@ -724,7 +724,7 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	if m.logs != nil {
 		_ = m.logs.DeleteExecLog(ctx, id)
 	}
-	_ = m.recordEvent(ctx, id, "exec.deleted", "exec deleted", map[string]any{"unit": exec.Unit})
+	_ = m.recordEvent(ctx, exec, "exec.deleted", "deleted", map[string]any{"unit": exec.Unit})
 	return nil
 }
 
@@ -747,7 +747,7 @@ func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 	if err := m.units.Stop(ctx, exec.Unit); err != nil {
 		return Exec{}, err
 	}
-	_ = m.recordEvent(ctx, id, "exec.stop.requested", "exec stop requested", map[string]any{"unit": exec.Unit})
+	_ = m.recordEvent(ctx, exec, "exec.stop.requested", "stop requested", map[string]any{"unit": exec.Unit})
 	current := m.withRuntimePaths(exec)
 	_ = os.Remove(current.SocketPath)
 	current.Status = StatusExited
@@ -764,7 +764,7 @@ func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
 	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
 	}
-	_ = m.recordEvent(ctx, id, "exec.stopped", "exec stopped", map[string]any{"unit": current.Unit})
+	_ = m.recordEvent(ctx, current, "exec.stopped", "stopped", map[string]any{"unit": current.Unit})
 	return cloneExec(current), nil
 }
 
@@ -783,12 +783,12 @@ func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {
 		exitedAt := time.Now().UTC()
 		exec.ExitedAt = &exitedAt
 		_ = m.writeRecord(ctx, exec)
-		_ = m.recordEvent(ctx, id, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
+		_ = m.recordEvent(ctx, exec, "exec.start.failed", "start failed ("+err.Error()+")", map[string]any{"error": err.Error()})
 		return cloneExec(exec), err
 	}
 	current := mergeExecStatus(exec, started)
 	_ = m.writeRecord(ctx, current)
-	_ = m.recordEvent(ctx, id, "exec.started", "exec started", map[string]any{"unit": current.Unit, "pid": current.PID})
+	_ = m.recordEvent(ctx, current, "exec.started", "started", map[string]any{"unit": current.Unit, "pid": current.PID})
 	return cloneExec(current), nil
 }
 
@@ -856,7 +856,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	if err := m.writeRecord(ctx, current); err != nil {
 		return Exec{}, err
 	}
-	_ = m.recordEvent(ctx, current.ID, "exec.relaunched", "exec relaunched", map[string]any{
+	_ = m.recordEvent(ctx, current, "exec.relaunched", "relaunched", map[string]any{
 		"unit":    current.Unit,
 		"command": current.Command,
 	})
@@ -882,14 +882,14 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 		exitedAt := time.Now().UTC()
 		current.ExitedAt = &exitedAt
 		_ = m.writeRecord(ctx, current)
-		_ = m.recordEvent(ctx, current.ID, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
+		_ = m.recordEvent(ctx, current, "exec.start.failed", "start failed ("+err.Error()+")", map[string]any{"error": err.Error()})
 		return current, err
 	}
 	if result.Unit != "" {
 		current.Unit = result.Unit
 	}
 	_ = m.writeRecord(ctx, current)
-	_ = m.recordEvent(ctx, current.ID, "exec.prepared", "exec prepared", map[string]any{"unit": current.Unit})
+	_ = m.recordEvent(ctx, current, "exec.prepared", "prepared", map[string]any{"unit": current.Unit})
 	return cloneExec(current), nil
 }
 
@@ -922,9 +922,17 @@ func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Req
 	if err := checkAttachable(exec); err != nil {
 		return err
 	}
-	_ = m.recordEvent(ctx, id, "exec.attach.opened", "exec attach opened", map[string]any{"unit": exec.Unit})
+	opened := time.Now()
+	_ = m.recordEvent(ctx, exec, "exec.attach.opened", "attach opened", map[string]any{"unit": exec.Unit, "replay": replay})
 	defer func() {
-		_ = m.recordEvent(context.Background(), id, "exec.attach.closed", "exec attach closed", map[string]any{"unit": exec.Unit})
+		// Described as it is now: the title a program sets is often what the
+		// session was doing, and it has usually changed since the attach.
+		if current, ok := m.Get(id); ok {
+			exec = current
+		}
+		held := time.Since(opened)
+		_ = m.recordEvent(context.Background(), exec, "exec.attach.closed", "attach closed after "+held.Round(time.Second).String(),
+			map[string]any{"unit": exec.Unit, "durationMs": held.Milliseconds()})
 	}()
 	return shimproxy.AttachWebSocket(ctx, w, r, exec.SocketPath, "discobox-sandbox-exec", replay)
 }
@@ -947,7 +955,7 @@ func (m *Manager) ConnectOneShot(ctx context.Context, id string) (*shimproxy.One
 	if err != nil {
 		return nil, err
 	}
-	_ = m.recordEvent(ctx, id, "exec.attach.opened", "exec one-shot attach opened", map[string]any{"unit": exec.Unit})
+	_ = m.recordEvent(ctx, exec, "exec.attach.opened", "one-shot attach opened", map[string]any{"unit": exec.Unit, "oneShot": true})
 	return oneShot, nil
 }
 
@@ -1449,11 +1457,57 @@ func mergeExecStatus(base, status Exec) Exec {
 	return base
 }
 
-func (m *Manager) recordEvent(ctx context.Context, execID, typ, message string, details map[string]any) error {
+// recordEvent records one event in an exec's audit trail. The message names the
+// exec as well as what happened to it: a trail read as a timeline shows the
+// message and the exec's ID, and an ID alone does not say which exec it was.
+func (m *Manager) recordEvent(ctx context.Context, exec Exec, typ, message string, details map[string]any) error {
 	if m.audit == nil {
 		return nil
 	}
-	return m.audit.RecordExecEvent(ctx, execID, typ, message, details)
+	if what := describeExec(exec); what != "" {
+		message += ": " + what
+	}
+	return m.audit.RecordExecEvent(ctx, exec.ID, typ, message, details)
+}
+
+// describeExecMaxCommand and describeExecMaxTitle bound what an event message
+// quotes. The whole argv is in the exec's record; the message only has to tell
+// execs apart. The title is whatever the program set, and every event row
+// keeps its copy for good.
+const (
+	describeExecMaxCommand = 80
+	describeExecMaxTitle   = 60
+)
+
+// describeExec names an exec the way a person would recognize it: the command
+// that was asked for, and the window title its program last set. A terminal's
+// argv is the login shell, so the command asked for is the one typed into it
+// (StartupCommand) when there is one.
+func describeExec(exec Exec) string {
+	argv := exec.StartupCommand
+	if len(argv) == 0 {
+		argv = exec.Command
+	}
+	words := make([]string, 0, len(argv))
+	for _, arg := range argv {
+		if arg == "" || strings.ContainsAny(arg, " \t\n'\"\\$`;&|<>()*?[]{}#~") {
+			arg = QuoteShellArg(arg)
+		}
+		words = append(words, arg)
+	}
+	what := truncateRunes(strings.Join(words, " "), describeExecMaxCommand)
+	if title := strings.TrimSpace(exec.Title); title != "" {
+		what = strings.TrimSpace(what + " " + strconv.Quote(truncateRunes(title, describeExecMaxTitle)))
+	}
+	return what
+}
+
+// truncateRunes cuts s to at most limit runes, marking the cut with an ellipsis.
+func truncateRunes(s string, limit int) string {
+	if runes := []rune(s); len(runes) > limit {
+		return string(runes[:limit-1]) + "…"
+	}
+	return s
 }
 
 func (m *Manager) observe(ctx context.Context, exec Exec) error {

@@ -1121,3 +1121,23 @@ func TestManagerLeavesTheHomeTokenWhenNoHomeIsKnown(t *testing.T) {
 		t.Fatalf("CLAUDE_CONFIG_DIR = %q, want the token left in place", got)
 	}
 }
+
+func TestDescribeExecNamesTheCommandAskedForAndItsTitle(t *testing.T) {
+	for name, tc := range map[string]struct {
+		exec Exec
+		want string
+	}{
+		"plain argv":              {Exec{Command: []string{"go", "test", "./..."}}, "go test ./..."},
+		"quoted argument":         {Exec{Command: []string{"bash", "-lc", "echo hi; exit"}}, `bash -lc 'echo hi; exit'`},
+		"terminal":                {Exec{Command: []string{"/bin/bash", "-l"}, StartupCommand: []string{"claude", "--resume"}, Title: "✳ Fix audit list"}, `claude --resume "✳ Fix audit list"`},
+		"title only":              {Exec{Title: "vim"}, `"vim"`},
+		"long title is truncated": {Exec{Command: []string{"vim"}, Title: strings.Repeat("t", 100)}, `vim "` + strings.Repeat("t", describeExecMaxTitle-1) + `…"`},
+		"long is truncated":       {Exec{Command: []string{strings.Repeat("x", 100)}}, strings.Repeat("x", describeExecMaxCommand-1) + "…"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := describeExec(tc.exec); got != tc.want {
+				t.Fatalf("describeExec = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
