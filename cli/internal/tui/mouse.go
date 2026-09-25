@@ -19,11 +19,6 @@ import (
 // nothing in particular — drives the chrome's selection, which is what stands
 // in for the native one the terminal stopped doing the moment the mouse was
 // reported. See ADR 0088.
-//
-// The opening prompt is the exception, and `View`'s AltScreen branch is where
-// it is made: it is drawn inline, in the shell's own scrollback, where a mouse
-// coordinate is the terminal's rather than the frame's and the terminal's own
-// selection is still the right one.
 
 // clickRun is how close together two presses on the same cell must be to read
 // as one gesture growing — the conventional desktop double-click window, and

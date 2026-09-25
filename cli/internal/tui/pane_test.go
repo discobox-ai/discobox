@@ -20,7 +20,6 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 	t.Helper()
 	m := New(t.Context(), ds)
 	m.logo = logo{}
-	m.expanded = true
 	// A test copy must not clobber the developer's actual clipboard, and a
 	// test press on a header link must not open a browser on their screen.
 	m.copyOS = func(string) error { return nil }

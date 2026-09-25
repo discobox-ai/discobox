@@ -24,9 +24,6 @@ func TestWelcomeTakesTheWindow(t *testing.T) {
 	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))
 
 	view := m.View()
-	if !view.AltScreen {
-		t.Fatal("the introduction was drawn inline")
-	}
 	if !strings.Contains(view.Content, welcomeTitle) {
 		t.Fatalf("the introduction is not on screen:\n%s", view.Content)
 	}

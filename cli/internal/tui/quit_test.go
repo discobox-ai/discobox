@@ -101,7 +101,6 @@ func openList(t *testing.T, ds *fakeSource) (*driver, *Model) {
 	t.Helper()
 	m := New(t.Context(), ds)
 	m.logo = logo{}
-	m.expanded = true
 	d := newDriver(t, m)
 	d.start()
 	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })

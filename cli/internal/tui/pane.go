@@ -452,12 +452,9 @@ func (m *Model) openOverlay(act Interaction, sandbox Sandbox) tea.Cmd {
 	// is where this box came from; from the list it is the row the cursor is
 	// on.
 	m.paneBox = sandbox
-	// A terminal wants the whole screen, so opening one opens the window out
-	// even when nothing has asked for the list yet. The overlay is sized
-	// before it is opened: the size is what the far end is told, and a
-	// terminal that starts at the wrong size draws itself wrong before
-	// anything can correct it.
-	m.expanded = true
+	// The overlay is sized before it is opened: the size is what the far end
+	// is told, and a terminal that starts at the wrong size draws itself wrong
+	// before anything can correct it.
 	m.busy = string(act) + "…"
 	cols, rows := m.paneCells(m.width)
 	ctx, ds, id := m.ctx, m.ds, sandbox.ID

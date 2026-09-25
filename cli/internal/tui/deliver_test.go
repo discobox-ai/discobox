@@ -85,7 +85,6 @@ func TestAWorkspaceThatCannotDeliverReturnsToTheList(t *testing.T) {
 	ds.awaitedErr = errors.New("source primary came from /src/gone")
 	m := New(t.Context(), ds)
 	m.logo = logo{}
-	m.expanded = true
 	m.copyOS = func(string) error { return nil }
 	m.openOS = func(string) error { return nil }
 	d := newDriver(t, m)

@@ -482,8 +482,7 @@ func fitFields(fields []string, sep string, room int) []string {
 //
 // A middle with no room for it is shortened, not dropped. It names what is on
 // screen, and a name that silently disappears at some widths is worse than a
-// shortened one; that is exactly how the opening hint went missing before it
-// moved to a line of its own.
+// shortened one.
 func spreadCenter(left, middle, right string, w int) string {
 	if middle == "" {
 		return spread(left, right, w)

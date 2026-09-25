@@ -724,35 +724,6 @@ own.
 
 ## Decisions
 
-**It opens as a prompt and opens out into a window** (`compact.go`). The first
-frame is inline and only as tall as it needs: the mark, the composer beside it,
-and no sandboxes. That answers the common case at its own size — you came here
-to start something, and a screenful of sandboxes you did not ask to see is a
-screenful to look past before typing. Reaching past the prompt (`leavePrompt`:
-Up, Down or Tab) is the ask for the rest, and opening a terminal implies it too.
-
-`expand` is one way. Having asked for the discoboxes once, flipping the screen
-back and forth around them would be the window arguing with you.
-
-**The opening frame has to fit the screen it is printed on** (`compactFits`,
-`fitsInline`). A frame taller than the terminal does not simply overflow:
-printing it scrolls the terminal, and the rows that go off the top land in its
-scrollback, where no escape sequence can reach them — the erase below cleans the
-screen and they stay above it. So the frame is measured at the tallest it can
-get, the composer grown and the line under it drawn, and what does not fit is
-given up in order: the mark first (`compactShowsLogo`, the height counterpart to
-`minWidthForLogo`), then the small window itself, which `layout` opens out
-rather than print. A terminal inside a pane is several rows shorter than the one
-around it, so a discobox running inside a discobox is where this shows up
-first.
-
-Nothing on that first frame suggests there is anything behind it, so it says so
-— laid into the very top border line (`titledEdge`), and only until the window
-opens out. That line has nothing else on it, which is what keeps a centered word
-from being squeezed out: in the header below, between the path on one side and
-the keys on the other, there is no room for it at 80 or 100 columns and it was
-silently dropped.
-
 **One flourish** (`shimmer.go`): a band of color travels once across "discobox"
 in the placeholder when the window opens — about a second — then the prompt is a
 prompt. The hues advance with the frame as well as with the letter, so what
@@ -764,41 +735,15 @@ inside a style of its own; the *first* is left bare because the textarea puts
 the cursor on the placeholder's first grapheme cluster, taken off the raw
 string, and an escape there gets split with its remainder printed as text.
 
-**Full screen, once open.** `View` sets `AltScreen` (per frame, which is how
-Bubble Tea v2 takes it), so the window owns the terminal and what was on screen
-before comes back when it exits. The list fills whatever rows the composer and
-chrome leave it rather than shrinking to its contents, so the frame is always
-exactly the terminal's height.
+**Full screen, from the first frame.** `View` sets `AltScreen` on every frame
+(per frame, which is how Bubble Tea v2 takes it), so the window owns the
+terminal and what was on screen before comes back when it exits. The list
+fills whatever rows the composer and chrome leave it rather than shrinking to
+its contents, so the frame is always exactly the terminal's height.
 
 On the alternate screen the runtime drops to the primary screen around an exec
 and repaints on resize, so the window keeps no settle-timer after a resize and
-reclaims no rows before `tea.Exec` — the two things an inline window would
-need, since an inline frame is reflowed by the terminal while the renderer
-still counts pre-reflow lines, and stays painted above whatever an exec prints.
-
-**The prompt comes off the screen before the window takes it**
-(`clearPrinted`). The opening prompt is printed on the primary screen;
-everything else the window draws is on the alternate one, and switching screens
-does not take the printed rows with it. They stay where they were, behind the
-window, and whatever the window later drops back onto the primary screen lands
-in the middle of them — `$EDITOR` run through `tea.Exec` prints straight over
-the old prompt. So the first frame that takes the whole terminal — opening
-out, a modal, the options panel, a pane — is held back for one empty inline
-frame, which is how the renderer is asked to erase the rows it printed; it is
-the only thing that knows where they are, which is why this is a frame of
-nothing rather than an escape sequence of ours. `View` records what it drew
-(`printed`) and `Update` reads it, so this is one place rather than a call at
-every door onto the screen.
-
-The window then holds still until the terminal says that frame has been written,
-rather than for a pause of its own. The renderer does not draw the frames the
-window returns: it keeps the latest and writes whichever is current when its own
-clock fires, so a frame held briefly may never be written at all — which on a
-terminal whose writes are slow is what left the prompt on the screen. It asks
-the terminal where its cursor is instead (`clearAcks`), because the request goes
-out from that same clock, immediately before the frame does; two answers, since
-the first can overtake the frame it was written beside. A timeout under it
-(`clearTimeout`) is for the outputs that are not terminals and never answer.
+reclaims no rows before `tea.Exec`.
 
 **Four kinds of action.** A `Verb` goes to the API and returns, so the window
 stays up and reports on its status line. Archive invoked from a workspace is the
@@ -1698,16 +1643,14 @@ is as though it had not been pressed.
 (`View`, `mouse.go`, ADR 0088). Native selection is traded for the
 window's own, which is every multiplexer's bargain — struck once, for the whole
 window, so the pointer never means one thing on one screen and another on the
-next. The opening prompt is the exception and the line is `takesScreen`: it is
-printed inline in the shell's scrollback, where a coordinate is the terminal's
-screen rather than this frame.
+next.
 
 **The attributes that are the terminal's, not the frame's, are stamped in one
-place** (`View`, keyed on `AltScreen`). `MouseMode` and `WindowTitle` follow
-from whether a frame owns the screen, so `View` sets both on the way out
-instead of each builder setting them for itself. This is a correction: the
-builders used to, and `altView` — which is every modal, the dialogs, the
-options panel and the introduction — set `AltScreen` alone. `MouseMode`'s zero
+place** (`View`). `AltScreen`, `MouseMode` and `WindowTitle` are the same on
+every frame, so `View` sets all three on the way out instead of each builder
+setting them for itself. This is a correction: the builders used to, and the
+one that drew every modal — the dialogs, the options panel and the
+introduction — set `AltScreen` alone. `MouseMode`'s zero
 value is `MouseModeNone`, so each of those frames told the terminal to stop
 reporting the mouse, and every modal was unclickable while its own key handling
 went on working. Nothing in the hit map or the press handling was wrong, which
@@ -2104,9 +2047,7 @@ thing it remembers and it comes back on its own; and vi mode.
 a `logoGutter` on each side — one between it and the box, one between it and the
 list. In the full window `logo.view` draws it from the top and pads below: a
 mark belongs beside the first rows of the list, not floating halfway down a
-column of them. The opening window uses `logo.viewCentered` instead, because
-there the mark is the taller of the two and centering is what stops the prompt
-reading as a caption on it. The art's own rows stay aligned to each other: it is
+column of them. The art's own rows stay aligned to each other: it is
 a picture, so the block moves, not the lines within it.
 
 **The harnesses are the window's, not another program's** (`harnesses.go`).
@@ -2446,17 +2387,13 @@ list's own line says to type a prompt.
 **A prompt with text in it keeps Up.** Up leaves the composer only while the
 composer is empty; with anything typed it is a cursor key in the text, and
 holding it walks to the top and stops there. Otherwise the last press of a key
-you were using to reread your own paragraph opens the whole window behind it —
-and in the opening screen `expand` is one way, so it cannot be taken back. Tab
+you were using to reread your own paragraph moves focus out from under you. Tab
 is the way out, being a key you press once and mean, and the strip under the
-composer and the opening frame's top line offer Up only while it works.
+composer offers Up only while it works.
 
 Where the cursor lands entering the list is `listLanding`, and only decides the
 *first* time (`sandboxList.visited`): Up is a direction, so it lands on the row
-nearest the prompt — the last; Tab lands at the top. Opening the window out is
-the exception: whichever key did it lands at the top, because "nearest the
-prompt" needs rows on screen to be near and there were none. After
-that every key returns the cursor to the sandbox it was left on, because leaving
+nearest the prompt — the last; Tab lands at the top. After that every key returns the cursor to the sandbox it was left on, because leaving
 the list to type something and coming back is not the same as arriving at it.
 `resetCursor` clears `visited` when the folder changes: a different set of
 sandboxes is a list nobody has chosen a row in.
@@ -2540,7 +2477,6 @@ the newest one where the busy line goes.
 | `folder.go` | the header's folder filter: the choices, the dropdown, and applying one |
 | `server.go` | the header's server filter: the choices, the dropdown, and the create that follows it |
 | `tags.go` | the header's tag filter: the choices, shown once anything is tagged, the dropdown, and applying one |
-| `compact.go` | the opening window: the prompt beside the mark, and opening out |
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
 | `model.go` | the window: update, actions, run, layout, view, help |
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |

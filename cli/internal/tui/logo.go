@@ -141,25 +141,8 @@ func (l logo) column() int {
 // It is drawn from the top of the height it is given and padded below. The mark
 // is a mark: it belongs at the head of the thing it marks, beside the first rows
 // of the list rather than floating halfway down a column of them.
-//
-// Use viewCentered where the mark is the taller of the two, which is the opening
-// window, and centering is what stops it reading as a caption on the mark.
 func (l logo) view(height int) string {
 	rows := l.paddedRows(height)
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
-}
-
-// viewCentered draws the mark in the middle of the height it is given.
-func (l logo) viewCentered(height int) string {
-	rows := make([]string, 0, max(height, l.height()))
-	blank := strings.Repeat(" ", l.column())
-	// The remainder of an odd split goes below, so the mark sits a row high
-	// rather than a row low, which is where the eye expects something centered
-	// against text.
-	for range max((height-l.height())/2, 0) {
-		rows = append(rows, blank)
-	}
-	rows = append(rows, l.paddedRows(max(height-len(rows), l.height()))...)
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 

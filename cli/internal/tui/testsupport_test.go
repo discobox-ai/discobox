@@ -1177,9 +1177,6 @@ func newTestModel(t *testing.T, ds DataSource) *Model {
 	// package in TestMain.
 	m := New(t.Context(), ds)
 	m.logo = logo{}
-	// Most of these are about the full launcher, which is what the window opens
-	// out into. The opening prompt has its own tests, in compact_test.go.
-	m.expanded = true
 	m.list.now = func() time.Time { return time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC) }
 	m.harnesses.now = m.list.now
 	// The runtime is what releases the terminal around an action; there is none

@@ -356,25 +356,18 @@ func TestADoubleClickInTheComposerTakesAWord(t *testing.T) {
 	}
 }
 
-// The mouse is reported once the window has the screen, and not before: the
-// opening prompt is inline in the shell's own scrollback, where the terminal's
-// selection is still the one that belongs.
-func TestTheOpeningPromptLeavesTheMouseToTheTerminal(t *testing.T) {
+// Every frame owns the screen, and so every frame reports the mouse.
+func TestTheWindowAsksTheTerminalForTheMouse(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	m.expanded = false
 	send(t, m, sizeMsg(120, 40))
 
 	view := m.View()
-	if view.AltScreen {
-		t.Fatal("the opening prompt is drawn inline")
+	if !view.AltScreen {
+		t.Fatal("the window should be on the alternate screen from its first frame")
 	}
-	if got := view.MouseMode; got != tea.MouseModeNone {
-		t.Fatalf("the inline prompt asks for %v, want the mouse left to the terminal", got)
-	}
-	m.expand()
-	if got := m.View().MouseMode; got == tea.MouseModeNone {
-		t.Fatalf("the full window should report the mouse")
+	if got := view.MouseMode; got == tea.MouseModeNone {
+		t.Fatalf("the window asks for %v, want it to report the mouse", got)
 	}
 }
 
@@ -848,16 +841,16 @@ func TestPressingTheOptionsKeyLineLeaves(t *testing.T) {
 // ---------------------------------------------------------------------------
 // the mouse a modal asks for
 
-// A modal is drawn by altView, which decides the screen and nothing else. The
-// mouse it asks for is therefore View's to stamp, and this is the assertion
+// A modal is drawn by its own builder, which decides nothing about the
+// terminal. The mouse it asks for is therefore View's to stamp, and this is the assertion
 // that it does: every layer that stands in place of the window reports the
 // mouse, because every one of them has rows a pointer is meant to press.
 //
 // It is written against View rather than against a synthesized press on
 // purpose. Feeding tea.MouseClickMsg to Update tests the handler and skips the
 // question this answers — whether the terminal was ever asked to send one. The
-// handlers were right and every modal was still dead, because altView left
-// MouseMode at its zero value, MouseModeNone.
+// handlers were right and every modal was still dead, because the builder that
+// set AltScreen left MouseMode at its zero value, MouseModeNone.
 func TestEveryModalAsksTheTerminalForTheMouse(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

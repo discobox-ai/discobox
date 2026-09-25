@@ -45,9 +45,7 @@ func (d *driver) key(spec string) {
 func (d *driver) dispatch(msg tea.Msg) {
 	d.t.Helper()
 	_, cmd := d.m.Update(msg)
-	// The runtime draws after every message, and the window reads back what it
-	// drew: a frame with anything on it, drawn inline, is the prompt printed on
-	// the screen the window was started from. See clearPrinted.
+	// The runtime draws after every message.
 	d.m.View()
 	d.run(cmd)
 }
@@ -62,12 +60,6 @@ func (d *driver) run(cmd tea.Cmd) {
 		msg := cmd()
 		if msg == nil {
 			return
-		}
-		// The terminal answers when it is asked where its cursor is, and the
-		// window waits on that answer before it takes the screen. See
-		// clearPrinted.
-		if msg == tea.RequestCursorPosition() {
-			msg = tea.CursorPositionMsg{}
 		}
 		if batch, ok := msg.(tea.BatchMsg); ok {
 			for _, sub := range batch {

@@ -182,14 +182,11 @@ func (z *zones) pop() {
 }
 
 // count is how many marks have been made, which is the handle a caller takes
-// before drawing a block it cannot place — or cannot answer — until it has
-// drawn it.
+// before drawing a block it cannot place until it has drawn it.
 func (z *zones) count() int { return len(z.marks) }
 
-// drop forgets everything marked since count returned from, for a frame whose
-// controls cannot be pressed: the opening prompt is printed inline, where a
-// mouse coordinate is the terminal's screen rather than this frame, so marks
-// made there would be read against the wrong rows if they were kept.
+// drop forgets everything marked since count returned from: a block drawn once
+// to be measured leaves marks at the wrong origin. See Model.place.
 func (z *zones) drop(from int) {
 	if from >= 0 && from <= len(z.marks) {
 		z.marks = z.marks[:from]

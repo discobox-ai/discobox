@@ -113,30 +113,12 @@ func TestHarnessesScreenOpensAndCloses(t *testing.T) {
 	}
 }
 
-// The screen opens out of the prompt window, since it is a whole window rather
-// than something that fits beside the opening prompt.
-func TestHarnessesScreenExpandsTheWindow(t *testing.T) {
-	t.Parallel()
-	m := newTestModel(t, newFakeSource())
-	m.expanded = false
-	m.layout()
-
-	send(t, m, keyPress("f3"))
-	if !m.expanded {
-		t.Fatal("opening the harnesses screen should open the window out")
-	}
-	if !m.View().AltScreen {
-		t.Fatal("the harnesses screen should be on the alternate screen")
-	}
-}
-
-// WithHarnesses is `discobox configure`: the window opens on the screen, already
-// out.
+// WithHarnesses is `discobox configure`: the window opens on the screen.
 func TestWithHarnessesOpensOnTheScreen(t *testing.T) {
 	t.Parallel()
 	m := New(t.Context(), newFakeSource(), WithHarnesses())
-	if !m.harnessesOpen || !m.expanded {
-		t.Fatalf("WithHarnesses = {open:%v expanded:%v}, want the window opened out on the screen", m.harnessesOpen, m.expanded)
+	if !m.harnessesOpen {
+		t.Fatal("WithHarnesses should open the window on the harnesses screen")
 	}
 }
 

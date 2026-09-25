@@ -381,11 +381,8 @@ func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 	return m.startPendingRun()
 }
 
-// openHarnesses brings the screen up. It opens the window out for the same
-// reason a terminal does: the screen is the whole window, and the opening
-// prompt is not a place to put one.
+// openHarnesses brings the screen up.
 func (m *Model) openHarnesses() tea.Cmd {
-	m.expand()
 	m.harnessesOpen = true
 	m.optionsOpen = false
 	// The secrets screen is this one's peer, not what it is drawn over: one of
@@ -574,7 +571,6 @@ func (m *Model) configureHarness(server string, harness Harness) tea.Cmd {
 func (m *Model) configureHarnessThen(server string, harness Harness, andDefault *Harness, resume *RunRequest) tea.Cmd {
 	name := harness.displayName()
 	m.busy = "configuring " + name + "…"
-	m.expanded = true
 	cols, rows := m.paneCells(m.width)
 	ctx, ds := m.ctx, m.ds
 	return func() tea.Msg {
@@ -871,7 +867,7 @@ func (m *Model) viewHarnesses() string {
 	m.zones.push(bodyLeft, headerTop+len(rows))
 	rows = append(rows, strings.Split(m.viewStatus(), "\n")...)
 	m.zones.pop()
-	return m.box("", rows)
+	return m.box(rows)
 }
 
 // harnessHints is the bottom line here: only the actions the harness under the

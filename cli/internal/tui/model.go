@@ -308,18 +308,6 @@ type Model struct {
 	// that opened it.
 	leaderArmed bool
 
-	// expanded is whether the window has opened out from the prompt it starts
-	// as into the full launcher. See compact.go.
-	expanded bool
-
-	// printed is whether the last frame was drawn inline — that is, printed on
-	// the screen the window was started from, which the alternate screen does
-	// not take with it. clearing is how many acknowledgements the window is
-	// still waiting for while those rows are erased, zero for none outstanding.
-	// Both are compact.go's; see clearPrinted.
-	printed  bool
-	clearing int
-
 	// shimmer is the frame the opening glint is on, or zero when there is none.
 	// See shimmer.go.
 	shimmer int
@@ -413,16 +401,14 @@ func WithLeader(key string) Option {
 
 // WithHarnesses opens the window on the harnesses screen, which is what
 // `discobox configure` is: the same window, opened on the screen that command is
-// about. The window is opened out with it — the screen is the whole of it, and
-// the opening prompt has no room for one.
+// about.
 func WithHarnesses() Option {
-	return func(m *Model) { m.harnessesOpen, m.expanded = true, true }
+	return func(m *Model) { m.harnessesOpen = true }
 }
 
 // WithAttach opens the window on one discobox's workspace, which is what
 // `discobox new` and `discobox attach` are: the window is that attach rather
-// than a launcher that happens to have one open. It is opened out with it — the
-// workspace is the whole of it — and leaving the workspace closes the window
+// than a launcher that happens to have one open. Leaving the workspace closes the window
 // instead of falling back to a list nobody asked for. The introduction never
 // stands in front of it, project unwelcomed or not — see New — because there
 // is nothing behind the workspace for it to hand over to.
@@ -766,24 +752,10 @@ func status(format string, args ...any) tea.Cmd {
 // update
 
 // Update is the window's one entry point for a message. Everything it does is
-// in update below; what is here is the one thing that has to happen around
-// every message rather than in any handler — the opening prompt being wiped off
-// the screen it was printed on, the first time the window takes the whole
-// terminal. See clearPrinted.
+// in update below; what is here is what has to happen around every message
+// rather than in any handler.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// The erasing frame is acknowledged by the terminal, and given up on by the
-	// backstop under it. Neither answer is anything the window itself is asked
-	// about, so neither reaches update below. See clearPrinted.
-	switch msg.(type) {
-	case screenClearedMsg:
-		m.clearing, m.printed = 0, false
-		return m, nil
-	case tea.CursorPositionMsg:
-		if m.clearing > 0 {
-			return m, m.screenCleared()
-		}
-	}
-	cmd := m.clearPrinted(m.update(msg))
+	cmd := m.update(msg)
 	// Whatever just happened may have changed which pane is on screen, and a
 	// pane on screen is one being read. Doing it here rather than at each of
 	// the several places focus can move means no new way to move it can forget.
@@ -1811,14 +1783,6 @@ func (m *Model) setSubmitting(on bool) {
 // you are standing in has nothing in it, and the sandboxes are somewhere else —
 // so landing on it beats refusing to move and leaving no way to reach it.
 func (m *Model) leavePrompt(landing listLanding) {
-	// Reaching past the prompt is the ask for everything behind it — and the
-	// first time, the list arrives with it. Up means "the row nearest the
-	// prompt" only once there are rows on screen to be near; opening the window
-	// out, there are none yet, so it lands at the top like everything else.
-	if !m.expanded {
-		landing = landFirst
-	}
-	m.expand()
 	m.prompt.Blur()
 	if len(m.list.rows()) == 0 {
 		m.focus = focusFolder
@@ -2905,17 +2869,6 @@ func (m *Model) layout() {
 	secretsLeft := max(secretsRoom-waiting-requestsChrome, 1)
 	m.secrets.width, m.secrets.height = m.bodyWidth(), min(max(len(m.secrets.all), 1), secretsLeft)
 	m.secrets.clamp()
-	if !m.expanded && !m.inPanes() {
-		m.compactLayout()
-		// An opening frame taller than the screen it is printed on loses its
-		// top rows into the terminal's scrollback the moment it is printed, and
-		// nothing can take them back. There is no small window at this size.
-		// See fitsInline.
-		if !m.compactFits() {
-			m.expand()
-		}
-		return
-	}
 	// The workspace takes the whole window: a terminal wants every row it can
 	// get, and the list underneath is not what you are looking at. Every pane
 	// is sized for the box it is drawn in, the hidden tabs included — flipping
@@ -2950,40 +2903,27 @@ func (m *Model) layout() {
 	m.list.clamp()
 }
 
-// View draws the window. It records what it drew as well: a frame with anything
-// on it, drawn inline, is text printed on the screen the window was started
-// from, and an empty inline frame is that text erased. That is what clearPrinted
-// goes on.
+// View draws the window.
 func (m *Model) View() tea.View {
 	view := m.view()
-	m.printed = !view.AltScreen && view.Content != ""
 	// The attributes that are the terminal's rather than the frame's are
 	// stamped here, at the one place every frame leaves by, rather than by each
-	// builder that makes one. A frame that owns the screen reports the mouse
-	// and names the window; an inline one does neither, because a mouse
-	// coordinate there is the shell's screen and not this frame (ADR 0088 §1).
+	// builder that makes one: every frame owns the whole terminal, reports the
+	// mouse, and names the window.
 	//
-	// Stamped once because the alternative was tried and drifted: altView set
+	// Stamped once because the alternative was tried and drifted: builders set
 	// AltScreen and nothing else, so every modal — the dialogs, the options
 	// panel, the introduction — asked the terminal for MouseModeNone, the zero
 	// value, and went unclickable while its own key handling carried on
 	// working. A builder cannot forget what it does not set.
 	//
-	// All-motion outright rather than through a second question of our own:
-	// owning the screen *is* the condition, and a frame that asked it again
-	// against some other piece of state could answer it differently and put
-	// the dead modal back. All-motion because a control the pointer rests on
-	// is drawn live before it is pressed, and a pointer that has not moved
-	// reports nothing; a bare move is answered here and forwarded to a sandbox
-	// only when that sandbox asked for motion (Model.hover).
-	//
-	// A new full-screen layer still owes `takesScreen` an entry — that is what
-	// `clearPrinted` reads, and tui/REVIEW.md asks for it — but forgetting it
-	// no longer costs the layer its mouse.
-	if view.AltScreen {
-		view.MouseMode = tea.MouseModeAllMotion
-		view.WindowTitle = m.windowTitle()
-	}
+	// All-motion because a control the pointer rests on is drawn live before
+	// it is pressed, and a pointer that has not moved reports nothing; a bare
+	// move is answered here and forwarded to a sandbox only when that sandbox
+	// asked for motion (Model.hover).
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeAllMotion
+	view.WindowTitle = m.windowTitle()
 	return view
 }
 
@@ -2998,11 +2938,6 @@ func (m *Model) view() tea.View {
 	if m.quit {
 		return tea.NewView("")
 	}
-	// Nothing at all, inline, while the rows the opening prompt printed are
-	// erased off the screen it printed them on. See clearPrinted.
-	if m.clearing > 0 {
-		return tea.NewView("")
-	}
 	if !m.ready {
 		return tea.NewView("Loading…")
 	}
@@ -3010,33 +2945,23 @@ func (m *Model) view() tea.View {
 	// The introduction is the window until it is dismissed, ahead of the screen
 	// it was opened on and ahead of any modal. See welcome.go.
 	if m.welcoming {
-		return m.altView(m.place(m.viewWelcome))
+		return tea.NewView(m.place(m.viewWelcome))
 	}
 
 	// A modal is drawn in place of the window rather than over it, and closing
 	// it puts the window back. It carries its own border, so it needs none of
 	// the frame below.
 	if m.dialog != nil {
-		return m.altView(m.place(func() string { return m.dialog.view(m.st, &m.zones, m.width, m.height) }))
+		return tea.NewView(m.place(func() string { return m.dialog.view(m.st, &m.zones, m.width, m.height) }))
 	}
 	if m.optionsOpen {
-		return m.altView(m.place(func() string { return m.opts.view(m.st, &m.zones, m.width, m.prompt.Value()) }))
+		return tea.NewView(m.place(func() string { return m.opts.view(m.st, &m.zones, m.width, m.prompt.Value()) }))
 	}
 
 	// The header names the session; what is under it is a different kind of
 	// thing, and butted together they read as one block.
 	var content string
 	switch {
-	case !m.expanded && !m.inPanes():
-		// Nothing on this frame answers a press: it is printed inline, under
-		// the command that started the window, where a coordinate belongs to
-		// the terminal's screen and not to these rows. Whatever its renderers
-		// marked on the way past is dropped rather than left to be read
-		// against the wrong ones. It is the frame View leaves AltScreen off,
-		// and so the one it asks no mouse for.
-		marked := m.zones.count()
-		content = m.viewCompact()
-		m.zones.drop(marked)
 	case m.inPanes():
 		// A pane wears the border itself. Everything else — the header, what
 		// the sandbox is called, the keys — sits outside it, the way a caption
@@ -3072,12 +2997,9 @@ func (m *Model) view() tea.View {
 		rows = append(rows, strings.Split(m.viewPrompt(), "\n")...)
 		m.zones.pop()
 
-		content = m.box("", rows)
+		content = m.box(rows)
 	}
 	view := tea.NewView(m.paintChrome(content))
-	// The whole terminal, once the window has opened out — but not before: the
-	// opening prompt is inline, sitting under the command that started it.
-	view.AltScreen = m.takesScreen()
 	// The cursor belongs to whatever is drawing one. A pane places it where the
 	// sandbox put it; everywhere else the composer's own virtual cursor does
 	// the job and there is nothing to place.
@@ -3096,14 +3018,14 @@ func (m *Model) view() tea.View {
 // from the screen the sandbox believes it is drawing on. Every row is fitted to
 // the cell here instead, so the frame is fixed and the cursor offsets in
 // paneCursor are exact.
-func (m *Model) box(title string, rows []string) string {
+func (m *Model) box(rows []string) string {
 	inner := m.inner()
 	pad := strings.Repeat(" ", boxPad)
 	side := m.st.frame.Render("│")
 	edge := inner + 2*boxPad
 
 	out := make([]string, 0, len(rows)+2)
-	out = append(out, titledEdge(m.st, m.st.frame, title, "", edge))
+	out = append(out, titledEdge(m.st, m.st.frame, "", "", edge))
 	for _, row := range rows {
 		out = append(out, side+pad+padANSI(row, inner)+pad+side)
 	}
@@ -3190,26 +3112,6 @@ func centerOffset(outer, inner int) int {
 		return 0
 	}
 	return gap - int(math.Round(float64(gap)/2))
-}
-
-// takesScreen reports whether the frame the window draws now is the whole
-// terminal. Everything but the opening prompt is: a modal and the options panel
-// stand in place of the window rather than inside it, and both can be up before
-// the window has opened out.
-func (m *Model) takesScreen() bool {
-	return m.expanded || m.inPanes() || m.dialog != nil || m.optionsOpen || m.welcoming
-}
-
-// altView is a frame on the alternate screen, for the layers that stand in
-// place of the window rather than inside it.
-//
-// The screen is the whole of what it decides. Whether such a frame reports the
-// mouse and what it calls the window follow from that, and View stamps both, so
-// there is nothing here for a new layer to leave out.
-func (m *Model) altView(content string) tea.View {
-	view := tea.NewView(content)
-	view.AltScreen = true
-	return view
 }
 
 // showLogo reports whether there is width to spare for the mark. Below the
@@ -4270,9 +4172,7 @@ func (m *Model) helpText() string {
 		"  Hold Shift for your terminal's own selection, as in tmux.",
 		"",
 		"  Inside a pane the box only sees the mouse while a program there",
-		"  has asked for it; " + m.paneMouseHint() + " takes it back. The opening prompt is",
-		"  printed in the terminal rather than drawn over it, so the mouse",
-		"  there is the terminal's.",
+		"  has asked for it; " + m.paneMouseHint() + " takes it back.",
 		"",
 		"  Press Esc to close.",
 	}, "\n")

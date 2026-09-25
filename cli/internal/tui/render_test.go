@@ -482,29 +482,7 @@ func TestTheMarkSitsAtTheTopOfTheList(t *testing.T) {
 	}
 }
 
-// The opening window centers it instead, because there the mark is the taller
-// of the two and a prompt pinned to its shoulder reads as a caption on it.
-func TestTheMarkIsCenteredInTheOpeningWindow(t *testing.T) {
-	t.Parallel()
-	mark := logo{rows: []string{"aa", "bb"}, width: 2}
-
-	// The blank rows are split above and below, the odd one going below so the
-	// mark sits a row high rather than a row low.
-	lines := strings.Split(mark.viewCentered(7), "\n")
-	if len(lines) != 7 {
-		t.Fatalf("viewCentered(7) drew %d rows", len(lines))
-	}
-	if strings.TrimSpace(lines[2]) != "aa" || strings.TrimSpace(lines[3]) != "bb" {
-		t.Fatalf("mark should start on row 2, got %q", lines)
-	}
-
-	// Exactly its own height: no padding at all.
-	if lines := strings.Split(mark.viewCentered(2), "\n"); len(lines) != 2 || strings.TrimSpace(lines[0]) != "aa" {
-		t.Fatalf("viewCentered(2) = %q", lines)
-	}
-}
-
-// And centered across too: the column it reserves is the art with a gutter on
+// The mark is centered across its column: the column it reserves is the art with a gutter on
 // each side, so it does not sit flush against the box on one side with all the
 // space on the other.
 func TestTheMarkIsCenteredAcrossItsColumn(t *testing.T) {
@@ -611,7 +589,7 @@ func TestTheWindowIsABox(t *testing.T) {
 		t.Errorf("bottom edge = %q", last)
 	}
 	// Every row between them carries the two sides, and the box is exactly the
-	// width of the terminal: an inline window one column too wide wraps, and a
+	// width of the terminal: a window one column too wide wraps, and a
 	// wrapped frame is the one thing the renderer cannot redraw its way out of.
 	for i, line := range lines {
 		plain := ansi.Strip(line)

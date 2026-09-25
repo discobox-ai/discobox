@@ -315,7 +315,6 @@ func (m *Model) loadSecrets() tea.Cmd {
 }
 
 func (m *Model) openSecrets() tea.Cmd {
-	m.expand()
 	m.secretsOpen = true
 	m.optionsOpen = false
 	m.harnessesOpen = false
@@ -1396,7 +1395,7 @@ func (m *Model) viewSecrets() string {
 	m.zones.push(bodyLeft, headerTop+len(rows))
 	rows = append(rows, strings.Split(m.viewStatus(), "\n")...)
 	m.zones.pop()
-	return m.box("", rows)
+	return m.box(rows)
 }
 
 // secretsChrome is what this screen costs in rows before a single secret is
