@@ -225,7 +225,10 @@ launchers, and configure scripts.
   thinking added 500 to 5,700 output tokens (5 to 50 seconds) and a fresh
   session's background traffic about two more. The wrapper sets both off
   itself, overriding the environment, so the judge's speed and depth are not
-  the judged agent's to choose.
+  the judged agent's to choose. `opencode` has no reasoning switch that holds
+  across the providers a user may pick, so its judge reasons as its model
+  does; what its wrapper removes is the session title opencode would
+  otherwise generate with a second call to the same model (`--title`).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,

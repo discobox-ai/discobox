@@ -381,16 +381,16 @@ func TestPromptJudgesWithTheConfiguredModel(t *testing.T) {
 		[]byte(`{"recent":[{"providerID":"openai","modelID":"gpt-5.6-terra"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := runWrapper(t, "prompt.sh", "", args, nil, "--model", "judge", "--no-tools", "--prompt", "is it safe"); got != "[run][--pure][is it safe]" {
+	if got := runWrapper(t, "prompt.sh", "", args, nil, "--model", "judge", "--no-tools", "--prompt", "is it safe"); got != "[run][--pure][--title=discobox-prompt][is it safe]" {
 		t.Errorf("no setting and no /models pick: opencode argv %s, want opencode's own pick", got)
 	}
 	for _, tc := range []struct {
 		setting string
 		want    string
 	}{
-		{`{"judgeModel": "anthropic/claude-opus-5"}`, "[run][--model=anthropic/claude-opus-5][--pure][is it safe]"},
-		{`{"judgeModel": ""}`, "[run][--model=openai/gpt-5.6-terra][--pure][is it safe]"},
-		{"", "[run][--model=openai/gpt-5.6-terra][--pure][is it safe]"},
+		{`{"judgeModel": "anthropic/claude-opus-5"}`, "[run][--model=anthropic/claude-opus-5][--pure][--title=discobox-prompt][is it safe]"},
+		{`{"judgeModel": ""}`, "[run][--model=openai/gpt-5.6-terra][--pure][--title=discobox-prompt][is it safe]"},
+		{"", "[run][--model=openai/gpt-5.6-terra][--pure][--title=discobox-prompt][is it safe]"},
 	} {
 		got := runWrapper(t, "prompt.sh", tc.setting, args, map[string]string{"XDG_STATE_HOME": state}, "--model", "judge", "--no-tools", "--prompt", "is it safe")
 		if got != tc.want {
@@ -417,29 +417,29 @@ func TestPromptJudgesWithOpencodesDefaultModel(t *testing.T) {
 		name, file, content, setting, want string
 	}{
 		{"opencode.json's model", "opencode.json", `{"model": "zai/glm-5.3"}`, "",
-			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+			"[run][--model=zai/glm-5.3][--pure][--title=discobox-prompt][is it safe]"},
 		{"opencode.jsonc, with comments", "opencode.jsonc", "// my default\n{\n  // the model\n  \"model\": \"zai/glm-5.3\"\n}", "",
-			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+			"[run][--model=zai/glm-5.3][--pure][--title=discobox-prompt][is it safe]"},
 		{"opencode.jsonc, as opencode writes it", "opencode.jsonc",
 			"{\n  \"$schema\": \"https://opencode.ai/config.json\", // the schema\n  /* the default\n     model */\n  \"model\": \"zai/glm-5.3\",\n  \"provider\": {\"zai\": {\"options\": {\"baseURL\": \"https://api.z.ai/v1\",},},},\n}", "",
-			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+			"[run][--model=zai/glm-5.3][--pure][--title=discobox-prompt][is it safe]"},
 		{"a trailing comma with a comment before its bracket", "opencode.jsonc",
 			"{\n  \"model\": \"zai/glm-5.3\", // the default\n  \"small_model\": \"zai/glm-5.3-air\", /* the small one */\n}", "",
-			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+			"[run][--model=zai/glm-5.3][--pure][--title=discobox-prompt][is it safe]"},
 		{"a trailing comma in an array, before a comment", "opencode.jsonc",
 			"{\n  \"plugin\": [\"a\", // first\n  ],\n  \"model\": \"zai/glm-5.3\"\n}", "",
-			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+			"[run][--model=zai/glm-5.3][--pure][--title=discobox-prompt][is it safe]"},
 		{"an escaped quote and a slash pair inside a string", "opencode.jsonc",
 			"{\"instructions\": [\"say \\\"hi\\\" // not a comment\"], \"model\": \"zai/glm-5.3\",}", "",
-			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+			"[run][--model=zai/glm-5.3][--pure][--title=discobox-prompt][is it safe]"},
 		{"a model that reads like a flag stays the model's value", "opencode.json", `{"model": "--agent=build"}`, "",
-			"[run][--model=--agent=build][--pure][is it safe]"},
+			"[run][--model=--agent=build][--pure][--title=discobox-prompt][is it safe]"},
 		{"config.json's model", "config.json", `{"model": "zai/glm-5.3"}`, "",
-			"[run][--model=zai/glm-5.3][--pure][is it safe]"},
+			"[run][--model=zai/glm-5.3][--pure][--title=discobox-prompt][is it safe]"},
 		{"a configuration naming no model falls to /models", "opencode.json", `{"theme": "tokyonight"}`, "",
-			"[run][--model=openai/gpt-5.6-luna][--pure][is it safe]"},
+			"[run][--model=openai/gpt-5.6-luna][--pure][--title=discobox-prompt][is it safe]"},
 		{"judgeModel still wins", "opencode.json", `{"model": "zai/glm-5.3"}`, `{"judgeModel": "anthropic/claude-haiku-4-5"}`,
-			"[run][--model=anthropic/claude-haiku-4-5][--pure][is it safe]"},
+			"[run][--model=anthropic/claude-haiku-4-5][--pure][--title=discobox-prompt][is it safe]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := t.TempDir()

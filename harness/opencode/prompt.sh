@@ -276,7 +276,11 @@ if [ -n "$no_tools" ]; then
 	# permission is the whole rule set.
 	export OPENCODE_PERMISSION='{"*":"deny"}'
 	cd "$isolated/cwd"
-	set -- "$@" --pure
+	# A session with no title gets one from a model call of its own, made
+	# before the answer and with the judge's own model when no small model is
+	# configured — which in this empty configuration none is. Measured, it was
+	# a second round trip on every ask. The session is gone when the run is.
+	set -- "$@" --pure --title=discobox-prompt
 	# Not exec: the isolated directory is removed when opencode exits.
 	if [ -n "$schema" ]; then
 		# Captured rather than piped: a pipeline reports the exit status of
