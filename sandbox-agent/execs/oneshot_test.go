@@ -164,3 +164,32 @@ func TestRunOnceRefusesAJobItCannotRun(t *testing.T) {
 		}
 	}
 }
+
+// A command gets a TMPDIR of its own, and it is gone once the command is, even
+// a command killed by its deadline — which runs no cleanup of its own, since
+// its whole group is killed. A judge's wrapper stages a CLI's state and a copy
+// of its account there.
+func TestRunOnceRemovesItsTmpdirHoweverItEnds(t *testing.T) {
+	dir := t.TempDir()
+	said := filepath.Join(dir, "tmpdir")
+	writeProgram(t, dir, "stage", "#!/bin/sh\nprintf '%s' \"$TMPDIR\" >"+said+"\n"+
+		"trap 'echo cleaned >>"+said+"' EXIT\nmkdir \"$TMPDIR/state\"\necho account >\"$TMPDIR/state/.credentials.json\"\nsleep 120\n")
+	manager := oneShotManager(t, systemPath(dir))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if _, err := manager.RunOnce(ctx, OnceRequest{Command: []string{"stage"}, MaxOutput: 64}); err == nil {
+		t.Fatal("a command killed by its deadline reported success")
+	}
+	got, err := os.ReadFile(said)
+	if err != nil {
+		t.Fatalf("the command never said where its TMPDIR was: %v", err)
+	}
+	tmpdir := string(got)
+	if tmpdir == "" || strings.Contains(tmpdir, "cleaned") {
+		t.Fatalf("the command said %q, want a TMPDIR and no cleanup of its own", tmpdir)
+	}
+	if _, err := os.Stat(tmpdir); !os.IsNotExist(err) {
+		t.Fatalf("the command's TMPDIR %s is still there after it was killed", tmpdir)
+	}
+}

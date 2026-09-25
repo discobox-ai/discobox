@@ -140,3 +140,48 @@ func writeStub(t *testing.T, dir, name, script string) {
 		t.Fatal(err)
 	}
 }
+
+// A judge answers asks in parallel, one codex per ask, so a run that judges
+// keeps what codex writes in a CODEX_HOME of its own. It starts with the
+// account and the harness's configuration, and it goes when codex exits.
+func TestCodexPromptJudgesInAHomeOfItsOwn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the image's scripts run on Linux")
+	}
+	shared := filepath.Join(t.TempDir(), ".codex")
+	if err := os.MkdirAll(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"auth.json", "config.toml", "history.jsonl"} {
+		if err := os.WriteFile(filepath.Join(shared, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := t.TempDir()
+	stub := "#!/bin/sh\nprintf '%s\\n' \"$CODEX_HOME\" >\"$DIR/home\"\nls -A \"$CODEX_HOME\" >\"$DIR/found\"\n" +
+		"echo session >\"$CODEX_HOME/history.jsonl\"\n" +
+		"while [ $# -gt 0 ]; do if [ \"$1\" = --output-last-message ]; then echo '{\"allow\":true,\"reason\":\"ok\"}' >\"$2\"; fi; shift; done\n"
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), "sh", "prompt.sh", "--model", "judge", "--prompt", "test", "--no-tools")
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "DIR="+dir, "CODEX_HOME="+shared)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("prompt.sh failed: %v: %s", err, out)
+	}
+	ran, _ := os.ReadFile(filepath.Join(dir, "home"))
+	own := strings.TrimSpace(string(ran))
+	if own == "" || own == shared {
+		t.Fatalf("codex ran with CODEX_HOME %q, want a home of the run's own", own)
+	}
+	found, _ := os.ReadFile(filepath.Join(dir, "found"))
+	if got := strings.Fields(string(found)); strings.Join(got, " ") != "auth.json config.toml" {
+		t.Fatalf("the run's home held %q, want the account and the configuration and nothing else", got)
+	}
+	if _, err := os.Stat(own); !os.IsNotExist(err) {
+		t.Fatalf("the run's home %s is still there after codex exited", own)
+	}
+	if kept, _ := os.ReadFile(filepath.Join(shared, "history.jsonl")); string(kept) != "x" {
+		t.Fatalf("the shared history is now %q, want it untouched", kept)
+	}
+}

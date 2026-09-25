@@ -215,8 +215,8 @@ func TestJudgeAnswersAsksInParallel(t *testing.T) {
 }
 
 // Past the bound, an ask waits for a run to finish rather than being turned
-// away, and gives up only when its caller's deadline does — which is Busy, a
-// caller's to retry, and not a refusal.
+// away, and gives up only when its caller's deadline does or its own wait runs
+// out — which is Busy, a caller's to retry, and not a refusal.
 func TestAnAskPastTheBoundWaitsForARun(t *testing.T) {
 	dir := t.TempDir()
 	started := filepath.Join(dir, "started")
@@ -249,5 +249,24 @@ func TestAnAskPastTheBoundWaitsForARun(t *testing.T) {
 	answer, err := svc.Judge(context.Background(), requestJob())
 	if err != nil || !answer.Allow {
 		t.Fatalf("an ask that could wait = %+v, %v; want it answered once the run finished", answer, err)
+	}
+}
+
+// The wait has a bound of its own. The control plane asks with no deadline this
+// process can see, and without one an ask would wait until it hung up — when a
+// 429 reaches nobody.
+func TestAnAskWithNoDeadlineWaitsOnlyItsBound(t *testing.T) {
+	svc := newJudgeService(t, config.HarnessModeJudge,
+		"#!/bin/sh\nprintf '{\"allow\":true,\"reason\":\"fine\"}\\n'\n")
+	svc.judging = make(chan struct{}, 1)
+	svc.judging <- struct{}{} // every run in use
+	svc.judgingWait = 50 * time.Millisecond
+
+	started := time.Now()
+	if _, err := svc.Judge(context.Background(), requestJob()); !Busy(err) {
+		t.Fatalf("an ask with no deadline and no run free: error = %v, want Busy", err)
+	}
+	if took := time.Since(started); took > 5*time.Second {
+		t.Fatalf("the ask waited %s, want it to give up at its own bound", took)
 	}
 }

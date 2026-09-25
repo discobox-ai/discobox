@@ -85,3 +85,47 @@ func stubDir(t *testing.T, claude string) string {
 	}
 	return dir
 }
+
+// A judge answers asks in parallel, one claude per ask, so a run that judges
+// keeps what claude writes in a configuration home of its own. It starts with
+// the account the harness installed, and it goes when claude exits, leaving
+// the shared home as it was.
+func TestClaudePromptJudgesInAHomeOfItsOwn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the image's scripts run on Linux")
+	}
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	//nolint:gosec // Stand-ins for the files the harness installs, holding no credential.
+	for name, content := range map[string]string{".claude.json": `{"primaryApiKey":"sentinel"}`, ".claude/.credentials.json": `{"claudeAiOauth":{}}`} {
+		if err := os.WriteFile(filepath.Join(home, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The stub says where it ran and what it found, and writes what claude
+	// would: its own rewrite of .claude.json.
+	dir := stubDir(t, "#!/bin/sh\nprintf '%s\\n' \"$CLAUDE_CONFIG_DIR\" >\"$DIR/home\"\n"+
+		"ls -A \"$CLAUDE_CONFIG_DIR\" >\"$DIR/found\"\necho '{\"rewritten\":true}' >\"$CLAUDE_CONFIG_DIR/.claude.json\"\n"+
+		"echo '{\"allow\":true,\"reason\":\"fine\"}'\n")
+	t.Setenv("HOME", home)
+	if out, err := runPrompt(t, dir, `{"type":"object"}`); err != nil {
+		t.Fatalf("discobox-prompt error = %v, output = %q", err, out)
+	}
+	ran, _ := os.ReadFile(filepath.Join(dir, "home"))
+	own := strings.TrimSpace(string(ran))
+	if own == "" || strings.HasPrefix(own, home) {
+		t.Fatalf("claude ran with CLAUDE_CONFIG_DIR %q, want a home of the run's own", own)
+	}
+	found, _ := os.ReadFile(filepath.Join(dir, "found"))
+	if got := strings.Fields(string(found)); strings.Join(got, " ") != ".claude.json .credentials.json" {
+		t.Fatalf("the run's home held %q, want the account and nothing else", got)
+	}
+	if _, err := os.Stat(own); !os.IsNotExist(err) {
+		t.Fatalf("the run's home %s is still there after claude exited", own)
+	}
+	if kept, _ := os.ReadFile(filepath.Join(home, ".claude.json")); string(kept) != `{"primaryApiKey":"sentinel"}` {
+		t.Fatalf("the shared .claude.json is now %q, want it as installed", kept)
+	}
+}

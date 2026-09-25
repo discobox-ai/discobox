@@ -29,7 +29,8 @@ type OnceRequest struct {
 	MaxOutput int
 }
 
-// RunOnce runs the request as the run user and returns its stdout.
+// RunOnce runs the request as the run user and returns its stdout. The command
+// gets a TMPDIR of its own, removed when it ends.
 //
 // stdout is bounded: a command that will not stop talking is stopped at the
 // limit and reported as having failed rather than being allowed to fill this
@@ -57,6 +58,21 @@ func (m *Manager) RunOnce(ctx context.Context, req OnceRequest) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+	// The command's TMPDIR is a directory of its own, and this removes it
+	// however the command ends. The command cannot be trusted to: a
+	// cancellation kills its whole process group (below), so a wrapper's own
+	// EXIT trap never runs, and whatever it staged — a CLI's state, a copy of
+	// its account — would otherwise stay behind, one directory per canceled
+	// run.
+	scratch, err := os.MkdirTemp("", "discobox-once-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(scratch) }()
+	if err := chownToUser(scratch, user); err != nil {
+		return nil, err
+	}
+	env["TMPDIR"] = scratch
 	// Resolved against the environment the command will run in, not this
 	// process's. They are not the same PATH — the agent is root and the
 	// command runs as the run user — and a name is looked up where the

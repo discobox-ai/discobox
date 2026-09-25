@@ -560,14 +560,19 @@ development images without a registry.
   kinder question than Discobox asks; the wrapper is resolved on the harness
   environment's PATH, and the answer is decoded strictly, so anything that is
   not a verdict is an error rather than an allow. Asks are answered in
-  parallel: each is its own process group sharing nothing with another, and
-  every discobox in the project is judged here, so one at a time would make
-  each credential-bearing request wait on every other. At most
-  `maxJudgingRuns` run at once, for the memory each harness CLI takes; an ask
-  past that waits for its caller's deadline, and one still waiting then is a
-  429 (busy) rather than a verdict. Harness files are installed before every
-  run, so they are written by rename and a starting run never reads half of
-  one. The route has its own scope (`judge:run`),
+  parallel: each is its own process group, and with `--no-tools` the wrapper
+  gives its CLI a state home of the run's own ([harness](../harness/DESIGN.md)),
+  so no two runs write one file; every discobox in the project is judged here,
+  so one at a time would make each credential-bearing request wait on every
+  other. At most `maxJudgingRuns` run at once, for the memory each harness CLI
+  takes. An ask past that waits for a run for at most `judgeQueueWait` (or its
+  caller's deadline, if sooner) and is then a 429 (busy) rather than a verdict:
+  the wait and the run's own `judge.Timeout` together stay inside the control
+  plane's bound on the ask, so the 429 is written while someone is there to
+  read it. Harness files are installed before every run, so they are written
+  by rename — a createOnly one by link, which never replaces a file another run
+  or the harness made meanwhile — and a starting run never reads half of one.
+  The route has its own scope (`judge:run`),
   which no token for a discobox's own work carries, and a discobox that is not
   a judge refuses the ask outright.
 - Every sandbox has a default terminal: on sandbox start the harness always

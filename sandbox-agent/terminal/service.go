@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -115,7 +117,10 @@ type Service struct {
 	// judging holds a slot per judging run under way, up to maxJudgingRuns
 	// (judge.go). It is made whatever the mode is; in every other mode nothing
 	// takes it.
-	judging      chan struct{}
+	judging chan struct{}
+	// judgingWait bounds how long an ask waits for a slot in judging
+	// (judgeQueueWait).
+	judgingWait  time.Duration
 	bootPrompt   []string
 	awaitSources func(context.Context) error
 
@@ -172,6 +177,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		homeDirectory: strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
 		harnessMode:   strings.TrimSpace(cfg.HarnessMode),
 		judging:       make(chan struct{}, maxJudgingRuns),
+		judgingWait:   judgeQueueWait,
 		bootPrompt:    append([]string(nil), cfg.Prompt...),
 		awaitSources:  cfg.AwaitSources,
 		installing:    map[string]struct{}{},
@@ -1060,6 +1066,16 @@ func writeHarnessFile(path, content string, createOnly bool, uid, gid *int64) er
 		if err := os.Chown(temp.Name(), int(*uid), int(*gid)); err != nil {
 			return err
 		}
+	}
+	if createOnly {
+		// Linked rather than renamed, because a link does not replace: the
+		// Stat above and this are two steps, and between them another install
+		// — or the harness itself, which rewrites a createOnly file — can have
+		// made the file this must not overwrite.
+		if err := os.Link(temp.Name(), path); err != nil && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+		return nil
 	}
 	return os.Rename(temp.Name(), path)
 }

@@ -187,7 +187,13 @@ launchers, and configure scripts.
   ([ADR 0090](../docs/adr/0090-the-judge-is-handed-facts-and-given-no-tools.md))
   — and mapping it onto whatever the image's CLI calls the same thing is the
   wrapper's job too; a CLI with no tools-off switch maps it onto the strictest
-  sandboxing it has instead. It goes on PATH rather than in `libexec` because
+  sandboxing it has instead. Under `--no-tools` the CLI also runs in a state
+  home of the run's own, made under `TMPDIR` and seeded with the account,
+  because the project's judge runs one wrapper per ask in parallel and a CLI
+  rewrites its state files as it goes. The wrapper removes it on exit; a run
+  killed on cancellation runs no trap, and its caller removes that `TMPDIR`
+  (the sandbox agent gives each judging run its own and removes it,
+  `execs.RunOnce`). It goes on PATH rather than in `libexec` because
   its callers resolve it by name. Its first consumer is the credential CLI's
   judge, which will not run a wrapped command until a model agrees the command
   is the approved use, and which never omits `--no-tools`.

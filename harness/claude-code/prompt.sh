@@ -90,6 +90,29 @@ if [ -n "$no_tools" ]; then
 	# write; --disable-slash-commands is the same reasoning for skills. None of
 	# the three costs the answer: the judge only ever needed the prompt.
 	set -- "$@" --tools "" --restricted --disable-slash-commands
+
+	# And the run keeps what claude writes in a configuration home of its own:
+	# the rewrites of .claude.json, the session transcript, the backups. A
+	# judge answers asks in parallel, one claude per ask, and they must not
+	# read-modify-write one file between them. The home starts with the
+	# account and nothing else — .claude.json, which carries an API key, and
+	# .credentials.json, which carries a login — and goes when claude exits.
+	# What claude writes back to them is dropped with it: they hold sentinels,
+	# and the control plane is what refreshes the credential behind one. A
+	# run that is killed runs no trap; its TMPDIR, where this is made, is its
+	# caller's to remove, which the sandbox agent does for a judge
+	# (execs.RunOnce).
+	account="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
+	login="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
+	isolated=""
+	trap 'if [ -n "$isolated" ]; then rm -rf "$isolated"; fi' EXIT
+	isolated=$(mktemp -d)
+	for file in "$account" "$login"; do
+		if [ -f "$file" ]; then
+			cp "$file" "$isolated/"
+		fi
+	done
+	export CLAUDE_CONFIG_DIR="$isolated"
 fi
 
 if [ -n "$schema" ]; then
@@ -101,4 +124,5 @@ if [ -n "$schema" ]; then
 	exit
 fi
 
-exec "$@"
+# Not exec: an isolated home is removed when claude exits.
+"$@"

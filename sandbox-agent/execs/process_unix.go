@@ -4,6 +4,7 @@ package execs
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"syscall"
 
@@ -96,6 +97,15 @@ func userCredential(user *User) (*syscall.Credential, bool, error) {
 // what must be signaled: killing the child alone leaves its helpers holding
 // the pipes this process is reading, and a wait does not return while anything
 // can still write to them.
+// chownToUser gives path to the user a command runs as, when it runs as one.
+func chownToUser(path string, user *User) error {
+	credential, ok, err := userCredential(user)
+	if err != nil || !ok {
+		return err
+	}
+	return os.Chown(path, int(credential.Uid), int(credential.Gid))
+}
+
 func killGroup(pid int) error {
 	if err := syscall.Kill(-pid, syscall.SIGKILL); err == nil {
 		return nil

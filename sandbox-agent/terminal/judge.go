@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
@@ -30,12 +31,13 @@ const judgePrompt = "discobox-prompt"
 // state between two requests that happen to be judged by the same runtime.
 //
 // Asks are answered in parallel. Each run is its own process in its own
-// process group, sharing nothing with any other, and every discobox in the
-// project is judged here — so one at a time would make every credential-bearing
-// request in the project wait on every other. What is bounded is how many run
-// at once (maxJudgingRuns), for the memory each harness CLI takes. An ask past
-// that waits for a run to finish, for as long as its caller's deadline allows:
-// the caller is holding a request open, and its deadline is what decides.
+// process group, with its own harness state (the wrapper keeps what its CLI
+// writes in a directory of the run's own, as it does with --no-tools), and
+// every discobox in the project is judged here — so one at a time would make
+// every credential-bearing request in the project wait on every other. What
+// is bounded is how many run at once (maxJudgingRuns), for the memory each
+// harness CLI takes. An ask past that waits for a run to finish for at most
+// judgingWait, and is Busy when none frees up.
 func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error) {
 	if s.harnessMode != config.HarnessModeJudge {
 		return judge.Answer{}, errors.New("this discobox is not a judge")
@@ -44,15 +46,21 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 	if err != nil {
 		return judge.Answer{}, err
 	}
+	// The wait has a bound of its own, and not only the caller's: the caller
+	// here is the control plane, whose request carries no deadline this
+	// process can see, so without one an ask would wait until the control
+	// plane hung up — and a 429 written then reaches nobody.
+	wait, stopWaiting := context.WithTimeout(ctx, s.judgingWait)
 	select {
 	case s.judging <- struct{}{}:
+		stopWaiting()
 		defer func() { <-s.judging }()
-	case <-ctx.Done():
-		return judge.Answer{}, fmt.Errorf("%w: %w", errBusy, ctx.Err())
+	case <-wait.Done():
+		stopWaiting()
+		return judge.Answer{}, fmt.Errorf("%w: %w", errBusy, wait.Err())
 	}
-	// Whichever is sooner: the caller's deadline, which covers the whole
-	// exchange it is conducting, or this ceiling, which is here for a caller
-	// that passed none (judge.Timeout).
+	// Whichever is sooner: the caller's deadline, or this ceiling on the run,
+	// which is what bounds it for a caller that passed none (judge.Timeout).
 	ctx, cancel := context.WithTimeout(ctx, judge.Timeout)
 	defer cancel()
 
@@ -107,8 +115,15 @@ func (s *Service) Judge(ctx context.Context, job judge.Job) (judge.Answer, error
 // like any other.
 const maxJudgingRuns = 16
 
-// errBusy is an ask whose caller gave up while every run was in use.
-var errBusy = errors.New("every judging run was in use until the caller's deadline")
+// judgeQueueWait is how long an ask waits for a run when every one is in use.
+// With the run's own ceiling (judge.Timeout) it stays inside the bound the
+// control plane puts on the ask (judge.Timeout plus its routing grace), so a
+// judge too busy to answer says so while the control plane is still there to
+// read it, and the pool is told the judge is busy rather than nothing.
+const judgeQueueWait = 15 * time.Second
+
+// errBusy is an ask that waited for a run for as long as it could.
+var errBusy = errors.New("every judging run was in use for as long as the ask could wait")
 
 // Busy reports whether an error is an ask that never started because every
 // run was in use, which a caller may retry rather than treat as a refusal.

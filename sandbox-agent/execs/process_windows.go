@@ -36,3 +36,6 @@ func UserEnvDefaults(user *User) (map[string]string, error) {
 // there is. The sandbox runtime is Linux, and this exists so the package still
 // builds for the cross-check.
 func killGroup(int) error { return errors.ErrUnsupported }
+
+// chownToUser has nothing to do: a command runs as this process's own user.
+func chownToUser(string, *User) error { return nil }

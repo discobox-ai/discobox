@@ -91,8 +91,30 @@ esac
 # wait for one on a session with no one to answer it. Read access and
 # read-only command execution are the residual this leaves (ADR 0090 §1); a
 # judge here is not tool-free, only unable to write.
+# Set before anything is made, so an exit at any point below removes what was.
+# A run that is killed instead runs no trap at all; its TMPDIR is its caller's
+# to remove, which the sandbox agent does for a judge (execs.RunOnce).
+isolated=""
+answer=""
+trap 'if [ -n "$answer" ]; then rm -f "$answer"; fi; if [ -n "$isolated" ]; then rm -rf "$isolated"; fi' EXIT
 if [ -n "$no_tools" ]; then
 	set -- "$@" --sandbox read-only --config approval_policy=never
+
+	# And the run keeps what codex writes in a CODEX_HOME of its own: its
+	# session, its log, its history. A judge answers asks in parallel, one
+	# codex per ask, and they must not share files one of them is writing.
+	# The home starts with the account and the harness's configuration
+	# (auth.json, config.toml) and goes when codex exits; what codex writes
+	# back to auth.json is dropped with it, since it holds sentinels and the
+	# control plane is what refreshes the credential behind one.
+	codex_home="${CODEX_HOME:-$HOME/.codex}"
+	isolated=$(mktemp -d)
+	for file in auth.json config.toml; do
+		if [ -f "$codex_home/$file" ]; then
+			cp "$codex_home/$file" "$isolated/"
+		fi
+	done
+	export CODEX_HOME="$isolated"
 fi
 
 # Codex narrates its run on stdout, and the contract above is one answer and
@@ -101,7 +123,6 @@ fi
 # prints the JSON document in it — codex may wrap an answer in a code fence,
 # and a fence is framing, not an answer.
 answer=$(mktemp)
-trap 'rm -f "$answer"' EXIT
 set -- "$@" --output-last-message "$answer"
 
 # Not exec: the answer is printed once codex has written it.
