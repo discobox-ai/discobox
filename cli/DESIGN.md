@@ -1543,6 +1543,10 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 | `list` | every trail but `dns` unless `--source` names it, merged by time, for one discobox | | each trail's own | each trail's own |
 | `get` | whichever trail the ID names | | | |
 
+`creds` lists both judges' verdicts, `--kind` picks one: `command`, a
+discobox's own judge, recorded at `use` or by `report`; and `request`, the
+project's judge, recorded `judge` by the control plane for every answer. `RTT`
+is the round trip each asker timed.
 `http`'s `USES` column is the join to `creds`, by `--use-id` on either; a
 discobox's calls to the discobox API carry the use they were made under too.
 Its `REFUSED BY` column says what refused a request the proxy never sent — the

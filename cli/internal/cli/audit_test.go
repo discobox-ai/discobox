@@ -179,6 +179,90 @@ func TestAuditCredsPromptKeepsItsLines(t *testing.T) {
 	}
 }
 
+// requestVerdicts are the project's judge's answers about two requests: one
+// allowed, one where it asked to be shown the body instead of deciding.
+const requestVerdicts = `{"credentialVerdicts":[{
+	"id":"cvd_2","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
+	"allow":false,"volunteered":false,"createdAt":"2026-09-02T10:00:01Z",
+	"request":{"method":"PATCH","url":"https://api.github.com/repos/org/repo","body":{"mediaType":"application/json","length":42}},
+	"round":1,"need":{"body":"json","bytes":512},"reason":"the change is in the body",
+	"role":"judge","prompt":"{\"kind\":\"request\"}","promptVersion":"2","latencyMs":1500,
+	"judgeSandboxId":"sbx_judge","harnessConfigId":"hc_1","image":"harness:1","imageDigest":"sha256:one"
+},{
+	"id":"cvd_1","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
+	"allow":true,"volunteered":false,"createdAt":"2026-09-02T10:00:00Z",
+	"request":{"method":"POST","url":"https://api.github.com/repos/org/repo/pulls"},
+	"round":1,"reason":"that is the approved use","role":"judge","prompt":"{}","promptVersion":"2","latencyMs":812,
+	"judgeSandboxId":"sbx_judge"
+}]}`
+
+// A request verdict says what was judged — the method and destination, not an
+// argv — who recorded it, how long the round trip took, and an ask to be shown
+// the body reads as an ask, not a denial or an allow.
+func TestAuditCredsShowsTheProjectJudgesVerdicts(t *testing.T) {
+	_, out, err := runAuditCreds(t, requestVerdicts)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines, want a header and two rows:\n%s", len(lines), out)
+	}
+	for _, want := range []string{"RTT", "JUDGED"} {
+		if !strings.Contains(lines[0], want) {
+			t.Fatalf("header %q lacks %s", lines[0], want)
+		}
+	}
+	for i, want := range [][]string{
+		{"ask", "judge", "1.5s", "PATCH https://api.github.com/repos/org/repo", "the change is in the body"},
+		{"allow", "judge", "812ms", "POST https://api.github.com/repos/org/repo/pulls"},
+	} {
+		for _, field := range want {
+			if !strings.Contains(lines[i+1], field) {
+				t.Fatalf("row %d = %q, want %q in it", i+1, lines[i+1], field)
+			}
+		}
+	}
+}
+
+// In full, a request verdict names the judge that gave it and what it ran, and
+// what it was told of the body and asked to see.
+func TestAuditCredsPromptShowsWhichJudgeAnswered(t *testing.T) {
+	_, out, err := runAuditCreds(t, requestVerdicts, "--prompt")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	for _, want := range []string{
+		"cvd_2  ask  judge",
+		"request:  PATCH https://api.github.com/repos/org/repo",
+		"body:     application/json, 42 bytes",
+		"asked:    the body as json, up to 512 bytes",
+		"judge:    sbx_judge",
+		"harness:  hc_1",
+		"image:    harness:1@sha256:one",
+		"version:  2",
+		"rtt:      1.5s",
+		"rtt:      812ms",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAuditCredsSendsItsKind(t *testing.T) {
+	query, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`, "--kind", "request")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if got := query.Get("kind"); got != "request" {
+		t.Fatalf("kind = %q, want request", got)
+	}
+	if _, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`, "--kind", "requests"); err == nil {
+		t.Fatal("expected an unknown --kind to be refused")
+	}
+}
+
 func TestParseSince(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {

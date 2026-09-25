@@ -279,14 +279,15 @@ func httpAuditRecord(e apimodel.HTTPAuditExchange) auditRecord {
 }
 
 // credentialVerdictRecord labels a verdict by how it arrived: one recorded at
-// use is the control plane's record of an issue, one reported after a denial
-// is the discobox's word alone.
+// use is the control plane's record of an issue, one the project's judge gave
+// about a request is the control plane's record of that answer, and one
+// reported after a denial is the discobox's word alone.
 func credentialVerdictRecord(v apimodel.CredentialVerdict) auditRecord {
 	attestor := auditAttestorControlPlane
 	if v.Volunteered {
 		attestor = auditAttestorSandbox
 	}
-	summary := fmt.Sprintf("%s %s (%s): %s", verdictWord(v.Allow), terminalSafe(v.UseId), verdictRecorded(v.Volunteered), displayArgv(v.Command))
+	summary := fmt.Sprintf("%s %s (%s): %s", verdictWord(v), terminalSafe(v.UseId), verdictRecorded(v), verdictJudged(v))
 	if reason := v.Reason.Or(""); reason != "" {
 		summary += " — " + terminalSafe(reason)
 	}
