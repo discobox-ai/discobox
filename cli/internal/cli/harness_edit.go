@@ -63,7 +63,7 @@ func (a *App) newHarnessEditCommand() *cobra.Command {
 		Short: "Edit one of a harness config's files in your editor",
 		Long: `Open one of a harness config's files in $VISUAL/$EDITOR and save the result back.
 
-PATH is the file's path as shown by "harnesses get" or the launcher's harnesses
+PATH is the file's path as shown by "harnesses get" or the console's harnesses
 screen, which is what "discobox configure" opens.
 Files written by the configure flow are edited in place of the configured set;
 image-declared files are edited in the declared set.`,

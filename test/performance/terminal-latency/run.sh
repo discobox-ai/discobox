@@ -51,9 +51,9 @@ if [ "${#requested_modes[@]}" -eq 0 ]; then
 fi
 for mode in "${requested_modes[@]}"; do
 	case "$mode" in
-		transport | direct | tui) ;;
+		transport | direct | console) ;;
 		*)
-			echo "terminal latency: unsupported mode '$mode' (use transport,direct,tui)" >&2
+			echo "terminal latency: unsupported mode '$mode' (use transport,direct,console)" >&2
 			exit 1
 			;;
 	esac
@@ -308,16 +308,16 @@ if mode_enabled direct; then
 	done
 fi
 
-if mode_enabled tui; then
-	create_probe_sandbox tui quiet
-	echo "Measuring the optional Bubble Tea TUI client path through tmux..."
+if mode_enabled console; then
+	create_probe_sandbox console quiet
+	echo "Measuring the optional Bubble Tea console client path through tmux..."
 	driver_args=(
 		--server "$server"
 		--project "$project"
 		--sandbox "$sandbox_id"
 		--sandbox-name "$sandbox_name"
 		--cli "$repo_root/build/discobox"
-		--mode tui
+		--mode console
 		--samples "$samples"
 		--sequence-start 30000001
 		--interval "$interval"
@@ -325,7 +325,7 @@ if mode_enabled tui; then
 		--settle "$settle"
 		--container "$container_id"
 		--load-profile quiet
-		--output "$output_dir/tui-quiet.json"
+		--output "$output_dir/console-quiet.json"
 	)
 	if [ -n "${DISCOBOX_TOKEN:-}" ]; then
 		driver_args+=(--token "$DISCOBOX_TOKEN")
@@ -341,7 +341,7 @@ for report in "$output_dir"/*.json; do
 		transport-*.json)
 			jq -r '"  transport/\(.loadProfile)  p50=\(.summary.echoRoundTrip.p50Us / 1000)ms p95=\(.summary.echoRoundTrip.p95Us / 1000)ms p99=\(.summary.echoRoundTrip.p99Us / 1000)ms output=\(.outputBytesPerSecond / 1024 | . * 10 | round / 10)KiB/s"' "$report"
 			;;
-		direct-*.json|tui-quiet.json)
+		direct-*.json|console-quiet.json)
 			jq -r '"  \(.kind)/\(.loadProfile)  p50=\(.summary.p50Us / 1000)ms p95=\(.summary.p95Us / 1000)ms p99=\(.summary.p99Us / 1000)ms output=\(.paneOutputBytesPerSecond / 1024 | . * 10 | round / 10)KiB/s"' "$report"
 			;;
 	esac

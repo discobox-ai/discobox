@@ -80,12 +80,12 @@ Use -- when the words need to be separated from command flags explicitly. This i
 the only command that makes a discobox: the bare "discobox" takes no prompt and
 none of these flags.
 
-By default new opens the launcher's window and makes the discobox there: the
+By default new opens the console's window and makes the discobox there: the
 question about uncommitted work is asked on it, the wait is drawn on it, and
 what it lands on is the discobox itself — its default terminal (the configured
 harness, or a shell when it has none), the shells and services running beside
 it, and its forwarded ports. It is the same screen, in the same window, that
-typing the same thing into "discobox tui" gives you. Press Ctrl-A d to leave,
+typing the same thing into "discobox console" gives you. Press Ctrl-A d to leave,
 which detaches and exits; the discobox and everything in it keeps running
 (DISCOBOX_LEADER changes the Ctrl-A).
 
@@ -257,7 +257,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// returns, and printing is stdout, which the window would be
 	// sitting on.
 	if !opts.detach && !opts.raw && canOpenWindow(cmd) {
-		return a.runTUI(cmd, "", tui.WithRun(a.runWindowRequest(opts, prompt)))
+		return a.runConsole(cmd, "", tui.WithRun(a.runWindowRequest(opts, prompt)))
 	}
 	projectID, err := a.projectIDValue()
 	if err != nil {

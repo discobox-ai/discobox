@@ -18,7 +18,7 @@ func newWelcomeModel(t *testing.T, ds DataSource) *Model {
 	return m
 }
 
-// The introduction is the whole screen, ahead of the launcher behind it.
+// The introduction is the whole screen, ahead of the list behind it.
 func TestWelcomeTakesTheWindow(t *testing.T) {
 	t.Parallel()
 	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))

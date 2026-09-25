@@ -1,4 +1,4 @@
-// Converts the captured TUI mark into explicit-color cell data.
+// Converts the captured console mark into explicit-color cell data.
 //
 // cli/internal/tui/logo.chars is a terminal capture, and as captured it is not
 // safe to replay: it paints with 16-color indices, which every terminal theme

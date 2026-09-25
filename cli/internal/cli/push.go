@@ -66,10 +66,10 @@ discobox and do not apply. Attaching to it from the machine that created it
 delivers it the same way, so this is for delivering it from a directory that
 has moved (--dir), or from another machine.
 
-The launcher pushes for you while its window is open on a discobox, so most of
+The console pushes for you while its window is open on a discobox, so most of
 the time there is nothing to run here. This command is what covers the rest: a
 discobox nobody has open, another branch, a source whose directory has moved,
-and forcing past a push the launcher will not make on its own.
+and forcing past a push the console will not make on its own.
 
 A push may rewind the discobox's origin — that is what a local rebase or amend
 means — but not silently: it is refused if the origin has moved since this

@@ -43,8 +43,8 @@
   `discobox-gzip` (portable file compression for the build),
   `discobox-server-manifest` (the server manifest a release CLI is linked with),
   `discobox-installers` (stamps the install scripts a release uploads with that
-  release and its binaries' digests), `discobox-installer-logo` (draws the TUI's
-  mark into those scripts, from the TUI's own cell data), `discobox-winres` (the
+  release and its binaries' digests), `discobox-installer-logo` (draws the console's
+  mark into those scripts, from the console's own cell data), `discobox-winres` (the
   Windows version resource a release executable links, and the check that it did).
 - `scripts`: shell and Node helpers the Taskfile and hooks run.
 - `docs`: user/developer documentation and ADRs (`docs/adr`).

@@ -1,6 +1,6 @@
 # tui
 
-The `discobox tui` launcher: one window that opens with the cursor in a prompt for
+The `discobox console` window: it opens with the cursor in a prompt for
 a new sandbox, with the project's sandboxes a press of Tab away.
 
 ## Shape
@@ -1052,13 +1052,13 @@ streaming a terminal of its own.
   frame (`Model.waitDialog`, `creatingTitle`) and stays up through the create,
   becoming the wait on the discobox itself once there is one to name; a create
   that fails takes it down, because a report belongs on a screen somebody can
-  read it on. The launcher's own runs keep the list they were started from and
+  read it on. The console's own runs keep the list they were started from and
   report on the busy line there.
 - Leaving that wait leaves the window (`onCancel` → `Model.exit`), because
   there is no list behind it to stop watching *from*. The discobox is not
   touched: it was created before the wait went up, or is being created by a
   request the server already has, and it carries on coming up with nothing
-  attached to it. The launcher's wait keeps the plain "Esc stops watching",
+  attached to it. The console's wait keeps the plain "Esc stops watching",
   which there means going back to the list the discobox will appear in.
 - The window is the attach on what it opened or made — a run becomes one in
   `created` — so every way out of the workspace is the way out of the window:
@@ -1068,7 +1068,7 @@ streaming a terminal of its own.
   is what it does to the discobox — nothing stops — and the header drops the
   `leader q quit` half beside it, since quit and detach are the same act in
   such a window and offering both reads as a choice between them.
-- The composer is unreachable in such a window, so the launcher's draft is
+- The composer is unreachable in such a window, so the console's draft is
   neither restored into it nor written over (`restoreDraft`, `draftToSave`), and
   the introduction is not shown (`New`): there is no prompt for it to interrupt
   and no screen for it to hand over to.
@@ -1142,7 +1142,7 @@ screen, the apply overlay or the showing tool, and every place that asked
 - The sessions live in the discobox, so the poll picks up every labeled one it
   finds and puts it away — a tab after the shells — rather than showing it:
   attaching to a discobox should show you the discobox. That is what makes a diff survive quitting the
-  launcher, and the only client-side state it needs is `ending`, which says
+  console, and the only client-side state it needs is `ending`, which says
   which of them this window has just killed.
 - A tool can carry a **config** (`ToolFile`, `tui_tools.go`), declared as
   `files:` with its default beside the declaration. The copy lives on
@@ -1554,7 +1554,7 @@ sit in the line with rule either side and it is dropped; the terminal's own
 title bar carries it too.
 
 Unattached the window is the other way round: one box holding all of it. The two
-are different shapes because they are different things — a launcher is a window
+are different shapes because they are different things — a console is a window
 with parts, and a pane is a terminal with captions. Focus becomes `focusPane` and *every* key goes to the sandbox
 except the reserved ones — and which those are depends on what is in the pane
 (`paneOptions`).
@@ -1620,7 +1620,7 @@ for exactly as long as somebody was reading them. All but F1 are guarded by
 and the three surfaces are peers: the harnesses, the secrets and the run
 options each put the other two away on their way in — `openHarnesses`,
 `openSecrets`, and the `optionsKey` branch of `updateKey` — so Esc from any of
-them goes back to the launcher rather than to a surface left standing
+them goes back to the console rather than to a surface left standing
 underneath. That is not tidiness. A surface left open under another still
 answers its own key from the dispatch above, so the key would close something
 nobody could see and change no frame at all; a fourth peer added here has to
@@ -1881,7 +1881,7 @@ accelerator and the only one of the two ever drawn; a menu whose rows have none
 has no key column at all.
 
 **A dialog with no answer is how a wait is drawn** (`dlgStatus`,
-`statusDialog`). A launcher left on screen with a line under it while a pool
+`statusDialog`). A console left on screen with a line under it while a pool
 comes up and gigabytes arrive looks idle beside a list you can still act on,
 and the next thing that happens is a terminal appearing without warning. So
 once the create returns, the window goes to the discobox being made
@@ -1964,7 +1964,7 @@ there is no room. A frame one row too tall scrolls the terminal, which is the
 one thing the renderer cannot redraw its way out of.
 
 Pool preload is reported through the sandbox launch's normal busy status. The
-launcher has no independent prepull subscription or reserved setup row.
+console has no independent prepull subscription or reserved setup row.
 
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
 is written through `DataSource.SaveDraft`, keyed by the session's directory, and
@@ -2095,7 +2095,7 @@ is opened rather than for every row of a listing.
 
 **One data seam.** Everything the window needs is on `DataSource` (`data.go`),
 implemented once in `cli.apiDataSource`. The interactive actions there build and
-execute the real Cobra commands, so the launcher runs `discobox apply` and the
+execute the real Cobra commands, so the console runs `discobox apply` and the
 rest rather than a second implementation that drifts from them.
 
 **Color is a value, not a global.** `detectColor` reads the profile once and
@@ -2329,7 +2329,7 @@ still without one would ask the same question on the next prompt.
 like any other, but a project whose default is a login shell has no coding
 harness by default, which is the state the question exists to leave. It is told
 apart by `harness.ShellSlug`, the reserved name, rather than by a literal of the
-launcher's own. A project holding nothing else says so instead of opening a menu
+console's own. A project holding nothing else says so instead of opening a menu
 with no choices on it.
 
 Both questions interrupt a run, so answering one runs it. The request travels

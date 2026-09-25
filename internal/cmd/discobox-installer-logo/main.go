@@ -1,10 +1,10 @@
-// Command discobox-installer-logo draws the TUI's mark into the install
+// Command discobox-installer-logo draws the console's mark into the install
 // scripts, as the escape sequences each language can carry (ADR 0110).
 //
 //	go generate ./installer
 //
 // The mark is cell data in cli/internal/tui/logo.json, generated from a
-// terminal capture by scripts/logo-cells.mjs and rendered by the TUI through
+// terminal capture by scripts/logo-cells.mjs and rendered by the console through
 // lipgloss, which downsamples its colors to whatever the terminal can show. A
 // shell script has no lipgloss, so the downsampling happens here instead: each
 // variant is written out twice, once in 24-bit color and once in the nearest
@@ -55,7 +55,7 @@ func main() {
 
 func generate() error {
 	var (
-		logo = flag.String("logo", "../cli/internal/tui/logo.json", "the TUI's cell data")
+		logo = flag.String("logo", "../cli/internal/tui/logo.json", "the console's cell data")
 		shln = flag.String("sh", "install.sh", "the sh installer to draw into")
 		ps1  = flag.String("ps1", "install.ps1", "the PowerShell installer to draw into")
 	)
@@ -90,7 +90,7 @@ func generate() error {
 	})
 }
 
-// render draws every row, dropping the blank rows the TUI's layout pads with:
+// render draws every row, dropping the blank rows the console's layout pads with:
 // an installer gives the mark its own spacing.
 func render(cells doc, trueColor bool) (string, error) {
 	var rows []string

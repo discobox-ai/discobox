@@ -13,7 +13,7 @@ import (
 
 // newAttachCommand implements `discobox attach`: open a discobox's own screen,
 // which is the launcher's window on that one discobox and nothing else. It is
-// the everyday shortcut for what pressing Enter on its row in `discobox tui`
+// the everyday shortcut for what pressing Enter on its row in `discobox console`
 // does, and --raw is what `discobox admin terminal attach primary
 // --discobox-id ID` spells out in full.
 func (a *App) newAttachCommand() *cobra.Command {
@@ -31,9 +31,9 @@ The primary terminal is the discobox's default session: the configured harness,
 or a plain shell when it has none. Attaching relaunches it with the harness's
 relaunch command when it has stopped.
 
-The window is the launcher's, opened on this discobox alone: the primary
+The window is the console's, opened on this discobox alone: the primary
 terminal, the shells and services running beside it, its forwarded ports, and
-the same keys that screen has in "discobox tui". The leader key then d — Ctrl-A
+the same keys that screen has in "discobox console". The leader key then d — Ctrl-A
 d by default, and Ctrl-A Ctrl-D works too — leaves it, which detaches and exits;
 every session keeps running. Set DISCOBOX_LEADER to change the Ctrl-A when it
 collides with what you run.
@@ -78,7 +78,7 @@ draw a window on, attach is raw whether or not the flag was given.`,
 				// discobox of its own to push into; see pushable.
 				hostID, _ := hostid.Get()
 				box := toTUISandbox(*sandbox, hostID)
-				return a.runTUI(cmd, "", tui.WithAttach(box))
+				return a.runConsole(cmd, "", tui.WithAttach(box))
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Attaching to the discobox's primary terminal (%s to detach)\n", a.detachHint())
 			return a.attachSandboxTerminal(cmd.Context(), projectID, sandboxID, primaryExecID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())

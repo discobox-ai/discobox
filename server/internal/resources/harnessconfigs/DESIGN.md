@@ -303,7 +303,7 @@ hand-bound secret survives, its binding does not — clears `ConfiguredFiles` an
 `ConfigureError`, and sets `Configured=false`, leaving the image baseline intact
 so the harness can simply be configured again.
 `UpdateHarnessConfig` can replace either file set (`files`, `configuredFiles`),
-which is how the CLI's file editing (`harnesses edit`, and `f` on the launcher's
+which is how the CLI's file editing (`harnesses edit`, and `f` on the console's
 harnesses screen) applies hand edits without a reconfigure; edited configured
 files remain owned by the configure lifecycle and are still cleared on
 deconfigure.

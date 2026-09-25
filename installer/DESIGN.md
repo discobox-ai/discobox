@@ -88,8 +88,8 @@ flowchart TD
 
 ## How it looks
 
-Both scripts draw the TUI's mark and use its palette
-(`cli/internal/tui/theme.go`), on the terms the TUI itself applies:
+Both scripts draw the console's mark and use its palette
+(`cli/internal/tui/theme.go`), on the terms the console itself applies:
 
 - **The mark is shading, not line art.** A terminal that cannot color it gets
   none of it rather than a monochrome smear — the same rule as `newLogo`. It

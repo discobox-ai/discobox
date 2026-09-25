@@ -3,7 +3,7 @@
 // that carries it.
 //
 // A person opening a shell in a sandbox — `discobox shell` with no command, or
-// a shell pane in the TUI — gets the shell they use when the sandbox has it, and the sandbox user's login shell when it does not (ADR
+// a shell pane in the console — gets the shell they use when the sandbox has it, and the sandbox user's login shell when it does not (ADR
 // 0138). The preference rides in the exec request's environment rather than in
 // a field of its own, and is never stored: it belongs to the person at the
 // keyboard, not to the sandbox, so it is read afresh every time a shell opens.

@@ -1,6 +1,6 @@
 # Screenshots
 
-The launcher, captured from a real run rather than mocked up. The root
+The console, captured from a real run rather than mocked up. The root
 `README.md` shows `claude-code.png`; nothing else in this repository reads them.
 
 | File | Screen |
@@ -14,7 +14,7 @@ The launcher, captured from a real run rather than mocked up. The root
 
 ## Re-taking one
 
-Run the launcher in a real terminal on a headless X display and photograph the
+Run the console in a real terminal on a headless X display and photograph the
 screen. `tmux` is in the middle only so the screens can be driven from outside
 the display.
 

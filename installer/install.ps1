@@ -75,7 +75,7 @@ function Install-Discobox {
 
     # The mark, in 24-bit color and in the nearest xterm-256 indices, as base64
     # of the escape sequences. Written by `go generate ./installer` from the
-    # TUI's own cell data; see internal/cmd/discobox-installer-logo. Base64
+    # console's own cell data; see internal/cmd/discobox-installer-logo. Base64
     # because this file stays ASCII, which is what 5.1 needs to read it.
     # BEGIN generated logo
     $logo24bit = 'ICAgICAbWzM4OzI7MTM5OzQ3OzIxNG3ilpfilpYbWzBtCiAgICAgG1s3OzM4OzI7MjQ0OzkyOzI1NW3ilo0bWzBtG1szODsyOzI0NDs5MjsyNTVt4paLG1swbQogICAgIBtbNzszODsyOzI0NDs5MjsyNTVt4paMG1swbRtbMzg7MjsyNDQ7OTI7MjU1beKWixtbMG0gIBtbMzg7MjsyNDQ7OTI7MjU1beKWgeKWgRtbMG0KICAgICAgG1s3OzM4OzI7MjQ0OzkyOzI1NW3iloQbWzBtG1szODsyOzI0NDs5MjsyNTVt4paG4paHG1swbRtbNzszODsyOzI0NDs5MjsyNTVt4paE4paE4paD4paCG1swbRtbMzg7MjsyNDQ7OTI7MjU1beKWhuKWheKWg+KWguKWgRtbMG0KICAgICAgIBtbNzszODsyOzI0NDs5MjsyNTVt4paOG1swbRtbMzg7MjsyNDQ7OTI7MjU1beKWjBtbMG0gG1szODsyOzI0NDs5MjsyNTVt4paX4paE4paWG1swbSAgG1s3OzM4OzI7MjQ0OzkyOzI1NW3ilobiloXiloTiloPiloIbWzBtG1szODsyOzI0NDs5MjsyNTVt4paG4paEG1swbQogICAgICAgG1s3OzM4OzI7MjQ0OzkyOzI1NW3ilo0bWzBtG1szODsyOzI0NDs5MjsyNTVt4paMG1swbSAbWzM4OzI7MjQ0OzkyOzI1NW3ilp0bWzBtG1s3OzM4OzI7MjQ0OzkyOzI1NW3iloMbWzBtG1szODsyOzI0NDs5MjsyNTVt4paYG1swbRtbNzszODsyOzI0NDs5MjsyNTVt4paYG1swbRtbMzg7MjsyNDQ7OTI7MjU1beKWh+KWhhtbMG0gG1szODsyOzI0NDs5MjsyNTVt4paF4paFG1swbSAgG1s3OzM4OzI7MjQ0OzkyOzI1NW3ilo4bWzBtG1szODsyOzI0NDs5MjsyNTVt4paNG1swbQogICAgICAgIBtbNzszODsyOzI0NDs5MjsyNTVt4paWG1swbRtbMzg7MjsyNDQ7OTI7MjU1beKWhBtbMG0gICAbWzc7Mzg7MjsyNDQ7OTI7MjU1beKWh+KWhhtbMG0gIBtbNzszODsyOzI0NDs5MjsyNTVt4paE4paEG1swbSAbWzM4OzI7MjQ0OzkyOzI1NW3ilpcbWzBtG1s3OzM4OzI7MjQ0OzkyOzI1NW0gG1swbRtbMzg7MjsxMzk7NDc7MjE0beKWjhtbMG0KICAgICAgIBtbMzg7MjsxMzk7NDc7MjE0beKWgxtbMG0bWzM4OzI7MjQ0OzkyOzI1NW3iloQbWzBtG1s3OzM4OzI7MjQ0OzkyOzI1NW0gG1swbRtbMzg7MjsyNDQ7OTI7MjU1beKWh+KWhOKWg+KWghtbMG0bWzM4OzI7MTM5OzQ3OzIxNG3iloEbWzBtICAbWzM4OzI7MjQ0OzkyOzI1NW3iloHiloPiloYbWzBtG1s3OzM4OzI7MjQ0OzkyOzI1NW3iloPilobilpYbWzBtG1szODsyOzI0NDs5MjsyNTVt4paWG1swbQogICAgICAbWzc7Mzg7MjsyNDQ7OTI7MjU1beKWiyAgICAg4paB4paC4paDICAgICDilp0bWzBtG1szODsyOzEzOTs0NzsyMTRt4paWG1swbRtbNzszODsyOzI0NDs5MjsyNTVt4paDG1swbRtbMzg7MjsyNDQ7OTI7MjU1beKWmBtbMG0KICAgICAgG1s3OzM4OzI7MjQ0OzkyOzI1NW3ilowgICAgIBtbMG0bWzM4OzI7MjQ0OzkyOzI1NW3ilpYbWzBtICAbWzM4OzI7MjQ0OzkyOzI1NW3ilp0bWzBtG1s3OzM4OzI7MjQ0OzkyOzI1NW0gICAgICAbWzBtG1szODsyOzI0NDs5MjsyNTVt4paEG1swbQogICAgICAbWzM4OzI7MTM5OzQ3OzIxNG3ilp0bWzBtG1s3OzM4OzI7MjQ0OzkyOzI1NW3iloXiloXiloXiloXiloUbWzBtG1s3OzM4OzI7MTM5OzQ3OzIxNG3iloUbWzBtICAgG1szODsyOzEzOTs0NzsyMTRt4padG1swbRtbNzszODsyOzI0NDs5MjsyNTVt4paF4paF4paF4paF4paF4paFG1swbQo='
@@ -89,7 +89,7 @@ function Install-Discobox {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     }
 
-    # How this looks: the TUI's palette (cli/internal/tui/theme.go), and only
+    # How this looks: the console's palette (cli/internal/tui/theme.go), and only
     # where the terminal will show it. A redirected stream, a console without
     # virtual terminal sequences, and NO_COLOR all get plain text; CLICOLOR_FORCE
     # or FORCE_COLOR turns it back on.
@@ -148,7 +148,7 @@ function Install-Discobox {
         if ($style.Depth -gt 0) { Write-Host "$($style.Warn)$($style.Bang)$($style.Reset) $Message" } else { Write-Host $Message }
     }
 
-    # The mark, on the terms the TUI draws it on: it is shading rather than line
+    # The mark, on the terms the console draws it on: it is shading rather than line
     # art, so a terminal that cannot color it gets none of it. It also needs the
     # room and the encoding.
     function Show-DiscoboxLogo {

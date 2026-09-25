@@ -389,7 +389,7 @@ Installed in every discobox, whatever it was made from:
 These are the user's commands, run on their side:
 
 ```
-discobox            open the launcher
+discobox            open the console
 discobox new        launch a prompt in a new box
 discobox ls         boxes started from this directory
 discobox rm         archive boxes (alias: delete)

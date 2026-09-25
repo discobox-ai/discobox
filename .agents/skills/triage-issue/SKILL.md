@@ -209,7 +209,7 @@ this scheme. Propose additions by editing this file.
 | | `flaky` | A test fails intermittently |
 | | `enhancement` | New behavior, or cleanup of working code |
 | | `documentation` | Docs, DESIGN.md, or ADRs are wrong or missing |
-| area | `area/cli` | CLI commands and output (not the TUI) |
+| area | `area/cli` | CLI commands and output (not the console) |
 | | `area/tui` | The interactive terminal UI and termpane |
 | | `area/server` | Control plane: handlers, resources, reconcile, store, auth |
 | | `area/api` | OpenAPI contract and generated code (`api/`) |

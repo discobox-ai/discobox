@@ -66,7 +66,7 @@
 
 - **What draws in front takes the keys.** `View`'s precedence is the contract:
   a modal (`modalUp` — the introduction, a dialog, the run options), then a
-  pane (`inPanes`), then the harnesses/secrets screens, then the launcher.
+  pane (`inPanes`), then the harnesses/secrets screens, then the console.
   `updateKey`, `updatePaste` and `hints()` must follow the same order.
   The harnesses and secrets screens are the trap: they open panes of their own
   and stay open behind them, so a check on `harnessesOpen`/`secretsOpen` that

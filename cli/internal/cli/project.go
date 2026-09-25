@@ -142,9 +142,9 @@ then the only way one moves. Rebuilding a discobox keeps its volumes, sources
 and history, but discards whatever was written to its container filesystem
 outside them -- which is the reason to hold one back.
 
---welcomed=false shows the launcher's welcome screen again on this project's
-next "discobox" or "discobox tui": it is otherwise shown once, the first time
-the launcher opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
+--welcomed=false shows the console's welcome screen again on this project's
+next "discobox" or "discobox console": it is otherwise shown once, the first time
+the console opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -195,7 +195,7 @@ the launcher opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction
 	cmd.Flags().StringVar(&upgradePolicy, "sandbox-upgrade-policy", "", `Whether stopped and errored discoboxes follow their harness image: "automatic" or "manual"; empty restores the server default`)
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
-	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the launcher show it again`)
+	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the console show it again`)
 	return cmd
 }
 

@@ -212,6 +212,20 @@ func TestRootCommandHelp(t *testing.T) {
 	if bytes.Contains(out.Bytes(), []byte("\n  run ")) {
 		t.Fatalf("help output = %q, want the old name unlisted", out.String())
 	}
+	// The same for the console's earlier name.
+	if !bytes.Contains(out.Bytes(), []byte("\n  console ")) {
+		t.Fatalf("help output = %q, want visible console command", out.String())
+	}
+	tui, _, err := cmd.Find([]string{"tui"})
+	if err != nil || tui.Name() != "tui" {
+		t.Fatalf("find the console's old name: command=%v err=%v", tui, err)
+	}
+	if !tui.Hidden {
+		t.Fatal("tui is listed in the command list")
+	}
+	if bytes.Contains(out.Bytes(), []byte("\n  tui ")) {
+		t.Fatalf("help output = %q, want tui unlisted", out.String())
+	}
 	if !bytes.Contains(out.Bytes(), []byte("\n  admin ")) {
 		t.Fatalf("help output = %q, want visible admin command", out.String())
 	}

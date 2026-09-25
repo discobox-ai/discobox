@@ -1,4 +1,4 @@
-// Package tui is the `discobox tui` launcher: one window that opens with the
+// Package tui is the `discobox console` window: it opens with the
 // cursor already in a prompt for a new sandbox, and the sandboxes you already
 // have one press of Tab away.
 //
@@ -4079,7 +4079,7 @@ func (m *Model) helpText() string {
 		"  and opens on its own.",
 		"",
 		"  Tool sessions live in the discobox, not in this window. Quit the",
-		"  launcher with a diff open and the next attach picks it back up,",
+		"  console with a diff open and the next attach picks it back up,",
 		"  put away beside the shells.",
 		"",
 		"  A tool can carry a config, kept on this machine and copied into a",
@@ -4108,7 +4108,7 @@ func (m *Model) helpText() string {
 		"                   files it carries",
 		"    f              edit one of those files in $EDITOR",
 		"    .              every action, as a menu",
-		"    Esc or " + HarnessesKeyName + "      back to the launcher",
+		"    Esc or " + HarnessesKeyName + "      leave this screen",
 		"",
 		"      ● enabled    ○ disabled    ✗ its setup did not finish",
 		"      ★ the project default",
@@ -4132,7 +4132,7 @@ func (m *Model) helpText() string {
 		"                   " + grantRevokeKey + " withdraws one, and the first row grants the",
 		"                   secret. On a request, Enter answers it",
 		"    r              refresh",
-		"    Esc or " + SecretsKeyName + "      back to the launcher",
+		"    Esc or " + SecretsKeyName + "      leave this screen",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"Run options (Ctrl-O)",

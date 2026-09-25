@@ -930,7 +930,7 @@ func TestLauncherWithOneServerReportsItsFailure(t *testing.T) {
 }
 
 // launcherDataSource is the window's data source aimed at a primary, the way
-// runTUI builds one.
+// runConsole builds one.
 func launcherDataSource(t *testing.T, serverURL string) *apiDataSource {
 	t.Helper()
 	app := &App{serverURL: serverURL, projectID: "project-1", source: "."}

@@ -35,7 +35,7 @@ func WithWelcome() Option {
 //
 // The commands are the point. Someone who reads only the three green lines has
 // the whole of using this; the prose beside them only says why each one is run.
-// They are the TUI flow rather than `discobox new`, which does the same work in
+// They are the console flow rather than `discobox new`, which does the same work in
 // one line and teaches none of the shape.
 const welcomeTitle = "Welcome to Discobox"
 

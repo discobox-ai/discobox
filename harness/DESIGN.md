@@ -78,7 +78,7 @@ launchers, and configure scripts.
   *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
   `discobox new fix the failing tests` reaches `discobox-harness-run` as four
   arguments, not one. A prompt given as one argument — `discobox new 'fix the
-  failing tests'`, and everything the launcher creates — arrives as one, which
+  failing tests'`, and everything the console creates — arrives as one, which
   the same joining leaves alone. Every wrapper joins everything after the flags with
   single spaces and hands its agent that single string — an agent CLI takes its
   prompt as one positional, so a wrapper that forwards `"$@"` unchanged asks it
@@ -231,7 +231,7 @@ launchers, and configure scripts.
   landed on the next free port would look bound and answer no browser. A port
   the machine cannot give is reported in the image's own `unavailable` words —
   only the image knows what its harness can still do without the callback — in
-  the configure terminal and, in the launcher, on the configure pane's header,
+  the configure terminal and, in the console, on the configure pane's header,
   where the CLI's full-screen sign-in cannot paint over it. See
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md)
   for the snapshot and [`cli/internal/tui/DESIGN.md`](../cli/internal/tui/DESIGN.md)

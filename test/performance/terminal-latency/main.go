@@ -52,10 +52,10 @@ func main() {
 	flag.StringVar(&opts.server, "server", "", "Discobox server endpoint (default: the endpoint discobox dials on its own)")
 	flag.StringVar(&opts.project, "project", "default", "Discobox project")
 	flag.StringVar(&opts.sandbox, "sandbox", "", "sandbox ID running the terminal-latency harness")
-	flag.StringVar(&opts.sandboxName, "sandbox-name", "", "sandbox name shown in the TUI")
+	flag.StringVar(&opts.sandboxName, "sandbox-name", "", "sandbox name shown in the console")
 	flag.StringVar(&opts.token, "token", os.Getenv("DISCOBOX_TOKEN"), "optional Discobox bearer token")
 	flag.StringVar(&opts.cli, "cli", "build/discobox", "path to the discobox CLI")
-	flag.StringVar(&opts.mode, "mode", "direct", "client path to measure: direct or tui")
+	flag.StringVar(&opts.mode, "mode", "direct", "client path to measure: direct or console")
 	flag.IntVar(&opts.samples, "samples", 100, "number of request/response samples")
 	flag.IntVar(&opts.sequenceStart, "sequence-start", 1, "first eight-digit probe sequence")
 	flag.DurationVar(&opts.interval, "interval", 20*time.Millisecond, "delay between samples")
@@ -106,11 +106,11 @@ func run(opts options) error {
 	if opts.loadProfile != "quiet" && (opts.loadHz == 0 || opts.loadBytes == 0) {
 		return errors.New("--load-hz and --load-bytes must be positive for a loaded profile")
 	}
-	if opts.mode != "direct" && opts.mode != "tui" {
-		return fmt.Errorf("--mode must be direct or tui, got %q", opts.mode)
+	if opts.mode != "direct" && opts.mode != "console" {
+		return fmt.Errorf("--mode must be direct or console, got %q", opts.mode)
 	}
-	if opts.mode == "tui" && strings.TrimSpace(opts.sandboxName) == "" {
-		return errors.New("--sandbox-name is required in tui mode")
+	if opts.mode == "console" && strings.TrimSpace(opts.sandboxName) == "" {
+		return errors.New("--sandbox-name is required in console mode")
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		return errors.New("tmux is required")
@@ -148,8 +148,8 @@ func run(opts options) error {
 	switch opts.mode {
 	case "direct":
 		command = append(command, "admin", "terminal", "--discobox-id", opts.sandbox, "attach", "primary")
-	case "tui":
-		command = append(command, "tui")
+	case "console":
+		command = append(command, "console")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -160,14 +160,17 @@ func run(opts options) error {
 	}
 	defer controller.Close()
 
-	if opts.mode == "tui" {
+	if opts.mode == "console" {
 		// Names may be elided to fit the table, while IDs are rendered in full.
 		// Waiting for the exact disposable ID also avoids selecting a similarly
 		// named pre-existing sandbox.
 		if err := controller.WaitOutput(opts.sandbox, 30*time.Second); err != nil {
 			return fmt.Errorf("wait for sandbox row: %w", err)
 		}
-		if err := controller.SendBytes([]byte("G")); err != nil {
+		// The window opens with the keys in the prompt; Tab moves them to the
+		// list's top row, which is the probe sandbox: the list is newest first
+		// and run.sh created it just now.
+		if err := controller.SendBytes([]byte{'\t'}); err != nil {
 			return err
 		}
 		time.Sleep(100 * time.Millisecond)

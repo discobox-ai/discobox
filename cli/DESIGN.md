@@ -9,7 +9,7 @@ transport helpers where OpenAPI does not model the stream.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox` | Binary entrypoint. |
-| `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. Staging itself is the root module's `serverstage`. |
+| `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, console API adapter, and the attach transports and policy layered on `execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. See [`internal/sandboxcreate/DESIGN.md`](internal/sandboxcreate/DESIGN.md). |
 | `internal/sandboxapply` | `discobox apply`'s fetch: a source's sandbox commits fetched into the local repository under `refs/discobox/apply/<sandbox>/<slug>` (ADR 0014). |
 | `internal/gitapply` | Landing a fetched range on the local branch by cherry-pick in a disposable worktree (`Attempt`), and onto a repository with no commits (`AttemptRoot`, ADR 0084). |
@@ -17,21 +17,21 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). |
 | `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
-| `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
+| `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
-| `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a launcher pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
+| `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
-| `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
+| `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
 
 - Keep reusable sandbox creation workflows out of `internal/cli`; place them in
-  `internal/sandboxcreate` so Cobra and TUI adapters consume the same behavior.
+  `internal/sandboxcreate` so Cobra and console adapters consume the same behavior.
 - `internal/tui` must not import `internal/cli`. It owns presentation state and
   frontend contracts only; API and terminal adapters belong outside it.
 - `internal/cli` may adapt generated API clients and terminal transports to the
-  TUI's interfaces, but must not become the owner of logic shared by frontends.
-- The launcher never reimplements a command, and never steps aside for one.
+  console's interfaces, but must not become the owner of logic shared by frontends.
+- The console never reimplements a command, and never steps aside for one.
   `apply` is drawn in an overlay pane from either screen — the list and the
   workspace — and is the Cobra command itself, spawned as a child
   `discobox apply <id>` on a local pty sized to the pane (`tui_local.go`). The pty
@@ -53,7 +53,7 @@ transport helpers where OpenAPI does not model the stream.
   [ADR 0065](../docs/adr/0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
 - A pane child must not outlive the process that drew it. Both of the ways a
   pane ends its command — canceling the context, closing the PTY — run inside
-  the launcher, so a launcher that dies without unwinding ends neither. The
+  the console, so a console that dies without unwinding ends neither. The
   child is `Setsid` with a pty of its own, which is what this package is for and
   also means nothing the operating system does reaches it: no SIGHUP from the
   real terminal, no shared process group. `localpty.Start` therefore sets
@@ -67,11 +67,11 @@ transport helpers where OpenAPI does not model the stream.
   and not everything that process starts — above all the autolaunched server,
   a singleton whose whole point is to outlive the CLI that forked it.
 - What runs is therefore `discobox apply` with its own flag defaults and terminal
-  detection, not a second implementation that drifts from it. A launcher that
+  detection, not a second implementation that drifts from it. A console that
   cannot be reproduced from a shell is the thing to avoid.
 - The child also writes its structured apply report to a private temporary file
   named in its environment. The pane remains the ordinary human-readable
-  command output; the private copy lets the launcher's success dialog name every
+  command output; the private copy lets the console's success dialog name every
   destination and local commit without parsing terminal text or reimplementing
   apply. The local terminal owns and removes that file when the pane closes.
 - **The command that makes a discobox is `new`, and nothing prints any other
@@ -98,10 +98,14 @@ transport helpers where OpenAPI does not model the stream.
   is gone. `-p` is therefore not `--project`'s shorthand: `--project` is
   persistent and would reach `new`, so it has a long form only. See
   [ADR 26-09-25-027](../docs/adr/26-09-25-027-only-new-makes-a-discobox.md).
-- Bare `discobox` runs the launcher when stdin and stdout are both
-  terminals, and prints its help when they are not (`App.runTUI`, also reached
-  from `discobox tui`). Typing a program's name is how you ask for it, and the
-  launcher is the one thing you can ask for without knowing a subcommand; a
+- **The interactive window is `console`.** It was `tui` first, so `tui` is
+  registered a second time, hidden (`newConsoleCommand` takes the spelling),
+  for the same reason and on the same terms as `run` above: not an alias, since
+  cobra prints aliases in help. `internal/tui` keeps its package name.
+- Bare `discobox` runs the console when stdin and stdout are both
+  terminals, and prints its help when they are not (`App.runConsole`, also reached
+  from `discobox console`). Typing a program's name is how you ask for it, and the
+  console is the one thing you can ask for without knowing a subcommand; a
   pipe, a script or CI expected output, and a full-screen window is not an
   answer to that. The leader there comes from the environment only: a flag
   would have to be persistent to be reachable, and every subcommand would carry
@@ -136,10 +140,10 @@ transport helpers where OpenAPI does not model the stream.
   and the root's returns early for the flag — because what somebody diagnosing
   a broken environment asks first is what they are running, so a leader key the
   environment spells wrong must not be what stops them hearing it.
-- `discobox configure` is the same launcher opened on its harnesses screen
+- `discobox configure` is the same console opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.
-- `discobox new` and `discobox attach` are the same launcher, opened on one run
+- `discobox new` and `discobox attach` are the same console, opened on one run
   (`tui.WithRun`) and on one discobox (`tui.WithAttach`), not a terminal stream
   on the caller's screen. What run creates is a machine with terminals,
   services and ports on it, and the workspace screen is where all of that
@@ -171,8 +175,8 @@ transport helpers where OpenAPI does not model the stream.
   a bare letter is taken as Ctrl-that, since a leader that is not a chord would
   be a character you could never type, and only a letter is accepted because the
   leader has to survive being turned back into the byte a terminal sends.
-  `discobox tui --leader` overrides it for the launcher; nothing else takes a flag.
-  It is one key for both the launcher's panes and a plain attach's detach chord.
+  `discobox console --leader` overrides it for the console; nothing else takes a flag.
+  It is one key for both the console's panes and a plain attach's detach chord.
 - Attach and shell are terminals rather than commands, and are drawn inside the
   window by the `termpane` module. `apiDataSource.Open` handles only the local
   commands above; a discobox's sessions come through `OpenExec` (an existing
@@ -274,7 +278,7 @@ first connection that gets through.
 ## CLI State Directory
 
 `cliStateDir()` (`internal/cli/statedir.go`) is `<state>` throughout this
-document: the picker's memory, the launcher's unsent prompts, this machine's
+document: the picker's memory, the console's unsent prompts, this machine's
 iroh identity (`<state>/iroh/id_ed25519`, whose peer ID `discobox admin peer id` prints
 and an operator enrolls), the SSH identity, and the generated per-project
 `ssh_config` files. It is `<discobox state>/cli`, a sibling of
@@ -312,7 +316,7 @@ parsing half a file for the rest of the install's life. Each is bounded to a
 number of entries and each is best-effort on every read and write: a missing,
 unwritable or corrupt file costs the convenience and never the command.
 
-- `prompt-drafts.json` (`internal/cli/drafts.go`) is the launcher's composer
+- `prompt-drafts.json` (`internal/cli/drafts.go`) is the console's composer
   contents per project directory: what `tui.Session.Draft` is loaded from and
   what `DataSource.SaveDraft` writes. Keyed by the window's own
   directory (`sandboxcreate.LocalProjectDirectory`), because a prompt written in one checkout must not come
@@ -350,7 +354,7 @@ run's staged copy), and this user's Discobox files in the temporary directory
   drains providers and closes its database, and releases `<data>/server.lock`
   last. That lock is waited for before anything is deleted, and a lock still
   held at the deadline ends the uninstall with nothing deleted.
-- **A server can come back.** An editor's ProxyCommand or an open launcher can
+- **A server can come back.** An editor's ProxyCommand or an open console can
   autolaunch one mid-run, and nothing prevents that. The endpoints are probed
   again afterwards, and a server that answers fails the command.
 - **Not seen, not deleted:** directories a `server.yaml` or
@@ -379,7 +383,7 @@ is an error rather than a lost convenience.
   auto-started; the server's default project, since a project ID names a
   project on one server; and no `--token`, which was given for the primary.
   Every path to "the server" — the API client, the git transport, the
-  terminals, the ssh bridge, the child commands the launcher runs — reads the
+  terminals, the ssh bridge, the child commands the console runs — reads the
   App it is on, so aiming one is the whole of routing.
 - **`App.servers`** is the set, the primary first, read once per invocation. A
   primary that is also registered is listed once, under its registered name:
@@ -416,7 +420,7 @@ is an error rather than a lost convenience.
   under two addresses, and is listed once. `ls` gains a SERVER column, and
   each `-o json` object a `server` field, only when there is more than one
   server.
-- **The launcher's listing is a snapshot, not a round trip.** A command asks
+- **The console's listing is a snapshot, not a round trip.** A command asks
   once and exits; the window polls every five seconds for as long as it is
   open, so each server keeps what it last said to each poll (`serverPoll`:
   `tuiServer.listing`, and `tuiServer.requests` for the credential inbox,
@@ -458,7 +462,7 @@ is an error rather than a lost convenience.
   - **The primary is a server like the others here**
     ([ADR 0122](../docs/adr/0122-a-window-that-polls-lists-the-servers-that-answer.md),
     which supersedes ADR 0116 §4's "the primary not answering fails the
-    command" for the launcher and leaves it standing for `ls` and the picker).
+    command" for the console and leaves it standing for `ls` and the picker).
     One that fails is reported as not answering (`Listing.Unreachable`), the
     other servers are still the listing, and the window reports *that* server
     as an error rather than a note, since it is still where a create goes
@@ -479,7 +483,7 @@ is an error rather than a lost convenience.
   server at once, so an ID copied from `ls` works whichever server listed it.
   The picker lists every server; a registered server's rows say `on <name>`
   and are keyed `<name>/<id>`, which is how the pick says where to go.
-- **The launcher routes two ways.** A call about one discobox finds its server
+- **The console routes two ways.** A call about one discobox finds its server
   from the ID the listing located it under (`apiDataSource.at`). A call about
   a server's configuration — harnesses, secrets, grants, answering a
   credential request — is handed the server's name and resolves it
@@ -749,7 +753,7 @@ The registry is spelled `remote`, git's name for the same thing — `add`,
 `admin server` already names the process.
 
 The global `--project` flag is hidden from help: it still works everywhere,
-and the launcher and scripts still pass it, but a project is advanced
+and the console and scripts still pass it, but a project is advanced
 configuration and belongs with the rest of it under `discobox admin`.
 
 `discobox admin project` is the only command group not scoped by the global
@@ -843,7 +847,7 @@ does describe is the person, so when the streams are a terminal it — or a loca
 `DISCOBOX_SHELL`, read first, or `nu` when `NU_VERSION` says the CLI was run
 from nushell, which leaves `$SHELL` naming the login shell — rides along as `DISCOBOX_SHELL` in the request env and the sandbox runs that shell instead
 if it has one ([ADR 0138](../docs/adr/0138-a-shell-opened-for-a-person-is-their-own-shell-when-the-sandbox-has-it.md));
-the TUI's shell pane does the same. It is read per request and stored nowhere.
+the console's shell pane does the same. It is read per request and stored nowhere.
 `admin exec create --shell` is the same request in raw form, without the
 preference.
 
@@ -1006,7 +1010,7 @@ flowchart LR
   unconditionally. `zed` is looked for last among Zed's names, since nixpkgs
   ships a data lake under it. A user `vscode.yaml` replaces the builtin, which is
   how a setting like `--reuse-window` is made.
-- **The launcher** (`apiDataSource.Tools`/`NewTool`/`RunHostTool`)
+- **The console** (`apiDataSource.Tools`/`NewTool`/`RunHostTool`)
   re-resolves the catalog by id on every run and discards host-tool output,
   reporting only the error.
 
@@ -1076,7 +1080,7 @@ table.
 ## Listing Order
 
 Every listing the CLI renders — tables, `-q` ID lists, shell completions, the
-picker, and the TUI — is ordered most recently touched first by
+picker, and the console — is ordered most recently touched first by
 `sortedByRecency` (`internal/cli/output.go`). "Touched" is `recencyTime`: the
 resource's update time, or its creation time when the resource has no update
 time, either unset or not tracked at all (`SandboxExec`). The whole CLI answers
@@ -1090,11 +1094,11 @@ as the table: the order is the CLI's answer, not a table-rendering detail.
 
 The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
 server (`services.SandboxDisplayName`) and read verbatim here — `discobox ls`, the
-launcher, and any other client name a sandbox the same way because none of them
+console, and any other client name a sandbox the same way because none of them
 derives it. Display only — name *resolution* (`matchSandboxArg`, `--name`
 updates) still works on the configured name.
 
-The launcher's row therefore carries both: `Sandbox.Name` is the display name
+The console's row therefore carries both: `Sandbox.Name` is the display name
 and `Sandbox.ConfigName` the configured one (`toTUISandbox`, trimmed the way
 the server trims it before falling back to the id). Its status line says the
 configured name under the cursor, since that is the handle every other command
@@ -1149,7 +1153,7 @@ positional argument shared with the command itself (`shell`, resolved by
   measured against the whole string.
 - The picker prompts on stderr so the command's stdout stays a clean stream.
 - Sandbox picker labels read the server's `Sandbox.displayName`, exactly like
-  `discobox ls` and the launcher; configured-name and ID fallbacks only defend
+  `discobox ls` and the console; configured-name and ID fallbacks only defend
   against an incomplete response. Name resolution still uses the configured
   name, as described above.
 - A row's detail is `discobox ls`'s answer in the same words: the runtime state,
@@ -1161,7 +1165,7 @@ positional argument shared with the command itself (`shell`, resolved by
   field, so `/dirty` and `/` plus a directory name both filter.
 - `pickOne` is resource-independent: callers supply `pickerItem`s, the wording
   for the empty and ambiguous cases, and optionally the wider list `a` offers.
-- `/` opens the same search line the launcher's F1 help uses; it is absent
+- `/` opens the same search line the console's F1 help uses; it is absent
   until asked for. Typing there fuzzy-filters and re-ranks the list
   (`internal/cli/fuzzy.go`):
   a subsequence match over each item's title, ID, and detail, scored to favour
@@ -1280,7 +1284,7 @@ session, `execstream/client`.
 - The way out of a terminal attach is the leader then `d` (`detachFilter`,
   `internal/cli/sandbox_terminals.go`), matched over the raw input bytes and
   nothing else: `execstream/client` never learns the chord, and never learns
-  where the leader came from. The leader is the launcher's
+  where the leader came from. The leader is the console's
   (`internal/keys`, `App.leader`), resolved once from `DISCOBOX_LEADER` in
   `App.validate` so a misspelling is reported before a terminal is handed over,
   and `App.detachHint` is the one spelling the messages print. Ctrl-D counts as
@@ -1289,7 +1293,7 @@ session, `execstream/client`.
   followed it — the same bargain `termpane` makes in a pane, so the keystrokes
   mean the same thing either way. Docker's Ctrl-P Ctrl-Q is not used: it takes
   a key programs want (Ctrl-P is history-back everywhere) and matches nothing
-  the launcher does.
+  the console does.
 - The other way out is repeated Ctrl-C, and it is the session's, not this
   module's: `execstream/client` owns the escape because the evidence it needs
   is the stream's own (`execstream.Delivery` acknowledgements), and because a
@@ -1324,12 +1328,12 @@ session, `execstream/client`.
   `SignalReady` and `OtherErr` are set to match: they only make sense once
   replay is in play, and only exist on the TTY branch.
 - Connection lifecycle notifications are transport events, not terminal output.
-  CLI attach ignores them; the launcher, which draws the session in a pane,
+  CLI attach ignores them; the console, which draws the session in a pane,
   renders them as that pane's status (`framedTerminal.Events` →
   `tui.TerminalEvent`), because a reconnect never appears in the output — the
   stream simply carries on — so it is reported there or not at all.
 - Resumable attaches can subscribe to timing events without parsing terminal
-  output (`execAttachOptions.timing`); no CLI or launcher path subscribes, and
+  output (`execAttachOptions.timing`); no CLI or console path subscribes, and
   only tests set it. A websocket heartbeat measures the physical proxy path to the
   sandbox-agent; an action-acknowledgement sample measures from client
   acceptance until the exec host applied the positioned input at the PTY
@@ -1348,9 +1352,9 @@ The mechanics are `internal/portforward`, which knows nothing about sandboxes:
 it is given a `Dialer` and a set of `Target`s, and owns picking local ports,
 accepting, splicing, and reporting. `internal/cli/proxy.go` supplies the two
 sandbox-shaped halves — the listing (`sandboxPortTargets`, the same agent
-report the launcher's rows are drawn from) and the transport
+report the console's rows are drawn from) and the transport
 (`sandboxPortDialer`, `internal/cli/port_tunnel.go`) — and prints the events. The
-launcher runs the same forwarder over the same transport and draws the events
+console runs the same forwarder over the same transport and draws the events
 instead (below).
 
 - The transport is the control plane's `/api/projects/{p}/sandboxes/{s}/tcp/attach`
@@ -1403,7 +1407,7 @@ instead (below).
   (ADR 0046); a flag that waits for the listing to agree is useless in the
   minute after a server starts, which is the minute it is reached for. What the listing does say about a named port — the address to
   dial, what it speaks, the service it belongs to — is still used.
-- The launcher runs the same forwarder. Opening a workspace opens one
+- The console runs the same forwarder. Opening a workspace opens one
   (`apiDataSource.Forward`, `internal/cli/tui_forward.go`) and detaching closes
   it, so the local ports live as long as the screen showing them; the window
   sees only a `tui.Forward` — what is bound, and a wake-up when that changes —
@@ -1776,7 +1780,7 @@ level or layering on the attach transports above.
   populated run needs no further edit to `~/.ssh/config` and no second trip to
   re-pin the same server.
 - A successful prompt sandbox create refreshes these files after its source has
-  been delivered, from both `discobox new` and the launcher. This is the same
+  been delivered, from both `discobox new` and the console. This is the same
   operation as `admin ssh-config --write`, including key enrollment and WSL's
   two targets, so a newly created sandbox is immediately available to OpenSSH
   clients without a separate command.
@@ -1883,7 +1887,7 @@ level or layering on the attach transports above.
   every one of those is worth a line — but who is listening differs by caller
   and none of it may pick a screen for itself. `admin ssh-config`, a host tool
   run from `discobox tools`, `tools ssh` and `cp` pass `printedNotes(stderr)`;
-  `discobox new` passes its status line, so the lines are gone before the attach; the launcher
+  `discobox new` passes its status line, so the lines are gone before the attach; the console
   passes its busy line, so nothing reaches the terminal it has drawn a window
   on. Everything below `writeProjectSSHConfig` therefore takes a `context.Context`
   and a sink rather than the `*cobra.Command`, which is what makes writing to
@@ -1972,7 +1976,7 @@ URL, and the client-side ref names.
 `CreatePromptSandbox` and `DeliverSource` both take a `sandboxcreate.Report` and
 call it as they enter each step. These steps are this process's own work, so
 nothing else can say which one is underway; the words live in `sandboxcreate`
-so `discobox new` and the launcher cannot describe the same stage differently,
+so `discobox new` and the console cannot describe the same stage differently,
 while where the line is drawn and when it is cleared stays each frontend's.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
@@ -2051,7 +2055,7 @@ acts on the report, which is exactly what `new --raw` attaches to. The same
 field ends `DeliverSource`'s wait early when somebody else's delivery was
 reported.
 
-The launcher's workspace delivers when the row says `AwaitsDelivery`
+The console's workspace delivers when the row says `AwaitsDelivery`
 (`DataSource.DeliverSource`), and a raw attach delivers from
 `attachSandboxTerminal`.
 
@@ -2076,7 +2080,7 @@ which nothing else reads.
 Both front ends run the same rule, over one resolver (`App.pushSandboxSources`,
 `pushable`, and a per-discobox cache of what its sources resolve to here):
 
-- the **launcher's workspace**, which attaches to the discobox's terminals when
+- the **console's workspace**, which attaches to the discobox's terminals when
   it opens, through `DataSource.PushSources` (`internal/cli/tui_push.go`) on a
   loop guarded by the workspace generation (`internal/tui/push.go`);
 - a **raw attach** — `attach --raw`, `new --raw`, `admin terminal attach`,
@@ -2165,8 +2169,8 @@ clock, so a long pull that keeps reporting is not cut off.
 
 `statusLine` is where it lands for the commands: one rewritable line on a
 terminal, appended lines off one, and cleared before the stream is handed to
-anything else. The launcher renders the same reports on its busy line instead;
-see the launcher's design doc.
+anything else. The console renders the same reports on its busy line instead;
+see the console's design doc.
 
 A first run reports server downloads and startup on this row. Launch-lock waits,
 server preparation, image checks (including running the new binary to list its
@@ -2174,7 +2178,7 @@ images), replacement shutdown, and process launch report before blocking.
 Image downloads and pool preload are labeled one-time setup per image version.
 Once a sandbox
 is requested, its normal pool wait reports `preloading images` from pool
-provisioning progress, including image bytes. The launcher uses the same wait
+provisioning progress, including image bytes. The console uses the same wait
 status. There is no separate first-run staging wait or initialization feed.
 
     ⠋ Downloading server — 12.0 MiB of 94.0 MiB
@@ -2197,7 +2201,7 @@ digest, because "is 41 bytes, not the 76312841 this build expects" is the legibl
 complaint for a truncated download or a URL that has started serving something
 else.
 
-The download narrates before the launcher's window opens, not inside it. The
+The download narrates before the console's window opens, not inside it. The
 window needs a server to list from, so the download is already over by the time
 there is a window. Pool preload is narrated by the sandbox create wait.
 
@@ -2246,7 +2250,7 @@ happens:
 - Frontends express the question through `sandboxcreate.ConfirmIncludeDirtyFunc`
   rather than prompting themselves. A nil func means there is nobody to ask — no
   terminal — and the work is included: dropping a user's edits silently is worse
-  than carrying them. The launcher does not use it: it owns the screen, so it
+  than carrying them. The console does not use it: it owns the screen, so it
   asks in its own confirmation dialog and settles `IncludeDirty` to `true` or
   `false` before it calls the shared create at all. It asks about the primary
   source, which is the one it can see a working tree for; the answer stands for
@@ -2300,7 +2304,7 @@ A repository can name the others it is worked on with, in
 {"foo": "https://github.com/acme/foo"}
 ```
 
-`discobox new` and the launcher both bring them in, as source code references
+`discobox new` and the console both bring them in, as source code references
 resolved exactly like `--include`:
 
 - **A local checkout wins.** `foo` is looked for at the sibling of the primary
@@ -2335,7 +2339,7 @@ resolved exactly like `--include`:
 
 `sandboxcreate` resolves them and reports through
 `PromptOptions.ReportDeclaredSource`; `discobox new` prints one line per source on
-stderr. The launcher passes no reporter — it owns its screen and has no status
+stderr. The console passes no reporter — it owns its screen and has no status
 line for per-source progress — so it brings the same sources in silently. See
 [ADR 0056](../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
 
@@ -2470,8 +2474,8 @@ A ref is refused rather than dropped: `@REF` names a commit to check out and
 there is nothing to check it out of. Declared sources fall away on their own,
 since the file that declares them lives in a checkout there is none of.
 
-In the launcher this is the Source row's last entry rather than a flag of its
-own; see the launcher design doc.
+In the console this is the Source row's last entry rather than a flag of its
+own; see the console design doc.
 
 ## Grants and a Request as JSON (ADR 26-09-24-630)
 
@@ -2675,7 +2679,7 @@ git operation read as a wall of text. It is drawn in three:
   something is yours to do — `✗` red for a conflict or an error. Each keeps its
   status word in capitals, so the ending is findable by eye in a scrolled-back
   terminal with or without color. `nextSteps` prints its commands in the
-  launcher's command color, because they are the part of a failed report meant
+  console's command color, because they are the part of a failed report meant
   to be copied.
 
 Color is **written unconditionally and taken away by the writer**:
@@ -2689,7 +2693,7 @@ holds the line: stripping the painted report has to give back the plain one
 exactly, so a terminal and a log file never show different output.
 
 Marks are not color and are never gated: `✓` in a pipe is still worth reading.
-The palette is the launcher's (`internal/tui/theme.go`) because apply is read
+The palette is the console's (`internal/tui/theme.go`) because apply is read
 inside a pane of that window as often as in a shell, and gold for a commit has
 to mean the same thing in both.
 
@@ -2737,7 +2741,7 @@ it.
   end the source, so every outcome that path reaches — blocked, up-to-date,
   stranded — explains the `--dir PATH` it hands back. A blocked source's
   verdict is still its status alone, exactly as on the placed path. The
-  launcher decodes the same field (`tui.AppliedSource.RepositoryError`): this
+  console decodes the same field (`tui.AppliedSource.RepositoryError`): this
   is the one status that finishes a source successfully with no `hostPath`, so
   its success dialog names why there is no repository rather than drawing the
   row empty.
@@ -2835,12 +2839,12 @@ sequences the calls and hands the user the terminal in between:
 4. `POST .../configure/commit` — the server reads the command's real exit status,
    applies the secrets and files it wrote, and deletes the sandbox.
 
-The launcher's harnesses screen does not call `runHarnessConfigure` itself: it
+The console's harnesses screen does not call `runHarnessConfigure` itself: it
 runs this command in a pane (`apiDataSource.OpenHarnessConfigure` →
 `openLocalHarnessConfigure`, see *UI Dependency Direction*), so the flow the
 window draws is the one a shell gets.
 
-`discobox configure` (aliases `config`, `conf`, `c`, `init`) is the launcher opened
+`discobox configure` (aliases `config`, `conf`, `c`, `init`) is the console opened
 on that screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` —
 and nothing else. It is not a second menu over the same harnesses: managing them
 and running something on one are the same job from two ends, and one list with

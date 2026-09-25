@@ -27,15 +27,19 @@ import (
 	"github.com/discobox-ai/x/gitutil"
 )
 
-// newTUICommand launches the interactive launcher: one full-screen window that
-// opens with the cursor in a prompt for a new sandbox, with the project's
-// sandboxes a press of Tab away.
-func (a *App) newTUICommand() *cobra.Command {
+// newConsoleCommand opens the console: one full-screen window that opens with
+// the cursor in a prompt for a new sandbox, with the project's sandboxes a
+// press of Tab away.
+//
+// name is what it is registered under. It is "console", and also "tui", its
+// earlier name, hidden so it keeps working without being offered.
+func (a *App) newConsoleCommand(name string, hidden bool) *cobra.Command {
 	var leaderFlag string
 	cmd := &cobra.Command{
-		Use:   "tui",
-		Short: "Launch the interactive discobox launcher",
-		Long: `Launch the interactive launcher.
+		Use:    name,
+		Hidden: hidden,
+		Short:  "Open the discobox console",
+		Long: `Open the console.
 
 The window opens with the cursor in a prompt: type what the discobox should do
 and press Enter to run it in a new one, or press Enter on an empty prompt to
@@ -59,12 +63,12 @@ What is enabled there is what the run options offer as the harness to run.
 The window takes the whole terminal while it is up, and puts back what was on
 screen when it exits. Press F1 for the keys, and Ctrl-C to quit once no
 discobox terminal is up.`,
-		Example: `  discobox tui
-  discobox tui --leader b
-  DISCOBOX_LEADER=b discobox tui`,
+		Example: `  discobox console
+  discobox console --leader b
+  DISCOBOX_LEADER=b discobox console`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.runTUI(cmd, leaderFlag)
+			return a.runConsole(cmd, leaderFlag)
 		},
 	}
 	cmd.Flags().StringVarP(&leaderFlag, "leader", "l", "",
@@ -72,15 +76,15 @@ discobox terminal is up.`,
 	return cmd
 }
 
-// runTUI starts the launcher. It is reached five ways — `discobox tui`, `discobox`
-// with nothing to do, `discobox configure`, which is the launcher opened on its
-// harnesses screen, `discobox new`, which is the launcher opened on one run
+// runConsole starts the console. It is reached five ways — `discobox console`,
+// `discobox` with nothing to do, `discobox configure`, which is the console
+// opened on its harnesses screen, `discobox new`, which is it opened on one run
 // (`tui.WithRun`), and `discobox attach`, which is it opened on one discobox
 // (`tui.WithAttach`) — so it lives here rather than inside any one's RunE.
 //
 // leaderFlag is --leader, empty when it was not given: the environment's leader
 // is already resolved on the App, and only an explicit flag displaces it.
-func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Option) error {
+func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.Option) error {
 	leaderKey := a.leader()
 	if leaderFlag != "" {
 		var err error

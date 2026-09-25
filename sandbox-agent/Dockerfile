@@ -610,7 +610,7 @@ COPY --chmod=0755 sandbox-agent/image/harness-run /usr/local/bin/discobox-harnes
 # here rather than in each wrapper that needs it. See harness/DESIGN.md.
 COPY --chmod=0755 harness/prompt-answer.sh /usr/local/bin/discobox-prompt-answer
 # Runs the shell a client prefers when the sandbox has it, the login shell
-# otherwise; the agent starts it for `discobox shell` and TUI shell panes.
+# otherwise; the agent starts it for `discobox shell` and console shell panes.
 # See ADR 0138.
 COPY --chmod=0755 sandbox-agent/image/discobox-shell /usr/local/bin/discobox-shell
 # The pool-cached agent store (ADR 0114): `pin` chooses the version this

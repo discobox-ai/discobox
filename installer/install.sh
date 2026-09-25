@@ -30,8 +30,8 @@ sources=${DISCOBOX_INSTALL_SOURCES:-"https://assets.discobox.ai/discobox https:/
 api=${DISCOBOX_INSTALL_API:-https://api.github.com/repos/discobox-ai/discobox}
 releases_page=https://github.com/discobox-ai/discobox/releases
 
-# How this looks. The palette is the TUI's (cli/internal/tui/theme.go) and the
-# mark is the TUI's, drawn only where the terminal will show it: a pipe, a log
+# How this looks. The palette is the console's (cli/internal/tui/theme.go) and the
+# mark is the console's, drawn only where the terminal will show it: a pipe, a log
 # file, TERM=dumb, and NO_COLOR all get plain text, and CLICOLOR_FORCE or
 # FORCE_COLOR turns it back on. Messages go to stderr, so a `| sh` leaves
 # stdout alone.
@@ -52,7 +52,7 @@ sym_err=
 sha_tool=
 
 # The mark, in 24-bit color and in the nearest xterm-256 indices, escaped for
-# printf %b. Written by `go generate ./installer` from the TUI's own cell data;
+# printf %b. Written by `go generate ./installer` from the console's own cell data;
 # see internal/cmd/discobox-installer-logo.
 # BEGIN generated logo
 logo_24bit='     \033[38;2;139;47;214m\0342\0226\0227\0342\0226\0226\033[0m\n     \033[7;38;2;244;92;255m\0342\0226\0215\033[0m\033[38;2;244;92;255m\0342\0226\0213\033[0m\n     \033[7;38;2;244;92;255m\0342\0226\0214\033[0m\033[38;2;244;92;255m\0342\0226\0213\033[0m  \033[38;2;244;92;255m\0342\0226\0201\0342\0226\0201\033[0m\n      \033[7;38;2;244;92;255m\0342\0226\0204\033[0m\033[38;2;244;92;255m\0342\0226\0206\0342\0226\0207\033[0m\033[7;38;2;244;92;255m\0342\0226\0204\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;2;244;92;255m\0342\0226\0206\0342\0226\0205\0342\0226\0203\0342\0226\0202\0342\0226\0201\033[0m\n       \033[7;38;2;244;92;255m\0342\0226\0216\033[0m\033[38;2;244;92;255m\0342\0226\0214\033[0m \033[38;2;244;92;255m\0342\0226\0227\0342\0226\0204\0342\0226\0226\033[0m  \033[7;38;2;244;92;255m\0342\0226\0206\0342\0226\0205\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;2;244;92;255m\0342\0226\0206\0342\0226\0204\033[0m\n       \033[7;38;2;244;92;255m\0342\0226\0215\033[0m\033[38;2;244;92;255m\0342\0226\0214\033[0m \033[38;2;244;92;255m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m\0342\0226\0203\033[0m\033[38;2;244;92;255m\0342\0226\0230\033[0m\033[7;38;2;244;92;255m\0342\0226\0230\033[0m\033[38;2;244;92;255m\0342\0226\0207\0342\0226\0206\033[0m \033[38;2;244;92;255m\0342\0226\0205\0342\0226\0205\033[0m  \033[7;38;2;244;92;255m\0342\0226\0216\033[0m\033[38;2;244;92;255m\0342\0226\0215\033[0m\n        \033[7;38;2;244;92;255m\0342\0226\0226\033[0m\033[38;2;244;92;255m\0342\0226\0204\033[0m   \033[7;38;2;244;92;255m\0342\0226\0207\0342\0226\0206\033[0m  \033[7;38;2;244;92;255m\0342\0226\0204\0342\0226\0204\033[0m \033[38;2;244;92;255m\0342\0226\0227\033[0m\033[7;38;2;244;92;255m \033[0m\033[38;2;139;47;214m\0342\0226\0216\033[0m\n       \033[38;2;139;47;214m\0342\0226\0203\033[0m\033[38;2;244;92;255m\0342\0226\0204\033[0m\033[7;38;2;244;92;255m \033[0m\033[38;2;244;92;255m\0342\0226\0207\0342\0226\0204\0342\0226\0203\0342\0226\0202\033[0m\033[38;2;139;47;214m\0342\0226\0201\033[0m  \033[38;2;244;92;255m\0342\0226\0201\0342\0226\0203\0342\0226\0206\033[0m\033[7;38;2;244;92;255m\0342\0226\0203\0342\0226\0206\0342\0226\0226\033[0m\033[38;2;244;92;255m\0342\0226\0226\033[0m\n      \033[7;38;2;244;92;255m\0342\0226\0213     \0342\0226\0201\0342\0226\0202\0342\0226\0203     \0342\0226\0235\033[0m\033[38;2;139;47;214m\0342\0226\0226\033[0m\033[7;38;2;244;92;255m\0342\0226\0203\033[0m\033[38;2;244;92;255m\0342\0226\0230\033[0m\n      \033[7;38;2;244;92;255m\0342\0226\0214     \033[0m\033[38;2;244;92;255m\0342\0226\0226\033[0m  \033[38;2;244;92;255m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m      \033[0m\033[38;2;244;92;255m\0342\0226\0204\033[0m\n      \033[38;2;139;47;214m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\033[0m\033[7;38;2;139;47;214m\0342\0226\0205\033[0m   \033[38;2;139;47;214m\0342\0226\0235\033[0m\033[7;38;2;244;92;255m\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\0342\0226\0205\033[0m\n'
@@ -110,7 +110,7 @@ setup_style() {
 	if [ "$color_depth" -ge 16777216 ]; then
 		c_mark=$(printf '\033[38;2;244;92;255m')
 	elif [ "$color_depth" -ge 256 ]; then
-		# The same colors the TUI names: the mark's purple downsampled, and its
+		# The same colors the console names: the mark's purple downsampled, and its
 		# own indices for the rest.
 		c_mark=$(printf '\033[38;5;207m')
 	else
@@ -160,7 +160,7 @@ term_cols() {
 	printf '%s' "${COLUMNS:-80}"
 }
 
-# print_logo draws the mark, on the terms the TUI draws it on: it is shading
+# print_logo draws the mark, on the terms the console draws it on: it is shading
 # rather than line art, so a terminal that cannot color it gets none of it
 # rather than a monochrome smear. It also needs the room and the encoding.
 print_logo() {

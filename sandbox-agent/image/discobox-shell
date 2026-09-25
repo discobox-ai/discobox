@@ -4,7 +4,7 @@
 # Runs the shell a client prefers, when this sandbox has it, and FALLBACK
 # otherwise, with ARG... either way (ADR 0138). The sandbox agent runs this for
 # an interactive shell exec whose request named a preferred shell -- `discobox
-# shell` or a TUI shell pane, passing the person's DISCOBOX_SHELL, their nu, or
+# shell` or a console shell pane, passing the person's DISCOBOX_SHELL, their nu, or
 # their $SHELL -- and hands it the login shell it resolved for the run user as
 # FALLBACK.
 #

@@ -210,7 +210,7 @@ const (
 	applyColOK      = "83"  // green: it landed
 	applyColWarn    = "214" // amber: nothing is broken, but something is yours to do
 	applyColErr     = "196" // red: it did not land
-	applyColCommand = "120" // the light green the launcher prints commands in
+	applyColCommand = "120" // the light green the console prints commands in
 )
 
 var (

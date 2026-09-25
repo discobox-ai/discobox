@@ -38,7 +38,7 @@ irm https://discobox.ai/install.ps1 | iex
 Each of those installs the stable channel. [Release channels](#release-channels)
 covers the newer ones and how to pin a version.
 
-Open the launcher from your repository to create a box:
+Open the console from your repository to create a box:
 
 ```bash
 cd ~/src/my-project
@@ -131,7 +131,7 @@ machine, the client pushes your new commits into it while you are attached, and
 
 ## Working with a box
 
-- **Terminal and SSH:** Use the TUI or `discobox shell`. SSH configuration syncs
+- **Terminal and SSH:** Use the console or `discobox shell`. SSH configuration syncs
   automatically when a box is created, so `ssh $DISCOBOX_ID` works without manual
   setup. You can also connect by box name.
 - **Editor and tools:** Use `discobox tools vscode` or `discobox tools zed` to

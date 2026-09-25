@@ -834,7 +834,7 @@ tasks:
       - pnpm run check:mermaid
 
   logo:cells:
-    desc: Rebuild the TUI mark's cell data from its terminal capture
+    desc: Rebuild the console mark's cell data from its terminal capture
     # The marketing site consumes the output of this and the art in
     # assets/brand; it lives in discobox-ai/site and syncs them with its own
     # `pnpm gen:logo`.

@@ -28,9 +28,9 @@ There is always a primary server: the one --server names, else the one
 created there unless you choose otherwise, and it is the only one started for
 you.
 
-Registered servers are listed beside it. "discobox ls" and "discobox tui" list
+Registered servers are listed beside it. "discobox ls" and "discobox console" list
 every server's discoboxes, a command given a discobox ID finds it on whichever
-server has it, and the launcher's run options can create one on any of them.
+server has it, and the console's run options can create one on any of them.
 --server takes a registered server's name as well as an address.
 
 A server's address is one of:
@@ -136,7 +136,7 @@ func (a *App) newServersAddCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add ADDRESS",
 		Short: "Register a server, under the name it offers unless --name gives one",
-		Long: `Register a server, so "discobox ls" and "discobox tui" list its discoboxes.
+		Long: `Register a server, so "discobox ls" and "discobox console" list its discoboxes.
 
 The server is reached before anything is written down, so what gets registered
 is a server that answered rather than a typo. It is registered under the name it

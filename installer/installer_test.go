@@ -584,7 +584,7 @@ func TestPowerShellFallsBackAndRefuses(t *testing.T) {
 var styleEnv = []string{"CLICOLOR_FORCE=1", "COLORTERM=truecolor", "TERM=xterm-256color", "LANG=C.UTF-8"}
 
 const (
-	// The lit side of the mark, which is also the color the TUI frames its
+	// The lit side of the mark, which is also the color the console frames its
 	// window in (cli/internal/tui/theme.go).
 	markPurple = "\x1b[38;2;244;92;255m"
 	// The shadow side, which appears in the mark and nowhere else, so it is
@@ -624,7 +624,7 @@ func TestShellDrawsTheMarkOnlyWhereItShows(t *testing.T) {
 	}
 
 	// Sixteen colors is not enough for the mark, which is shading rather than
-	// line art — the rule the TUI's newLogo applies. The messages keep theirs.
+	// line art — the rule the console's newLogo applies. The messages keep theirs.
 	sixteen := runShell(t, s, script, []string{"CLICOLOR_FORCE=1", "TERM=xterm", "LANG=C.UTF-8"})
 	if strings.Contains(sixteen.output, shadowPurple) || strings.Contains(sixteen.output, markPurple) {
 		t.Errorf("a 16-color terminal was sent the mark:\n%q", sixteen.output)

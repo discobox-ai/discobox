@@ -23,7 +23,7 @@ const (
 	PowerShellName = "install.ps1"
 )
 
-// The mark both scripts draw is generated from the TUI's own cell data, so the
+// The mark both scripts draw is generated from the console's own cell data, so the
 // installer cannot drift from the brand: `task generate` runs this, and
 // `task verify` fails when it would change anything.
 //

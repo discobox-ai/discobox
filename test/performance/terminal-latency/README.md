@@ -28,8 +28,8 @@ Each transport and direct path runs against three fresh sandboxes by default:
 - `screen`: 4,800-byte full-screen-style updates at 30 writes per second
   (about 141 KiB/s before probe replies and framing).
 
-`discobox tui` is an optional, quiet-only mode of the same driver, reported as
-`tui-quiet.json`. It measures the embedded terminal, VT parsing, Bubble Tea
+`discobox console` is an optional, quiet-only mode of the same driver, reported as
+`console-quiet.json`. It measures the embedded terminal, VT parsing, Bubble Tea
 update loop, and rendering path, but it is not part of the default run because
 it is not on the `discobox new` or direct attach path.
 
@@ -79,7 +79,7 @@ DISCOBOX_TERMINAL_LATENCY_MODES=transport go tool task perf:terminal
 
 # Run only quiet and spinner load, or opt into the Bubble Tea comparison.
 DISCOBOX_TERMINAL_LATENCY_PROFILES=quiet,spinner \
-DISCOBOX_TERMINAL_LATENCY_MODES=transport,direct,tui \
+DISCOBOX_TERMINAL_LATENCY_MODES=transport,direct,console \
 go tool task perf:terminal
 
 # Keep the probe sandboxes and the harness for manual inspection after the run.
@@ -106,10 +106,10 @@ set. The default loads can be changed with `..._SPINNER_HZ`,
   downstream output. Input travels on the full-duplex uplink, but output,
   action acknowledgements, and probe replies ultimately share the downstream
   writer, so this comparison detects downstream head-of-line delay.
-- A large gap from direct to the optional TUI result implicates VT parsing, the
+- A large gap from direct to the optional console result implicates VT parsing, the
   Bubble Tea loop, or rendering; that gap does not describe `discobox new`.
 
-The tmux reports (direct and TUI) include host CPU/IO/memory pressure snapshots and the
+The tmux reports (direct and console) include host CPU/IO/memory pressure snapshots and the
 sandbox's cgroup CPU quota, pressure, and `cpu.stat` delta. Both report types
 also record observed output bytes per second, so a run can prove that the load
 was flowing while latency was sampled. In particular, growth in `nr_throttled`

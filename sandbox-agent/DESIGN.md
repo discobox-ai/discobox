@@ -703,7 +703,7 @@ development images without a registry.
   request already lets a caller avoid naming one.
 - A client may still say which shell its *person* prefers: `DISCOBOX_SHELL`
   (`sandboxshell.PreferredEnv`) in the request's own env, which `discobox
-  shell` and the TUI's shell pane set from the local `DISCOBOX_SHELL`, else `nu` under nushell (`NU_VERSION`), else `$SHELL`
+  shell` and the console's shell pane set from the local `DISCOBOX_SHELL`, else `nu` under nushell (`NU_VERSION`), else `$SHELL`
   ([ADR 0138](../docs/adr/0138-a-shell-opened-for-a-person-is-their-own-shell-when-the-sandbox-has-it.md)).
   `execs.PreferredShellCommand` honors it only for an interactive shell with no
   `startupCommand` and no `shellCommandLine` — both are written for the login

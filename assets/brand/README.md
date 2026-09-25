@@ -2,7 +2,7 @@
 
 The source art for the discobox mark, copied out of the discobot repository so
 this repo does not depend on a sibling checkout. These are the originals: any
-rendered form — the TUI mark, a favicon, an icon — is derived from one of the
+rendered form — the console mark, a favicon, an icon — is derived from one of the
 SVGs here, not hand-edited.
 
 | File | What it is |
@@ -31,7 +31,7 @@ in their `fill`. The wordmarks have their own viewBoxes, with origin `0 0`.
 - The marketing site (`discobox-ai/site`) syncs this art with its own
   `pnpm gen:logo`.
 
-## The TUI mark
+## The console mark
 
 `cli/internal/tui/logo.chars` is a much smaller capture of this mark: 25 columns
 of block characters in 16-color indices with inverse-video runs. It is kept as

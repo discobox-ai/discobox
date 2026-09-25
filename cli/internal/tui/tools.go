@@ -26,7 +26,7 @@ import (
 //
 // The session carries the tool's id as exec metadata, so the listing says which
 // sessions are tools and which tool each one is. That is what lets a window
-// that has never seen this discobox before — a second `discobox tui`, this one
+// that has never seen this discobox before — a second `discobox console`, this one
 // restarted — pick a running diff back up instead of drawing it as a stray
 // shell. See ADR 26-08-27-302 on tool sessions.
 

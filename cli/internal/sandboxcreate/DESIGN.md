@@ -74,7 +74,7 @@ sandbox create requests.
   `https://github.com/owner/repo.git` (`ExpandGitHubShorthand`) only when no
   such path exists locally: both spellings are valid relative paths, and a
   directory that is there always wins. The CLI expands `-C` once, at flag
-  validation, and the launcher expands a source typed by hand the same way.
+  validation, and the console expands a source typed by hand the same way.
 
 - Whether a dirty workspace is snapshotted is the caller's policy
   (`PromptOptions.IncludeDirty`), and asking is the caller's UI

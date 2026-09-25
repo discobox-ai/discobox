@@ -137,7 +137,7 @@ Make a discobox with "%[1]s new":
   %[1]s new 'fix the failing tests'
   %[1]s new -H codex -d 'fix the failing tests'
 
-With no command at all it opens the launcher, where the same thing is one prompt
+With no command at all it opens the console, where the same thing is one prompt
 and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -197,10 +197,10 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 				return cmd.Help()
 			}
 			// No leader override here: validate already took the environment's,
-			// and --leader is the tui command's own. A flag would have to be a
+			// and --leader is the console command's own. A flag would have to be a
 			// persistent one to be reachable from a bare `discobox`, and every
 			// subcommand would then carry a flag that means nothing to it.
-			return app.runTUI(cmd, "")
+			return app.runConsole(cmd, "")
 		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault(serverEnv, endpoint.DefaultEndpoint()), "Discobox API server endpoint, or a registered server's name; defaults to the primary \"discobox admin remote primary\" set, and to the local server when none is")
@@ -268,7 +268,10 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	cmd.AddCommand(app.newIDCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newTrustCommand())
-	cmd.AddCommand(app.newTUICommand())
+	cmd.AddCommand(app.newConsoleCommand("console", false))
+	// tui is the console's earlier name: it still opens it, and nothing lists
+	// or teaches it. See newConsoleCommand.
+	cmd.AddCommand(app.newConsoleCommand("tui", true))
 	cmd.AddCommand(app.newCompletionCommand())
 	cmd.AddCommand(app.newAdminCommand())
 	cmd.AddCommand(app.newVersionCommand())

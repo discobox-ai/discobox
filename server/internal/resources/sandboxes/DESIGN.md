@@ -388,7 +388,7 @@ and nothing is authorized or cascades by it.
 ## Display name
 
 `Sandbox.displayName` is what a listing calls a sandbox, computed on the server
-(`services.SandboxDisplayName`) so `discobox ls`, the launcher, and any other
+(`services.SandboxDisplayName`) so `discobox ls`, the console, and any other
 client agree: the window title the primary terminal last set, the configured
 name until one has, and the sandbox ID when it has no name either. The title is
 what the harness says the work is about, which tells two sandboxes apart better
