@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,12 @@ import (
 // environment's PATH.
 func newJudgeService(t *testing.T, mode, wrapper string) *Service {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		// The stub is a shell script found by its executable bit, and Windows
+		// has neither a shebang nor that bit. The judge only ever runs beside
+		// a harness in the Linux sandbox.
+		t.Skip("the discobox-prompt stub is a shell script; the sandbox is Linux")
+	}
 	dir := shorttmp.Dir(t)
 	bin := filepath.Join(dir, "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
