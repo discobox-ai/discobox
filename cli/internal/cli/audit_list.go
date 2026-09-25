@@ -55,6 +55,9 @@ type auditRecord struct {
 // auditUnavailable is a trail, or part of one, that could not be read.
 type auditUnavailable struct {
 	Source string `json:"source"`
+	// Pool is the pool of a pool-recorded trail that did not answer; the
+	// trail's other pools may still have.
+	Pool   string `json:"pool,omitempty"`
 	Reason string `json:"reason"`
 }
 
@@ -117,13 +120,20 @@ are missing from the timeline.`,
 			}
 
 			var unavailable []auditUnavailable
+			// A read back pages, and every page of a trail says again what it
+			// could not read, so each is kept once.
+			missing := func(entry auditUnavailable) {
+				if !slices.Contains(unavailable, entry) {
+					unavailable = append(unavailable, entry)
+				}
+			}
 			var trails []auditSource[auditRecord]
 			if wantSource[auditSourceHTTP] {
 				query := httpAuditQuery{projectID: projectID}
 				query.params.SandboxId = apiclientgen.NewOptString(resolvedSandboxID)
 				trails = append(trails, auditRecords(httpAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) {
 					for _, pool := range pools {
-						unavailable = append(unavailable, auditUnavailable{Source: auditSourceHTTP, Reason: pool.Reason})
+						missing(auditUnavailable{Source: auditSourceHTTP, Pool: pool.PoolId, Reason: pool.Reason})
 					}
 				}), auditSourceHTTP, httpAuditRecord))
 			}
@@ -132,7 +142,7 @@ are missing from the timeline.`,
 				query.params.SandboxId = apiclientgen.NewOptString(resolvedSandboxID)
 				trails = append(trails, auditRecords(dnsAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) {
 					for _, pool := range pools {
-						unavailable = append(unavailable, auditUnavailable{Source: auditSourceDNS, Reason: pool.Reason})
+						missing(auditUnavailable{Source: auditSourceDNS, Pool: pool.PoolId, Reason: pool.Reason})
 					}
 				}), auditSourceDNS, dnsAuditRecord))
 			}
@@ -158,12 +168,12 @@ are missing from the timeline.`,
 			// still answer (ADR 0130 §1).
 			options := a.auditReadOptions(cmd, sinceAt, limit, follow)
 			options.unavailable = func(trail string, err error) {
-				unavailable = append(unavailable, auditUnavailable{Source: trail, Reason: err.Error()})
+				missing(auditUnavailable{Source: trail, Reason: err.Error()})
 			}
 			if a.output == "json" && !follow {
 				var records []auditRecord
 				options.unavailable = func(trail string, err error) {
-					unavailable = append(unavailable, auditUnavailable{Source: trail, Reason: err.Error()})
+					missing(auditUnavailable{Source: trail, Reason: err.Error()})
 				}
 				if err := readAudit(cmd.Context(), trails, options, func(batch []auditRecord) error {
 					records = append(records, batch...)
@@ -186,8 +196,12 @@ are missing from the timeline.`,
 			var reported auditOnce
 			report := func() {
 				var b strings.Builder
-				for _, missing := range unavailable {
-					_, _ = fmt.Fprintf(&b, "%s could not be read, so its records are missing: %s\n", terminalSafe(missing.Source), terminalSafe(missing.Reason))
+				for _, gap := range unavailable {
+					source := terminalSafe(gap.Source)
+					if gap.Pool != "" {
+						source += " on pool " + terminalSafe(gap.Pool)
+					}
+					_, _ = fmt.Fprintf(&b, "%s could not be read, so its records are missing: %s\n", source, terminalSafe(gap.Reason))
 				}
 				unavailable = unavailable[:0]
 				if reported.changed(b.String()) {

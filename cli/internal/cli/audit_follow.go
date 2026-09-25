@@ -19,8 +19,14 @@ import (
 var auditFollowInterval = 2 * time.Second
 
 // defaultAuditLimit is how many records a read returns when --limit is not
-// positive; a follower pages by it.
-const defaultAuditLimit = 100
+// positive. Every trail interleaves into one timeline, so a small default
+// leaves a busy sandbox's history only a minute or two deep.
+const defaultAuditLimit = 1000
+
+// auditPageLimit is the most records one request to a trail asks for: the
+// audit endpoints' ceiling. A larger --limit is read as several pages of it,
+// and a follower pages by it.
+const auditPageLimit = 1000
 
 // How far behind its newest record a follower re-reads a trail that has no
 // write-ordered cursor, because a record does not become readable in the order
@@ -49,6 +55,11 @@ type auditReadCursor struct {
 	// Since keeps records at or after it, inclusively, and is what a trail
 	// with no cursor reads forward from.
 	Since time.Time
+	// Until keeps records at or before it, inclusively, and is how a one-off
+	// read pages back past the first page: each page is read up to the oldest
+	// record of the one before, and the records sharing that instant are read
+	// again and recognized by key.
+	Until time.Time
 	// Forward reads oldest first, which is how a follower reads; a one-off
 	// read takes the newest instead.
 	Forward bool
@@ -85,21 +96,25 @@ type auditSource[T any] struct {
 type auditPosition struct {
 	lookback time.Duration
 	newest   time.Time
-	// floor bounds a trail that answered the backlog with nothing at all, at
-	// the oldest record the backlog printed. Without it such a trail has no
-	// lower bound, and every trail spells that as "the oldest limit records I
-	// hold" — a whole history, paged through inside the first poll.
+	// floor is where the backlog began for this trail, and bounds its reads
+	// from below. Without it the first poll reads back a whole lookback from
+	// the trail's newest record, and on a busy trail everything in that window
+	// older than the backlog prints as new — past --limit, and out of order
+	// with the backlog it follows.
 	//
-	// Only such a trail. One time for every trail is a foreign clock to all but
-	// the one that stamped it, and a position on a foreign clock is what the
-	// per-trail split took out: a trail floored above its own present skips
-	// whatever it records below that. A trail that answered, even with records
-	// the cut dropped, is anchored on its own newest instead.
+	// A trail that answered the backlog is floored at its own oldest record
+	// read, cut or printed, which is a time on its own clock. One time for
+	// every trail is a foreign clock to all but the one that stamped it, and a
+	// position on a foreign clock is what the per-trail split took out: a
+	// trail floored above its own present skips whatever it records below
+	// that.
 	//
-	// A trail holding nothing at all has no time of its own to be anchored on,
-	// so it keeps the foreign floor, and against a clock behind it misses what
-	// it records below — bounded by the skew, and over as soon as it has one
-	// record of its own.
+	// A trail that answered with nothing at all has no time of its own, so it
+	// is floored at the oldest record the backlog printed. Without that it has
+	// no lower bound, and every trail spells that as "the oldest limit records
+	// I hold" — a whole history, paged through inside the first poll. Against
+	// a clock behind it the foreign floor misses what it records below —
+	// bounded by the skew, and over as soon as it has one record of its own.
 	floor time.Time
 	seen  map[string]time.Time
 	after map[string]int64
@@ -235,6 +250,7 @@ func readAudit[T any](ctx context.Context, sources []auditSource[T], opts auditR
 	if limit <= 0 {
 		limit = defaultAuditLimit
 	}
+	pageSize := min(limit, auditPageLimit)
 	if len(sources) == 0 {
 		return emit(nil)
 	}
@@ -243,7 +259,7 @@ func readAudit[T any](ctx context.Context, sources []auditSource[T], opts auditR
 		positions[i] = newAuditPosition(source.lookback)
 	}
 	if !opts.follow {
-		pages, err := readAuditPages(ctx, sources, opts, auditReadCursor{Since: opts.since}, limit)
+		pages, _, err := readAuditBack(ctx, sources, opts, limit)
 		if err != nil {
 			return err
 		}
@@ -260,13 +276,13 @@ func readAudit[T any](ctx context.Context, sources []auditSource[T], opts auditR
 		// first. What the cut drops is admitted too but not printed, which is
 		// what leaves each trail a position of its own; admitBacklog has the
 		// argument.
-		pages, err := readAuditPages(ctx, sources, opts, auditReadCursor{}, limit)
+		pages, exhausted, err := readAuditBack(ctx, sources, opts, limit)
 		if err != nil {
 			return err
 		}
 		backlog := mergeAuditBatches(sources, pages, false, limit)
 		slices.Reverse(backlog)
-		admitBacklog(sources, positions, pages, limit)
+		admitBacklog(sources, positions, pages, exhausted)
 		if len(backlog) > 0 {
 			// Where the printed tail begins, for the trails with no record of
 			// their own to start from.
@@ -309,7 +325,7 @@ func readAudit[T any](ctx context.Context, sources []auditSource[T], opts auditR
 				if pageFrom[i].After(cursor.Since) {
 					cursor.Since = pageFrom[i]
 				}
-				page, read, err := readAuditPage(ctx, source, opts, cursor, limit)
+				page, read, err := readAuditPage(ctx, source, opts, cursor, pageSize)
 				if err != nil {
 					return followEnded(ctx, err)
 				}
@@ -343,7 +359,7 @@ func readAudit[T any](ctx context.Context, sources []auditSource[T], opts auditR
 				// moves neither the position nor the page bound cannot be read
 				// past — more records share one instant than a page holds — so
 				// it waits like a caught-up trail rather than spinning.
-				if len(page) < limit {
+				if len(page) < pageSize {
 					// The window has been read to its end, so every record in
 					// it — including the ones on this poll's earlier pages —
 					// is printed, and the highest ID among them is a cursor
@@ -363,7 +379,7 @@ func readAudit[T any](ctx context.Context, sources []auditSource[T], opts auditR
 			}
 			// Not cut to the limit: every record here has already moved its own
 			// trail's position, so dropping one would lose it for good. Each
-			// trail is bounded by the limit on its own.
+			// trail is bounded by a page on its own.
 			batch := mergeAuditBatches(sources, fresh, true, 0)
 			if err := emitAudit(ctx, emit, batch, pace(opts, catchingUp, len(batch))); err != nil {
 				return followEnded(ctx, err)
@@ -387,18 +403,83 @@ func readAudit[T any](ctx context.Context, sources []auditSource[T], opts auditR
 	}
 }
 
-// readAuditPages reads every trail once from the same cursor, for the reads
-// that have no position yet.
-func readAuditPages[T any](ctx context.Context, sources []auditSource[T], opts auditReadOptions, cursor auditReadCursor, limit int) ([][]T, error) {
-	pages := make([][]T, len(sources))
+// readAuditAll is a one-off read of one trail collected whole, for -o json,
+// which writes the list as one document. It pages back as any one-off read
+// does, so a --limit past one page reaches past it here too.
+func readAuditAll[T any](ctx context.Context, source auditSource[T], opts auditReadOptions) ([]T, error) {
+	opts.follow = false
+	rows := []T{}
+	err := readAudit(ctx, []auditSource[T]{source}, opts, func(batch []T) error {
+		rows = append(rows, batch...)
+		return nil
+	})
+	return rows, err
+}
+
+// readAuditBack reads each trail's newest limit records since opts.since,
+// newest first, for the reads that have no position yet. Every trail is read
+// for the whole limit, because the newest limit across trails can all come
+// from one of them.
+//
+// A limit past one page is read back a page at a time, each up to the oldest
+// record of the page before. The bound is inclusive, so the records sharing
+// that instant are read again and recognized by key rather than skipped. A
+// full page that adds nothing new cannot be read past — more records share one
+// instant than a page holds — so the trail ends there rather than looping.
+//
+// A page holding a record newer than its until was answered by a peer that
+// predates until (a sandbox agent, say, that the control plane passes the read
+// through to): it ignored the bound and answered its newest page again. That
+// page is dropped and the trail ends, because appending it would put records
+// newer than everything read so far at the end of a newest-first page, and
+// on a trail still being written each such page adds a few, so it would not
+// stop either.
+//
+// exhausted reports, per trail, that its last page came back short: the trail
+// holds nothing older in the window, which is what lets a follower take a
+// cursor from what was read.
+func readAuditBack[T any](ctx context.Context, sources []auditSource[T], opts auditReadOptions, limit int) (pages [][]T, exhausted []bool, err error) {
+	pageSize := min(limit, auditPageLimit)
+	pages = make([][]T, len(sources))
+	exhausted = make([]bool, len(sources))
 	for i, source := range sources {
-		page, _, err := readAuditPage(ctx, source, opts, cursor, limit)
-		if err != nil {
-			return nil, err
+		cursor := auditReadCursor{Since: opts.since}
+		seen := map[string]struct{}{}
+		for len(pages[i]) < limit {
+			page, read, err := readAuditPage(ctx, source, opts, cursor, pageSize)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !read {
+				break
+			}
+			if !cursor.Until.IsZero() && slices.ContainsFunc(page, func(row T) bool { return source.at(row).After(cursor.Until) }) {
+				break
+			}
+			added := false
+			for _, row := range page {
+				key := source.key(row)
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+				pages[i] = append(pages[i], row)
+				added = true
+			}
+			if len(page) < pageSize {
+				exhausted[i] = true
+				break
+			}
+			if !added {
+				break
+			}
+			cursor.Until = source.at(page[len(page)-1])
 		}
-		pages[i] = page
+		if len(pages[i]) > limit {
+			pages[i] = pages[i][:limit]
+		}
 	}
-	return pages, nil
+	return pages, exhausted, nil
 }
 
 // readAuditPage reads one trail, naming a trail that could not be read rather
@@ -428,15 +509,20 @@ func readAuditPage[T any](ctx context.Context, source auditSource[T], opts audit
 // machine's clock — rather than on whichever trail filled the cut. It also
 // means those records are recognized rather than printed later as new.
 //
-// By key, because the backlog is read by time. A trail gets its first cursor
-// here only when its page was not full: then it holds nothing older that a
-// later read could turn up, and its highest ID has nothing behind it.
-func admitBacklog[T any](sources []auditSource[T], positions []*auditPosition, pages [][]T, limit int) {
+// By key, because the backlog is read by time, and floored at the trail's own
+// oldest record (auditPosition.floor). A trail gets its first cursor here only
+// when it was read to its end: then it holds nothing older that a later read
+// could turn up, and its highest ID has nothing behind it.
+func admitBacklog[T any](sources []auditSource[T], positions []*auditPosition, pages [][]T, exhausted []bool) {
 	for i, source := range sources {
 		for _, row := range pages[i] {
-			positions[i].admit(source.key(row), source.at(row), rowCursor{}, false)
+			at := source.at(row)
+			positions[i].admit(source.key(row), at, rowCursor{}, false)
+			if positions[i].floor.IsZero() || at.Before(positions[i].floor) {
+				positions[i].floor = at
+			}
 		}
-		if len(pages[i]) >= limit {
+		if !exhausted[i] {
 			continue
 		}
 		for _, row := range pages[i] {

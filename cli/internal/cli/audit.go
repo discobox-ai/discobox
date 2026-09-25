@@ -60,6 +60,9 @@ func httpAuditSource(client *apiclientgen.Client, query httpAuditQuery, unavaila
 			if !cursor.Since.IsZero() {
 				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
 			}
+			if !cursor.Until.IsZero() {
+				params.Until = apiclientgen.NewOptDateTime(cursor.Until)
+			}
 			if cursor.Forward {
 				params.Order = apiclientgen.NewOptListHTTPAuditOrder(apiclientgen.ListHTTPAuditOrderAsc)
 			}
@@ -203,8 +206,10 @@ with non-printing characters escaped.`,
 				// One read, written whole, so -o json keeps the list and the
 				// pools missing from it together.
 				var unavailable []apimodel.UnavailableAuditPool
-				source := httpAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) { unavailable = pools })
-				exchanges, err := source.read(cmd.Context(), auditReadCursor{Since: sinceAt}, limit)
+				source := httpAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) {
+					unavailable = addUnavailableAuditPools(unavailable, pools)
+				})
+				exchanges, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
 				if err != nil {
 					return err
 				}
@@ -319,6 +324,19 @@ func httpAuditRefuser(blocked bool, reason string) string {
 // missing. It goes to stderr because it is about the answer rather than part of
 // it, and it is never skipped: a list silently short a pool reads as a complete
 // one (ADR 0130 §1).
+// addUnavailableAuditPools adds the pools a read named to those already named,
+// once each: a read back pages, and every page names them again.
+func addUnavailableAuditPools(named, pools []apimodel.UnavailableAuditPool) []apimodel.UnavailableAuditPool {
+	for _, pool := range pools {
+		if !slices.ContainsFunc(named, func(n apimodel.UnavailableAuditPool) bool {
+			return n.PoolId == pool.PoolId && n.Reason == pool.Reason
+		}) {
+			named = append(named, pool)
+		}
+	}
+	return named
+}
+
 func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAuditPool, what string) {
 	for _, pool := range pools {
 		_, _ = fmt.Fprintf(errOut, "pool %s could not be read, so its %s are missing: %s\n",
@@ -408,7 +426,7 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 			}
 			source := credentialVerdictSource(client, params)
 			if a.output == "json" && !follow {
-				verdicts, err := source.read(cmd.Context(), auditReadCursor{Since: sinceAt}, limit)
+				verdicts, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
 				if err != nil {
 					return err
 				}
@@ -455,6 +473,9 @@ func credentialVerdictSource(client *apiclientgen.Client, params apiclientgen.Li
 			params.Limit = apiclientgen.NewOptInt(limit)
 			if !cursor.Since.IsZero() {
 				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
+			}
+			if !cursor.Until.IsZero() {
+				params.Until = apiclientgen.NewOptDateTime(cursor.Until)
 			}
 			if cursor.Forward {
 				params.Order = apiclientgen.NewOptListCredentialVerdictsOrder(apiclientgen.ListCredentialVerdictsOrderAsc)

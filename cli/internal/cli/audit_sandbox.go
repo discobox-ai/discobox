@@ -62,7 +62,7 @@ are recorded.
 			}
 			source := harnessHookSource(client, params)
 			if a.output == "json" && !follow {
-				hooks, err := source.read(cmd.Context(), auditReadCursor{Since: sinceAt}, limit)
+				hooks, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
 				if err != nil {
 					return err
 				}
@@ -127,7 +127,7 @@ last --limit oldest first and keep printing events as they are recorded.
 			}
 			source := execEventSource(client, params)
 			if a.output == "json" && !follow {
-				events, err := source.read(cmd.Context(), auditReadCursor{Since: sinceAt}, limit)
+				events, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
 				if err != nil {
 					return err
 				}
@@ -175,6 +175,9 @@ func harnessHookSource(client *apiclientgen.Client, params apiclientgen.ListHarn
 			if !cursor.Since.IsZero() {
 				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
 			}
+			if !cursor.Until.IsZero() {
+				params.Until = apiclientgen.NewOptDateTime(cursor.Until)
+			}
 			if cursor.Forward {
 				params.Order = apiclientgen.NewOptListHarnessHooksOrder(apiclientgen.ListHarnessHooksOrderAsc)
 			}
@@ -211,6 +214,9 @@ func execEventSource(client *apiclientgen.Client, params apiclientgen.ListExecEv
 			params.Limit = apiclientgen.NewOptInt(limit)
 			if !cursor.Since.IsZero() {
 				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
+			}
+			if !cursor.Until.IsZero() {
+				params.Until = apiclientgen.NewOptDateTime(cursor.Until)
 			}
 			if cursor.Forward {
 				params.Order = apiclientgen.NewOptListExecEventsOrder(apiclientgen.ListExecEventsOrderAsc)

@@ -425,3 +425,80 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 		t.Fatalf("records that arrived while following = %v, want them in the order recorded:\n%s", tail, stdout)
 	}
 }
+
+// -o json reads back past one page as the table does: no request asks for more
+// than an endpoint answers, every exchange arrives once, and a pool that every
+// page names as unavailable is named once.
+func TestAuditHTTPJSONPagesBackPastOnePage(t *testing.T) {
+	base := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	const total = 2500
+	exchange := func(i int) map[string]any {
+		return map[string]any{
+			"poolId": "pool-a", "id": "http_" + strconv.Itoa(i+1), "sandboxId": "sbx_1", "method": "GET",
+			"createdAt": base.Add(time.Duration(i) * time.Millisecond).Format(time.RFC3339Nano),
+			"url":       "https://example.com/", "host": "example.com", "status": 200, "blocked": false, "swappedUseIds": []string{},
+		}
+	}
+	var mu sync.Mutex
+	var limits []int
+	stdout, _, err := runAudit(context.Background(), t, func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		limit, _ := strconv.Atoi(query.Get("limit"))
+		mu.Lock()
+		limits = append(limits, limit)
+		mu.Unlock()
+		if limit > auditPageLimit {
+			http.Error(w, "limit is past the maximum", http.StatusBadRequest)
+			return
+		}
+		newest := total - 1
+		if raw := query.Get("until"); raw != "" {
+			until, err := time.Parse(time.RFC3339Nano, raw)
+			if err != nil {
+				t.Errorf("until %q: %v", raw, err)
+			}
+			newest = int(until.Sub(base) / time.Millisecond)
+		}
+		var page []map[string]any
+		for i := newest; i >= 0 && len(page) < limit; i-- {
+			page = append(page, exchange(i))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"exchanges":        page,
+			"unavailablePools": []map[string]string{{"poolId": "pool-b", "reason": "it did not answer"}},
+		})
+	}, "http", "--limit", strconv.Itoa(total), "-o", "json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	var body struct {
+		Exchanges        []struct{ ID string }
+		UnavailablePools []struct{ PoolID string }
+	}
+	if err := json.Unmarshal([]byte(stdout), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Exchanges) != total || body.Exchanges[0].ID != "http_"+strconv.Itoa(total) || body.Exchanges[total-1].ID != "http_1" {
+		t.Fatalf("read %d exchanges, want all %d newest first", len(body.Exchanges), total)
+	}
+	if len(body.UnavailablePools) != 1 || body.UnavailablePools[0].PoolID != "pool-b" {
+		t.Fatalf("unavailable = %+v, want pool-b once", body.UnavailablePools)
+	}
+	if len(limits) < 3 {
+		t.Fatalf("made %d requests, want a page per thousand", len(limits))
+	}
+}
+
+// A follower pages forward by since, from the last record of a full page, so
+// since goes out to the nanosecond: truncated to the second, a second holding
+// more than a page would answer the same page forever.
+func TestAuditSinceKeepsFractionalSeconds(t *testing.T) {
+	query, _, _, err := runAuditHTTP(t, `{"exchanges":[],"unavailablePools":[]}`, "--since", "2026-09-17T10:00:00.123456789Z")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if got := query.Get("since"); got != "2026-09-17T10:00:00.123456789Z" {
+		t.Fatalf("since = %q, want it to the nanosecond", got)
+	}
+}

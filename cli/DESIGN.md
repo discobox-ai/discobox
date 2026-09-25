@@ -1570,6 +1570,21 @@ records.
   leave the verdict trail permanently unread, silently. A trail's cursor, its
   lookback and its newest record are its own, and the merge only decides the
   order records print in.
+- **A read back pages by time** (`readAuditBack`). An endpoint answers at most
+  1000 records, so a one-off read or a backlog with a larger `--limit` reads
+  each trail a page at a time, each up to the oldest record of the page before
+  with an inclusive `until` sent to the nanosecond. The records sharing that
+  instant are read again and recognized by key; a full page that adds nothing
+  (more records share one instant than a page holds) ends the trail rather
+  than looping. A page holding a record newer than its `until` came from a
+  peer that predates it and answered its newest page again; that page is
+  dropped and the trail ends, since on a trail still being written each such
+  page adds a few records newer than everything read and the read would
+  neither stop nor stay in order. The control plane names a pool that did
+  this as unavailable rather than merging it. Every trail is read for the
+  whole `--limit`, since the newest records across trails can all be one
+  trail's. `-o json` reads the same way (`readAuditAll`), and a pool or trail
+  every page reports as unreadable is reported once.
 - **A merged batch is never cut.** Each trail is bounded by `--limit` on its
   own, and a record dropped from a merged batch would already have moved its
   trail's position — lost, with nothing to say so. Where a cut is real, in the
@@ -1609,10 +1624,13 @@ records.
   last record; a full page that nothing can get past (more records than a page
   holds share one instant) waits instead of spinning.
 - **Nothing is read from before the tail began.** A trail is anchored on its own
-  newest backlog record — its whole page is admitted, printed or cut, so a trail
-  the cut left out still has a position on its own machine's clock. Only a trail
-  that answered with nothing takes the backlog's oldest printed record as a
-  floor, because it has no time of its own to start from; a trail with no bound
+  newest backlog record and floored at its own oldest — everything it answered
+  is admitted, printed or cut, so a trail the cut left out still has a position
+  on its own machine's clock. Without the floor the first poll reads a whole
+  lookback back from the newest record, and on a busy trail prints everything
+  in it older than the backlog as new. A trail that answered with nothing takes
+  the backlog's oldest printed record as its floor instead, because it has no
+  time of its own to start from; a trail with no bound
   at all is read as "the oldest `--limit` records I hold", and one busy pool can
   fill the whole backlog, so that is ordinary rather than exotic. The floor is
   deliberately not shared any wider than that: one time for every trail is a

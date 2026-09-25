@@ -33,6 +33,9 @@ func dnsAuditSource(client *apiclientgen.Client, query dnsAuditQuery, unavailabl
 			if !cursor.Since.IsZero() {
 				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
 			}
+			if !cursor.Until.IsZero() {
+				params.Until = apiclientgen.NewOptDateTime(cursor.Until)
+			}
 			if cursor.Forward {
 				params.Order = apiclientgen.NewOptListDNSAuditOrder(apiclientgen.ListDNSAuditOrderAsc)
 			}
@@ -133,8 +136,10 @@ characters escaped.`,
 				// One read, written whole, so -o json keeps the list and the
 				// pools missing from it together.
 				var unavailable []apimodel.UnavailableAuditPool
-				source := dnsAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) { unavailable = pools })
-				queries, err := source.read(cmd.Context(), auditReadCursor{Since: sinceAt}, limit)
+				source := dnsAuditSource(client, query, func(pools []apimodel.UnavailableAuditPool) {
+					unavailable = addUnavailableAuditPools(unavailable, pools)
+				})
+				queries, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
 				if err != nil {
 					return err
 				}

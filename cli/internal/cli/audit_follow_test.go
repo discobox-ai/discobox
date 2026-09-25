@@ -30,10 +30,17 @@ type fakeAuditTrail struct {
 	// failFrom makes every read from the nth on fail, as a pool that stopped
 	// answering mid-poll does.
 	failFrom int
+	// ignoreUntil answers as a peer that predates until does, by reading as
+	// if it were not there.
+	ignoreUntil bool
+	// writing records one new row, newer than every other, before each read
+	// answers: a trail still being written while it is read.
+	writing bool
 }
 
 type fakeAuditRead struct {
 	cursor auditReadCursor
+	limit  int
 }
 
 func (f *fakeAuditTrail) add(rows ...fakeAuditRow) {
@@ -49,7 +56,11 @@ func (f *fakeAuditTrail) source(ordered bool) auditSource[fakeAuditRow] {
 		read: func(_ context.Context, cursor auditReadCursor, limit int) ([]fakeAuditRow, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			f.reads = append(f.reads, fakeAuditRead{cursor: cursor})
+			f.reads = append(f.reads, fakeAuditRead{cursor: cursor, limit: limit})
+			if f.writing {
+				newest := f.rows[len(f.rows)-1]
+				f.rows = append(f.rows, fakeAuditRow{id: fmt.Sprintf("w%05d", len(f.reads)), at: newest.at.Add(time.Millisecond)})
+			}
 			if f.failFrom > 0 && len(f.reads) >= f.failFrom {
 				return nil, errors.New("pool is not reachable")
 			}
@@ -61,7 +72,8 @@ func (f *fakeAuditTrail) source(ordered bool) auditSource[fakeAuditRow] {
 						out = append(out, row)
 					}
 				case ordered && !cursored, !ordered:
-					if cursor.Since.IsZero() || !row.at.Before(cursor.Since) {
+					if (cursor.Since.IsZero() || !row.at.Before(cursor.Since)) &&
+						(f.ignoreUntil || cursor.Until.IsZero() || !row.at.After(cursor.Until)) {
 						out = append(out, row)
 					}
 				}
@@ -629,5 +641,148 @@ func TestFollowDoesNotFloorATrailOnAnotherMachinesClock(t *testing.T) {
 	// And the record the cut dropped is recognized, not replayed as new.
 	if slices.Contains(printed, "old-verdict") {
 		t.Fatalf("printed %v, want the cut record left out of the tail", printed)
+	}
+}
+
+// auditRows is n rows a millisecond apart from base, oldest first, where at
+// says which instant each one is stamped with.
+func auditRows(n int, base time.Time, at func(i int) int) []fakeAuditRow {
+	rows := make([]fakeAuditRow, n)
+	for i := range rows {
+		rows[i] = fakeAuditRow{id: fmt.Sprintf("r%05d", i), at: base.Add(time.Duration(at(i)) * time.Millisecond)}
+	}
+	return rows
+}
+
+func readAuditOnce(t *testing.T, trail *fakeAuditTrail, limit int) []string {
+	t.Helper()
+	var printed []string
+	err := readAudit(context.Background(), []auditSource[fakeAuditRow]{trail.source(false)}, auditReadOptions{limit: limit}, func(rows []fakeAuditRow) error {
+		for _, row := range rows {
+			printed = append(printed, row.id)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("readAudit: %v", err)
+	}
+	return printed
+}
+
+// newestFirst is the ids of rows' newest n, newest first.
+func newestFirst(rows []fakeAuditRow, n int) []string {
+	var ids []string
+	for i := len(rows) - 1; i >= 0 && len(ids) < n; i-- {
+		ids = append(ids, rows[i].id)
+	}
+	return ids
+}
+
+// A limit past what one request may ask for is read back a page at a time,
+// and no page asks for more than the endpoints allow.
+func TestReadAuditPagesBackPastOnePage(t *testing.T) {
+	trail := &fakeAuditTrail{}
+	rows := auditRows(2600, time.Date(2026, 9, 24, 9, 0, 0, 0, time.UTC), func(i int) int { return i })
+	trail.add(rows...)
+
+	printed := readAuditOnce(t, trail, 2500)
+	if want := newestFirst(rows, 2500); !slices.Equal(printed, want) {
+		t.Fatalf("read %d records, first %v; want the newest 2500 newest first", len(printed), printed[:min(3, len(printed))])
+	}
+	for _, read := range trail.reads {
+		if read.limit > auditPageLimit {
+			t.Fatalf("a read asked for %d records, past the %d an endpoint allows", read.limit, auditPageLimit)
+		}
+	}
+	if len(trail.reads) != 3 {
+		t.Fatalf("read %d pages, want 3", len(trail.reads))
+	}
+}
+
+// The page bound is inclusive, so the records that share the instant a page
+// ended on are read again: none is skipped, and none is printed twice.
+func TestReadAuditPagesBackAcrossSharedInstant(t *testing.T) {
+	trail := &fakeAuditTrail{}
+	// Rows 1590 to 1610 share one instant, which the first page (the newest
+	// thousand, down to row 1600) ends inside.
+	rows := auditRows(2000, time.Date(2026, 9, 24, 9, 0, 0, 0, time.UTC), func(i int) int {
+		if i >= 1590 && i <= 1610 {
+			return 1590
+		}
+		return i
+	})
+	trail.add(rows...)
+
+	printed := readAuditOnce(t, trail, 2000)
+	if len(printed) != 2000 {
+		t.Fatalf("read %d records, want all 2000", len(printed))
+	}
+	seen := map[string]bool{}
+	for _, id := range printed {
+		if seen[id] {
+			t.Fatalf("%s printed twice", id)
+		}
+		seen[id] = true
+	}
+}
+
+// A peer that predates until answers the newest page again, and on a trail
+// still being written that page holds records newer than any read so far. The
+// read ends with the page it had rather than printing those out of order or
+// paging on for as long as the trail is written.
+func TestReadAuditStopsWhenUntilIsIgnored(t *testing.T) {
+	trail := &fakeAuditTrail{ignoreUntil: true, writing: true}
+	trail.add(auditRows(2500, time.Date(2026, 9, 24, 9, 0, 0, 0, time.UTC), func(i int) int { return i })...)
+
+	printed := readAuditOnce(t, trail, 2500)
+	trail.mu.Lock()
+	defer trail.mu.Unlock()
+	// The first read answered after its own write, so its page is the newest
+	// thousand as they stood then.
+	firstPage := newestFirst(trail.rows[:2501], auditPageLimit)
+	if !slices.Equal(printed, firstPage) {
+		t.Fatalf("read %d records, first %v; want the first page alone", len(printed), printed[:min(3, len(printed))])
+	}
+	if len(trail.reads) != 2 {
+		t.Fatalf("read %d pages, want 2: the page, and the one past its bound", len(trail.reads))
+	}
+}
+
+// More records sharing one instant than a page holds cannot be read past by
+// time; the read ends instead of asking for the same page forever.
+func TestReadAuditStopsOnAFullPageOfOneInstant(t *testing.T) {
+	trail := &fakeAuditTrail{}
+	trail.add(auditRows(1500, time.Date(2026, 9, 24, 9, 0, 0, 0, time.UTC), func(int) int { return 0 })...)
+
+	if printed := readAuditOnce(t, trail, 2000); len(printed) != auditPageLimit {
+		t.Fatalf("read %d records, want one page", len(printed))
+	}
+	if len(trail.reads) != 2 {
+		t.Fatalf("read %d pages, want 2", len(trail.reads))
+	}
+}
+
+// A follower's backlog past one page is read back the same way, and the
+// follow that picks up after it asks for no more than a page either.
+func TestFollowAuditBacklogPagesBack(t *testing.T) {
+	trail := &fakeAuditTrail{}
+	rows := auditRows(1800, time.Date(2026, 9, 24, 9, 0, 0, 0, time.UTC), func(i int) int { return i })
+	trail.add(rows...)
+
+	late := fakeAuditRow{id: "late", at: rows[len(rows)-1].at.Add(time.Second)}
+	printed := followAuditFor(t, trail, 1500, func([]string) { trail.add(late) }, func(printed []string) bool {
+		return slices.Contains(printed, late.id)
+	})
+	want := append(newestFirst(rows, 1500), late.id)
+	slices.Reverse(want[:1500])
+	if !slices.Equal(printed, want) {
+		t.Fatalf("followed %d records; want the newest 1500 oldest first, then the one recorded after", len(printed))
+	}
+	trail.mu.Lock()
+	defer trail.mu.Unlock()
+	for _, read := range trail.reads {
+		if read.limit > auditPageLimit {
+			t.Fatalf("a read asked for %d records, past the %d an endpoint allows", read.limit, auditPageLimit)
+		}
 	}
 }
