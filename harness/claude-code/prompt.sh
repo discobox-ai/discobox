@@ -65,10 +65,25 @@ fi
 # The id rather than the `haiku` alias: the alias moves with the CLI, and the
 # model a security gate runs on should change when someone decides it changes,
 # not when an image is rebuilt. Bump it deliberately.
+#
+# The judge also answers without extended thinking, which Claude Code turns on
+# by default. Its verdict is a few dozen tokens, and thinking before it was
+# measured at 500 to 5,700 more: 5 to 50 seconds of a request held open,
+# against about a second and a half without. Set here rather than inherited, so
+# neither the image's environment nor a caller decides how the gate thinks.
 case "$model" in
-judge) model=claude-haiku-4-5 ;;
+judge)
+	model=claude-haiku-4-5
+	export MAX_THINKING_TOKENS=0
+	;;
 fast | "") model=haiku ;;
 esac
+
+# A one-shot answer has no use for what a session does beside the model call —
+# telemetry, error reporting, update and feature checks. Each run starts from a
+# configuration home of its own, so none of it is ever cached, and it cost about
+# two seconds of every ask.
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 # Claude Code has no schema flag, so the schema is stated as an instruction. It
 # is appended last, after any caller system text, so it is the final word on the

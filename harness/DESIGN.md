@@ -218,6 +218,14 @@ launchers, and configure scripts.
   `DISCOBOX_SHELL_JUDGE=allow` for the discobox, which allows every judged
   command. It is a stand-in until the pool judge decides these requests; the
   host a credential may go to is enforced either way.
+
+  **The `judge` role answers without extended reasoning, and a one-shot run
+  does nothing beside the model call.** The judge holds a request open, and
+  its verdict is a few dozen tokens. Measured on `claude-code`, default
+  thinking added 500 to 5,700 output tokens (5 to 50 seconds) and a fresh
+  session's background traffic about two more. The wrapper sets both off
+  itself, overriding the environment, so the judge's speed and depth are not
+  the judged agent's to choose.
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,

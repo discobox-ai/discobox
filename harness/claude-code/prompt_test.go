@@ -55,6 +55,25 @@ func TestClaudePromptFailsWhenClaudeDoes(t *testing.T) {
 	}
 }
 
+// The judge answers without extended thinking and without a session's
+// background traffic, whatever the environment it was started in said: both
+// are seconds of a held request (harness/claude-code/prompt.sh).
+func TestClaudePromptJudgesWithoutThinking(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the image's scripts run on Linux")
+	}
+	dir := stubDir(t, "#!/bin/sh\necho \"thinking=$MAX_THINKING_TOKENS traffic=$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC\"\n")
+	t.Setenv("MAX_THINKING_TOKENS", "31999")
+	t.Setenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "")
+	out, err := runPrompt(t, dir, "")
+	if err != nil {
+		t.Fatalf("discobox-prompt error = %v, output = %q", err, out)
+	}
+	if want := "thinking=0 traffic=1"; out != want {
+		t.Fatalf("claude ran with %q, want %q", out, want)
+	}
+}
+
 func runPrompt(t *testing.T, dir, schema string) (string, error) {
 	t.Helper()
 	args := []string{"prompt.sh", "--model", "judge", "--system", "decide", "--prompt", "judge this", "--no-tools"}
