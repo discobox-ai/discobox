@@ -277,7 +277,7 @@ func (r *DockerSandboxRuntime) endBoot(sandboxID string, boot *sandboxBoot, err 
 // and ends the boot when it answers or the wait gives up.
 //
 // The wait belongs to the boot, not to the request that began it: that request
-// going away — a client that reconnects, an attach cancelled mid-start — must
+// going away — a client that reconnects, an attach canceled mid-start — must
 // not end the mark while the agent is still not listening, or every request
 // behind it would be proxied into a 502. So the wait runs detached, bounded by
 // its own sandboxAgentReadyTimeout, and the caller only waits on it for as long
@@ -302,8 +302,12 @@ func (r *DockerSandboxRuntime) awaitBoot(ctx context.Context, sandboxID string) 
 	if !ok {
 		return false, nil
 	}
+	boot, ok := value.(*sandboxBoot)
+	if !ok {
+		return false, nil
+	}
 	select {
-	case <-value.(*sandboxBoot).done:
+	case <-boot.done:
 		return true, nil
 	case <-ctx.Done():
 		return true, ctx.Err()
