@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -191,6 +192,98 @@ func TestAwaitSandboxHTTPClientWaitsForAPoolHostComingUp(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("await did not wake once the pool host was up")
+	}
+}
+
+// A server that has just started trusts no pool until it hears from it, so the
+// judge's pool reads not ready for up to a heartbeat. The judge is reached by
+// the server itself, and it waits out that window instead of refusing the
+// credential it was asked about.
+func TestAwaitSandboxHTTPClientForServerWaitsForAPoolHeartbeat(t *testing.T) {
+	service, provider := attachWaitFixture(t)
+	provider.ready.Store(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	sb.SetState(model.SandboxStateReady)
+	if err := service.store.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatalf("update sandbox: %v", err)
+	}
+	if err := service.store.BeginPoolHealthChecks(ctx); err != nil {
+		t.Fatalf("begin pool health checks: %v", err)
+	}
+
+	_, _, err = service.AcquireSandboxHTTPClient(ctx, "project-1", "sb-1", nil)
+	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("acquire before the first heartbeat = %v, want %v", err, sandbox.ErrPoolNotReachable)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		lease, _, err := service.AwaitSandboxHTTPClientForServer(ctx, "project-1", "sb-1", []string{poolagentauth.ScopeJudgeRun})
+		if lease != nil {
+			lease.Release()
+		}
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("await returned before the pool's first heartbeat: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatalf("report pool status: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("await once the pool reported in: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("await did not wake once the pool reported in")
+	}
+}
+
+// A caller's deadline ends the wait with the refusal that never cleared, the
+// same answer the stall budget and the host ceiling give. For the judge it is
+// all a discobox learns about why its credential did not go out, and "context
+// deadline exceeded" would tell it nothing.
+func TestAwaitSandboxHTTPClientAnswersADeadlineWithTheRefusal(t *testing.T) {
+	service, provider := attachWaitFixture(t)
+	provider.ready.Store(true)
+	ctx := context.Background()
+
+	sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	sb.SetState(model.SandboxStateReady)
+	if err := service.store.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatalf("update sandbox: %v", err)
+	}
+	if err := service.store.BeginPoolHealthChecks(ctx); err != nil {
+		t.Fatalf("begin pool health checks: %v", err)
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, 2*sandboxReachablePollInterval)
+	defer cancel()
+	_, _, err = service.AwaitSandboxHTTPClientForServer(waitCtx, "project-1", "sb-1", []string{poolagentauth.ScopeJudgeRun})
+	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("await past its deadline = %v, want the pool's refusal (%v)", err, sandbox.ErrPoolNotReachable)
+	}
+
+	// A cancel is the caller leaving, and is told so.
+	cancelCtx, cancelNow := context.WithCancel(ctx)
+	cancelNow()
+	_, _, err = service.AwaitSandboxHTTPClientForServer(cancelCtx, "project-1", "sb-1", []string{poolagentauth.ScopeJudgeRun})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("await after a cancel = %v, want %v", err, context.Canceled)
 	}
 }
 

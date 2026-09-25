@@ -76,13 +76,42 @@ var sandboxPoolHostWaitCeiling = 5 * time.Minute
 // Every pass re-reads authoritative state and asks again, so there is no window
 // in which the transition that opens the gate can be missed.
 func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	if err := authorizeRequestedScopes(ctx, scopes); err != nil {
+		return nil, nil, err
+	}
+	return s.awaitSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
+}
+
+// AwaitSandboxHTTPClientForServer is the same wait for a call Discobox makes
+// itself rather than on behalf of somebody: putting a job to the project's
+// judge (ADR 26-09-22-838 §2). There are no caller scopes to check, because
+// there is no caller — the scopes are this code's own, and the route they
+// reach is the one they name.
+//
+// It waits because a judge on a pool the server has not heard from since it
+// started is the ordinary state for the first heartbeat after a restart, and a
+// refusal there blocks a request the judge would have allowed. The caller
+// bounds the wait with its context.
+func (s *Service) AwaitSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	return s.awaitSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
+}
+
+func (s *Service) awaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	stallDeadline := time.Now().Add(sandboxReachableStallTimeout)
 	var observed provisioningMark
 	var hostDownSince time.Time
+	// The last "not yet", which is what a caller's deadline is answered with.
+	var refusal error
 	for {
-		lease, sandboxModel, err := s.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
+		lease, sandboxModel, err := s.acquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
 		if err == nil && !sandboxProvisioningPending(sandboxModel) {
 			return lease, sandboxModel, nil
+		}
+		if err != nil && ctx.Err() != nil {
+			// The caller's time ran out inside the acquire, and what its reads
+			// said then is about the context, not the sandbox: a store read
+			// cut short reads as "sandbox not found".
+			return nil, sandboxModel, awaitEnded(ctx, refusal)
 		}
 		if err == nil {
 			// Reachable but not usable yet. The lease goes back rather than
@@ -128,12 +157,23 @@ func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandbox
 			// than "timed out" on its own.
 			return nil, sandboxModel, err
 		}
+		refusal = err
 		select {
 		case <-ctx.Done():
-			return nil, sandboxModel, ctx.Err()
+			return nil, sandboxModel, awaitEnded(ctx, refusal)
 		case <-time.After(sandboxReachablePollInterval):
 		}
 	}
+}
+
+// awaitEnded is what a wait whose context is done returns. A caller's deadline
+// is a bound like the stall budget and gets the same answer: the refusal that
+// never cleared. A cancel is the caller leaving, and is told so.
+func awaitEnded(ctx context.Context, refusal error) error {
+	if refusal != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return refusal
+	}
+	return ctx.Err()
 }
 
 // provisioningMark is what the wait watches for change: the gate it is waiting

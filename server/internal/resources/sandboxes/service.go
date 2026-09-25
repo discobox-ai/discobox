@@ -429,15 +429,6 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	return s.acquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
 }
 
-// AcquireSandboxHTTPClientForServer is the same lease for a call Discobox
-// makes itself rather than on behalf of somebody: putting a job to the
-// project's judge (ADR 26-09-22-838 §2). There are no caller scopes to check, because
-// there is no caller — the scopes are this code's own, and the route they
-// reach is the one they name.
-func (s *Service) AcquireSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
-	return s.acquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
-}
-
 func (s *Service) acquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {

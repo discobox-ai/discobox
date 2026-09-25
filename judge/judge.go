@@ -33,6 +33,14 @@ const (
 	// on its own as a ceiling for a caller that passed no deadline at all,
 	// which bounds one ask rather than the exchange.
 	Timeout = 90 * time.Second
+	// ReachWait is how long the control plane waits for the judge's discobox
+	// to become reachable before putting the job to it. A server that has just
+	// started trusts no pool until the pool's next heartbeat, and a pool that
+	// has just restarted is not ready until its agent is, so a judge that is
+	// about to be reachable is waited on rather than refused. It is spent
+	// before Timeout starts, and every hop that bounds the whole exchange
+	// allows for both.
+	ReachWait = 60 * time.Second
 	// MaxRounds is how many times the judge may be asked about one job: the
 	// first ask, and at most two more after it asks to be shown something.
 	// A judge still asking on the last round has decided nothing, and a job

@@ -32,7 +32,7 @@ import (
 // Leases is the sandbox service's half of reaching a discobox's agent. It is
 // named here rather than taken whole because this package makes one call.
 type Leases interface {
-	AcquireSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error)
+	AwaitSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error)
 }
 
 // SetLeases installs it. A judge that cannot be reached is a judge that
@@ -139,7 +139,7 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	// share one deadline, so a later round comes with less time than this
 	// hop's own; answered inside what the pool has left, the refusal arrives
 	// with its sentence rather than as the pool giving up on a silence.
-	bound := judge.Timeout + judgeRoutingGrace
+	bound := judge.ReachWait + judge.Timeout + judgeRoutingGrace
 	if ask.Timeout > 0 {
 		left := ask.Timeout - judgeReplyMargin
 		if left <= 0 {
@@ -154,7 +154,14 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	// The round trip starts here, before the judge is reached: bringing up a
 	// stopped judge is part of how long it took to answer.
 	start := time.Now()
-	lease, sandboxModel, err := s.leases.AcquireSandboxHTTPClientForServer(ctx, project.ID, judgeSandbox.ID, []string{poolagentauth.ScopeJudgeRun})
+	// A judge that is about to be reachable — its pool not yet heard from
+	// since this server started, or its host still coming back — is waited on
+	// rather than refused, for a bound of its own. Every deadline on the
+	// exchange allows for it on top of the judge's own time, so a first round
+	// that waits the whole of it still leaves the judge all of judge.Timeout.
+	reachCtx, cancelReach := context.WithTimeout(ctx, judge.ReachWait)
+	lease, sandboxModel, err := s.leases.AwaitSandboxHTTPClientForServer(reachCtx, project.ID, judgeSandbox.ID, []string{poolagentauth.ScopeJudgeRun})
+	cancelReach()
 	if err != nil {
 		return judge.Answer{}, err
 	}
@@ -435,8 +442,9 @@ func standingOrigin(request *judge.Request) string {
 	return strings.ToLower(target.Scheme) + "://" + strings.ToLower(target.Host)
 }
 
-// judgeRoutingGrace is what this hop allows on top of the judge's own bound:
-// the time to reach the pool, start a stopped judge, and read the answer back.
+// judgeRoutingGrace is what this hop allows on top of the judge's own bound
+// and the wait to reach it: the time to start a stopped judge and read the
+// answer back.
 // It is generous on purpose — the deadline here is a backstop against a caller
 // with none, not the one that should normally fire.
 const judgeRoutingGrace = 30 * time.Second

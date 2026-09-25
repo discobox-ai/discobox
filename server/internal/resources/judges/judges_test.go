@@ -535,7 +535,7 @@ func TestAFailedJudgeRefusesWithoutQuotingItsOwnError(t *testing.T) {
 // is not what this test is about, and a failed judge is refused before it.
 type refusingLeases struct{}
 
-func (refusingLeases) AcquireSandboxHTTPClientForServer(context.Context, string, string, []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (refusingLeases) AwaitSandboxHTTPClientForServer(context.Context, string, string, []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	return nil, nil, errors.New("the judge should not have been reached")
 }
 
@@ -683,8 +683,8 @@ func (f *answeringJudge) asked() []sandboxapi.JudgeJob {
 	return append([]sandboxapi.JudgeJob(nil), f.jobs...)
 }
 
-// AcquireSandboxHTTPClientForServer hands out a lease pointed at the fake.
-func (f *answeringJudge) AcquireSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+// AwaitSandboxHTTPClientForServer hands out a lease pointed at the fake.
+func (f *answeringJudge) AwaitSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	lease := transport.NewHTTPClientLeaseWithBaseURL(f.server.Client(), f.server.URL, func() {})
 	return lease, &model.Sandbox{ID: sandboxID, ProjectID: projectID, PoolID: "pool-1"}, nil
 }
@@ -937,7 +937,7 @@ func newSilentJudge(t *testing.T) *silentJudge {
 	return fake
 }
 
-func (f *silentJudge) AcquireSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (f *silentJudge) AwaitSandboxHTTPClientForServer(_ context.Context, projectID, sandboxID string, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	lease := transport.NewHTTPClientLeaseWithBaseURL(f.server.Client(), f.server.URL, func() {})
 	return lease, &model.Sandbox{ID: sandboxID, ProjectID: projectID, PoolID: "pool-1"}, nil
 }

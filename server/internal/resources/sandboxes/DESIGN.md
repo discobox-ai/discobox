@@ -72,7 +72,11 @@ through, and it answers now: the sandbox exists, and its pool is up.
 
 `AwaitSandboxHTTPClient` (`attach_wait.go`) is the same acquire for a caller
 that means "I want to use this sandbox now" — the exec attach, or an exec
-create request with `wait=ready`.
+create request with `wait=ready`. `AwaitSandboxHTTPClientForServer` is the same
+wait for a call the server makes itself, with no caller scopes to check:
+putting a job to the project's judge, which bounds it with `judge.ReachWait`
+so a judge whose pool has not reported since a server restart is waited on
+rather than refused.
 It waits for a sandbox that is still being provisioned instead of refusing it,
 which is what lets a client create a sandbox and attach to it in the next call
 rather than polling for readiness (ADR 0039 tier 1).
@@ -111,6 +115,9 @@ rather than polling for readiness (ADR 0039 tier 1).
   complete-source-push in which the reconciler materializes what was pushed.
   The push itself goes through the git proxy, which does *not* wait, so the
   delivery a wait is waiting on can never be blocked by it.
+- A caller's deadline also ends the wait, and is answered like the stall
+  budget and the host ceiling: with the last refusal, which names what never
+  became true. A cancel is the caller leaving, and gets the context's error.
 - The budget is a stall timeout, not a duration cap. Progress restarts it, so an
   image pull that keeps reporting takes as long as it takes while a sandbox that
   has gone silent gives up. Tiers below take budgets that fit inside it, so the

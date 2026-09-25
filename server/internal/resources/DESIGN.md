@@ -48,7 +48,10 @@ the control plane — `POST /api/pools/{poolId}/judge`, on the credential
 broker's own scope, since deciding whether a credential may be used is what
 that scope is for — and the control plane forwards to the pool hosting the
 project's judge over the channel it already uses to create and start
-discoboxes there.
+discoboxes there. A judge that is not reachable yet — its pool not heard from
+since this server started, or its host still coming back — is waited on for
+`judge.ReachWait` with the sandbox service's attach wait, not refused. Every
+deadline on the exchange allows for that wait on top of `judge.Timeout`.
 
 What a pool asks with is which discobox is spending which approved use, and
 what its proxy observed. It does not say what that use allows. The sentence

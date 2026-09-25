@@ -58,5 +58,7 @@ may resolve it somewhere the route never named. The host, the discobox, and the 
 judge's to name.
 
 **Rounds are bounded.** `MaxRounds` asks in total, inside one `Timeout` for the
-whole exchange, because a request is held open while the judge thinks. A
+whole exchange, because a request is held open while the judge thinks.
+`ReachWait` comes before it: how long the control plane waits for the judge's
+discobox to become reachable, which every hop bounding the exchange allows for. A
 command job is asked once: there is nothing further to show.
