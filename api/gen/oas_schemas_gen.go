@@ -2149,6 +2149,15 @@ type CredentialVerdict struct {
 	Round OptInt64 `json:"round"`
 	// Sandbox the command ran in, or the request came from. It may no longer exist.
 	SandboxId string `json:"sandboxId"`
+	// The route this allow was let stand for, on a request verdict whose judge asked for one and whose
+	// route the control plane admitted. Requests matching it from the same discobox, under the same use,
+	// to the same host, were allowed until standingUntil without asking the judge.
+	StandingRoute OptString `json:"standingRoute"`
+	// When the allow standing for standingRoute stops covering requests.
+	StandingUntil OptDateTime `json:"standingUntil"`
+	// The verdict whose standing allow decided this request, which no model read. Its judge, reason and
+	// prompt version are that verdict's.
+	StandingVerdictId OptString `json:"standingVerdictId"`
 	// Approved use that was judged against. Joins to the proxy audit trail's swapped use IDs.
 	UseId string `json:"useId"`
 	// True when the sandbox reported this after a denial the issuing call never saw.
@@ -2263,6 +2272,21 @@ func (s *CredentialVerdict) GetRound() OptInt64 {
 // GetSandboxId returns the value of SandboxId.
 func (s *CredentialVerdict) GetSandboxId() string {
 	return s.SandboxId
+}
+
+// GetStandingRoute returns the value of StandingRoute.
+func (s *CredentialVerdict) GetStandingRoute() OptString {
+	return s.StandingRoute
+}
+
+// GetStandingUntil returns the value of StandingUntil.
+func (s *CredentialVerdict) GetStandingUntil() OptDateTime {
+	return s.StandingUntil
+}
+
+// GetStandingVerdictId returns the value of StandingVerdictId.
+func (s *CredentialVerdict) GetStandingVerdictId() OptString {
+	return s.StandingVerdictId
 }
 
 // GetUseId returns the value of UseId.
@@ -2383,6 +2407,21 @@ func (s *CredentialVerdict) SetRound(val OptInt64) {
 // SetSandboxId sets the value of SandboxId.
 func (s *CredentialVerdict) SetSandboxId(val string) {
 	s.SandboxId = val
+}
+
+// SetStandingRoute sets the value of StandingRoute.
+func (s *CredentialVerdict) SetStandingRoute(val OptString) {
+	s.StandingRoute = val
+}
+
+// SetStandingUntil sets the value of StandingUntil.
+func (s *CredentialVerdict) SetStandingUntil(val OptDateTime) {
+	s.StandingUntil = val
+}
+
+// SetStandingVerdictId sets the value of StandingVerdictId.
+func (s *CredentialVerdict) SetStandingVerdictId(val OptString) {
+	s.StandingVerdictId = val
 }
 
 // SetUseId sets the value of UseId.
@@ -5788,7 +5827,8 @@ type JudgeAnswer struct {
 	Allow OptBool      `json:"allow"`
 	Need  OptJudgeNeed `json:"need"`
 	// Why, always said. It is what the discobox is told when its request is refused.
-	Reason string `json:"reason"`
+	Reason   string           `json:"reason"`
+	Standing OptJudgeStanding `json:"standing"`
 }
 
 // GetAllow returns the value of Allow.
@@ -5806,6 +5846,11 @@ func (s *JudgeAnswer) GetReason() string {
 	return s.Reason
 }
 
+// GetStanding returns the value of Standing.
+func (s *JudgeAnswer) GetStanding() OptJudgeStanding {
+	return s.Standing
+}
+
 // SetAllow sets the value of Allow.
 func (s *JudgeAnswer) SetAllow(val OptBool) {
 	s.Allow = val
@@ -5819,6 +5864,11 @@ func (s *JudgeAnswer) SetNeed(val OptJudgeNeed) {
 // SetReason sets the value of Reason.
 func (s *JudgeAnswer) SetReason(val string) {
 	s.Reason = val
+}
+
+// SetStanding sets the value of Standing.
+func (s *JudgeAnswer) SetStanding(val OptJudgeStanding) {
+	s.Standing = val
 }
 
 func (*JudgeAnswer) judgeForPoolRes() {}
@@ -6198,6 +6248,38 @@ func (s *JudgeRequestEvidenceHeaders) init() JudgeRequestEvidenceHeaders {
 		*s = m
 	}
 	return m
+}
+
+// An allow the judge asked to let stand, so requests matching its route are not asked about again
+// (ADR 26-09-25-428). Only ever beside an allow; the control plane decides whether it stands, for
+// the same discobox, use and host, and caps how long.
+// Ref: #/components/schemas/JudgeStanding
+type JudgeStanding struct {
+	// One method, a space, and an absolute path, in net/http pattern syntax. {name} matches one segment
+	// and a final {name...} the rest of the path.
+	Route string `json:"route"`
+	// How long the judge asked for it to stand, in seconds.
+	Seconds int64 `json:"seconds"`
+}
+
+// GetRoute returns the value of Route.
+func (s *JudgeStanding) GetRoute() string {
+	return s.Route
+}
+
+// GetSeconds returns the value of Seconds.
+func (s *JudgeStanding) GetSeconds() int64 {
+	return s.Seconds
+}
+
+// SetRoute sets the value of Route.
+func (s *JudgeStanding) SetRoute(val string) {
+	s.Route = val
+}
+
+// SetSeconds sets the value of Seconds.
+func (s *JudgeStanding) SetSeconds(val int64) {
+	s.Seconds = val
 }
 
 // Ref: #/components/schemas/ListApprovalRequestsBody
@@ -8800,6 +8882,52 @@ func (o OptJudgeRequestEvidenceHeaders) Get() (v JudgeRequestEvidenceHeaders, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptJudgeRequestEvidenceHeaders) Or(d JudgeRequestEvidenceHeaders) JudgeRequestEvidenceHeaders {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeStanding returns new OptJudgeStanding with value set to v.
+func NewOptJudgeStanding(v JudgeStanding) OptJudgeStanding {
+	return OptJudgeStanding{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeStanding is optional JudgeStanding.
+type OptJudgeStanding struct {
+	Value JudgeStanding
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeStanding was set.
+func (o OptJudgeStanding) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeStanding) Reset() {
+	var v JudgeStanding
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeStanding) SetTo(v JudgeStanding) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeStanding) Get() (v JudgeStanding, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeStanding) Or(d JudgeStanding) JudgeStanding {
 	if v, ok := o.Get(); ok {
 		return v
 	}

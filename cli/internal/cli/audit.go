@@ -601,6 +601,16 @@ func requestVerdictLines(v apimodel.CredentialVerdict) []string {
 		}
 	}
 	lines = append(lines, fmt.Sprintf("round:    %d", v.Round.Or(0)))
+	if route := v.StandingRoute.Or(""); route != "" {
+		stands := terminalSafe(route)
+		if until, ok := v.StandingUntil.Get(); ok {
+			stands += " until " + until.Format(time.RFC3339)
+		}
+		lines = append(lines, "stands:   "+stands)
+	}
+	if granted := v.StandingVerdictId.Or(""); granted != "" {
+		lines = append(lines, "standing: "+terminalSafe(granted))
+	}
 	if need, ok := v.Need.Get(); ok {
 		asked := "the body as " + string(need.Body)
 		if bytes := need.Bytes.Or(0); bytes > 0 {
@@ -661,11 +671,14 @@ func verdictWord(v apimodel.CredentialVerdict) string {
 }
 
 // verdictRecorded says where a verdict came from: "use" rode the call that took
-// the value, "report" is one the discobox sent on its own after a denial, and
+// the value, "report" is one the discobox sent on its own after a denial,
 // "judge" is the project's judge answering about a request, recorded by the
-// server.
+// server, and "standing" is a request an allow the judge let stand covered,
+// which no model read (ADR 26-09-25-428).
 func verdictRecorded(v apimodel.CredentialVerdict) string {
 	switch {
+	case v.StandingVerdictId.Or("") != "":
+		return "standing"
 	case isRequestVerdict(v):
 		return "judge"
 	case v.Volunteered:

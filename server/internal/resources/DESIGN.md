@@ -57,7 +57,8 @@ read here from the live grant the use belongs to (`secrets.ApprovedUse`), so
 nothing a pool or a sandbox sends can widen its own question. The same read
 happens again after the verdict, because a verdict takes a while and a grant can
 be revoked inside one. The question is composed only once a judge is found: a
-project with no judge refuses whatever the use turns out to say.
+project with no judge refuses whatever the use turns out to say, and that
+includes a request an allow already standing would have covered.
 
 Every answer the judge gives is recorded before it goes back to the pool — an
 allow, a refusal, or an ask to be shown the body — as a request
@@ -69,6 +70,18 @@ record is no verdict (ADR 26-09-22-838 §§4, 8). The re-check of the use runs
 before the write, so a row is only ever the answer the pool was given. An ask
 that got no answer, or whose use was revoked while it was judged, leaves no row;
 the proxy's blocked audit row is its record.
+
+An allow may stand (ADR 26-09-25-428). The judge may name a route
+(`judge.Standing`); `admit` keeps it only when `judge.Job.Admits` does (a
+first-round allow whose route covers its own request), caps it at
+`judge.MaxStanding`, and records the route and expiry on that verdict's row.
+Before routing a first-round ask, `standing` looks for an unexpired standing
+row for the same discobox and use, and uses it only if the grant, the approved
+sentence, and the origin (scheme, host and port, not the normalized host) all
+match and its route matches this request. A match
+answers allow without the judge and writes its own verdict naming the row that
+decided it (`StandingVerdictID`). Since the use is read live before any of
+this, a revoked grant ends a standing allow on its next request.
 
 The row does not yet carry §8's request correlation. The proxy numbers an
 exchange when it writes the audit row, after the judge has answered, so there

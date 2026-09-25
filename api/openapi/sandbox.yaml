@@ -123,6 +123,8 @@ components:
                 reason:
                     description: Why, always said. It is what the discobox is told when its request is refused.
                     type: string
+                standing:
+                    $ref: '#/components/schemas/JudgeStanding'
             required:
                 - reason
             type: object
@@ -221,6 +223,21 @@ components:
             required:
                 - method
                 - url
+            type: object
+        JudgeStanding:
+            additionalProperties: false
+            description: An allow the judge asked to let stand, so requests matching its route are not asked about again (ADR 26-09-25-428). Only ever beside an allow; the control plane decides whether it stands, for the same discobox, use and host, and caps how long.
+            properties:
+                route:
+                    description: One method, a space, and an absolute path, in net/http pattern syntax. {name} matches one segment and a final {name...} the rest of the path.
+                    type: string
+                seconds:
+                    description: How long the judge asked for it to stand, in seconds.
+                    format: int64
+                    type: integer
+            required:
+                - route
+                - seconds
             type: object
         ResourceHistoryResponse:
             additionalProperties: false

@@ -184,7 +184,7 @@ func TestTheSystemPromptSaysWhatTheContractSays(t *testing.T) {
 	if strings.TrimSpace(judge.PromptVersion) == "" {
 		t.Fatal("a verdict could not name the prompt that produced it")
 	}
-	for _, phrase := range []string{"purpose", "untrusted data", judge.FormText, judge.FormJSON, "need", "missing"} {
+	for _, phrase := range []string{"purpose", "untrusted data", judge.FormText, judge.FormJSON, "need", "missing", "standing", "route", "seconds"} {
 		if !strings.Contains(judge.System, phrase) {
 			t.Fatalf("the system prompt never mentions %q, which the contract relies on", phrase)
 		}

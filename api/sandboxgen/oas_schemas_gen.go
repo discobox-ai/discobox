@@ -455,7 +455,8 @@ type JudgeAnswer struct {
 	Allow OptBool      `json:"allow"`
 	Need  OptJudgeNeed `json:"need"`
 	// Why, always said. It is what the discobox is told when its request is refused.
-	Reason string `json:"reason"`
+	Reason   string           `json:"reason"`
+	Standing OptJudgeStanding `json:"standing"`
 }
 
 // GetAllow returns the value of Allow.
@@ -473,6 +474,11 @@ func (s *JudgeAnswer) GetReason() string {
 	return s.Reason
 }
 
+// GetStanding returns the value of Standing.
+func (s *JudgeAnswer) GetStanding() OptJudgeStanding {
+	return s.Standing
+}
+
 // SetAllow sets the value of Allow.
 func (s *JudgeAnswer) SetAllow(val OptBool) {
 	s.Allow = val
@@ -486,6 +492,11 @@ func (s *JudgeAnswer) SetNeed(val OptJudgeNeed) {
 // SetReason sets the value of Reason.
 func (s *JudgeAnswer) SetReason(val string) {
 	s.Reason = val
+}
+
+// SetStanding sets the value of Standing.
+func (s *JudgeAnswer) SetStanding(val OptJudgeStanding) {
+	s.Standing = val
 }
 
 // One question put to the judge, and everything it may see to answer it. Purpose and host are the
@@ -862,6 +873,38 @@ func (s *JudgeRequestEvidenceHeaders) init() JudgeRequestEvidenceHeaders {
 		*s = m
 	}
 	return m
+}
+
+// An allow the judge asked to let stand, so requests matching its route are not asked about again
+// (ADR 26-09-25-428). Only ever beside an allow; the control plane decides whether it stands, for
+// the same discobox, use and host, and caps how long.
+// Ref: #/components/schemas/JudgeStanding
+type JudgeStanding struct {
+	// One method, a space, and an absolute path, in net/http pattern syntax. {name} matches one segment
+	// and a final {name...} the rest of the path.
+	Route string `json:"route"`
+	// How long the judge asked for it to stand, in seconds.
+	Seconds int64 `json:"seconds"`
+}
+
+// GetRoute returns the value of Route.
+func (s *JudgeStanding) GetRoute() string {
+	return s.Route
+}
+
+// GetSeconds returns the value of Seconds.
+func (s *JudgeStanding) GetSeconds() int64 {
+	return s.Seconds
+}
+
+// SetRoute sets the value of Route.
+func (s *JudgeStanding) SetRoute(val string) {
+	s.Route = val
+}
+
+// SetSeconds sets the value of Seconds.
+func (s *JudgeStanding) SetSeconds(val int64) {
+	s.Seconds = val
 }
 
 type ListExecEventsOrder string
@@ -1584,6 +1627,52 @@ func (o OptJudgeRequestEvidenceHeaders) Get() (v JudgeRequestEvidenceHeaders, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptJudgeRequestEvidenceHeaders) Or(d JudgeRequestEvidenceHeaders) JudgeRequestEvidenceHeaders {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptJudgeStanding returns new OptJudgeStanding with value set to v.
+func NewOptJudgeStanding(v JudgeStanding) OptJudgeStanding {
+	return OptJudgeStanding{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptJudgeStanding is optional JudgeStanding.
+type OptJudgeStanding struct {
+	Value JudgeStanding
+	Set   bool
+}
+
+// IsSet returns true if OptJudgeStanding was set.
+func (o OptJudgeStanding) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptJudgeStanding) Reset() {
+	var v JudgeStanding
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptJudgeStanding) SetTo(v JudgeStanding) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptJudgeStanding) Get() (v JudgeStanding, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptJudgeStanding) Or(d JudgeStanding) JudgeStanding {
 	if v, ok := o.Get(); ok {
 		return v
 	}

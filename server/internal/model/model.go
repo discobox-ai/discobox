@@ -1337,12 +1337,24 @@ type CredentialVerdict struct {
 	// The judge that answered a request verdict: the discobox, and the harness
 	// and image it ran, read when it was asked. Empty on a command verdict,
 	// whose judge is the discobox itself.
-	JudgeSandboxID  string    `gorm:"column:judge_sandbox_id;not null;type:text;default:''" json:"judgeSandboxId,omitempty" doc:"The project judge that answered"`
-	HarnessConfigID string    `gorm:"column:harness_config_id;not null;type:text;default:''" json:"harnessConfigId,omitempty" doc:"Harness config the judge ran"`
-	Image           string    `gorm:"column:image;not null;type:text;default:''" json:"image,omitempty" doc:"Image the judge ran"`
-	ImageDigest     string    `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Digest of the image the judge ran"`
-	Volunteered     bool      `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	JudgeSandboxID  string `gorm:"column:judge_sandbox_id;not null;type:text;default:''" json:"judgeSandboxId,omitempty" doc:"The project judge that answered"`
+	HarnessConfigID string `gorm:"column:harness_config_id;not null;type:text;default:''" json:"harnessConfigId,omitempty" doc:"Harness config the judge ran"`
+	Image           string `gorm:"column:image;not null;type:text;default:''" json:"image,omitempty" doc:"Image the judge ran"`
+	ImageDigest     string `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Digest of the image the judge ran"`
+	Volunteered     bool   `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
+	// StandingRoute and StandingUntil are an allow the judge let stand, as
+	// the control plane admitted it (ADR 26-09-25-428): until then, a request
+	// from the same discobox, under the same use, to the same host, whose
+	// method and path match the route is allowed on this row's word. Both are
+	// empty on every other verdict, which is what every row written before
+	// standing allows existed already is.
+	StandingRoute string     `gorm:"column:standing_route;not null;type:text;default:''" json:"standingRoute,omitempty" doc:"Route this allow was let stand for"`
+	StandingUntil *time.Time `gorm:"column:standing_until;index" json:"standingUntil,omitempty" doc:"When the standing allow stops covering requests" format:"date-time"`
+	// StandingVerdictID is set on a request a standing allow decided: the
+	// verdict that let it stand, which is whose judge and reason this row
+	// repeats. No model read this request.
+	StandingVerdictID string    `gorm:"column:standing_verdict_id;not null;type:text;default:''" json:"standingVerdictId,omitempty" doc:"The verdict whose standing allow decided this request"`
+	CreatedAt         time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -1375,6 +1387,12 @@ func (c *CredentialVerdict) BeforeCreate(_ *gorm.DB) error {
 		c.CreatedAt = time.Now().UTC()
 	} else {
 		c.CreatedAt = c.CreatedAt.UTC()
+	}
+	// The same text comparison bounds a standing allow's lookup, so its
+	// expiry is written in UTC as well.
+	if c.StandingUntil != nil {
+		until := c.StandingUntil.UTC()
+		c.StandingUntil = &until
 	}
 	return nil
 }

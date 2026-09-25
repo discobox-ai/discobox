@@ -13,6 +13,7 @@ it.
 | `judge.go` | `Job` — a command or an observed request, judged against one approved use — its bounds, and the JSON prompt it becomes. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |
+| `standing.go` | `Standing`, `Route`, and `Job.Admits`: an allow the judge asks to let stand for a route, and whether it may. |
 
 ## The rules it exists to keep
 
@@ -44,6 +45,17 @@ object and no prose around it, which is a requirement on every harness image's
 `discobox-prompt`: a wrapper that frames its answer in a transcript cannot
 judge. See [`harness/DESIGN.md`](../harness/DESIGN.md) for the wrapper
 contract.
+
+**The judge proposes a standing allow; Discobox admits it.** An allow may carry
+a `Standing` route: net/http pattern syntax, one method and an exact path
+(ADR 26-09-25-428). `Decode` refuses a route that does not parse, or one beside
+anything but an allow. `Job.Admits` keeps only a first-round route, standing
+for some time, with a literal segment, that covers its own request; `Duration`
+caps it at `MaxStanding`. A route matches the method and the unescaped path
+segments and nothing else. A path with a dot or empty segment, or a segment
+that unescapes to a slash or backslash, matches no route, because the upstream
+may resolve it somewhere the route never named. The host, the discobox, and the use are never the
+judge's to name.
 
 **Rounds are bounded.** `MaxRounds` asks in total, inside one `Timeout` for the
 whole exchange, because a request is held open while the judge thinks. A

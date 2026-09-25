@@ -4450,6 +4450,24 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 		e.Str(s.SandboxId)
 	}
 	{
+		if s.StandingRoute.Set {
+			e.FieldStart("standingRoute")
+			s.StandingRoute.Encode(e)
+		}
+	}
+	{
+		if s.StandingUntil.Set {
+			e.FieldStart("standingUntil")
+			s.StandingUntil.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.StandingVerdictId.Set {
+			e.FieldStart("standingVerdictId")
+			s.StandingVerdictId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("useId")
 		e.Str(s.UseId)
 	}
@@ -4459,7 +4477,7 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCredentialVerdict = [24]string{
+var jsonFieldsNameOfCredentialVerdict = [27]string{
 	0:  "$schema",
 	1:  "allow",
 	2:  "command",
@@ -4482,8 +4500,11 @@ var jsonFieldsNameOfCredentialVerdict = [24]string{
 	19: "role",
 	20: "round",
 	21: "sandboxId",
-	22: "useId",
-	23: "volunteered",
+	22: "standingRoute",
+	23: "standingUntil",
+	24: "standingVerdictId",
+	25: "useId",
+	26: "volunteered",
 }
 
 // Decode decodes CredentialVerdict from json.
@@ -4491,7 +4512,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CredentialVerdict to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -4734,8 +4755,38 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
+		case "standingRoute":
+			if err := func() error {
+				s.StandingRoute.Reset()
+				if err := s.StandingRoute.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"standingRoute\"")
+			}
+		case "standingUntil":
+			if err := func() error {
+				s.StandingUntil.Reset()
+				if err := s.StandingUntil.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"standingUntil\"")
+			}
+		case "standingVerdictId":
+			if err := func() error {
+				s.StandingVerdictId.Reset()
+				if err := s.StandingVerdictId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"standingVerdictId\"")
+			}
 		case "useId":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.UseId = string(v)
@@ -4747,7 +4798,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"useId\"")
 			}
 		case "volunteered":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[3] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Volunteered = bool(v)
@@ -4767,10 +4818,11 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
+	for i, mask := range [4]uint8{
 		0b01001010,
 		0b01000000,
-		0b11100000,
+		0b00100000,
+		0b00000110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -10605,12 +10657,19 @@ func (s *JudgeAnswer) encodeFields(e *jx.Encoder) {
 		e.FieldStart("reason")
 		e.Str(s.Reason)
 	}
+	{
+		if s.Standing.Set {
+			e.FieldStart("standing")
+			s.Standing.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfJudgeAnswer = [3]string{
+var jsonFieldsNameOfJudgeAnswer = [4]string{
 	0: "allow",
 	1: "need",
 	2: "reason",
+	3: "standing",
 }
 
 // Decode decodes JudgeAnswer from json.
@@ -10653,6 +10712,16 @@ func (s *JudgeAnswer) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "standing":
+			if err := func() error {
+				s.Standing.Reset()
+				if err := s.Standing.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"standing\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -11492,6 +11561,119 @@ func (s JudgeRequestEvidenceHeaders) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *JudgeRequestEvidenceHeaders) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *JudgeStanding) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *JudgeStanding) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("route")
+		e.Str(s.Route)
+	}
+	{
+		e.FieldStart("seconds")
+		e.Int64(s.Seconds)
+	}
+}
+
+var jsonFieldsNameOfJudgeStanding = [2]string{
+	0: "route",
+	1: "seconds",
+}
+
+// Decode decodes JudgeStanding from json.
+func (s *JudgeStanding) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode JudgeStanding to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "route":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Route = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"route\"")
+			}
+		case "seconds":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int64()
+				s.Seconds = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"seconds\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode JudgeStanding")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfJudgeStanding) {
+					name = jsonFieldsNameOfJudgeStanding[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *JudgeStanding) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *JudgeStanding) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -15663,6 +15845,39 @@ func (s OptJudgeRequestEvidenceHeaders) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptJudgeRequestEvidenceHeaders) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes JudgeStanding as json.
+func (o OptJudgeStanding) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes JudgeStanding from json.
+func (o *OptJudgeStanding) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptJudgeStanding to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptJudgeStanding) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptJudgeStanding) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

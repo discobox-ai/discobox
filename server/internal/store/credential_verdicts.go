@@ -101,3 +101,23 @@ func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, fi
 	err = query.Find(&out).Error
 	return out, err
 }
+
+// StandingVerdicts returns the allows the project's judge let stand for one
+// discobox and one use that still stand at now, newest first (ADR 26-09-25-428
+// §3). Which of them covers a request — its host and its route — is the
+// caller's to match: a route is not something a query can compare.
+func (s *Store) StandingVerdicts(ctx context.Context, projectID, sandboxID, useID string, now time.Time) ([]model.CredentialVerdict, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.CredentialVerdict
+	// UTC for the reason ListCredentialVerdicts's since bound is: the column
+	// is written in UTC, and on SQLite it is compared as text.
+	err = read.Where("project_id = ? AND sandbox_id = ? AND use_id = ?", projectID, sandboxID, useID).
+		Where("kind = ? AND origin = ? AND allow = ?", model.CredentialVerdictKindRequest, model.CredentialVerdictOriginJudge, true).
+		Where("standing_route <> '' AND standing_until > ?", now.UTC()).
+		Order("created_at DESC").Order("id DESC").
+		Find(&out).Error
+	return out, err
+}

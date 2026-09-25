@@ -978,3 +978,191 @@ func TestAnAskIsAnsweredInsideThePoolsDeadline(t *testing.T) {
 		}
 	})
 }
+
+// standingJudge is a project whose ready judge answers with answer, and the
+// fake standing in for it.
+func standingJudge(t *testing.T, answer sandboxapi.JudgeAnswer) (*Service, *store.Store, *answeringJudge) {
+	t.Helper()
+	ctx := context.Background()
+	service, appStore, sandboxes := newJudgeTest(t)
+	defaultHarness(t, appStore, "codex", "sha256:one")
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	ready(t, appStore, sandboxes.created[0])
+	fake := newAnsweringJudge(t, answer)
+	service.SetLeases(fake)
+	service.SetUses(approvedUses{use: services.ApprovedUse{
+		Purpose: "open a pull request in org/repo", Host: "api.github.com", Credential: "GitHub token", GrantID: "grant-1",
+	}})
+	return service, appStore, fake
+}
+
+func standingAnswer(route string, seconds int64) sandboxapi.JudgeAnswer {
+	return sandboxapi.JudgeAnswer{
+		Allow:    sandboxapi.NewOptBool(true),
+		Reason:   "reading the pull requests of org/repo supports opening one",
+		Standing: sandboxapi.NewOptJudgeStanding(sandboxapi.JudgeStanding{Route: route, Seconds: seconds}),
+	}
+}
+
+func getAsk(sandboxID, url string) services.JudgeAsk {
+	return services.JudgeAsk{
+		SandboxID: sandboxID, UseID: "use_abc", Round: 1,
+		Request: &judge.Request{Method: http.MethodGet, URL: url},
+	}
+}
+
+// An allow the judge lets stand answers the requests its route covers without
+// asking again, each still recorded and naming the verdict that decided it;
+// a request it does not cover is asked about like any other (ADR 26-09-25-428).
+func TestAnAllowLetStandAnswersWhatItsRouteCovers(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, fake := standingJudge(t, standingAnswer("GET /repos/org/repo/pulls/{number}/comments", 86400))
+
+	before := time.Now()
+	first, err := service.Judge(ctx, "pool-1", getAsk("sandbox-1", "https://api.github.com/repos/org/repo/pulls/1/comments"))
+	if err != nil || !first.Allow {
+		t.Fatalf("Judge() = %+v, %v, want the judge's allow", first, err)
+	}
+	verdicts, err := appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
+	if err != nil || len(verdicts) != 1 {
+		t.Fatalf("verdicts = %+v, %v", verdicts, err)
+	}
+	granted := verdicts[0]
+	if granted.StandingRoute != "GET /repos/org/repo/pulls/{number}/comments" || granted.StandingUntil == nil {
+		t.Fatalf("granted = %+v, want the route recorded as standing", granted)
+	}
+	if limit := before.Add(judge.MaxStanding + time.Minute); granted.StandingUntil.After(limit) {
+		t.Fatalf("standing until %v, want it capped near %v whatever the judge asked", granted.StandingUntil, limit)
+	}
+
+	covered, err := service.Judge(ctx, "pool-1", getAsk("sandbox-1", "https://api.github.com/repos/org/repo/pulls/2/comments?page=3"))
+	if err != nil || !covered.Allow || covered.Reason != granted.Reason {
+		t.Fatalf("Judge() = %+v, %v, want the standing allow", covered, err)
+	}
+	if n := len(fake.asked()); n != 1 {
+		t.Fatalf("the judge was asked %d times, want a covered request answered without it", n)
+	}
+	verdicts, err = appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
+	if err != nil || len(verdicts) != 2 {
+		t.Fatalf("verdicts = %+v, %v, want the covered request recorded too", verdicts, err)
+	}
+	hit := verdicts[0]
+	if hit.StandingVerdictID != granted.ID || !hit.Allow || hit.Request == nil || hit.Request.URL != "https://api.github.com/repos/org/repo/pulls/2/comments?page=3" {
+		t.Fatalf("hit = %+v, want the covered request naming the verdict that decided it", hit)
+	}
+	if hit.StandingRoute != "" || hit.Prompt != "" || hit.Role != "" || hit.JudgeSandboxID != granted.JudgeSandboxID {
+		t.Fatalf("hit = %+v, want no prompt, no role, and no standing of its own", hit)
+	}
+
+	for _, ask := range []services.JudgeAsk{
+		// Another operation on the same target.
+		{SandboxID: "sandbox-1", UseID: "use_abc", Round: 1, Request: &judge.Request{Method: http.MethodPost, URL: "https://api.github.com/repos/org/repo/pulls/2/comments"}},
+		// Another target.
+		getAsk("sandbox-1", "https://api.github.com/repos/org/other/pulls/2/comments"),
+		// A path the upstream may resolve elsewhere.
+		getAsk("sandbox-1", "https://api.github.com/repos/org/repo/pulls/2/comments/../../../../other/pulls/2/comments"),
+		// Another discobox spending a use by the same ID.
+		getAsk("sandbox-2", "https://api.github.com/repos/org/repo/pulls/2/comments"),
+		// Another port, or another scheme, on the same name.
+		getAsk("sandbox-1", "https://api.github.com:8443/repos/org/repo/pulls/2/comments"),
+		getAsk("sandbox-1", "http://api.github.com/repos/org/repo/pulls/2/comments"),
+	} {
+		asked := len(fake.asked())
+		if _, err := service.Judge(ctx, "pool-1", ask); err != nil {
+			t.Fatalf("Judge(%s %s) error = %v", ask.Request.Method, ask.Request.URL, err)
+		}
+		if len(fake.asked()) != asked+1 {
+			t.Fatalf("%s %s from %s was answered by the standing allow, want the judge asked", ask.Request.Method, ask.Request.URL, ask.SandboxID)
+		}
+	}
+}
+
+// A standing route that does not cover the request it was granted on was not
+// derived from it: the allow stays and the route does not stand.
+func TestAStandingRouteThatMissesItsOwnRequestDoesNotStand(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, fake := standingJudge(t, standingAnswer("GET /repos/{rest...}", 600))
+
+	answer, err := service.Judge(ctx, "pool-1", getAsk("sandbox-1", "https://api.github.com/user"))
+	if err != nil || !answer.Allow {
+		t.Fatalf("Judge() = %+v, %v, want the allow kept", answer, err)
+	}
+	verdicts, err := appStore.ListCredentialVerdicts(ctx, "project-1", store.CredentialVerdictFilter{})
+	if err != nil || len(verdicts) != 1 || verdicts[0].StandingRoute != "" || verdicts[0].StandingUntil != nil {
+		t.Fatalf("verdicts = %+v, %v, want the allow recorded without the route", verdicts, err)
+	}
+	if _, err := service.Judge(ctx, "pool-1", getAsk("sandbox-1", "https://api.github.com/repos/org/repo")); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(fake.asked()); n != 2 {
+		t.Fatalf("the judge was asked %d times, want a route that did not stand to cover nothing", n)
+	}
+}
+
+// A standing allow covers nothing once it lapses, once its use stops being
+// live, or once the use approves something the judge never read.
+func TestAStandingAllowEndsWithItsTimeItsUseOrItsSentence(t *testing.T) {
+	route := "GET /repos/org/repo/pulls"
+	url := "https://api.github.com/repos/org/repo/pulls"
+	grant := func(t *testing.T) (*Service, *store.Store, *answeringJudge) {
+		t.Helper()
+		service, appStore, fake := standingJudge(t, standingAnswer(route, 600))
+		if _, err := service.Judge(context.Background(), "pool-1", getAsk("sandbox-1", url)); err != nil {
+			t.Fatal(err)
+		}
+		return service, appStore, fake
+	}
+
+	t.Run("lapsed", func(t *testing.T) {
+		ctx := context.Background()
+		service, appStore, fake := grant(t)
+		if err := appStore.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
+			return tx.Model(&model.CredentialVerdict{}).Where("standing_route <> ''").
+				Update("standing_until", time.Now().UTC().Add(-time.Second)).Error
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.Judge(ctx, "pool-1", getAsk("sandbox-1", url)); err != nil {
+			t.Fatal(err)
+		}
+		if n := len(fake.asked()); n != 2 {
+			t.Fatalf("the judge was asked %d times, want a lapsed allow to cover nothing", n)
+		}
+	})
+	t.Run("revoked", func(t *testing.T) {
+		service, _, fake := grant(t)
+		service.SetUses(approvedUses{err: apperrors.NewStatusError(http.StatusForbidden, "no live approved use by that ID")})
+		if _, err := service.Judge(context.Background(), "pool-1", getAsk("sandbox-1", url)); err == nil {
+			t.Fatal("a standing allow outlived its use")
+		}
+		if n := len(fake.asked()); n != 1 {
+			t.Fatalf("the judge was asked %d times, want a revoked use refused before it", n)
+		}
+	})
+	t.Run("regranted", func(t *testing.T) {
+		service, _, fake := grant(t)
+		service.SetUses(approvedUses{use: services.ApprovedUse{
+			Purpose: "open a pull request in org/repo", Host: "api.github.com", Credential: "GitHub token", GrantID: "grant-2",
+		}})
+		if _, err := service.Judge(context.Background(), "pool-1", getAsk("sandbox-1", url)); err != nil {
+			t.Fatal(err)
+		}
+		if n := len(fake.asked()); n != 2 {
+			t.Fatalf("the judge was asked %d times, want another grant's use asked about", n)
+		}
+	})
+	t.Run("reworded", func(t *testing.T) {
+		service, _, fake := grant(t)
+		service.SetUses(approvedUses{use: services.ApprovedUse{
+			Purpose: "delete org/repo", Host: "api.github.com", Credential: "GitHub token", GrantID: "grant-1",
+		}})
+		if _, err := service.Judge(context.Background(), "pool-1", getAsk("sandbox-1", url)); err != nil {
+			t.Fatal(err)
+		}
+		if n := len(fake.asked()); n != 2 {
+			t.Fatalf("the judge was asked %d times, want a use approving something else asked about", n)
+		}
+	})
+}

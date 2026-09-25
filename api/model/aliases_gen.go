@@ -56,6 +56,7 @@ type JudgeJob = apigen.JudgeJob
 type JudgeNeed = apigen.JudgeNeed
 type JudgeRequestBody = apigen.JudgeRequestBody
 type JudgeRequestEvidence = apigen.JudgeRequestEvidence
+type JudgeStanding = apigen.JudgeStanding
 type ListApprovalRequestsBody = apigen.ListApprovalRequestsBody
 type ListCredentialVerdictsBody = apigen.ListCredentialVerdictsBody
 type ListDNSAuditBody = apigen.ListDNSAuditBody

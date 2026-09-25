@@ -251,6 +251,45 @@ func TestAuditCredsPromptShowsWhichJudgeAnswered(t *testing.T) {
 	}
 }
 
+// An allow the judge let stand says what it stands for and until when, and a
+// request it covered says so rather than reading as the judge's own answer.
+func TestAuditCredsShowsStandingAllows(t *testing.T) {
+	const standing = `{"credentialVerdicts":[{
+	"id":"cvd_2","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
+	"allow":true,"volunteered":false,"createdAt":"2026-09-02T10:00:05Z",
+	"request":{"method":"GET","url":"https://api.github.com/repos/org/repo/pulls?page=2"},
+	"round":1,"reason":"reading its pull requests","latencyMs":3,
+	"judgeSandboxId":"sbx_judge","standingVerdictId":"cvd_1"
+},{
+	"id":"cvd_1","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
+	"allow":true,"volunteered":false,"createdAt":"2026-09-02T10:00:00Z",
+	"request":{"method":"GET","url":"https://api.github.com/repos/org/repo/pulls"},
+	"round":1,"reason":"reading its pull requests","role":"judge","prompt":"{}","promptVersion":"3","latencyMs":812,
+	"judgeSandboxId":"sbx_judge","standingRoute":"GET /repos/org/repo/pulls","standingUntil":"2026-09-02T10:15:00Z"
+}]}`
+	_, out, err := runAuditCreds(t, standing)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 || !strings.Contains(lines[1], "standing") || strings.Contains(lines[2], "standing") {
+		t.Fatalf("want the covered request recorded as standing and the grant as the judge's:\n%s", out)
+	}
+	_, out, err = runAuditCreds(t, standing, "--prompt")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	for _, want := range []string{
+		"cvd_2  allow  standing",
+		"standing: cvd_1",
+		"stands:   GET /repos/org/repo/pulls until 2026-09-02T10:15:00Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestAuditCredsSendsItsKind(t *testing.T) {
 	query, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`, "--kind", "request")
 	if err != nil {

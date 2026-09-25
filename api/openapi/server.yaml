@@ -3339,6 +3339,16 @@ components:
                 sandboxId:
                     description: Sandbox the command ran in, or the request came from. It may no longer exist.
                     type: string
+                standingRoute:
+                    description: The route this allow was let stand for, on a request verdict whose judge asked for one and whose route the control plane admitted. Requests matching it from the same discobox, under the same use, to the same host, were allowed until standingUntil without asking the judge.
+                    type: string
+                standingUntil:
+                    description: When the allow standing for standingRoute stops covering requests
+                    format: date-time
+                    type: string
+                standingVerdictId:
+                    description: The verdict whose standing allow decided this request, which no model read. Its judge, reason and prompt version are that verdict's.
+                    type: string
                 useId:
                     description: Approved use that was judged against. Joins to the proxy audit trail's swapped use IDs.
                     type: string
@@ -4335,6 +4345,8 @@ components:
                 reason:
                     description: Why, always said. It is what the discobox is told when its request is refused.
                     type: string
+                standing:
+                    $ref: '#/components/schemas/JudgeStanding'
             required:
                 - reason
             type: object
@@ -4353,6 +4365,22 @@ components:
                     type: integer
             required:
                 - body
+            type: object
+            x-sandbox-agent-component: true
+        JudgeStanding:
+            additionalProperties: false
+            description: An allow the judge asked to let stand, so requests matching its route are not asked about again (ADR 26-09-25-428). Only ever beside an allow; the control plane decides whether it stands, for the same discobox, use and host, and caps how long.
+            properties:
+                route:
+                    description: One method, a space, and an absolute path, in net/http pattern syntax. {name} matches one segment and a final {name...} the rest of the path.
+                    type: string
+                seconds:
+                    description: How long the judge asked for it to stand, in seconds.
+                    format: int64
+                    type: integer
+            required:
+                - route
+                - seconds
             type: object
             x-sandbox-agent-component: true
         ApproveSecretRequestBody:

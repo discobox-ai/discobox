@@ -115,10 +115,18 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 
 	// The question is composed once there is something that could answer it:
 	// reading a use out of the grants is work, and a project with no judge
-	// refuses whatever the use turns out to say.
+	// refuses whatever the use turns out to say. That holds for an allow the
+	// judge let stand as well: a project whose judge is gone or failed has
+	// nobody standing behind it, and refuses the same way.
 	job, use, err := s.job(ctx, poolID, ask)
 	if err != nil {
 		return judge.Answer{}, err
+	}
+	// An allow the judge already let stand may answer it (ADR 26-09-25-428
+	// §3). Reading the use above is also what checked it is still live, which
+	// a standing allow needs on every request as much as a fresh one does.
+	if standing, ok, err := s.standing(ctx, project.ID, ask, job, use); err != nil || ok {
+		return standing, err
 	}
 
 	// One ask is bounded here as well as at the judge (ADR 26-09-22-838 §2): a caller
@@ -200,16 +208,17 @@ func (s *Service) Judge(ctx context.Context, poolID string, ask services.JudgeAs
 	// longer exists is not what the request was refused on, and a row saying
 	// allow for it would contradict the proxy's own record of the refusal.
 	// Like an ask that got no answer, it leaves the proxy's blocked row alone.
-	if _, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask)); err != nil {
+	if _, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask.Request)); err != nil {
 		return judge.Answer{}, err
 	}
+	standingUntil := s.admit(ctx, job, &decided, time.Now())
 	// Recorded before the answer goes back, and gating it: an answer with no
 	// record of it is no verdict (ADR 26-09-22-838 §§4, 8). The write gets a
 	// deadline of its own, so an answer that arrived just inside the ask's is
 	// not lost to it — the model has already been paid to give it.
 	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
 	defer cancelRecord()
-	if err := s.record(recordCtx, project.ID, judgeSandbox, ask, use, job, decided, latency); err != nil {
+	if err := s.record(recordCtx, project.ID, judgeSandbox, ask, use, job, decided, standingUntil, latency); err != nil {
 		return judge.Answer{}, err
 	}
 	return decided, nil
@@ -223,8 +232,9 @@ const recordTimeout = 10 * time.Second
 // each is the judge's decision about a request that was held while it was
 // made. The judge is read off the discobox that answered, so a verdict names
 // the harness and the image that produced it even after the project's judge
-// is replaced.
-func (s *Service) record(ctx context.Context, projectID string, judgeSandbox *model.Sandbox, ask services.JudgeAsk, use services.ApprovedUse, job judge.Job, decided judge.Answer, latency time.Duration) error {
+// is replaced. An allow admitted to stand carries its route and when it
+// lapses, which is what makes the row the standing allow.
+func (s *Service) record(ctx context.Context, projectID string, judgeSandbox *model.Sandbox, ask services.JudgeAsk, use services.ApprovedUse, job judge.Job, decided judge.Answer, standingUntil *time.Time, latency time.Duration) error {
 	prompt, err := judge.Prompt(job)
 	if err != nil {
 		return err
@@ -253,7 +263,116 @@ func (s *Service) record(ctx context.Context, projectID string, judgeSandbox *mo
 	if judgeSandbox.HarnessConfigID != nil {
 		row.HarnessConfigID = *judgeSandbox.HarnessConfigID
 	}
+	if decided.Standing != nil && standingUntil != nil {
+		row.StandingRoute = decided.Standing.Route
+		row.StandingUntil = standingUntil
+	}
 	return s.store.CreateCredentialVerdict(ctx, row)
+}
+
+// admit decides whether the allow the judge asked to let stand does, and until
+// when (ADR 26-09-25-428 §2). The judge proposes a route; whether it was
+// derived from this request's evidence, and how long it may last, are this
+// side's. A route that fails is dropped from the answer and the allow stays:
+// the request was allowed, and only the shortcut for the next one is refused.
+func (s *Service) admit(ctx context.Context, job judge.Job, decided *judge.Answer, now time.Time) *time.Time {
+	if decided.Standing == nil {
+		return nil
+	}
+	if !decided.Allow {
+		decided.Standing = nil
+		return nil
+	}
+	if _, err := job.Admits(*decided.Standing); err != nil {
+		s.logger.InfoContext(ctx, "the judge's standing route was not admitted", "route", decided.Standing.Route, "reason", err)
+		decided.Standing = nil
+		return nil
+	}
+	until := now.Add(decided.Standing.Duration())
+	return &until
+}
+
+// standing answers an ask that an allow already stands for, without asking the
+// judge (ADR 26-09-25-428 §3). It reports false for an ask none covers, which
+// goes to the judge like any other.
+//
+// An allow covers an ask only when it was granted to the same discobox, under
+// the same use of the same grant, against the same approved sentence, for a
+// request to the same host, and its route matches this request. The use was
+// checked live when the question was composed, so a revoked grant or a lapsed
+// activation has already refused before anything here is read.
+//
+// A covered request is recorded like any other, naming the verdict that
+// decided it, before the answer goes back: an allow with no record of it is no
+// verdict, standing or not.
+func (s *Service) standing(ctx context.Context, projectID string, ask services.JudgeAsk, job judge.Job, use services.ApprovedUse) (judge.Answer, bool, error) {
+	if job.Round != 1 {
+		// A later round is the judge asking to be shown the body, and an
+		// allow that stands never needed one.
+		return judge.Answer{}, false, nil
+	}
+	start := time.Now()
+	rows, err := s.store.StandingVerdicts(ctx, projectID, ask.SandboxID, ask.UseID, start)
+	if err != nil {
+		return judge.Answer{}, false, err
+	}
+	origin := standingOrigin(job.Request)
+	for i := range rows {
+		granted := &rows[i]
+		if !covers(granted, job, use, origin) {
+			continue
+		}
+		row := &model.CredentialVerdict{
+			ProjectID:         projectID,
+			Kind:              model.CredentialVerdictKindRequest,
+			Origin:            model.CredentialVerdictOriginJudge,
+			SandboxID:         ask.SandboxID,
+			UseID:             ask.UseID,
+			GrantID:           use.GrantID,
+			Command:           job.Command,
+			Request:           job.Request,
+			Round:             job.Round,
+			Allow:             true,
+			Reason:            granted.Reason,
+			PromptVersion:     granted.PromptVersion,
+			LatencyMS:         time.Since(start).Milliseconds(),
+			JudgeSandboxID:    granted.JudgeSandboxID,
+			HarnessConfigID:   granted.HarnessConfigID,
+			Image:             granted.Image,
+			ImageDigest:       granted.ImageDigest,
+			StandingVerdictID: granted.ID,
+		}
+		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+		err := s.store.CreateCredentialVerdict(recordCtx, row)
+		cancel()
+		if err != nil {
+			return judge.Answer{}, false, err
+		}
+		return judge.Answer{Allow: true, Reason: granted.Reason}, true, nil
+	}
+	return judge.Answer{}, false, nil
+}
+
+// covers reports whether one standing allow covers this request. The grant
+// and the sentence are compared as well as the use ID, because a standing
+// allow was the judge's reading of the purpose it was shown, and a use that
+// now approves something else has not been read by anyone.
+func covers(granted *model.CredentialVerdict, job judge.Job, use services.ApprovedUse, origin string) bool {
+	if granted.GrantID != use.GrantID || origin == "" || standingOrigin(granted.Request) != origin {
+		return false
+	}
+	var asked judge.Job
+	if err := json.Unmarshal([]byte(granted.Prompt), &asked); err != nil {
+		return false
+	}
+	if asked.Purpose != job.Purpose || asked.Host != job.Host || asked.Credential != job.Credential {
+		return false
+	}
+	route, err := judge.ParseRoute(granted.StandingRoute)
+	if err != nil {
+		return false
+	}
+	return route.Matches(job.Request.Method, job.Request.URL)
 }
 
 // job is the question this server puts, built from what the pool sent and what
@@ -265,7 +384,7 @@ func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk)
 	if ask.Request == nil {
 		return judge.Job{}, services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, "a request to judge is required")
 	}
-	use, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask))
+	use, err := s.uses.ApprovedUse(ctx, poolID, ask.SandboxID, ask.UseID, judgedHost(ask.Request))
 	if err != nil {
 		return judge.Job{}, services.ApprovedUse{}, err
 	}
@@ -287,15 +406,33 @@ func (s *Service) job(ctx context.Context, poolID string, ask services.JudgeAsk)
 // judgedHost is where the request the pool observed is going, which is what
 // the use has to cover. It is read off the URL rather than taken as a field of
 // its own: the destination and the evidence must be the same destination.
-func judgedHost(ask services.JudgeAsk) string {
-	if ask.Request == nil {
+func judgedHost(request *judge.Request) string {
+	if request == nil {
 		return ""
 	}
-	target, err := url.Parse(ask.Request.URL)
+	target, err := url.Parse(request.URL)
 	if err != nil || target.Host == "" {
 		return ""
 	}
 	return hostscope.Normalize(target.Host)
+}
+
+// standingOrigin is where a request went, as a standing allow compares it: the
+// scheme and the authority with its port, not the normalized host a use is
+// scoped by. Normalizing drops the port, and the judge read a request to one
+// service; another port, or plain HTTP, on the same name is another one
+// (ADR 26-09-25-428 §2). Ports are compared as written, so an explicit
+// default port is a different origin: a miss is a request judged, which is the
+// safe way to be wrong.
+func standingOrigin(request *judge.Request) string {
+	if request == nil {
+		return ""
+	}
+	target, err := url.Parse(request.URL)
+	if err != nil || target.Scheme == "" || target.Host == "" {
+		return ""
+	}
+	return strings.ToLower(target.Scheme) + "://" + strings.ToLower(target.Host)
 }
 
 // judgeRoutingGrace is what this hop allows on top of the judge's own bound:
@@ -353,6 +490,10 @@ func answer(answered sandboxapi.JudgeAnswer) judge.Answer {
 	if need, ok := answered.Need.Get(); ok {
 		out.Allow = false
 		out.Need = &judge.Need{Body: string(need.Body), Bytes: int(need.Bytes.Or(0))}
+		return out
+	}
+	if standing, ok := answered.Standing.Get(); ok && out.Allow {
+		out.Standing = &judge.Standing{Route: standing.Route, Seconds: int(standing.Seconds)}
 	}
 	return out
 }

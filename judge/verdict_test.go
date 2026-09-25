@@ -115,7 +115,7 @@ func TestSchemaDescribesTheAnswersDecodeTakes(t *testing.T) {
 		t.Fatalf("the schema is not JSON: %v", err)
 	}
 	properties, _ := schema["properties"].(map[string]any)
-	for _, field := range []string{"allow", "reason", "need"} {
+	for _, field := range []string{"allow", "reason", "need", "standing"} {
 		if _, ok := properties[field]; !ok {
 			t.Fatalf("the schema does not describe %q", field)
 		}

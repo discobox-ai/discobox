@@ -16,7 +16,8 @@ import (
 const Schema = `{"type":"object","properties":{` +
 	`"allow":{"type":"boolean"},` +
 	`"reason":{"type":"string"},` +
-	`"need":{"type":"object","properties":{"body":{"type":"string","enum":["text","json"]},"bytes":{"type":"integer"}},"required":["body"],"additionalProperties":false}` +
+	`"need":{"type":"object","properties":{"body":{"type":"string","enum":["text","json"]},"bytes":{"type":"integer"}},"required":["body"],"additionalProperties":false},` +
+	`"standing":{"type":"object","properties":{"route":{"type":"string"},"seconds":{"type":"integer"}},"required":["route","seconds"],"additionalProperties":false}` +
 	`},"required":["reason"],"additionalProperties":false}`
 
 // Answer is one round's reply. A judge either decides — allow, or not — or
@@ -32,6 +33,10 @@ type Answer struct {
 	// Reason is always said, and is what the discobox is told when its
 	// request is refused. It is the only thing it learns about why.
 	Reason string `json:"reason"`
+	// Standing is the judge asking for this allow to stand for a route, so
+	// the requests it covers are not asked about again (ADR 26-09-25-428). It
+	// is only ever beside an allow, and Job.Admits decides whether it stands.
+	Standing *Standing `json:"standing,omitempty"`
 }
 
 // Decided reports whether this answer settles the job.
@@ -77,10 +82,11 @@ func Decode(data []byte) (Answer, error) {
 		return Answer{}, errors.New("a verdict is one JSON object")
 	}
 	var (
-		allow  *bool
-		reason *string
-		need   *Need
-		seen   = map[string]bool{}
+		allow    *bool
+		reason   *string
+		need     *Need
+		standing *Standing
+		seen     = map[string]bool{}
 	)
 	for decoder.More() {
 		key, err := readKey(decoder, seen)
@@ -106,6 +112,12 @@ func Decode(data []byte) (Answer, error) {
 				return Answer{}, err
 			}
 			need = value
+		case "standing":
+			value, err := readStanding(decoder)
+			if err != nil {
+				return Answer{}, err
+			}
+			standing = value
 		default:
 			return Answer{}, fmt.Errorf("a verdict has no %q", key)
 		}
@@ -123,8 +135,13 @@ func Decode(data []byte) (Answer, error) {
 	switch {
 	case allow != nil && need != nil:
 		return Answer{}, errors.New("a verdict decides or asks, never both")
+	case standing != nil && (allow == nil || !*allow):
+		// A standing route is an allow that lasts. Beside a refusal or an
+		// ask it would be read as permission by whoever reads it carelessly.
+		return Answer{}, errors.New("only an allow may stand")
 	case allow != nil:
 		answer.Allow = *allow
+		answer.Standing = standing
 	case need != nil:
 		answer.Need = need
 	default:
@@ -157,7 +174,7 @@ func readNeed(decoder *json.Decoder) (*Need, error) {
 			}
 			need.Body = form
 		case "bytes":
-			value, err := readInt(decoder)
+			value, err := readInt(decoder, "bytes")
 			if err != nil {
 				return nil, err
 			}
@@ -173,6 +190,56 @@ func readNeed(decoder *json.Decoder) (*Need, error) {
 		return nil, errors.New("an ask says what it needs to be shown")
 	}
 	return &need, nil
+}
+
+// readStanding reads the route an allow asks to stand for, and how long. The
+// route must parse here: a standing route Discobox cannot read is a verdict
+// it cannot read, and whether a readable one stands is Job.Admits's to say.
+func readStanding(decoder *json.Decoder) (*Standing, error) {
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return nil, errors.New("a standing allow names a route and how long")
+	}
+	var (
+		standing Standing
+		route    bool
+		seconds  bool
+		seen     = map[string]bool{}
+	)
+	for decoder.More() {
+		key, err := readKey(decoder, seen)
+		if err != nil {
+			return nil, err
+		}
+		switch key {
+		case "route":
+			value, err := readString(decoder, "route")
+			if err != nil {
+				return nil, err
+			}
+			if _, err := ParseRoute(value); err != nil {
+				return nil, err
+			}
+			standing.Route, route = value, true
+		case "seconds":
+			value, err := readInt(decoder, "seconds")
+			if err != nil {
+				return nil, err
+			}
+			if value <= 0 {
+				return nil, errors.New("a standing allow stands for some seconds")
+			}
+			standing.Seconds, seconds = value, true
+		default:
+			return nil, fmt.Errorf("a standing allow has no %q", key)
+		}
+	}
+	if err := endObject(decoder); err != nil {
+		return nil, err
+	}
+	if !route || !seconds {
+		return nil, errors.New("a standing allow names a route and how long")
+	}
+	return &standing, nil
 }
 
 // readKey reads one field name, refusing a name already read in any spelling:
@@ -219,18 +286,18 @@ func readString(decoder *json.Decoder, field string) (string, error) {
 	return value, nil
 }
 
-func readInt(decoder *json.Decoder) (int, error) {
+func readInt(decoder *json.Decoder, field string) (int, error) {
 	token, err := decoder.Token()
 	if err != nil {
 		return 0, fmt.Errorf("the judge's answer is not a verdict: %w", err)
 	}
 	number, ok := token.(json.Number)
 	if !ok {
-		return 0, errors.New("bytes is a whole number")
+		return 0, fmt.Errorf("%s is a whole number", field)
 	}
 	value, err := strconv.Atoi(number.String())
 	if err != nil {
-		return 0, errors.New("bytes is a whole number")
+		return 0, fmt.Errorf("%s is a whole number", field)
 	}
 	return value, nil
 }

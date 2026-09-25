@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -188,5 +189,51 @@ func TestListCredentialVerdictsSinceDoesNotDependOnZones(t *testing.T) {
 		if len(rows) != tc.want {
 			t.Fatalf("since %s: got %d verdicts, want %d", tc.name, len(rows), tc.want)
 		}
+	}
+}
+
+// A standing allow is found for its own discobox and use while it stands, and
+// never once it has lapsed, for another discobox, or on a row that is not the
+// project judge's allow.
+func TestStandingVerdictsAreTheLiveAllowsForOneUse(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	project := &model.Project{Name: "standing"}
+	if err := st.CreateProject(ctx, project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) *time.Time {
+		// A zone other than UTC, which the row must not be compared in.
+		t := now.Add(d).In(time.FixedZone("JST", 9*60*60))
+		return &t
+	}
+	request := func(id, sandboxID, useID string, allow bool, route string, until *time.Time, created time.Duration) model.CredentialVerdict {
+		return model.CredentialVerdict{
+			ID: id, ProjectID: project.ID, Kind: model.CredentialVerdictKindRequest, Origin: model.CredentialVerdictOriginJudge,
+			SandboxID: sandboxID, UseID: useID, Allow: allow, StandingRoute: route, StandingUntil: until,
+			CreatedAt: now.Add(created),
+		}
+	}
+	for _, v := range []model.CredentialVerdict{
+		request("cv_live_old", "sbx_a", "use_1", true, "GET /a", at(5*time.Minute), -2*time.Minute),
+		request("cv_live_new", "sbx_a", "use_1", true, "GET /b", at(10*time.Minute), -time.Minute),
+		request("cv_lapsed", "sbx_a", "use_1", true, "GET /c", at(-time.Second), -20*time.Minute),
+		request("cv_no_route", "sbx_a", "use_1", true, "", nil, -time.Minute),
+		request("cv_refused", "sbx_a", "use_1", false, "GET /d", at(5*time.Minute), -time.Minute),
+		request("cv_other_sandbox", "sbx_b", "use_1", true, "GET /e", at(5*time.Minute), -time.Minute),
+		request("cv_other_use", "sbx_a", "use_2", true, "GET /f", at(5*time.Minute), -time.Minute),
+		{ID: "cv_command", ProjectID: project.ID, SandboxID: "sbx_a", UseID: "use_1", Allow: true, StandingRoute: "GET /g", StandingUntil: at(5 * time.Minute), CreatedAt: now},
+	} {
+		if err := st.CreateCredentialVerdict(ctx, &v); err != nil {
+			t.Fatalf("create verdict %s: %v", v.ID, err)
+		}
+	}
+	rows, err := st.StandingVerdicts(ctx, project.ID, "sbx_a", "use_1", now)
+	if err != nil {
+		t.Fatalf("StandingVerdicts() error = %v", err)
+	}
+	if got, want := verdictIDs(rows), []string{"cv_live_new", "cv_live_old"}; !slices.Equal(got, want) {
+		t.Fatalf("StandingVerdicts() = %v, want %v", got, want)
 	}
 }

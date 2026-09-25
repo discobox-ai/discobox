@@ -38,6 +38,14 @@ func (h *handler) JudgeSandbox(ctx context.Context, req *sandboxapi.JudgeJob, _ 
 		return out, nil
 	}
 	out.Allow = sandboxapi.NewOptBool(answer.Allow)
+	if answer.Standing != nil {
+		// Passed on as the judge asked for it. Whether it stands, and for how
+		// long, is the control plane's to decide (ADR 26-09-25-428 §2).
+		out.Standing = sandboxapi.NewOptJudgeStanding(sandboxapi.JudgeStanding{
+			Route:   answer.Standing.Route,
+			Seconds: int64(answer.Standing.Seconds),
+		})
+	}
 	return out, nil
 }
 
