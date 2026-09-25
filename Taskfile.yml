@@ -453,9 +453,9 @@ tasks:
       - dev:docker-image-watch
 
   dev:nested-claude-auth:
-    desc: Inside a discobox, configure the running dev server's claude-code harness with this sandbox's own Claude Code login
+    desc: "Inside a discobox, configure the running dev server's claude-code harness with this sandbox's own Claude Code login (`-- --test` proves it works first)"
     cmds:
-      - scripts/nested-claude-auth.sh
+      - scripts/nested-claude-auth.sh {{.CLI_ARGS}}
 
   dev:released-images:
     desc: Hot-reload local binaries using an existing release manifest (MANIFEST=path)

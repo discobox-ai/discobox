@@ -18,9 +18,10 @@
 # The harness is marked configured only by a configure flow that exited 0
 # (CommitHarnessConfigConfigure), so this drives the real flow over the API and
 # replaces the configure sandbox's configure command, before it launches, with
-# one that verifies the sentinel with `claude -p` and writes the result the
-# interactive flow would have. Everything after that — the secret, its binding
-# and grant, the files, `configured` — is the server's normal apply.
+# one that writes the result the interactive flow would have. Everything after
+# that — the secret, its binding and grant, the files, `configured` — is the
+# server's normal apply. The sentinel is assumed to work; --test first proves it
+# with `claude -p` through the nested proxy, which costs a model round trip.
 #
 # Run it against a nested server that is up (`go tool task dev`). Re-running it
 # updates the harness's secret in place.
@@ -36,14 +37,19 @@ SETTINGS_FILE="$HOME/.claude/settings.json"
 # tries to rotate a sentinel.
 CREDENTIALS_EXPIRES_AT=4102444800000
 
+TEST=0
 for arg in "$@"; do
 	case "$arg" in
+	--test) TEST=1 ;;
 	-h | --help)
-		echo "usage: scripts/nested-claude-auth.sh"
+		echo "usage: scripts/nested-claude-auth.sh [--test]"
 		echo
 		echo "Configures the local discobox server's $HARNESS harness with this"
 		echo "sandbox's own Claude Code login (its sentinel). DISCOBOX_SERVER and"
 		echo "DISCOBOX_PROJECT select the server and project as for the CLI."
+		echo
+		echo "  --test  prove the login works from a nested sandbox with claude -p"
+		echo "          before configuring; without it the login is assumed to work"
 		exit 0
 		;;
 	*)
@@ -173,12 +179,12 @@ until discobox admin exec --discobox-id "$SANDBOX_ID" create --user root -- true
 done
 
 # Before the primary terminal is attached nothing has run, so the command it
-# will launch can still be replaced. The replacement proves the sentinel works
-# from a nested sandbox, as the interactive flow's own check does, and fails
-# the flow — leaving the harness unconfigured — if it does not.
-REPLACEMENT=$(cat <<EOF
-#!/bin/sh
-set -eu
+# will launch can still be replaced. With --test the replacement first proves
+# the sentinel works from a nested sandbox, as the interactive flow's own check
+# does, and fails the flow — leaving the harness unconfigured — if it does not.
+VERIFY=""
+if [ "$TEST" = 1 ]; then
+	VERIFY=$(cat <<EOF
 echo "Verifying the $SECRET_LABEL through the nested proxy…"
 reply=\$(env -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN $SECRET_ENV='$TOKEN' \\
 	timeout 180 claude -p 'Reply with exactly: discobox-ok' 2>&1) || {
@@ -186,6 +192,13 @@ reply=\$(env -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN $SECRET_ENV='$TOKEN
 	exit 1
 }
 echo "Claude replied: \$reply"
+EOF
+	)
+fi
+REPLACEMENT=$(cat <<EOF
+#!/bin/sh
+set -eu
+$VERIFY
 mkdir -p /run/discobox/configure
 cat >/run/discobox/configure/harness-configure.json <<'OUTPUT_EOF'
 $OUTPUT
