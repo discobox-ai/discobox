@@ -2,6 +2,8 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-22
+- **Superseded in part by**: [26-09-25-428](26-09-25-428-the-judge-may-let-its-allow-stand-for-a-route.md)
+  — the judge, not only an endpoint rule, may let an allow stand (§7)
 - **Amends**: [0079](0079-a-local-judge-gates-every-wrapped-credential-use.md)'s
   placement of the judge in the sandbox and its deferred trusted-side half;
   [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md)'s invocation
