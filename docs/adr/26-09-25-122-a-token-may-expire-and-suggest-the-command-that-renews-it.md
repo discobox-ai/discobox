@@ -2,6 +2,9 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-25
+- **§2 amended**: 2026-09-25, before anything shipped against it — a
+  well-known credential also carries the lifetime its value really has, and a
+  secret may be created already answering its ID. See §2's last paragraphs.
 - **Relates to**: [0011](0011-oauth-secrets-refresh-server-side-on-resolve.md),
   whose "serve what is on hand" this keeps while moving the renewal to a person's
   client; [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md),
@@ -100,6 +103,24 @@ for a credential the registry does not know. Because the first value is fetched
 when the secret is created, a secret with a command always starts with a value.
 The registry never runs anything: what runs is always what the person saw in
 the field.
+
+**A well-known credential says how long its value lasts** (`RefreshTTL`). A
+command's value lasts 300s by default because most are short-lived, but not all
+are: `gh auth token` prints an OAuth app token that lasts until it is revoked,
+so asking for a new one every five minutes asks a person to approve nothing.
+`com.github.api` gets a day. It is a default like the command, taken by a secret
+created for the ID with a command and no lifetime, and a person may choose
+another. A value that outlasts it is only re-checked: a refusal still asks for a
+new one at once (§3).
+
+**A secret may be created for an ID** (`CreateSecretBody.wellKnownId`). Until
+this, only the first approval of an ask by ID marked the secret that answers it;
+a person who stored GitHub's token ahead of any ask was still asked, on the
+first one, which secret answered. Creating a token for the ID sets that mark
+itself. It is refused for a gate, whose secret is made by approving a request
+for it, and for an ID another secret already answers. F4 offers each
+well-known credential with a value as a kind of its own, beside token and OAuth,
+filling in its name, host, command, and lifetime.
 
 ### 3. Delivery serves what is on hand
 
