@@ -13,6 +13,35 @@ in their discobox window, and you carry on.
 
 Every command below is safe to run and none of them prints a secret.
 
+## Stay with approval requests until they resolve
+
+For credentials and host trust, use `wait: true` or `--wait`. If your execution
+tool returns a running session or job ID, keep waiting on **that same
+execution**. A tool yield is not a timeout or a completed request. In Codex,
+use `write_stdin` for an `exec_command` session; if `functions.exec` itself
+yields a cell ID, use `functions.wait` for that cell.
+
+While approval is pending, provide occasional progress updates and continue
+independent work when useful. Do not end your turn merely to announce that
+access was requested, and do not ask the user to say "continue". After approval,
+automatically resume the authorized task. Stop waiting only when the request
+resolves, the command reports an actual timeout or failure, or the user cancels.
+Elapsed time is never approval.
+
+If the running execution is lost, resume waiting on the existing request ID;
+do not create a replacement request:
+
+```bash
+discobox-access wait --json request sreq_7f3a2b
+discobox-access wait --json trust treq_7f3a2b
+```
+
+Flags go before the request kind and ID. `--timeout 1h` controls the wait
+(default one hour). A timeout stops waiting; it does not cancel the request or
+deny it. A denial is final: report it rather than requesting the same access
+again. Pending notices appear on stderr, including in JSON mode; stdout holds
+the result.
+
 ## 1. Check what you already have
 
 ```bash
@@ -68,7 +97,7 @@ EOF
   yourself — its use IDs are not `run` uses and `list` does not show them.
   Leave it out to ask to use the credential; if you need both, ask twice.
 - `wait: true` blocks until a human answers. Without it you get a request ID
-  back and the request sits pending — poll by asking again with `wait`.
+  back and the request sits pending — use `wait --json request REQUEST_ID`.
 
 ### Well-known credentials
 
@@ -82,7 +111,7 @@ getting them wrong is then impossible:
 | `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes, give a new one uses of project secrets, and answer credential requests | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
 
 ```bash
-discobox-access request com.github.api --use "Open a pull request against the current repo" --why "the task asks for a PR"
+discobox-access request com.github.api --use "Open a pull request against the current repo" --why "the task asks for a PR" --wait
 ```
 
 or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,

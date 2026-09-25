@@ -21,13 +21,16 @@ import (
 // wrapped command whose exit status is its own.
 
 type fakeService struct {
-	credentials []agentcreds.Credential
-	gotRequest  agentcreds.RequestBody
-	gotUse      agentcreds.UseBody
-	status      agentcreds.RequestStatus
-	getErr      error
-	gotDenial   agentcreds.DenialReport
-	denialErr   error
+	credentials  []agentcreds.Credential
+	gotRequest   agentcreds.RequestBody
+	gotUse       agentcreds.UseBody
+	status       agentcreds.RequestStatus
+	requestPolls []agentcreds.RequestStatus
+	requestIDs   []string
+	trustIDs     []string
+	getErr       error
+	gotDenial    agentcreds.DenialReport
+	denialErr    error
 	// predatesPurpose answers as a service that knows no purposes: it drops
 	// the field and reports none.
 	predatesPurpose bool
@@ -50,7 +53,15 @@ func (f *fakeService) Request(_ context.Context, body agentcreds.RequestBody) (a
 	return status, nil
 }
 
-func (f *fakeService) RequestStatus(context.Context, string) (agentcreds.RequestStatus, error) {
+func (f *fakeService) RequestStatus(_ context.Context, id string) (agentcreds.RequestStatus, error) {
+	f.requestIDs = append(f.requestIDs, id)
+	if len(f.requestPolls) > 0 {
+		next := f.requestPolls[0]
+		if len(f.requestPolls) > 1 {
+			f.requestPolls = f.requestPolls[1:]
+		}
+		return next, nil
+	}
 	return f.status, nil
 }
 
@@ -76,7 +87,8 @@ func (f *fakeService) RequestTrust(_ context.Context, body agentcreds.TrustReque
 	return f.trustStatus, nil
 }
 
-func (f *fakeService) TrustRequestStatus(context.Context, string) (agentcreds.TrustRequestStatus, error) {
+func (f *fakeService) TrustRequestStatus(_ context.Context, id string) (agentcreds.TrustRequestStatus, error) {
+	f.trustIDs = append(f.trustIDs, id)
 	next := f.trustPolls[0]
 	if len(f.trustPolls) > 1 {
 		f.trustPolls = f.trustPolls[1:]
@@ -445,10 +457,11 @@ func TestWaitReportsAGrantedRequestWithItsUseIDs(t *testing.T) {
 
 	body := `{"name":"github","envVar":"GITHUB_TOKEN","host":"api.github.com",` +
 		`"uses":[{"description":"Open a PR"}],"wait":true,"timeoutSeconds":5}`
-	stdout, _, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
+	stdout, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
 	if code != exitOK {
 		t.Fatalf("exit = %d, want 0", code)
 	}
+	assertProgress(t, stderr, "request", "sreq_1", true)
 	var status agentcreds.RequestStatus
 	if err := json.Unmarshal([]byte(stdout), &status); err != nil {
 		t.Fatalf("stdout is not JSON (%v): %s", err, stdout)

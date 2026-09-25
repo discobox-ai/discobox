@@ -183,12 +183,10 @@ func runRequest(ctx context.Context, args []string) int {
 			agentcreds.ErrInvalid, status.RequestID))
 	}
 
-	if input.Wait {
+	if input.Wait && !status.Settled() {
 		waitCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		if !structured {
-			fmt.Fprintf(os.Stderr, "Waiting for approval of %s...\n", status.RequestID)
-		}
+		out.pending("request", status.RequestID, true)
 		settled, err := client.WaitForRequest(waitCtx, status.RequestID, 2*time.Second)
 		if err != nil {
 			return out.report(err)
@@ -196,6 +194,10 @@ func runRequest(ctx context.Context, args []string) int {
 		status = settled
 	}
 
+	return out.requestStatus(status)
+}
+
+func (out *emitter) requestStatus(status agentcreds.RequestStatus) int {
 	out.emit(status, func(w io.Writer) {
 		fmt.Fprintf(w, "%s %s\n", status.RequestID, status.Status)
 		for _, use := range status.Uses {
@@ -204,10 +206,10 @@ func runRequest(ctx context.Context, args []string) int {
 		if status.Purpose == agentcreds.PurposeDelegate && len(status.Uses) > 0 {
 			fmt.Fprintln(w, "  (delegation: these say what you may delegate the credential for; run takes none of them)")
 		}
-		if status.Status == agentcreds.StatusPending {
-			fmt.Fprintf(os.Stderr, "Waiting on a human. Poll with: %s request --wait ...\n", Name)
-		}
 	})
+	if status.Status == agentcreds.StatusPending {
+		out.pending("request", status.RequestID, false)
+	}
 	// A request that settled as denied is a completed call, not a failed one:
 	// the caller asked what the answer was and got it. Only --wait can observe
 	// this, since without it every request is still pending.

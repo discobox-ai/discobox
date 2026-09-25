@@ -45,6 +45,7 @@ func TestTrustJSONBodyAndWait(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d, stderr %s", code, stderr)
 	}
+	assertProgress(t, stderr, "trust", "treq_1", true)
 	var status agentcreds.TrustRequestStatus
 	if err := json.Unmarshal([]byte(stdout), &status); err != nil {
 		t.Fatalf("stdout %q: %v", stdout, err)

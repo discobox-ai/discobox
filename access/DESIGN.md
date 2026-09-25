@@ -46,6 +46,7 @@ shape, so they deliberately do not get the same interface.
 | `list` | nothing | — |
 | `trust` | a host argument and flags, or JSON on stdin (`--json`) | The protocol's trust verb (ADR 0149): ask for a host whose certificate the egress refuses to be trusted for this sandbox. It carries free text for the reason `request` does. Nothing is run under it, so there is nothing to judge here; the proxy judges every request to the trusted host against its uses. |
 | `trusts` | nothing | — |
+| `wait` | `request` or `trust`, then an existing request ID; optional `--json` and `--timeout` flags first | Resume polling without creating another request. The explicit kind keeps service-owned ID formats out of the CLI. |
 
 There is no command that takes a use id and prints the bare value
 ([ADR 0092](../docs/adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md)):
@@ -62,7 +63,7 @@ that wants structure wants it in both directions.
 
 Rules the shape depends on:
 
-- **Results to stdout, failures to stderr, always.** `run` hands the child the
+- **Results to stdout, failures and progress to stderr, always.** `run` hands the child the
   real stdout, so the wrapper must never write into it.
 - **The JSON body replaces the flags; it does not merge with them.** Two
   sources for one field is a silent-precedence bug waiting to be reported as
@@ -79,6 +80,21 @@ Rules the shape depends on:
   `run` the child's own status passes straight through, as `env`(1) does. A
   `--wait` that settles as *denied* exits non-zero: the call completed, but the
   answer was no, and a shell-driven agent reads a zero as approval.
+
+## Approval waiting
+
+`request --wait`, `trust --wait`, and `wait` keep polling until the request
+settles or the wait context ends. They emit a pending notice before polling,
+also in JSON mode: a `progress` envelope on stderr carries the request kind,
+ID, whether this process is waiting, and instructions to keep monitoring the
+execution across tool yields. stdout remains a single result. A request made
+without waiting emits the same notice with the exact command to resume it.
+Timeouts end the local wait, not the service-owned request. Resuming a trust
+request returns the status available from the service; only the original
+`trust --wait` can preserve certificate-chain metadata from its creation call.
+
+The bundled skill requires the agent to keep its turn active while waiting
+and resume the authorized work after approval without another user prompt.
 
 ## The judge
 

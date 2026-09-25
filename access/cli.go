@@ -80,6 +80,8 @@ func Run(args []string) int {
 		return runList(ctx, rest)
 	case "request":
 		return runRequest(ctx, rest)
+	case "wait":
+		return runWait(ctx, rest)
 	case "run":
 		return runWrapped(ctx, rest)
 	case "trust":
@@ -174,6 +176,16 @@ func usage(w io.Writer) {
       write them as what you will actually send. --json reads the same
       fields from stdin: host, justification, uses, suppliedCA,
       grantTTLSeconds, wait, timeoutSeconds.
+
+  %[1]s wait [--json] [--timeout 1h] request|trust REQUEST_ID
+      Wait for an existing credential or trust request by ID without creating
+      another request. Flags precede the request kind and ID. Returns the same
+      final status as request --wait or trust --wait; denial exits non-zero.
+
+      While waiting, keep monitoring the running execution even if your shell
+      tool yields a session ID. Resume the authorized task after approval;
+      do not end your turn just to announce the request. Progress goes to
+      stderr (JSON with --json); stdout carries only the final result.
 
   %[1]s trusts [--json]
       Show the hosts this sandbox trusts and what each was trusted for.

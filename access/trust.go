@@ -117,9 +117,7 @@ func runTrust(ctx context.Context, args []string) int {
 	if input.Wait && !status.Settled() {
 		waitCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		if !structured {
-			fmt.Fprintf(os.Stderr, "Waiting for a human to trust %s (%s)...\n", status.Host, status.RequestID)
-		}
+		out.pending("trust", status.RequestID, true)
 		settled, err := client.WaitForTrustRequest(waitCtx, status.RequestID, 2*time.Second)
 		if err != nil {
 			return out.report(err)
@@ -132,6 +130,10 @@ func runTrust(ctx context.Context, args []string) int {
 		status = settled
 	}
 
+	return out.trustStatus(status)
+}
+
+func (out *emitter) trustStatus(status agentcreds.TrustRequestStatus) int {
 	out.emit(status, func(w io.Writer) {
 		// An ask that settled on the spot opened no request, and has no ID.
 		fmt.Fprintln(w, strings.TrimSpace(strings.Join([]string{status.RequestID, status.Host, status.Status}, " ")))
@@ -148,10 +150,10 @@ func runTrust(ctx context.Context, args []string) int {
 		for _, use := range status.Uses {
 			fmt.Fprintf(w, "  %s  %s\n", use.UseID, use.Description)
 		}
-		if status.Status == agentcreds.StatusPending {
-			fmt.Fprintf(os.Stderr, "Waiting on a human. Wait for the answer with: %s trust %s --wait ...\n", Name, status.Host)
-		}
 	})
+	if status.Status == agentcreds.StatusPending {
+		out.pending("trust", status.RequestID, false)
+	}
 	if status.Status == agentcreds.StatusDenied {
 		return exitError
 	}

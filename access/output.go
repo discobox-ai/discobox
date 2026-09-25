@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/discobox-ai/discobox/agentcreds"
 )
@@ -71,4 +72,33 @@ func (e *emitter) report(err error) int {
 	// CLI does not get to invent its own classification or its own wording.
 	e.fail(agentcreds.Code(err), agentcreds.Message(err))
 	return exitError
+}
+
+// pending is diagnostic output, leaving stdout as one final result even when
+// an execution tool yields while the approval command is still running.
+func (e *emitter) pending(kind, requestID string, waiting bool) {
+	resume := fmt.Sprintf("%s wait --json %s '%s'", Name, kind, strings.ReplaceAll(requestID, "'", "'\\''"))
+	message := "Approval is pending. Wait for the answer with: " + resume
+	if waiting {
+		message = "Waiting for approval. Keep monitoring this running execution if your tool yields a session/job ID; do not end your turn while approval is pending. After approval, resume the authorized task. If the execution is lost, resume with: " + resume
+	}
+	if e.structured {
+		//nolint:errchkjson // Fixed struct of strings and a bool; marshaling cannot fail.
+		encoded, _ := json.Marshal(struct {
+			Progress progressBody `json:"progress"`
+		}{Progress: progressBody{Status: "pending", Kind: kind, RequestID: requestID, Waiting: waiting, Message: message}})
+		fmt.Fprintln(e.err, string(encoded))
+		return
+	}
+	fmt.Fprintf(e.err, "%s %s: %s\n", kind, requestID, message)
+}
+
+// progressBody is separate from errorBody so pending approval cannot be
+// mistaken for a failure by a structured consumer.
+type progressBody struct {
+	Status    string `json:"status"`
+	Kind      string `json:"kind"`
+	RequestID string `json:"requestId"`
+	Waiting   bool   `json:"waiting"`
+	Message   string `json:"message"`
 }
