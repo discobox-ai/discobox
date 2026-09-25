@@ -28,9 +28,10 @@ func (a *App) newAuditGetCommand() *cobra.Command {
 reports for it.
 
 The ID says which trail to read: http_<row> is an exchange the pool's proxy
-recorded, dns_<row> a lookup the pool answered, cvd_… a credential verdict, and
-evt_… either a harness hook or an exec event, both of which the discobox keeps
-inside itself.
+recorded, dns_<row> a lookup the pool answered, cvd_… a credential verdict,
+sreq_… an ask for a new value of a token and how it was answered, and evt_…
+either a harness hook or an exec event, both of which the discobox keeps inside
+itself.
 
 An http record's headers are shown as the proxy stored them, which is already
 redacted: a credential the proxy swapped into the request was never written to
@@ -56,10 +57,12 @@ escaped.`,
 				return a.printDNSAuditRecord(cmd, client, projectID, poolID, sandboxID, recordID)
 			case strings.HasPrefix(recordID, "cvd_"):
 				return a.printCredentialVerdictRecord(cmd, client, projectID, sandboxID, recordID)
+			case strings.HasPrefix(recordID, "sreq_"):
+				return a.printSecretRefreshRecord(cmd, client, projectID, sandboxID, recordID)
 			case strings.HasPrefix(recordID, "evt_"):
 				return a.printSandboxTrailRecord(cmd, client, projectID, sandboxID, recordID)
 			default:
-				return fmt.Errorf("%q is not an audit record ID: they are written http_<row>, dns_<row>, cvd_… or evt_…", terminalSafe(recordID))
+				return fmt.Errorf("%q is not an audit record ID: they are written http_<row>, dns_<row>, cvd_…, sreq_… or evt_…", terminalSafe(recordID))
 			}
 		},
 	}

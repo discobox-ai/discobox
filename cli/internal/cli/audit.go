@@ -31,6 +31,7 @@ func (a *App) newAuditCommand() *cobra.Command {
 	cmd.AddCommand(a.newAuditListCommand())
 	cmd.AddCommand(a.newAuditGetCommand())
 	cmd.AddCommand(a.newAuditCredsCommand())
+	cmd.AddCommand(a.newAuditRefreshCommand())
 	cmd.AddCommand(a.newAuditHTTPCommand())
 	cmd.AddCommand(a.newAuditDNSCommand())
 	cmd.AddCommand(a.newAuditHooksCommand())

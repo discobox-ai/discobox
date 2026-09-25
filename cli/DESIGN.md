@@ -21,6 +21,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
+| `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
@@ -1536,6 +1537,7 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 | `http` | `list-http-audit`, `get-http-audit`, and the hand-wired recording route for `--body` | each pool | `http_<row>` | row id, per pool |
 | `dns` | `list-dns-audit`; `get` reads one row through it by `id` | each pool | `dns_<row>` | row id, per pool |
 | `creds` | `list-credential-verdicts` | control plane | `cvd_…` | time |
+| `refresh` | `list-secret-refreshes`; `get` reads a request's events through it by `id` | control plane | `sreq_…` | time |
 | `hooks` | `list-harness-hooks` | inside the discobox | `evt_…` | time |
 | `execs` | `list-exec-events` | inside the discobox | `evt_…` | time |
 | `list` | every trail but `dns` unless `--source` names it, merged by time, for one discobox | | each trail's own | each trail's own |
@@ -1545,6 +1547,13 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 discobox's own judge, recorded at `use` or by `report`; and `request`, the
 project's judge, recorded `judge` by the control plane for every answer. `RTT`
 is the round trip each asker timed.
+`refresh` is the asks for a new value of a token and how each closed
+(ADR 26-09-25-122 §6), two events per request — `asked`, then `answered` or
+`dismissed` — so a follower reading forward by time sees the answer arrive
+rather than a record that changed behind it; its key is the request ID and the
+event. An answer's record is attested `client`, the answering client's account
+of how the value was made; the ask and a dismissal are `control-plane`'s.
+`--discobox-id` matches the discobox that most recently needed the value.
 `http`'s `USES` column is the join to `creds`, by `--use-id` on either; a
 discobox's calls to the discobox API carry the use they were made under too.
 Its `REFUSED BY` column says what refused a request the proxy never sent — the
@@ -1562,7 +1571,7 @@ records.
   scope, a trail that fails is named without failing the rest, and no server
   route has to know every trail's cursors.
 - **Every trail keeps its own position** (`auditPosition`, one per source). The
-  four trails are stamped by three different machines — the pool proxy, the
+  trails are stamped by three different machines — the pool proxy, the
   control plane, the sandbox agent — so a shared position would read every
   trail from the clock of whichever is ahead: a pool a few minutes fast would
   leave the verdict trail permanently unread, silently. A trail's cursor, its
@@ -1595,7 +1604,8 @@ records.
   every record in the listing is that one discobox's, and not the pool, because
   a discobox runs on one. `SOURCE` is also what says how much a record is worth
   (ADR 0130 §2): `http` is the proxy's own observation, `hooks` and `execs` are
-  the discobox's account of itself, and a `creds` record says `use` or `report`.
+  the discobox's account of itself, a `creds` record says `use` or `report`, and
+  a `refresh` record reads `answered` with how the client says it made the value.
   The attestor stays a field in `-o json`.
 - **`get <discobox-id> <record-id>` routes on the ID.** `http_…` is read from
   the pool the discobox runs on — resolved from the discobox, since a record ID

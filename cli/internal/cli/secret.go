@@ -12,7 +12,41 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
+	"github.com/discobox-ai/discobox/wellknown"
 )
+
+// secretRenewalOptions is how a token is renewed: how long a value lasts, and
+// the command that prints a new one (ADR 26-09-25-122 §1).
+type secretRenewalOptions struct {
+	refreshCommand string
+	ttl            string
+}
+
+func addSecretRenewalFlags(flags *pflag.FlagSet, opts *secretRenewalOptions) {
+	flags.StringVar(&opts.refreshCommand, "refresh-command", "", "Command that prints a new value on this machine, such as 'gh auth token'; run without a shell, and offered to whoever renews the token (\"\" removes it)")
+	flags.StringVar(&opts.ttl, "ttl", "", "How long a value is good for before a new one is asked for: 5m, 1h, or forever (default 5m with --refresh-command)")
+}
+
+// apply sets what the flags say on a body's setters. The command is split as
+// a person types it; it is never handed to a shell.
+func (o secretRenewalOptions) apply(flags *pflag.FlagSet, setCommand func([]string), setTTL func(int64)) error {
+	if flags.Changed("refresh-command") {
+		command, err := refreshcmd.Split(o.refreshCommand)
+		if err != nil {
+			return fmt.Errorf("--refresh-command: %w", err)
+		}
+		setCommand(command)
+	}
+	seconds, given, err := grantLifetime(flags, "ttl", o.ttl)
+	if err != nil {
+		return err
+	}
+	if given {
+		setTTL(seconds)
+	}
+	return nil
+}
 
 type secretValueOptions struct {
 	valueJSON string
@@ -34,6 +68,7 @@ func (a *App) newSecretCommand() *cobra.Command {
 	cmd.AddCommand(a.newSecretCreateCommand())
 	cmd.AddCommand(a.newSecretUpdateCommand())
 	cmd.AddCommand(a.newSecretDeleteCommand())
+	cmd.AddCommand(a.newSecretRefreshCommand())
 	cmd.AddCommand(a.newSecretRequestCommand())
 	cmd.AddCommand(a.newSecretGrantCommand())
 	return cmd
@@ -240,9 +275,17 @@ func (a *App) newSecretGetCommand() *cobra.Command {
 }
 
 func (a *App) newSecretCreateCommand() *cobra.Command {
-	var name, secretType, host, ttl string
+	var name, secretType, host, ttl, wellKnownID string
 	var value secretValueOptions
-	cmd := &cobra.Command{Use: "create --name NAME --type TYPE", Short: "Create a secret", RunE: func(cmd *cobra.Command, _ []string) error {
+	var renewal secretRenewalOptions
+	cmd := &cobra.Command{Use: "create --name NAME --type TYPE", Short: "Create a secret", Long: `Create a secret.
+
+A token can be given as a value (--token) or got from a command on this
+machine (--refresh-command), which is run now for the first value and offered
+to whoever renews the token when it goes stale. --well-known fills in the name,
+host, and command a well-known credential suggests, such as com.github.api's
+'gh auth token', and makes the secret the one that answers requests for that
+ID; --token instead stores the value given and no command.`, RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -251,9 +294,33 @@ func (a *App) newSecretCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := applyWellKnownDefaults(cmd.Flags(), wellKnownID, &name, &host, &renewal); err != nil {
+			return err
+		}
 		body, err := createSecretBody(cmd.Flags(), name, secretType, host, ttl, value)
 		if err != nil {
 			return err
+		}
+		if id := strings.TrimSpace(wellKnownID); id != "" {
+			body.SetWellKnownId(apiclientgen.NewOptString(id))
+		}
+		if err := renewal.apply(cmd.Flags(), func(command []string) {
+			body.SetRefreshCommand(apiclientgen.NewOptNilStringArray(command))
+		}, func(seconds int64) {
+			body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
+		}); err != nil {
+			return err
+		}
+		// A token got from a command starts with a value: the command is run
+		// here, now, for the first one — the same run the window does when a
+		// person picks "get it from a command".
+		if command, ok := body.RefreshCommand.Get(); ok && len(command) > 0 && !body.Value.Token.IsSet() && !cmd.Flags().Changed("value-json") {
+			fmt.Fprintf(cmd.ErrOrStderr(), "running %s for the first value\n", refreshcmd.Join(command))
+			token, err := refreshcmd.Run(cmd.Context(), command)
+			if err != nil {
+				return err
+			}
+			body.Value.SetToken(apiclientgen.NewOptString(token))
 		}
 		res, err := client.CreateSecret(cmd.Context(), body, apiclientgen.CreateSecretParams{ProjectId: projectID})
 		if err != nil {
@@ -269,13 +336,46 @@ func (a *App) newSecretCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: token or oauth (default token)")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
 	cmd.Flags().StringVar(&ttl, "max-grant-ttl", "", maxGrantTTLCreateFlagUsage)
+	cmd.Flags().StringVar(&wellKnownID, "well-known", "", "Well-known credential the secret answers, such as com.github.api; fills in the name, host, and refresh command it suggests")
 	addSecretValueFlags(cmd.Flags(), &value)
+	addSecretRenewalFlags(cmd.Flags(), &renewal)
 	return cmd
+}
+
+// applyWellKnownDefaults fills in what a well-known credential suggests for
+// whatever the flags left out. A value typed with --token is the "enter a
+// value" answer, and takes no command (ADR 26-09-25-122 §2).
+func applyWellKnownDefaults(flags *pflag.FlagSet, id string, name, host *string, renewal *secretRenewalOptions) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	known, ok := wellknown.Lookup(id)
+	if !ok {
+		return fmt.Errorf("%s is not a well-known credential", id)
+	}
+	if known.Gate {
+		return fmt.Errorf("%s is a gate, with no value: it is given by approving a request for it", id)
+	}
+	if strings.TrimSpace(*name) == "" {
+		*name = known.Name
+	}
+	if !flags.Changed("host") {
+		*host = known.Host()
+	}
+	if !flags.Changed("refresh-command") && !secretValueFlagsChanged(flags) && len(known.RefreshCommand) > 0 {
+		renewal.refreshCommand = refreshcmd.Join(known.RefreshCommand)
+		if err := flags.Set("refresh-command", renewal.refreshCommand); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *App) newSecretUpdateCommand() *cobra.Command {
 	var name, host, ttl string
 	var value secretValueOptions
+	var renewal secretRenewalOptions
 	cmd := &cobra.Command{Use: "update SECRET_ID", Short: "Update a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -293,6 +393,13 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := renewal.apply(cmd.Flags(), func(command []string) {
+			body.SetRefreshCommand(apiclientgen.NewOptNilStringArray(command))
+		}, func(seconds int64) {
+			body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
+		}); err != nil {
+			return err
+		}
 		res, err := client.UpdateSecret(cmd.Context(), body, apiclientgen.UpdateSecretParams{ProjectId: projectID, SecretId: secretID})
 		if err != nil {
 			return err
@@ -307,6 +414,7 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
 	cmd.Flags().StringVar(&ttl, "max-grant-ttl", "", maxGrantTTLUpdateFlagUsage)
 	addSecretValueFlags(cmd.Flags(), &value)
+	addSecretRenewalFlags(cmd.Flags(), &renewal)
 	return cmd
 }
 

@@ -18,24 +18,29 @@ import (
 // The trails `audit list` merges, and who attests each record in them (ADR 0130
 // §2).
 const (
-	auditSourceHTTP  = "http"
-	auditSourceDNS   = "dns"
-	auditSourceCreds = "creds"
-	auditSourceHooks = "hooks"
-	auditSourceExecs = "execs"
+	auditSourceHTTP    = "http"
+	auditSourceDNS     = "dns"
+	auditSourceCreds   = "creds"
+	auditSourceRefresh = "refresh"
+	auditSourceHooks   = "hooks"
+	auditSourceExecs   = "execs"
 
 	auditAttestorPool         = "pool"
 	auditAttestorControlPlane = "control-plane"
 	auditAttestorSandbox      = "sandbox"
+	// auditAttestorClient is a person's client's own account, which the
+	// control plane received and cannot check: how a refreshed value was made
+	// (ADR 26-09-25-122 §6).
+	auditAttestorClient = "client"
 )
 
-var auditSources = []string{auditSourceHTTP, auditSourceDNS, auditSourceCreds, auditSourceHooks, auditSourceExecs}
+var auditSources = []string{auditSourceHTTP, auditSourceDNS, auditSourceCreds, auditSourceRefresh, auditSourceHooks, auditSourceExecs}
 
 // auditDefaultSources are the trails `audit list` reads when --source names
 // none. DNS is left out: a discobox looks up an A and an AAAA for every name its
 // tools touch, and on the timeline they would crowd out everything else. It is
 // read when --source names it.
-var auditDefaultSources = []string{auditSourceHTTP, auditSourceCreds, auditSourceHooks, auditSourceExecs}
+var auditDefaultSources = []string{auditSourceHTTP, auditSourceCreds, auditSourceRefresh, auditSourceHooks, auditSourceExecs}
 
 // auditRecord is one record from any trail, labeled with where it came from and
 // who vouches for it. Record is the trail's own record, unchanged.
@@ -92,6 +97,10 @@ it is worth:
          A record marked "report" instead of "use" is one the discobox sent
          after a denial, on its own; the verdict's words are its account
          either way.
+  refresh
+         the server asked for a new value of a token this discobox needed,
+         and recorded who answered and when. How the value was made is the
+         answering client's word: its record is marked "client" with -o json.
   hooks  what the coding harness published inside the discobox.
   execs  what the discobox recorded about its own execs.
 
@@ -152,6 +161,13 @@ are missing from the timeline.`,
 					SandboxId: apiclientgen.NewOptString(resolvedSandboxID),
 				}
 				trails = append(trails, auditRecords(credentialVerdictSource(client, params), auditSourceCreds, credentialVerdictRecord))
+			}
+			if wantSource[auditSourceRefresh] {
+				params := apiclientgen.ListSecretRefreshesParams{
+					ProjectId: projectID,
+					SandboxId: apiclientgen.NewOptString(resolvedSandboxID),
+				}
+				trails = append(trails, auditRecords(secretRefreshSource(client, params), auditSourceRefresh, secretRefreshRecord))
 			}
 			if wantSource[auditSourceHooks] {
 				trails = append(trails, auditRecords(harnessHookSource(client, apiclientgen.ListHarnessHooksParams{ProjectId: projectID, SandboxId: resolvedSandboxID}),
@@ -222,7 +238,7 @@ are missing from the timeline.`,
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Discobox whose trails to read (required); a deleted one needs its full ID")
-	cmd.Flags().StringSliceVar(&sources, "source", nil, "Only these trails: http, dns, creds, hooks, execs (default all but dns)")
+	cmd.Flags().StringSliceVar(&sources, "source", nil, "Only these trails: http, dns, creds, refresh, hooks, execs (default all but dns)")
 	cmd.Flags().StringVar(&since, "since", "", "Only records from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of records to read")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing records as they are recorded")

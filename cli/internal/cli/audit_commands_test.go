@@ -197,6 +197,14 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 			_, _ = w.Write([]byte(`{"credentialVerdicts":[
 				{"id":"cvd_1","projectId":"project-1","sandboxId":"` + sandboxID + `","useId":"use_1","allow":true,"volunteered":false,"createdAt":"2026-09-17T10:02:00Z","command":["gh"]},
 				{"id":"cvd_2","projectId":"project-1","sandboxId":"` + sandboxID + `","useId":"use_2","allow":false,"volunteered":true,"createdAt":"2026-09-17T10:01:00Z","command":["curl"]}]}`))
+		case strings.HasSuffix(r.URL.Path, "/secret-refreshes"):
+			asked["refresh"] = true
+			if r.URL.Query().Get("sandboxId") != sandboxID {
+				t.Errorf("refresh trail read for %q, want the discobox", r.URL.Query().Get("sandboxId"))
+			}
+			_, _ = w.Write([]byte(`{"secretRefreshEvents":[
+				{"id":"sreq_1","event":"answered","at":"2026-09-17T10:00:45Z","projectId":"project-1","secretId":"sec_1","secretName":"github","sandboxId":"` + sandboxID + `","refreshCause":"stale","answer":{"answeredAt":"2026-09-17T10:00:45Z","answeredBy":"user-1","via":"command","command":["gh","auth","token"],"session":true,"clientHost":"host-a"}},
+				{"id":"sreq_1","event":"asked","at":"2026-09-17T10:00:30Z","projectId":"project-1","secretId":"sec_1","secretName":"github","sandboxId":"` + sandboxID + `","refreshCause":"stale"}]}`))
 		case strings.HasSuffix(r.URL.Path, "/harness-hooks"):
 			asked["hooks"] = true
 			_, _ = w.Write([]byte(`{"hooks":[{"id":"evt_hook1","provider":"claude-code","event":"PreToolUse","payload":{},"createdAt":"2026-09-17T10:04:00Z"}]}`))
@@ -214,8 +222,8 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 5 {
-		t.Fatalf("stdout = %q, want a header and four records", stdout)
+	if len(lines) != 7 {
+		t.Fatalf("stdout = %q, want a header and six records", stdout)
 	}
 	if asked["dns"] {
 		t.Fatal("list read the DNS trail without --source naming it")
@@ -230,6 +238,8 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		{"http", "http_7", "uses=use_1"},
 		{"creds", "cvd_1", "allow use_1 (use)"},
 		{"creds", "cvd_2", "deny use_2 (report)"},
+		{"refresh", "sreq_1", "answered github: ran gh auth token for the session by user-1 on host-a"},
+		{"refresh", "sreq_1", "asked github: stale"},
 	} {
 		for _, field := range want {
 			if !strings.Contains(lines[i+1], field) {
@@ -269,7 +279,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list -o json: %v", err)
 	}
-	if asked["hooks"] || asked["execs"] || asked["dns"] {
+	if asked["hooks"] || asked["execs"] || asked["dns"] || asked["refresh"] {
 		t.Fatalf("--source http,creds read other trails: %v", asked)
 	}
 	var got struct {
@@ -290,6 +300,20 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	}
 	if attestors["pool"] != "http" || attestors["control-plane"] != "creds" || attestors["sandbox"] != "creds" {
 		t.Fatalf("attestors = %v, want the pool's request and both kinds of verdict", attestors)
+	}
+
+	// An answer's record is the client's account of how the value was made;
+	// the ask is the control plane's (ADR 26-09-25-122 §6).
+	stdout, _, err = runAudit(context.Background(), t, handler, "list", "--discobox-id", sandboxID, "--source", "refresh", "-o", "json")
+	if err != nil {
+		t.Fatalf("list --source refresh: %v", err)
+	}
+	got.Records = nil
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, stdout)
+	}
+	if len(got.Records) != 2 || got.Records[0].Attestor != "client" || got.Records[1].Attestor != "control-plane" {
+		t.Fatalf("refresh records = %+v, want the answer as the client's word and the ask as the control plane's", got.Records)
 	}
 
 	if _, _, err := runAudit(context.Background(), t, handler, "list"); err == nil {
@@ -362,6 +386,11 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 				rows = append(rows, verdict("cv_2", "use_two", 4))
 			}
 			_, _ = w.Write([]byte(`{"credentialVerdicts":[` + strings.Join(rows, ",") + `]}`))
+		case strings.HasSuffix(r.URL.Path, "/secret-refreshes"):
+			if asc {
+				forward["refresh"]++
+			}
+			_, _ = w.Write([]byte(`{"secretRefreshEvents":[]}`))
 		case strings.HasSuffix(r.URL.Path, "/harness-hooks"):
 			if asc {
 				forward["hooks"]++
@@ -392,7 +421,7 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 	if forward["dns"] != 0 {
 		t.Fatal("follow read the DNS trail without --source naming it")
 	}
-	for _, trail := range []string{"http", "creds", "hooks", "execs"} {
+	for _, trail := range []string{"http", "creds", "refresh", "hooks", "execs"} {
 		if forward[trail] == 0 {
 			t.Fatalf("%s was never read forward: %v", trail, forward)
 		}
@@ -500,5 +529,51 @@ func TestAuditSinceKeepsFractionalSeconds(t *testing.T) {
 	}
 	if got := query.Get("since"); got != "2026-09-17T10:00:00.123456789Z" {
 		t.Fatalf("since = %q, want it to the nanosecond", got)
+	}
+}
+
+// The refresh trail reads project-wide, newest first, each event on its own
+// row; `audit get` prints a request's events by the ID either row shows.
+func TestAuditRefreshListsEventsAndGetPrintsARequest(t *testing.T) {
+	sandboxID, err := idpkg.New("sbx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var query url.Values
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/secret-refreshes"):
+			query = r.URL.Query()
+			_, _ = w.Write([]byte(`{"secretRefreshEvents":[
+				{"id":"sreq_1","event":"dismissed","at":"2026-09-17T10:02:00Z","projectId":"project-1","secretId":"sec_1","secretName":"gcloud","refreshCause":"rejected"},
+				{"id":"sreq_1","event":"asked","at":"2026-09-17T10:01:00Z","projectId":"project-1","secretId":"sec_1","secretName":"gcloud\u001b[2J","refreshCause":"rejected"}]}`))
+		case strings.Contains(r.URL.Path, "/sandboxes/"):
+			_, _ = w.Write([]byte(`{"id":"` + sandboxID + `","projectId":"project-1","name":"box","createdAt":"2026-09-17T10:00:00Z","updatedAt":"2026-09-17T10:00:00Z"}`))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}
+	stdout, _, err := runAudit(context.Background(), t, handler, "refresh", "--since", "1h")
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if query.Get("since") == "" || query.Has("sandboxId") || query.Has("order") {
+		t.Fatalf("query = %v", query)
+	}
+	dismissed, asked := strings.Index(stdout, "dismissed"), strings.Index(stdout, "asked")
+	if dismissed < 0 || asked < dismissed || strings.ContainsRune(stdout, 0x1b) {
+		t.Fatalf("stdout = %q, want both events newest first, escaped", stdout)
+	}
+
+	stdout, _, err = runAudit(context.Background(), t, handler, "get", sandboxID, "sreq_1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if query.Get("id") != "sreq_1" || query.Get("order") != "asc" || query.Has("sandboxId") {
+		t.Fatalf("get query = %v", query)
+	}
+	if !strings.Contains(stdout, "cause:") || !strings.Contains(stdout, "rejected") || !strings.Contains(stdout, "dismissed:") {
+		t.Fatalf("get stdout = %q", stdout)
 	}
 }

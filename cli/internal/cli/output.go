@@ -18,6 +18,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/wellknown"
@@ -490,6 +491,17 @@ func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
 		// is one that will expire and stay expired.
 		fmt.Fprintf(tw, "REFRESHABLE\t%t\n", oauth.Refreshable.Or(false))
 	}
+	// A token's lifetime and how it is renewed (ADR 26-09-25-122): the
+	// command is advice to whoever renews it, shown as they would type it.
+	if command, ok := secret.RefreshCommand.Get(); ok && len(command) > 0 {
+		fmt.Fprintf(tw, "REFRESH COMMAND\t%s\n", refreshcmd.Join(command))
+	}
+	if ttl := secret.TtlSeconds.Or(0); ttl > 0 {
+		fmt.Fprintf(tw, "VALUE LIFETIME\t%s\n", formatSeconds(ttl))
+	}
+	if staleAt, ok := secret.StaleAt.Get(); ok {
+		fmt.Fprintf(tw, "STALE AT\t%s\n", formatTime(staleAt))
+	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(secret.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(secret.UpdatedAt))
 	return tw.Flush()
@@ -744,11 +756,20 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tPURPOSE\tSTATUS\tSECRET\tDISCOBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
+		// A refresh request asks for a new value, not a grant: its purpose
+		// column says so, and why it was opened.
+		purpose := string(request.Purpose.Or(apiclientgen.SecretRequestPurposeUse))
+		if request.Reason.Or("") == apiclientgen.SecretRequestReasonRefresh {
+			purpose = "refresh"
+			if cause := request.RefreshCause.Or(""); cause != "" {
+				purpose += " (" + string(cause) + ")"
+			}
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			request.ID,
 			request.Type,
 			request.Host.Or(""),
-			request.Purpose.Or(apiclientgen.SecretRequestPurposeUse),
+			purpose,
 			request.Status,
 			request.SecretId.Or(""),
 			request.SandboxId.Or(""),
