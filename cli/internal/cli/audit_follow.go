@@ -646,7 +646,8 @@ func (t auditTable[T]) fixedLine(values []string) string {
 		if pad := column.width - len([]rune(value)); pad > 0 {
 			value += strings.Repeat(" ", pad)
 		}
-		b.WriteString(value + "  ")
+		b.WriteString(value)
+		b.WriteString("  ")
 	}
 	return strings.TrimRight(b.String(), " ")
 }
