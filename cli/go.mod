@@ -54,7 +54,7 @@ require (
 require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
-	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b
+	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b // indirect
 )
 
 require (
