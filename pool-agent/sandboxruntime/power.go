@@ -98,12 +98,43 @@ func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 	// wait on the start gate while a cache clear holds it. A clear stopping it
 	// a moment after this look is the same as any stop landing just after a
 	// request, which the proxy already has to answer.
+	//
+	// Running is Docker's word, though, and Docker says it the moment the
+	// container starts, well before the sandbox agent inside it answers. A
+	// start or create under way is still booting it, and the request waits for
+	// that boot to end; proxying on the first look sends it to an agent that is
+	// not listening yet, and it comes back a bare 502. A boot can end without
+	// the sandbox up, so one that was waited on is followed by a second look
+	// the ordinary way, which starts the sandbox if it went down.
 	if current != nil && current.Status == StatusRunning {
-		return nil
+		waited, err := r.awaitBoot(ctx, sandboxID)
+		if err != nil || !waited {
+			return err
+		}
 	}
+	for {
+		booting, err := r.startUnlessRunning(ctx, sandboxID)
+		if err != nil || !booting {
+			return err
+		}
+		// Running, but on a boot an earlier request began and left: a boot
+		// outlives its requester. It is waited out here, with neither the gate
+		// nor the lock held, so a stop or a clear is not held up behind it,
+		// and then the sandbox is looked at again.
+		if _, err := r.awaitBoot(ctx, sandboxID); err != nil {
+			return err
+		}
+	}
+}
+
+// startUnlessRunning starts the sandbox unless it is already running, inside
+// the start gate and under the sandbox's power lock. It reports whether it
+// found the sandbox running on a boot still under way, which its caller waits
+// out once both are released.
+func (r *DockerSandboxRuntime) startUnlessRunning(ctx context.Context, sandboxID string) (bool, error) {
 	leave, err := r.starts.enter(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer leave()
 	lock := r.sandboxLock(sandboxID)
@@ -115,14 +146,14 @@ func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 		// archive check answers the more useful question, and only for a
 		// sandbox this pool actually holds.
 		if errors.Is(err, ErrNotFound) && r.SandboxIsArchived(sandboxID) {
-			return ErrArchived
+			return false, ErrArchived
 		}
-		return err
+		return false, err
 	}
 	if sb.Status == StatusRunning {
-		return nil
+		return r.SandboxBooting(sandboxID), nil
 	}
-	return r.startLocked(ctx, sandboxID)
+	return false, r.startLocked(ctx, sandboxID)
 }
 
 // sandboxContainerWaitTimeout bounds the wait for a container that is being
@@ -198,11 +229,92 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	// once the container is up, and waitForSandboxAgent can take a while after
 	// that, so without this nobody could ever observe `starting`.
 	r.PublishSandboxState(ctx, sandboxID, StateStarting)
+	boot := r.beginBoot(sandboxID)
 	if _, err := r.client.ContainerStart(ctx, sb.ID, client.ContainerStartOptions{}); err != nil {
 		r.PublishSandboxState(ctx, sandboxID, StateStopped)
+		r.endBoot(sandboxID, boot, err)
 		return err
 	}
-	return r.waitForSandboxAgent(ctx, sandboxID)
+	return r.finishBoot(ctx, sandboxID, boot)
+}
+
+// sandboxBoot is one start of a sandbox's container, from just before
+// ContainerStart until its sandbox agent answers or the wait for it gives up.
+// err is written once, before done is closed.
+type sandboxBoot struct {
+	done chan struct{}
+	err  error
+}
+
+// beginBoot marks a sandbox as booting. It is called before ContainerStart, so
+// there is no moment Docker reports the container running and the mark is not
+// there. Every beginBoot is ended by endBoot, directly when the container did
+// not start and through finishBoot when it did.
+//
+// Boots of one sandbox can overlap. Both paths that start a container hold its
+// power lock to do it, but a boot's wait outlives that lock (see finishBoot), so
+// a restart or a replacing create can begin a new boot while the old one is
+// still waiting. The newer boot replaces the older in the map, and endBoot
+// removes only its own, so the mark lasts until the newest boot ends; a caller
+// waiting on the older one wakes when it ends and looks again.
+//
+// A sandbox deleted or archived mid-boot reads as booting until the wait gives
+// up, at most sandboxAgentReadyTimeout. Nothing routes on the mark for a
+// sandbox that is gone.
+func (r *DockerSandboxRuntime) beginBoot(sandboxID string) *sandboxBoot {
+	boot := &sandboxBoot{done: make(chan struct{})}
+	r.booting.Store(sandboxID, boot)
+	return boot
+}
+
+func (r *DockerSandboxRuntime) endBoot(sandboxID string, boot *sandboxBoot, err error) {
+	boot.err = err
+	r.booting.CompareAndDelete(sandboxID, boot)
+	close(boot.done)
+}
+
+// finishBoot waits for the sandbox agent of a container that has just started,
+// and ends the boot when it answers or the wait gives up.
+//
+// The wait belongs to the boot, not to the request that began it: that request
+// going away — a client that reconnects, an attach cancelled mid-start — must
+// not end the mark while the agent is still not listening, or every request
+// behind it would be proxied into a 502. So the wait runs detached, bounded by
+// its own sandboxAgentReadyTimeout, and the caller only waits on it for as long
+// as its own context allows.
+func (r *DockerSandboxRuntime) finishBoot(ctx context.Context, sandboxID string, boot *sandboxBoot) error {
+	go func() {
+		r.endBoot(sandboxID, boot, r.waitForSandboxAgent(context.WithoutCancel(ctx), sandboxID))
+	}()
+	select {
+	case <-boot.done:
+		return boot.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// awaitBoot waits out a boot of the sandbox under way, and reports whether
+// there was one. How that boot ended is its starter's to report; a caller that
+// waited looks at the sandbox again.
+func (r *DockerSandboxRuntime) awaitBoot(ctx context.Context, sandboxID string) (bool, error) {
+	value, ok := r.booting.Load(sandboxID)
+	if !ok {
+		return false, nil
+	}
+	select {
+	case <-value.(*sandboxBoot).done:
+		return true, nil
+	case <-ctx.Done():
+		return true, ctx.Err()
+	}
+}
+
+// SandboxBooting reports whether the sandbox's container is up but its sandbox
+// agent has not answered yet.
+func (r *DockerSandboxRuntime) SandboxBooting(sandboxID string) bool {
+	_, ok := r.booting.Load(sandboxID)
+	return ok
 }
 
 func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string) error {

@@ -231,6 +231,10 @@ type Runtime interface {
 	// sandbox this pool holds without a container is waited on as a rebuild
 	// in progress (ADR 0039 tier 2) or answered at once with ErrNoContainer.
 	EnsureSandboxRunning(ctx context.Context, sandboxID string, awaitContainer bool) error
+	// SandboxBooting reports whether the sandbox's container is up but its
+	// sandbox agent has not answered yet: Docker calls it running, and nothing
+	// in it can be reached.
+	SandboxBooting(sandboxID string) bool
 	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error)
 	// GitOriginPath serves the bare origin repository of a push-delivered
 	// source, which the client pushes into (ADR 0058 §3).
@@ -253,6 +257,9 @@ type DockerSandboxRuntime struct {
 	hostState layout.HostMapping
 	// powerLocks serializes power operations per sandbox (see power.go).
 	powerLocks sync.Map
+	// booting holds the boot under way of each sandbox whose container is
+	// started and whose sandbox agent has not answered yet (see beginBoot).
+	booting sync.Map
 	// starts holds every operation that can start a container, so a cache
 	// clear can keep sandboxes down while it empties the caches; clearRun is
 	// the clear under way, which concurrent requests share (see clearcache.go).
@@ -545,7 +552,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	}
 	r.PublishSandboxState(ctx, sandboxID, StateStarting)
 	r.PublishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
+	boot := r.beginBoot(sandboxID)
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		r.endBoot(sandboxID, boot, err)
 		return nil, err
 	}
 	// The container is up and the agent inside it is not yet answering. This is
@@ -553,7 +562,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// sandbox agent's own boot, which reports on no channel this one owns
 	// (ADR 0060).
 	r.PublishSandboxPhase(ctx, sandboxID, PhaseWaitingForAgent)
-	if err := r.waitForSandboxAgent(ctx, sandboxID); err != nil {
+	if err := r.finishBoot(ctx, sandboxID, boot); err != nil {
 		return nil, err
 	}
 	return r.observedSandbox(ctx, sandboxID)
@@ -2532,6 +2541,12 @@ func (r *MemorySandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 
 func (r *MemorySandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandboxID string, _ bool) error {
 	return r.StartSandbox(ctx, sandboxID, nil)
+}
+
+// SandboxBooting is always false: a memory sandbox is running the moment it is
+// started.
+func (r *MemorySandboxRuntime) SandboxBooting(string) bool {
+	return false
 }
 
 func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {

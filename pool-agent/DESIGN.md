@@ -451,7 +451,9 @@ forwards the request and waits; it records no state and orchestrates nothing.
   a start that lands during a clear is late, not wrong.
 - **Only on-demand starts wait.** `EnsureSandboxRunning` returns before the
   gate for a sandbox that is already running, so traffic to running sandboxes
-  does not stall behind a clear that is still draining.
+  does not stall behind a clear that is still draining. It does wait for a
+  sandbox that is still booting: Docker calls a container running before its
+  sandbox agent answers.
 - **Nothing starts after.** A stopped sandbox comes back on its next use
   (ADR 0017 §12); the agent does not remember what was running.
 - **The work outlives the request once it has begun.** Concurrent requests

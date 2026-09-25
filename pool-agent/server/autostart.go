@@ -74,14 +74,21 @@ func (s *sandboxService) autoStart(wait containerWait, next http.Handler) http.H
 // would undo the stop it may be reading about — the idle stop of ADR 0108 above
 // all — or, for an orchestrator polling its workers, keep that stop from ever
 // holding. A sandbox that is not running answers 409
-// saying so; one this runtime does not know passes through, so the proxy fails
-// on its own terms.
+// saying so, and so does one still booting — Docker calls its container
+// running, but the agent this would read from is not answering yet. One this
+// runtime does not know passes through, so the proxy fails on its own terms.
 func (s *sandboxService) requireRunning(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sandboxID := chi.URLParam(r, "sandboxId")
-		if sb, err := s.runtime.GetSandbox(r.Context(), sandboxID); err == nil && sb.Status != sandboxruntime.StatusRunning {
-			http.Error(w, fmt.Sprintf("discobox %s is %s: what is read here is inside it, and reading it does not start it", sandboxID, sb.Status), http.StatusConflict)
-			return
+		if sb, err := s.runtime.GetSandbox(r.Context(), sandboxID); err == nil {
+			status := string(sb.Status)
+			if sb.Status == sandboxruntime.StatusRunning && s.runtime.SandboxBooting(sandboxID) {
+				status = "starting"
+			}
+			if status != string(sandboxruntime.StatusRunning) {
+				http.Error(w, fmt.Sprintf("discobox %s is %s: what is read here is inside it, and reading it does not start it", sandboxID, status), http.StatusConflict)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

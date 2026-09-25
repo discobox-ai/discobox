@@ -60,3 +60,24 @@ in opposite ways, so `mapRuntimeError` stamps the archived one with
 `model.ErrorTypeSandboxArchived` and `NewError` copies it onto the response. Do
 not let a caller's only signal be the detail string: it is prose, it is written
 for people, and nothing stops it being reworded.
+
+## Running is not ready
+
+Docker reports a container `running` the moment it starts; the sandbox agent in
+it answers well after. A sandbox is usable only once `waitForSandboxAgent` has
+seen `/healthz` (ADR 0017 §12, ADR 0039 tier 2), and every path that starts a
+container marks the sandbox booting until then (`beginBoot`, before
+`ContainerStart`). A status check that decides whether to proxy must not treat
+`StatusRunning` as reachable while `SandboxBooting` says otherwise: a request
+arriving mid-start reaches an agent that is not listening, and the caller gets
+a bare 502. `EnsureSandboxRunning` waits the boot out; `requireRunning` refuses
+with 409. A new path that starts a container brackets it with `beginBoot` and
+`finishBoot` too. The boot's wait for the agent runs detached from the request
+that began it, so a caller going away cannot end the mark early; do not put it
+back on the caller's context.
+
+`EnsureSandboxRunning`'s already-running shortcut regressed this way once.
+Do not answer it with the power lock: that lock is also held by create,
+archive, delete, import and stop, so waiting on it (or failing a `TryLock`)
+stalls healthy traffic behind unrelated work, and re-reading the container
+after it adds a Docker round trip to every request.
