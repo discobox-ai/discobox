@@ -9,6 +9,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 )
 
 const testCommit = "0123456789abcdef0123456789abcdef01234567"
@@ -173,7 +174,7 @@ func TestPushSourceDeliversADirectoryWithNoRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pushRoot: %v", err)
 	}
-	if err := pushSource(ctx, repoRoot, sandboxRepo, "", source.Checkout.Commit, source.Checkout.RefName, source.Workspace.SnapshotRef); err != nil {
+	if err := pushSource(ctx, repoRoot, sandboxRepo, "", sandboxgit.OriginLeaseRef("sbx_1", "primary", source.Checkout.RefName), source.Checkout.Commit, source.Checkout.RefName, source.Workspace.SnapshotRef); err != nil {
 		t.Fatalf("pushSource: %v", err)
 	}
 
@@ -212,7 +213,7 @@ func TestPushSourceDeliversARepositoryWithNoCommits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pushRoot: %v", err)
 	}
-	if err := pushSource(ctx, repoRoot, sandboxRepo, "", source.Checkout.Commit, source.Checkout.RefName, source.Workspace.SnapshotRef); err != nil {
+	if err := pushSource(ctx, repoRoot, sandboxRepo, "", sandboxgit.OriginLeaseRef("sbx_1", "primary", source.Checkout.RefName), source.Checkout.Commit, source.Checkout.RefName, source.Workspace.SnapshotRef); err != nil {
 		t.Fatalf("pushSource: %v", err)
 	}
 

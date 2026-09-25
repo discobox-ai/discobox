@@ -130,7 +130,8 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		if err != nil {
 			return err
 		}
-		if err := pushSource(ctx, repoRoot, originURL, token, commit, branch, snapshotRef); err != nil {
+		leaseRef := sandboxgit.OriginLeaseRef(sandbox.ID, slug, pushBranch(branch))
+		if err := pushSource(ctx, repoRoot, originURL, token, leaseRef, commit, branch, snapshotRef); err != nil {
 			// Another client can be delivering this discobox at the same time:
 			// an attach to it from a second terminal while this create pushes,
 			// or the other way round (ADR 26-09-24-005 §3). Both send the same pinned
@@ -139,21 +140,15 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 			// idempotent, so a refused push is not believed until it has been
 			// read against the discobox and made once more: by then either the
 			// other delivery has been reported, and there is nothing left to
-			// do, or the branch holds exactly this commit and the push is a
-			// no-op.
+			// do, or the branch holds this commit and the push is a no-op.
 			delivered, readErr := sourceDelivered(ctx, client, projectID, sandbox.ID)
 			if readErr == nil && delivered {
 				return nil
 			}
-			if err := pushSource(ctx, repoRoot, originURL, token, commit, branch, snapshotRef); err != nil {
+			if err := pushSource(ctx, repoRoot, originURL, token, leaseRef, commit, branch, snapshotRef); err != nil {
 				return err
 			}
 		}
-		// The commit just delivered is the lease every later `discobox push` of this
-		// source leases against (ADR 0058 §6). A failure to record it must not
-		// fail the create: the source is delivered either way, and the only cost
-		// is that the next push has no lease to hold.
-		_ = gitutil.UpdateRef(ctx, repoRoot, sandboxgit.OriginLeaseRef(sandbox.ID, slug, pushBranch(branch)), commit)
 		pushed[slug] = commit
 	}
 	if err := completeSourcePush(ctx, client, projectID, sandbox.ID, pushed); err != nil {
@@ -293,18 +288,53 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 // the local branch: the local branch may have moved on since create, and the
 // sandbox must receive the commit its source names. The snapshot ref carries a
 // dirty workspace's uncommitted changes, which the sandbox re-applies on top.
-func pushSource(ctx context.Context, repoRoot, repoURL, token, commit, branch, snapshotRef string) error {
+//
+// The branch is left alone when the origin already holds the commit, by this
+// client's own record of what it put there (originHolds). A delivery can be owed
+// long after the origin was first filled — a discobox that ran, was sent newer
+// commits by `discobox push`, and came back to awaiting its source — and pushing
+// the pinned commit onto a branch that has moved past it is a non-fast-forward
+// the origin refuses, every time. The lease is recorded only for a push that
+// moved the branch; rewinding it to the older commit would make the next
+// `discobox push` read its own earlier push as somebody else's.
+func pushSource(ctx context.Context, repoRoot, repoURL, token, leaseRef, commit, branch, snapshotRef string) error {
+	held := originHolds(ctx, repoRoot, leaseRef, commit)
 	refspecs := make([]string, 0, 2)
-	refspecs = append(refspecs, commit+":refs/heads/"+pushBranch(branch))
+	if !held {
+		refspecs = append(refspecs, commit+":refs/heads/"+pushBranch(branch))
+	}
 	if snapshotRef != "" {
 		refspecs = append(refspecs, "+"+snapshotRef+":"+snapshotRef)
+	}
+	if len(refspecs) == 0 {
+		return nil
 	}
 	args := []string{"push", repoURL}
 	args = append(args, refspecs...)
 	if _, err := gitutil.Output(ctx, repoRoot, nil, sandboxgit.NoPromptEnv, sandboxgit.PushArgs(token, args)...); err != nil {
 		return fmt.Errorf("push source to discobox: %w", err)
 	}
+	if !held {
+		// The commit just delivered is the lease every later `discobox push` of
+		// this source leases against (ADR 0058 §6). A failure to record it must
+		// not fail the delivery: the source is delivered either way, and the
+		// only cost is that the next push has no lease to hold.
+		_ = gitutil.UpdateRef(ctx, repoRoot, leaseRef, commit)
+	}
 	return nil
+}
+
+// originHolds reports that this client's lease — the commit it last pushed to
+// the branch — is the commit or a descendant of it, so the origin's branch
+// already reaches it. No lease, or one this repository cannot relate to the
+// commit, is not knowing, and the branch is pushed as for a first delivery.
+func originHolds(ctx context.Context, repoRoot, leaseRef, commit string) bool {
+	lease, err := gitutil.Output(ctx, repoRoot, nil, nil, "rev-parse", "--verify", "--quiet", leaseRef+"^{commit}")
+	if err != nil || strings.TrimSpace(lease) == "" {
+		return false
+	}
+	_, err = gitutil.Output(ctx, repoRoot, nil, nil, "merge-base", "--is-ancestor", commit, strings.TrimSpace(lease))
+	return err == nil
 }
 
 // pushBranch is the branch a commit lands on in the origin repository: the

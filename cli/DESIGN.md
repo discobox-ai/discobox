@@ -2035,6 +2035,14 @@ throwaway repository was deleted when that run ended (ADR 0045) and took the
 only copy of those commits with it. `--source`, `--branch`, and `--force` all
 describe a rebase-time push and are refused here rather than ignored.
 
+A delivery can be owed to an origin this client has already pushed past the
+pinned commit: a rebase-time push moved the branch, then the discobox came back
+to `awaiting_source`. Pushing the pinned commit onto that branch is a
+non-fast-forward the origin refuses on every attempt. So when the client's lease
+is the pinned commit or a descendant of it, the branch is left alone, and so is
+the lease. Only the snapshot is pushed, if there is one, and the delivery is
+reported.
+
 **Attaching delivers it too** (`internal/cli/push_attach.go`, ADR 26-09-24-005).
 Attaching to a discobox is asking for it by name, and a parked one waits on a
 push nobody is making. An attach runs the same delivery with no overrides

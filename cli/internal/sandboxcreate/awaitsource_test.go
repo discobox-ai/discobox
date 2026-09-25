@@ -14,6 +14,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 )
 
 // awaitClient answers each read from the script, one entry per read, holding on
@@ -25,9 +26,11 @@ type awaitClient struct {
 	// pool is what the pool read answers, for the stretch of the wait where the
 	// sandbox has nothing to say but the pool does.
 	pool *apimodel.Pool
-	// completeErr is what a completion answers. Unset, a completion panics:
-	// most of these never get that far, and one that does is the bug.
+	// completeErr is what a completion answers, and completeOK accepts one
+	// instead. Unset, a completion panics: most of these never get that far,
+	// and one that does is the bug.
 	completeErr error
+	completeOK  bool
 	completes   int
 }
 
@@ -45,10 +48,13 @@ func (c *awaitClient) GetPool(context.Context, apiclientgen.GetPoolParams) (apic
 }
 
 func (c *awaitClient) CompleteSandboxSourcePush(context.Context, *apimodel.CompleteSandboxSourcePushBody, apiclientgen.CompleteSandboxSourcePushParams) (apiclientgen.CompleteSandboxSourcePushRes, error) {
-	if c.completeErr == nil {
+	if c.completeErr == nil && !c.completeOK {
 		panic("the wait does not push")
 	}
 	c.completes++
+	if c.completeOK {
+		return &apimodel.Sandbox{ID: "sbx_1"}, nil
+	}
 	return nil, c.completeErr
 }
 
@@ -295,5 +301,38 @@ func TestDeliverSourceStopsWhenAnotherDeliveryReportedFirst(t *testing.T) {
 	}
 	if client.completes != 1 {
 		t.Fatalf("completes = %d, want one", client.completes)
+	}
+}
+
+// A delivery owed to a discobox whose origin this client has since pushed newer
+// commits into — `discobox push` moved the branch past the pinned commit before
+// the discobox came back to awaiting its source — is already made. Pushing the
+// pinned commit onto that branch is a non-fast-forward the origin refuses on
+// every attempt, so the branch is left where it is, and so is the lease the next
+// `discobox push` holds.
+func TestDeliverSourceLeavesABranchThatHasMovedPastThePinnedCommit(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	git := runSourceTestGit(t, repo)
+	pinned := strings.TrimSpace(git("rev-parse", "HEAD"))
+	git("commit", "--allow-empty", "-m", "later")
+	later := strings.TrimSpace(git("rev-parse", "HEAD"))
+	serverURL := gitOriginServer(t)
+	originURL := serverURL + "/projects/project-1/sandboxes/sbx_1/git-origins/primary.git"
+	leaseRef := sandboxgit.OriginLeaseRef("sbx_1", "primary", "feature-foo")
+	git("push", originURL, later+":refs/heads/feature-foo")
+	git("update-ref", leaseRef, later)
+
+	client := &awaitClient{runtimes: []apimodel.SandboxRuntime{{State: apiclientgen.SandboxRuntimeStateAwaitingSource}}, completeOK: true}
+	if err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(pinned), NewLocalSources(map[string]string{"": repo}), serverURL, "token", nil); err != nil {
+		t.Fatalf("DeliverSource: %v, want the origin's branch to stand for the pinned commit", err)
+	}
+	if client.completes != 1 {
+		t.Fatalf("completes = %d, want the delivery reported", client.completes)
+	}
+	if tip := strings.Fields(git("ls-remote", originURL, "refs/heads/feature-foo")); len(tip) == 0 || tip[0] != later {
+		t.Fatalf("origin feature-foo = %v, want it left at %s", tip, later)
+	}
+	if lease := strings.TrimSpace(git("rev-parse", leaseRef)); lease != later {
+		t.Fatalf("lease = %s, want it left at %s", lease, later)
 	}
 }
