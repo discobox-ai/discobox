@@ -5,7 +5,8 @@
 # engine: lsp
 # pattern: "**/*.go"
 # ignore:
-#   - "server/providers/vz/internal/vzvm/{vm,host,wake}_{darwin,other}.go"
+#   - "server/providers/vz/internal/vzvm/*_{darwin,other}.go"
+#   - "server/providers/vz/internal/vzvm/*_darwin_test.go"
 # language_id: go
 # min_severity: warning
 #---
