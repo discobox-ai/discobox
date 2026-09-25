@@ -1,6 +1,7 @@
 {
   "apiVersion": "discobox.dev/image/v1",
   "env": {
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/discobox/session/bus",
     "DISPLAY": ":0",
     "HOMEBREW_CELLAR": "/home/linuxbrew/.linuxbrew/Cellar",
     "HOMEBREW_NO_ANALYTICS": "1",

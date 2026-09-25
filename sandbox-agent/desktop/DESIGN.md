@@ -22,7 +22,7 @@ flowchart TD
     wsvc --> vsock["x11vnc.socket :5900"]
     vsock --> vnc["x11vnc@.service"]
     dsvc -->|"xrandr"| xsock
-    dsvc -->|"xfconf-query"| bus["discobox-desktop-bus.service<br/>session D-Bus"]
+    dsvc -->|"xfconf-query"| bus["discobox-session-bus.socket<br/>session D-Bus"]
     vnc --> xorg["xvfb.service<br/>Xorg dummy on :0"]
     app(["any program on DISPLAY=:0"]) --> xsock["x11-display.socket"]
     xsock --> xorg
@@ -50,23 +50,30 @@ under that user's home and the agent that reads it back runs as the same user.
 
 ## One session bus
 
-`discobox-desktop-bus.service` is a `dbus-daemon --session` on a fixed path,
-`/run/discobox/desktop/bus`, that both the Xfce session and this service name in
-their unit environment.
+`discobox-session-bus.service` is a `dbus-daemon --session`, socket-activated by
+`discobox-session-bus.socket` on a fixed path, `/run/discobox/session/bus`. The
+Xfce session and this service name it in their unit environment, and every
+sandbox terminal is given it as `DBUS_SESSION_BUS_ADDRESS` through the image
+manifest's env ([ADR 26-09-25-146](../../docs/adr/26-09-25-146-sandbox-terminals-share-the-desktops-socket-activated-session-bus.md)).
 
-It exists because **Xfce keeps its settings in xfconf, and xfconf is only
-reachable over a session bus.** The density this package sets is an xfconf
+The desktop needs it because **Xfce keeps its settings in xfconf, and xfconf is
+only reachable over a session bus.** The density this package sets is an xfconf
 property (see below), so the viewer has to reach the same xfconf the session is
 reading — which rules out the bus `dbus-run-session` or `startxfce4` would hand
-xfce4-session privately. A fixed path in a systemd `RuntimeDirectory` is what
-makes it shareable: systemd creates the directory owned by the sandbox user, so
-the daemon can bind inside it, and removes it on stop, so a restart never finds
-its own stale socket.
+xfce4-session privately.
 
-It is not exported into the sandbox's environment. A program a person starts
-from a terminal inside the desktop inherits it from the session; one started
-from a sandbox terminal gets no session bus, as in an image with no desktop, rather than an
-address that would be dead whenever nobody had opened the desktop.
+The terminals need it because a D-Bus client with `DISPLAY` set and no bus
+address autolaunches one through `dbus-launch`, which connects to `:0` and so
+starts X and this whole stack. Socket activation is what lets the address be
+handed out unconditionally: it always answers, and nothing runs until a client
+connects. The bus is not part of the desktop: reaching it starts only the
+daemon, never X.
+
+The socket unit owns the path, so the service has no `RuntimeDirectory=` — one
+would be removed when the daemon stops and take the listening socket with it.
+The `boot` package binds both units to the sandbox user (`SocketUser=`,
+`User=`); the socket is 0600, and a client of any other uid gets a refused
+connection, never an autolaunch.
 
 ## One port
 

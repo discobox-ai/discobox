@@ -516,7 +516,8 @@ COPY sandbox-agent/image/systemd/websockify@.service /etc/systemd/system/websock
 COPY sandbox-agent/image/systemd/xvfb.service /etc/systemd/system/xvfb.service
 COPY sandbox-agent/image/systemd/discobox-desktop.socket /etc/systemd/system/discobox-desktop.socket
 COPY sandbox-agent/image/systemd/discobox-desktop.service /etc/systemd/system/discobox-desktop.service
-COPY sandbox-agent/image/systemd/discobox-desktop-bus.service /etc/systemd/system/discobox-desktop-bus.service
+COPY sandbox-agent/image/systemd/discobox-session-bus.socket /etc/systemd/system/discobox-session-bus.socket
+COPY sandbox-agent/image/systemd/discobox-session-bus.service /etc/systemd/system/discobox-session-bus.service
 COPY sandbox-agent/image/systemd/xfce4-session@.service /etc/systemd/system/xfce4-session@.service
 COPY sandbox-agent/image/xorg-dummy.conf /etc/X11/xorg-dummy.conf
 COPY sandbox-agent/image/discobox-vnc-websockify /usr/local/bin/discobox-vnc-websockify
@@ -686,7 +687,8 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
         x11-display.socket \
         x11vnc.socket \
         websockify-proxy.socket \
-        discobox-desktop.socket
+        discobox-desktop.socket \
+        discobox-session-bus.socket
 
 # The manifest layer every image built FROM this one inherits: the env,
 # volumes, groups, and seed files that are true of this image's filesystem

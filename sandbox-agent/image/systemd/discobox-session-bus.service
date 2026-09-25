@@ -1,0 +1,36 @@
+[Unit]
+Description=Discobox session D-Bus
+Documentation=https://github.com/discobox-ai/discobox
+# The sandbox user's one session bus: every sandbox terminal, the Xfce session
+# and the desktop viewer share it. Xfce keeps its settings in xfconf, which is
+# only reachable over a session bus, and the viewer is a separate systemd
+# service that has to reach the same xfconf the session is reading -- so the bus
+# cannot be the private one dbus-run-session would hand xfce4-session alone. The
+# terminals are why it is socket-activated; see discobox-session-bus.socket.
+Requires=discobox-session-bus.socket
+After=discobox-session-bus.socket
+
+[Service]
+Type=simple
+# User= comes from a drop-in the boot flow writes, resolving the sandbox user:
+# this bus is that user's session, and every unit that connects to it runs as
+# the same user.
+#
+# No RuntimeDirectory=: the socket unit owns the path, and a runtime directory
+# is removed when the service stops, which would take the listening socket
+# with it.
+#
+# DISPLAY because a service the bus activates inherits the daemon's environment:
+# a terminal asking for Thunar before anybody opened the desktop would otherwise
+# get a Thunar that exits with "cannot open display". With it, that request
+# reaches :0 and brings the desktop up, which is what asking for a GUI program
+# means. It is the one address terminals are given too (image.json).
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/dbus-daemon --session --address=systemd: --nofork --nopidfile --syslog-only
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=

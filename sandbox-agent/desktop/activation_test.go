@@ -1,8 +1,10 @@
 package desktop
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -103,4 +105,72 @@ func TestTheSessionPreparesTheServerScaleBeforeStarting(t *testing.T) {
 		}
 	}
 	t.Fatalf("xfce4-session@.service ExecStartPre = %q, want `discobox-sandbox-agent desktop prepare-session`", pre)
+}
+
+// A sandbox terminal has DISPLAY=:0, and a D-Bus client with a DISPLAY and no
+// bus address autolaunches a bus through dbus-launch, which connects to :0 and
+// so starts X and the whole desktop -- gh reading its keyring did that at every
+// harness start (ADR 26-09-25-146). Terminals are therefore handed the session
+// bus's socket, which has to be the path the socket unit listens on, and the
+// bus it activates must not bring the display up behind it.
+func TestTerminalsAreGivenTheSessionBusWithoutTheDisplay(t *testing.T) {
+	body, err := os.ReadFile("../image.json")
+	if err != nil {
+		t.Fatalf("read image.json: %v", err)
+	}
+	var manifest struct {
+		Env map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("parse image.json: %v", err)
+	}
+	if manifest.Env["DISPLAY"] == "" {
+		t.Fatal("image.json sets no DISPLAY; this test guards the bus that has to go with it")
+	}
+
+	listen := directive(readUnit(t, "discobox-session-bus.socket"), "ListenStream")
+	if len(listen) != 1 || !strings.HasPrefix(listen[0], "/") {
+		t.Fatalf("discobox-session-bus.socket ListenStream = %q, want exactly one path", listen)
+	}
+	want := "unix:path=" + listen[0]
+	if got := manifest.Env["DBUS_SESSION_BUS_ADDRESS"]; got != want {
+		t.Errorf("image.json DBUS_SESSION_BUS_ADDRESS = %q, want %q: without it a terminal's D-Bus client autolaunches through :0", got, want)
+	}
+
+	for _, unit := range []string{"xfce4-session@.service", "discobox-desktop.service"} {
+		found := false
+		for _, env := range directive(readUnit(t, unit), "Environment") {
+			if value, ok := strings.CutPrefix(env, "DBUS_SESSION_BUS_ADDRESS="); ok {
+				found = true
+				if value != want {
+					t.Errorf("%s DBUS_SESSION_BUS_ADDRESS = %q, want the terminals' %q", unit, value, want)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s sets no DBUS_SESSION_BUS_ADDRESS, want %q", unit, want)
+		}
+	}
+
+	bus := readUnit(t, "discobox-session-bus.service")
+	// A service the bus activates inherits the daemon's environment, so a GUI
+	// one a terminal asks for -- Thunar -- needs the terminals' display, or it
+	// exits with "cannot open display".
+	if got := directive(bus, "Environment"); !slices.Contains(got, "DISPLAY="+manifest.Env["DISPLAY"]) {
+		t.Errorf("discobox-session-bus.service Environment = %q, want DISPLAY=%s for the GUI services it activates", got, manifest.Env["DISPLAY"])
+	}
+	for _, key := range []string{"Requires", "Requisite", "Wants", "BindsTo", "PartOf", "Upholds"} {
+		for _, value := range directive(bus, key) {
+			for _, unit := range strings.Fields(value) {
+				if unit == "xvfb.service" || strings.HasPrefix(unit, "xfce4-session@") || unit == "x11-display.socket" {
+					t.Errorf("discobox-session-bus.service has %s=%s; a terminal reaching its bus would start a desktop", key, unit)
+				}
+			}
+		}
+	}
+	// The socket unit owns the path. A runtime directory is removed when the
+	// daemon stops, and would take the listening socket with it.
+	if dirs := directive(bus, "RuntimeDirectory"); len(dirs) > 0 {
+		t.Errorf("discobox-session-bus.service RuntimeDirectory = %q; stopping the daemon would unlink its activation socket", dirs)
+	}
 }

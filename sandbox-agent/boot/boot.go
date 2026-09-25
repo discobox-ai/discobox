@@ -32,6 +32,10 @@ func Init(logger *slog.Logger, args []string) int {
 			logger.Error("write desktop drop-ins", "error", err)
 			return 1
 		}
+		if err := writeSessionBusDropins(id); err != nil {
+			logger.Error("write session bus drop-ins", "error", err)
+			return 1
+		}
 		if fileExists("/etc/systemd/system/xfce4-session@.service") {
 			// Not fatal. Everything that reads the file tolerates its absence,
 			// and a sandbox must not fail to start over a HiDPI hint.

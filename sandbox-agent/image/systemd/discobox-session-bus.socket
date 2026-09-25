@@ -1,0 +1,26 @@
+[Unit]
+Description=Discobox session D-Bus socket activation
+Documentation=https://github.com/discobox-ai/discobox
+
+[Socket]
+# The sandbox user's session bus, at a fixed path every sandbox terminal is
+# given as DBUS_SESSION_BUS_ADDRESS (the image manifest's env) and the desktop
+# units name in their own environment.
+#
+# A terminal has to have a bus address, or a D-Bus client in it -- gh reading
+# its keyring is the one that ran at every harness start -- falls back to
+# `dbus-launch --autolaunch`, which connects to DISPLAY=:0, which is
+# x11-display.socket, which starts X and with it the whole desktop. Socket
+# activation is what lets the address be handed out unconditionally: it always
+# answers, and nothing runs until a client connects.
+#
+# SocketUser= comes from a drop-in the boot flow writes, resolving the sandbox
+# user. 0600 because the bus is that user's alone; dbus-daemon would refuse any
+# other uid at authentication anyway, and a refused connection is an error in
+# the client, never an autolaunch.
+ListenStream=/run/discobox/session/bus
+SocketMode=0600
+DirectoryMode=0755
+
+[Install]
+WantedBy=sockets.target

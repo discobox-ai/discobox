@@ -11,8 +11,8 @@ Documentation=https://github.com/discobox-ai/discobox
 After=xvfb.service
 # The session bus is how this service reaches xfconf, which is where the
 # desktop's UI density lives, since xfsettingsd owns it. See desktop/display.go.
-Requires=discobox-desktop-bus.service
-After=discobox-desktop-bus.service
+Requires=discobox-session-bus.service
+After=discobox-session-bus.service
 
 [Service]
 # notify, not simple: readiness here means "the desktop scale is settled", and
@@ -25,7 +25,7 @@ NotifyAccess=main
 # Readiness is reached without any I/O that can block -- the remembered scale is
 # read from a file -- so this only has to cover process startup.
 TimeoutStartSec=60
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/desktop/bus
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/session/bus
 # User= comes from a drop-in the boot flow writes, resolving the sandbox user:
 # the annotation record lives under that user's home, and the agent that reads
 # it back runs as the same user.

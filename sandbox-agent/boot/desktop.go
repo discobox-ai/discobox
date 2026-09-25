@@ -10,15 +10,16 @@ import (
 )
 
 // desktopUserUnits are the desktop units whose work belongs to the person using
-// the sandbox rather than to root: the VNC server, the session bus and the
-// desktop that shares it, and the viewer, whose annotation record lives under
-// that user's home and is read back by an agent running as the same user.
+// the sandbox rather than to root: the VNC server, and the viewer, whose
+// annotation record lives under that user's home and is read back by an agent
+// running as the same user.
 //
 // The Xfce session is not here. It takes the user as its instance name instead,
-// because xvfb.service has to name the instance it wants started.
+// because xvfb.service has to name the instance it wants started. Nor is the
+// session bus the desktop shares: it is every terminal's too, so
+// writeSessionBusDropins binds it.
 var desktopUserUnits = []string{
 	"x11vnc@.service",
-	"discobox-desktop-bus.service",
 	"discobox-desktop.service",
 }
 

@@ -1,7 +1,7 @@
 [Unit]
 Description=Xfce desktop session on display :0
-Requires=xvfb.service discobox-desktop-bus.service
-After=xvfb.service discobox-desktop-bus.service
+Requires=xvfb.service discobox-session-bus.service
+After=xvfb.service discobox-session-bus.service
 # The session reads the desktop scale from an environment file, and GDK_SCALE is
 # read once per process. The boot flow writes that file before systemd starts;
 # the viewer rewrites it when the scale changes. Ordering after the viewer's
@@ -18,7 +18,7 @@ PartOf=xvfb.service
 Type=simple
 User=%i
 Environment=DISPLAY=:0
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/desktop/bus
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/session/bus
 # Proxy and trust settings for everything launched from the desktop. systemd
 # starts this unit, not sandbox-agent, so none of the environment a sandbox
 # terminal gets reaches it. Without these, Chromium from the desktop icon connects
