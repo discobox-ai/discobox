@@ -135,6 +135,106 @@ func TestWhatCannotBeShownIsSaid(t *testing.T) {
 			header:  map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
 			content: "state=open&password=%3Credacted%3E&base=main", shownAs: judge.FormText,
 		},
+		{
+			// The spellings a JSON body uses, which are not a query string's:
+			// the shape of a secret created through the discobox API.
+			name: "JSON, with camelCase credentials in it", form: judge.FormJSON,
+			body: []byte(`{"name":"gh","value":{"type":"oauth","token":"ghp_a","refreshToken":"ghr_b","clientSecret":"cs",` +
+				`"tokenUrl":"https://example.com/token"},"headers":{"Authorization":"Bearer x"},"sortKey":"name"}`),
+			content: `{"name":"gh","value":{"type":"oauth","token":"<redacted>","refreshToken":"<redacted>","clientSecret":"<redacted>",` +
+				`"tokenUrl":"https://example.com/token"},"headers":{"Authorization":"<redacted>"},"sortKey":"name"}`,
+			shownAs: judge.FormJSON,
+		},
+		{
+			// What is redacted is decided by the body, not by the form the
+			// judge picked: as text, JSON keeps its spacing and loses the
+			// same values.
+			name: "JSON shown as text", form: judge.FormText,
+			body:    []byte(`{"title": "t", "accessToken": "ghp_a", "auth": {"password": "p", "list": [1, "two"]}}`),
+			header:  map[string]string{"Content-Type": "application/json"},
+			content: `{"title": "t", "accessToken": "<redacted>", "auth": {"password": "<redacted>", "list": ["<redacted>", "<redacted>"]}}`,
+			shownAs: judge.FormText,
+		},
+		{
+			name: "JSON labeled as something else, shown as text", form: judge.FormText,
+			body:    []byte(`[{"token": "ghp_a"}]`),
+			content: `[{"token": "<redacted>"}]`, shownAs: judge.FormText,
+		},
+		{
+			// Too large to parse as JSON, which is what sends a judge to text:
+			// the part that is shown is still redacted, and the value the read
+			// ended inside is left out.
+			name: "JSON too large to parse, shown as text", form: judge.FormText,
+			body:    append([]byte(`{"token":"ghp_a","a":"`), bytes.Repeat([]byte("b"), proxy.MaxCapturedSecretBody)...),
+			header:  map[string]string{"Content-Type": "application/json"},
+			content: `{"token":"<redacted>","a"`, shownAs: judge.FormText,
+			missing: "the body is longer than this proxy reads",
+		},
+		{
+			name: "JSON that stops being JSON, shown as text", form: judge.FormText,
+			body:    []byte(`{"a":1,"token": nope}`),
+			header:  map[string]string{"Content-Type": "application/json"},
+			content: `{"a":1,"token"`, shownAs: judge.FormText,
+			missing: "the body stops being JSON after its first 14 bytes",
+		},
+		{
+			// A form upload names its fields the way a form-encoded body
+			// does, and a file in it does not make the rest unreadable.
+			name: "multipart, with credentials and a file in it", form: judge.FormText,
+			body: []byte("--XB\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nfix it\r\n" +
+				"--XB\r\nContent-Disposition: form-data; name=\"client_secret\"\r\n\r\ns3cr3t\r\n" +
+				"--XB\r\nContent-Disposition: form-data; name=\"user[password]\"\r\n\r\nhunter2\r\n" +
+				"--XB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.bin\"\r\nContent-Type: application/octet-stream\r\n" +
+				"X-Extra: ghp_itsown\r\n\r\n\xff\xfe\x00\r\n--XB--\r\n"),
+			header: map[string]string{"Content-Type": "multipart/form-data; boundary=XB"},
+			content: "--XB\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nfix it\r\n" +
+				"--XB\r\nContent-Disposition: form-data; name=\"client_secret\"\r\n\r\n<redacted>\r\n" +
+				"--XB\r\nContent-Disposition: form-data; name=\"user[password]\"\r\n\r\n<redacted>\r\n" +
+				"--XB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.bin\"\r\nContent-Type: application/octet-stream\r\n" +
+				"X-Extra: <redacted>\r\n\r\n<3 bytes that are not text>\r\n--XB--\r\n",
+			shownAs: judge.FormText,
+		},
+		{
+			// Each part is redacted as what it says it is, and named by its
+			// disposition whatever that is — not only form-data.
+			name: "multipart/mixed, with JSON and form parts", form: judge.FormText,
+			body: []byte("--XB\r\nContent-Type: application/json\r\n\r\n{\"repo\": \"a/b\", \"access_token\": \"ghp_a\"}\r\n" +
+				"--XB\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\nstate=open&clientSecret=cs\r\n" +
+				"--XB\r\nContent-Disposition: attachment; name=\"password\"\r\n\r\nhunter2\r\n" +
+				"--XB\r\nContent-Type: application/json\r\n\r\n{\"a\":1,\"token\": nope}\r\n--XB--\r\n"),
+			header: map[string]string{"Content-Type": "multipart/mixed; boundary=XB"},
+			content: "--XB\r\nContent-Type: application/json\r\n\r\n{\"repo\": \"a/b\", \"access_token\": \"<redacted>\"}\r\n" +
+				"--XB\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\nstate=open&clientSecret=%3Credacted%3E\r\n" +
+				"--XB\r\nContent-Disposition: attachment; name=\"password\"\r\n\r\n<redacted>\r\n" +
+				"--XB\r\nContent-Type: application/json\r\n\r\n{\"a\":1,\"token\"\r\n--XB--\r\n",
+			shownAs: judge.FormText, missing: "part 4 stops being JSON after its first 14 bytes",
+		},
+		{
+			// A part is named by where it is, and multipart is shown two
+			// bodies deep and no further: every level copies what is left,
+			// and a body can nest as deep as its bytes allow.
+			name: "multipart nested past the depth shown", form: judge.FormText,
+			body: []byte("--A\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n" +
+				"--B\r\nContent-Type: application/json\r\n\r\n{\"x\": nope}\r\n" +
+				"--B\r\nContent-Type: multipart/mixed; boundary=C\r\n\r\n--C\r\n\r\ndeep\r\n--C--\r\n\r\n--B--\r\n\r\n--A--\r\n"),
+			header: map[string]string{"Content-Type": "multipart/mixed; boundary=A"},
+			content: "--A\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n" +
+				"--B\r\nContent-Type: application/json\r\n\r\n{\"x\"\r\n" +
+				"--B\r\nContent-Type: multipart/mixed; boundary=C\r\n\r\n<20 bytes of multipart>\r\n--B--\r\n\r\n--A--\r\n",
+			shownAs: judge.FormText,
+			missing: "part 1.1 stops being JSON after its first 4 bytes, and nothing after that is shown; " +
+				"part 1.2 is multipart inside multipart, which is described rather than shown",
+		},
+		{
+			name: "multipart with no boundary", form: judge.FormText, body: []byte("--XB\r\n"),
+			header:  map[string]string{"Content-Type": "multipart/form-data"},
+			shownAs: judge.FormText, missing: "names no boundary",
+		},
+		{
+			name: "a sentinel as the encoding", form: judge.FormText, body: []byte("x"),
+			header:  map[string]string{"Content-Encoding": testEphemeral},
+			missing: "which this proxy does not decode",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resolver, asked := judgingPoolFunc(t, needsThenDecides(tc.form))
@@ -153,6 +253,9 @@ func TestWhatCannotBeShownIsSaid(t *testing.T) {
 			if shown.Form != tc.shownAs || shown.Content != tc.content || !strings.Contains(shown.Missing, tc.missing) ||
 				(tc.missing == "") != (shown.Missing == "") {
 				t.Fatalf("shown = %+v\nwant form %q, content %q, missing containing %q", shown, tc.shownAs, tc.content, tc.missing)
+			}
+			if strings.Contains(shown.Content+shown.Missing, testEphemeral) {
+				t.Fatalf("shown = %+v, which carries a sentinel", shown)
 			}
 			// What the control plane will check, checked here: a later round
 			// the judge package would refuse is a body nobody sees.

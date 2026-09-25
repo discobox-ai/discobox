@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
@@ -318,28 +319,83 @@ var shownHeaders = map[string]bool{
 	"x-github-api-version": true,
 }
 
-// credentialQueryParams are query parameters whose values are never shown. The
-// query string is evidence — it is half of what identifies an operation — so
-// it cannot be dropped wholesale the way a header's value can, and this is the
-// denylist that the header side deliberately avoids. It is the common spellings
-// and it is not exhaustive; what makes that survivable is that a sentinel is
-// redacted wherever it appears, so what leaks here is a credential a discobox
-// brought itself.
-var credentialQueryParams = map[string]bool{
-	"access_token":         true,
-	"api_key":              true,
-	"apikey":               true,
-	"auth":                 true,
-	"code":                 true,
-	"key":                  true,
-	"password":             true,
-	"secret":               true,
-	"sig":                  true,
-	"signature":            true,
-	"token":                true,
-	"x-amz-credential":     true,
-	"x-amz-security-token": true,
-	"x-amz-signature":      true,
+// credentialName reports whether a query parameter, a form field or a JSON key
+// names something whose value is never shown. The query string is evidence —
+// it is half of what identifies an operation — so it cannot be dropped
+// wholesale the way a header's value can, and this is the denylist that the
+// header side deliberately avoids. It is the common spellings and it is not
+// exhaustive; what makes that survivable is that a sentinel is redacted
+// wherever it appears, so what leaks here is a credential a discobox brought
+// itself.
+//
+// The name is folded before it is looked up — case, and the separators that
+// tell access_token, access-token and accessToken apart, are dropped — because
+// a query string is mostly snake_case and a JSON body mostly camelCase, and
+// they carry the same credentials. A name ending in one of credentialSuffixes
+// is a credential whatever precedes it (refreshToken, clientSecret,
+// privateKey), which over-redacts a paging token and is the right direction to
+// be wrong in.
+//
+// A bracketed name — user[password], auth[token], items[0][key], the way form
+// bodies and query strings nest — is a credential when it or any one of its
+// parts is.
+func credentialName(name string) bool {
+	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '[' || r == ']' })
+	for _, part := range append(parts, strings.Join(parts, "")) {
+		if credentialPart(part) {
+			return true
+		}
+	}
+	return false
+}
+
+// credentialPart is credentialName for one name with no brackets in it.
+func credentialPart(name string) bool {
+	folded := strings.Map(func(r rune) rune {
+		switch r {
+		case '_', '-', '.', ' ':
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, name)
+	if credentialNames[folded] {
+		return true
+	}
+	for _, suffix := range credentialSuffixes {
+		if strings.HasSuffix(folded, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// credentialNames are folded names that are a credential only as a whole:
+// "key" is one, and a sortKey is not.
+var credentialNames = map[string]bool{
+	"auth":   true,
+	"code":   true,
+	"key":    true,
+	"sig":    true,
+	"cookie": true,
+}
+
+// credentialSuffixes are folded endings that make any name a credential.
+var credentialSuffixes = []string{
+	"accesskey",
+	"apikey",
+	"apikeys",
+	"authorization",
+	"credential",
+	"credentials",
+	"passwd",
+	"password",
+	"passwords",
+	"privatekey",
+	"secret",
+	"secretkey",
+	"secrets",
+	"signature",
+	"token",
 }
 
 // redactedURL is the destination as the judge is shown it: the same URL with
@@ -382,7 +438,7 @@ func redactedQuery(query string) string {
 			// is left exactly as it arrived rather than dropped.
 			continue
 		}
-		if credentialQueryParams[strings.ToLower(name)] {
+		if credentialName(name) {
 			segments[i] = segment[:equals+1] + url.QueryEscape(redactedValue)
 		}
 	}

@@ -383,6 +383,12 @@ func TestTheJudgeSeesTheQueryAsItWasSent(t *testing.T) {
 		{"a fragment stays at the end",
 			"https://api.github.com/x?token=abc#frag",
 			"https://api.github.com/x?token=%3Credacted%3E#frag"},
+		{"camelCase and plural names are credentials too",
+			"https://api.github.com/x?clientSecret=abc&apiKeys=def&pageSize=1",
+			"https://api.github.com/x?clientSecret=%3Credacted%3E&apiKeys=%3Credacted%3E&pageSize=1"},
+		{"a bracketed name is a credential when any part of it is",
+			"https://api.github.com/x?user[password]=a&auth[token]=b&items[0][key]=c&user[name]=d",
+			"https://api.github.com/x?user[password]=%3Credacted%3E&auth[token]=%3Credacted%3E&items[0][key]=%3Credacted%3E&user[name]=d"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := redactedURL(tc.in, nil); got != tc.want {

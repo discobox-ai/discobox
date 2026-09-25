@@ -896,13 +896,25 @@ flowchart LR
   keep their values, and every other header is reported by name with its value
   replaced — a denylist would only ever cover the credential headers somebody
   thought of. The query string cannot be treated that way, since it is half of
-  what identifies an operation, so its credential-ish parameters are a denylist
-  and the rest is shown; a form-encoded body is redacted the same way, and a
-  JSON body loses the values under those same names. The first ask describes
-  the body only when the request declared a length: the contract counts bytes
-  and cannot say "unknown", so a chunked upload is not described at all rather
-  than described as empty. Every sentinel is taken out of a shown body before
-  it is cut, so no cut can leave part of one behind.
+  what identifies an operation, so its credential-ish names are a denylist
+  (`credentialName`: folded, so `access_token` and `accessToken` are one name;
+  anything ending in `token`, `secret`, `password` and the like; and a bracketed
+  `user[password]` when any part of it is one) and the rest is shown. A
+  form-encoded body is redacted the same way, a multipart body part by part (a
+  part named as a credential in its disposition, whatever the disposition, has
+  its content replaced; every other part is redacted as its own media type — a
+  JSON or form part loses what that body would — or, if it is not text,
+  described by its length; multipart is shown two bodies deep,
+  `maxMultipartDepth`, and described past that; and part headers other than the
+  ones that say what a part is are reduced to their names), and a JSON body
+  loses every value under those names in either form: which redaction applies is
+  decided by the body, never by the form the judge asked for. Shown as text,
+  JSON keeps its spacing and is followed only as far as it is JSON — nothing
+  past that point is shown, since nothing there says which part is a value. The
+  first ask describes the body only when the request declared a length: the
+  contract counts bytes and cannot say "unknown", so a chunked upload is not
+  described at all rather than described as empty. Every sentinel is taken out
+  of a shown body before it is cut, so no cut can leave part of one behind.
 - **A server that does not judge is not a refusal.** It says so with a problem
   type a program can recognize, and the pool remembers that for a few minutes
   and allows in the meantime, so an opted-out server does not put a
