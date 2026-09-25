@@ -21,4 +21,10 @@ Global review expectations:
   that starts listening is asked `HEAD /` once, and this repository is worked
   on inside a sandbox, so an unguarded counter is a flake that only fires
   there. See `sandbox-agent/ports/probe.go`.
+- No file may carry a build constraint that excludes darwin, linux, and
+  windows together (`!darwin && !linux && !windows`). gopls opens such a file
+  in an `aix/ppc64` view, the first port its list has left, and type-checks
+  the whole workspace for aix; the `go-lsp` hook then fails on `syscall.Flock`
+  and `modernc.org/libc`. Nothing here builds for another OS, so write the
+  darwin, linux, and windows halves and no fallback.
 - Update package-local design docs when changing architecture or data model.
