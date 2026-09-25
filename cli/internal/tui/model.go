@@ -76,6 +76,13 @@ type Model struct {
 	// beat, and the two answer different questions.
 	alertPoll poll
 
+	// renewSession is the tokens this window may renew without asking, each
+	// with the exact command it was allowed to run (sessionKey), for as long
+	// as the window runs (ADR 26-09-25-122 §5). renewing is the refresh
+	// requests a renewal is out for, so a beat does not start a second.
+	renewSession map[string]bool
+	renewing     map[string]bool
+
 	ctx context.Context
 	ds  DataSource
 	st  *styles
@@ -868,7 +875,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return again
 		}
 		m.setCredentialRequests(msg.requests)
-		return again
+		return tea.Batch(again, m.renewBySession(msg.requests))
 
 	case secretRejectionsLoadedMsg:
 		// Nothing asks for this read but the beat, so a landed one is simply
@@ -911,6 +918,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case credentialAnsweredMsg:
 		return m.credentialAnswered(msg)
+
+	case renewalAnsweredMsg:
+		return m.renewalAnswered(msg)
+
+	case renewalSkippedMsg:
+		delete(m.renewing, msg.requestID)
+		return nil
 
 	case tickMsg:
 		cmds := []tea.Cmd{m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadSecretRejections(), m.tick()}

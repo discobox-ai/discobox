@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -9,7 +10,9 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
 // The window's half of the credential inbox: the requests waiting on a person,
@@ -188,6 +191,12 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		WellKnownID:   strings.TrimSpace(r.WellKnownId.Or("")),
 		Created:       r.CreatedAt,
 	}
+	if r.Reason.Or("") == apiclientgen.SecretRequestReasonRefresh {
+		req.Refresh = &tui.RefreshAsk{
+			SecretID: strings.TrimSpace(r.SecretId.Or("")),
+			Cause:    string(r.RefreshCause.Or("")),
+		}
+	}
 	if uses, ok := r.Uses.Get(); ok {
 		for _, use := range uses {
 			if description := strings.TrimSpace(use.Description); description != "" {
@@ -347,6 +356,11 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 				row.OAuth.AccessTokenExpiresAt = time.UnixMilli(expires).UTC()
 			}
 		}
+		row.RefreshCommand = s.RefreshCommand.Or(nil)
+		row.ValueTTL = time.Duration(s.TtlSeconds.Or(0)) * time.Second
+		if staleAt, ok := s.StaleAt.Get(); ok {
+			row.StaleAt = staleAt
+		}
 		out = append(out, row)
 	}
 	return out, nil
@@ -374,6 +388,25 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 	// forever", and leaving it out would take the server's default instead.
 	body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(secret.MaxTTLSeconds))
 	body.Value = secretValueBody(secret.Value)
+	if secret.ValueTTLSeconds != nil {
+		body.SetTtlSeconds(apiclientgen.NewOptInt64(*secret.ValueTTLSeconds))
+	}
+	if id := strings.TrimSpace(secret.WellKnownID); id != "" {
+		body.SetWellKnownId(apiclientgen.NewOptString(id))
+	}
+	// A token got from a command starts with a value, which the command is run
+	// here for, as `discobox secret create --refresh-command` does
+	// (ADR 26-09-25-122 §2).
+	if len(secret.RefreshCommand) > 0 {
+		body.SetRefreshCommand(apiclientgen.NewOptNilStringArray(secret.RefreshCommand))
+		if strings.TrimSpace(secret.Value.Token) == "" {
+			token, err := refreshcmd.Run(ctx, secret.RefreshCommand)
+			if err != nil {
+				return tui.Secret{}, err
+			}
+			body.Value = secretValueBody(tui.SecretValue{Token: token})
+		}
+	}
 
 	res, err := d.client.CreateSecret(ctx, body, apiclientgen.CreateSecretParams{ProjectId: d.projectID})
 	if err != nil {
@@ -434,6 +467,12 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 	if update.Value != nil {
 		body.SetValue(apiclientgen.NewOptSecretValue(secretValueBody(*update.Value)))
 	}
+	if update.RefreshCommand != nil {
+		body.SetRefreshCommand(apiclientgen.NewOptNilStringArray(*update.RefreshCommand))
+	}
+	if update.ValueTTLSeconds != nil {
+		body.SetTtlSeconds(apiclientgen.NewOptInt64(*update.ValueTTLSeconds))
+	}
 	res, err := d.client.UpdateSecret(ctx, body, apiclientgen.UpdateSecretParams{
 		ProjectId: d.projectID,
 		SecretId:  secretID,
@@ -475,6 +514,55 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 		return err
 	}
 	window.answered(server, approval.RequestID)
+	return nil
+}
+
+// RefreshSecret answers a refresh request with a new value: the output of the
+// token's command, run here, or the value a person entered. The command is
+// run on this machine because this is where the person who agreed to it is
+// (ADR 26-09-25-122 §5).
+func (d *apiDataSource) RefreshSecret(ctx context.Context, server string, renewal tui.Renewal) error {
+	window := d
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	body := &apimodel.RefreshSecretBody{Value: renewal.Value, Via: apiclientgen.RefreshSecretBodyViaEntered}
+	if len(renewal.Command) > 0 {
+		value, err := refreshcmd.Run(ctx, renewal.Command)
+		if err != nil {
+			return err
+		}
+		body.Value = value
+		body.Via = apiclientgen.RefreshSecretBodyViaCommand
+		body.SetCommand(apiclientgen.NewOptNilStringArray(renewal.Command))
+	}
+	if renewal.RequestID != "" {
+		body.SetRequestId(apiclientgen.NewOptString(renewal.RequestID))
+	}
+	if renewal.Session {
+		body.SetSession(apiclientgen.NewOptBool(true))
+	}
+	if id, err := hostid.Get(); err == nil {
+		body.SetClientHost(apiclientgen.NewOptString(id))
+	}
+	res, err := d.client.RefreshSecret(ctx, body, apiclientgen.RefreshSecretParams{
+		ProjectId: d.projectID,
+		SecretId:  renewal.SecretID,
+	})
+	if err != nil {
+		return err
+	}
+	// The one conflict the route answers is a request somebody else answered
+	// first, which the window treats as renewed.
+	if problem, ok := res.(*apiclientgen.ErrorModelStatusCode); ok && problem.StatusCode == http.StatusConflict {
+		window.answered(server, renewal.RequestID)
+		return tui.ErrAlreadyAnswered
+	}
+	if _, err := expectResponse[apimodel.Secret](res); err != nil {
+		return err
+	}
+	window.answered(server, renewal.RequestID)
 	return nil
 }
 

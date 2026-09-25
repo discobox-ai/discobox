@@ -70,12 +70,21 @@ type formRow struct {
 	why string
 	// required refuses an empty typed row on submit, saying why.
 	required string
+	// chose, on a picker, is told each time its option changes, so a choice
+	// can fill in the rows it implies — a well-known credential its name,
+	// host, and command.
+	chose func(f *form)
 }
 
 // form is the rows and where the cursor is in them.
 type form struct {
 	rows   []formRow
 	cursor int
+	// listing is a picker row opened as a list, every option on its own line
+	// under the row, with listAt the one highlighted. Enter opens it, so the
+	// options can be read together rather than met one at a time by ←→.
+	listing bool
+	listAt  int
 	// err is the refusal from the last submit, shown against the row that
 	// caused it until it is answered.
 	err string
@@ -194,6 +203,80 @@ func (f *form) chosen(key string) string {
 	return ""
 }
 
+// onPicker is whether the cursor is on a row with options to choose between,
+// where Enter lists them rather than accepting the form.
+func (f *form) onPicker() bool {
+	return len(f.rows[f.cursor].choices) > 1
+}
+
+// openList opens the cursor's picker as a list, on the option it holds.
+func (f *form) openList() {
+	if !f.onPicker() {
+		return
+	}
+	f.listing, f.listAt = true, f.rows[f.cursor].at
+}
+
+// closeList closes the list, leaving the option as it was.
+func (f *form) closeList() { f.listing = false }
+
+// updateList is a key while a picker is open as a list: ↑↓ walk it, Enter
+// takes the highlighted option. Esc is the dialog's, which closes the list
+// before it would close the card.
+func (f *form) updateList(msg tea.KeyPressMsg) {
+	row := &f.rows[f.cursor]
+	switch keyName(msg) {
+	case "up", "k", "shift+tab":
+		f.listAt = max(f.listAt-1, 0)
+	case "down", "j", "tab":
+		f.listAt = min(f.listAt+1, len(row.choices)-1)
+	case "home":
+		f.listAt = 0
+	case "end":
+		f.listAt = len(row.choices) - 1
+	case "enter", " ":
+		f.pick(f.listAt)
+	}
+}
+
+// pick takes an option off the open list, as ←→ would have landed on it.
+func (f *form) pick(at int) {
+	row := &f.rows[f.cursor]
+	if at < 0 || at >= len(row.choices) {
+		return
+	}
+	f.listing = false
+	row.at = at
+	if row.chose != nil {
+		row.chose(f)
+	}
+	f.cursor = f.next(f.cursor, 1)
+	f.focus()
+}
+
+// set replaces what a typed row holds.
+func (f *form) set(key, value string) {
+	for i := range f.rows {
+		if f.rows[i].key == key && len(f.rows[i].choices) == 0 {
+			f.rows[i].input.SetValue(value)
+		}
+	}
+}
+
+// choose moves a picker row to the option with the given key.
+func (f *form) choose(key, option string) {
+	for i := range f.rows {
+		if f.rows[i].key != key {
+			continue
+		}
+		for j, c := range f.rows[i].choices {
+			if c.key == option {
+				f.rows[i].at = j
+			}
+		}
+	}
+}
+
 // chosenLabel is that option as it is said to a person, for the report after
 // the form is answered.
 func (f *form) chosenLabel(key string) string {
@@ -212,6 +295,9 @@ func (f *form) cycle(delta int) {
 		return
 	}
 	row.at = ((row.at+delta)%len(row.choices) + len(row.choices)) % len(row.choices)
+	if row.chose != nil {
+		row.chose(f)
+	}
 	// A choice can take rows away or bring them back, and the cursor may be
 	// standing on one that has just gone.
 	f.cursor = f.next(f.cursor, 1)
@@ -239,6 +325,10 @@ func (f *form) submit() string {
 // row being typed into, which is why the rows move on ↑↓ and Tab rather than on
 // j and k.
 func (f *form) update(msg tea.KeyPressMsg) tea.Cmd {
+	if f.listing {
+		f.updateList(msg)
+		return nil
+	}
 	switch keyName(msg) {
 	case "up", "shift+tab":
 		f.move(-1)
@@ -254,6 +344,8 @@ func (f *form) update(msg tea.KeyPressMsg) tea.Cmd {
 			f.cycle(-1)
 		case "right", "l", " ":
 			f.cycle(1)
+		case "enter":
+			f.openList()
 		}
 		return nil
 	}
@@ -320,6 +412,34 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 		}
 		b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
 			f.viewValue(st, i, valueW), inner))
+		b.WriteString("\n")
+		if f.listing && i == f.cursor {
+			b.WriteString(f.viewList(st, z, top+strings.Count(b.String(), "\n"), labelW, inner))
+		}
+	}
+	return b.String()
+}
+
+// viewList draws an open picker's options under it, in the value column: each
+// with what it means beside it, the highlighted one marked. Each is a press.
+func (f *form) viewList(st *styles, z *zones, top, labelW, inner int) string {
+	row := f.rows[f.cursor]
+	indent := strings.Repeat(" ", labelW+4)
+	width := max(inner-len(indent)-2, 8)
+	var b strings.Builder
+	for j, c := range row.choices {
+		mark, style := "  ", st.name
+		if j == f.listAt {
+			mark, style = st.key.Render("›")+" ", st.cursorName
+		}
+		text := style.Render(truncate(c.label, width))
+		if c.hint != "" {
+			if room := width - lipgloss.Width(c.label) - 3; room > 8 {
+				text += st.dimText.Render(" · " + truncate(c.hint, room))
+			}
+		}
+		z.markRow(hit{kind: hitFormChoice, idx: j}, top+j, inner+2*dialogPadLeft)
+		b.WriteString(padANSI(indent+mark+text, inner))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -406,6 +526,11 @@ func (f *form) hint(st *styles, inner int) string {
 	// discobox in this project" means.
 	if len(row.choices) > 0 && row.choices[row.at].hint != "" {
 		hint = row.choices[row.at].hint
+	}
+	// An open list is read one option at a time: the line says the whole of
+	// what the highlighted one means, which its row cuts short.
+	if f.listing && row.choices[f.listAt].hint != "" {
+		hint = row.choices[f.listAt].hint
 	}
 	if f.err != "" {
 		// The refusal replaces the explanation: the row is being told why it

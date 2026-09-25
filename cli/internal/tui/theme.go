@@ -107,6 +107,9 @@ type styles struct {
 	// background, as discobox-review's file lists do. Painting a background
 	// across a row that carries its own colors needs highlight(), not a style.
 	cursorName lipgloss.Style
+	// emphasis is the part of a muted line that must not be read past: the
+	// command a menu row would run.
+	emphasis lipgloss.Style
 
 	dimText lipgloss.Style
 	rule    lipgloss.Style
@@ -183,6 +186,7 @@ func newStyles(color bool) *styles {
 	}
 
 	s.cursorName = lipgloss.NewStyle().Bold(true)
+	s.emphasis = lipgloss.NewStyle().Bold(true)
 
 	s.dimText = paint(colDim)
 	s.rule = paint(colInactive)

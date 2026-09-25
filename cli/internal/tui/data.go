@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -1219,12 +1220,42 @@ type CredentialRequest struct {
 	// which secret answers it once one is marked.
 	WellKnownID string
 	Created     time.Time
+	// Refresh is set on an item that asks for a new value of a token the
+	// project already holds, because it went stale or was refused
+	// (ADR 26-09-25-122 §4). Name is then the secret's name; the answer is a
+	// value, not a grant.
+	Refresh *RefreshAsk
 	// Trust is set on an item that asks to trust a host for its discobox
 	// rather than for a credential (ADR 0149). Host is then the endpoint,
 	// Uses and Justification are what the agent said it will send there, and
 	// Name, EnvVar, and Type are empty: the answer is not a secret but which
 	// certificate to pin.
 	Trust *TrustAsk
+}
+
+// RefreshAsk is which token a refresh request wants a new value of, and why.
+type RefreshAsk struct {
+	SecretID string
+	// Cause is "stale" — the value is past, or nearly past, its lifetime — or
+	// "rejected" — an upstream refused it.
+	Cause string
+}
+
+// ErrAlreadyAnswered is a renewal that lost the race to answer its refresh
+// request: somebody else's value was written first, and nothing was written
+// here. For the token it is a success.
+var ErrAlreadyAnswered = errors.New("the refresh request was already answered")
+
+// Renewal is a new value for a token, answering its refresh request. Either
+// Command is run, on this machine, for the value, or Value is the value a
+// person entered. Session says a permission given for the session answered
+// it rather than a prompt, which the server records.
+type Renewal struct {
+	RequestID string
+	SecretID  string
+	Command   []string
+	Value     string
+	Session   bool
 }
 
 // TrustAsk is what a trust request offers to pin: the chain the pool's egress
@@ -1303,6 +1334,14 @@ type Secret struct {
 	// OAuth is what an oauth credential is, without being it. Nil for a token,
 	// and never the tokens themselves.
 	OAuth *SecretOAuth
+
+	// RefreshCommand is the command a token suggests for its own renewal,
+	// run only on a person's say-so (ADR 26-09-25-122). ValueTTL is how long a
+	// value lasts, and StaleAt when the current one stops being trusted; zero
+	// for a token that never goes stale.
+	RefreshCommand []string
+	ValueTTL       time.Duration
+	StaleAt        time.Time
 }
 
 // SecretOAuth is the half of an OAuth credential that can be shown: where it
@@ -1386,6 +1425,18 @@ type NewSecret struct {
 	// credential may then live forever.
 	MaxTTLSeconds int64
 
+	// RefreshCommand makes the token one got from a command: when Value has no
+	// token, the data source runs it here for the first one, and it is what a
+	// person is offered to renew it with later. Nil is a token typed in.
+	RefreshCommand []string
+	// ValueTTLSeconds is how long a value lasts; nil takes the server's
+	// default for a token with a command, and zero never goes stale.
+	ValueTTLSeconds *int64
+
+	// WellKnownID is the well-known credential the secret answers from the
+	// start, so the first request for the ID binds it without asking.
+	WellKnownID string
+
 	Value SecretValue
 }
 
@@ -1420,6 +1471,11 @@ type SecretUpdate struct {
 	Host          *string
 	MaxTTLSeconds *int64
 	Value         *SecretValue
+	// RefreshCommand replaces the command a token suggests for its renewal;
+	// empty removes it.
+	RefreshCommand *[]string
+	// ValueTTLSeconds replaces how long a value lasts; zero never goes stale.
+	ValueTTLSeconds *int64
 }
 
 // Approval is what a person decided about a request: which secret answers it,
@@ -1781,6 +1837,11 @@ type DataSource interface {
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
 	// a dismissal: the asking agent is waiting on one.
 	DenyCredentialRequest(ctx context.Context, server, requestID string) error
+
+	// RefreshSecret writes a new value for a token, answering its refresh
+	// request: running the renewal's command here for it, or sending the value
+	// a person entered.
+	RefreshSecret(ctx context.Context, server string, renewal Renewal) error
 
 	// ApproveTrustRequest answers a trust request yes, pinning the chosen
 	// certificate for the asking discobox alone (ADR 0149).

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/wellknown"
 
@@ -188,6 +189,9 @@ func (m *Model) credentialRequestByID(requestID string) (CredentialRequest, bool
 // answer it. Choosing a secret, or a new credential, is the first of two steps;
 // the second is how long the grant lives (askLifetime).
 func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.Cmd {
+	if req.Refresh != nil {
+		return m.askAboutRefresh(req, secrets)
+	}
 	if known, ok := wellknown.Lookup(req.WellKnownID); ok && known.Gate {
 		return m.askAboutGate(req, secrets, known)
 	}
@@ -204,11 +208,26 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 			detail = "answers " + req.WellKnownID + " · " + detail
 		}
 		items = append(items, action{
-			key:     "secret:" + secret.ID,
-			label:   secret.Name,
-			detail:  detail,
-			enabled: true,
+			key:      "secret:" + secret.ID,
+			label:    secret.Name,
+			detail:   detail,
+			emphasis: refreshcmd.Join(secret.RefreshCommand),
+			enabled:  true,
 		})
+	}
+	// A credential that suggests the command printing it can be stored that
+	// way: run here, now, and renewed with it when it goes stale
+	// (ADR 26-09-25-122 §2).
+	//
+	// Only while nothing answers the ID: a secret that does is already the
+	// answer — the first row — and one stored from the command is renewed
+	// with it, so running it again would store a second copy of the same
+	// credential.
+	answered := slices.ContainsFunc(secrets, func(secret Secret) bool { return secret.WellKnownID == req.WellKnownID })
+	if known, ok := wellknown.Lookup(req.WellKnownID); ok && len(known.RefreshCommand) > 0 && !answered {
+		command := refreshcmd.Join(known.RefreshCommand)
+		items = append(items, action{key: "command", press: "c", label: "From a command…",
+			detail: "run " + command + " here, store what it prints, and renew with it", emphasis: command, enabled: true})
 	}
 	items = append(items,
 		action{key: "new", press: "n", label: "New credential…", detail: "store it as a project secret and approve with it", enabled: true},
@@ -222,6 +241,11 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 			return m.denyCredential(req)
 		case result == "new":
 			a.fresh = true
+			return m.startNewCredential(a)
+		case result == "command":
+			known, _ := wellknown.Lookup(req.WellKnownID)
+			a.fresh = true
+			a.command = slices.Clone(known.RefreshCommand)
 			return m.startNewCredential(a)
 		case strings.HasPrefix(result, "secret:"):
 			return m.chooseSecret(a, strings.TrimPrefix(result, "secret:"))
@@ -435,6 +459,9 @@ func grantSection(a approval) section {
 // needs its value, and an existing one may need its limit raised. back is the
 // dialog the lifetime was chosen on, which either of them returns to.
 func (m *Model) lifetimeChosen(a approval, back func() tea.Cmd) tea.Cmd {
+	if a.fresh && a.command != nil {
+		return m.askForRefreshCommand(a, back)
+	}
 	if a.fresh {
 		return m.askForNewCredential(a, back)
 	}
@@ -612,17 +639,28 @@ func normalizeHostName(host string) string { return hostscope.Normalize(host) }
 // about on the way through if the lifetime on the card is longer.
 func secretDetail(secret Secret, host string) string {
 	bound := normalizeHostName(secret.Host)
-	detail := secret.Type + " · bound to " + secret.Host + ", asks before using it here"
+	kind := secretKind(secret)
+	detail := kind + " · bound to " + secret.Host + ", asks before using it here"
 	switch {
 	case bound == "":
-		detail = secret.Type + " · any host"
+		detail = kind + " · any host"
 	case hostscope.Covers(bound, host):
-		detail = secret.Type + " · " + secret.Host
+		detail = kind + " · " + secret.Host
 	}
 	if secret.MaxTTL > 0 {
 		detail += " · at most " + lifetime.Label(secret.MaxTTL)
 	}
 	return detail
+}
+
+// secretKind is what a secret is, said the way that matters when choosing it:
+// a token got from a command is named by the command, which is how its value
+// is kept current (ADR 26-09-25-122).
+func secretKind(secret Secret) string {
+	if len(secret.RefreshCommand) > 0 {
+		return "from " + refreshcmd.Join(secret.RefreshCommand)
+	}
+	return secret.Type
 }
 
 // startNewCredential is the way into storing a credential the project does not
@@ -711,19 +749,59 @@ func (m *Model) askForNewCredential(a approval, back func() tea.Cmd) tea.Cmd {
 	return nil
 }
 
+// askForRefreshCommand shows the command a new credential will be got from,
+// editable, before anything runs: it runs on this machine, as the person
+// reading it, and is what they will be offered to renew the credential with.
+func (m *Model) askForRefreshCommand(a approval, back func() tea.Cmd) tea.Cmd {
+	req := a.req
+	fields := []field{{label: "stored as", value: a.storedAs(), tone: toneAccent}}
+	if req.Host != "" {
+		fields = append(fields, field{label: "bound to", value: req.Host, tone: toneAccent})
+	}
+	fields = append(fields, field{label: "granted for", value: lifetime.Label(a.ttl), tone: toneAccent})
+	d := inputDialog("From a command", "", "command", refreshcmd.Join(a.command), func(value string) tea.Cmd {
+		command, err := refreshcmd.Split(value)
+		if err != nil || len(command) == 0 {
+			return m.report(true, "no command to run; the request is still waiting")
+		}
+		next := a
+		next.command = command
+		return m.createAndApprove(next, "")
+	})
+	d.sections = []section{{label: "the new project secret", fields: fields}}
+	d.answerLabel = "run this here for the token"
+	lasts := defaultValueLifetime
+	if ttl := wellKnownValueTTL(req.WellKnownID, a.command); ttl != nil {
+		lasts = time.Duration(*ttl) * time.Second
+	}
+	d.footer = "it runs now, without a shell, and what it prints is stored encrypted · a value lasts " + lifetime.Label(lasts) + ", then it is asked for again"
+	d.keys = []hint{pressing("Enter runs it", "enter"), pressing("Esc goes back", "esc")}
+	d.onCancel = back
+	m.dialog = d
+	return nil
+}
+
 // createAndApprove stores the typed credential and answers with it. A secret
 // stored here has no grant limit of its own, so the lifetime chosen is the
 // whole of what bounds the grant, and there is nothing to ask about on the way
 // through.
 func (m *Model) createAndApprove(a approval, value string) tea.Cmd {
 	req, ttl := a.req, a.ttl
-	m.dialog = statusDialog("Credential request", "storing the credential…")
+	status := "storing the credential…"
+	if a.command != nil {
+		status = "running " + refreshcmd.Join(a.command) + "…"
+	}
+	m.dialog = statusDialog("Credential request", status)
 	return func() tea.Msg {
 		secret, err := m.ds.CreateSecret(m.ctx, req.Server, NewSecret{
-			Name:  a.storedAs(),
-			Type:  req.Type,
-			Host:  req.Host,
-			Value: SecretValue{Token: value},
+			Name:           a.storedAs(),
+			Type:           req.Type,
+			Host:           req.Host,
+			Value:          SecretValue{Token: value},
+			RefreshCommand: a.command,
+			// The lifetime the well-known credential says its value really
+			// has, rather than the short one any command gets.
+			ValueTTLSeconds: wellKnownValueTTL(req.WellKnownID, a.command),
 		})
 		if err != nil {
 			return credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
@@ -741,6 +819,17 @@ func (m *Model) createAndApprove(a approval, value string) tea.Cmd {
 	}
 }
 
+// wellKnownValueTTL is how long a value lasts for a credential stored from a
+// well-known ID's command, nil when the ID says nothing.
+func wellKnownValueTTL(id string, command []string) *int64 {
+	known, ok := wellknown.Lookup(id)
+	if !ok || command == nil || known.RefreshTTL <= 0 {
+		return nil
+	}
+	seconds := lifetime.Seconds(known.RefreshTTL)
+	return &seconds
+}
+
 // approval is what answering a request will do, gathered one step at a time:
 // the secret chosen, how long its grant lives, and the change to the secret
 // those two need, applied with the grant.
@@ -755,6 +844,10 @@ type approval struct {
 	// fresh is an answer typed in on the spot rather than a secret the project
 	// holds: secret is empty, and the value is asked for after the lifetime.
 	fresh bool
+	// command, on a fresh answer, is the command the value is got from instead
+	// of typed: run here when the secret is stored, and kept on it for its
+	// renewal.
+	command []string
 	// gate is an answer that is no secret at all: the credential is a gate
 	// (wellknown.Credential.Gate), secret is empty, and the server answers it.
 	gate bool
@@ -979,6 +1072,9 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 		return tea.Batch(m.loadCredentialRequests(),
 			m.report(false, "approved %s for %s", credentialName(msg.request), lifetime.Label(msg.ttl)))
 	}
+	if msg.request.Refresh != nil {
+		return tea.Batch(m.loadCredentialRequests(), m.report(false, "dismissed the refresh of %s", credentialName(msg.request)))
+	}
 	return tea.Batch(m.loadCredentialRequests(), m.report(false, "denied %s", credentialName(msg.request)))
 }
 
@@ -1001,6 +1097,9 @@ func (m *Model) viewCredentialBanner(width int) string {
 	if pending[0].Trust != nil {
 		// The name already says the host, so it is not said twice.
 		what = "trust request"
+	} else if pending[0].Refresh != nil {
+		// A token this discobox already has, wanting a new value.
+		what = "refresh request"
 	} else if host := pending[0].Host; host != "" {
 		subject += " for " + host
 	}

@@ -476,7 +476,8 @@ func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
 	send(t, m, keyPress("down"), keyPress("down")) // past the kind, onto the binding
 	send(t, m, typeString("registry.npmjs.org")...)
 	send(t, m, keyPress("down")) // the lifetime, on its default
-	send(t, m, keyPress("down")) // and past it to the value
+	send(t, m, keyPress("down")) // past it to how the value is given, on "enter a value"
+	send(t, m, keyPress("down")) // and to the value
 	send(t, m, typeString("npm_typedbyahuman")...)
 	send(t, m, keyPress("enter"))
 
@@ -511,7 +512,7 @@ func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
 	send(t, m, typeString("npm")...)
 	send(t, m, keyPress("down"), keyPress("down"))
 	send(t, m, tea.PasteMsg{Content: "registry.npmjs.org"})
-	send(t, m, keyPress("down"), keyPress("down"))
+	send(t, m, keyPress("down"), keyPress("down"), keyPress("down"))
 
 	// Long, because a credential is as long as whoever issued it made it: a
 	// character limit on the field would store the front of this and fail
@@ -614,7 +615,7 @@ func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
 	if !rowShown(m, "envVar") || !rowShown(m, "use") {
 		t.Fatal("the form does not ask what the credential is for")
 	}
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("ctrl+s"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("the form went away with nothing answered: %s", describe(m.dialog))
 	}
@@ -926,7 +927,7 @@ func TestAProjectGrantCanBeAccessOnlyToo(t *testing.T) {
 	typeInto(t, m, "envVar", "GH_TOKEN")
 	typeInto(t, m, "use", "Open a PR")
 	chooseTTL(t, m, "ttl", ttlNever)
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("ctrl+s"))
 
 	if len(ds.createdGrants) != 1 {
 		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
@@ -1114,7 +1115,7 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	if !rowShown(m, "harness") {
 		t.Fatal("a harness grant does not ask which harness")
 	}
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("ctrl+s"))
 
 	if len(ds.createdGrants) != 1 || ds.createdGrants[0].Scope != "harnessConfig" {
 		t.Fatalf("created = %#v, want the server's own word on the wire", ds.createdGrants)
@@ -1193,7 +1194,7 @@ func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
 	if got := m.dialog.form.chosenLabel("ttl"); got != "no limit" {
 		t.Fatalf("zero reads as %q, want it to say there is no limit", got)
 	}
-	send(t, m, keyPress("enter"))
+	send(t, m, keyPress("ctrl+s"))
 	if len(ds.limited) != 1 || ds.limited[0] != "sec_gh=0" {
 		t.Fatalf("limited = %v, want the limit lifted on the secret under the cursor", ds.limited)
 	}

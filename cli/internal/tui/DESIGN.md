@@ -126,6 +126,13 @@ applicable (`only for an OAuth credential`), or not editable at all
 (`unchanged — type to replace it`). One `hint` line under the form carries the
 sentence for the row — or the picker option — under the cursor.
 
+A picker is stepped through with ←→, and **Enter lists every option** under the
+row, each with its meaning (`form.listing`): ↑↓ walk the list, Enter or a press
+takes one, Esc closes the list rather than the card, and the hint line says the
+whole of the highlighted option. Because Enter on a picker lists, **ctrl+s
+accepts a card from any row**, and the key line offers the card's own "enter …"
+on ctrl+s while the cursor is on a picker (`formHints`).
+
 That line keeps **`hintRows` rows whether or not it has anything to say**. A
 dialog is drawn from its content and a sentence wraps to as many rows as it
 needs, so an explanation that ran to three rows on one row of the form and one
@@ -250,6 +257,24 @@ ask is a `CredentialRequest` with `Trust` set — marked, bannered, and listed
 like any other — whose dialog (`trusts.go`) asks which certificate from the
 chain the pool was shown to pin, the server's default first and the leaf's key
 last, then how long, from an hour to a month: a trust always lapses.
+
+**It holds refresh requests too** ([ADR 26-09-25-122](../../../docs/adr/26-09-25-122-a-token-may-expire-and-suggest-the-command-that-renews-it.md)).
+A token whose value went stale or was refused asks for a new one; the item is a
+`CredentialRequest` with `Refresh` set, and its dialog (`refresh.go`) shows the
+token's command before anything runs and offers to run it once, run it for the
+session, take a typed value, or dismiss. The command runs in the data source, on
+this machine, without a shell (`refreshcmd`). "For the session" is a permission
+in the window's memory, keyed by server, token, and the exact command
+(`sessionKey`): the poll answers that pair's next asks unprompted
+(`renewBySession`), an edited command asks a person again, and a failure drops
+the permission. A well-known ask whose credential suggests a command offers
+"From a command…" beside "New credential…", and F4's new token picks between
+entering a value and getting it from a command, with how long a value lasts
+(5m unless chosen, or the lifetime a well-known credential says its value really has — a day for GitHub; minutes to a day, not a grant's weeks and months), which the
+edit card changes for any token. F4's kind offers every
+well-known credential with a value after token and OAuth: choosing one fills in
+its name, host, and command (`fillWellKnown`, leaving alone what was typed) and
+stores a token that answers that ID from the start.
 
 **It is polled, not pushed.** The requests are read on the same 5s tick as the
 listing; there is no client-facing event stream to subscribe to
@@ -2491,6 +2516,7 @@ the newest one where the busy line goes.
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
+| `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `apply.go` | apply: the ready band, the question a click asks, and what is offered when it succeeds |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |

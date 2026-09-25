@@ -315,9 +315,22 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 
 	case hitFormRow:
 		// The row is answered where the keyboard is: a press moves the cursor
-		// to it and focuses its field, which is what ↑ and ↓ do.
+		// to it and focuses its field, which is what ↑ and ↓ do. A press on
+		// the picker already under the cursor opens it, as Enter does; one
+		// anywhere else closes a list left open.
 		if d := m.dialog; d != nil && d.kind == dlgForm {
+			if d.form.listing {
+				d.form.closeList()
+			} else if d.form.cursor == what.idx {
+				d.form.openList()
+			}
 			d.form.moveTo(what.idx)
+		}
+		return nil, true
+
+	case hitFormChoice:
+		if d := m.dialog; d != nil && d.kind == dlgForm && d.form.listing {
+			d.form.pick(what.idx)
 		}
 		return nil, true
 

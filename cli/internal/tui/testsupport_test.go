@@ -36,6 +36,10 @@ func TestMain(m *testing.M) {
 type fakeSource struct {
 	resources Resources
 	mu        sync.Mutex
+	// renewals are the refresh requests answered, and renewErr what the next
+	// answer fails with.
+	renewals []Renewal
+	renewErr error
 
 	session   Session
 	sandboxes []Sandbox
@@ -1439,6 +1443,18 @@ func (f *fakeSource) DenyCredentialRequest(_ context.Context, server, requestID 
 	f.onServer = append(f.onServer, "DenyCredentialRequest@"+server)
 	f.denials = append(f.denials, requestID)
 	f.dropRequestLocked(requestID)
+	return nil
+}
+
+func (f *fakeSource) RefreshSecret(_ context.Context, server string, renewal Renewal) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "RefreshSecret@"+server)
+	if f.renewErr != nil {
+		return f.renewErr
+	}
+	f.renewals = append(f.renewals, renewal)
+	f.dropRequestLocked(renewal.RequestID)
 	return nil
 }
 

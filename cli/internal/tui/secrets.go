@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/wellknown"
 
 	"charm.land/bubbles/v2/textinput"
@@ -513,7 +514,7 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	host.section = where
 	host.hint = "the host covers itself and everything beneath it, and may not reach outside the secret's own binding"
 
-	ttl := ttlRows("ttl", "lifetime", where, "never expires", int64(secret.MaxTTL/time.Second))
+	ttl := ttlRows("ttl", "lifetime", where, "never expires", lifetime.Presets, int64(secret.MaxTTL/time.Second))
 	lifetime := "it never expires: a credential nobody has to think about again, and one nothing takes away"
 	if secret.MaxTTL > 0 {
 		lifetime = "this credential allows at most " + grantLimit(secret.MaxTTL) + ", so it cannot be granted forever"
@@ -691,6 +692,21 @@ func describeSecret(secret Secret, now time.Time) []section {
 		{label: "may be sent to", value: where, tone: tone},
 		{label: "grant limit", value: limit},
 	}}
+	// How the value is renewed, for a token that has a lifetime
+	// (ADR 26-09-25-122).
+	if len(secret.RefreshCommand) > 0 {
+		credential.fields = append(credential.fields, field{label: "renewed by", value: refreshcmd.Join(secret.RefreshCommand), tone: toneAccent})
+	}
+	if secret.ValueTTL > 0 {
+		credential.fields = append(credential.fields, field{label: "a value lasts", value: lifetime.Label(secret.ValueTTL)})
+	}
+	if !secret.StaleAt.IsZero() {
+		stale := "stale " + ago(secret.StaleAt, now) + "; renewed when next needed"
+		if secret.StaleAt.After(now) {
+			stale = "stale at " + secret.StaleAt.Local().Format("15:04")
+		}
+		credential.fields = append(credential.fields, field{label: "value", value: stale, tone: toneDim})
+	}
 	if secret.OAuth == nil {
 		return []section{credential}
 	}
@@ -950,9 +966,9 @@ const ttlDefault = ttlNever
 // ttlRows is a lifetime as two rows: the presets, and the seconds behind
 // custom. The second only applies while the first is on custom, so the number
 // is there to be edited when it is wanted and out of the way when it is not.
-func ttlRows(key, label, section, forever string, seconds int64) []formRow {
-	choices := make([]choice, 0, len(lifetime.Presets)+1)
-	for _, d := range lifetime.Presets {
+func ttlRows(key, label, section, forever string, presets []time.Duration, seconds int64) []formRow {
+	choices := make([]choice, 0, len(presets)+1)
+	for _, d := range presets {
 		// Forever is named by the caller: on a grant it never expires, and on
 		// a credential's ceiling it is no limit — the same zero, saying two
 		// different things about two different fields.
@@ -980,6 +996,20 @@ func ttlRows(key, label, section, forever string, seconds int64) []formRow {
 	custom.when = func(f *form) bool { return f.chosen(key) == ttlCustom }
 	return []formRow{pick, custom}
 }
+
+func mustAtoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
+}
+
+// defaultValueLifetime is what a value got from a command lasts when nobody
+// chooses otherwise, as the server gives one (model.DefaultRefreshTTL).
+const defaultValueLifetime = 5 * time.Minute
+
+// valueLifetimes are the lifetimes a token's value is offered: a value got from
+// a command is short-lived by assumption, so these are minutes and hours, not
+// the days and months a grant is given (ADR 26-09-25-122 §1).
+var valueLifetimes = []time.Duration{5 * time.Minute, 15 * time.Minute, time.Hour, 8 * time.Hour, lifetime.Day, lifetime.Forever}
 
 // ttlSeconds reads a lifetime back off the two rows, refusing what is not a
 // lifetime rather than quietly meaning something else. The typed row takes
@@ -1016,7 +1046,8 @@ func secretForm(existing *Secret) *form {
 	const what, value = "the credential", "what it is"
 	editing := existing != nil
 	oauth := func(f *form) bool { return f.chosen("kind") == "oauth" }
-	token := func(f *form) bool { return f.chosen("kind") == "token" }
+	// A well-known credential is a token the project stores for that ID.
+	token := func(f *form) bool { return f.chosen("kind") != "oauth" }
 
 	name := textRow("name", "name", "e.g. github", "")
 	name.section = what
@@ -1033,6 +1064,18 @@ func secretForm(existing *Secret) *form {
 		choice{key: "token", label: "a token", hint: "one opaque string, however it is presented"},
 		choice{key: "oauth", label: "an OAuth credential", hint: "renews itself: an access token, a refresh token, and where to spend it"})
 	kind.section = what
+	// Then every well-known credential with a value behind it: a token stored
+	// for that ID answers requests for it from the start, and the choice fills
+	// in the name, host, and command it suggests (ADR 26-09-25-122 §2).
+	for _, known := range wellknown.All() {
+		if known.Gate {
+			continue
+		}
+		kind.choices = append(kind.choices, choice{key: wellKnownKind + known.ID, label: known.ID, hint: known.Description})
+	}
+	if !editing {
+		kind.chose = fillWellKnown()
+	}
 
 	host := textRow("host", "may be sent to", "any host a grant allows", "")
 	host.section = what
@@ -1047,17 +1090,51 @@ func secretForm(existing *Secret) *form {
 	// "grant limit" rather than "grants last": the value is a ceiling, and a
 	// row reading "grants last ‹ 1 day ›" states it as the lifetime every grant
 	// gets, which is the opposite of what it does.
-	limit := ttlRows("ttl", "grant limit", what, "no limit", seconds)
+	limit := ttlRows("ttl", "grant limit", what, "no limit", lifetime.Presets, seconds)
 	limit[0].hint = "the longest a grant on this credential may live: a longer one is refused, and nothing else about it changes"
 	limit[1].hint = limit[0].hint
+
+	// A token is either typed in or got from a command on this machine, which
+	// is run now for the first value and offered to whoever renews it when it
+	// goes stale (ADR 26-09-25-122 §2).
+	fromCommand := func(f *form) bool { return token(f) && f.chosen("source") == "command" }
+	source := pickRow("source", "the value",
+		choice{key: "value", label: "enter a value", hint: "type or paste it below"},
+		choice{key: "command", label: "get it from a command", hint: "run on this machine now, and again when it goes stale — with your say-so"})
+	source.section = value
+	source.when = token
+	source.why = "only for a token"
+
+	command := textRow("command", "command", "e.g. gh auth token", "")
+	command.section = value
+	command.hint = "prints the token; run without a shell, as you, on the machine renewing it"
+	command.required = "a token got from a command needs the command"
+	command.when = fromCommand
+	command.why = "only for a token got from a command"
+
+	valueTTL := int64(defaultValueLifetime / time.Second)
+	if editing {
+		valueTTL = int64(existing.ValueTTL / time.Second)
+	}
+	lasts := ttlRows("lasts", "a value lasts", value, "never goes stale", valueLifetimes, valueTTL)
+	lasts[0].hint = "how long a value is trusted before a new one is asked for · a stale value is still used until one arrives"
+	lasts[1].hint = lasts[0].hint
+	for i := range lasts {
+		row := &lasts[i]
+		base := row.when
+		row.when = func(f *form) bool { return fromCommand(f) && (base == nil || base(f)) }
+		if i == 0 {
+			row.why = "only for a token got from a command"
+		}
+	}
 
 	plain := textRow("token", "token", "the value itself", "")
 	plain.section = value
 	plain.masked = true
 	plain.hint = "stored encrypted, and never shown again"
 	plain.required = "a secret is the value: nothing was stored"
-	plain.when = token
-	plain.why = "only for a token"
+	plain.when = func(f *form) bool { return token(f) && !fromCommand(f) }
+	plain.why = "only for a token typed in"
 
 	access := textRow("access", "access token", "the value itself", "")
 	access.section = value
@@ -1104,6 +1181,11 @@ func secretForm(existing *Secret) *form {
 		if existing.Type == "oauth" {
 			kind.at = 1
 		}
+		for i, c := range kind.choices {
+			if existing.WellKnownID != "" && c.key == wellKnownKind+existing.WellKnownID {
+				kind.at = i
+			}
+		}
 		host.input = valued(host.input, existing.Host)
 		if existing.OAuth != nil {
 			tokenURL.input = valued(tokenURL.input, existing.OAuth.TokenURL)
@@ -1116,6 +1198,23 @@ func secretForm(existing *Secret) *form {
 		// every one of these empty is the ordinary answer — the credential
 		// stays as it is.
 		plain.required, access.required, refresh.required, tokenURL.required = "", "", "", ""
+		// An existing token keeps its value unless one is typed; its command
+		// is edited in place, and emptied to remove it.
+		command.when = token
+		command.required = ""
+		command.input = valued(command.input, refreshcmd.Join(existing.RefreshCommand))
+		command.hint = "offered to whoever renews it when it goes stale · empty removes it"
+		// An existing token's lifetime is its own, command or not: one typed in
+		// can go stale too.
+		for i := range lasts {
+			row := &lasts[i]
+			if i == 0 {
+				row.when = token
+			} else {
+				row.when = func(f *form) bool { return token(f) && f.chosen("lasts") == ttlCustom }
+			}
+		}
+		plain.when = token
 		plain.input.Placeholder = keepStored
 		access.input.Placeholder = keepStored
 		refresh.input.Placeholder = keepStored
@@ -1125,7 +1224,67 @@ func secretForm(existing *Secret) *form {
 		tokenURL.hint = access.hint
 	}
 	rows := append([]formRow{name, kind, host}, limit...)
+	if editing {
+		rows = append(rows, plain, command)
+		rows = append(rows, lasts...)
+		return newForm(append(rows, access, refresh, tokenURL, client, scopes)...)
+	}
+	rows = append(rows, source, command)
+	rows = append(rows, lasts...)
 	return newForm(append(rows, plain, access, refresh, tokenURL, client, scopes)...)
+}
+
+// wellKnownKind prefixes the kind a well-known credential is chosen by.
+const wellKnownKind = "known:"
+
+// chosenWellKnown is the well-known credential the kind names, if it names
+// one.
+func chosenWellKnown(f *form) (wellknown.Credential, bool) {
+	id, ok := strings.CutPrefix(f.chosen("kind"), wellKnownKind)
+	if !ok {
+		return wellknown.Credential{}, false
+	}
+	return wellknown.Lookup(id)
+}
+
+// fillWellKnown fills in what a well-known credential suggests as it is
+// chosen: its name, its host, and getting it from its command. A field
+// somebody typed into is theirs and is left alone; one this filled in follows
+// the next choice.
+func fillWellKnown() func(f *form) {
+	var filled map[string]string
+	return func(f *form) {
+		ours := func(key string) bool { return f.value(key) == "" || f.value(key) == filled[key] }
+		known, ok := chosenWellKnown(f)
+		next := map[string]string{}
+		if ok {
+			next["name"], next["host"] = known.Name, known.Host()
+			if len(known.RefreshCommand) > 0 {
+				next["command"] = refreshcmd.Join(known.RefreshCommand)
+			}
+		}
+		for _, key := range []string{"name", "host", "command"} {
+			if ours(key) {
+				f.set(key, next[key])
+			}
+		}
+		if next["command"] != "" && f.value("token") == "" {
+			f.choose("source", "command")
+		}
+		// How long its value lasts follows the credential chosen — a day for
+		// a token that lasts until revoked — unless somebody moved it off
+		// what was filled in.
+		lasts := itoa(int(defaultValueLifetime / time.Second))
+		if ok && known.RefreshTTL > 0 {
+			lasts = itoa(int(known.RefreshTTL / time.Second))
+		}
+		if f.chosen("lasts") == filled["lasts"] || filled["lasts"] == "" {
+			f.choose("lasts", lasts)
+			f.set("lastsCustom", lifetime.Label(time.Duration(mustAtoi(lasts))*time.Second))
+		}
+		next["lasts"] = f.chosen("lasts")
+		filled = next
+	}
 }
 
 // keepStored is what an untouched value row says on an existing credential: a
@@ -1146,13 +1305,31 @@ func (m *Model) newSecretForm() tea.Cmd {
 			f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
 			return nil
 		}
-		return m.storeSecret(NewSecret{
+		secret := NewSecret{
 			Name:          f.value("name"),
 			Type:          f.chosen("kind"),
 			Host:          f.value("host"),
 			MaxTTLSeconds: seconds,
 			Value:         formSecretValue(f),
-		})
+		}
+		if known, ok := chosenWellKnown(f); ok {
+			secret.Type, secret.WellKnownID = "token", known.ID
+		}
+		if secret.Type == "token" && f.chosen("source") == "command" {
+			command, err := refreshcmd.Split(f.value("command"))
+			if err != nil || len(command) == 0 {
+				f.err = "the command is words, with quotes around one that holds a space"
+				return nil
+			}
+			secret.RefreshCommand, secret.Value = command, SecretValue{}
+			lasts, ok := ttlSeconds(f, "lasts")
+			if !ok {
+				f.err = "a value lasts 5m, 90m, 8h, or never goes stale"
+				return nil
+			}
+			secret.ValueTTLSeconds = &lasts
+		}
+		return m.storeSecret(secret)
 	})
 	d.keys = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter stores it", "enter"), pressing("esc cancels", "esc")}
 	m.dialog = d
@@ -1225,6 +1402,24 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 			return nil
 		}
 		update.Value = value
+		if was.Type == "token" {
+			command, err := refreshcmd.Split(f.value("command"))
+			if err != nil {
+				f.err = "the command is words, with quotes around one that holds a space"
+				return nil
+			}
+			if refreshcmd.Join(command) != refreshcmd.Join(was.RefreshCommand) {
+				update.RefreshCommand = &command
+			}
+			lasts, ok := ttlSeconds(f, "lasts")
+			if !ok {
+				f.err = "a value lasts 5m, 90m, 8h, or never goes stale"
+				return nil
+			}
+			if time.Duration(lasts)*time.Second != was.ValueTTL {
+				update.ValueTTLSeconds = &lasts
+			}
+		}
 		return m.saveSecret(server, id, was, update)
 	})
 	lines := []line{
@@ -1300,6 +1495,22 @@ func (m *Model) saveSecret(server, id string, was Secret, update SecretUpdate) t
 	}
 	if update.Value != nil {
 		did = append(did, "replaced "+was.Name+"'s value")
+	}
+	if update.ValueTTLSeconds != nil {
+		switch *update.ValueTTLSeconds {
+		case 0:
+			did = append(did, was.Name+"'s value never goes stale")
+		default:
+			did = append(did, "a value of "+was.Name+" now lasts "+lifetime.Label(time.Duration(*update.ValueTTLSeconds)*time.Second))
+		}
+	}
+	if update.RefreshCommand != nil {
+		switch len(*update.RefreshCommand) {
+		case 0:
+			did = append(did, "removed "+was.Name+"'s refresh command")
+		default:
+			did = append(did, was.Name+" now renews with "+refreshcmd.Join(*update.RefreshCommand))
+		}
 	}
 	if len(did) == 0 {
 		m.dialog = nil

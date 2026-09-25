@@ -161,6 +161,10 @@ type action struct {
 	enabled bool
 	why     string // why it is not available, when it is not
 
+	// emphasis is a part of detail drawn bold rather than muted: the thing
+	// in the sentence a reader must not skim past.
+	emphasis string
+
 	// note is what the row says about itself after it has been chosen, drawn
 	// at the end of it in the window's OK color: the tools picker's "copied".
 	// It is on the row rather than on the card because it belongs to the one
@@ -313,6 +317,11 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			d.endSearch()
 			return nil, false
 		}
+		// An open list closes before the card does.
+		if d.kind == dlgForm && d.form.listing {
+			d.form.closeList()
+			return nil, false
+		}
 		return d.cancel(), true
 	}
 
@@ -376,7 +385,12 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, false
 
 	case dlgForm:
-		if keyName(msg) == "enter" {
+		// Enter on a picker lists its options; ctrl+s accepts the card from
+		// any row, so a card whose cursor rests on a picker can still be
+		// answered without walking to a field.
+		accept := keyName(msg) == "ctrl+s" || (keyName(msg) == "enter" && !d.form.listing && !d.form.onPicker())
+		if accept {
+			d.form.closeList()
 			// A form that is not answered stays up with the reason on it: the
 			// alternative is a dialog that closes and reports a refusal onto
 			// the screen behind it, having thrown away everything typed.
@@ -661,11 +675,7 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 	// a hint that names a key is a button for that key here too, and a card
 	// whose keys were only readable would be the one surface in the window
 	// where they are not. It gives up offers from the tail to fit.
-	keys := func(fallback ...hint) {
-		line := d.keys
-		if len(line) == 0 {
-			line = fallback
-		}
+	drawHints := func(line []hint) {
 		line = fitHints(line, hintSep, inner)
 		if len(line) == 0 {
 			return
@@ -674,6 +684,13 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		z.push(dialogPadLeft, strings.Count(b.String(), "\n")+dialogPadTop)
 		b.WriteString(viewHints(st, z, line, 0, hintSep))
 		z.pop()
+	}
+	keys := func(fallback ...hint) {
+		line := d.keys
+		if len(line) == 0 {
+			line = fallback
+		}
+		drawHints(line)
 	}
 
 	switch d.kind {
@@ -730,7 +747,11 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		b.WriteString(d.form.hint(st, inner))
 		b.WriteString("\n")
 		footer()
-		keys(says("↑↓ moves"), says("←→ chooses"), pressing("enter accepts", "enter"), pressing("esc cancels", "esc"))
+		line := d.keys
+		if len(line) == 0 {
+			line = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter accepts", "enter"), pressing("esc cancels", "esc")}
+		}
+		drawHints(formHints(d.form, line))
 
 	case dlgInput:
 		answer()
@@ -921,7 +942,7 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner int) string {
 		}
 		room := max(inner-keyCol-labelW-4-lipgloss.Width(note), 8)
 		row := bar + " " + key + label.Render(pad(it.label, labelW)) + "  " +
-			st.dimText.Render(truncate(detail, room)) + note
+			emphasized(st, truncate(detail, room), it.emphasis) + note
 		b.WriteString(padANSI(row, inner))
 		b.WriteString("\n")
 	}
@@ -1078,4 +1099,38 @@ func (d *dialog) tally() string {
 		return "no matches"
 	}
 	return itoa(d.match+1) + "/" + itoa(d.matches)
+}
+
+// formHints is a card's key line as the row under the cursor has it. On a
+// picker Enter lists the options, so the card's own "enter …" is offered on
+// ctrl+s, which accepts from anywhere; with the list open the line is the
+// list's.
+func formHints(f *form, line []hint) []hint {
+	if f.listing {
+		return []hint{says("↑↓ picks"), pressing("enter chooses", "enter"), pressing("esc closes the list", "esc")}
+	}
+	if !f.onPicker() {
+		return line
+	}
+	out := make([]hint, 0, len(line)+1)
+	for _, h := range line {
+		if len(h.keys) == 1 && h.keys[0] == "enter" {
+			out = append(out, pressing("enter lists them", "enter"),
+				pressing("ctrl+s "+strings.TrimPrefix(h.text, "enter "), "ctrl+s"))
+			continue
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
+// emphasized draws a muted detail with the part named in it bold, so what
+// matters most in the line — the command a row would run — is not read as
+// part of the explanation around it.
+func emphasized(st *styles, detail, part string) string {
+	i := strings.Index(detail, part)
+	if part == "" || i < 0 {
+		return st.dimText.Render(detail)
+	}
+	return st.dimText.Render(detail[:i]) + st.emphasis.Render(part) + st.dimText.Render(detail[i+len(part):])
 }
