@@ -863,6 +863,18 @@ func (UnimplementedHandler) ListSecretGrants(ctx context.Context, params ListSec
 	return r, ht.ErrNotImplemented
 }
 
+// ListSecretRefreshes implements list-secret-refreshes operation.
+//
+// The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new
+// value of a token, and how each ask was answered or dismissed -- newest first. Project-scoped, like
+// the verdict trail, because it outlives the discoboxes it names. An answer's principal and time are
+// the control plane's record; how the value was produced is the answering client's own account.
+//
+// GET /projects/{projectId}/secret-refreshes
+func (UnimplementedHandler) ListSecretRefreshes(ctx context.Context, params ListSecretRefreshesParams) (r ListSecretRefreshesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListSecretRejections implements list-secret-rejections operation.
 //
 // List credentials an upstream has refused.
@@ -958,6 +970,17 @@ func (UnimplementedHandler) RecordCredentialVerdict(ctx context.Context, req *Re
 //
 // POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 func (UnimplementedHandler) RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (r RefreshHarnessConfigImageRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// RefreshSecret implements refresh-secret operation.
+//
+// Write a new value for a token secret, answering its open refresh request (ADR 26-09-25-122 §4).
+// Closes every open refresh request on the secret. The command a client reports is recorded, never
+// checked.
+//
+// POST /projects/{projectId}/secrets/{secretId}/refresh
+func (UnimplementedHandler) RefreshSecret(ctx context.Context, req *RefreshSecretBody, params RefreshSecretParams) (r RefreshSecretRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

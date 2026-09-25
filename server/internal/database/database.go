@@ -131,7 +131,42 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := normalizeCredentialVerdictTimes(write); err != nil {
 		return err
 	}
+	if err := backfillSecretValueUpdatedAt(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
+}
+
+// backfillSecretValueUpdatedAt gives every secret written before
+// value_updated_at existed the time its value was last written, which for
+// those rows is the last time the row was written at all (ADR 26-09-25-122 §1).
+// A value's lifetime runs from it, and updated_at moves on every rename and
+// limit change, so a lifetime read from updated_at would restart on each.
+// Idempotent: only rows without one are touched.
+//
+// It is copied through Go rather than in SQL, and written in UTC: SQLite
+// compares times as text, updated_at on older rows carries the server's local
+// offset, and value_updated_at is compared against UTC times in SQL
+// (MarkSecretValueStale), as normalizeCredentialVerdictTimes found for verdicts.
+func backfillSecretValueUpdatedAt(db *gorm.DB) error {
+	var rows []struct {
+		ID        string
+		UpdatedAt time.Time
+	}
+	if err := db.Model(&model.Secret{}).
+		Select("id", "updated_at").
+		Where("value_updated_at IS NULL").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err := db.Model(&model.Secret{}).
+			Where("id = ?", row.ID).
+			UpdateColumn("value_updated_at", row.UpdatedAt.UTC()).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // normalizeCredentialVerdictTimes rewrites into UTC any credential verdict

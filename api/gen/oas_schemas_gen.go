@@ -1684,11 +1684,26 @@ type CreateSecretBody struct {
 	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Optional host used to match requests (e.g. github.com).
 	Host OptString `json:"host"`
+	// A command a person's client may run to produce a new value, as an argument vector run without a
+	// shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only;
+	// setting one without ttlSeconds gives the token the well-known credential's own lifetime when
+	// wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+	RefreshCommand OptNilStringArray `json:"refreshCommand"`
+	// How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets
+	// only.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
+	// value only. Token secrets only, and only with a value.
+	ValueExpiresAt OptDateTime `json:"valueExpiresAt"`
 	// Secret name.
 	Name string `json:"name"`
 	// Secret type.
 	Type  CreateSecretBodyType `json:"type"`
 	Value SecretValue          `json:"value"`
+	// The well-known credential this secret answers, such as com.github.api. A request for that ID then
+	// resolves to it without anyone being asked which secret answers it. A token only; a gate is refused,
+	//  and so is an ID another secret already answers.
+	WellKnownId OptString `json:"wellKnownId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1706,6 +1721,21 @@ func (s *CreateSecretBody) GetHost() OptString {
 	return s.Host
 }
 
+// GetRefreshCommand returns the value of RefreshCommand.
+func (s *CreateSecretBody) GetRefreshCommand() OptNilStringArray {
+	return s.RefreshCommand
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *CreateSecretBody) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// GetValueExpiresAt returns the value of ValueExpiresAt.
+func (s *CreateSecretBody) GetValueExpiresAt() OptDateTime {
+	return s.ValueExpiresAt
+}
+
 // GetName returns the value of Name.
 func (s *CreateSecretBody) GetName() string {
 	return s.Name
@@ -1719,6 +1749,11 @@ func (s *CreateSecretBody) GetType() CreateSecretBodyType {
 // GetValue returns the value of Value.
 func (s *CreateSecretBody) GetValue() SecretValue {
 	return s.Value
+}
+
+// GetWellKnownId returns the value of WellKnownId.
+func (s *CreateSecretBody) GetWellKnownId() OptString {
+	return s.WellKnownId
 }
 
 // SetSchema sets the value of Schema.
@@ -1736,6 +1771,21 @@ func (s *CreateSecretBody) SetHost(val OptString) {
 	s.Host = val
 }
 
+// SetRefreshCommand sets the value of RefreshCommand.
+func (s *CreateSecretBody) SetRefreshCommand(val OptNilStringArray) {
+	s.RefreshCommand = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *CreateSecretBody) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// SetValueExpiresAt sets the value of ValueExpiresAt.
+func (s *CreateSecretBody) SetValueExpiresAt(val OptDateTime) {
+	s.ValueExpiresAt = val
+}
+
 // SetName sets the value of Name.
 func (s *CreateSecretBody) SetName(val string) {
 	s.Name = val
@@ -1749,6 +1799,11 @@ func (s *CreateSecretBody) SetType(val CreateSecretBodyType) {
 // SetValue sets the value of Value.
 func (s *CreateSecretBody) SetValue(val SecretValue) {
 	s.Value = val
+}
+
+// SetWellKnownId sets the value of WellKnownId.
+func (s *CreateSecretBody) SetWellKnownId(val OptString) {
+	s.WellKnownId = val
 }
 
 // Secret type.
@@ -2952,6 +3007,7 @@ func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
 func (*ErrorModelStatusCode) listSandboxesRes()                    {}
 func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
+func (*ErrorModelStatusCode) listSecretRefreshesRes()              {}
 func (*ErrorModelStatusCode) listSecretRejectionsRes()             {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
@@ -2962,6 +3018,7 @@ func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) recordCredentialVerdictRes()          {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
+func (*ErrorModelStatusCode) refreshSecretRes()                    {}
 func (*ErrorModelStatusCode) registerPoolRes()                     {}
 func (*ErrorModelStatusCode) repairSandboxRes()                    {}
 func (*ErrorModelStatusCode) reportPoolResourcesRes()              {}
@@ -7099,6 +7156,78 @@ func (s *ListSecretGrantsBody) SetSecretGrants(val []SecretGrant) {
 
 func (*ListSecretGrantsBody) listSecretGrantsRes() {}
 
+// Ref: #/components/schemas/ListSecretRefreshEventsBody
+type ListSecretRefreshEventsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema              OptURI               `json:"$schema"`
+	SecretRefreshEvents []SecretRefreshEvent `json:"secretRefreshEvents"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSecretRefreshEventsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecretRefreshEvents returns the value of SecretRefreshEvents.
+func (s *ListSecretRefreshEventsBody) GetSecretRefreshEvents() []SecretRefreshEvent {
+	return s.SecretRefreshEvents
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSecretRefreshEventsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecretRefreshEvents sets the value of SecretRefreshEvents.
+func (s *ListSecretRefreshEventsBody) SetSecretRefreshEvents(val []SecretRefreshEvent) {
+	s.SecretRefreshEvents = val
+}
+
+func (*ListSecretRefreshEventsBody) listSecretRefreshesRes() {}
+
+// Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
+// the newest first.
+type ListSecretRefreshesOrder string
+
+const (
+	ListSecretRefreshesOrderAsc  ListSecretRefreshesOrder = "asc"
+	ListSecretRefreshesOrderDesc ListSecretRefreshesOrder = "desc"
+)
+
+// AllValues returns all ListSecretRefreshesOrder values.
+func (ListSecretRefreshesOrder) AllValues() []ListSecretRefreshesOrder {
+	return []ListSecretRefreshesOrder{
+		ListSecretRefreshesOrderAsc,
+		ListSecretRefreshesOrderDesc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListSecretRefreshesOrder) MarshalText() ([]byte, error) {
+	switch s {
+	case ListSecretRefreshesOrderAsc:
+		return []byte(s), nil
+	case ListSecretRefreshesOrderDesc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListSecretRefreshesOrder) UnmarshalText(data []byte) error {
+	switch ListSecretRefreshesOrder(data) {
+	case ListSecretRefreshesOrderAsc:
+		*s = ListSecretRefreshesOrderAsc
+		return nil
+	case ListSecretRefreshesOrderDesc:
+		*s = ListSecretRefreshesOrderDesc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ListSecretRejectionsBody
 type ListSecretRejectionsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -9250,6 +9379,52 @@ func (o OptListHarnessHooksOrder) Get() (v ListHarnessHooksOrder, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListHarnessHooksOrder) Or(d ListHarnessHooksOrder) ListHarnessHooksOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListSecretRefreshesOrder returns new OptListSecretRefreshesOrder with value set to v.
+func NewOptListSecretRefreshesOrder(v ListSecretRefreshesOrder) OptListSecretRefreshesOrder {
+	return OptListSecretRefreshesOrder{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListSecretRefreshesOrder is optional ListSecretRefreshesOrder.
+type OptListSecretRefreshesOrder struct {
+	Value ListSecretRefreshesOrder
+	Set   bool
+}
+
+// IsSet returns true if OptListSecretRefreshesOrder was set.
+func (o OptListSecretRefreshesOrder) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListSecretRefreshesOrder) Reset() {
+	var v ListSecretRefreshesOrder
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListSecretRefreshesOrder) SetTo(v ListSecretRefreshesOrder) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListSecretRefreshesOrder) Get() (v ListSecretRefreshesOrder, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListSecretRefreshesOrder) Or(d ListSecretRefreshesOrder) ListSecretRefreshesOrder {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -12218,6 +12393,98 @@ func (o OptSecretOAuth) Or(d SecretOAuth) SecretOAuth {
 	return d
 }
 
+// NewOptSecretRefreshAnswer returns new OptSecretRefreshAnswer with value set to v.
+func NewOptSecretRefreshAnswer(v SecretRefreshAnswer) OptSecretRefreshAnswer {
+	return OptSecretRefreshAnswer{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRefreshAnswer is optional SecretRefreshAnswer.
+type OptSecretRefreshAnswer struct {
+	Value SecretRefreshAnswer
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRefreshAnswer was set.
+func (o OptSecretRefreshAnswer) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRefreshAnswer) Reset() {
+	var v SecretRefreshAnswer
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRefreshAnswer) SetTo(v SecretRefreshAnswer) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRefreshAnswer) Get() (v SecretRefreshAnswer, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRefreshAnswer) Or(d SecretRefreshAnswer) SecretRefreshAnswer {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRefreshEventRefreshCause returns new OptSecretRefreshEventRefreshCause with value set to v.
+func NewOptSecretRefreshEventRefreshCause(v SecretRefreshEventRefreshCause) OptSecretRefreshEventRefreshCause {
+	return OptSecretRefreshEventRefreshCause{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRefreshEventRefreshCause is optional SecretRefreshEventRefreshCause.
+type OptSecretRefreshEventRefreshCause struct {
+	Value SecretRefreshEventRefreshCause
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRefreshEventRefreshCause was set.
+func (o OptSecretRefreshEventRefreshCause) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRefreshEventRefreshCause) Reset() {
+	var v SecretRefreshEventRefreshCause
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRefreshEventRefreshCause) SetTo(v SecretRefreshEventRefreshCause) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRefreshEventRefreshCause) Get() (v SecretRefreshEventRefreshCause, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRefreshEventRefreshCause) Or(d SecretRefreshEventRefreshCause) SecretRefreshEventRefreshCause {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSecretRejectionSecretType returns new OptSecretRejectionSecretType with value set to v.
 func NewOptSecretRejectionSecretType(v SecretRejectionSecretType) OptSecretRejectionSecretType {
 	return OptSecretRejectionSecretType{
@@ -12350,6 +12617,98 @@ func (o OptSecretRequestPurpose) Get() (v SecretRequestPurpose, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretRequestPurpose) Or(d SecretRequestPurpose) SecretRequestPurpose {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestReason returns new OptSecretRequestReason with value set to v.
+func NewOptSecretRequestReason(v SecretRequestReason) OptSecretRequestReason {
+	return OptSecretRequestReason{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestReason is optional SecretRequestReason.
+type OptSecretRequestReason struct {
+	Value SecretRequestReason
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestReason was set.
+func (o OptSecretRequestReason) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestReason) Reset() {
+	var v SecretRequestReason
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestReason) SetTo(v SecretRequestReason) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestReason) Get() (v SecretRequestReason, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestReason) Or(d SecretRequestReason) SecretRequestReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestRefreshCause returns new OptSecretRequestRefreshCause with value set to v.
+func NewOptSecretRequestRefreshCause(v SecretRequestRefreshCause) OptSecretRequestRefreshCause {
+	return OptSecretRequestRefreshCause{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestRefreshCause is optional SecretRequestRefreshCause.
+type OptSecretRequestRefreshCause struct {
+	Value SecretRequestRefreshCause
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestRefreshCause was set.
+func (o OptSecretRequestRefreshCause) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestRefreshCause) Reset() {
+	var v SecretRequestRefreshCause
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestRefreshCause) SetTo(v SecretRequestRefreshCause) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestRefreshCause) Get() (v SecretRequestRefreshCause, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestRefreshCause) Or(d SecretRequestRefreshCause) SecretRequestRefreshCause {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -15297,6 +15656,150 @@ func (s *RecordCredentialVerdictBody) SetVolunteered(val bool) {
 type RecordCredentialVerdictNoContent struct{}
 
 func (*RecordCredentialVerdictNoContent) recordCredentialVerdictRes() {}
+
+// Ref: #/components/schemas/RefreshSecretBody
+type RefreshSecretBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Host ID of the client writing the value, recorded with the answer.
+	ClientHost OptString `json:"clientHost"`
+	// The command the client ran, when via is command.
+	Command OptNilStringArray `json:"command"`
+	// When this value goes stale, for a value that knows its own lifetime; overrides the secret's
+	// ttlSeconds for this value.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// The refresh request this answers. A request already answered is refused with 409 and nothing is
+	// written. Omit for a refresh nobody asked for.
+	RequestId OptString `json:"requestId"`
+	// Whether a permission the person gave for the session answered it, rather than a prompt.
+	Session OptBool `json:"session"`
+	// The new token value.
+	Value string `json:"value"`
+	// How the value was produced.
+	Via RefreshSecretBodyVia `json:"via"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *RefreshSecretBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetClientHost returns the value of ClientHost.
+func (s *RefreshSecretBody) GetClientHost() OptString {
+	return s.ClientHost
+}
+
+// GetCommand returns the value of Command.
+func (s *RefreshSecretBody) GetCommand() OptNilStringArray {
+	return s.Command
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *RefreshSecretBody) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetRequestId returns the value of RequestId.
+func (s *RefreshSecretBody) GetRequestId() OptString {
+	return s.RequestId
+}
+
+// GetSession returns the value of Session.
+func (s *RefreshSecretBody) GetSession() OptBool {
+	return s.Session
+}
+
+// GetValue returns the value of Value.
+func (s *RefreshSecretBody) GetValue() string {
+	return s.Value
+}
+
+// GetVia returns the value of Via.
+func (s *RefreshSecretBody) GetVia() RefreshSecretBodyVia {
+	return s.Via
+}
+
+// SetSchema sets the value of Schema.
+func (s *RefreshSecretBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetClientHost sets the value of ClientHost.
+func (s *RefreshSecretBody) SetClientHost(val OptString) {
+	s.ClientHost = val
+}
+
+// SetCommand sets the value of Command.
+func (s *RefreshSecretBody) SetCommand(val OptNilStringArray) {
+	s.Command = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *RefreshSecretBody) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetRequestId sets the value of RequestId.
+func (s *RefreshSecretBody) SetRequestId(val OptString) {
+	s.RequestId = val
+}
+
+// SetSession sets the value of Session.
+func (s *RefreshSecretBody) SetSession(val OptBool) {
+	s.Session = val
+}
+
+// SetValue sets the value of Value.
+func (s *RefreshSecretBody) SetValue(val string) {
+	s.Value = val
+}
+
+// SetVia sets the value of Via.
+func (s *RefreshSecretBody) SetVia(val RefreshSecretBodyVia) {
+	s.Via = val
+}
+
+// How the value was produced.
+type RefreshSecretBodyVia string
+
+const (
+	RefreshSecretBodyViaCommand RefreshSecretBodyVia = "command"
+	RefreshSecretBodyViaEntered RefreshSecretBodyVia = "entered"
+)
+
+// AllValues returns all RefreshSecretBodyVia values.
+func (RefreshSecretBodyVia) AllValues() []RefreshSecretBodyVia {
+	return []RefreshSecretBodyVia{
+		RefreshSecretBodyViaCommand,
+		RefreshSecretBodyViaEntered,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RefreshSecretBodyVia) MarshalText() ([]byte, error) {
+	switch s {
+	case RefreshSecretBodyViaCommand:
+		return []byte(s), nil
+	case RefreshSecretBodyViaEntered:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RefreshSecretBodyVia) UnmarshalText(data []byte) error {
+	switch RefreshSecretBodyVia(data) {
+	case RefreshSecretBodyViaCommand:
+		*s = RefreshSecretBodyViaCommand
+		return nil
+	case RefreshSecretBodyViaEntered:
+		*s = RefreshSecretBodyViaEntered
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/RegisterPoolBody
 type RegisterPoolBody struct {
@@ -21931,6 +22434,16 @@ type Secret struct {
 	// Stable secret ID.
 	ID    string         `json:"id"`
 	OAuth OptSecretOAuth `json:"oauth"`
+	// The command a person's client may run to produce a new value (ADR 26-09-25-122). Advice to the
+	// client; the server never runs it.
+	RefreshCommand OptNilStringArray `json:"refreshCommand"`
+	// When the current value stops being trusted and a refresh is asked for. Absent on a value that
+	// never goes stale.
+	StaleAt OptDateTime `json:"staleAt"`
+	// How long a value is good for after it is written, in seconds; 0 never goes stale.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// When the current value was written.
+	ValueUpdatedAt OptDateTime `json:"valueUpdatedAt"`
 	// Secret name.
 	Name string `json:"name"`
 	// Project ID.
@@ -21982,6 +22495,26 @@ func (s *Secret) GetID() string {
 // GetOAuth returns the value of OAuth.
 func (s *Secret) GetOAuth() OptSecretOAuth {
 	return s.OAuth
+}
+
+// GetRefreshCommand returns the value of RefreshCommand.
+func (s *Secret) GetRefreshCommand() OptNilStringArray {
+	return s.RefreshCommand
+}
+
+// GetStaleAt returns the value of StaleAt.
+func (s *Secret) GetStaleAt() OptDateTime {
+	return s.StaleAt
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *Secret) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// GetValueUpdatedAt returns the value of ValueUpdatedAt.
+func (s *Secret) GetValueUpdatedAt() OptDateTime {
+	return s.ValueUpdatedAt
 }
 
 // GetName returns the value of Name.
@@ -22049,6 +22582,26 @@ func (s *Secret) SetOAuth(val OptSecretOAuth) {
 	s.OAuth = val
 }
 
+// SetRefreshCommand sets the value of RefreshCommand.
+func (s *Secret) SetRefreshCommand(val OptNilStringArray) {
+	s.RefreshCommand = val
+}
+
+// SetStaleAt sets the value of StaleAt.
+func (s *Secret) SetStaleAt(val OptDateTime) {
+	s.StaleAt = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *Secret) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// SetValueUpdatedAt sets the value of ValueUpdatedAt.
+func (s *Secret) SetValueUpdatedAt(val OptDateTime) {
+	s.ValueUpdatedAt = val
+}
+
 // SetName sets the value of Name.
 func (s *Secret) SetName(val string) {
 	s.Name = val
@@ -22074,9 +22627,10 @@ func (s *Secret) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*Secret) createSecretRes() {}
-func (*Secret) getSecretRes()    {}
-func (*Secret) updateSecretRes() {}
+func (*Secret) createSecretRes()  {}
+func (*Secret) getSecretRes()     {}
+func (*Secret) refreshSecretRes() {}
+func (*Secret) updateSecretRes()  {}
 
 // Ref: #/components/schemas/SecretGrant
 type SecretGrant struct {
@@ -22435,6 +22989,366 @@ func (s *SecretOAuth) SetTokenUrl(val OptString) {
 	s.TokenUrl = val
 }
 
+// How a refresh request was answered, as the answering client reported it (ADR 26-09-25-122 §6).
+// Never the value.
+// Ref: #/components/schemas/SecretRefreshAnswer
+type SecretRefreshAnswer struct {
+	// When the new value was written.
+	AnsweredAt time.Time `json:"answeredAt"`
+	// Principal that wrote it.
+	AnsweredBy OptString `json:"answeredBy"`
+	// Host ID of the client that wrote it, as the client reports it.
+	ClientHost OptString `json:"clientHost"`
+	// The command the client says it ran to produce the value.
+	Command OptNilStringArray `json:"command"`
+	// Digest of that command.
+	CommandDigest OptString `json:"commandDigest"`
+	// Whether a permission the person gave for the session answered it, rather than a prompt.
+	Session OptBool `json:"session"`
+	// How the value was produced -- by running the command, entered by a person, or an ordinary write of
+	// the secret's value.
+	Via SecretRefreshAnswerVia `json:"via"`
+}
+
+// GetAnsweredAt returns the value of AnsweredAt.
+func (s *SecretRefreshAnswer) GetAnsweredAt() time.Time {
+	return s.AnsweredAt
+}
+
+// GetAnsweredBy returns the value of AnsweredBy.
+func (s *SecretRefreshAnswer) GetAnsweredBy() OptString {
+	return s.AnsweredBy
+}
+
+// GetClientHost returns the value of ClientHost.
+func (s *SecretRefreshAnswer) GetClientHost() OptString {
+	return s.ClientHost
+}
+
+// GetCommand returns the value of Command.
+func (s *SecretRefreshAnswer) GetCommand() OptNilStringArray {
+	return s.Command
+}
+
+// GetCommandDigest returns the value of CommandDigest.
+func (s *SecretRefreshAnswer) GetCommandDigest() OptString {
+	return s.CommandDigest
+}
+
+// GetSession returns the value of Session.
+func (s *SecretRefreshAnswer) GetSession() OptBool {
+	return s.Session
+}
+
+// GetVia returns the value of Via.
+func (s *SecretRefreshAnswer) GetVia() SecretRefreshAnswerVia {
+	return s.Via
+}
+
+// SetAnsweredAt sets the value of AnsweredAt.
+func (s *SecretRefreshAnswer) SetAnsweredAt(val time.Time) {
+	s.AnsweredAt = val
+}
+
+// SetAnsweredBy sets the value of AnsweredBy.
+func (s *SecretRefreshAnswer) SetAnsweredBy(val OptString) {
+	s.AnsweredBy = val
+}
+
+// SetClientHost sets the value of ClientHost.
+func (s *SecretRefreshAnswer) SetClientHost(val OptString) {
+	s.ClientHost = val
+}
+
+// SetCommand sets the value of Command.
+func (s *SecretRefreshAnswer) SetCommand(val OptNilStringArray) {
+	s.Command = val
+}
+
+// SetCommandDigest sets the value of CommandDigest.
+func (s *SecretRefreshAnswer) SetCommandDigest(val OptString) {
+	s.CommandDigest = val
+}
+
+// SetSession sets the value of Session.
+func (s *SecretRefreshAnswer) SetSession(val OptBool) {
+	s.Session = val
+}
+
+// SetVia sets the value of Via.
+func (s *SecretRefreshAnswer) SetVia(val SecretRefreshAnswerVia) {
+	s.Via = val
+}
+
+// How the value was produced -- by running the command, entered by a person, or an ordinary write of
+// the secret's value.
+type SecretRefreshAnswerVia string
+
+const (
+	SecretRefreshAnswerViaCommand SecretRefreshAnswerVia = "command"
+	SecretRefreshAnswerViaEntered SecretRefreshAnswerVia = "entered"
+	SecretRefreshAnswerViaUpdate  SecretRefreshAnswerVia = "update"
+)
+
+// AllValues returns all SecretRefreshAnswerVia values.
+func (SecretRefreshAnswerVia) AllValues() []SecretRefreshAnswerVia {
+	return []SecretRefreshAnswerVia{
+		SecretRefreshAnswerViaCommand,
+		SecretRefreshAnswerViaEntered,
+		SecretRefreshAnswerViaUpdate,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRefreshAnswerVia) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRefreshAnswerViaCommand:
+		return []byte(s), nil
+	case SecretRefreshAnswerViaEntered:
+		return []byte(s), nil
+	case SecretRefreshAnswerViaUpdate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRefreshAnswerVia) UnmarshalText(data []byte) error {
+	switch SecretRefreshAnswerVia(data) {
+	case SecretRefreshAnswerViaCommand:
+		*s = SecretRefreshAnswerViaCommand
+		return nil
+	case SecretRefreshAnswerViaEntered:
+		*s = SecretRefreshAnswerViaEntered
+		return nil
+	case SecretRefreshAnswerViaUpdate:
+		*s = SecretRefreshAnswerViaUpdate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// One thing that happened to a refresh request, as the refresh audit trail serves it (ADR
+// 26-09-25-122 §6). A request is its asking and, once closed, its answer or its dismissal. Never
+// the value.
+// Ref: #/components/schemas/SecretRefreshEvent
+type SecretRefreshEvent struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI                 `json:"$schema"`
+	Answer OptSecretRefreshAnswer `json:"answer"`
+	// When it happened.
+	At time.Time `json:"at"`
+	// What happened -- the control plane asked for a new value, a value was written answering it, or a
+	// person dismissed it.
+	Event SecretRefreshEventEvent `json:"event"`
+	// The refresh request's ID.
+	ID string `json:"id"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// What opened the request.
+	RefreshCause OptSecretRefreshEventRefreshCause `json:"refreshCause"`
+	// The discobox that most recently needed the value.
+	SandboxId OptString `json:"sandboxId"`
+	// Secret a new value was asked for.
+	SecretId string `json:"secretId"`
+	// Its name, while it exists.
+	SecretName OptString `json:"secretName"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SecretRefreshEvent) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAnswer returns the value of Answer.
+func (s *SecretRefreshEvent) GetAnswer() OptSecretRefreshAnswer {
+	return s.Answer
+}
+
+// GetAt returns the value of At.
+func (s *SecretRefreshEvent) GetAt() time.Time {
+	return s.At
+}
+
+// GetEvent returns the value of Event.
+func (s *SecretRefreshEvent) GetEvent() SecretRefreshEventEvent {
+	return s.Event
+}
+
+// GetID returns the value of ID.
+func (s *SecretRefreshEvent) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *SecretRefreshEvent) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRefreshCause returns the value of RefreshCause.
+func (s *SecretRefreshEvent) GetRefreshCause() OptSecretRefreshEventRefreshCause {
+	return s.RefreshCause
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *SecretRefreshEvent) GetSandboxId() OptString {
+	return s.SandboxId
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SecretRefreshEvent) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSecretName returns the value of SecretName.
+func (s *SecretRefreshEvent) GetSecretName() OptString {
+	return s.SecretName
+}
+
+// SetSchema sets the value of Schema.
+func (s *SecretRefreshEvent) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAnswer sets the value of Answer.
+func (s *SecretRefreshEvent) SetAnswer(val OptSecretRefreshAnswer) {
+	s.Answer = val
+}
+
+// SetAt sets the value of At.
+func (s *SecretRefreshEvent) SetAt(val time.Time) {
+	s.At = val
+}
+
+// SetEvent sets the value of Event.
+func (s *SecretRefreshEvent) SetEvent(val SecretRefreshEventEvent) {
+	s.Event = val
+}
+
+// SetID sets the value of ID.
+func (s *SecretRefreshEvent) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *SecretRefreshEvent) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRefreshCause sets the value of RefreshCause.
+func (s *SecretRefreshEvent) SetRefreshCause(val OptSecretRefreshEventRefreshCause) {
+	s.RefreshCause = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *SecretRefreshEvent) SetSandboxId(val OptString) {
+	s.SandboxId = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SecretRefreshEvent) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSecretName sets the value of SecretName.
+func (s *SecretRefreshEvent) SetSecretName(val OptString) {
+	s.SecretName = val
+}
+
+// What happened -- the control plane asked for a new value, a value was written answering it, or a
+// person dismissed it.
+type SecretRefreshEventEvent string
+
+const (
+	SecretRefreshEventEventAsked     SecretRefreshEventEvent = "asked"
+	SecretRefreshEventEventAnswered  SecretRefreshEventEvent = "answered"
+	SecretRefreshEventEventDismissed SecretRefreshEventEvent = "dismissed"
+)
+
+// AllValues returns all SecretRefreshEventEvent values.
+func (SecretRefreshEventEvent) AllValues() []SecretRefreshEventEvent {
+	return []SecretRefreshEventEvent{
+		SecretRefreshEventEventAsked,
+		SecretRefreshEventEventAnswered,
+		SecretRefreshEventEventDismissed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRefreshEventEvent) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRefreshEventEventAsked:
+		return []byte(s), nil
+	case SecretRefreshEventEventAnswered:
+		return []byte(s), nil
+	case SecretRefreshEventEventDismissed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRefreshEventEvent) UnmarshalText(data []byte) error {
+	switch SecretRefreshEventEvent(data) {
+	case SecretRefreshEventEventAsked:
+		*s = SecretRefreshEventEventAsked
+		return nil
+	case SecretRefreshEventEventAnswered:
+		*s = SecretRefreshEventEventAnswered
+		return nil
+	case SecretRefreshEventEventDismissed:
+		*s = SecretRefreshEventEventDismissed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What opened the request.
+type SecretRefreshEventRefreshCause string
+
+const (
+	SecretRefreshEventRefreshCauseStale    SecretRefreshEventRefreshCause = "stale"
+	SecretRefreshEventRefreshCauseRejected SecretRefreshEventRefreshCause = "rejected"
+)
+
+// AllValues returns all SecretRefreshEventRefreshCause values.
+func (SecretRefreshEventRefreshCause) AllValues() []SecretRefreshEventRefreshCause {
+	return []SecretRefreshEventRefreshCause{
+		SecretRefreshEventRefreshCauseStale,
+		SecretRefreshEventRefreshCauseRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRefreshEventRefreshCause) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRefreshEventRefreshCauseStale:
+		return []byte(s), nil
+	case SecretRefreshEventRefreshCauseRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRefreshEventRefreshCause) UnmarshalText(data []byte) error {
+	switch SecretRefreshEventRefreshCause(data) {
+	case SecretRefreshEventRefreshCauseStale:
+		*s = SecretRefreshEventRefreshCauseStale
+		return nil
+	case SecretRefreshEventRefreshCauseRejected:
+		*s = SecretRefreshEventRefreshCauseRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // A credential an upstream refused that this control plane cannot renew, so a person has to replace
 // it. Live state, not history - it is cleared when the credential is replaced or starts working
 // again.
@@ -22742,6 +23656,13 @@ type SecretRequest struct {
 	Purpose OptSecretRequestPurpose `json:"purpose"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
+	// Why the request exists, when it is not an ask for a grant. refresh asks for a new value of a token
+	// that has gone stale or was refused; it is answered by writing a value (refresh-secret), never by
+	// approving.
+	Reason OptSecretRequestReason `json:"reason"`
+	// What opened a refresh request.
+	RefreshCause  OptSecretRequestRefreshCause `json:"refreshCause"`
+	RefreshAnswer OptSecretRefreshAnswer       `json:"refreshAnswer"`
 	// Principal ID of the requestor.
 	RequestedBy string `json:"requestedBy"`
 	// Sandbox that owns the sentinel, for sandbox-originated requests.
@@ -22817,6 +23738,21 @@ func (s *SecretRequest) GetPurpose() OptSecretRequestPurpose {
 // GetProjectId returns the value of ProjectId.
 func (s *SecretRequest) GetProjectId() string {
 	return s.ProjectId
+}
+
+// GetReason returns the value of Reason.
+func (s *SecretRequest) GetReason() OptSecretRequestReason {
+	return s.Reason
+}
+
+// GetRefreshCause returns the value of RefreshCause.
+func (s *SecretRequest) GetRefreshCause() OptSecretRequestRefreshCause {
+	return s.RefreshCause
+}
+
+// GetRefreshAnswer returns the value of RefreshAnswer.
+func (s *SecretRequest) GetRefreshAnswer() OptSecretRefreshAnswer {
+	return s.RefreshAnswer
 }
 
 // GetRequestedBy returns the value of RequestedBy.
@@ -22914,6 +23850,21 @@ func (s *SecretRequest) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
+// SetReason sets the value of Reason.
+func (s *SecretRequest) SetReason(val OptSecretRequestReason) {
+	s.Reason = val
+}
+
+// SetRefreshCause sets the value of RefreshCause.
+func (s *SecretRequest) SetRefreshCause(val OptSecretRequestRefreshCause) {
+	s.RefreshCause = val
+}
+
+// SetRefreshAnswer sets the value of RefreshAnswer.
+func (s *SecretRequest) SetRefreshAnswer(val OptSecretRefreshAnswer) {
+	s.RefreshAnswer = val
+}
+
 // SetRequestedBy sets the value of RequestedBy.
 func (s *SecretRequest) SetRequestedBy(val string) {
 	s.RequestedBy = val
@@ -22990,6 +23941,85 @@ func (s *SecretRequestPurpose) UnmarshalText(data []byte) error {
 		return nil
 	case SecretRequestPurposeDelegate:
 		*s = SecretRequestPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Why the request exists, when it is not an ask for a grant. refresh asks for a new value of a token
+// that has gone stale or was refused; it is answered by writing a value (refresh-secret), never by
+// approving.
+type SecretRequestReason string
+
+const (
+	SecretRequestReasonRefresh SecretRequestReason = "refresh"
+)
+
+// AllValues returns all SecretRequestReason values.
+func (SecretRequestReason) AllValues() []SecretRequestReason {
+	return []SecretRequestReason{
+		SecretRequestReasonRefresh,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestReasonRefresh:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestReason) UnmarshalText(data []byte) error {
+	switch SecretRequestReason(data) {
+	case SecretRequestReasonRefresh:
+		*s = SecretRequestReasonRefresh
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What opened a refresh request.
+type SecretRequestRefreshCause string
+
+const (
+	SecretRequestRefreshCauseStale    SecretRequestRefreshCause = "stale"
+	SecretRequestRefreshCauseRejected SecretRequestRefreshCause = "rejected"
+)
+
+// AllValues returns all SecretRequestRefreshCause values.
+func (SecretRequestRefreshCause) AllValues() []SecretRequestRefreshCause {
+	return []SecretRequestRefreshCause{
+		SecretRequestRefreshCauseStale,
+		SecretRequestRefreshCauseRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestRefreshCause) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestRefreshCauseStale:
+		return []byte(s), nil
+	case SecretRequestRefreshCauseRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestRefreshCause) UnmarshalText(data []byte) error {
+	switch SecretRequestRefreshCause(data) {
+	case SecretRequestRefreshCauseStale:
+		*s = SecretRequestRefreshCauseStale
+		return nil
+	case SecretRequestRefreshCauseRejected:
+		*s = SecretRequestRefreshCauseRejected
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -24075,6 +25105,17 @@ type UpdateSecretBody struct {
 	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Optional host used to match requests (e.g. github.com).
 	Host OptString `json:"host"`
+	// A command a person's client may run to produce a new value, as an argument vector run without a
+	// shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only;
+	// setting one without ttlSeconds gives the token the well-known credential's own lifetime when
+	// wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+	RefreshCommand OptNilStringArray `json:"refreshCommand"`
+	// How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets
+	// only.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
+	// value only. Token secrets only, and only with a value.
+	ValueExpiresAt OptDateTime `json:"valueExpiresAt"`
 	// Secret name.
 	Name  OptString      `json:"name"`
 	Value OptSecretValue `json:"value"`
@@ -24093,6 +25134,21 @@ func (s *UpdateSecretBody) GetMaxGrantTTLSeconds() OptInt64 {
 // GetHost returns the value of Host.
 func (s *UpdateSecretBody) GetHost() OptString {
 	return s.Host
+}
+
+// GetRefreshCommand returns the value of RefreshCommand.
+func (s *UpdateSecretBody) GetRefreshCommand() OptNilStringArray {
+	return s.RefreshCommand
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *UpdateSecretBody) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// GetValueExpiresAt returns the value of ValueExpiresAt.
+func (s *UpdateSecretBody) GetValueExpiresAt() OptDateTime {
+	return s.ValueExpiresAt
 }
 
 // GetName returns the value of Name.
@@ -24118,6 +25174,21 @@ func (s *UpdateSecretBody) SetMaxGrantTTLSeconds(val OptInt64) {
 // SetHost sets the value of Host.
 func (s *UpdateSecretBody) SetHost(val OptString) {
 	s.Host = val
+}
+
+// SetRefreshCommand sets the value of RefreshCommand.
+func (s *UpdateSecretBody) SetRefreshCommand(val OptNilStringArray) {
+	s.RefreshCommand = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *UpdateSecretBody) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// SetValueExpiresAt sets the value of ValueExpiresAt.
+func (s *UpdateSecretBody) SetValueExpiresAt(val OptDateTime) {
+	s.ValueExpiresAt = val
 }
 
 // SetName sets the value of Name.

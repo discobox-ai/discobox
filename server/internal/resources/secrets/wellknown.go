@@ -74,7 +74,7 @@ func (s *Service) wellKnownSecret(ctx context.Context, projectID, id, chosenID s
 	marked, err := s.store.FindSecretByWellKnownID(ctx, projectID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("no secret fulfills %s yet: name the secret that does, and it will answer every later request for it", id))
+			fmt.Sprintf("no secret fulfills %s yet: name the secret that does, and it will answer every later request for it; `discobox secret create --well-known %s` stores one", id, id))
 	}
 	return marked, err
 }
@@ -135,5 +135,36 @@ func reservedHostAsk(wellKnownID, host string) error {
 				fmt.Sprintf("%s is reached only through %s: ask for it by that ID", host, known.ID))
 		}
 	}
+	return nil
+}
+
+// answersWellKnown makes a new secret the one that answers a well-known ID,
+// as a person creating it for that ID means it to be: the first request for
+// the ID then binds it without asking which secret answers. It is the mark the
+// first approval would otherwise set, set ahead of any request. A gate is not
+// created this way — its secret is made by approving a request for it — and
+// an ID another secret already answers stays with that secret until somebody
+// deletes it.
+func (s *Service) answersWellKnown(ctx context.Context, sec *model.Secret, id string) error {
+	known, ok := wellknown.Lookup(id)
+	if !ok {
+		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("%q is not a well-known credential", id))
+	}
+	if known.Gate {
+		return apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("%s is a gate, with no value: it is given by approving a request for it", id))
+	}
+	if sec.Type != model.SecretTypeToken {
+		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("%s is answered by a token", id))
+	}
+	existing, err := s.store.FindSecretByWellKnownID(ctx, sec.ProjectID, id)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	if existing != nil {
+		return apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("%s already answers %s; delete it, or store this one without the ID", existing.Name, id))
+	}
+	sec.WellKnownID = id
 	return nil
 }

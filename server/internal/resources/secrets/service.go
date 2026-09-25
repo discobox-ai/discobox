@@ -55,6 +55,8 @@ func (s *Service) ListSecrets(ctx context.Context, projectID string) ([]model.Se
 	}
 	for i := range secrets {
 		s.describeOAuth(ctx, &secrets[i])
+		describeStaleness(&secrets[i])
+		withholdRenewalFromSandbox(ctx, &secrets[i])
 	}
 	return secrets, nil
 }
@@ -147,6 +149,17 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 		MaxGrantTTL:    ttl,
 		EncryptedValue: valueBytes,
 	}
+	sec.ValueWritten(time.Now().UTC(), nil)
+	// The ID first: a well-known credential says how long its value lasts
+	// when nobody says otherwise.
+	if id := strings.TrimSpace(input.WellKnownId.Or("")); id != "" {
+		if err := s.answersWellKnown(ctx, sec, id); err != nil {
+			return nil, err
+		}
+	}
+	if err := createLifetime(input).apply(sec, true); err != nil {
+		return nil, err
+	}
 	if err := s.store.CreateSecret(ctx, sec); err != nil {
 		return nil, secretCollision(err, sec)
 	}
@@ -161,6 +174,8 @@ func (s *Service) GetSecret(ctx context.Context, projectID, secretID string) (*m
 		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	s.describeOAuth(ctx, sec)
+	describeStaleness(sec)
+	withholdRenewalFromSandbox(ctx, sec)
 	return sec, nil
 }
 
@@ -195,6 +210,9 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 		// and it is revoked deliberately rather than shortened behind their
 		// back.
 		sec.MaxGrantTTL = ttl
+	}
+	if err := updateLifetime(input).apply(sec, input.Value.IsSet()); err != nil {
+		return nil, err
 	}
 	if valueVal, ok := input.Value.Get(); ok {
 		valueBytes, err := marshalSecretValue(valueVal)
@@ -231,7 +249,14 @@ func (s *Service) ListSecretRequests(ctx context.Context, projectID, status stri
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	return s.store.ListSecretRequests(ctx, projectID, status)
+	requests, err := s.store.ListSecretRequests(ctx, projectID, status)
+	if err != nil {
+		return nil, err
+	}
+	for i := range requests {
+		withholdAnswerFromSandbox(ctx, &requests[i])
+	}
+	return requests, nil
 }
 
 func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, input services.CreateSecretRequestBody) (*model.SecretRequest, error) {
@@ -296,6 +321,7 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 	if err != nil {
 		return nil, apperrors.NotFound(err, "secret request not found")
 	}
+	withholdAnswerFromSandbox(ctx, req)
 	return req, nil
 }
 
@@ -311,6 +337,12 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	}
 	if req.Status != model.SecretRequestStatusPending {
 		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
+	}
+	// A refresh request has no grant to mint: it asks for a new value, and is
+	// answered by writing one (ADR 26-09-25-122 §4).
+	if req.IsRefresh() {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("a refresh request is answered with a new value, not an approval: `discobox secret refresh %s --run` runs its command, or --value gives one", req.SecretID))
 	}
 
 	secretID := strings.TrimSpace(input.SecretId.Or(""))
@@ -498,6 +530,11 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 	if req.Status != model.SecretRequestStatusPending {
 		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
 	}
+	// Dismissing a refresh request decides when a credential is renewed, which
+	// is a person's to decide, not a discobox's (ADR 26-09-25-122 §4).
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox && req.IsRefresh() {
+		return apperrors.NewStatusError(http.StatusForbidden, "a refresh request is dismissed by a person, not a discobox")
+	}
 	req.Status = model.SecretRequestStatusDenied
 	if err := s.store.UpdateSecretRequestIfPending(ctx, req); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
@@ -571,6 +608,9 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 				return nil, err
 			}
 			expiresAt = oauthResolutionExpiry(grant.ExpiresAt, val)
+		}
+		if secret.Renewable() {
+			expiresAt = s.renewableResolution(ctx, secret, sandbox.ID, grant.ExpiresAt)
 		}
 		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt}, nil
 	}

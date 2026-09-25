@@ -611,6 +611,15 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/secret-grants
 	ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (ListSecretGrantsRes, error)
+	// ListSecretRefreshes invokes list-secret-refreshes operation.
+	//
+	// The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new
+	// value of a token, and how each ask was answered or dismissed -- newest first. Project-scoped, like
+	// the verdict trail, because it outlives the discoboxes it names. An answer's principal and time are
+	// the control plane's record; how the value was produced is the answering client's own account.
+	//
+	// GET /projects/{projectId}/secret-refreshes
+	ListSecretRefreshes(ctx context.Context, params ListSecretRefreshesParams) (ListSecretRefreshesRes, error)
 	// ListSecretRejections invokes list-secret-rejections operation.
 	//
 	// List credentials an upstream has refused.
@@ -679,6 +688,14 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 	RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error)
+	// RefreshSecret invokes refresh-secret operation.
+	//
+	// Write a new value for a token secret, answering its open refresh request (ADR 26-09-25-122 §4).
+	// Closes every open refresh request on the secret. The command a client reports is recorded, never
+	// checked.
+	//
+	// POST /projects/{projectId}/secrets/{secretId}/refresh
+	RefreshSecret(ctx context.Context, request *RefreshSecretBody, params RefreshSecretParams) (RefreshSecretRes, error)
 	// RegisterPool invokes register-pool operation.
 	//
 	// Register a bootstrapped pool agent.
@@ -11465,6 +11482,225 @@ func (c *Client) sendListSecretGrants(ctx context.Context, params ListSecretGran
 	return result, nil
 }
 
+// ListSecretRefreshes invokes list-secret-refreshes operation.
+//
+// The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new
+// value of a token, and how each ask was answered or dismissed -- newest first. Project-scoped, like
+// the verdict trail, because it outlives the discoboxes it names. An answer's principal and time are
+// the control plane's record; how the value was produced is the answering client's own account.
+//
+// GET /projects/{projectId}/secret-refreshes
+func (c *Client) ListSecretRefreshes(ctx context.Context, params ListSecretRefreshesParams) (ListSecretRefreshesRes, error) {
+	res, err := c.sendListSecretRefreshes(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListSecretRefreshes(ctx context.Context, params ListSecretRefreshesParams) (res ListSecretRefreshesRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-secret-refreshes"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-refreshes"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSecretRefreshesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-refreshes"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "id" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.ID.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.SandboxId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "secretId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "secretId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.SecretId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "since" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "since",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Since.Get(); ok {
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "until" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "until",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Until.Get(); ok {
+				return e.EncodeValue(val.Format("2006-01-02T15:04:05.999999999Z07:00"))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "limit" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Limit.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "order" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "order",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Order.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSecretRefreshesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListSecretRejections invokes list-secret-rejections operation.
 //
 // List credentials an upstream has refused.
@@ -12520,6 +12756,123 @@ func (c *Client) sendRefreshHarnessConfigImage(ctx context.Context, params Refre
 
 	stage = "DecodeResponse"
 	result, err := decodeRefreshHarnessConfigImageResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// RefreshSecret invokes refresh-secret operation.
+//
+// Write a new value for a token secret, answering its open refresh request (ADR 26-09-25-122 §4).
+// Closes every open refresh request on the secret. The command a client reports is recorded, never
+// checked.
+//
+// POST /projects/{projectId}/secrets/{secretId}/refresh
+func (c *Client) RefreshSecret(ctx context.Context, request *RefreshSecretBody, params RefreshSecretParams) (RefreshSecretRes, error) {
+	res, err := c.sendRefreshSecret(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendRefreshSecret(ctx context.Context, request *RefreshSecretBody, params RefreshSecretParams) (res RefreshSecretRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("refresh-secret"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secrets/{secretId}/refresh"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, RefreshSecretOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secrets/"
+	{
+		// Encode "secretId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "secretId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SecretId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/refresh"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeRefreshSecretRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeRefreshSecretResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

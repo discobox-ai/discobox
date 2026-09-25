@@ -27,6 +27,11 @@ are what tells them apart (`SecretRequest.FromProtocol`).
 | Carries | type, host, sandbox | plus name, env var, justification, declared uses, and optionally the lifetime asked for |
 | Approval mints | a grant at the chosen scope | a sandbox-scoped, host-scoped grant with minted use IDs, and a stable binding |
 
+A third species shares the table and is not an ask for a grant at all: a
+**refresh request** (`Reason: refresh`, `SecretRequest.IsRefresh`) asks for a new
+value of a token the project holds. It is never approved; see
+[below](#a-token-may-expire-and-suggest-its-renewal).
+
 The lifetime an agent asks for (`SecretRequest.GrantTTL`) is recorded, never
 enforced: it is what the window and `secret request approve` start from, and
 approval still takes whatever lifetime it is sent. It is not checked against a
@@ -131,6 +136,11 @@ registry. `wellknown.go` owns it.
   ID — written last, once the grant is minted and bound, so a secret whose
   approval failed never becomes the answer. A later approval may still name
   another secret, which answers that one request and marks nothing.
+- **A secret may be created for an ID** (`CreateSecretBody.wellKnownId`,
+  `answersWellKnown`): the mark the first approval would set, set by the
+  person storing it, so no request ever asks which secret answers. A token
+  only; an ID another secret already answers is a 409, and a gate is refused,
+  since its secret is made by approving a request for it.
 - **A gate has nothing behind it** (`wellknown.Credential.Gate`; today
   `ai.discobox.sandbox`, the discobox API —
   [ADR 0140](../../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)).
@@ -226,6 +236,14 @@ The entry points:
   the recorded ID and the route is `/projects/{projectId}/credential-verdicts`
   rather than one under the sandbox (ADR 0130 §5). Verdicts are removed only
   when their project is deleted.
+- **`ListSecretRefreshEvents`** — the refresh trail (ADR 26-09-25-122 §6), at
+  `/projects/{projectId}/secret-refreshes`: each refresh request as its
+  `asked` event at `CreatedAt` and, once closed, its `answered` or `dismissed`
+  event at `ClosedAt`. Two events rather than one row because the trail is read
+  forward by time and a request changes after it is asked. Both times are
+  stamped in UTC, as a verdict's is, because the bounds are compared in SQL; the
+  limit is exact because requests are ordered by their event nearest the
+  reading edge. Never a value; the answer is the client's account.
 
 A protocol request is always recorded as type `token`. Both types carry their
 current value in `Value.Token`, the one field `ResolveSandboxSecret` emits, so
@@ -306,6 +324,62 @@ decrypted leaves the summary empty rather than failing the read.
 `oauth` means *renews itself*. Creating one without a refresh token and a token
 URL is refused: what has been handed over is a token that will expire and stay
 expired, and the type would promise a refresh nothing can perform.
+
+## A token may expire, and suggest its renewal
+
+A `token` may carry a lifetime (`TTL`) and a refresh command
+([ADR 26-09-25-122](../../../../docs/adr/26-09-25-122-a-token-may-expire-and-suggest-the-command-that-renews-it.md)).
+Delivery and renewal are separate loops, and `refresh.go` owns both halves here.
+
+```mermaid
+flowchart LR
+    proxy["pool proxy"] -->|resolve| resolve["ResolveSandboxSecret"]
+    resolve -->|"value on hand, always"| proxy
+    resolve -->|"stale, or within refreshAhead"| ask["refresh request (inbox)"]
+    reject["rejection report"] -->|"MarkSecretValueStale"| ask
+    ask --> client["a person's client"]
+    client -->|"RefreshSecret: new value"| store["store.UpdateSecret"]
+    store -->|"closes every open refresh request"| ask
+```
+
+- **Delivery never waits.** Resolve serves the stored value, capping the
+  resolution at the value's stale time (`Secret.StaleTime`: an expiry the value
+  carried, else `ValueUpdatedAt + TTL`). A stale value is still served, for
+  `staleResolutionTTL`, because a lifetime is an estimate and the upstream is the
+  authority.
+- **Renewal is asked for, not performed.** A resolve of a value stale or within
+  `refreshAhead` of it opens one refresh request per secret, naming the
+  discobox that last needed it. The command is advice to the client that
+  answers: nothing on this side runs it, and nothing checks a value came from it.
+- **Any value write answers it.** `store.UpdateSecret` stamps `ValueUpdatedAt`
+  on a replaced value unless the writer stamped it already, and closes every
+  open refresh request (`via: update`). `RefreshSecret` closes them first with
+  the client's own account of the value (`SecretRefreshAnswer`), and when it
+  names a request, the first answer wins: one already answered is a 409 and
+  writes nothing.
+- **A refusal of a renewable token is not a rejection.** `Secret.Renewable`
+  tokens skip `judgeRejection`: the value is marked stale and a refresh request
+  opened (`renewableRejection`), except within `rejectionAfterRenewal` of a
+  write, when the report may be about the value just replaced.
+- **A command's value lasts 5m unless named otherwise**, or what its
+  well-known credential says (`wellknown.Credential.RefreshTTL`,
+  `defaultRefreshTTL`): GitHub's token lasts until revoked, so a day.
+- **One open refresh request per secret**, held by a partial unique index
+  (`idx_secret_request_open_refresh`), so two resolves racing past the find
+  cannot both open one; the loser's create conflict is "already open".
+- **The value's fields have their own writer.** `store.UpdateSecret` leaves
+  `value_updated_at` and `value_expires_at` out of a write that keeps the value,
+  so a rename read before a rejection cannot put back what the rejection
+  marked; `MarkSecretValueStale` refuses, in its `WHERE`, a value written within
+  `rejectionAfterRenewal`.
+- **A discobox never reads a refresh command or answer.** The sandbox role lists
+  secrets and requests for names and bindings (ADR 0140 §4); a command a person
+  wrote can name a vault path or carry a credential, so it and the answer
+  recorded against a request are withheld from a sandbox principal
+  (`withholdRenewalFromSandbox`, `withholdAnswerFromSandbox`).
+- **Only a person renews.** A command is a secret write, which the sandbox role
+  lists none of. A discobox may not approve, dismiss, or answer a refresh
+  request; approving one is refused for anybody, since there is no grant to mint.
 
 ## A secret's host is a binding somebody set
 

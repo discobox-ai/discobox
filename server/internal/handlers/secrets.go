@@ -65,6 +65,18 @@ func (h *Handler) UpdateSecret(ctx context.Context, req *apimodel.UpdateSecretBo
 	return &body, nil
 }
 
+func (h *Handler) RefreshSecret(ctx context.Context, req *apimodel.RefreshSecretBody, params serverapi.RefreshSecretParams) (serverapi.RefreshSecretRes, error) {
+	sec, err := h.services.Secrets.RefreshSecret(ctx, params.ProjectId, params.SecretId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.Secret](sec)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) DeleteSecret(ctx context.Context, params serverapi.DeleteSecretParams) (serverapi.DeleteSecretRes, error) {
 	if err := h.services.Secrets.DeleteSecret(ctx, params.ProjectId, params.SecretId); err != nil {
 		return apiError(err), nil
@@ -344,6 +356,34 @@ func (h *Handler) ListCredentialVerdicts(ctx context.Context, params serverapi.L
 	body, err := services.Convert[apimodel.ListCredentialVerdictsBody](struct {
 		CredentialVerdicts any `json:"credentialVerdicts"`
 	}{CredentialVerdicts: verdicts})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) ListSecretRefreshes(ctx context.Context, params serverapi.ListSecretRefreshesParams) (serverapi.ListSecretRefreshesRes, error) {
+	filter := services.SecretRefreshFilter{
+		ID:        params.ID.Or(""),
+		SandboxID: params.SandboxId.Or(""),
+		SecretID:  params.SecretId.Or(""),
+		Since:     params.Since.Or(time.Time{}),
+		Until:     params.Until.Or(time.Time{}),
+		Ascending: params.Order.Or(serverapi.ListSecretRefreshesOrderDesc) == serverapi.ListSecretRefreshesOrderAsc,
+		Limit:     params.Limit.Or(100),
+	}
+	events, err := h.services.Secrets.ListSecretRefreshEvents(ctx, params.ProjectId, filter)
+	if err != nil {
+		return apiError(err), nil
+	}
+	if events == nil {
+		// A nil slice encodes as null, which the required array refuses; see
+		// ListCredentialVerdicts.
+		events = []model.SecretRefreshEvent{}
+	}
+	body, err := services.Convert[apimodel.ListSecretRefreshEventsBody](struct {
+		SecretRefreshEvents any `json:"secretRefreshEvents"`
+	}{SecretRefreshEvents: events})
 	if err != nil {
 		return nil, err
 	}

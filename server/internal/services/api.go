@@ -31,6 +31,7 @@ type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
 type CreatePeerBody = apimodel.CreatePeerBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
+type RefreshSecretBody = apimodel.RefreshSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
 type CompleteSandboxSourcePushBody = apimodel.CompleteSandboxSourcePushBody
 type CompleteSandboxApplyBody = apimodel.CompleteSandboxApplyBody
@@ -377,6 +378,9 @@ type SecretService interface {
 	GetSecret(ctx context.Context, projectID, secretID string) (*model.Secret, error)
 	UpdateSecret(ctx context.Context, projectID, secretID string, input UpdateSecretBody) (*model.Secret, error)
 	DeleteSecret(ctx context.Context, projectID, secretID string) error
+	// RefreshSecret writes a new value for a token, answering its refresh
+	// request (ADR 26-09-25-122 §4).
+	RefreshSecret(ctx context.Context, projectID, secretID string, input RefreshSecretBody) (*model.Secret, error)
 
 	ListSecretRequests(ctx context.Context, projectID, status string) ([]model.SecretRequest, error)
 	CreateSecretRequest(ctx context.Context, projectID string, input CreateSecretRequestBody) (*model.SecretRequest, error)
@@ -408,6 +412,9 @@ type SecretService interface {
 	// Unlike the broker calls above it is a user read, scoped by project, and
 	// does not require the sandbox a verdict names to still exist.
 	ListCredentialVerdicts(ctx context.Context, projectID string, filter CredentialVerdictFilter) ([]model.CredentialVerdict, error)
+	// ListSecretRefreshEvents reads the refresh audit trail: each ask for a
+	// new value of a token, and how it was answered (ADR 26-09-25-122 §6).
+	ListSecretRefreshEvents(ctx context.Context, projectID string, filter SecretRefreshFilter) ([]model.SecretRefreshEvent, error)
 }
 
 // HostTrustService is host trust (ADR 0149): an agent's ask, relayed by its
@@ -431,6 +438,10 @@ type HostTrustService interface {
 // CredentialVerdictFilter is the store's filter, named here so a handler builds
 // it through its services dependency rather than importing internal/store.
 type CredentialVerdictFilter = store.CredentialVerdictFilter
+
+// SecretRefreshFilter is the store's filter for the refresh trail, named here
+// for the reason CredentialVerdictFilter is.
+type SecretRefreshFilter = store.SecretRefreshFilter
 
 // SSHKeyService manages project-scoped SSH keys that authorize SSH access to
 // that project's sandboxes (ADR 0024 §5).

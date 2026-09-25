@@ -353,6 +353,10 @@ type ListSecretGrantsRes interface {
 	listSecretGrantsRes()
 }
 
+type ListSecretRefreshesRes interface {
+	listSecretRefreshesRes()
+}
+
 type ListSecretRejectionsRes interface {
 	listSecretRejectionsRes()
 }
@@ -391,6 +395,10 @@ type RecordCredentialVerdictRes interface {
 
 type RefreshHarnessConfigImageRes interface {
 	refreshHarnessConfigImageRes()
+}
+
+type RefreshSecretRes interface {
+	refreshSecretRes()
 }
 
 type RegisterPoolRes interface {

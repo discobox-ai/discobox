@@ -65,6 +65,11 @@ func (s *Store) OpenSecretValue(ctx context.Context, secret *model.Secret) (*mod
 }
 
 func (s *Store) CreateSecret(ctx context.Context, secret *model.Secret) error {
+	// A new secret's value is written now, whichever writer made it — the
+	// secrets service, the harness configure flow, an anonymous inline value.
+	if secret.ValueUpdatedAt == nil {
+		secret.ValueWritten(time.Now().UTC(), secret.ValueExpiresAt)
+	}
 	sealed, err := s.sealSecretForWrite(ctx, secret)
 	if err != nil {
 		return err
@@ -190,9 +195,16 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	// replaced" has more than one writer — the secrets service, the harness
 	// configure flow's update-in-place, and whatever is added next — and a rule
 	// enforced in one of them is a rule the others walk around.
-	replacedValue, err := s.secretValueReplaced(ctx, secret)
+	stored, replacedValue, err := s.secretValueReplaced(ctx, secret)
 	if err != nil {
 		return err
+	}
+	// A replaced value is a new value, and its lifetime starts now
+	// (ADR 26-09-25-122 §1). A writer that stamped it already — with the
+	// expiry the value carries — keeps its stamp; every other writer gets one
+	// here, so no path can put a new value behind an old value's clock.
+	if replacedValue && !stampedSince(secret, stored) {
+		secret.ValueWritten(time.Now().UTC(), nil)
 	}
 	sealed, err := s.sealSecretForWrite(ctx, secret)
 	if err != nil {
@@ -200,15 +212,30 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	}
 	// The write and the retraction are one act, the way DeleteSecret's cascade
 	// is: a row saying a credential was refused, standing against a credential
-	// that is no longer there, is the state this must not leave behind.
+	// that is no longer there, is the state this must not leave behind. The
+	// same goes for an ask for a new value, which the write has answered.
 	if err := s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
-		if err := tx.Save(sealed).Error; err != nil {
+		// When the value stays, so do the fields that describe it: they have
+		// a writer of their own (MarkSecretValueStale), and a row read before
+		// that write must not put the old ones back (store DESIGN, "Field
+		// Ownership on Whole-Row Writes").
+		save := tx
+		if !replacedValue {
+			save = tx.Omit("value_updated_at", "value_expires_at")
+		}
+		if err := save.Save(sealed).Error; err != nil {
 			return err
 		}
 		if !replacedValue {
 			return nil
 		}
-		return s.clearSecretRejections(tx, sealed.ProjectID, sealed.ID)
+		if err := s.clearSecretRejections(tx, sealed.ProjectID, sealed.ID); err != nil {
+			return err
+		}
+		return answerRefreshRequests(tx, sealed.ProjectID, sealed.ID, &model.SecretRefreshAnswer{
+			AnsweredAt: time.Now().UTC(),
+			Via:        model.SecretRefreshViaUpdate,
+		})
 	}); err != nil {
 		return err
 	}
@@ -216,21 +243,114 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	return nil
 }
 
+// stampedSince reports whether the writer stamped the value's write time
+// itself, past what is stored.
+func stampedSince(secret, stored *model.Secret) bool {
+	if secret.ValueUpdatedAt == nil {
+		return false
+	}
+	return stored == nil || stored.ValueUpdatedAt == nil || secret.ValueUpdatedAt.After(*stored.ValueUpdatedAt)
+}
+
 // secretValueReplaced reports whether an update carries a different credential
-// than the row already holds. A secret that does not exist yet, or a write
-// carrying no value at all, replaces nothing.
-func (s *Store) secretValueReplaced(ctx context.Context, secret *model.Secret) (bool, error) {
+// than the row already holds, with the stored row when there is one. A secret
+// that does not exist yet, or a write carrying no value at all, replaces
+// nothing.
+func (s *Store) secretValueReplaced(ctx context.Context, secret *model.Secret) (*model.Secret, bool, error) {
 	if len(secret.EncryptedValue) == 0 || secret.ID == "" {
-		return false, nil
+		return nil, false, nil
 	}
 	stored, err := s.GetSecret(ctx, secret.ProjectID, secret.ID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return false, nil
+			return nil, false, nil
 		}
+		return nil, false, err
+	}
+	return stored, !bytes.Equal(stored.EncryptedValue, secret.EncryptedValue), nil
+}
+
+// MarkSecretValueStale makes a secret's current value stale from at, without
+// touching the value: an upstream refused it, and the next resolve asks for a
+// new one (ADR 26-09-25-122 §3). It reports whether it did: a value written at
+// or after writtenBefore is not the one that was refused, and is left alone,
+// decided in the write itself so a renewal committing in between cannot be
+// marked stale by a report about the value it replaced.
+func (s *Store) MarkSecretValueStale(ctx context.Context, projectID, secretID string, at, writtenBefore time.Time) (bool, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
 		return false, err
 	}
-	return !bytes.Equal(stored.EncryptedValue, secret.EncryptedValue), nil
+	res := write.Model(&model.Secret{}).
+		Where("project_id = ? AND id = ? AND (value_updated_at IS NULL OR value_updated_at < ?)", projectID, secretID, writtenBefore).
+		UpdateColumn("value_expires_at", at)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// FindPendingRefreshRequest returns the open refresh request on a secret, or
+// ErrNotFound. There is at most one: staleness belongs to the secret, not to
+// the discobox that noticed it.
+func (s *Store) FindPendingRefreshRequest(ctx context.Context, projectID, secretID string) (*model.SecretRequest, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req model.SecretRequest
+	err = read.Where("project_id = ? AND secret_id = ? AND reason = ? AND status = ?",
+		projectID, secretID, model.SecretRequestReasonRefresh, model.SecretRequestStatusPending).
+		Order("created_at DESC").First(&req).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+// SetRefreshRequestSandbox records the discobox that most recently needed an
+// open refresh request's value, so the window's banner follows the work.
+func (s *Store) SetRefreshRequestSandbox(ctx context.Context, projectID, requestID, sandboxID string) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Model(&model.SecretRequest{}).
+		Where("project_id = ? AND id = ? AND status = ?", projectID, requestID, model.SecretRequestStatusPending).
+		Updates(map[string]any{"sandbox_id": sandboxID, "requested_by": "sandbox:" + sandboxID}).Error
+}
+
+// AnswerRefreshRequest closes one open refresh request with how it was
+// answered. It returns ErrGenerationConflict when the request is no longer
+// open: somebody answered first.
+func (s *Store) AnswerRefreshRequest(ctx context.Context, projectID, requestID string, answer *model.SecretRefreshAnswer) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	res := write.Model(&model.SecretRequest{}).
+		Where("project_id = ? AND id = ? AND reason = ? AND status = ?", projectID, requestID, model.SecretRequestReasonRefresh, model.SecretRequestStatusPending).
+		Select("status", "refresh_answer", "closed_at").
+		Updates(&model.SecretRequest{Status: model.SecretRequestStatusApproved, RefreshAnswer: answer, ClosedAt: closedAt(answer.AnsweredAt)})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrGenerationConflict
+	}
+	return nil
+}
+
+// answerRefreshRequests closes every open refresh request on a secret with
+// one answer: a new value was written, so none of them is waiting on anything.
+func answerRefreshRequests(tx *gorm.DB, projectID, secretID string, answer *model.SecretRefreshAnswer) error {
+	return tx.Model(&model.SecretRequest{}).
+		Where("project_id = ? AND secret_id = ? AND reason = ? AND status = ?", projectID, secretID, model.SecretRequestReasonRefresh, model.SecretRequestStatusPending).
+		Select("status", "refresh_answer", "closed_at").
+		Updates(&model.SecretRequest{Status: model.SecretRequestStatusApproved, RefreshAnswer: answer, ClosedAt: closedAt(answer.AnsweredAt)}).Error
 }
 
 // UpdateSecretValueIfUnchanged replaces a secret's encrypted value only if its
@@ -354,7 +474,9 @@ func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretI
 		return nil, err
 	}
 	var req model.SecretRequest
-	err = read.Where("project_id = ? AND secret_id = ? AND host = ? AND requested_by = ? AND status = ?",
+	// A refresh request names the same secret and discobox, and asks for
+	// something else: a value, not a grant. It is never the reactive ask.
+	err = read.Where("project_id = ? AND secret_id = ? AND host = ? AND requested_by = ? AND status = ? AND reason = ''",
 		projectID, secretID, host, requestedBy, model.SecretRequestStatusPending).
 		Order("created_at DESC").First(&req).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -428,6 +550,9 @@ func (s *Store) UpdateSecretRequestIfPending(ctx context.Context, req *model.Sec
 	if err != nil {
 		return err
 	}
+	if req.Status != model.SecretRequestStatusPending && req.ClosedAt == nil {
+		req.ClosedAt = closedAt(time.Now())
+	}
 	result := write.Model(&model.SecretRequest{}).
 		Where("project_id = ? AND id = ? AND status = ?", req.ProjectID, req.ID, model.SecretRequestStatusPending).
 		Select("*").
@@ -439,4 +564,23 @@ func (s *Store) UpdateSecretRequestIfPending(ctx context.Context, req *model.Sec
 		return ErrGenerationConflict
 	}
 	return nil
+}
+
+// AnswerOpenRefreshRequests closes every open refresh request on a secret
+// with the answer given, for a writer that knows more about the value than an
+// ordinary update does.
+func (s *Store) AnswerOpenRefreshRequests(ctx context.Context, projectID, secretID string, answer *model.SecretRefreshAnswer) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return answerRefreshRequests(write, projectID, secretID, answer)
+}
+
+// closedAt is when a request stopped pending, in UTC: the refresh trail bounds
+// its reads by it, and SQLite compares times as text (see
+// SecretRequest.BeforeCreate).
+func closedAt(at time.Time) *time.Time {
+	at = at.UTC()
+	return &at
 }

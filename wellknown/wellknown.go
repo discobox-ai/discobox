@@ -11,6 +11,7 @@ package wellknown
 
 import (
 	"slices"
+	"time"
 
 	"github.com/discobox-ai/discobox/hostscope"
 )
@@ -43,6 +44,17 @@ type Credential struct {
 	// a request carrying a live use of it to its host, and never swaps a
 	// value in. Approving a request for one chooses no secret.
 	Gate bool
+	// RefreshCommand is the command that prints the credential on a machine
+	// that is logged in, as an argument vector. It is what a person is offered
+	// when they give a secret for the ID, and they may edit it before it is
+	// saved; nothing runs it from here (ADR 26-09-25-122 §2). A gate has none.
+	RefreshCommand []string
+	// RefreshTTL is how long a value from RefreshCommand is trusted before a
+	// new one is asked for, when the person storing it chooses nothing else.
+	// It follows how long the credential really lives: a value that outlasts
+	// it is only re-checked, since a refusal asks for a new one at once. Zero
+	// takes the default for any command (ADR 26-09-25-122 §1).
+	RefreshTTL time.Duration
 }
 
 // Host is the host a request for the credential names.
@@ -57,11 +69,15 @@ func (c Credential) AllowsHost(host string) bool {
 
 var registry = []Credential{
 	{
-		ID:          GitHubAPI,
-		Name:        "github",
-		Description: "GitHub: repositories over HTTPS as git pushes and pulls them, and the REST and GraphQL API beneath the same site, as gh uses it.",
-		Hosts:       []string{"github.com"},
-		EnvVar:      "GH_TOKEN",
+		ID:             GitHubAPI,
+		Name:           "github",
+		Description:    "GitHub: repositories over HTTPS as git pushes and pulls them, and the REST and GraphQL API beneath the same site, as gh uses it.",
+		Hosts:          []string{"github.com"},
+		EnvVar:         "GH_TOKEN",
+		RefreshCommand: []string{"gh", "auth", "token"},
+		// gh's token is an OAuth app token: it lasts until it is revoked or
+		// gh logs in again, so a day is a re-check, not an expiry.
+		RefreshTTL: 24 * time.Hour,
 	},
 	{
 		ID:          DiscoboxSandbox,

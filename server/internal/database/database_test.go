@@ -1453,3 +1453,48 @@ func TestMigrateNormalizesCredentialVerdictTimesToUTC(t *testing.T) {
 		}
 	}
 }
+
+// A secret written before value_updated_at existed gets the time its value was
+// last written, so its lifetime does not restart on the next rename.
+func TestMigrateBackfillsSecretValueUpdatedAt(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	if err := db.Write.Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	// Written the way older rows were: in the server's local zone, nine hours
+	// east, which SQLite keeps as text with its offset.
+	written := time.Date(2025, 9, 1, 21, 0, 0, 0, time.FixedZone("UTC+9", 9*60*60))
+	if err := db.Write.Exec(`INSERT INTO secrets (id, project_id, name, type, host, unique_key, anonymous, format, max_grant_ttl_seconds, well_known_id, ttl_seconds, created_at, updated_at)
+		VALUES ('sec_legacy', 'project-1', 'github', 'token', '', '', false, '', 3600, '', 0, ?, ?)`, written, written).Error; err != nil {
+		t.Fatalf("insert legacy secret: %v", err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	var secret model.Secret
+	if err := db.Write.First(&secret, "id = ?", "sec_legacy").Error; err != nil {
+		t.Fatal(err)
+	}
+	if secret.ValueUpdatedAt == nil || !secret.ValueUpdatedAt.Equal(written) {
+		t.Fatalf("value_updated_at = %v, want the row's last write %v", secret.ValueUpdatedAt, written)
+	}
+	// In UTC, because it is compared as text against UTC times in SQL.
+	var text string
+	if err := db.Write.Raw("SELECT CAST(value_updated_at AS TEXT) FROM secrets WHERE id = ?", "sec_legacy").Scan(&text).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(text, "+00:00") && !strings.HasSuffix(text, "Z") {
+		t.Fatalf("value_updated_at stored as %q, want UTC", text)
+	}
+}

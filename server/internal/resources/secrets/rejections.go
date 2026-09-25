@@ -115,6 +115,11 @@ func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sand
 	if outcome == SecretAcceptedOutcome {
 		return s.store.ClearSecretRejection(ctx, assignment.ProjectID, secret.ID, host)
 	}
+	// A token a person's client renews is not a dead end: its value is stale
+	// from now, and the client is asked for another (ADR 26-09-25-122 §3).
+	if secret.Renewable() {
+		return s.renewableRejection(ctx, secret, sandboxID)
+	}
 
 	standing, err := s.store.GetSecretRejection(ctx, assignment.ProjectID, secret.ID, host)
 	if err != nil {

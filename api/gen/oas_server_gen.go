@@ -592,6 +592,15 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secret-grants
 	ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (ListSecretGrantsRes, error)
+	// ListSecretRefreshes implements list-secret-refreshes operation.
+	//
+	// The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new
+	// value of a token, and how each ask was answered or dismissed -- newest first. Project-scoped, like
+	// the verdict trail, because it outlives the discoboxes it names. An answer's principal and time are
+	// the control plane's record; how the value was produced is the answering client's own account.
+	//
+	// GET /projects/{projectId}/secret-refreshes
+	ListSecretRefreshes(ctx context.Context, params ListSecretRefreshesParams) (ListSecretRefreshesRes, error)
 	// ListSecretRejections implements list-secret-rejections operation.
 	//
 	// List credentials an upstream has refused.
@@ -660,6 +669,14 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 	RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error)
+	// RefreshSecret implements refresh-secret operation.
+	//
+	// Write a new value for a token secret, answering its open refresh request (ADR 26-09-25-122 §4).
+	// Closes every open refresh request on the secret. The command a client reports is recorded, never
+	// checked.
+	//
+	// POST /projects/{projectId}/secrets/{secretId}/refresh
+	RefreshSecret(ctx context.Context, req *RefreshSecretBody, params RefreshSecretParams) (RefreshSecretRes, error)
 	// RegisterPool implements register-pool operation.
 	//
 	// Register a bootstrapped pool agent.

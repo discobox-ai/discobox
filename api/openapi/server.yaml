@@ -4439,6 +4439,20 @@ components:
                 host:
                     description: Optional host used to match requests (e.g. github.com)
                     type: string
+                refreshCommand:
+                    description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token the well-known credential's own lifetime when wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                ttlSeconds:
+                    description: How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets only.
+                    format: int64
+                    type: integer
+                valueExpiresAt:
+                    description: When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this value only. Token secrets only, and only with a value.
+                    format: date-time
+                    type: string
                 name:
                     description: Secret name
                     maxLength: 200
@@ -4451,6 +4465,9 @@ components:
                     type: string
                 value:
                     $ref: '#/components/schemas/SecretValue'
+                wellKnownId:
+                    description: The well-known credential this secret answers, such as com.github.api. A request for that ID then resolves to it without anyone being asked which secret answers it. A token only; a gate is refused, and so is an ID another secret already answers.
+                    type: string
             required:
                 - name
                 - type
@@ -4675,6 +4692,25 @@ components:
                     type: string
                 oauth:
                     "$ref": '#/components/schemas/SecretOAuth'
+                refreshCommand:
+                    description: The command a person's client may run to produce a new value (ADR 26-09-25-122). Advice to the client; the server never runs it.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                staleAt:
+                    description: When the current value stops being trusted and a refresh is asked for. Absent on a value that never goes stale.
+                    format: date-time
+                    readOnly: true
+                    type: string
+                ttlSeconds:
+                    description: How long a value is good for after it is written, in seconds; 0 never goes stale
+                    format: int64
+                    type: integer
+                valueUpdatedAt:
+                    description: When the current value was written
+                    format: date-time
+                    type: string
                 name:
                     description: Secret name
                     type: string
@@ -4809,6 +4845,151 @@ components:
             required:
                 - secretGrants
             type: object
+        SecretRefreshAnswer:
+            additionalProperties: false
+            description: How a refresh request was answered, as the answering client reported it (ADR 26-09-25-122 §6). Never the value.
+            properties:
+                answeredAt:
+                    description: When the new value was written
+                    format: date-time
+                    type: string
+                answeredBy:
+                    description: Principal that wrote it
+                    type: string
+                clientHost:
+                    description: Host ID of the client that wrote it, as the client reports it
+                    type: string
+                command:
+                    description: The command the client says it ran to produce the value
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                commandDigest:
+                    description: Digest of that command
+                    type: string
+                session:
+                    description: Whether a permission the person gave for the session answered it, rather than a prompt
+                    type: boolean
+                via:
+                    description: How the value was produced -- by running the command, entered by a person, or an ordinary write of the secret's value
+                    enum:
+                        - command
+                        - entered
+                        - update
+                    type: string
+            required:
+                - answeredAt
+                - via
+            type: object
+        RefreshSecretBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/RefreshSecretBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                clientHost:
+                    description: Host ID of the client writing the value, recorded with the answer
+                    type: string
+                command:
+                    description: The command the client ran, when via is command
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                expiresAt:
+                    description: When this value goes stale, for a value that knows its own lifetime; overrides the secret's ttlSeconds for this value
+                    format: date-time
+                    type: string
+                requestId:
+                    description: The refresh request this answers. A request already answered is refused with 409 and nothing is written. Omit for a refresh nobody asked for.
+                    type: string
+                session:
+                    description: Whether a permission the person gave for the session answered it, rather than a prompt
+                    type: boolean
+                value:
+                    description: The new token value
+                    type: string
+                via:
+                    description: How the value was produced
+                    enum:
+                        - command
+                        - entered
+                    type: string
+            required:
+                - value
+                - via
+            type: object
+        SecretRefreshEvent:
+            additionalProperties: false
+            description: One thing that happened to a refresh request, as the refresh audit trail serves it (ADR 26-09-25-122 §6). A request is its asking and, once closed, its answer or its dismissal. Never the value.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SecretRefreshEvent.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                answer:
+                    $ref: '#/components/schemas/SecretRefreshAnswer'
+                at:
+                    description: When it happened
+                    format: date-time
+                    type: string
+                event:
+                    description: What happened -- the control plane asked for a new value, a value was written answering it, or a person dismissed it
+                    enum:
+                        - asked
+                        - answered
+                        - dismissed
+                    type: string
+                id:
+                    description: The refresh request's ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                refreshCause:
+                    description: What opened the request
+                    enum:
+                        - stale
+                        - rejected
+                    type: string
+                sandboxId:
+                    description: The discobox that most recently needed the value
+                    type: string
+                secretId:
+                    description: Secret a new value was asked for
+                    type: string
+                secretName:
+                    description: Its name, while it exists
+                    type: string
+            required:
+                - id
+                - event
+                - at
+                - projectId
+                - secretId
+            type: object
+        ListSecretRefreshEventsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretRefreshEventsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretRefreshEvents:
+                    items:
+                        $ref: '#/components/schemas/SecretRefreshEvent'
+                    type: array
+            required:
+                - secretRefreshEvents
+            type: object
         SecretRequest:
             additionalProperties: false
             properties:
@@ -4859,6 +5040,19 @@ components:
                 projectId:
                     description: Project ID
                     type: string
+                reason:
+                    description: Why the request exists, when it is not an ask for a grant. refresh asks for a new value of a token that has gone stale or was refused; it is answered by writing a value (refresh-secret), never by approving.
+                    enum:
+                        - refresh
+                    type: string
+                refreshCause:
+                    description: What opened a refresh request
+                    enum:
+                        - stale
+                        - rejected
+                    type: string
+                refreshAnswer:
+                    $ref: '#/components/schemas/SecretRefreshAnswer'
                 requestedBy:
                     description: Principal ID of the requestor
                     type: string
@@ -4975,6 +5169,20 @@ components:
                     type: integer
                 host:
                     description: Optional host used to match requests (e.g. github.com)
+                    type: string
+                refreshCommand:
+                    description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token the well-known credential's own lifetime when wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                ttlSeconds:
+                    description: How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets only.
+                    format: int64
+                    type: integer
+                valueExpiresAt:
+                    description: When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this value only. Token secrets only, and only with a value.
+                    format: date-time
                     type: string
                 name:
                     description: Secret name
@@ -9874,6 +10082,48 @@ paths:
             summary: Update a secret
             tags:
                 - Secrets
+    /projects/{projectId}/secrets/{secretId}/refresh:
+        post:
+            description: Write a new value for a token secret, answering its open refresh request (ADR 26-09-25-122 §4). Closes every open refresh request on the secret. The command a client reports is recorded, never checked.
+            operationId: refresh-secret
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret ID
+                  in: path
+                  name: secretId
+                  required: true
+                  schema:
+                    description: Secret ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RefreshSecretBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Secret'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Write a new value for a token, answering its refresh request
+            tags:
+                - Secrets
     /projects/{projectId}/secret-rejections:
         get:
             operationId: list-secret-rejections
@@ -10446,6 +10696,87 @@ paths:
             summary: Read one audited HTTP exchange in full
             tags:
                 - Pools
+    /projects/{projectId}/secret-refreshes:
+        get:
+            description: The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new value of a token, and how each ask was answered or dismissed -- newest first. Project-scoped, like the verdict trail, because it outlives the discoboxes it names. An answer's principal and time are the control plane's record; how the value was produced is the answering client's own account.
+            operationId: list-secret-refreshes
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Only the events of the refresh request with this ID
+                  in: query
+                  name: id
+                  schema:
+                    description: Only the events of the refresh request with this ID
+                    type: string
+                - description: Only requests last needed by this sandbox, which need not still exist
+                  in: query
+                  name: sandboxId
+                  schema:
+                    description: Only requests last needed by this sandbox, which need not still exist
+                    type: string
+                - description: Only requests for a new value of this secret
+                  in: query
+                  name: secretId
+                  schema:
+                    description: Only requests for a new value of this secret
+                    type: string
+                - description: Only events at or after this time
+                  in: query
+                  name: since
+                  schema:
+                    description: Only events at or after this time
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+                - description: Only events at or before this time, for paging back newest first
+                  in: query
+                  name: until
+                  schema:
+                    description: Only events at or before this time, for paging back newest first
+                    format: date-time
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                    type: string
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: 100
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                - description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                  in: query
+                  name: order
+                  schema:
+                    default: desc
+                    description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
+                    enum:
+                        - asc
+                        - desc
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretRefreshEventsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the refresh audit trail
+            tags:
+                - Secrets
     /projects/{projectId}/credential-verdicts:
         get:
             description: The recorded judge verdicts for agent credential uses in a project, newest first. Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId instead.

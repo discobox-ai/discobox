@@ -75,6 +75,15 @@ func (fakeSecretService) UpdateSecret(context.Context, string, string, svcapi.Up
 	return &secret, nil
 }
 
+func (fakeSecretService) RefreshSecret(context.Context, string, string, svcapi.RefreshSecretBody) (*model.Secret, error) {
+	secret := fakeSecret()
+	return &secret, nil
+}
+
+func (fakeSecretService) ListSecretRefreshEvents(context.Context, string, svcapi.SecretRefreshFilter) ([]model.SecretRefreshEvent, error) {
+	return nil, nil
+}
+
 func (fakeSecretService) DeleteSecret(context.Context, string, string) error {
 	return nil
 }

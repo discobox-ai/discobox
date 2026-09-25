@@ -927,6 +927,20 @@ const (
 	SecretRequestStatusApproved = "approved"
 	SecretRequestStatusDenied   = "denied"
 
+	// SecretRequestReasonRefresh marks a request for a new value
+	// (SecretRequest.Reason).
+	SecretRequestReasonRefresh = "refresh"
+	// SecretRefreshCauseStale and SecretRefreshCauseRejected are what opened a
+	// refresh request: a resolve of a value past, or nearly past, its
+	// lifetime, or an upstream refusing it.
+	SecretRefreshCauseStale    = "stale"
+	SecretRefreshCauseRejected = "rejected"
+	// SecretRefreshViaCommand and its siblings are how a refresh's value was
+	// produced, as the answer records it.
+	SecretRefreshViaCommand = "command"
+	SecretRefreshViaEntered = "entered"
+	SecretRefreshViaUpdate  = "update"
+
 	// SecretGrantScopeSandbox and its siblings decide how widely a single grant
 	// applies. A grant is matched against a resolving sandbox by its scope key:
 	// the sandbox's own ID, its harness config ID, or the project ID.
@@ -1016,14 +1030,75 @@ type Secret struct {
 	// WellKnownID is the well-known credential this secret fulfills: a
 	// request for that ID resolves to it. At most one secret in a project
 	// carries a given ID, which the partial unique index holds.
-	WellKnownID string    `gorm:"column:well_known_id;not null;type:text;default:'';uniqueIndex:idx_secret_project_well_known,priority:2,where:well_known_id <> ''" json:"wellKnownId,omitempty" doc:"Well-known credential this secret fulfills"`
-	CreatedAt   time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt   time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	WellKnownID string `gorm:"column:well_known_id;not null;type:text;default:'';uniqueIndex:idx_secret_project_well_known,priority:2,where:well_known_id <> ''" json:"wellKnownId,omitempty" doc:"Well-known credential this secret fulfills"`
+	// TTL is how long a token's value is good for after it is written, in
+	// seconds (ADR 26-09-25-122 §1). Zero never goes stale, which is every
+	// token written before the field existed.
+	TTL int64 `gorm:"column:ttl_seconds;not null;default:0" json:"ttlSeconds,omitempty" doc:"How long a value is good for after it is written, in seconds; 0 never goes stale"`
+	// RefreshCommand is the argument vector a person's client may run to
+	// produce a new value. It is advice to that client: nothing on this side
+	// runs it, or checks that a value came from it.
+	RefreshCommand []string `gorm:"column:refresh_command;type:text;serializer:json" json:"refreshCommand,omitempty" doc:"Command a person's client may run to produce a new value"`
+	// ValueUpdatedAt is when the current value was written, set by the store
+	// on create and on every replaced value.
+	ValueUpdatedAt *time.Time `gorm:"column:value_updated_at" json:"valueUpdatedAt,omitempty" doc:"When the current value was written" format:"date-time"`
+	// ValueExpiresAt is when the current value goes stale, when that is not
+	// TTL after it was written: a value that knew its own lifetime, or one an
+	// upstream refused, which is stale from the moment it was refused.
+	ValueExpiresAt *time.Time `gorm:"column:value_expires_at" json:"-"`
+	// StaleAt is when the current value stops being trusted, derived on read
+	// (StaleTime). It is not a column.
+	StaleAt   *time.Time `gorm:"-" json:"staleAt,omitempty" doc:"When the current value stops being trusted" format:"date-time"`
+	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
 
 func (Secret) TableName() string { return "secrets" }
+
+// DefaultRefreshTTL is the lifetime a token takes when it names a refresh
+// command and no lifetime: a value worth fetching by command is short-lived by
+// assumption (ADR 26-09-25-122 §1).
+const DefaultRefreshTTL = 300
+
+// ValueWrittenAt is when the current value was written. Every row has one:
+// the store stamps it on create and on each replaced value, and the migration
+// backfilled the rows written before it existed. A row somehow without one
+// reads its creation, which never moves, rather than its last update, which
+// moves on every rename.
+func (s *Secret) ValueWrittenAt() time.Time {
+	if s.ValueUpdatedAt != nil {
+		return *s.ValueUpdatedAt
+	}
+	return s.CreatedAt
+}
+
+// StaleTime is when the current value stops being trusted, and false for one
+// that never does. An expiry the value carries wins over the secret's TTL.
+func (s *Secret) StaleTime() (time.Time, bool) {
+	if s.ValueExpiresAt != nil {
+		return *s.ValueExpiresAt, true
+	}
+	if s.TTL > 0 {
+		return s.ValueWrittenAt().Add(time.Duration(s.TTL) * time.Second), true
+	}
+	return time.Time{}, false
+}
+
+// Renewable reports whether a person's client is asked for a new value when
+// this one goes stale or is refused: a token that has a lifetime or a command
+// to renew it by.
+func (s *Secret) Renewable() bool {
+	return s.Type == SecretTypeToken && (s.TTL > 0 || len(s.RefreshCommand) > 0)
+}
+
+// ValueWritten records that a new value was written at now. expiresAt is the
+// value's own expiry, or nil to go stale TTL after now.
+func (s *Secret) ValueWritten(now time.Time, expiresAt *time.Time) {
+	s.ValueUpdatedAt = &now
+	s.ValueExpiresAt = expiresAt
+}
 
 func (s *Secret) BeforeCreate(_ *gorm.DB) error {
 	if s.ID == "" {
@@ -1108,8 +1183,11 @@ type SecretUse struct {
 //     protocol, saying what it needs, why, and what for. Approving one must
 //     produce a host-scoped grant carrying approved uses.
 type SecretRequest struct {
-	ID            string      `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
-	ProjectID     string      `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	ID string `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
+	// ProjectID and SecretID are also the open-refresh index: one pending
+	// refresh request per secret (ADR 26-09-25-122 §4), held by the database
+	// so two resolves at once cannot both open one.
+	ProjectID     string      `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_request_open_refresh,priority:1" json:"projectId" doc:"Project ID"`
 	RequestedBy   string      `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
 	SandboxID     string      `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
 	Type          string      `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"token,oauth"`
@@ -1128,17 +1206,71 @@ type SecretRequest struct {
 	// with this purpose. Every request written before an agent could ask to
 	// delegate asked to use, which the column's default gives it.
 	Purpose  string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose,omitempty" doc:"What the agent asked the credential for: to use it, or to delegate it to other discoboxes" enum:"use,delegate"`
-	SecretID string `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
+	SecretID string `gorm:"column:secret_id;not null;type:text;default:'';uniqueIndex:idx_secret_request_open_refresh,priority:2,where:reason = 'refresh' AND status = 'pending'" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
 	Status   string `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
 	GrantID  string `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
 	// WellKnownID is the well-known credential the agent asked for by ID;
 	// approving the request binds the secret that fulfills it.
-	WellKnownID string    `gorm:"column:well_known_id;not null;type:text;default:''" json:"wellKnownId,omitempty" doc:"Well-known credential the agent asked for by ID"`
-	CreatedAt   time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt   time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	WellKnownID string `gorm:"column:well_known_id;not null;type:text;default:''" json:"wellKnownId,omitempty" doc:"Well-known credential the agent asked for by ID"`
+	// Reason is why the request exists when it is not an ask for a grant.
+	// SecretRequestReasonRefresh asks for a new value of a token that went
+	// stale or was refused (ADR 26-09-25-122 §4): a third species, answered by
+	// writing a value and never by approving.
+	Reason string `gorm:"column:reason;not null;type:text;default:''" json:"reason,omitempty" doc:"Why the request exists, when it is not an ask for a grant" enum:"refresh"`
+	// RefreshCause is what opened a refresh request.
+	RefreshCause string `gorm:"column:refresh_cause;not null;type:text;default:''" json:"refreshCause,omitempty" doc:"What opened a refresh request" enum:"stale,rejected"`
+	// RefreshAnswer is how a refresh request was answered, set when it is.
+	RefreshAnswer *SecretRefreshAnswer `gorm:"column:refresh_answer;type:text;serializer:json" json:"refreshAnswer,omitempty" doc:"How a refresh request was answered"`
+	// ClosedAt is when the request stopped pending: approved, answered, or
+	// denied. It is what the refresh trail reads a request's second event at
+	// (ADR 26-09-25-122 §6), stamped in UTC for the reason CreatedAt is.
+	ClosedAt  *time.Time `gorm:"column:closed_at;index" json:"-"`
+	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
+
+// IsRefresh reports whether the request asks for a new value rather than a
+// grant.
+func (r *SecretRequest) IsRefresh() bool { return r.Reason == SecretRequestReasonRefresh }
+
+// SecretRefreshAnswer is how a refresh request was answered: who wrote the
+// value, from where, and how the client says it produced it. Never the value.
+// Everything but the principal and the time is the client's own account
+// (ADR 26-09-25-122 §6).
+type SecretRefreshAnswer struct {
+	AnsweredAt    time.Time `json:"answeredAt" doc:"When the new value was written" format:"date-time"`
+	AnsweredBy    string    `json:"answeredBy,omitempty" doc:"Principal that wrote it"`
+	Via           string    `json:"via" doc:"How the value was produced" enum:"command,entered,update"`
+	Command       []string  `json:"command,omitempty" doc:"The command the client says it ran"`
+	CommandDigest string    `json:"commandDigest,omitempty" doc:"Digest of that command"`
+	Session       bool      `json:"session,omitempty" doc:"Whether a session permission answered it"`
+	ClientHost    string    `json:"clientHost,omitempty" doc:"Host ID of the client that wrote it"`
+}
+
+// SecretRefreshEvent is one thing that happened to a refresh request, as the
+// refresh audit trail serves it (ADR 26-09-25-122 §6): it was asked for, and
+// later answered with a value or dismissed. A request is two events rather
+// than one record because the trail is read forward by time, and a record that
+// changed after a reader passed it would never be read again.
+type SecretRefreshEvent struct {
+	ID           string               `json:"id" doc:"The refresh request's ID"`
+	Event        string               `json:"event" doc:"What happened" enum:"asked,answered,dismissed"`
+	At           time.Time            `json:"at" doc:"When it happened" format:"date-time"`
+	ProjectID    string               `json:"projectId" doc:"Project ID"`
+	SecretID     string               `json:"secretId" doc:"Secret a new value was asked for"`
+	SecretName   string               `json:"secretName,omitempty" doc:"Its name, while it exists"`
+	SandboxID    string               `json:"sandboxId,omitempty" doc:"The discobox that most recently needed the value"`
+	RefreshCause string               `json:"refreshCause,omitempty" doc:"What opened the request" enum:"stale,rejected"`
+	Answer       *SecretRefreshAnswer `json:"answer,omitempty" doc:"How it was answered, on an answered event"`
+}
+
+const (
+	SecretRefreshEventAsked     = "asked"
+	SecretRefreshEventAnswered  = "answered"
+	SecretRefreshEventDismissed = "dismissed"
+)
 
 // FromProtocol reports whether the request came through the agent credentials
 // protocol rather than the proxy's reactive sentinel path. Declared uses are
@@ -1155,6 +1287,12 @@ func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
 		if err != nil {
 			return err
 		}
+	}
+	// Stamped in UTC rather than left to autoCreateTime, for the reason
+	// CredentialVerdict's is: SQLite compares a time as text carrying its
+	// offset, and the refresh trail bounds its reads by this column.
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = time.Now().UTC()
 	}
 	return nil
 }
