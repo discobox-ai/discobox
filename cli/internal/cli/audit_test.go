@@ -516,6 +516,8 @@ func TestHookSummaryNamesThePromptOrTheToolAndWhatItRanOn(t *testing.T) {
 		"codex mcp":           {`{"tool_name":"mcp__fs__read","tool_input":{"path":"/etc/hosts"}}`, "mcp__fs__read: /etc/hosts"},
 		"opencode before":     {`{"tool":"read","args":{"filePath":"/src/a.go"}}`, "read: /src/a.go"},
 		"opencode after":      {`{"tool":"bash","title":"ls -la"}`, "bash: ls -la"},
+		"pi tool_call":        {`{"toolName":"bash","toolCallId":"call_1","input":{"command":"go test ./..."}}`, "bash: go test ./..."},
+		"omp tool_result":     {`{"toolName":"edit","toolCallId":"call_2","input":{"path":"/src/a.go"},"isError":false}`, "edit: /src/a.go"},
 		"no subject":          {`{"tool_name":"TodoWrite","tool_input":{"todos":[]}}`, "TodoWrite"},
 		"prompt":              {`{"hook_event_name":"UserPromptSubmit","prompt":"fix the\n\n  audit\tlist"}`, "prompt: fix the audit list"},
 		"long prompt":         {`{"prompt":"` + strings.Repeat("a", 150) + `"}`, "prompt: " + strings.Repeat("a", hookSummaryMaxText-1) + "…"},
