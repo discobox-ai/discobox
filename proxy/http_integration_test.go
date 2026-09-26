@@ -1858,6 +1858,31 @@ func TestHTTPProxyBodilessResponsesKeepTheConnectionInSync(t *testing.T) {
 			w.WriteHeader(http.StatusNotModified)
 		case "/no-content":
 			w.WriteHeader(http.StatusNoContent)
+		case "/not-modified-chunked", "/no-content-chunked":
+			// RFC 9110 lets a 304 carry the Transfer-Encoding its 200 would
+			// have, still with no body; net/http will not write one, so the
+			// head goes out by hand.
+			status := "304 Not Modified"
+			if r.URL.Path == "/no-content-chunked" {
+				status = "204 No Content"
+			}
+			conn, rw, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			_, _ = rw.WriteString("HTTP/1.1 " + status + "\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
+			_ = rw.Flush()
+		case "/head-chunked":
+			// The GET this HEAD describes would be chunked; the HEAD says so and
+			// carries nothing.
+			conn, rw, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			_, _ = rw.WriteString("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+			_ = rw.Flush()
 		case "/head":
 			w.Header().Set("Content-Length", "4")
 			if r.Method != http.MethodHead {
@@ -1947,7 +1972,7 @@ func TestHTTPProxyBodilessResponsesKeepTheConnectionInSync(t *testing.T) {
 	})
 	reader := bufio.NewReader(tunnel)
 
-	exchange := func(method, path, extra string) (int, http.Header) {
+	exchange := func(method, path, extra string) (int, http.Header, bool) {
 		t.Helper()
 		if _, err := fmt.Fprintf(tunnel, "%s %s HTTP/1.1\r\nHost: %s\r\n%s\r\n", method, path, originURL.Host, extra); err != nil {
 			t.Fatalf("%s %s: write: %v", method, path, err)
@@ -1965,19 +1990,28 @@ func TestHTTPProxyBodilessResponsesKeepTheConnectionInSync(t *testing.T) {
 		if len(body) > 0 && (method == http.MethodHead || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusNoContent) {
 			t.Fatalf("%s %s: body = %q, want none", method, path, body)
 		}
-		return resp.StatusCode, resp.Header
+		return resp.StatusCode, resp.Header, resp.Close
 	}
 
-	if status, _ := exchange(http.MethodGet, "/not-modified", "If-None-Match: \"v1\"\r\n"); status != http.StatusNotModified {
+	if status, _, _ := exchange(http.MethodGet, "/not-modified", "If-None-Match: \"v1\"\r\n"); status != http.StatusNotModified {
 		t.Fatalf("GET /not-modified status = %d, want 304", status)
 	}
-	if status, _ := exchange(http.MethodGet, "/no-content", ""); status != http.StatusNoContent {
+	if status, _, _ := exchange(http.MethodGet, "/no-content", ""); status != http.StatusNoContent {
 		t.Fatalf("GET /no-content status = %d, want 204", status)
 	}
-	if status, _ := exchange(http.MethodGet, "/cached-no-content", ""); status != http.StatusNoContent {
+	if status, _, _ := exchange(http.MethodGet, "/not-modified-chunked", ""); status != http.StatusNotModified {
+		t.Fatalf("GET /not-modified-chunked status = %d, want 304", status)
+	}
+	if status, _, _ := exchange(http.MethodGet, "/no-content-chunked", ""); status != http.StatusNoContent {
+		t.Fatalf("GET /no-content-chunked status = %d, want 204", status)
+	}
+	if status, _, _ := exchange(http.MethodGet, "/cached-no-content", ""); status != http.StatusNoContent {
 		t.Fatalf("GET /cached-no-content status = %d, want the cached 204", status)
 	}
-	if _, header := exchange(http.MethodHead, "/head", ""); header.Get("Content-Length") != "4" {
+	if _, _, closing := exchange(http.MethodHead, "/head-chunked", ""); closing {
+		t.Fatal("HEAD /head-chunked closed the connection; a HEAD's transfer coding describes its GET and must pass through")
+	}
+	if _, header, _ := exchange(http.MethodHead, "/head", ""); header.Get("Content-Length") != "4" {
 		t.Fatalf("HEAD /head Content-Length = %q, want 4 (the length of the GET it describes)", header.Get("Content-Length"))
 	}
 

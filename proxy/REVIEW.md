@@ -90,7 +90,10 @@
   capture the swapped value.
 - A response that cannot carry a body (HEAD, 1xx, 204, 304; see
   `bodyAllowed`) leaves the handler with `http.NoBody` and nothing wrapped
-  around it — on the upstream path and on a cache hit alike. goproxy's MITM
-  loop frames any other body as chunked, an empty wrapper included, and the
-  chunk terminator stays on the kept-alive connection for the client to read
-  as the next response.
+  around it — on the upstream path and on a cache hit alike (`discardBody`).
+  goproxy's MITM loop frames any other body as chunked, an empty wrapper
+  included. A 1xx, 204, or 304 also loses its transfer coding, since goproxy
+  writes a chunk terminator for one still marked chunked, and the terminator
+  stays on the kept-alive connection for the client to read as the next
+  response. A HEAD keeps its transfer coding: it describes the GET, and
+  without it net/http closes the connection after an unsized HEAD.

@@ -939,10 +939,13 @@ func bodyAllowed(req *http.Request, resp *http.Response) bool {
 	return resp.StatusCode >= 200 && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotModified
 }
 
-// discardBody leaves a response that cannot carry a body with http.NoBody,
-// which is the only body goproxy relays as nothing. goproxy frames any other
-// body as chunked — an empty wrapper included — and a chunk terminator after a
-// 304's headers is read by the client as the start of the next response.
+// discardBody leaves a response that cannot carry a body with http.NoBody, the
+// only body goproxy relays as nothing: it frames any other as chunked, an empty
+// wrapper included. A 1xx, 204, or 304 also loses its transfer coding, which a
+// 304 may carry by the letter of RFC 9110 and for which goproxy would still
+// write a chunk terminator; after the headers the client reads it as the start
+// of the next response. A HEAD keeps its own: it describes the GET, and
+// net/http writes nothing after a HEAD's headers either way.
 func discardBody(req *http.Request, resp *http.Response) {
 	if bodyAllowed(req, resp) {
 		return
@@ -951,6 +954,10 @@ func discardBody(req *http.Request, resp *http.Response) {
 		_ = resp.Body.Close()
 	}
 	resp.Body = http.NoBody
+	if req.Method != http.MethodHead {
+		resp.TransferEncoding = nil
+		resp.Header.Del("Transfer-Encoding")
+	}
 }
 
 // sameHeaderValues reports whether every named header holds the same values in
