@@ -381,10 +381,14 @@ tasks:
       - task: build:harness-image
         vars: { HARNESS: opencode }
       - task: build:harness-image
+        vars: { HARNESS: pi }
+      - task: build:harness-image
+        vars: { HARNESS: omp }
+      - task: build:harness-image
         vars: { HARNESS: shell }
 
   build:harness-image:
-    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode, SANDBOX_AGENT_IMAGE defaults to the local base)
+    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode|pi|omp|shell, SANDBOX_AGENT_IMAGE defaults to the local base)
     requires:
       vars: [HARNESS]
     vars:
@@ -772,6 +776,8 @@ tasks:
           harness/claude-code/Dockerfile:harness/claude-code \
           harness/codex-cli/Dockerfile:harness/codex-cli \
           harness/opencode/Dockerfile:harness/opencode \
+          harness/pi/Dockerfile:harness/pi \
+          harness/omp/Dockerfile:harness/omp \
           harness/shell/Dockerfile:harness/shell; do
           dockerfile="${entry%:*}"
           context="${entry##*:}"
@@ -1739,10 +1745,14 @@ tasks:
       - task: release:harness-image
         vars: { HARNESS: opencode }
       - task: release:harness-image
+        vars: { HARNESS: pi }
+      - task: release:harness-image
+        vars: { HARNESS: omp }
+      - task: release:harness-image
         vars: { HARNESS: shell }
 
   release:harness-image:
-    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|opencode|shell)
+    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|opencode|pi|omp|shell)
     requires:
       vars: [HARNESS]
     vars:

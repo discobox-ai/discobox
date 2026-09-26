@@ -384,7 +384,7 @@ Installed in every discobox, whatever it was made from:
 | --- | --- |
 | Discobox | one disposable environment with the source in it, running one agent |
 | Pool | the host boxes are scheduled onto, and what they share: a cache volume, CPU and memory, a kernel |
-| Harness | the agent a box runs — Claude Code, Codex, OpenCode, a shell, or any terminal agent in an image |
+| Harness | the agent a box runs — Claude Code, Codex, OpenCode, Pi, Oh My Pi, a shell, or any terminal agent in an image |
 
 These are the user's commands, run on their side:
 

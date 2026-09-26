@@ -340,9 +340,10 @@ func harnessHookRecord(sandboxID string) func(apimodel.HarnessHookLog) auditReco
 
 // hookPayload is the part of a hook's payload that says what it was about.
 // Claude Code and Codex send tool_name and tool_input; the opencode image's
-// plugin sends tool and args, and only a title after the tool ran. Claude
-// Code's PostToolBatch names every call of a batch in tool_calls. Claude Code
-// and Codex send a UserPromptSubmit's text as prompt.
+// plugin sends tool and args, and only a title after the tool ran; the pi and
+// omp images' extensions send toolName and input, before and after. Claude
+// Code's PostToolBatch names every call of a batch in tool_calls. Claude Code,
+// Codex, pi and omp send a UserPromptSubmit's text as prompt.
 type hookPayload struct {
 	Prompt    string         `json:"prompt"`
 	ToolName  string         `json:"tool_name"`
@@ -350,6 +351,8 @@ type hookPayload struct {
 	Tool      string         `json:"tool"`
 	Args      map[string]any `json:"args"`
 	Title     string         `json:"title"`
+	PiTool    string         `json:"toolName"`
+	PiInput   map[string]any `json:"input"`
 	ToolCalls []struct {
 		ToolName string `json:"tool_name"`
 	} `json:"tool_calls"`
@@ -392,6 +395,9 @@ func hookSummary(payload []byte) string {
 	tool, input := p.ToolName, p.ToolInput
 	if tool == "" {
 		tool, input = p.Tool, p.Args
+	}
+	if tool == "" {
+		tool, input = p.PiTool, p.PiInput
 	}
 	if tool == "" {
 		return ""
