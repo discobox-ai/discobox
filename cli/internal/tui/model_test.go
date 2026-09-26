@@ -944,6 +944,11 @@ func TestTheSourceChipOnlyShowsWhenItDiffers(t *testing.T) {
 func TestUpFromThePromptLandsOnTheLastRow(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	// Every folder is a list nobody has chosen a row in.
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("left"), keyPress("esc"))
+	if m.focus != focusPrompt || m.list.visited {
+		t.Fatalf("focus = %v, visited = %v: want the prompt, over an unvisited list", m.focus, m.list.visited)
+	}
 
 	send(t, m, keyPress("up"))
 	if m.focus != focusList {
@@ -952,8 +957,30 @@ func TestUpFromThePromptLandsOnTheLastRow(t *testing.T) {
 	if want := len(m.list.rows()) - 1; m.list.cursor != want {
 		t.Fatalf("cursor = %d, want the last row %d", m.list.cursor, want)
 	}
-	if want := "sbx_two"; m.list.current().ID != want {
-		t.Fatalf("cursor on %s, want %s", m.list.current().ID, want)
+}
+
+// The window opens on the prompt, and the first Up out of it lands at the top
+// of the list; from then on Up goes back to wherever the cursor was left.
+func TestFirstUpOfASessionLandsOnTheFirstRow(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	// A refresh keeps the cursor on its sandbox, not its row, so by the time
+	// Up is pressed it may be anywhere; nobody chose it, so it is not kept.
+	m.list.cursor = len(m.list.rows()) - 1
+
+	send(t, m, keyPress("up"))
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list", m.focus)
+	}
+	if m.list.cursor != 0 {
+		t.Fatalf("cursor = %d, want the first row", m.list.cursor)
+	}
+
+	send(t, m, keyPress("down"))
+	on := m.list.current().ID
+	send(t, m, keyPress("esc"), keyPress("up"))
+	if got := m.list.current().ID; got != on {
+		t.Fatalf("cursor on %s, want %s where it was left", got, on)
 	}
 }
 

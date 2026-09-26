@@ -884,3 +884,28 @@ func TestEveryModalAsksTheTerminalForTheMouse(t *testing.T) {
 		})
 	}
 }
+
+// Clicking the folder filter takes focus out of the prompt as surely as a key
+// does, so the Up after it is not the session's first and lands on the row
+// nearest the prompt.
+func TestAClickOutOfThePromptSpendsTheFirstUp(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	slowClock(m)
+
+	x, y := at(t, m, m.session.Directory)
+	tap(t, m, x, y)
+	for range 3 {
+		if m.focus == focusPrompt {
+			break
+		}
+		send(t, m, keyPress("esc"))
+	}
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v, want Esc to have brought it back to the prompt", m.focus)
+	}
+	send(t, m, keyPress("up"))
+	if want := len(m.list.rows()) - 1; m.focus != focusList || m.list.cursor != want {
+		t.Fatalf("focus = %v, cursor = %d: want the list, on the last row %d", m.focus, m.list.cursor, want)
+	}
+}

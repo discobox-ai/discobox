@@ -2420,8 +2420,11 @@ Where the cursor lands entering the list is `listLanding`, and only decides the
 *first* time (`sandboxList.visited`): Up is a direction, so it lands on the row
 nearest the prompt — the last; Tab lands at the top. After that every key returns the cursor to the sandbox it was left on, because leaving
 the list to type something and coming back is not the same as arriving at it.
-`resetCursor` clears `visited` when the folder changes: a different set of
-sandboxes is a list nobody has chosen a row in.
+The one exception is the first time focus leaves the prompt in a session
+(`Model.leftPrompt`): the window opens there, and that first Up is reading the
+list rather than stepping into the row above, so it lands at the top.
+`resetCursor` clears `visited` when the folder, server, or tag changes: a
+different set of sandboxes is a list nobody has chosen a row in.
 
 **The git column is where the work sits now.** Every row carries a
 branch@commit, and once the sandbox's agent has reported (`GitState`, relayed
