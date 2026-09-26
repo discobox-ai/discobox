@@ -88,3 +88,9 @@
   entry, and the fallback exists precisely to outlive the value being dropped.
 - Do not scan or swap request bodies while the request-body audit spool would
   capture the swapped value.
+- A response that cannot carry a body (HEAD, 1xx, 204, 304; see
+  `bodyAllowed`) leaves the handler with `http.NoBody` and nothing wrapped
+  around it — on the upstream path and on a cache hit alike. goproxy's MITM
+  loop frames any other body as chunked, an empty wrapper included, and the
+  chunk terminator stays on the kept-alive connection for the client to read
+  as the next response.
