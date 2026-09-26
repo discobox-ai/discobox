@@ -1838,3 +1838,169 @@ func TestHTTPProxySecretSentinelSwapInBasicAuth(t *testing.T) {
 		t.Fatalf("Authorization audit values = %#v, want [REDACTED]", values)
 	}
 }
+
+// A response that cannot carry a body — a 304, a 204, the answer to a HEAD —
+// must reach the client with nothing after its headers. Anything written there
+// stays on the kept-alive connection and is read as the start of the next
+// response, which is how a warm cargo cache broke: every revalidation came back
+// 304, and the request after it failed with "Invalid status line".
+func TestHTTPProxyBodilessResponsesKeepTheConnectionInSync(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("goproxy's MITM leg fails before the handler runs on Windows")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	origin := newTLSOrigin(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/not-modified":
+			w.Header().Set("ETag", `"v1"`)
+			w.WriteHeader(http.StatusNotModified)
+		case "/no-content":
+			w.WriteHeader(http.StatusNoContent)
+		case "/head":
+			w.Header().Set("Content-Length", "4")
+			if r.Method != http.MethodHead {
+				_, _ = io.WriteString(w, "body")
+			}
+		default:
+			_, _ = io.WriteString(w, "done")
+		}
+	})
+	defer origin.Close()
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		Cache: CacheConfig{
+			Enabled:      true,
+			Dir:          filepath.Join(dir, "cache"),
+			MaxSizeBytes: 1024 * 1024,
+			Patterns:     []string{"/cached-no-content"},
+		},
+	}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	server.http.proxy.Tr = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // test origin is self-signed
+	// A 204 stored before bodiless responses stopped being cached: the cache
+	// outlives an upgrade, so a hit on one must be relayed without a body too.
+	put, err := server.http.cache.BeginStreamingPut(originURL.Host+"/cached-no-content", &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}})
+	if err != nil {
+		t.Fatalf("seed cached 204: %v", err)
+	}
+	if err := put.Commit(); err != nil {
+		t.Fatalf("commit cached 204: %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	t.Cleanup(closeProxyServer(t, server, errCh))
+	addr := waitForAddr(t, server)
+
+	material := prepared.Clients["sandbox-1"]
+	conn := dialProxyMTLS(ctx, t, addr.String(), material)
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	if _, err := fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", originURL.Host, originURL.Host); err != nil {
+		t.Fatalf("write CONNECT: %v", err)
+	}
+	connectReader := bufio.NewReader(conn)
+	connectResp, err := http.ReadResponse(connectReader, nil)
+	if err != nil {
+		t.Fatalf("read CONNECT response: %v", err)
+	}
+	_ = connectResp.Body.Close()
+	if connectResp.StatusCode != http.StatusOK {
+		t.Fatalf("CONNECT status = %d, want 200", connectResp.StatusCode)
+	}
+
+	mitmCA, err := os.ReadFile(material.MITMCAPath)
+	if err != nil {
+		t.Fatalf("read MITM CA: %v", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(mitmCA) {
+		t.Fatal("parse MITM CA")
+	}
+	tunnel := tls.Client(conn, &tls.Config{
+		RootCAs:    roots,
+		ServerName: originURL.Hostname(),
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"http/1.1"},
+	})
+	reader := bufio.NewReader(tunnel)
+
+	exchange := func(method, path, extra string) (int, http.Header) {
+		t.Helper()
+		if _, err := fmt.Fprintf(tunnel, "%s %s HTTP/1.1\r\nHost: %s\r\n%s\r\n", method, path, originURL.Host, extra); err != nil {
+			t.Fatalf("%s %s: write: %v", method, path, err)
+		}
+		req := &http.Request{Method: method}
+		resp, err := http.ReadResponse(reader, req)
+		if err != nil {
+			t.Fatalf("%s %s: read response: %v (the previous response left bytes on the connection)", method, path, err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			t.Fatalf("%s %s: read body: %v", method, path, err)
+		}
+		if len(body) > 0 && (method == http.MethodHead || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusNoContent) {
+			t.Fatalf("%s %s: body = %q, want none", method, path, body)
+		}
+		return resp.StatusCode, resp.Header
+	}
+
+	if status, _ := exchange(http.MethodGet, "/not-modified", "If-None-Match: \"v1\"\r\n"); status != http.StatusNotModified {
+		t.Fatalf("GET /not-modified status = %d, want 304", status)
+	}
+	if status, _ := exchange(http.MethodGet, "/no-content", ""); status != http.StatusNoContent {
+		t.Fatalf("GET /no-content status = %d, want 204", status)
+	}
+	if status, _ := exchange(http.MethodGet, "/cached-no-content", ""); status != http.StatusNoContent {
+		t.Fatalf("GET /cached-no-content status = %d, want the cached 204", status)
+	}
+	if _, header := exchange(http.MethodHead, "/head", ""); header.Get("Content-Length") != "4" {
+		t.Fatalf("HEAD /head Content-Length = %q, want 4 (the length of the GET it describes)", header.Get("Content-Length"))
+	}
+
+	// The request that broke: the next one on the same connection.
+	if _, err := fmt.Fprintf(tunnel, "GET /after HTTP/1.1\r\nHost: %s\r\n\r\n", originURL.Host); err != nil {
+		t.Fatalf("GET /after: write: %v", err)
+	}
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("GET /after: read response: %v (a bodiless response before it left bytes on the connection)", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("GET /after: read body: %v", err)
+	}
+	if string(body) != "done" {
+		t.Fatalf("GET /after body = %q, want \"done\"", body)
+	}
+
+	// The HEAD relayed no body, whatever length it announced.
+	head := waitForHTTPExchange(t, filepath.Join(dir, "audit.db"), "method = ?", http.MethodHead)
+	if head.ResponseBytes != 0 {
+		t.Fatalf("HEAD audit ResponseBytes = %d, want 0", head.ResponseBytes)
+	}
+}

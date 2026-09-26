@@ -295,7 +295,8 @@ func (h *httpProxy) setupHandlers() {
 				meta.ctx = lookupCtx
 				resp := cache.RestoreResponse(entry, req)
 				span.SetAttributes(attribute.Bool("proxy.cache.hit", true), attribute.Int("http.response.status_code", resp.StatusCode))
-				if resp.Body == nil {
+				if resp.Body == nil || !bodyAllowed(req, resp) {
+					discardBody(req, resp)
 					h.audit.RecordHTTP(h.auditEvent(req, resp, meta, time.Since(meta.start), false))
 					span.End()
 					return req, resp
@@ -413,6 +414,14 @@ func (h *httpProxy) setupHandlers() {
 			return resp
 		}
 
+		if resp.Body == nil || !bodyAllowed(ctx.Req, resp) {
+			discardBody(ctx.Req, resp)
+			h.audit.RecordHTTP(h.auditEvent(ctx.Req, resp, meta, time.Since(meta.start), false))
+			meta.span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
+			meta.span.End()
+			return resp
+		}
+
 		var store *cache.StreamingPut
 		if matcher := h.cache.Matcher(); matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
 			key := matcher.GenerateKey(ctx.Req)
@@ -426,12 +435,6 @@ func (h *httpProxy) setupHandlers() {
 				store = nil
 			}
 			cacheSpan.End()
-		}
-		if resp.Body == nil {
-			h.audit.RecordHTTP(h.auditEvent(ctx.Req, resp, meta, time.Since(meta.start), false))
-			meta.span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
-			meta.span.End()
-			return resp
 		}
 		bodyRecord, bodySpool, err := h.beginResponseBody(meta)
 		if err != nil {
@@ -462,7 +465,9 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		headers = resp.Header
 	}
 	responseBytes := int64(0)
-	if resp != nil && resp.ContentLength > 0 {
+	// A HEAD's ContentLength describes the GET it stands in for; nothing of it
+	// was relayed.
+	if resp != nil && resp.ContentLength > 0 && bodyAllowed(req, resp) {
 		responseBytes = resp.ContentLength
 	}
 	requestBodyFile, requestBodyFormat, requestBodyBytes, requestBodyError := meta.requestBodyMetadata()
@@ -924,6 +929,29 @@ func (h *httpProxy) rebuiltRequest(req *http.Request, meta *requestMeta) *http.R
 // retract a standing rejection about a credential that is still dead — using
 // the upstream's own way of *saying* it is dead as the evidence it is alive.
 func succeeded(status int) bool { return status >= 200 && status < 300 }
+
+// bodyAllowed reports whether resp may have a body on the wire: it is not the
+// answer to a HEAD, nor a 1xx, 204, or 304 (RFC 9112 §6.3).
+func bodyAllowed(req *http.Request, resp *http.Response) bool {
+	if req.Method == http.MethodHead {
+		return false
+	}
+	return resp.StatusCode >= 200 && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotModified
+}
+
+// discardBody leaves a response that cannot carry a body with http.NoBody,
+// which is the only body goproxy relays as nothing. goproxy frames any other
+// body as chunked — an empty wrapper included — and a chunk terminator after a
+// 304's headers is read by the client as the start of the next response.
+func discardBody(req *http.Request, resp *http.Response) {
+	if bodyAllowed(req, resp) {
+		return
+	}
+	if resp.Body != nil && resp.Body != http.NoBody {
+		_ = resp.Body.Close()
+	}
+	resp.Body = http.NoBody
+}
 
 // sameHeaderValues reports whether every named header holds the same values in
 // both, which for the swapped headers means the retry would send the same
