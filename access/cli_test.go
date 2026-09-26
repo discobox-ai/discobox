@@ -448,6 +448,47 @@ func TestRunInjectsTheValueOnlyIntoTheChild(t *testing.T) {
 	}
 }
 
+func TestRunPointsTheDiscoboxCLIAtTheAPIWhenNoServerIsNamed(t *testing.T) {
+	stubJudge(t, allowScript)
+	serve(t, &fakeService{credentials: judgeCredentials()})
+	t.Setenv("DISCOBOX_API_URL", "https://api.discobox.internal")
+	// Unset, as a development shell in a discobox leaves it.
+	t.Setenv("DISCOBOX_SERVER", "")
+	if err := os.Unsetenv("DISCOBOX_SERVER"); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, _, code := capture(t, "", func() int {
+		return Run([]string{"run", "--use", "use_7f3c", "--", "sh", "-c", "printf %s \"$DISCOBOX_SERVER\""})
+	})
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if stdout != "https://api.discobox.internal" {
+		t.Fatalf("child saw DISCOBOX_SERVER=%q, want the discobox API", stdout)
+	}
+	if _, set := os.LookupEnv("DISCOBOX_SERVER"); set {
+		t.Fatal("the CLI mutated its own environment; DISCOBOX_SERVER must reach only the child")
+	}
+}
+
+func TestRunKeepsANamedServer(t *testing.T) {
+	stubJudge(t, allowScript)
+	serve(t, &fakeService{credentials: judgeCredentials()})
+	t.Setenv("DISCOBOX_API_URL", "https://api.discobox.internal")
+	t.Setenv("DISCOBOX_SERVER", "https://elsewhere.example")
+
+	stdout, _, code := capture(t, "", func() int {
+		return Run([]string{"run", "--use", "use_7f3c", "--", "sh", "-c", "printf %s \"$DISCOBOX_SERVER\""})
+	})
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if stdout != "https://elsewhere.example" {
+		t.Fatalf("child saw DISCOBOX_SERVER=%q, want the one already named", stdout)
+	}
+}
+
 func TestWaitReportsAGrantedRequestWithItsUseIDs(t *testing.T) {
 	serve(t, &fakeService{status: agentcreds.RequestStatus{
 		RequestID: "sreq_1",

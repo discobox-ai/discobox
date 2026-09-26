@@ -286,7 +286,7 @@ func runWrapped(ctx context.Context, args []string) int {
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
 	// The value replaces any same-named variable already in the environment
 	// rather than joining it, so a stale export cannot shadow the fresh value.
-	child.Env = append(withoutEnv(os.Environ(), result.EnvVar), result.EnvVar+"="+result.Value)
+	child.Env = append(withoutEnv(childEnviron(), result.EnvVar), result.EnvVar+"="+result.Value)
 	if err := child.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -322,6 +322,30 @@ func approvedUse(ctx context.Context, client *agentcreds.Client, useID string) (
 		}
 	}
 	return agentcreds.Credential{}, agentcreds.Use{}, fmt.Errorf("%w: no live approved use %s", agentcreds.ErrDenied, useID)
+}
+
+// Where the discobox CLI finds its server, and the address the pool gives a
+// discobox for the discobox API.
+const (
+	serverEnv = "DISCOBOX_SERVER"
+	apiURLEnv = "DISCOBOX_API_URL"
+)
+
+// childEnviron is this process's environment with DISCOBOX_SERVER pointed at
+// the discobox API when nothing already names a server. A development shell in
+// a discobox unsets it so the CLI reaches a local server, and a discobox CLI
+// run under a use of the discobox API would otherwise start one of its own
+// rather than call the API the use was granted for. DISCOBOX_API_URL is that
+// address; the pool sets both to the same one.
+func childEnviron() []string {
+	environ := os.Environ()
+	if _, set := os.LookupEnv(serverEnv); set {
+		return environ
+	}
+	if apiURL := strings.TrimSpace(os.Getenv(apiURLEnv)); apiURL != "" {
+		environ = append(environ, serverEnv+"="+apiURL)
+	}
+	return environ
 }
 
 func withoutEnv(environ []string, name string) []string {

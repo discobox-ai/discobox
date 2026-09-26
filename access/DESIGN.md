@@ -22,6 +22,13 @@ learns where it runs only from the environment variables `agentcreds` names:
 `DISCOBOX_CREDENTIALS_URL` (default `http://127.0.0.1:17010`) and
 `DISCOBOX_CREDENTIALS_TOKEN`.
 
+`run` bends it once more, for its child only: when `DISCOBOX_SERVER` is unset
+it gives the child `DISCOBOX_SERVER=$DISCOBOX_API_URL`, the discobox API the
+pool names. A development shell in a discobox unsets `DISCOBOX_SERVER` to
+reach its local server, and the discobox CLI run there under a use of
+`ai.discobox.sandbox` would otherwise start a server of its own. A server
+already named is kept, and without `DISCOBOX_API_URL` nothing is added.
+
 `facts.go` (ADR 0090) is the one place this rule bends without breaking: it
 shells out to `git`, a runtime dependency rather than a package one, and it is
 optional in the way the rule demands — a repository this module is lifted into
