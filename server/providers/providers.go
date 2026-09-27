@@ -64,7 +64,7 @@ func EnsurePlatformPrerequisites(ctx context.Context, options FactoryOptions) er
 
 // CheckDefaultProvider reports whether a first start can install providerType
 // as this host's default, and a *sandbox.ProviderUnavailableError when it
-// cannot (ADR 0148 §2).
+// cannot (ADR 26-09-23-473 §2).
 //
 // Only libkrun has anything to check. It is the default that needs the host to
 // have something — KVM, and a runtime that loads — and a missing one is the

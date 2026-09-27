@@ -20,7 +20,7 @@ var Version = ""
 // Released reports whether this binary is a release build: one whose version
 // the release's linker flags stamped. Anything else is a development build,
 // which is what decides, for one, which provider a Linux server installs by
-// default on its first start (ADR 0148 §1).
+// default on its first start (ADR 26-09-23-473 §1).
 func Released() bool { return Version != "" }
 
 // String is the version to show a human.

@@ -1,7 +1,7 @@
 # syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 # The libkrun host runtime, released on its own line as
-# `discobox-libkrun-runtime` (ADR 0148 §5): everything libkrun needs to boot a
+# `discobox-libkrun-runtime` (ADR 26-09-23-473 §5): everything libkrun needs to boot a
 # pool that is not the guest's root disk.
 #
 # - vmlinux, kernel.config: libkrunfw's patched Linux. libkrun boots a kernel
@@ -25,7 +25,7 @@
 # RHEL 9 and later — because that is where pthreads' symbols moved into libc,
 # and no Debian that still gets security updates predates it. A host older than
 # that cannot load it, which the server reports as a runtime that will not load
-# (ADR 0148 §2). `vm:verify-libkrun-runtime` holds both lines. Nothing refers to a path
+# (ADR 26-09-23-473 §2). `vm:verify-libkrun-runtime` holds both lines. Nothing refers to a path
 # on the machine that built it: the launcher finds both by path, so neither
 # needs an install location.
 

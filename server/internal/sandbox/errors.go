@@ -124,7 +124,7 @@ func (e *ImageUnavailableError) Is(target error) bool { return target == ErrImag
 
 // ProviderUnavailableError is a provider that cannot run on this host at all,
 // found when a first start checks the provider it would install as the default
-// (ADR 0148 §2). Reason is one of the health package's Reason constants, which
+// (ADR 26-09-23-473 §2). Reason is one of the health package's Reason constants, which
 // is what lets a client that launched the server say why without reading prose.
 type ProviderUnavailableError struct {
 	Provider string

@@ -210,7 +210,7 @@ type Config struct {
 	// would not look. It accepts a full path.
 	WSLCCommand string `yaml:"wslcCommand" env:"DISCOBOX_WSLC_COMMAND" doc:"The WSL Containers program to look for on a Windows host, as a name on PATH or a full path. Empty looks for the component's own name, wslc. Windows only." example:"'C:\\tools\\wslc.exe'"`
 	// DefaultProvider chooses the provider a first start installs on Linux
-	// (ADR 0148 §4). Empty lets the build decide: libkrun in a release, the
+	// (ADR 26-09-23-473 §4). Empty lets the build decide: libkrun in a release, the
 	// host's Docker in a development build.
 	DefaultProvider string `yaml:"defaultProvider" env:"DISCOBOX_DEFAULT_PROVIDER" doc:"The provider a first start installs as this machine's default, on Linux: libkrun, which runs each pool in a VM, or docker, which runs sandboxes as containers on the host kernel with no VM boundary. Empty installs libkrun in a release build and docker in a development build. Read only until a default has been installed. Linux only." example:"docker"`
 

@@ -10,7 +10,7 @@ import (
 
 // With no terminal to ask on, the CLI never answers for the user: it says why
 // libkrun cannot run, what Docker would give up, and the command that chooses
-// it — and the server is left waiting (ADR 0148 §3).
+// it — and the server is left waiting (ADR 26-09-23-473 §3).
 func TestNoTerminalLeavesTheDefaultProviderChoiceToTheUser(t *testing.T) {
 	var errOut bytes.Buffer
 	app := &App{errOut: &errOut}

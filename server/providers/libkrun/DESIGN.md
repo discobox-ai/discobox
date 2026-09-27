@@ -1,6 +1,6 @@
 # libkrun Provider Design
 
-This package implements ADR 0013 as amended by ADR 0062 §9 and ADR 0148. It is a
+This package implements ADR 0013 as amended by ADR 0062 §9 and ADR 26-09-23-473. It is a
 `dockerworker.Driver`: the shared engine still owns the pool-agent container and
 Docker behavior, while this package owns one local libkrun microVM per pool.
 
@@ -9,7 +9,7 @@ Docker behavior, while this package owns one local libkrun microVM per pool.
 A linux/amd64 machine needs `discobox-server` and KVM. Nothing else: the root
 filesystem, the kernel, libkrun, and passt all arrive in one image, fetched by
 digest through the server's image store — staged by a release CLI before the
-server starts, otherwise from a registry on first use (ADR 0148 §5–§6). Nothing
+server starts, otherwise from a registry on first use (ADR 26-09-23-473 §5–§6). Nothing
 is built or installed on the host to start a pool.
 
 libkrun is dlopened and passt exec'd by path, from the directory the image was
@@ -21,7 +21,7 @@ This is what makes libkrun Linux's default in a release build
 (`service.defaultProviderType`). A first start that would install it runs
 `CheckHost` — the platform, `/dev/kvm`, and the image's libkrun loaded in a
 launcher child — and a host that fails holds the start for a choice rather than
-installing Docker in its place (ADR 0148 §2; see
+installing Docker in its place (ADR 26-09-23-473 §2; see
 [Startup and Readiness](../../DESIGN.md#startup-and-readiness)).
 
 Everything is ordered off that:
@@ -116,7 +116,7 @@ host TAP/TUN/veth device.
 ## Guest artifact boundary
 
 One image, `discobox-vm-krun` (`DefaultImage`, `linux/amd64`), resolved by
-`server/providers/guestimage` (ADR 0148 §5). It packages two builds without
+`server/providers/guestimage` (ADR 26-09-23-473 §5). It packages two builds without
 compiling either:
 
 - **`root.ext4`**, copied from the shared `discobox-vm` guest — the same root

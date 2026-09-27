@@ -246,7 +246,7 @@ flowchart TD
   regenerates CLI completions. `GOTOOLCHAIN=auto` means Nix supplies a bootstrap
   Go and `go.mod` names the one that compiles. `devShells.libkrun` adds a
   Nix-built libkrun and passt for a developer overriding the ones the libkrun
-  image carries (ADR 0148 §5; a machine running libkrun pools installs
+  image carries (ADR 26-09-23-473 §5; a machine running libkrun pools installs
   neither), and stays out of the default shell because that libkrun build is
   not in cache.nixos.org.
 - `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
@@ -436,4 +436,4 @@ is one guest for every VM backend: `vz` boots its `linux/arm64` variant and
 `libkrun` the `linux/amd64` one (ADR 0101). libkrun also needs a host runtime it
 cannot take from there — the libkrunfw-patched kernel, libkrun, and passt — built
 on its own `libkrun-runtime/v*` line, and boots one image packaging both,
-`vm-krun/v*` (ADR 0148 §5).
+`vm-krun/v*` (ADR 26-09-23-473 §5).

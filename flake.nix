@@ -30,7 +30,7 @@
       # a developer who wants the launcher to use them (the libkrun provider's
       # libkrunPath and passtPath) instead of the ones the libkrun image
       # carries. A machine running libkrun pools installs neither: the image
-      # brings both, built in vm-image/libkrun (ADR 0148 §5). There is no
+      # brings both, built in vm-image/libkrun (ADR 26-09-23-473 §5). There is no
       # launcher package — the launcher is a hidden subcommand of the server
       # binary (ADR 0062 §9) — and no image builders, because the guest, the
       # kernel, and the runtime are built by Docker and pulled from a registry
@@ -149,7 +149,7 @@
         # A Nix-built libkrun, with block and network support, and passt, for a
         # developer trying the launcher against a libkrun other than the one
         # the libkrun image carries. Running libkrun pools needs neither: the
-        # launcher loads the image's own by path (ADR 0148 §5), and this shell
+        # launcher loads the image's own by path (ADR 26-09-23-473 §5), and this shell
         # changes that only when the provider's libkrunPath / passtPath name
         # these. That override is not the derivation cache.nixos.org has, so it
         # stays out of the default shell rather than making every CI job build

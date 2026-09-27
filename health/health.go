@@ -16,7 +16,7 @@ const (
 	// StatusReady is served with 200.
 	StatusReady = "ready"
 	// StatusNeedsChoice is served with 503: startup is held until someone
-	// makes the choice Choice describes (ADR 0148 §2). It is not starting —
+	// makes the choice Choice describes (ADR 26-09-23-473 §2). It is not starting —
 	// waiting on it will not end on its own — so a client that launched the
 	// server stops waiting and asks.
 	StatusNeedsChoice = "needs-choice"

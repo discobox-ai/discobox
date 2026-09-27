@@ -706,7 +706,7 @@ instead. A provider never learns the store's layout: it asks for an image for a
 platform and reads the blobs back through the store, which verifies them.
 
 The store is also where the CLI staged the boot image before starting the
-server — the vz guest on macOS, the libkrun image on amd64 Linux (ADR 0148 §6) —
+server — the vz guest on macOS, the libkrun image on amd64 Linux (ADR 26-09-23-473 §6) —
 so a first pool extracts from
 local blobs without a registry request; a guest nothing staged is downloaded
 into the store on the way, for the next pool and the next stage to find. For a
@@ -775,7 +775,7 @@ Linux's default is not a platform backend in that sense: a development build
 installs Docker, and libkrun, a release build's default, is checked only when a
 first start is about to install it (`providers.CheckDefaultProvider`,
 `libkrun.CheckHost`). A host that fails it holds that start for a choice
-instead of refusing to serve (ADR 0148 §2; see
+instead of refusing to serve (ADR 26-09-23-473 §2; see
 [Startup and Readiness](../DESIGN.md#startup-and-readiness)).
 
 **Presence is the only thing that refuses a host.** The version is read for the

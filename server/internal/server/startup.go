@@ -94,7 +94,7 @@ func (h *startupHandler) status() health.Status {
 }
 
 // awaitChoice holds startup on choice until it is answered through
-// health.SetupDefaultProviderPath, and returns the answer (ADR 0148 §2).
+// health.SetupDefaultProviderPath, and returns the answer (ADR 26-09-23-473 §2).
 //
 // The server stays bound and says why, rather than exiting: an exited server
 // leaves its reason only in a log, and a CLI that started it as a systemd user

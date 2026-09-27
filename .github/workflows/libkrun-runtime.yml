@@ -1,5 +1,5 @@
 # The libkrun host runtime has its own build and its own release line
-# (ADR 0148 §5): libkrunfw's patched kernel, libkrun, and a static passt,
+# (ADR 26-09-23-473 §5): libkrunfw's patched kernel, libkrun, and a static passt,
 # built together because the libkrunfw patches are what this libkrun expects
 # of its kernel.
 #

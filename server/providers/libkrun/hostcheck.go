@@ -16,7 +16,7 @@ import (
 
 // CheckHost reports whether this host can run the libkrun provider a first
 // start would install as its default, and a *sandbox.ProviderUnavailableError
-// saying why when it cannot (ADR 0148 §2).
+// saying why when it cannot (ADR 26-09-23-473 §2).
 //
 // It asks what a pool's boot otherwise discovers, in the order a boot would:
 // the platform, KVM, then the runtime the libkrun image carries — fetched, as

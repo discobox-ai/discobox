@@ -42,7 +42,7 @@ func hostSupported() bool {
 
 // CheckKVM reports whether this host can start a libkrun microVM right now:
 // the platform gate, then a usable /dev/kvm. It is what a server asks before it
-// installs libkrun as a machine's default provider (ADR 0148 §2) — the one
+// installs libkrun as a machine's default provider (ADR 26-09-23-473 §2) — the one
 // point at which KVM is a property of the decision rather than of a pool that
 // has not started yet (see Supported).
 func CheckKVM() error {

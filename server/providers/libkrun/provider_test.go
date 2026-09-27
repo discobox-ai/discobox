@@ -28,7 +28,7 @@ func TestProviderIdentity(t *testing.T) {
 
 // The pool boots one image, pinned by this backend: the guest's root disk and
 // the kernel and runtime built for it are one pin because a host can use none
-// of the four without the other three (ADR 0148 §5). It is not the shared vz
+// of the four without the other three (ADR 26-09-23-473 §5). It is not the shared vz
 // guest image, whose kernel is a distribution one libkrun cannot boot.
 func TestImageIsOnePinCarryingTheRuntime(t *testing.T) {
 	image, err := imageResolver(Config{}, dockerworker.ServerDefaults{})
@@ -442,7 +442,7 @@ func TestReleaseManifestBypassesLocalImageOverrides(t *testing.T) {
 }
 
 // A key the one libkrun image replaced would do nothing, so a write that sets
-// one is refused, naming the key and what replaced it (ADR 0148 §5).
+// one is refused, naming the key and what replaced it (ADR 26-09-23-473 §5).
 func TestValidateRefusesSupersededImageKeys(t *testing.T) {
 	err := Validate(json.RawMessage(`{"kernelImageDir":"/opt/kernel"}`))
 	if err == nil || !strings.Contains(err.Error(), "kernelImageDir") || !strings.Contains(err.Error(), "vmImageDir") {

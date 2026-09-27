@@ -1,4 +1,4 @@
-# The image a libkrun pool boots has its own release line (ADR 0148 §5).
+# The image a libkrun pool boots has its own release line (ADR 26-09-23-473 §5).
 #
 # It compiles nothing: vm-image/libkrun/package/Dockerfile copies the guest's
 # root disk from a pinned `discobox-vm` digest and the host runtime from a

@@ -5,7 +5,7 @@
 // The VM boots one image, pulled from a registry by
 // server/providers/guestimage: the root disk of the guest a vz pool boots, the
 // libkrunfw-patched kernel that is libkrun's alone, and the host runtime that
-// boots them — libkrun itself and passt (ADR 0148 §5). Nothing is built or
+// boots them — libkrun itself and passt (ADR 26-09-23-473 §5). Nothing is built or
 // installed on the host to start a pool, and libkrun is dlopened by the
 // launcher child rather than linked into the server (ADR 0062 §9).
 package libkrun
@@ -55,7 +55,7 @@ const (
 	labelProviderType = "discobox.provider_type"
 )
 
-// The artifacts the libkrun image carries (ADR 0148 §5): the guest's root disk,
+// The artifacts the libkrun image carries (ADR 26-09-23-473 §5): the guest's root disk,
 // the libkrunfw-patched kernel libkrun boots it with, and the host runtime —
 // the library the launcher dlopens and the passt it execs. kernel.config rides
 // along so what booted can be read back off the artifact, and nothing here
@@ -100,7 +100,7 @@ type Config struct {
 	//
 	// The keys are new rather than the guestImage/kernelImage pairs this
 	// replaced, because those named a guest and a kernel on their own and
-	// neither is a whole libkrun image (ADR 0148 §5). See supersededKeys for
+	// neither is a whole libkrun image (ADR 26-09-23-473 §5). See supersededKeys for
 	// what becomes of a configuration that still carries them.
 	VMImage         string `json:"vmImage,omitempty"`
 	VMImageDir      string `json:"vmImageDir,omitempty"`
@@ -128,7 +128,7 @@ func Decode(data json.RawMessage) (Config, error) {
 }
 
 // supersededKeys are the configuration keys the one libkrun image replaced
-// (ADR 0148 §5). A saved configuration carrying one still loads — it is the
+// (ADR 26-09-23-473 §5). A saved configuration carrying one still loads — it is the
 // user's record, and a provider that stopped loading would take its pools
 // with it — but the key does nothing, so loading says so, and a write that
 // sets one is refused rather than accepted and ignored.

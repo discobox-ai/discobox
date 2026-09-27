@@ -108,12 +108,12 @@ type Options struct {
 	// refusing it. A refusal Jev is sure of stands either way.
 	JudgeJevFallback bool
 	// DefaultProvider is the provider type a first start installs as the
-	// machine's default, when the server is configured with one (ADR 0148 §4).
+	// machine's default, when the server is configured with one (ADR 26-09-23-473 §4).
 	// Empty lets the build decide: see defaultProviderType.
 	DefaultProvider string
 	// AwaitDefaultProviderChoice holds a first start whose default provider
 	// cannot run on this host until someone chooses one of alternatives, and
-	// returns that choice (ADR 0148 §2). The server answers it through its
+	// returns that choice (ADR 26-09-23-473 §2). The server answers it through its
 	// startup endpoint. Nil refuses the start instead, with the reason.
 	AwaitDefaultProviderChoice func(ctx context.Context, unavailable *sandbox.ProviderUnavailableError, alternatives []string) (string, error)
 }

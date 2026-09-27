@@ -880,7 +880,7 @@ it, so only the probes speak for it.
 
 A server that answers `needs-choice` is not waited on at all: its first start
 is held because its default provider cannot run here, and waiting will not end
-that (ADR 0148 §3). `EnsureRunning` returns it as `endpoint.ChoiceRequiredError`,
+that (ADR 26-09-23-473 §3). `EnsureRunning` returns it as `endpoint.ChoiceRequiredError`,
 and `ensureLocalServer` asks (`answerDefaultProviderChoice`): it says why libkrun
 cannot run, that Docker runs sandboxes on this machine's kernel with no VM
 boundary, and `Use Docker? [y/N]`. Yes posts the answer

@@ -1,4 +1,4 @@
-# 0148 — A Linux release defaults to libkrun, and the image it boots carries what it needs
+# 26-09-23-473 — A Linux release defaults to libkrun, and the image it boots carries what it needs
 
 - **Status**: Accepted
 - **Date**: 2026-09-23

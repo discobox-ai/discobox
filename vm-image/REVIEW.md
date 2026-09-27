@@ -33,7 +33,7 @@ together, where before it broke one".
   loads directly (ADR 0101 §4). It never changes the root filesystem. A
   difference a backend genuinely needs and the other cannot take belongs in a
   separate artifact with its own release line, as libkrun's runtime does
-  (ADR 0101 §3, ADR 0148 §5). The one
+  (ADR 0101 §3, ADR 26-09-23-473 §5). The one
   thing that could have differed — how the guest gets an address — is answered
   the same way for both, because passt serves DHCP as Virtualization.framework's
   NAT attachment does.

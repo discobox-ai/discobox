@@ -194,7 +194,7 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 }
 
 // ChoiceRequiredError is a server holding its startup until a choice is made
-// (ADR 0148 §2). It is not a failure to start, and waiting will not end it:
+// (ADR 26-09-23-473 §2). It is not a failure to start, and waiting will not end it:
 // the caller asks whoever it can, and answers with ChooseDefaultProvider.
 type ChoiceRequiredError struct {
 	Choice health.Choice

@@ -278,7 +278,7 @@ tasks:
     #
     # One guest serves both backends, but they take it differently. vz boots
     # the guest image as it is. libkrun boots one image that carries the guest's
-    # root disk beside its runtime (ADR 0148 §5), so on Linux this swaps the
+    # root disk beside its runtime (ADR 26-09-23-473 §5), so on Linux this swaps the
     # root disk into an already staged libkrun image rather than staging a
     # guest on its own: a directory holding only a guest is not one libkrun can
     # boot.
@@ -319,7 +319,7 @@ tasks:
   stage-vm-krun:
     internal: true
     # The libkrun provider resolves one directory holding all five files
-    # (ADR 0148 §5), so this assembles them aside and swaps the whole directory
+    # (ADR 26-09-23-473 §5), so this assembles them aside and swaps the whole directory
     # in: a pool may be booting from it right now, and a half-written one would
     # pair one build's kernel with another's library. The staging directory is
     # a sibling of the destination so the swap is a rename, not a copy.
@@ -790,7 +790,7 @@ tasks:
       # build, so it fails loudly listing what is missing rather than skipping
       # silently and looking like a pass. The image directory is what
       # `vm:build-krun` writes, build/vm-krun: the root disk, the kernel,
-      # libkrun and passt together (ADR 0148 §5), and the launcher loads the
+      # libkrun and passt together (ADR 26-09-23-473 §5), and the launcher loads the
       # last two from there rather than from the path. It is amd64 whatever the
       # host, which matters: an override directory carries no platform, so
       # nothing downstream can catch an arm64 root filesystem.
@@ -1194,7 +1194,7 @@ tasks:
     desc: Build this checkout as a release for this machine, to try locally (task release -- v0.0.0-dev)
     # What a release build is, minus everything that needs a release to exist:
     # the version is stamped, so the binaries behave as a user's do (a Linux
-    # first start installs libkrun, ADR 0148 §1; the CLI autolaunches its
+    # first start installs libkrun, ADR 26-09-23-473 §1; the CLI autolaunches its
     # server), but nothing is published, no manifest names download URLs that
     # would 404, and the images are pinned to the newest published release,
     # because the tag given here has none. IMAGE_TAG= pins another, REGISTRY=
@@ -2374,7 +2374,7 @@ tasks:
           || { echo "libkrun.so.1 does not carry the soname libkrun.so.1" >&2; exit 1; }
         # The provider hands libkrun its own kernel, so libkrunfw is never
         # needed — and a NEEDED entry for it makes the library refuse to load
-        # on every host that lacks it (ADR 0148 §5).
+        # on every host that lacks it (ADR 26-09-23-473 §5).
         if readelf -d libkrun.so.1 | grep "(NEEDED)" | grep -q libkrunfw; then
           echo "libkrun.so.1 links libkrunfw; the runtime ships none" >&2
           exit 1

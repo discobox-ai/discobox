@@ -113,7 +113,7 @@ func TestLibkrunEndToEnd(t *testing.T) {
 
 	// One directory holds the whole libkrun image, and the driver is given no
 	// passt or libkrun of its own: booting proves the launcher loads both
-	// from the image (ADR 0148 §5).
+	// from the image (ADR 26-09-23-473 §5).
 	image, err := guestimage.New(guestimage.Config{
 		OverrideDir: imageDir,
 		Artifacts: []guestimage.Artifact{

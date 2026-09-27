@@ -16,12 +16,12 @@ import (
 )
 
 // dockerProvider is the alternative a server offers when its VM backend cannot
-// run (ADR 0148 §2), and the one this CLI knows how to describe.
+// run (ADR 26-09-23-473 §2), and the one this CLI knows how to describe.
 const dockerProvider = "docker"
 
 // answerDefaultProviderChoice asks what a server holding its first start wants
 // to know: its default provider cannot run on this host, so should it install
-// Docker instead (ADR 0148 §3).
+// Docker instead (ADR 26-09-23-473 §3).
 //
 // Every time it asks, it says what the answer gives up: a sandbox in a Docker
 // container runs on this machine's kernel, with no VM between them. Without a

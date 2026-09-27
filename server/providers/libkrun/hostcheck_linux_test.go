@@ -18,7 +18,7 @@ import (
 // A first start that would install libkrun loads the libkrun its image carries
 // before it installs anything, and a library that will not load is the
 // runtime's failure, said as one — not a pool that fails at its first boot
-// (ADR 0148 §2).
+// (ADR 26-09-23-473 §2).
 func TestCheckHostRefusesALibkrunThatWillNotLoad(t *testing.T) {
 	if err := krunvm.CheckKVM(); err != nil {
 		t.Skipf("this host has no KVM, so the check stops before the runtime: %v", err)

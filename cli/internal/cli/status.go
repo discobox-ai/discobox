@@ -182,7 +182,7 @@ func (a *App) statusAPILayer(ctx context.Context, diagnosis endpoint.Diagnosis) 
 		}
 	case diagnosis.ServerStatus == health.StatusNeedsChoice:
 		// Holding, not starting: it will not become ready on its own
-		// (ADR 0148 §2), so the row says what does make it ready.
+		// (ADR 26-09-23-473 §2), so the row says what does make it ready.
 		return endpoint.DiagnosisStep{
 			Layer:   statusLayerAPI,
 			Status:  endpoint.DiagnosisSkipped,

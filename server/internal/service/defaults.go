@@ -189,7 +189,7 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 }
 
 // defaultProviderType is the provider a first start installs on this host
-// (ADR 0148 §1). Each OS has its VM backend, and Linux's is libkrun in a release
+// (ADR 26-09-23-473 §1). Each OS has its VM backend, and Linux's is libkrun in a release
 // build. A development build on Linux installs the host's Docker instead: the
 // `task dev` loop converges the images it builds onto that daemon, and a
 // contributor's machine should not need KVM to run the product. A configured
@@ -215,7 +215,7 @@ func defaultProviderType(configured string, released bool) string {
 
 // chooseDefaultProvider decides the provider a first start installs, and checks
 // that it can run here before anything is installed. A provider that cannot is
-// never quietly replaced with a weaker one (ADR 0148 §2): the start holds until
+// never quietly replaced with a weaker one (ADR 26-09-23-473 §2): the start holds until
 // someone chooses, or refuses when nothing can ask.
 func (s *Service) chooseDefaultProvider(ctx context.Context) (string, error) {
 	providerType := defaultProviderType(s.options.DefaultProvider, version.Released())
@@ -245,7 +245,7 @@ func defaultSandboxProvider(projectID, providerID, providerType string) *model.S
 	case providerlibkrun.ProviderType:
 		// Every field of the libkrun config has a default, and the image it
 		// boots carries the runtime, so the built-in instance needs no
-		// configuration and the host needs nothing installed (ADR 0148 §5).
+		// configuration and the host needs nothing installed (ADR 26-09-23-473 §5).
 		provider.Name = "Linux"
 	case "vz":
 		// Every field of the vz config has a default (see its Definition), so the

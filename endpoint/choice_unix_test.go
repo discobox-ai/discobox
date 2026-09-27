@@ -18,7 +18,7 @@ import (
 
 // A server holding its first start on a choice is neither starting nor ready.
 // Waiting will not end it, so EnsureRunning hands the question back rather
-// than waiting out its deadline or starting a second server (ADR 0148 §3); the
+// than waiting out its deadline or starting a second server (ADR 26-09-23-473 §3); the
 // answer goes back to the same endpoint.
 func TestEnsureRunningHandsBackAServerWaitingForAChoice(t *testing.T) {
 	choice := health.Choice{Provider: "libkrun", Reason: health.ReasonKVMUnavailable, Detail: "open /dev/kvm: no such file or directory", Alternatives: []string{"docker"}}

@@ -58,7 +58,7 @@ type krunLibrary struct {
 // RTLD_GLOBAL, not RTLD_LOCAL: a libkrun that is not handed a kernel dlopens
 // libkrunfw for one and resolves symbols against the global namespace to do
 // it. This launcher always hands it one, so libkrunfw is never needed
-// (ADR 0148 §5), but a libkrunPath naming another build keeps working.
+// (ADR 26-09-23-473 §5), but a libkrunPath naming another build keeps working.
 func openLibrary(path string) (*krunLibrary, error) {
 	if path == "" {
 		path = defaultSoname

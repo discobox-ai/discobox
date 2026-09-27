@@ -54,7 +54,7 @@ var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 // DriverConfig configures the local libkrun VM driver.
 type DriverConfig struct {
 	// Image resolves the one image a pool boots: root disk, kernel, libkrun,
-	// and passt (ADR 0148 §5).
+	// and passt (ADR 26-09-23-473 §5).
 	Image *guestimage.Resolver
 
 	// StateDir roots each pool's durable disks at <StateDir>/<poolID>.

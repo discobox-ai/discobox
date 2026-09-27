@@ -1,7 +1,7 @@
 # syntax=mirror.gcr.io/docker/dockerfile:1.7
 
 # The image a libkrun pool boots, released on its own line as
-# `discobox-vm-krun` (ADR 0148 §5): the shared guest's root disk beside the
+# `discobox-vm-krun` (ADR 26-09-23-473 §5): the shared guest's root disk beside the
 # libkrun host runtime, so one pinned digest is everything a host needs.
 #
 # It compiles nothing. Both inputs are published images pinned here by digest:

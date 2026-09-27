@@ -3,7 +3,7 @@
 A manifest names runtime images by role: pool agent, sandbox agent, vz's VM
 guest, the libkrun image, and harness slug. `Images.References` derives the host
 cache's staging list from those roles: the guest on macOS, the libkrun image on
-amd64 Linux, where a release installs libkrun by default (ADR 0148 §6). Never add
+amd64 Linux, where a release installs libkrun by default (ADR 26-09-23-473 §6). Never add
 a separately maintained preload list. The VM images retain their independent
 release pins; container image tags name the Discobox release. Windows supplies
 its own guest through WSL Containers.

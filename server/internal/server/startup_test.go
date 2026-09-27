@@ -77,7 +77,7 @@ func TestReadyStatusIdentifiesTheServer(t *testing.T) {
 
 // A first start whose default provider cannot run holds, reports the question
 // on health, and goes on with the answer given over the local IPC endpoint
-// (ADR 0148 §2, §4).
+// (ADR 26-09-23-473 §2, §4).
 func TestStartupHoldsForADefaultProviderChoice(t *testing.T) {
 	handler := newStartupHandler("starting services")
 	chosen := make(chan string, 1)

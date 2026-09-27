@@ -19,7 +19,7 @@ const Env = "DISCOBOX_RELEASE_MANIFEST"
 
 // Format is the manifest format this package writes.
 //
-// Format 1 predates ADR 0148. It names the guest and libkrun's kernel as two
+// Format 1 predates ADR 26-09-23-473. It names the guest and libkrun's kernel as two
 // images, where format 2 names the one libkrun image that packages the guest's
 // root disk with its kernel and runtime. Format 1 is still read, because a
 // published release's manifest is durable and a development build is pointed
@@ -191,7 +191,7 @@ func validateImage(value string) error {
 }
 
 // References includes the boot image of the host's VM backend: vz's guest on
-// macOS, the libkrun image on amd64 Linux (ADR 0148 §6). Windows supplies its
+// macOS, the libkrun image on amd64 Linux (ADR 26-09-23-473 §6). Windows supplies its
 // own guest, and Linux elsewhere has no VM backend to boot one.
 func (i Images) References(hostOS, hostArch string) []string {
 	var refs []string

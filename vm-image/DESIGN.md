@@ -3,7 +3,7 @@
 One guest for every VM backend, and the host runtime one backend cannot take
 from it.
 
-This directory implements ADR 0062 §3, §4, §6, ADR 0101 and ADR 0148 §5. It is not a Go
+This directory implements ADR 0062 §3, §4, §6, ADR 0101 and ADR 26-09-23-473 §5. It is not a Go
 module and is imported by nothing — its one Go binary, `discobox-vsock-guest`,
 is compiled from `pool-agent` sources inside the build. What it produces are
 boot artifacts, published to a registry on their own release lines and pulled
@@ -109,7 +109,7 @@ a kernel and every kernel bump republish a userland (ADR 0101 §3).
 
 The kernel, libkrun, and passt are one build because they change together: the
 libkrunfw patches are what that libkrun version expects of its kernel
-(ADR 0148 §5). What it builds is what ships inside a release, onto hosts this
+(ADR 26-09-23-473 §5). What it builds is what ships inside a release, onto hosts this
 repository knows nothing about:
 
 - **Debian's toolchain, not Nix's.** Built on the guest's Debian, nothing needs

@@ -7,7 +7,7 @@ import (
 
 // A release build on Linux installs libkrun, so a fresh install gets a VM
 // boundary; a development build keeps the host's Docker; a configured choice
-// decides either way (ADR 0148 §1, §4).
+// decides either way (ADR 26-09-23-473 §1, §4).
 func TestLinuxDefaultProviderFollowsTheBuildAndTheConfiguration(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the default provider is chosen only on Linux")
@@ -33,7 +33,7 @@ func TestLinuxDefaultProviderFollowsTheBuildAndTheConfiguration(t *testing.T) {
 
 // The libkrun instance a first start installs carries no configuration: the
 // image it boots brings its own runtime, so nothing is installed or named on
-// the host (ADR 0148 §5).
+// the host (ADR 26-09-23-473 §5).
 func TestDefaultLibkrunInstanceNeedsNoConfiguration(t *testing.T) {
 	provider := defaultSandboxProvider("proj_1", "prov_1", "libkrun")
 	if provider.Type != "libkrun" || provider.Disabled {
