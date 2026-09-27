@@ -38,6 +38,16 @@ SOCKS5, an ASCII capital letter as HTTP, and anything else (SOCKS4 included) is
 closed. Every allowed `CONNECT` is MITM'd with a per-host certificate from the
 MITM CA; there is no passthrough tunnel.
 
+A request read from a tunnel is for the `CONNECT` authority, while policy —
+the filter, header rules, and the secret swap — judges its `Host`. So a
+tunneled request whose `Host` or absolute URL names any other host is answered
+`421` and audited as blocked, never sent: otherwise a credential bound to one
+host could be sent to another. A tunnel whose client skips TLS is served in
+plaintext; if the tunnel is to port 443, its requests still go upstream over
+TLS (span attribute `proxy.http.tunnel_upgraded`). Zig's HTTP client
+(ziglang/zig#19878) needs this: it sends plaintext HTTP inside an HTTPS
+`CONNECT`. A tunnel to any other port stays plaintext end to end.
+
 The sandbox-local bridge accepts localhost traffic from sandbox processes and
 splices it, protocol-agnostic, onto an mTLS connection to the pool proxy
 carrying the sandbox's client certificate. It lives in the dependency-light

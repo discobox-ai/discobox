@@ -2038,3 +2038,297 @@ func TestHTTPProxyBodilessResponsesKeepTheConnectionInSync(t *testing.T) {
 		t.Fatalf("HEAD audit ResponseBytes = %d, want 0", head.ResponseBytes)
 	}
 }
+
+// tunnelOrigin records what the origin behind a tunnel saw.
+type tunnelOrigin struct {
+	mu   sync.Mutex
+	seen []tunnelOriginRequest
+}
+
+type tunnelOriginRequest struct {
+	method string
+	host   string
+	path   string
+	tls    bool
+	auth   string
+	body   string
+}
+
+func (o *tunnelOrigin) handler(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	o.mu.Lock()
+	o.seen = append(o.seen, tunnelOriginRequest{
+		method: r.Method, host: r.Host, path: r.URL.Path, tls: r.TLS != nil,
+		auth: r.Header.Get("Authorization"), body: string(body),
+	})
+	o.mu.Unlock()
+	_, _ = io.WriteString(w, "ok "+r.URL.Path)
+}
+
+func (o *tunnelOrigin) requests() []tunnelOriginRequest {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]tunnelOriginRequest(nil), o.seen...)
+}
+
+// startTunnelProxy starts a proxy whose upstream transport sends every dial
+// to origin, so a CONNECT to any name and port reaches it. It returns the
+// proxy's address and the sandbox's client material.
+func startTunnelProxy(ctx context.Context, t *testing.T, origin *url.URL, resolver stubResolver, sentinel string) (net.Addr, ClientMaterial) {
+	t.Helper()
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	cfg := Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+	}
+	if sentinel != "" {
+		cfg.Secrets = SecretsConfig{Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}}}
+	}
+	server, err := NewServer(ctx, cfg, prepared.Bundle, resolver)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	var dialer net.Dialer
+	server.http.proxy.Tr = &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, origin.Host)
+		},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test origin is self-signed
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	t.Cleanup(closeProxyServer(t, server, errCh))
+	return waitForAddr(t, server), prepared.Clients["sandbox-1"]
+}
+
+// openTunnel sends CONNECT authority over mTLS and returns the tunnel once the
+// proxy has answered 200.
+func openTunnel(ctx context.Context, t *testing.T, addr net.Addr, material ClientMaterial, authority string) net.Conn {
+	t.Helper()
+	conn := dialProxyMTLS(ctx, t, addr.String(), material)
+	t.Cleanup(func() { _ = conn.Close() })
+	if err := conn.SetDeadline(time.Now().Add(20 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	if _, err := fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: zig/0.15.2 (std.http)\r\n\r\n", authority, authority); err != nil {
+		t.Fatalf("write CONNECT: %v", err)
+	}
+	// The proxy's 200 is a bare status line; read it byte-exact so nothing of
+	// the tunnel is buffered away.
+	head := make([]byte, len("HTTP/1.0 200 OK\r\n\r\n"))
+	if _, err := io.ReadFull(conn, head); err != nil {
+		t.Fatalf("read CONNECT response: %v", err)
+	}
+	if !strings.HasPrefix(string(head), "HTTP/1.0 200") {
+		t.Fatalf("CONNECT response = %q, want 200", head)
+	}
+	return conn
+}
+
+type tunnelExchange struct {
+	conn   io.Writer
+	reader *bufio.Reader
+}
+
+func (x tunnelExchange) do(t *testing.T, method, raw string) (int, string) {
+	t.Helper()
+	if _, err := io.WriteString(x.conn, raw); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	resp, err := http.ReadResponse(x.reader, &http.Request{Method: method})
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp.StatusCode, string(body)
+}
+
+// Zig's HTTP client opens a CONNECT tunnel to :443 and then speaks plaintext
+// HTTP inside it. The proxy answers it in plaintext and speaks TLS to the
+// origin, for every request on the kept-alive connection, a chunked upload
+// included (git smart-HTTP's POST /git-upload-pack).
+func TestTunnelUpgradesPlaintextHTTPTo443(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("goproxy's MITM leg fails before the handler runs on Windows")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var origin tunnelOrigin
+	server := newTLSOrigin(origin.handler)
+	defer server.Close()
+	originURL, _ := url.Parse(server.URL)
+	addr, material := startTunnelProxy(ctx, t, originURL, stubResolver{}, "")
+
+	conn := openTunnel(ctx, t, addr, material, "deps.example.test:443")
+	x := tunnelExchange{conn: conn, reader: bufio.NewReader(conn)}
+
+	if status, body := x.do(t, http.MethodGet, "GET /pkg.tar.gz HTTP/1.1\r\nHost: deps.example.test\r\nUser-Agent: zig/0.15.2 (std.http)\r\n\r\n"); status != http.StatusOK || body != "ok /pkg.tar.gz" {
+		t.Fatalf("tunneled plaintext GET to :443 = %d %q, want 200 \"ok /pkg.tar.gz\"", status, body)
+	}
+	if status, body := x.do(t, http.MethodGet, "GET /info/refs HTTP/1.1\r\nHost: deps.example.test:443\r\n\r\n"); status != http.StatusOK || body != "ok /info/refs" {
+		t.Fatalf("second GET on the kept-alive tunnel = %d %q, want 200", status, body)
+	}
+	if status, body := x.do(t, http.MethodPost, "POST /git-upload-pack HTTP/1.1\r\nHost: deps.example.test\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n"); status != http.StatusOK || body != "ok /git-upload-pack" {
+		t.Fatalf("chunked POST on the kept-alive tunnel = %d %q, want 200", status, body)
+	}
+
+	seen := origin.requests()
+	if len(seen) != 3 {
+		t.Fatalf("origin saw %d requests, want 3: %+v", len(seen), seen)
+	}
+	for _, r := range seen {
+		if !r.tls {
+			t.Fatalf("origin saw %s %s in plaintext, want TLS", r.method, r.path)
+		}
+	}
+	if seen[2].body != "hello world" {
+		t.Fatalf("origin saw POST body %q, want \"hello world\"", seen[2].body)
+	}
+}
+
+// A plaintext tunnel to any port but 443 is plaintext HTTP end to end.
+func TestTunnelKeepsPlaintextHTTPToOtherPorts(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("goproxy's MITM leg fails before the handler runs on Windows")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var origin tunnelOrigin
+	server := newOrigin(origin.handler)
+	defer server.Close()
+	originURL, _ := url.Parse(server.URL)
+	addr, material := startTunnelProxy(ctx, t, originURL, stubResolver{}, "")
+
+	conn := openTunnel(ctx, t, addr, material, "plain.example.test:8080")
+	x := tunnelExchange{conn: conn, reader: bufio.NewReader(conn)}
+	if status, _ := x.do(t, http.MethodGet, "GET /x HTTP/1.1\r\nHost: plain.example.test:8080\r\n\r\n"); status != http.StatusOK {
+		t.Fatalf("tunneled plaintext GET to :8080 = %d, want 200", status)
+	}
+	if seen := origin.requests(); len(seen) != 1 || seen[0].tls {
+		t.Fatalf("origin saw %+v, want one plaintext request", seen)
+	}
+}
+
+// The destination of a tunneled request is the CONNECT authority, so that is
+// the host policy must judge it by. A Host header naming another host would
+// have the proxy swap in a credential bound to that host and send it to the
+// tunnel's. The proxy refuses it, whether the tunnel is TLS or plaintext.
+func TestTunnelRefusesAHostOtherThanTheConnectAuthority(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("goproxy's MITM leg fails before the handler runs on Windows")
+	}
+	const sentinel = "ghp_SENTINELVALUE0000000000000000000000"
+	const realValue = "ghp_REALVALUE11111111111111111111111111"
+
+	for _, tc := range []struct {
+		name      string
+		authority string
+		wrap      func(t *testing.T, conn net.Conn, material ClientMaterial) net.Conn
+	}{
+		{name: "tls", authority: "attacker.example.test:443", wrap: mitmTunnel("attacker.example.test")},
+		{name: "plaintext", authority: "attacker.example.test:443", wrap: func(_ *testing.T, conn net.Conn, _ ClientMaterial) net.Conn { return conn }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			var origin tunnelOrigin
+			server := newTLSOrigin(origin.handler)
+			defer server.Close()
+			originURL, _ := url.Parse(server.URL)
+			addr, material := startTunnelProxy(ctx, t, originURL, stubResolver{value: realValue, host: "github.example.test"}, sentinel)
+
+			conn := tc.wrap(t, openTunnel(ctx, t, addr, material, tc.authority), material)
+			x := tunnelExchange{conn: conn, reader: bufio.NewReader(conn)}
+			status, _ := x.do(t, http.MethodGet, "GET /user HTTP/1.1\r\nHost: github.example.test\r\nAuthorization: Bearer "+sentinel+"\r\n\r\n")
+			for _, r := range origin.requests() {
+				if strings.Contains(r.auth, realValue) {
+					t.Fatalf("origin behind %s received the credential bound to github.example.test", tc.authority)
+				}
+			}
+			if status != http.StatusMisdirectedRequest {
+				t.Fatalf("tunnel to %s with Host github.example.test = %d, want 421", tc.authority, status)
+			}
+		})
+	}
+}
+
+func mitmTunnel(serverName string) func(t *testing.T, conn net.Conn, material ClientMaterial) net.Conn {
+	return func(t *testing.T, conn net.Conn, material ClientMaterial) net.Conn {
+		t.Helper()
+		mitmCA, err := os.ReadFile(material.MITMCAPath)
+		if err != nil {
+			t.Fatalf("read MITM CA: %v", err)
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(mitmCA) {
+			t.Fatal("parse MITM CA")
+		}
+		return tls.Client(conn, &tls.Config{RootCAs: roots, ServerName: serverName, MinVersion: tls.VersionTLS12, NextProtos: []string{"http/1.1"}})
+	}
+}
+
+// A tunneled request names the tunnel's host however its Host spells it: in
+// another case, with a trailing dot, with or without the port, or an IPv6
+// literal with its brackets and no port, as clients send for the default port.
+func TestConnectTunnelMatchesHostsAsPolicyDoes(t *testing.T) {
+	for _, tc := range []struct {
+		authority, host string
+		misdirected     bool
+	}{
+		{authority: "deps.example.test:443", host: "deps.example.test"},
+		{authority: "deps.example.test:443", host: "Deps.Example.Test.:443"},
+		{authority: "deps.example.test:8443", host: "deps.example.test:8443"},
+		{authority: "[2001:db8::1]:443", host: "[2001:db8::1]"},
+		{authority: "[2001:db8::1]:443", host: "[2001:DB8::1]:443"},
+		{authority: "deps.example.test:443", host: "github.example.test", misdirected: true},
+		{authority: "[2001:db8::1]:443", host: "[2001:db8::2]", misdirected: true},
+	} {
+		tunnel := &connectTunnel{authority: tc.authority}
+		req := &http.Request{Host: tc.host, URL: &url.URL{Scheme: "https", Host: tc.authority, Path: "/"}}
+		if got := tunnel.misdirected(req); got != tc.misdirected {
+			t.Errorf("tunnel %s, Host %q: misdirected = %v, want %v", tc.authority, tc.host, got, tc.misdirected)
+		}
+	}
+}
+
+// Only a plaintext request for port 443 is upgraded: an absolute-form request
+// in a :443 tunnel goes to the tunnel's port unless it names another, and one
+// that names another port stays plaintext.
+func TestConnectTunnelUpgradesOnlyPort443(t *testing.T) {
+	tunnel := &connectTunnel{authority: "deps.example.test:443"}
+	for _, tc := range []struct {
+		url      string
+		upgraded bool
+	}{
+		{url: "http://deps.example.test:443/pkg", upgraded: true},
+		{url: "http://deps.example.test/pkg", upgraded: true},
+		{url: "http://deps.example.test:80/pkg"},
+		{url: "https://deps.example.test:443/pkg"},
+	} {
+		u, err := url.Parse(tc.url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := &http.Request{URL: u}
+		if got := tunnel.upgrade(req); got != tc.upgraded {
+			t.Errorf("%s: upgraded = %v, want %v", tc.url, got, tc.upgraded)
+		}
+	}
+}
