@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -255,9 +258,12 @@ func TestSandboxExecProxyRejectsArchivedSandbox(t *testing.T) {
 	}
 }
 
+// proxyTestRuntime reaches every sandbox at baseURL's address, whichever port
+// is asked for, and records the ports it was asked for in dialed when set.
 type proxyTestRuntime struct {
 	*sandboxruntime.MemorySandboxRuntime
 	baseURL *url.URL
+	dialed  chan<- int
 }
 
 // Model the sandbox behind the test upstream so auto-start sees it running.
@@ -270,9 +276,18 @@ func newProxyTestRuntime(t *testing.T, baseURL *url.URL) proxyTestRuntime {
 	return proxyTestRuntime{MemorySandboxRuntime: runtime, baseURL: baseURL}
 }
 
-func (r proxyTestRuntime) HTTPBaseURL(context.Context, string, int) (*url.URL, error) {
-	copied := *r.baseURL
-	return &copied, nil
+func (r proxyTestRuntime) SandboxDialer(_ context.Context, _ string, port int) (sandboxruntime.Dialer, error) {
+	if r.dialed != nil {
+		r.dialed <- port
+	}
+	return dialAddress(r.baseURL.Host), nil
+}
+
+func dialAddress(address string) sandboxruntime.Dialer {
+	return func(ctx context.Context) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "tcp", address)
+	}
 }
 
 func testPoolTokenSigner(t *testing.T) (string, func(projectID, poolID, sandboxID string, scopes ...string) string) {
@@ -437,18 +452,111 @@ func TestSandboxUDPTunnelProxyRequiresUDPConnectScope(t *testing.T) {
 	}
 }
 
+// The port proxy reaches the sandbox only through the dial its runtime
+// supplies (ADR 0126 §5): the port asked for is the runtime's to resolve, the
+// sandbox is told it is localhost on that port, and an upgrade carries on over
+// the same connection.
+func TestSandboxHTTPProxyReachesThePortThroughTheRuntimeDialer(t *testing.T) {
+	projectID := "project-1"
+	poolID := "pool-1"
+	sandboxID := "sandbox-1"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ws" {
+			t.Errorf("upstream path = %q, want /ws", r.URL.Path)
+		}
+		if r.Host != "localhost:5173" {
+			t.Errorf("upstream Host = %q, want localhost:5173", r.Host)
+		}
+		if r.Header.Get("Upgrade") != "echo" {
+			t.Errorf("upstream Upgrade = %q, want echo", r.Header.Get("Upgrade"))
+			return
+		}
+		conn, rw, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		defer conn.Close()
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n\r\n")
+		_ = rw.Flush()
+		line, err := rw.ReadString('\n')
+		if err != nil {
+			t.Errorf("read upgraded stream: %v", err)
+			return
+		}
+		_, _ = rw.WriteString(line)
+		_ = rw.Flush()
+	}))
+	t.Cleanup(upstream.Close)
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dialed := make(chan int, 1)
+	runtime := newProxyTestRuntime(t, baseURL)
+	runtime.dialed = dialed
+	publicKey, sign := testPoolTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, PoolID: poolID},
+		Runtime:               runtime,
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	pool := httptest.NewServer(router)
+	t.Cleanup(pool.Close)
+
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(t.Context(), "tcp", pool.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial pool: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	request := "GET /api/project/project-1/pool/pool-1/sandboxes/sandbox-1/http/5173/ws HTTP/1.1\r\n" +
+		"Host: pool\r\n" +
+		"Authorization: Bearer " + sign(projectID, poolID, sandboxID, ScopeSandboxHTTP) + "\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Upgrade: echo\r\n\r\n"
+	if _, err := conn.Write([]byte(request)); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("proxy status = %d, want 101; body = %s", resp.StatusCode, body)
+	}
+	if port := <-dialed; port != 5173 {
+		t.Fatalf("runtime asked to dial port %d, want 5173", port)
+	}
+	if _, err := conn.Write([]byte("hello\n")); err != nil {
+		t.Fatalf("write upgraded stream: %v", err)
+	}
+	echoed, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read upgraded stream: %v", err)
+	}
+	if echoed != "hello\n" {
+		t.Fatalf("echoed = %q, want hello", echoed)
+	}
+}
+
 // A sandbox the proxy cannot reach is a failure worth a line and a 502.
 func TestSandboxProxyReportsAnUnreachableSandbox(t *testing.T) {
 	logged := captureProxyLog(t)
 	upstream := httptest.NewServer(http.NotFoundHandler())
-	target, err := url.Parse(upstream.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	address := upstream.Listener.Addr().String()
 	upstream.Close()
 
 	recorder := httptest.NewRecorder()
-	sandboxProxy(target, "").ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sandbox", nil))
+	sandboxProxy(dialAddress(address), sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, "/"), "").ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sandbox", nil))
 
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
@@ -466,15 +574,11 @@ func TestSandboxProxyIgnoresAClientThatWentAway(t *testing.T) {
 		t.Error("the proxy reached the sandbox for a request whose client had gone")
 	}))
 	t.Cleanup(upstream.Close)
-	target, err := url.Parse(upstream.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/sandbox", nil)
-	sandboxProxy(target, "").ServeHTTP(httptest.NewRecorder(), request)
+	sandboxProxy(dialAddress(upstream.Listener.Addr().String()), sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, "/"), "").ServeHTTP(httptest.NewRecorder(), request)
 
 	if logged.Len() != 0 {
 		t.Fatalf("log = %q, want nothing for a client that went away", logged.String())

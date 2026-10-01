@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +20,7 @@ import (
 )
 
 // statusPollTestRuntime wraps MemorySandboxRuntime (which already implements
-// every other sandboxruntime.Runtime method) and routes HTTPBaseURL to a
+// every other sandboxruntime.Runtime method) and routes SandboxDialer to a
 // per-sandbox fake HTTP server, or an error for a sandbox configured to be
 // unreachable.
 type statusPollTestRuntime struct {
@@ -29,7 +29,7 @@ type statusPollTestRuntime struct {
 	failSandboxID string
 }
 
-func (r *statusPollTestRuntime) HTTPBaseURL(_ context.Context, sandboxID string, _ int) (*url.URL, error) {
+func (r *statusPollTestRuntime) SandboxDialer(_ context.Context, sandboxID string, _ int) (sandboxruntime.Dialer, error) {
 	if sandboxID == r.failSandboxID {
 		return nil, fmt.Errorf("simulated unreachable sandbox %s", sandboxID)
 	}
@@ -37,7 +37,11 @@ func (r *statusPollTestRuntime) HTTPBaseURL(_ context.Context, sandboxID string,
 	if !ok {
 		return nil, fmt.Errorf("no test server for sandbox %s", sandboxID)
 	}
-	return url.Parse(srv.URL)
+	address := srv.Listener.Addr().String()
+	return func(ctx context.Context) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "tcp", address)
+	}, nil
 }
 
 type fakeSandboxAgentStatusClient struct {
@@ -134,6 +138,42 @@ func TestSandboxAgentStatusPollerIsolatesPerSandboxErrors(t *testing.T) {
 	}
 	if seen["sandbox-bad"] {
 		t.Fatal("sandbox-bad was reported, want it skipped")
+	}
+}
+
+// TestSandboxAgentStatusPollReachesTheAgentThroughTheRuntimeDialer confirms
+// the poll asks the runtime for a connection to the agent's port rather than
+// an address, and that what decides the request is its status:read token
+// alone (ADR 0126 §5): the URL names no sandbox address, only localhost.
+func TestSandboxAgentStatusPollReachesTheAgentThroughTheRuntimeDialer(t *testing.T) {
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "localhost:3003" {
+			t.Errorf("Host = %q, want localhost:3003", r.Host)
+		}
+		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/status" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token-sandbox-1" {
+			t.Errorf("Authorization = %q, want the status:read token", got)
+		}
+		statusOKHandler("2026-01-01T00:00:00Z")(w, r)
+	}))
+	defer agent.Close()
+
+	poller := &sandboxAgentStatusPoller{
+		logger:    slog.New(slog.DiscardHandler),
+		bootstrap: Bootstrap{ProjectID: "project-1", PoolID: "pool-1"},
+		runtime: &statusPollTestRuntime{
+			MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(),
+			servers:              map[string]*httptest.Server{"sandbox-1": agent},
+		},
+	}
+	entry, err := poller.pollOne(t.Context(), "sandbox-1", "token-sandbox-1")
+	if err != nil {
+		t.Fatalf("poll: %v", err)
+	}
+	if entry.SandboxID != "sandbox-1" {
+		t.Fatalf("entry sandbox = %q", entry.SandboxID)
 	}
 }
 
