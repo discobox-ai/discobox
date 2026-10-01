@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -41,7 +41,6 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/execidentity"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
-	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -49,9 +48,8 @@ import (
 )
 
 const (
-	// SandboxAgentPort is exported so pool-agent's standing status-poll loop
-	// (a package-external caller) can reach a sandbox-agent's HTTP API via
-	// HTTPBaseURL without duplicating this value.
+	// SandboxAgentPort is the port the sandbox-agent's HTTP API listens on
+	// inside every sandbox, which callers of SandboxDialer name to reach it.
 	SandboxAgentPort         = 3003
 	sandboxAgentReadyTimeout = 30 * time.Second
 	// A pass is one container inspect and one loopback GET, so the interval is
@@ -239,7 +237,11 @@ type Runtime interface {
 	// GitOriginPath serves the bare origin repository of a push-delivered
 	// source, which the client pushes into (ADR 0058 §3).
 	GitOriginPath(ctx context.Context, sandboxID, slug string) (GitRepositoryLocation, error)
-	HTTPBaseURL(ctx context.Context, sandboxID string, port int) (*url.URL, error)
+	// SandboxDialer resolves how to reach port inside the sandbox — its agent
+	// on SandboxAgentPort, or a port something in it listens on — and returns
+	// the dial for it (ADR 0126 §5). A sandbox that cannot be reached at all
+	// is an error here, so a caller can answer it before sending anything.
+	SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error)
 }
 
 // DockerSandboxRuntime launches sandboxes as Docker containers inside a pool.
@@ -2120,23 +2122,37 @@ func sandboxUserFromEnv(env map[string]string) (uid, gid int) {
 	return uid, gid
 }
 
-func (r *DockerSandboxRuntime) HTTPBaseURL(ctx context.Context, sandboxID string, port int) (*url.URL, error) {
+func (r *DockerSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error) {
 	if port < 1 || port > 65535 {
-		return nil, fmt.Errorf("invalid sandbox HTTP port %d", port)
+		return nil, fmt.Errorf("invalid sandbox port %d", port)
 	}
-	sb, err := r.GetSandbox(ctx, sandboxID)
+	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters(sandboxID)})
 	if err != nil {
 		return nil, err
 	}
-	inspect, err := r.client.ContainerInspect(ctx, sb.ID, client.ContainerInspectOptions{})
+	if len(containers.Items) == 0 {
+		return nil, ErrNotFound
+	}
+	inspect, err := r.client.ContainerInspect(ctx, containers.Items[0].ID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, err
 	}
-	ip := containerIPAddress(inspect.Container)
+	return containerDialer(sandboxID, inspect.Container, port)
+}
+
+// containerDialer reaches a port in a sandbox container at its address on the
+// pool's network, the one shape of reachability a Docker pool has: the pool
+// and its sandboxes share that network.
+func containerDialer(sandboxID string, inspect container.InspectResponse, port int) (Dialer, error) {
+	ip := containerIPAddress(inspect)
 	if ip == "" {
 		return nil, fmt.Errorf("sandbox %q does not have an inspectable IP address", sandboxID)
 	}
-	return &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:%d", ip, port)}, nil
+	address := net.JoinHostPort(ip, strconv.Itoa(port))
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	return func(ctx context.Context) (net.Conn, error) {
+		return dialer.DialContext(ctx, "tcp", address)
+	}, nil
 }
 
 // waitForSandboxAgent blocks until the sandbox-agent answers /healthz, and is
@@ -2146,10 +2162,10 @@ func (r *DockerSandboxRuntime) HTTPBaseURL(ctx context.Context, sandboxID string
 // The container is resolved once, by ID, rather than looked up each pass.
 // Finding a sandbox by label costs a ContainerList -- ~20ms against a local
 // daemon, against ~0.7ms for inspecting a container already named -- and the
-// previous shape paid it twice per pass, once in GetSandbox and again inside
-// HTTPBaseURL, which resolves the sandbox all over again to reach its IP. That
-// was ~43ms of Docker traffic per pass on a loop whose whole job is to notice a
-// state change quickly.
+// previous shape paid it twice per pass, once in GetSandbox and again to
+// resolve the sandbox all over again for its address. That was ~43ms of
+// Docker traffic per pass on a loop whose whole job is to notice a state
+// change quickly.
 //
 // The per-pass inspect stays. It is what detects a container that died on the
 // way up, and at sub-millisecond cost there is nothing to gain by sampling the
@@ -2181,35 +2197,17 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 			if err := sandboxAgentTerminalStateError(sb); err != nil {
 				return err
 			}
-			// Read from the same inspect that just reported the container's
-			// state, rather than asking the daemon a second time for an address
-			// that cannot change while it runs.
-			ip := containerIPAddress(inspect.Container)
-			if ip == "" {
-				lastErr = fmt.Errorf("sandbox %q does not have an inspectable IP address", sandboxID)
+			// Dial what the same inspect that just reported the container's
+			// state says, rather than asking the daemon a second time for an
+			// address that cannot change while it runs. It is the dial
+			// SandboxDialer hands everyone else.
+			dial, dialErr := containerDialer(sandboxID, inspect.Container, SandboxAgentPort)
+			if dialErr != nil {
+				lastErr = dialErr
 			} else {
-				healthURL := url.URL{
-					Scheme: "http",
-					Host:   fmt.Sprintf("%s:%d", ip, SandboxAgentPort),
-					Path:   "/healthz",
-				}
-				req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
-				if reqErr != nil {
-					return reqErr
-				}
-				// Not http.DefaultClient: it honors HTTP_PROXY, and a pool
-				// running inside a sandbox has proxy env injected for its
-				// egress. This request stays on the pool's own network.
-				resp, reqErr := internalhttp.Client.Do(req)
-				if reqErr == nil {
-					_, _ = io.Copy(io.Discard, resp.Body)
-					_ = resp.Body.Close()
-					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-						return nil
-					}
-					lastErr = fmt.Errorf("sandbox-agent health returned %s", resp.Status)
-				} else {
-					lastErr = reqErr
+				lastErr = sandboxAgentHealthy(ctx, dial)
+				if lastErr == nil {
+					return nil
 				}
 			}
 		}
@@ -2222,6 +2220,24 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 		case <-time.After(sandboxAgentPollInterval):
 		}
 	}
+}
+
+// sandboxAgentHealthy asks the sandbox-agent's /healthz once, over dial.
+func sandboxAgentHealthy(ctx context.Context, dial Dialer) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, HTTPURL(SandboxAgentPort, "/healthz").String(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := (&http.Client{Transport: dial.Transport()}).Do(req)
+	if err != nil {
+		return err
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("sandbox-agent health returned %s", resp.Status)
+	}
+	return nil
 }
 
 func sandboxAgentTerminalStateError(sb *Sandbox) error {
@@ -2613,7 +2629,8 @@ func (r *MemorySandboxRuntime) GitOriginPath(_ context.Context, sandboxID, slug 
 	return GitRepositoryLocation{Path: origins[slug], UID: -1, GID: -1}, nil
 }
 
-func (r *MemorySandboxRuntime) HTTPBaseURL(context.Context, string, int) (*url.URL, error) {
+// SandboxDialer reaches nothing: a memory sandbox has nothing in it to dial.
+func (r *MemorySandboxRuntime) SandboxDialer(context.Context, string, int) (Dialer, error) {
 	return nil, ErrNotFound
 }
 

@@ -164,18 +164,19 @@ func (p *sandboxAgentStatusPoller) tick(ctx context.Context) {
 func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token string) (SandboxAgentStatusEntry, error) {
 	callCtx, cancel := context.WithTimeout(ctx, sandboxAgentStatusCallTimeout)
 	defer cancel()
-	base, err := p.runtime.HTTPBaseURL(callCtx, sandboxID, sandboxruntime.SandboxAgentPort)
+	dial, err := p.runtime.SandboxDialer(callCtx, sandboxID, sandboxruntime.SandboxAgentPort)
 	if err != nil {
 		return SandboxAgentStatusEntry{}, err
 	}
-	statusURL := *base
-	statusURL.Path = fmt.Sprintf("/api/projects/%s/sandboxes/%s/status", p.bootstrap.ProjectID, sandboxID)
+	statusURL := sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, fmt.Sprintf("/api/projects/%s/sandboxes/%s/status", p.bootstrap.ProjectID, sandboxID))
 	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, statusURL.String(), nil)
 	if err != nil {
 		return SandboxAgentStatusEntry{}, err
 	}
+	// The connection is no credential: the sandbox agent decides on this
+	// status:read token alone, whatever carried it (ADR 0126 §5).
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Transport: dial.Transport()}).Do(req)
 	if err != nil {
 		return SandboxAgentStatusEntry{}, err
 	}
