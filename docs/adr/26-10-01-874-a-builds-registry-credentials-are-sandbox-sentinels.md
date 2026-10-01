@@ -5,7 +5,7 @@
 - **Relates to**: [ADR 0044](0044-builds-run-on-a-pool-shared-buildkit.md)
   §6, which accepted that buildkitd's own fetches are attributed to the pool;
   [ADR 26-10-01-032](26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)
-  §7, which therefore filters them at the project level alone;
+  §7, which records that they are not filtered at all;
   [ADR 0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md),
   the sentinels this reuses.
 
@@ -13,10 +13,11 @@
 
 A sandbox's `docker build` runs on its pool's shared buildkitd. `RUN` steps
 reach the proxy as the sandbox, through the per-build forwarder. buildkitd's
-own fetches — `FROM` pulls, `ADD <url>`, git contexts, cache import — reach it
-as the pool, so the proxy can neither record whose build a pull served nor
-apply that sandbox's egress policy to it. ADR 26-10-01-032 §7 settles for the
-project's policy.
+own fetches — `FROM` pulls, `ADD <url>`, git contexts, cache import — do not
+reach the pool proxy at all: buildkitd dials origins directly, or through an
+outer proxy when the pool is nested in a discobox. Nothing records whose build
+a pull served or applies that sandbox's egress policy to it (ADR 26-10-01-032
+§7).
 
 Two further costs follow from the same gap:
 
@@ -29,9 +30,9 @@ Two further costs follow from the same gap:
   one sandbox's token can serve another's build.
 
 What BuildKit gives to work with (v0.20.2): registry credentials come from the
-client side of the build's session, asked per host (`session/auth`). Every
-credential-bearing exchange on a pull passes through the pool proxy, which
-MITMs it:
+client side of the build's session, asked per host (`session/auth`). Once
+buildkitd's fetches go through the pool proxy (§0), every credential-bearing
+exchange on a pull passes through it, MITM'd:
 
 - **Token registries** (Docker Hub, GHCR, most). `GET /v2/` answers `401`
   naming a token realm. The credential goes to the realm, as Basic or an OAuth
@@ -51,6 +52,13 @@ applied, and the sentinel is swapped for a real registry credential when one
 is bound, or removed so the request goes anonymously when none is. The proxy
 carries the attribution onto the token the exchange issued, and onto the
 redirect a response it attributed sends buildkitd to.**
+
+### 0. buildkitd's own fetches go through the pool proxy
+
+buildkitd is pointed at the pool proxy through a pool-local forwarder holding
+a client certificate of the pool's own, and trusts the pool's MITM CA. The
+pool registry stays in `NO_PROXY`. Unattributed buildkitd traffic is then the
+pool's, governed by the project and pool levels of ADR 26-10-01-032 (§5).
 
 ### 1. The mediator answers registry auth, not the sandbox
 
@@ -94,7 +102,9 @@ form's password):
 ### 5. Unattributed build traffic
 
 buildkitd traffic that carries no sentinel, no recorded token, and no recorded
-redirect stays the pool's, under ADR 26-10-01-032 §7's project policy. With
+redirect stays the pool's, under the project and pool levels of ADR
+26-10-01-032 alone: §2's rule over just those two, the levels known for every
+build on a pool. With
 §1 in place, that is traffic no build asked for by name.
 
 ## Alternatives rejected
