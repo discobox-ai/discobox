@@ -101,20 +101,24 @@ no special case is needed for it.
   entry of the creator's (a domain by an equal or wider pattern, an IP or CIDR
   by a CIDR containing it). Checked at create only; later edits are a person's.
 
-### 5. Delivery: pushed, and converged by the reconciler
+### 5. Delivery: on every create, converged by the reconciler
 
-The effective policy is computed on the server and is not in the sandbox
-manifest: it changes live, and a manifest change rebuilds the container
-(`SandboxManifest.Fingerprint`). It travels as sentinels do —
-`PoolSandboxCreateRequest` and `PoolSandboxUpdateRequest` carry it, the pool
-agent records it beside them, and the proxy unit's policy publisher adds it as
-a fourth input to every `ApplyConfig`, so the policy is in force before the
-sandbox's first packet.
+The effective policy is computed on the server, on every reconcile, and is
+not in the sandbox manifest: it changes live, and a manifest change rebuilds
+the container (`SandboxManifest.Fingerprint`). `PoolSandboxCreateRequest`
+carries it, always, unrestricted included. The pool agent records it beside
+the sandbox's sentinels first thing on every create — before a new container
+exists, and before the early return for one that already matches its spec —
+and the proxy unit's policy publisher adds it as a fourth input to every
+`ApplyConfig`, so the policy is in force before the sandbox's first packet.
 
-A change at any level marks every sandbox it affects for reconcile; the
-sandbox reconciler pushes a running sandbox's effective policy, and a stopped
-one gets it at its next create. Tightening takes effect on the next request,
-not a poll interval later.
+A change at any level marks every sandbox it affects that is meant to exist,
+in the transaction that writes the level. The mark's ensure sends the pool a
+create, which records the newly merged policy whether the sandbox is running
+or stopped; an archived one gets it when it is recreated. Tightening takes
+effect as soon as the mark is reconciled, not a poll interval later, and a
+lost push cannot leave a sandbox on an old policy: the mark is level-triggered
+and committed with the change.
 
 ### 6. The filter is per client
 
@@ -176,6 +180,10 @@ sandbox from its certificate and could ask the same filter.
 - **The pool proxy polls a per-pool route, as host trusts do.** No fan-out
   needed, but a new sandbox would run unrestricted until the first poll, and
   tightening would take up to the interval.
+- **Push the policy to a running sandbox through `PoolSandboxUpdateRequest`,
+  as rebound sentinels are.** A second path to the same file, and one a push
+  that failed or raced a reconcile's create could leave stale; the create
+  every ensure already sends is the one path that converges.
 - **Put the policy in the sandbox manifest.** Every change would rebuild the
   container.
 - **No pool level.** The project covers a project with one pool, but not a
