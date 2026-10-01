@@ -89,7 +89,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	units, err := w.manager.WatchUnits(ctx)
 	if err != nil {
 		units = nil
-		w.logger.Warn("subscribe to systemd unit changes; sweeping on an interval instead",
+		w.logger.Warn("subscribe to unit changes; sweeping on an interval instead",
 			"error", err, "interval", w.fallbackInterval)
 	}
 	var (
@@ -174,7 +174,7 @@ func (w *Watcher) Run(ctx context.Context) {
 			if !ok {
 				// The subscription ended under us. Sweeping is the honest
 				// fallback: something may have changed while it was going away.
-				w.logger.Warn("systemd unit subscription ended; sweeping on an interval instead",
+				w.logger.Warn("unit subscription ended; sweeping on an interval instead",
 					"interval", w.fallbackInterval)
 				units = nil
 				degrade()
@@ -193,7 +193,7 @@ func (w *Watcher) Run(ctx context.Context) {
 			// Degraded is a state to leave, not to settle into: the dbus-daemon
 			// may have come up, or the connection that dropped may be back.
 			if resumed, err := w.manager.WatchUnits(ctx); err == nil {
-				w.logger.Info("resumed systemd unit change notifications")
+				w.logger.Info("resumed unit change notifications")
 				units = resumed
 				fallback = nil
 				if ticker != nil {

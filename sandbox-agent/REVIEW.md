@@ -74,6 +74,23 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   delivery tables with a `Reason`; one with no reason is a signal delivered as
   itself.
 
+## Supervision
+
+- **The supervisor's lifetime lock is `flock`, never `fcntl`.** A flock
+  belongs to the open file description, so it travels to the shim with the
+  descriptor and outlives the supervisor closing its own copy; a POSIX record
+  lock belongs to the process and would be released the moment it did.
+- **The shim marks the lifetime descriptor close-on-exec before it starts
+  anything** (`execs.HoldLifetime`). A command that inherited it would hold
+  the lock past the shim's exit, and the exec would read as running for as
+  long as anything it started did.
+- **A lock that cannot be waited on is not a shim that ended.** Reading an
+  error as "gone" demotes the exec to lost, and the terminal layer relaunches
+  a lost terminal over the shim still running.
+- **A unit manager is required and complete.** Add behavior to `UnitManager`
+  and to every implementation, including the test fakes; run the shared
+  contract (`testUnitManagerContract`) against each.
+
 ## Reading the working tree at boot
 
 - **Anything at boot that reads the sandbox's sources goes behind

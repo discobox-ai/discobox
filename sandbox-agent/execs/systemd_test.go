@@ -1,3 +1,5 @@
+//go:build linux
+
 package execs
 
 import (
@@ -149,22 +151,6 @@ func TestUnitNameRoundTrip(t *testing.T) {
 	}
 	if got := unitBaseName("discobox-exec-ex_1.service"); got != "discobox-exec-ex_1" {
 		t.Errorf("base name = %q", got)
-	}
-}
-
-func TestExecIDFromUnit(t *testing.T) {
-	for unit, want := range map[string]string{
-		"discobox-exec-ex_1.service":    "ex_1",
-		"discobox-exec-ex_1":            "ex_1",
-		"discobox-exec-ex_1-g2.service": "ex_1",
-		"discobox-exec-ex_1-g17":        "ex_1",
-		// Not a generation suffix, so it is part of the id.
-		"discobox-exec-ex_1-gx": "ex_1-gx",
-		"sshd.service":          "",
-	} {
-		if got := execIDFromUnit(unit); got != want {
-			t.Errorf("execIDFromUnit(%q) = %q, want %q", unit, got, want)
-		}
 	}
 }
 

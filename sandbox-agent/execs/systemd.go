@@ -1,14 +1,12 @@
+//go:build linux
+
 package execs
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,13 +14,6 @@ import (
 	sddbus "github.com/coreos/go-systemd/v22/dbus"
 	godbus "github.com/godbus/dbus/v5"
 )
-
-// unitType is the suffix every exec unit carries. Unit names are stored and
-// passed around without it — nextUnitGeneration parses a bare name, and a
-// stored name with the suffix would make every relaunch collide on generation
-// 2 — so it is appended at the D-Bus boundary and stripped off everything
-// coming back.
-const unitType = ".service"
 
 // unitPattern matches every generation of every exec unit, for the one call
 // that lists them all (ADR 0115 §3).
@@ -223,54 +214,6 @@ func (r *SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResul
 	return StartResult{Unit: req.Unit}, nil
 }
 
-// shimArgv is the command line the transient unit runs: this same binary, as
-// the exec shim, carrying the exec's inputs as base64 JSON. The shim keeps the
-// unit's own identity — no User=/Group= is set on the unit — because it drops
-// to the run user itself after it has set up the PTY and the socket.
-func shimArgv(exe string, req StartRequest) ([]string, error) {
-	commandJSON, err := json.Marshal(req.Command)
-	if err != nil {
-		return nil, err
-	}
-	startupCommandJSON, err := json.Marshal(req.StartupCommand)
-	if err != nil {
-		return nil, err
-	}
-	envJSON, err := json.Marshal(req.Env)
-	if err != nil {
-		return nil, err
-	}
-	userJSON, err := json.Marshal(req.User)
-	if err != nil {
-		return nil, err
-	}
-	metadataJSON, err := json.Marshal(req.Metadata)
-	if err != nil {
-		return nil, err
-	}
-	argv := []string{
-		exe,
-		"exec-shim",
-		"--exec-id", req.ID,
-		"--unit", req.Unit,
-		"--workdir", req.Workdir,
-		"--socket", req.SocketPath,
-		"--runtime", req.RuntimePath,
-		"--database", req.DatabasePath,
-		"--rows", strconv.Itoa(int(req.Rows)),
-		"--cols", strconv.Itoa(int(req.Cols)),
-		"--command", base64.StdEncoding.EncodeToString(commandJSON),
-		"--startup-command", base64.StdEncoding.EncodeToString(startupCommandJSON),
-		"--env", base64.StdEncoding.EncodeToString(envJSON),
-		"--user", base64.StdEncoding.EncodeToString(userJSON),
-		"--metadata", base64.StdEncoding.EncodeToString(metadataJSON),
-	}
-	if req.TTY {
-		argv = append(argv, "--tty")
-	}
-	return argv, nil
-}
-
 // unitProperties are what `systemd-run --collect --property=...` used to spell
 // on a command line. CollectMode is --collect: a transient unit that failed is
 // unloaded rather than kept for a reset-failed, which is what lets every run
@@ -295,23 +238,6 @@ func unitProperties(req StartRequest, argv []string) []sddbus.Property {
 		})
 	}
 	return props
-}
-
-// unitEnvironment renders the exec's environment as systemd's Environment
-// property. Entries are sorted so a unit's properties do not depend on map
-// iteration order.
-func unitEnvironment(env map[string]string) []string {
-	if len(env) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(env))
-	for key, value := range env {
-		if strings.TrimSpace(key) != "" {
-			out = append(out, key+"="+value)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func (r *SystemdRunner) Stop(ctx context.Context, unit string) error {
@@ -489,11 +415,6 @@ func unitFullName(unit string) string {
 		return unit
 	}
 	return unit + unitType
-}
-
-// unitBaseName is the inverse: what gets stored on an Exec.
-func unitBaseName(name string) string {
-	return strings.TrimSuffix(strings.TrimSpace(name), unitType)
 }
 
 func unitStatusFromProperties(props map[string]any) UnitStatus {
