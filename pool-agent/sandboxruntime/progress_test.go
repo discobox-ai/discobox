@@ -38,7 +38,7 @@ func TestPublishSandboxPhaseNamesTheWork(t *testing.T) {
 	observed, stop := watchProgress(t, runtime)
 	defer stop()
 
-	runtime.PublishSandboxPhase(t.Context(), "sbx_1", PhaseCreatingContainer)
+	runtime.publishSandboxPhase(t.Context(), "sbx_1", PhaseCreatingContainer)
 
 	select {
 	case got := <-observed:
@@ -61,7 +61,7 @@ func TestPublishSandboxPullProgressCarriesItsPhase(t *testing.T) {
 	observed, stop := watchProgress(t, runtime)
 	defer stop()
 
-	runtime.PublishSandboxPullProgress(t.Context(), "sbx_1", PullProgress{Image: "example:latest", Layers: 3})
+	runtime.publishSandboxPullProgress(t.Context(), "sbx_1", PullProgress{Image: "example:latest", Layers: 3})
 
 	select {
 	case got := <-observed:
@@ -84,8 +84,8 @@ func TestPublishSandboxProgressRefusesAPhaselessReport(t *testing.T) {
 	observed, stop := watchProgress(t, runtime)
 	defer stop()
 
-	runtime.PublishSandboxProgress(t.Context(), SandboxProgressObservation{SandboxID: "sbx_1"})
-	runtime.PublishSandboxPhase(t.Context(), "sbx_1", PhaseStartingContainer)
+	runtime.publishSandboxProgress(t.Context(), SandboxProgressObservation{SandboxID: "sbx_1"})
+	runtime.publishSandboxPhase(t.Context(), "sbx_1", PhaseStartingContainer)
 
 	select {
 	case got := <-observed:

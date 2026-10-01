@@ -65,14 +65,14 @@ type SandboxStateBatch struct {
 	States     []SandboxStateObservation
 }
 
-// PublishSandboxState reports a single transition immediately.
+// publishSandboxState reports a single transition immediately.
 //
 // The power operations call this on their way into a start or a stop, which is
 // the only way `starting` and `stopping` can be observed at all: by the time
 // the Docker event arrives the transition is over, and a state nobody can
 // report is a state that does not exist. Everything else is derived from the
 // event stream.
-func (r *DockerSandboxRuntime) PublishSandboxState(ctx context.Context, sandboxID, state string) {
+func (r *DockerSandboxRuntime) publishSandboxState(ctx context.Context, sandboxID, state string) {
 	publish, _ := r.statePublisher.Load().(func(context.Context, SandboxStateBatch) error)
 	if publish == nil || sandboxID == "" {
 		return
@@ -123,11 +123,11 @@ type SandboxProgressObservation struct {
 	Pull *PullProgress
 }
 
-// PublishSandboxProgress reports provisioning progress immediately, if a
-// watcher is running. It is best-effort in the same way PublishSandboxState is:
+// publishSandboxProgress reports provisioning progress immediately, if a
+// watcher is running. It is best-effort in the same way publishSandboxState is:
 // progress that nobody is listening for is dropped rather than queued, and the
 // complete sync remains the thing that makes the channel correct.
-func (r *DockerSandboxRuntime) PublishSandboxProgress(ctx context.Context, observation SandboxProgressObservation) {
+func (r *DockerSandboxRuntime) publishSandboxProgress(ctx context.Context, observation SandboxProgressObservation) {
 	publish, _ := r.progressPublisher.Load().(func(context.Context, SandboxProgressObservation) error)
 	if publish == nil || strings.TrimSpace(observation.SandboxID) == "" || strings.TrimSpace(observation.Phase) == "" {
 		return
@@ -143,17 +143,17 @@ func (r *DockerSandboxRuntime) PublishSandboxProgress(ctx context.Context, obser
 	}
 }
 
-// PublishSandboxPullProgress reports the image pull, the one phase that can say
+// publishSandboxPullProgress reports the image pull, the one phase that can say
 // how far in it is.
-func (r *DockerSandboxRuntime) PublishSandboxPullProgress(ctx context.Context, sandboxID string, pull PullProgress) {
-	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhasePullingImage, Pull: &pull})
+func (r *DockerSandboxRuntime) publishSandboxPullProgress(ctx context.Context, sandboxID string, pull PullProgress) {
+	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhasePullingImage, Pull: &pull})
 }
 
-// PublishSandboxPhase reports a phase that has nothing to measure — which is
+// publishSandboxPhase reports a phase that has nothing to measure — which is
 // every phase but the pull. It is the call the create path makes at each of its
 // own boundaries.
-func (r *DockerSandboxRuntime) PublishSandboxPhase(ctx context.Context, sandboxID, phase string) {
-	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: phase})
+func (r *DockerSandboxRuntime) publishSandboxPhase(ctx context.Context, sandboxID, phase string) {
+	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: phase})
 }
 
 // WatchSandboxProgress installs the progress sink for as long as ctx lives. It

@@ -250,7 +250,28 @@ type Runtime interface {
 	// the dial for it (ADR 0126 §5). A sandbox that cannot be reached at all
 	// is an error here, so a caller can answer it before sending anything.
 	SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error)
+
+	// The rest run until ctx ends, and the agent starts each once.
+	//
+	// WatchSandboxStates is the state channel (ADR 0017 §10, statereport.go):
+	// what the runtime observes about power state, as deltas and as a complete
+	// sync on start and on an interval, from whatever source it watches.
+	WatchSandboxStates(ctx context.Context, logger *slog.Logger, publish func(context.Context, SandboxStateBatch) error)
+	// WatchSandboxProgress holds the sink provisioning progress is reported to
+	// by whatever is doing the work (ADR 0039).
+	WatchSandboxProgress(ctx context.Context, publish func(context.Context, SandboxProgressObservation) error)
+	// WatchSandboxVolumes reaps the durable trees of sandboxes the control
+	// plane no longer holds (ADR 26-10-01-876).
+	WatchSandboxVolumes(ctx context.Context, logger *slog.Logger, held HeldSandboxes)
+	// WatchProxyMaterial reclaims the pool proxy's per-sandbox material for
+	// sandboxes this runtime no longer has.
+	WatchProxyMaterial(ctx context.Context, logger *slog.Logger)
 }
+
+var (
+	_ Runtime = (*DockerSandboxRuntime)(nil)
+	_ Runtime = (*MemorySandboxRuntime)(nil)
+)
 
 // DockerSandboxRuntime launches sandboxes as Docker containers inside a pool.
 type DockerSandboxRuntime struct {
@@ -435,7 +456,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			// after the container was created and parked. This create is that
 			// resume, so finish those sources rather than returning a sandbox whose
 			// workspace is still empty.
-			r.PublishSandboxPhase(ctx, sandboxID, PhaseMaterializingSource)
+			r.publishSandboxPhase(ctx, sandboxID, PhaseMaterializingSource)
 			rebuild, err := r.settleDeliveredSources(ctx, sandboxID, req)
 			if err != nil {
 				return nil, err
@@ -473,7 +494,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		if replacedRunning {
 			// Stop it the way a stop would, so the sandbox-agent tears its execs
 			// down and flushes their logs instead of being killed outright.
-			r.PublishSandboxState(ctx, sandboxID, StateStopping)
+			r.publishSandboxState(ctx, sandboxID, StateStopping)
 			timeout := sandboxStopTimeoutSeconds
 			if _, err := r.client.ContainerStop(ctx, replaced.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !cerrdefs.IsNotFound(err) {
 				return nil, fmt.Errorf("stop sandbox container for a spec change: %w", err)
@@ -484,7 +505,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		}
 	}
 	user := resolveSandboxUser(req)
-	r.PublishSandboxPhase(ctx, sandboxID, PhasePreparingVolumes)
+	r.publishSandboxPhase(ctx, sandboxID, PhasePreparingVolumes)
 	mounts, project, err := r.prepareSandboxVolumes(ctx, sandboxID, req, user)
 	if err != nil {
 		return nil, err
@@ -558,7 +579,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			proxyagent.SandboxNetworkName(r.poolID): {},
 		},
 	}
-	r.PublishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
+	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, NetworkingConfig: netCfg, Name: name})
 	if err != nil {
 		return nil, err
@@ -574,8 +595,8 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if !config.Start.Or(true) && !replacedRunning {
 		return r.observedSandbox(ctx, sandboxID)
 	}
-	r.PublishSandboxState(ctx, sandboxID, StateStarting)
-	r.PublishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
+	r.publishSandboxState(ctx, sandboxID, StateStarting)
+	r.publishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
 	boot := r.beginBoot(sandboxID)
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		r.endBoot(sandboxID, boot, err)
@@ -585,7 +606,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// the last phase the pool agent can see: what happens after it is the
 	// sandbox agent's own boot, which reports on no channel this one owns
 	// (ADR 0060).
-	r.PublishSandboxPhase(ctx, sandboxID, PhaseWaitingForAgent)
+	r.publishSandboxPhase(ctx, sandboxID, PhaseWaitingForAgent)
 	if err := r.finishBoot(ctx, sandboxID, boot); err != nil {
 		return nil, err
 	}
@@ -612,7 +633,7 @@ func (r *DockerSandboxRuntime) observedSandbox(ctx context.Context, sandboxID st
 	if err != nil {
 		return nil, err
 	}
-	r.PublishSandboxState(ctx, sandboxID, stateFromStatus(sb.Status))
+	r.publishSandboxState(ctx, sandboxID, stateFromStatus(sb.Status))
 	return sb, nil
 }
 
@@ -788,7 +809,7 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 	// Draining is what runs the pull, so this replaces Wait rather than adding
 	// to it.
 	err = consumePullProgress(ctx, pull.JSONMessages(ctx), imageName, func(progress PullProgress) {
-		r.PublishSandboxPullProgress(ctx, sandboxID, progress)
+		r.publishSandboxPullProgress(ctx, sandboxID, progress)
 	}, nil)
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", imageName, err)
@@ -1662,17 +1683,6 @@ const (
 	poolDataTombstone = ".discobox-orphaned-at"
 )
 
-// ReconcileProxyMaterial prunes proxy material for sandboxes whose containers no
-// longer exist. It is the recovery path for containers deleted out of band or
-// while the pool was down, which never run through DeleteSandbox.
-func (r *DockerSandboxRuntime) ReconcileProxyMaterial(ctx context.Context, minAge time.Duration) error {
-	live, err := r.liveSandboxIDs(ctx)
-	if err != nil {
-		return err
-	}
-	return proxyagent.PruneOrphanedMaterial(r.root, r.projectID, r.poolID, live, minAge)
-}
-
 func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, error) {
 	sandboxes, err := r.ListSandboxes(ctx)
 	if err != nil {
@@ -1713,8 +1723,15 @@ func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *s
 	}
 }
 
+// reconcileProxyMaterial prunes proxy material for sandboxes whose containers
+// no longer exist. It is the recovery path for containers deleted out of band
+// or while the pool was down, which never run through DeleteSandbox.
 func (r *DockerSandboxRuntime) reconcileProxyMaterial(ctx context.Context, logger *slog.Logger) {
-	if err := r.ReconcileProxyMaterial(ctx, proxyMaterialGracePeriod); err != nil {
+	live, err := r.liveSandboxIDs(ctx)
+	if err == nil {
+		err = proxyagent.PruneOrphanedMaterial(r.root, r.projectID, r.poolID, live, proxyMaterialGracePeriod)
+	}
+	if err != nil {
 		logger.Warn("reconcile proxy material", "error", err)
 	}
 }
@@ -2646,6 +2663,54 @@ func (r *MemorySandboxRuntime) GitOriginPath(_ context.Context, sandboxID, slug 
 // SandboxDialer reaches nothing: a memory sandbox has nothing in it to dial.
 func (r *MemorySandboxRuntime) SandboxDialer(context.Context, string, int) (Dialer, error) {
 	return nil, ErrNotFound
+}
+
+// WatchSandboxStates publishes a complete sync on start and on the interval.
+// There is no event stream behind this runtime to take deltas from, and the
+// sync alone is what makes the channel correct.
+func (r *MemorySandboxRuntime) WatchSandboxStates(ctx context.Context, logger *slog.Logger, publish func(context.Context, SandboxStateBatch) error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if publish == nil {
+		return
+	}
+	sync := time.NewTicker(sandboxStateSyncInterval)
+	defer sync.Stop()
+	for {
+		r.mu.Lock()
+		states := make([]SandboxStateObservation, 0, len(r.sandboxes))
+		for sandboxID, sb := range r.sandboxes {
+			states = append(states, SandboxStateObservation{SandboxID: sandboxID, State: stateFromStatus(sb.Status)})
+		}
+		r.mu.Unlock()
+		batch := SandboxStateBatch{Complete: true, ReportedAt: time.Now().UTC(), States: states}
+		if err := publish(ctx, batch); err != nil && ctx.Err() == nil {
+			logger.Warn("publish sandbox state sync", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-sync.C:
+		}
+	}
+}
+
+// WatchSandboxProgress holds nothing: no work done here takes long enough to
+// report.
+func (r *MemorySandboxRuntime) WatchSandboxProgress(ctx context.Context, _ func(context.Context, SandboxProgressObservation) error) {
+	<-ctx.Done()
+}
+
+// WatchSandboxVolumes reaps nothing: a tree here goes when its sandbox is
+// deleted, and there is no disk for one to be left behind on.
+func (r *MemorySandboxRuntime) WatchSandboxVolumes(ctx context.Context, _ *slog.Logger, _ HeldSandboxes) {
+	<-ctx.Done()
+}
+
+// WatchProxyMaterial reclaims nothing: this runtime stages no proxy material.
+func (r *MemorySandboxRuntime) WatchProxyMaterial(ctx context.Context, _ *slog.Logger) {
+	<-ctx.Done()
 }
 
 func (r *MemorySandboxRuntime) SetGitRepositoryPath(sandboxID, repositoryID, path string) {
