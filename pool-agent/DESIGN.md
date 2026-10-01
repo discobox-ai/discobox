@@ -24,7 +24,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
 | `poolauth` | Pool-to-control-plane assertions: PASETO v4.public signed with the pool's Ed25519 key. |
-| `internalhttp` | The HTTP client for pool-to-sandbox traffic; it never honors `HTTP_PROXY`. |
+| `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
 | `githttp` | `git http-backend` CGI bridge behind the `git-repositories`/`git-origins` routes, run as the repository's owner. |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
@@ -198,6 +198,42 @@ disjoint measurements added. Services are never derived by subtracting the
 sandboxes from a supposed pool total: that "total" can be smaller than the
 sandboxes it is meant to contain, and the difference goes negative
 (ADR 0071 §6).
+
+## Reaching a Sandbox
+
+The pool never addresses a sandbox. `Runtime.SandboxDialer(sandboxID, port)`
+hands it a `Dialer` for a port inside the sandbox — the sandbox agent on
+`SandboxAgentPort`, or anything the sandbox listens on — and every pool→sandbox
+request rides a connection it opened ([ADR 0126](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §5).
+How it connects is the runtime's: the Docker runtime dials the container's
+address on the pool network; a host-VM runtime would dial a guest socket, and a
+provider-hosted one a stream on a session the sandbox opened outward.
+
+```mermaid
+flowchart LR
+    poll["status poll<br/>statuspoll.go"] --> dialer
+    proxy["sandbox-agent and port proxies<br/>server/sandbox_proxy.go"] --> dialer
+    health["boot health wait<br/>waitForSandboxAgent"] --> dialer
+    dialer["Runtime.SandboxDialer → Dialer"] --> transport["Dialer.Transport()<br/>internalhttp base, no keep-alive"]
+    transport --> agent["sandbox agent / sandbox port"]
+```
+
+- The boot's health wait is the runtime's own, so it takes the dial from the
+  container inspect it already made each pass rather than resolving the
+  sandbox again — the same dial `SandboxDialer` hands everyone else.
+- Resolving the dialer is where a sandbox that cannot be reached at all is
+  refused (no container, no address — mapped to a status before the proxy sends
+  anything); a failed dial after that is a 502.
+- A request's URL names no address: `HTTPURL(port, path)` is
+  `http://localhost:<port>/…`, which is only the `Host` the sandbox's server
+  reads — and the name a dev server checking `Host` accepts.
+- The transport is built per use and keeps no idle connections, so none
+  outlives the sandbox it reached. Upgrades (exec attach, tunnels) carry on
+  over the dialed connection.
+- The connection is never an authority. The sandbox agent validates its own
+  token on every request — the status poll's `status:read` token (ADR 0030),
+  the proxy's downstream `Authorization` — and a lost connection is not a
+  power-state signal: power state comes from the runtime's own channel below.
 
 ## Sandbox State Channel
 

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -92,17 +92,16 @@ func (s *sandboxService) sandboxHTTPProxyHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		base, err := s.runtime.HTTPBaseURL(r.Context(), chi.URLParam(r, "sandboxId"), port)
+		dial, err := s.runtime.SandboxDialer(r.Context(), chi.URLParam(r, "sandboxId"), port)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForGitError(mapRuntimeError(err)))
 			return
 		}
-		suffix := chi.URLParam(r, "*")
-		target := *base
-		if suffix != "" {
-			target.Path = "/" + suffix
+		path := ""
+		if suffix := chi.URLParam(r, "*"); suffix != "" {
+			path = "/" + suffix
 		}
-		sandboxProxy(&target, "").ServeHTTP(w, r)
+		sandboxProxy(dial, sandboxruntime.HTTPURL(port, path), "").ServeHTTP(w, r)
 	})
 }
 
@@ -121,13 +120,12 @@ func (s *sandboxService) sandboxAgentProxyHandler() http.Handler {
 			http.Error(w, "sandbox-agent authorization is required", http.StatusUnauthorized)
 			return
 		}
-		base, err := s.runtime.HTTPBaseURL(r.Context(), chi.URLParam(r, "sandboxId"), 3003)
+		dial, err := s.runtime.SandboxDialer(r.Context(), chi.URLParam(r, "sandboxId"), sandboxruntime.SandboxAgentPort)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForGitError(mapRuntimeError(err)))
 			return
 		}
-		target := *base
-		target.Path = sandboxAgentPath(
+		target := sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, sandboxAgentPath(
 			chi.URLParam(r, "projectId"),
 			chi.URLParam(r, "sandboxId"),
 			strings.TrimPrefix(r.URL.Path, fmt.Sprintf(
@@ -136,8 +134,8 @@ func (s *sandboxService) sandboxAgentProxyHandler() http.Handler {
 				chi.URLParam(r, "poolId"),
 				chi.URLParam(r, "sandboxId"),
 			)),
-		)
-		sandboxProxy(&target, downstreamAuth).ServeHTTP(w, r)
+		))
+		sandboxProxy(dial, target, downstreamAuth).ServeHTTP(w, r)
 	})
 }
 
@@ -244,14 +242,13 @@ func sandboxAgentPath(projectID, sandboxID, suffix string) string {
 	)
 }
 
-func sandboxProxy(target *url.URL, downstreamAuth string) *httputil.ReverseProxy {
+// sandboxProxy forwards to target over dial, the connection the runtime
+// supplies (ADR 0126 §5); target names no address, only the path and the Host
+// the sandbox sees. An upgrade — an exec attach, a tunnel — is forwarded on
+// the same connection.
+func sandboxProxy(dial sandboxruntime.Dialer, target *url.URL, downstreamAuth string) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
-		// Not the default transport: it honors HTTP_PROXY, and a pool running
-		// inside a Discobox sandbox has proxy env injected for its egress.
-		// This request goes to a sandbox on the pool's own network, so it must
-		// never leave through the egress proxy -- and must not depend on
-		// NO_PROXY being right for that.
-		Transport: internalhttp.Transport(),
+		Transport: dial.Transport(),
 		Rewrite: func(req *httputil.ProxyRequest) {
 			rawQuery := req.In.URL.RawQuery
 			req.SetURL(target)
