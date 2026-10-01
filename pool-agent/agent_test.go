@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"aidanwoods.dev/go-paseto"
 
 	"github.com/discobox-ai/discobox/controlplane"
+	"github.com/discobox-ai/discobox/layout"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -616,4 +618,64 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// stateRecordingClient is a control plane that takes state reports and holds
+// no sandbox.
+type stateRecordingClient struct {
+	reports chan poolagent.SandboxStateRequest
+}
+
+func (c *stateRecordingClient) ReportSandboxStates(_ context.Context, req poolagent.SandboxStateRequest) error {
+	c.reports <- req
+	return nil
+}
+
+func (c *stateRecordingClient) ListHeldSandboxes(context.Context, poolagent.HeldSandboxesRequest) ([]string, error) {
+	return nil, nil
+}
+
+// Serve knows its runtime only as sandboxruntime.Runtime, so a runtime that is
+// not Docker drives the state channel the same way.
+func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runtime := poolagent.NewMemorySandboxRuntime()
+	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}); err != nil {
+		t.Fatalf("CreateSandbox() error = %v", err)
+	}
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &stateRecordingClient{reports: make(chan poolagent.SandboxStateRequest, 8)}
+	served := make(chan error, 1)
+	go func() {
+		served <- poolagent.Serve(ctx, slog.New(slog.DiscardHandler), layout.ContainerAt(t.TempDir()), poolagent.Bootstrap{
+			ControlPlaneURL: "http://control.example",
+			ProjectID:       "project-1",
+			PoolID:          "pool-1",
+			AgentListenURL:  "http://127.0.0.1:0",
+		}, &poolagent.Registration{PrivateKey: privateKey}, runtime, client)
+	}()
+
+	select {
+	case report := <-client.reports:
+		if !report.Complete || report.BootID == "" || report.Sequence != 1 {
+			t.Fatalf("first report = complete %v, boot %q, sequence %d; want the boot's first complete sync", report.Complete, report.BootID, report.Sequence)
+		}
+		if len(report.States) != 1 || report.States[0].SandboxID != "sandbox-1" || report.States[0].State != sandboxruntime.StateRunning {
+			t.Fatalf("first report states = %+v, want sandbox-1 running", report.States)
+		}
+	case err := <-served:
+		t.Fatalf("Serve() returned before reporting: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve() reported no sandbox state")
+	}
+	cancel()
+	select {
+	case <-served:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve() did not return once its context ended")
+	}
 }
