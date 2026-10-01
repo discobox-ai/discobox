@@ -26,7 +26,7 @@ Policy has four natural owners:
 
 - the **project** — "nothing in this project talks to the internet freely";
 - the **pool** — "this pool sits beside internal services; nothing in it
-  reaches out freely", and the identity a pool's own BuildKit fetches under;
+  reaches out freely";
 - the **harness config** — "Claude Code needs `api.anthropic.com`";
 - the **sandbox** — "this one also needs `registry.npmjs.org`".
 
@@ -116,10 +116,6 @@ sandbox reconciler pushes a running sandbox's effective policy, and a stopped
 one gets it at its next create. Tightening takes effect on the next request,
 not a poll interval later.
 
-A project or pool change also changes the policy of the pool's own client
-(§7). The pool reconciler pushes it to the pool agent, which the project or
-pool change marks for reconcile as well.
-
 ### 6. The filter is per client
 
 `filter.Config` loses its pool-wide `Enabled` and its client-scoped rules, and
@@ -132,36 +128,33 @@ HTTP, a refused `CONNECT` or SOCKS connect, audited `host denied`.
 What is outside the filter stays outside it: the gate host
 (`api.discobox.internal`, intercepted before the filter), the credential
 broker, the DNS forwarder, the hop from a sandbox to the BuildKit mediator,
-the pool registry, and the pool agent's own traffic. buildkitd's own fetches
-are not outside it; §7 says what governs them. A restricted sandbox still
-reaches the Discobox API it was given.
+the pool registry, the pool agent's own traffic, and buildkitd's own fetches
+(§7). A restricted sandbox still reaches the Discobox API it was given.
 
-### 7. A build's own fetches follow the project and pool levels only
+### 7. A build's own fetches are not filtered yet
 
 A pool's shared BuildKit makes two kinds of connection
 ([ADR 0044](0044-builds-run-on-a-pool-shared-buildkit.md) §6):
 
-| Traffic | Identity at the proxy | Policy applied |
+| Traffic | Route | Policy applied |
 | --- | --- | --- |
-| `RUN` steps, through the per-build forwarder | the sandbox (the forwarder holds its certificate) | the sandbox's effective policy, as its own traffic |
-| buildkitd's own: `FROM` pulls, `ADD <url>`, git contexts, cache import | the pool | the **project and pool** levels alone |
+| `RUN` steps | the per-build forwarder, to the pool proxy, as the sandbox | the sandbox's effective policy, as its own traffic |
+| buildkitd's own: `FROM` pulls, `ADD <url>`, git contexts, cache import | the pool container's own network, **not** the pool proxy | none |
 
-buildkitd fetches in no container and under no sandbox's identity, so the
-proxy cannot tell whose build a pull is for, and a harness or sandbox level
-cannot reach it. A pool belongs to one project, so the project's and the
-pool's levels are known for every build on it, and §2's rule over just those
-two is the one policy those builds share: buildkitd's client is restricted
-when either sets `denyByDefault`, to the union of their `allow`.
+buildkitd is given the pool process's proxy environment, and a pool is given
+one only when it runs nested inside a discobox — then it is the outer box's
+proxy, not its own. Otherwise buildkitd dials origins directly. So a
+restricted sandbox's `docker build` can pull any base image and `ADD` any URL;
+only its `RUN` steps are held to its policy.
 
-**To restrict what builds may pull, set it at the project or pool level.** A
-harness or sandbox `denyByDefault` restricts that sandbox's `RUN` steps but not
-the base images its builds pull, and a host only a harness or sandbox allows is
-reachable from a `RUN` step but not by a `FROM` in a restricted pool. Image
-registries a pool's builds use belong in its project's or its own `allow`.
-
-Attributing buildkitd's fetches to the sandbox whose build they serve is
-[ADR 26-10-01-874](26-10-01-874-a-builds-registry-credentials-are-sandbox-sentinels.md),
-proposed and not part of this decision.
+This is recorded rather than fixed here. Routing buildkitd through the pool
+proxy, under an identity of the pool's own, would let the project and pool
+levels — the two known for every build on a pool, since a pool belongs to one
+project — govern it; attributing its fetches to the sandbox whose build they
+serve is [ADR 26-10-01-874](26-10-01-874-a-builds-registry-credentials-are-sandbox-sentinels.md).
+Revisit when a restricted sandbox's builds must be held to its policy, or
+when 26-10-01-874 is taken up, whichever is first: the routing is a
+prerequisite of both.
 
 ### 8. DNS is not filtered yet
 
@@ -186,16 +179,14 @@ sandbox from its certificate and could ask the same filter.
 - **Put the policy in the sandbox manifest.** Every change would rebuild the
   container.
 - **No pool level.** The project covers a project with one pool, but not a
-  pool on a network the rest of the project is not on, and buildkitd's
-  identity is the pool's: without a pool level, builds could be restricted
-  only project-wide.
+  pool on a network the rest of the project is not on.
 - **Exempt the judge.** Unneeded once harness images declare their hosts (§3),
   and an exemption is a hole in a project's restriction.
 
 ## Consequences
 
-- A restricted project's or pool's builds pull only from hosts the project and
-  pool allow (§7).
+- A restricted sandbox's builds still pull base images and `ADD` URLs
+  unfiltered (§7).
 - A domain-only allow list refuses a request to an IP literal, including a
   SOCKS client that resolves locally: an IP is matched only against IP and
   CIDR entries.
