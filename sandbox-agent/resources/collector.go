@@ -2,58 +2,21 @@ package resources
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/store"
-	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 )
 
-type Collector struct {
-	ProcRoot   string
-	CgroupRoot string
-}
-
-func NewCollector() Collector {
-	return Collector{
-		ProcRoot:   "/proc",
-		CgroupRoot: "/sys/fs/cgroup",
-	}
-}
-
-func (c Collector) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSample, error) {
-	if c.ProcRoot == "" {
-		c.ProcRoot = "/proc"
-	}
-	if c.CgroupRoot == "" {
-		c.CgroupRoot = "/sys/fs/cgroup"
-	}
+// Collect reads the exec's cgroup files and every process in that cgroup.
+func (c Procfs) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSample, error) {
+	c = c.normalized()
 	sampledAt := time.Now().UTC()
-	host := map[string]any{
-		"goos":   runtime.GOOS,
-		"goarch": runtime.GOARCH,
-	}
-	if hostname, err := os.Hostname(); err == nil {
-		host["hostname"] = hostname
-	}
-	data := map[string]any{
-		"terminal": map[string]any{
-			"id":        ex.ID,
-			"harnessId": terminal.HarnessID(ex),
-			"status":    ex.Status,
-			"unit":      ex.Unit,
-			"pid":       ex.PID,
-			"workdir":   ex.Workdir,
-			"metadata":  ex.Metadata,
-		},
-		"host": host,
-	}
+	data := execSnapshot(ex)
 	if ex.PID > 0 {
 		pid := int(ex.PID)
 		cgroupPath := c.cgroupPath(pid)
@@ -61,7 +24,7 @@ func (c Collector) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSa
 			"path":  cgroupPath,
 			"files": c.readCgroupFiles(cgroupPath),
 		}
-		data["processes"] = c.processes(pid, cgroupPath)
+		data["processes"] = c.execProcesses(pid, cgroupPath)
 	} else {
 		data["cgroup"] = map[string]any{"files": map[string]any{}}
 		data["processes"] = []any{}
@@ -71,19 +34,10 @@ func (c Collector) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSa
 		return store.ResourceSample{}, ctx.Err()
 	default:
 	}
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return store.ResourceSample{}, err
-	}
-	return store.ResourceSample{
-		TerminalID: ex.ID,
-		SampledAt:  sampledAt,
-		Source:     "linux-procfs-cgroup",
-		Data:       raw,
-	}, nil
+	return resourceSample(ex, sampledAt, "linux-procfs-cgroup", data)
 }
 
-func (c Collector) cgroupPath(pid int) string {
+func (c Procfs) cgroupPath(pid int) string {
 	data, err := os.ReadFile(filepath.Join(c.ProcRoot, strconv.Itoa(pid), "cgroup"))
 	if err != nil {
 		return ""
@@ -100,7 +54,7 @@ func (c Collector) cgroupPath(pid int) string {
 	return ""
 }
 
-func (c Collector) readCgroupFiles(cgroupPath string) map[string]any {
+func (c Procfs) readCgroupFiles(cgroupPath string) map[string]any {
 	out := map[string]any{}
 	if cgroupPath == "" {
 		return out
@@ -134,7 +88,7 @@ func (c Collector) readCgroupFiles(cgroupPath string) map[string]any {
 	return out
 }
 
-func (c Collector) processes(rootPID int, cgroupPath string) []map[string]any {
+func (c Procfs) execProcesses(rootPID int, cgroupPath string) []map[string]any {
 	seen := map[int]bool{}
 	pids := []int{rootPID}
 	pids = append(pids, c.cgroupPIDs(cgroupPath)...)
@@ -144,14 +98,14 @@ func (c Collector) processes(rootPID int, cgroupPath string) []map[string]any {
 			continue
 		}
 		seen[pid] = true
-		if proc := c.process(pid); proc != nil {
+		if proc := c.processSnapshot(pid); proc != nil {
 			out = append(out, proc)
 		}
 	}
 	return out
 }
 
-func (c Collector) cgroupPIDs(cgroupPath string) []int {
+func (c Procfs) cgroupPIDs(cgroupPath string) []int {
 	if cgroupPath == "" {
 		return nil
 	}
@@ -168,7 +122,7 @@ func (c Collector) cgroupPIDs(cgroupPath string) []int {
 	return pids
 }
 
-func (c Collector) process(pid int) map[string]any {
+func (c Procfs) processSnapshot(pid int) map[string]any {
 	root := filepath.Join(c.ProcRoot, strconv.Itoa(pid))
 	statusText, ok := readTrimmed(filepath.Join(root, "status"))
 	if !ok {

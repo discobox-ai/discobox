@@ -68,7 +68,6 @@ type Config struct {
 	ExecUnitManager   execs.UnitManager
 	ExecAuditRecorder execs.AuditRecorder
 	Store             *agentstore.Store
-	ResourceCollector resources.Collector
 	// SecretEnv returns the sandbox's current secret-bound env->sentinel map.
 	// Serve wires this to a live secretswatch.Watcher; callers that build a
 	// router directly (e.g. tests) may leave it nil.
@@ -255,7 +254,6 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		services:          serviceManager,
 		tools:             declaredTools,
 		store:             localStore,
-		resourceCollector: cfg.ResourceCollector,
 		resourceSampler:   resources.NewSampler(),
 		resourceInterval:  cfg.Resources.SampleInterval,
 		resourceRetention: cfg.Resources.RetentionCount,

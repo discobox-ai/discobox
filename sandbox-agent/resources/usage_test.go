@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,7 +71,7 @@ func TestSampleReadsCgroupTotalsAndProcessRollup(t *testing.T) {
 		"memory.stat":    "anon 4000000000\nfile 2000000000\nslab 1234\n",
 	})
 
-	usage := Sampler{ProcRoot: procRoot, CgroupRoot: cgroupRoot, PageSize: pageSize}.Sample()
+	usage := Procfs{ProcRoot: procRoot, CgroupRoot: cgroupRoot, PageSize: pageSize}.Sample(context.Background())
 
 	if usage.Source != "cgroup" {
 		t.Fatalf("source = %q, want cgroup", usage.Source)
@@ -108,7 +109,7 @@ func TestSampleFallsBackToProcWithoutCgroup(t *testing.T) {
 	procRoot := t.TempDir()
 	writeProc(t, procRoot, 7, "sh", 100, 50, 5, 1<<20, 64, "sh\x00")
 
-	usage := Sampler{ProcRoot: procRoot, CgroupRoot: filepath.Join(t.TempDir(), "absent"), PageSize: 4096}.Sample()
+	usage := Procfs{ProcRoot: procRoot, CgroupRoot: filepath.Join(t.TempDir(), "absent"), PageSize: 4096}.Sample(context.Background())
 
 	if usage.Source != "proc" {
 		t.Fatalf("source = %q, want proc", usage.Source)

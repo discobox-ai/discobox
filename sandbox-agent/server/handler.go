@@ -33,7 +33,6 @@ type handler struct {
 	services          *services.Manager
 	tools             toolDirs
 	store             terminalStore
-	resourceCollector resources.Collector
 	resourceSampler   resources.Sampler
 	resourceInterval  time.Duration
 	resourceRetention int
@@ -528,7 +527,7 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		Sources:    make([]sandboxapi.SandboxAgentGitSourceStatus, 0, len(sources)),
 		Sessions:   make([]sandboxapi.SandboxAgentSessionStatus, 0, len(sessions)),
 		Ports:      make([]sandboxapi.SandboxAgentListeningPort, 0, len(listening)),
-		Resources:  sandboxAgentResourceUsage(h.resourceSampler.Sample()),
+		Resources:  sandboxAgentResourceUsage(h.resourceSampler.Sample(ctx)),
 	}
 	for _, source := range sources {
 		response.Sources = append(response.Sources, sandboxAgentGitSourceStatus(source))
@@ -952,15 +951,7 @@ func (h *handler) collectResourceSample(ctx context.Context, execID string) (sto
 	if !ok {
 		return store.ResourceSample{}, execs.ErrNotFound
 	}
-	collector := h.resourceCollector
-	defaultCollector := resources.NewCollector()
-	if collector.ProcRoot == "" {
-		collector.ProcRoot = defaultCollector.ProcRoot
-	}
-	if collector.CgroupRoot == "" {
-		collector.CgroupRoot = defaultCollector.CgroupRoot
-	}
-	sample, err := collector.Collect(ctx, exec)
+	sample, err := h.resourceSampler.Collect(ctx, exec)
 	if err != nil {
 		return store.ResourceSample{}, err
 	}

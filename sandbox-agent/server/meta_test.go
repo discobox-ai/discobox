@@ -19,9 +19,10 @@ import (
 func metaHandler(t *testing.T, home string) *handler {
 	t.Helper()
 	return &handler{
-		ports:    ports.New(ports.Config{ProcRoot: t.TempDir()}),
-		autostop: autostop.New(autostop.Config{LeaseDir: filepath.Join(t.TempDir(), "keepalive")}),
-		meta:     meta.New(home, meta.Owner{}),
+		ports:           ports.New(ports.Config{Scanner: ports.Procfs{Root: t.TempDir()}}),
+		autostop:        autostop.New(autostop.Config{LeaseDir: filepath.Join(t.TempDir(), "keepalive")}),
+		meta:            meta.New(home, meta.Owner{}),
+		resourceSampler: emptyResources(t),
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 )
@@ -111,6 +112,13 @@ func TestGetSandboxAgentStatusRequiresStatusReadScope(t *testing.T) {
 	}
 }
 
+// emptyResources reads a sandbox with no processes and no cgroup, for status
+// tests that are about something else.
+func emptyResources(t *testing.T) resources.Sampler {
+	t.Helper()
+	return resources.Procfs{ProcRoot: t.TempDir(), CgroupRoot: t.TempDir()}
+}
+
 // TestGetSandboxAgentStatusReportsWatchedPorts covers the one status component
 // read from a snapshot rather than computed per request (ADR 0046).
 func TestGetSandboxAgentStatusReportsWatchedPorts(t *testing.T) {
@@ -124,15 +132,15 @@ func TestGetSandboxAgentStatusReportsWatchedPorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	watcher := ports.New(ports.Config{
-		UID:      4242,
-		ProcRoot: procRoot,
-		Probe:    func(context.Context, netip.AddrPort) ports.Protocol { return ports.ProtocolHTTP },
+		UID:     4242,
+		Scanner: ports.Procfs{Root: procRoot},
+		Probe:   func(context.Context, netip.AddrPort) ports.Protocol { return ports.ProtocolHTTP },
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go watcher.Run(ctx)
 
-	agent := &handler{ports: watcher}
+	agent := &handler{ports: watcher, resourceSampler: emptyResources(t)}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		status, err := agent.GetSandboxAgentStatus(ctx, sandboxapi.GetSandboxAgentStatusParams{})
@@ -168,7 +176,11 @@ func TestGetSandboxAgentStatusReportsAutostopWhileItRuns(t *testing.T) {
 			return nil
 		},
 	})
-	agent := &handler{ports: ports.New(ports.Config{ProcRoot: t.TempDir()}), autostop: policy}
+	agent := &handler{
+		ports:           ports.New(ports.Config{Scanner: ports.Procfs{Root: t.TempDir()}}),
+		autostop:        policy,
+		resourceSampler: emptyResources(t),
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

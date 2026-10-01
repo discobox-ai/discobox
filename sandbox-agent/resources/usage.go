@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -89,11 +90,9 @@ type ProcessUsage struct {
 	ResidentBytes int64  `json:"residentBytes"`
 }
 
-// Sampler reads one sandbox-wide usage sample. It holds no state between
-// samples: sandbox-agent's status is computed fresh on every call and never
-// pushed on its own initiative (ADR 0030), and the differencing that turns
-// these counters into rates belongs to the pool agent.
-type Sampler struct {
+// Procfs is Linux's Sampler: cgroup v2 and /proc. Its zero value reads the
+// running system's; tests point the roots at fixtures.
+type Procfs struct {
 	ProcRoot   string
 	CgroupRoot string
 	// PageSize is the size of a page in bytes, for converting the page counts
@@ -101,11 +100,7 @@ type Sampler struct {
 	PageSize int
 }
 
-func NewSampler() Sampler {
-	return Sampler{ProcRoot: "/proc", CgroupRoot: "/sys/fs/cgroup", PageSize: os.Getpagesize()}
-}
-
-func (s Sampler) normalized() Sampler {
+func (s Procfs) normalized() Procfs {
 	if s.ProcRoot == "" {
 		s.ProcRoot = "/proc"
 	}
@@ -126,7 +121,7 @@ func (s Sampler) normalized() Sampler {
 // files there describe exactly this sandbox and nothing else. When they cannot
 // be read the per-process rollup stands in, which sees no page cache and no
 // kernel memory; Source records which happened.
-func (s Sampler) Sample() Usage {
+func (s Procfs) Sample(context.Context) Usage {
 	s = s.normalized()
 	usage := Usage{ObservedAt: time.Now().UTC(), Source: "proc"}
 
@@ -157,7 +152,7 @@ func (s Sampler) Sample() Usage {
 	return usage
 }
 
-func (s Sampler) cgroupCPU() (CPUUsage, bool) {
+func (s Procfs) cgroupCPU() (CPUUsage, bool) {
 	text, ok := readTrimmed(filepath.Join(s.CgroupRoot, "cpu.stat"))
 	if !ok {
 		return CPUUsage{}, false
@@ -191,7 +186,7 @@ func (s Sampler) cgroupCPU() (CPUUsage, bool) {
 
 // cgroupCPULimit reads cpu.max, which is "<quota> <period>" or "max <period>"
 // when unlimited. Zero means unlimited, which is what a sandbox container has.
-func (s Sampler) cgroupCPULimit() float64 {
+func (s Procfs) cgroupCPULimit() float64 {
 	text, ok := readTrimmed(filepath.Join(s.CgroupRoot, "cpu.max"))
 	if !ok {
 		return 0
@@ -211,7 +206,7 @@ func (s Sampler) cgroupCPULimit() float64 {
 	return quota / period
 }
 
-func (s Sampler) cgroupMemory() (MemoryUsage, bool) {
+func (s Procfs) cgroupMemory() (MemoryUsage, bool) {
 	current, ok := readInt64(filepath.Join(s.CgroupRoot, "memory.current"))
 	if !ok {
 		return MemoryUsage{}, false
@@ -249,7 +244,7 @@ func (s Sampler) cgroupMemory() (MemoryUsage, bool) {
 // procCPU sums every process's CPU time, for a sandbox whose own cgroup is not
 // readable. It undercounts against the cgroup, which keeps charging for
 // processes that have already exited.
-func (s Sampler) procCPU() CPUUsage {
+func (s Procfs) procCPU() CPUUsage {
 	var cpu CPUUsage
 	s.eachProcess(func(stat procStat, _ string) {
 		cpu.UserUsec += ticksToUsec(stat.utime)
@@ -259,7 +254,7 @@ func (s Sampler) procCPU() CPUUsage {
 	return cpu
 }
 
-func (s Sampler) memoryRollup() (virtual, resident int64) {
+func (s Procfs) memoryRollup() (virtual, resident int64) {
 	s.eachProcess(func(stat procStat, _ string) {
 		virtual += int64(stat.vsize)
 		resident += stat.rssPages * int64(s.PageSize)
@@ -268,7 +263,7 @@ func (s Sampler) memoryRollup() (virtual, resident int64) {
 }
 
 // processes returns the candidate list and the total number of processes seen.
-func (s Sampler) processes() ([]ProcessUsage, int) {
+func (s Procfs) processes() ([]ProcessUsage, int) {
 	var all []ProcessUsage
 	s.eachProcess(func(stat procStat, cmdline string) {
 		all = append(all, ProcessUsage{
@@ -314,7 +309,7 @@ func topCandidates(all []ProcessUsage) []ProcessUsage {
 // eachProcess walks /proc once, calling fn for every process whose stat could
 // be read. A process that exits mid-walk simply does not appear; that is
 // ordinary, not an error.
-func (s Sampler) eachProcess(fn func(procStat, string)) {
+func (s Procfs) eachProcess(fn func(procStat, string)) {
 	entries, err := os.ReadDir(s.ProcRoot)
 	if err != nil {
 		return

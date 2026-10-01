@@ -1,6 +1,7 @@
 package ports
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -12,25 +13,13 @@ import (
 	"strings"
 )
 
-// listener is one socket a server could be behind, as /proc/net/{tcp,udp}{,6}
-// report it: a TCP socket in TCP_LISTEN, or a UDP socket nothing has connected.
-// Those tables are per network namespace, and sandbox-agent shares the
-// sandbox's, so they list exactly the sockets a forward could reach.
-type listener struct {
-	Network network
-	Addr    netip.Addr
-	Port    int
-	Inode   uint64
+// Procfs is Linux's Scanner: the socket tables in /proc/net, filtered by the
+// uid column. Those tables are per network namespace, and sandbox-agent shares
+// the sandbox's, so they list exactly the sockets a forward could reach.
+type Procfs struct {
+	// Root is where procfs is mounted; tests point it at a fixture.
+	Root string
 }
-
-// network is which table a socket came from. A TCP port and a UDP port with the
-// same number are two ports (ADR 0109 §1), so it is half of every key.
-type network string
-
-const (
-	networkTCP network = "tcp"
-	networkUDP network = "udp"
-)
 
 // tcpStateListen is TCP_LISTEN as the kernel prints it in the st column.
 const tcpStateListen = "0A"
@@ -40,7 +29,7 @@ const tcpStateListen = "0A"
 // TCP_CLOSE; a connected socket is 01, TCP_ESTABLISHED. A server receives from
 // anybody and so never connects, which makes this the closest UDP has to a
 // listen state — and a client using sendto never connects either, which is why
-// it is not enough on its own (see ephemeralRange).
+// it is not enough on its own (see portRange).
 const udpStateUnconnected = "07"
 
 // procNetFields is how many whitespace-separated columns a row must have to
@@ -62,16 +51,19 @@ var procNetTables = []procNetTable{
 	{name: "udp6", network: networkUDP, state: udpStateUnconnected},
 }
 
-// scanListeners returns every listening TCP socket and every bound,
-// unconnected UDP socket owned by uid. A table that does not exist is not an
-// error — an IPv6-less kernel has no net/tcp6, and a platform with no procfs at
-// all has none of them, which reports no ports rather than failing the status
-// it is part of.
+// scan returns every listening TCP socket and every bound, unconnected UDP
+// socket owned by uid: a TCP socket in TCP_LISTEN, or a UDP socket nothing has
+// connected. A table that does not exist is not an error — an IPv6-less kernel
+// has no net/tcp6, and a platform with no procfs at all has none of them, which
+// reports no ports rather than failing the status it is part of.
 //
-// A UDP socket on a port inside the ephemeral range is dropped: that is where
-// the kernel puts a client's socket when it binds nothing, and an unconnected
-// client looks exactly like a server in every other column (ADR 0109 §1).
-func scanListeners(procRoot string, uid int64) ([]listener, error) {
+// A UDP socket on a port inside the ephemeral range is dropped (ADR 0109 §1;
+// see portRange).
+func (p Procfs) scan(_ context.Context, uid int64) ([]listener, error) {
+	procRoot := p.Root
+	if procRoot == "" {
+		procRoot = "/proc"
+	}
 	var (
 		out  []listener
 		errs []error
@@ -120,15 +112,10 @@ func parseProcNet(table string, from procNetTable, uid int64) []listener {
 		if err != nil {
 			continue
 		}
-		out = append(out, listener{Network: from.network, Addr: addr, Port: port, Inode: inode})
+		out = append(out, listener{Network: from.network, Addr: addr, Port: port, Socket: inode})
 	}
 	return out
 }
-
-// portRange is an inclusive range of port numbers.
-type portRange struct{ low, high int }
-
-func (r portRange) contains(port int) bool { return port >= r.low && port <= r.high }
 
 // defaultEphemeralRange is the kernel's own default for ip_local_port_range,
 // used when the sysctl cannot be read.

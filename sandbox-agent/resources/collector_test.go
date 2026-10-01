@@ -26,7 +26,7 @@ func TestCollectorCollectsProcAndCgroupData(t *testing.T) {
 	writeFile(t, filepath.Join(cgroupDir, "memory.current"), "4096\n")
 	writeFile(t, filepath.Join(cgroupDir, "cpu.stat"), "usage_usec 100\nuser_usec 70\nsystem_usec 30\n")
 
-	sample, err := (Collector{ProcRoot: procRoot, CgroupRoot: cgroupRoot}).Collect(context.Background(), execs.Exec{
+	sample, err := (Procfs{ProcRoot: procRoot, CgroupRoot: cgroupRoot}).Collect(context.Background(), execs.Exec{
 		ID:     "ex_1",
 		Status: execs.StatusRunning,
 		PID:    123,

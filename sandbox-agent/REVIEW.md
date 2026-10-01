@@ -108,6 +108,16 @@ user waits on every single start.
   boot must not assert it again. Both sides asserting produced two full walks of
   the same inodes, in opposite directions, on every start.
 
+## Platform observation
+
+- **Ports, resource counters and power-off go through their seam**
+  (`ports.Scanner`, `resources.Sampler`, `autostop`'s `platformPowerOff`). A
+  new `/proc`, cgroup or `systemctl` read outside the Linux implementation is
+  a Linux-only answer that breaks on darwin without failing a Linux test.
+- **Keep the tagged files to the system calls.** Parse what a platform's tool
+  prints in an untagged file, so the parser is tested in every CI lane rather
+  than only on a Mac.
+
 ## Idle stop
 
 - **Every client connection this process serves must hold `autostop`** —
