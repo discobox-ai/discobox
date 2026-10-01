@@ -18,7 +18,7 @@ terminal, and service runtime.
 | `config` | Decodes `/etc/discobox/sandbox.json` — the effective config pool-agent already computed; nothing is merged here — into the config the agent runs on, with defaults and validation. Carries the image-contributed `volumes` declaration; its `%HOME%`/`%UID%`/`%GID%` tokens are resolved by the root `harness` package when `boot` wires the volumes. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. Also hand-registers the exec attach/start routes and, for ADR 0024's SSH ingress, `GET .../tcp/attach` (`tcp_attach.go`): dials `host:port` from inside this process — sharing the sandbox's network namespace, unlike the pool-agent's container-IP-only `/http/{port}` — and bridges the raw TCP bytes to `execstream/frame` `Input`/`Stdout`/`CloseInput`/`CloseOutput` frames over a websocket, gated by the `tcp:connect` scope. Each direction ends on its own: a `CloseInput` half-closes the TCP conn's write side, and the target's own EOF sends `CloseOutput` and keeps the tunnel open for whatever the client is still sending. `GET .../udp/attach` (`udp_attach.go`, scope `udp:connect`) is its datagram twin ([ADR 0109](../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)): a *connected* UDP socket, so only the target's replies arrive and each tunnel has its own source port, bridged one datagram per `Input`/`Stdout` frame. It has no half-close, and a refused datagram (`ECONNREFUSED` from ICMP) does not end it; the tunnel ends when the websocket does. In config mode it also provisions `harness.ConfigureDir` (`configuredir.go`) before anything can be seeded into it: the configure command runs as the sandbox user, and this 0700 subdirectory is the only part of root-owned `/run/discobox` that user may write — the rest holds the resolved secrets file, the proxy CA bundles and trust env, and the control-plane and buildkit sockets. Like `boot.WireSecrets`, it runs from this process rather than the PID-1 flow, because systemd mounts its own tmpfs over `/run` after boot execs into it. |
 | `runuser` | The sandbox's run identity: merges the image/manifest/request layers ([`sandboxuser`](../sandboxuser/DESIGN.md)) and completes them against the image's own passwd/group database — on Linux. Completion is a per-platform seam: off Linux a sandbox has one account and no POSIX ids, so the answer is the agent's own account and a request naming anything else is refused (ADR 0145 §5). The **only** package that reads those files for resolution, so faking them fakes them for every consumer including the `setuid` path. Imported by `boot` and `execs`; `terminal` reaches it only through `execs.Manager.ResolveUser`, so none of them derives identity separately. See [runuser/DESIGN.md](runuser/DESIGN.md). |
-| `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. `SystemdRunner` drives systemd over one persistent D-Bus connection on the system bus — `StartTransientUnit` for a launch, unit properties for status — rather than forking `systemd-run`/`systemctl` per call, and `Watcher` converges exec state from that connection's unit signals plus the runtime directory's file events ([ADR 0115](../docs/adr/0115-exec-state-converges-on-notifications-not-a-poll.md)). It is the system bus specifically because signal subscription needs a dbus-daemon, which systemd's private socket does not provide. |
+| `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, the unit abstraction (`UnitManager`, see [Supervision](#supervision)), stdout/stderr or PTY logging, shim launch and its argv contract (`shimargs.go`), status socket, and attach. Harness terminals are execs. `SystemdRunner` (linux) drives systemd over one persistent D-Bus connection on the system bus — `StartTransientUnit` for a launch, unit properties for status — rather than forking `systemd-run`/`systemctl` per call, and `Watcher` converges exec state from that connection's unit signals plus the runtime directory's file events ([ADR 0115](../docs/adr/0115-exec-state-converges-on-notifications-not-a-poll.md)). It is the system bus specifically because signal subscription needs a dbus-daemon, which systemd's private socket does not provide. |
 | `execs` (`shim.go`) | Per-exec child process: the local Unix socket attach/status/start API, the terminal screen/input/wait routes, the audit log, and the runtime status file. The process itself is `procio`'s. |
 | `procio` | Running a process and owning its descriptors: PTY versus pipes, stdin close, signal mapping (each request reported as a `Delivery` of what it became), and exit status. No sockets, no frames, no attach — which is what makes its traps testable with a real process and nothing else. |
 | [`services`](services) | The sandbox's declared services, from the repository's `.discobox/services` and the image's own directory in the same format, which the sandbox starts at boot and `discobox admin services` and the workspace act on afterwards ([ADR 0070](../docs/adr/0070-services-are-declared-execs-the-sandbox-starts-for-you.md)). Like `terminal` it is a typed layer over `execs` and owns no runtime of its own: a service is an exec created with `Shell`/`ShellCommandLine` (the script, under the run user's login shell), on pipes rather than a PTY, tagged `serviceId`/`serviceName` in exec metadata, and run in the repository root it was declared in. That workdir is named on the request rather than left to the exec default: the two resolve to the same directory today, since discovery is rooted at that default, but a service script reads its own repository through relative paths and which directory those are relative to must be a property of the declaration rather than a coincidence of two derivations agreeing. It keeps no state — declarations are re-read from disk on every listing, and run state is the exec record — so two clients, or a client and the boot flow, cannot disagree about what is running. A declaration may also name the ports it serves, which `ports` reports whatever the scan finds ([ADR 0076](../docs/adr/0076-a-service-may-declare-a-port-discovery-cannot-see.md)); `Declarations` is the seam it is asked through, and it reads the files rather than the exec records, because a port is declared by a file and not by a run.  A declaration is a script with front matter or, for one with nothing to run, a `.yaml` file, which starts never; the file shapes are the root `declared` package's ([ADR 0125](../docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md) §1). It reads two directories in the same format ([ADR 26-09-05-409](../docs/adr/26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)): the repository's, and the image's at `/usr/local/share/discobox/services` — the same pairing `.discobox/skills` has with the image's skills directory (ADR 0080), because some services are true of the sandbox whatever repository is worked on in it. A repository declaration wins on a shared id. Three front-matter keys exist for the image's case: `protocol:`, reported instead of probing the port — and `protocol: udp` declares the UDP ports of those numbers, the remedy for a UDP server discovery cannot see ([ADR 0109](../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)); a declaration names one transport, so a service on both takes a second, `start: never` declaration for its UDP ports; `start: never`, which declares ports without declaring anything to run — a socket-activated unit already serves them, and a declaration with nothing to run is not a broken script; and `id:`, a stated lowercase reverse-DNS identity replacing the filename-derived one, so a client can recognize `ai.discobox.desktop` whatever the file is called. That prefix is reserved for image declarations, because a repository wins on a shared id and one claiming the desktop's would take its link with it. |
@@ -118,6 +118,46 @@ platform.
   user holds; and the idle clock is moved by a changed screen, never by
   output (ADR 0124) — that part of `autostop` is the same code on every
   platform.
+
+## Supervision
+
+Supervision is one of the three per-platform seams behind the sandbox-agent API
+([ADR 0145 §4](../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)).
+`execs.UnitManager` is the seam: every implementation is required and
+complete, and which one a `Manager` gets is chosen by build
+(`units_linux.go`, `units_other.go`), never probed at runtime.
+
+```mermaid
+flowchart LR
+  Manager["execs.Manager"] -->|Start/Stop/Status/List/Watch| UM{{"UnitManager"}}
+  UM -->|linux| Systemd["SystemdRunner: transient units over D-Bus"]
+  UM -->|darwin, windows| Supervisor["Supervisor: the agent's own shims"]
+  Systemd --> Shim["exec-shim"]
+  Supervisor --> Shim
+  Shim -->|"runtime file: exit status"| Watcher["execs.Watcher"]
+  UM -->|"Watch: unit gone"| Watcher
+```
+
+- Both run the same `exec-shim` (`shimArgv`/`ParseShimArgs` are its one argv
+  contract), and both answer only whether a run is still there. The exit
+  status is always the shim's own runtime write (ADR 0115).
+- `Supervisor` starts each shim in a session of its own, so it outlives the
+  agent, and passes it a descriptor holding an exclusive **flock** on
+  `<runtime>/units/<unit>.lock`. The kernel releases that lock when the shim
+  exits however it exits, so a held lock is a running unit, a free one is a
+  shim that is gone — collected (removed) and reported on `Watch` — and no
+  file at all is an unloaded unit. One goroutine blocks on each lock; nothing
+  polls. An agent that restarts finds the same locks held and waits on them,
+  which is how it converges on shims it did not start.
+- `Stop` sends the shim SIGTERM — the shim ends its command's process group —
+  and SIGKILL after a grace period. There is no control group: a process the
+  command moved into a session of its own is not the supervisor's to end.
+- The shim's own output goes to `<unit>.log` beside its lock, never to the
+  agent's stderr: a shim outlives the agent, and a Go process writing to a
+  pipe whose reader is gone dies of SIGPIPE.
+- The Windows half of the lock is not written yet. It builds and reports
+  every lock as unsupported, which the supervisor never reads as a shim that
+  ended.
 
 ## Boundary Rules
 
@@ -291,8 +331,10 @@ platform.
   underneath it would undo that. Nothing re-reads the directory afterwards, so a
   skill added to the repository later reaches a new sandbox, not this one.
   See ADR 0072.
-- Treat systemd as the source of truth for terminal unit liveness. Runtime JSON
-  files identify known terminals; reconciliation joins those files with systemd
+- Treat the unit manager as the source of truth for terminal unit liveness —
+  systemd on Linux, the agent's own `Supervisor` elsewhere (see
+  [Supervision](#supervision)). Runtime JSON
+  files identify known terminals; reconciliation joins those files with unit
   status and shim status. That join is driven by notifications, never a timer
   ([ADR 0115](../docs/adr/0115-exec-state-converges-on-notifications-not-a-poll.md)):
   `execs.Watcher` reconciles one exec when its runtime file changes — the shim

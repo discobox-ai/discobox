@@ -312,10 +312,10 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	if strings.TrimSpace(runtimeDir) == "" {
 		runtimeDir = "/run/discobox/execs"
 	}
-	if units == nil {
-		units = NewSystemdRunner()
-	}
 	runtimeDir = filepath.Clean(runtimeDir)
+	if units == nil {
+		units = defaultUnitManager(runtimeDir)
+	}
 	return &Manager{
 		// A workdir is a guest path, so it is cleaned and joined with "path"
 		// wherever one is handled below; filepath would call "/tmp" relative on

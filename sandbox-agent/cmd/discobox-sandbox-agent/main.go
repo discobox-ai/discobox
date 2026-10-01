@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -372,89 +371,25 @@ func runDesktopPrepareSession(args []string) int {
 }
 
 func runExecShim(args []string) int {
-	var cfg execs.ShimConfig
-	var databasePath, commandBase64, startupCommandBase64, envBase64, userBase64, metadataBase64 string
-	var rows, cols int
-	flags := flag.NewFlagSet("discobox-sandbox-agent exec-shim", flag.ContinueOnError)
-	flags.StringVar(&cfg.ExecID, "exec-id", "", "sandbox exec id")
-	flags.StringVar(&cfg.Unit, "unit", "", "systemd unit name")
-	flags.StringVar(&cfg.Workdir, "workdir", "", "exec working directory")
-	flags.StringVar(&cfg.SocketPath, "socket", "", "exec shim unix socket path")
-	flags.StringVar(&cfg.RuntimePath, "runtime", "", "exec runtime status path")
-	flags.StringVar(&databasePath, "database", "", "sandbox-agent sqlite database path")
-	flags.IntVar(&rows, "rows", 0, "initial PTY rows")
-	flags.IntVar(&cols, "cols", 0, "initial PTY cols")
-	flags.BoolVar(&cfg.TTY, "tty", false, "allocate a PTY")
-	flags.StringVar(&commandBase64, "command", "", "base64 encoded JSON command argv")
-	flags.StringVar(&startupCommandBase64, "startup-command", "", "base64 encoded JSON startup command argv, typed into the shell after it starts")
-	flags.StringVar(&envBase64, "env", "", "base64 encoded JSON environment")
-	flags.StringVar(&userBase64, "user", "", "base64 encoded JSON exec user")
-	flags.StringVar(&metadataBase64, "metadata", "", "base64 encoded JSON exec metadata")
-	if err := flags.Parse(args); err != nil {
-		return 2
-	}
-	if commandBase64 == "" {
-		slog.Error("exec shim command is required")
-		return 2
-	}
-	commandJSON, err := base64.StdEncoding.DecodeString(commandBase64)
+	parsed, err := execs.ParseShimArgs(args)
 	if err != nil {
-		slog.Error("decode exec shim command", "error", err)
+		slog.Error("parse exec shim arguments", "error", err)
 		return 2
 	}
-	if err := json.Unmarshal(commandJSON, &cfg.Command); err != nil {
-		slog.Error("parse exec shim command", "error", err)
-		return 2
-	}
-	if startupCommandBase64 != "" {
-		startupCommandJSON, err := base64.StdEncoding.DecodeString(startupCommandBase64)
-		if err != nil {
-			slog.Error("decode exec shim startup command", "error", err)
-			return 2
-		}
-		if err := json.Unmarshal(startupCommandJSON, &cfg.StartupCommand); err != nil {
-			slog.Error("parse exec shim startup command", "error", err)
-			return 2
+	cfg := parsed.Config
+	// Taken before anything else this process starts, so the command never
+	// inherits the descriptor whose release tells the supervisor this shim is
+	// gone (execs.Supervisor).
+	if parsed.Lifetime != nil {
+		if err := execs.HoldLifetime(*parsed.Lifetime); err != nil {
+			slog.Error("hold exec shim lifetime", "execID", cfg.ExecID, "error", err)
+			return 1
 		}
 	}
-	if envBase64 != "" {
-		envJSON, err := base64.StdEncoding.DecodeString(envBase64)
-		if err != nil {
-			slog.Error("decode exec shim env", "error", err)
-			return 2
-		}
-		if err := json.Unmarshal(envJSON, &cfg.Env); err != nil {
-			slog.Error("parse exec shim env", "error", err)
-			return 2
-		}
-	}
-	if userBase64 != "" {
-		userJSON, err := base64.StdEncoding.DecodeString(userBase64)
-		if err != nil {
-			slog.Error("decode exec shim user", "error", err)
-			return 2
-		}
-		if err := json.Unmarshal(userJSON, &cfg.User); err != nil {
-			slog.Error("parse exec shim user", "error", err)
-			return 2
-		}
-	}
-	if metadataBase64 != "" {
-		metadataJSON, err := base64.StdEncoding.DecodeString(metadataBase64)
-		if err != nil {
-			slog.Error("decode exec shim metadata", "error", err)
-			return 2
-		}
-		if err := json.Unmarshal(metadataJSON, &cfg.Metadata); err != nil {
-			slog.Error("parse exec shim metadata", "error", err)
-			return 2
-		}
-	}
-	cfg.Rows = uint16Dimension(rows)
-	cfg.Cols = uint16Dimension(cols)
+	databasePath := parsed.DatabasePath
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// The exec-shim is its own OS process (systemd-run, see execs/systemd.go),
+	// The exec-shim is its own OS process (a unit the execs.UnitManager starts),
 	// separate from the main sandbox-agent server that owns the long-lived
 	// store — it opens its own connection to the same sqlite file to write
 	// this exec's transcript (execs.LogSink, see docs/adr/0028). Fail hard on
@@ -479,14 +414,4 @@ func runExecShim(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-func uint16Dimension(value int) uint16 {
-	if value <= 0 {
-		return 0
-	}
-	if value > int(^uint16(0)) {
-		return ^uint16(0)
-	}
-	return uint16(value)
 }
