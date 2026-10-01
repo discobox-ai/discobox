@@ -114,7 +114,32 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 
 	startResolveTokenRefresher(ctx, logger, bootstrap, registration)
 
-	return Serve(ctx, logger, bootstrap, registration, client)
+	runtime, err := newDockerSandboxRuntime(bootstrap)
+	if err != nil {
+		return err
+	}
+	// Image reclamation is the Docker pool's alone: the images are its daemon's,
+	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
+	go runtime.WatchImages(ctx, logger)
+	return Serve(ctx, logger, bootstrap, registration, runtime, client)
+}
+
+// newDockerSandboxRuntime is this pool's runtime: sandboxes as containers on
+// the Docker daemon beside the agent.
+func newDockerSandboxRuntime(bootstrap Bootstrap) (*sandboxruntime.DockerSandboxRuntime, error) {
+	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
+	if err != nil {
+		return nil, err
+	}
+	return sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
+		ProjectID:             bootstrap.ProjectID,
+		PoolID:                bootstrap.PoolID,
+		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
+		HostMountPrefix:       bootstrap.HostMountPrefix,
+		HostStateRoot:         bootstrap.HostStateRoot,
+		SandboxIdleTimeout:    idleTimeout,
+		SharedMemoryBytes:     sandboxSharedMemoryBytes(poolCgroupRoot),
+	})
 }
 
 const (
@@ -246,28 +271,13 @@ func ExecSystemdChildIfRequested() error {
 	return agentsystemd.ExecSystemdChildIfRequested()
 }
 
-// Serve starts the pool-agent HTTP server.
-func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporters ...SandboxStateClient) error {
-	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
-	if err != nil {
-		return err
-	}
-	runtime, err := sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
-		ProjectID:             bootstrap.ProjectID,
-		PoolID:                bootstrap.PoolID,
-		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
-		HostMountPrefix:       bootstrap.HostMountPrefix,
-		HostStateRoot:         bootstrap.HostStateRoot,
-		SandboxIdleTimeout:    idleTimeout,
-		SharedMemoryBytes:     sandboxSharedMemoryBytes(poolCgroupRoot),
-	})
-	if err != nil {
-		return err
-	}
-	var reporter SandboxStateClient
-	if len(reporters) > 0 {
-		reporter = reporters[0]
-	}
+// Serve runs the pool's sandbox runtime loops and serves the pool-agent HTTP
+// endpoints until ctx ends. It knows the runtime only as sandboxruntime.Runtime;
+// what kind it is, and anything only that kind needs, is the caller's.
+//
+// A nil reporter runs no loop that reports to the control plane: no state
+// channel, tree reaper, status poll or resource report.
+func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, reporter SandboxStateClient) error {
 	if reporter != nil {
 		if registration == nil {
 			return errors.New("pool registration is required for sandbox state reporting")
@@ -356,12 +366,6 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 		}
 	}
 	go runtime.WatchProxyMaterial(ctx, logger)
-	go runtime.WatchImages(ctx, logger)
-	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
-}
-
-// ServeWithRuntime starts the pool-agent HTTP server with an explicit sandbox runtime.
-func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime) error {
 	// The listen URL's scheme selects the transport, so a VSOCK-only or
 	// socket-only pool needs no special case here.
 	listener, err := wire.Listen(bootstrap.AgentListenURL)
