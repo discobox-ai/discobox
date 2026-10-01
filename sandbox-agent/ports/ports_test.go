@@ -126,7 +126,7 @@ func TestWatcherClassifiesAndCachesPerSocket(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
 	probe := newRecordingProbe(map[int]Protocol{5173: ProtocolHTTP})
-	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: probe.probe})
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: probe.probe})
 
 	watcher.tick(context.Background())
 	if got := snapshotByPort(t, watcher, 5173); got.Protocol != ProtocolHTTP {
@@ -145,7 +145,7 @@ func TestWatcherReprobesWhenTheSocketBehindAPortIsReplaced(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
 	probe := newRecordingProbe(map[int]Protocol{5173: ProtocolHTTP})
-	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: probe.probe})
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: probe.probe})
 	watcher.tick(context.Background())
 	first := snapshotByPort(t, watcher, 5173)
 
@@ -172,7 +172,7 @@ func TestWatcherRetriesPortsItCouldNotReach(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
 	probe := newRecordingProbe(map[int]Protocol{5173: ProtocolUnknown})
-	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: probe.probe})
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: probe.probe})
 
 	watcher.tick(context.Background())
 	if got := snapshotByPort(t, watcher, 5173); got.Protocol != ProtocolUnknown {
@@ -205,7 +205,7 @@ func TestWatcherGroupsOneWildcardPortAcrossFamilies(t *testing.T) {
 	write("tcp6", row(0, "00000000000000000000000000000000", "1F90", 1000, 41002))
 
 	var probed netip.AddrPort
-	watcher := New(Config{UID: 1000, ProcRoot: root, Probe: func(_ context.Context, target netip.AddrPort) Protocol {
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: root}, Probe: func(_ context.Context, target netip.AddrPort) Protocol {
 		probed = target
 		return ProtocolHTTP
 	}})
@@ -234,7 +234,7 @@ func TestWatcherIgnoresOtherUsersAndExcludedPorts(t *testing.T) {
 	watcher := New(Config{
 		UID:             1000,
 		ExcludeTCPPorts: []int{3003},
-		ProcRoot:        fixture.root,
+		Scanner:         Procfs{Root: fixture.root},
 		Probe:           func(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP },
 	})
 	watcher.tick(context.Background())
@@ -248,7 +248,7 @@ func TestWatcherIgnoresOtherUsersAndExcludedPorts(t *testing.T) {
 func TestWatcherDropsPortsThatStopListening(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
-	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: func(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP }})
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: func(context.Context, netip.AddrPort) Protocol { return ProtocolHTTP }})
 	watcher.tick(context.Background())
 
 	fixture.write()
@@ -262,7 +262,7 @@ func TestWatcherPublishesANewPortBeforeItsProbeAnswers(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
 	release := make(chan struct{})
-	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: func(context.Context, netip.AddrPort) Protocol {
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: func(context.Context, netip.AddrPort) Protocol {
 		<-release
 		return ProtocolHTTP
 	}})
@@ -307,7 +307,7 @@ func TestWatcherReportsADeclaredPortNothingIsListeningOn(t *testing.T) {
 	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolHTTP})
 	watcher := New(Config{
 		UID:      1000,
-		ProcRoot: fixture.root,
+		Scanner:  Procfs{Root: fixture.root},
 		Probe:    probe.probe,
 		Declared: func() ([]Declaration, error) { return []Declaration{{Port: 8080}}, nil },
 	})
@@ -339,7 +339,7 @@ func TestWatcherFollowsTheDeclaredSetAsItChanges(t *testing.T) {
 	var declared []Declaration
 	watcher := New(Config{
 		UID:      1000,
-		ProcRoot: fixture.root,
+		Scanner:  Procfs{Root: fixture.root},
 		Probe:    newRecordingProbe(nil).probe,
 		Declared: func() ([]Declaration, error) { return declared, nil },
 	})
@@ -368,7 +368,7 @@ func TestWatcherKeepsTheObservationOfADeclaredPortThatIsAlsoListening(t *testing
 	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolHTTP})
 	watcher := New(Config{
 		UID:      1000,
-		ProcRoot: fixture.root,
+		Scanner:  Procfs{Root: fixture.root},
 		Probe:    probe.probe,
 		Declared: func() ([]Declaration, error) { return []Declaration{{Port: 8080}}, nil },
 	})
@@ -398,7 +398,7 @@ func TestWatcherProbesADeclaredPortOnceItAnswers(t *testing.T) {
 	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolUnknown})
 	watcher := New(Config{
 		UID:      1000,
-		ProcRoot: fixture.root,
+		Scanner:  Procfs{Root: fixture.root},
 		Probe:    probe.probe,
 		Declared: func() ([]Declaration, error) { return []Declaration{{Port: 8080}}, nil },
 	})
@@ -428,7 +428,7 @@ func TestWatcherExcludesADeclaredPortItMustNotReport(t *testing.T) {
 	fixture.write()
 	watcher := New(Config{
 		UID:             1000,
-		ProcRoot:        fixture.root,
+		Scanner:         Procfs{Root: fixture.root},
 		ExcludeTCPPorts: []int{8558},
 		Probe:           newRecordingProbe(nil).probe,
 		Declared:        func() ([]Declaration, error) { return []Declaration{{Port: 8558}, {Port: 70000}, {Port: 0}}, nil },
@@ -447,7 +447,7 @@ func TestWatcherSurvivesADeclaredSetItCannotRead(t *testing.T) {
 	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
 	watcher := New(Config{
 		UID:      1000,
-		ProcRoot: fixture.root,
+		Scanner:  Procfs{Root: fixture.root},
 		Probe:    newRecordingProbe(nil).probe,
 		Declared: func() ([]Declaration, error) { return nil, errors.New("read .discobox/services: permission denied") },
 	})
@@ -470,9 +470,9 @@ func TestAStatedProtocolIsReportedWithoutProbingThePort(t *testing.T) {
 	fixture.write()
 	probe := newRecordingProbe(map[int]Protocol{6900: ProtocolTCP})
 	watcher := New(Config{
-		UID:      1000,
-		ProcRoot: fixture.root,
-		Probe:    probe.probe,
+		UID:     1000,
+		Scanner: Procfs{Root: fixture.root},
+		Probe:   probe.probe,
 		Declared: func() ([]Declaration, error) {
 			return []Declaration{{Port: 6900, ServiceID: "ai.discobox.desktop", ServiceName: "Desktop", Protocol: ProtocolHTTP}}, nil
 		},
@@ -516,7 +516,7 @@ func TestADeclarationWithoutAProtocolIsStillProbed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			watcher := New(Config{
 				UID:      1000,
-				ProcRoot: fixture.root,
+				Scanner:  Procfs{Root: fixture.root},
 				Probe:    probe.probe,
 				Declared: func() ([]Declaration, error) { return []Declaration{test.declaration}, nil },
 			})
@@ -541,9 +541,9 @@ func TestTheFirstDeclarationOfAPortWins(t *testing.T) {
 	fixture.write()
 	probe := newRecordingProbe(nil)
 	watcher := New(Config{
-		UID:      1000,
-		ProcRoot: fixture.root,
-		Probe:    probe.probe,
+		UID:     1000,
+		Scanner: Procfs{Root: fixture.root},
+		Probe:   probe.probe,
 		Declared: func() ([]Declaration, error) {
 			return []Declaration{
 				{Port: 6900, ServiceID: "ai.discobox.desktop", ServiceName: "Desktop", Protocol: ProtocolHTTP},
@@ -569,7 +569,7 @@ func TestWatcherReportsABoundUDPPortWithoutProbingIt(t *testing.T) {
 	fixture.write()
 	fixture.writeUDP(udpRow(0, "00000000", "14E9", 1000, 51001))
 	probe := newRecordingProbe(nil)
-	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: probe.probe})
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: probe.probe})
 
 	watcher.tick(context.Background())
 	watcher.tick(context.Background())
@@ -594,7 +594,7 @@ func TestWatcherReportsTheTCPAndUDPPortsOfOneNumberSeparately(t *testing.T) {
 	fixture.write(row(0, "0100007F", "0035", 1000, 41001))
 	fixture.writeUDP(udpRow(0, "0100007F", "0035", 1000, 51001))
 	probe := newRecordingProbe(map[int]Protocol{53: ProtocolTCP})
-	watcher := New(Config{UID: 1000, ProcRoot: fixture.root, Probe: probe.probe})
+	watcher := New(Config{UID: 1000, Scanner: Procfs{Root: fixture.root}, Probe: probe.probe})
 
 	watcher.tick(context.Background())
 
@@ -630,9 +630,9 @@ func TestAUDPDeclarationDeclaresTheUDPPort(t *testing.T) {
 	fixture.write(row(0, "0100007F", "1F90", 1000, 41001))
 	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolHTTP})
 	watcher := New(Config{
-		UID:      1000,
-		ProcRoot: fixture.root,
-		Probe:    probe.probe,
+		UID:     1000,
+		Scanner: Procfs{Root: fixture.root},
+		Probe:   probe.probe,
 		Declared: func() ([]Declaration, error) {
 			return []Declaration{{Port: 8080, ServiceID: "game", ServiceName: "Game", Protocol: ProtocolUDP}}, nil
 		},
@@ -665,7 +665,7 @@ func TestTheExcludedPortIsExcludedForTCPOnly(t *testing.T) {
 	watcher := New(Config{
 		UID:             1000,
 		ExcludeTCPPorts: []int{3003},
-		ProcRoot:        fixture.root,
+		Scanner:         Procfs{Root: fixture.root},
 		Probe:           newRecordingProbe(nil).probe,
 		Declared: func() ([]Declaration, error) {
 			return []Declaration{{Port: 3003, Protocol: ProtocolUDP, ServiceID: "game"}}, nil

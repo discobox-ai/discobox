@@ -4,7 +4,8 @@
 // having to know its number or its protocol (see ADR 0046). It reports the UDP
 // ports they have bound beside them, as udp and never probed (ADR 0109).
 //
-// Discovery is a procfs read filtered by uid, cheap enough to repeat on a short
+// Discovery is a read of the platform's socket table filtered by uid — procfs
+// on Linux, lsof on darwin, behind Scanner — cheap enough to repeat on a short
 // interval. Classification is not: the only way to learn what a socket speaks
 // is to connect to it and write a request at it, so a socket is probed once and
 // the answer is cached for its lifetime. That is why this is a standing watcher
@@ -40,7 +41,7 @@ import (
 	"time"
 )
 
-// DefaultInterval is how often the watcher rescans procfs. Only newly appeared
+// DefaultInterval is how often the watcher rescans the socket table. Only newly appeared
 // sockets cost anything beyond the two file reads, so this is set by how quickly
 // a port should show up rather than by scan cost — well inside the 15s cadence
 // pool-agent polls status on (ADR 0030), so a port is rarely more than one
@@ -110,8 +111,10 @@ type Config struct {
 	// root. A UDP port of the same number is somebody else's and is reported
 	// as usual (ADR 0109 §1).
 	ExcludeTCPPorts []int
-	// ProcRoot defaults to /proc. Tests point it at a fixture directory.
-	ProcRoot string
+	// Scanner reads the sockets the sandbox's processes serve on: this
+	// package's observation seam (ADR 0145 §4). Nil is this platform's own —
+	// Procfs on Linux, lsof on darwin. Tests point a Procfs at a fixture.
+	Scanner Scanner
 	// Interval defaults to DefaultInterval.
 	Interval time.Duration
 	// Declared reports the ports declarations name, which are listed whatever
@@ -122,7 +125,7 @@ type Config struct {
 	// construction because declarations are re-read from disk on every listing
 	// (ADR 0070 §5): a service file added or edited while the sandbox is up
 	// takes effect immediately, and the port it declares has to behave the same
-	// way. Asking through a seam is also what keeps a procfs watcher from
+	// way. Asking through a seam is also what keeps a socket-table watcher from
 	// knowing what a repository is, the way Probe keeps it from knowing what
 	// HTTP is.
 	Declared func() ([]Declaration, error)
@@ -131,7 +134,7 @@ type Config struct {
 	Logger *slog.Logger
 }
 
-// Declaration is a port something says exists, whatever procfs shows.
+// Declaration is a port something says exists, whatever the scan shows.
 //
 // Protocol is the field that changes behavior: stated, it is reported as-is and
 // the port is never connected to; empty, the port is probed like any other.
@@ -193,7 +196,7 @@ func (e endpoint) less(other endpoint) bool {
 type Watcher struct {
 	uid      int64
 	exclude  map[int]struct{}
-	procRoot string
+	scanner  Scanner
 	interval time.Duration
 	declared func() ([]Declaration, error)
 	probe    func(context.Context, netip.AddrPort) Protocol
@@ -205,12 +208,12 @@ type Watcher struct {
 }
 
 // portState is what the watcher remembers about one port between ticks. The
-// inode key is what makes the cached protocol safe to keep: it changes whenever
+// socket key is what makes the cached protocol safe to keep: it changes whenever
 // the socket behind the port is replaced, which is the only event that can
 // change the answer.
 type portState struct {
 	firstSeenAt time.Time
-	inodeKey    string
+	socketKey   string
 	protocol    Protocol
 	addresses   []string
 	target      netip.AddrPort
@@ -219,18 +222,18 @@ type portState struct {
 	serviceName string
 }
 
-// declaredInodeKey stands in for the socket inodes of a port that has none to
+// declaredSocketKey stands in for the socket ids of a port that has none to
 // name: a declared port nothing visible is listening on. It keys the probe
 // cache to the declaration rather than to a socket, so the classification of
 // such a port is established once and not re-established while it stays
 // declared — re-probing it on a schedule is the standing scan of a user's own
 // services ADR 0046 rejected. No real key can collide with it: those are
 // comma-separated digits.
-const declaredInodeKey = "declared"
+const declaredSocketKey = "declared"
 
 func New(cfg Config) *Watcher {
-	if cfg.ProcRoot == "" {
-		cfg.ProcRoot = "/proc"
+	if cfg.Scanner == nil {
+		cfg.Scanner = platformScanner()
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = DefaultInterval
@@ -248,7 +251,7 @@ func New(cfg Config) *Watcher {
 	return &Watcher{
 		uid:      cfg.UID,
 		exclude:  exclude,
-		procRoot: cfg.ProcRoot,
+		scanner:  cfg.Scanner,
 		interval: cfg.Interval,
 		declared: cfg.Declared,
 		probe:    cfg.Probe,
@@ -258,8 +261,7 @@ func New(cfg Config) *Watcher {
 }
 
 // Run scans immediately and then on the configured interval until ctx is done.
-// It never returns an error: a failed scan is this tick's gap, not a fault, and
-// on a platform with no procfs table to read it is simply always empty.
+// It never returns an error: a failed scan is this tick's gap, not a fault.
 func (w *Watcher) Run(ctx context.Context) {
 	if w == nil {
 		return
@@ -289,7 +291,7 @@ func (w *Watcher) Snapshot() []Port {
 }
 
 func (w *Watcher) tick(ctx context.Context) {
-	listeners, err := scanListeners(w.procRoot, w.uid)
+	listeners, err := w.scanner.scan(ctx, w.uid)
 	if err != nil {
 		w.logger.Debug("sandbox agent listening port scan failed", "error", err)
 		return
@@ -307,7 +309,7 @@ func (w *Watcher) tick(ctx context.Context) {
 }
 
 // declaredPorts is the declared set for this tick. A read that fails is this
-// tick's gap the same way a failed procfs scan is: the ports it would have
+// tick's gap the same way a failed socket scan is: the ports it would have
 // named drop off the snapshot until a later tick reads them, which a client
 // that already forwarded one rides out — a binding outlives the port going
 // away (ADR 0049).
@@ -368,7 +370,7 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 	fold := func(key endpoint, state *portState) {
 		if previous, ok := w.state[key]; ok {
 			state.firstSeenAt = previous.firstSeenAt
-			if previous.inodeKey == state.inodeKey {
+			if previous.socketKey == state.socketKey {
 				state.protocol = previous.protocol
 			}
 		}
@@ -393,7 +395,7 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 		_, isDeclared := declaredSet[key]
 		fold(key, &portState{
 			firstSeenAt: now,
-			inodeKey:    inodeKey(entries),
+			socketKey:   socketKey(entries),
 			protocol:    initialProtocol(key),
 			addresses:   addressStrings(entries),
 			target:      netip.AddrPortFrom(probeAddr(entries), uint16(key.port)),
@@ -406,7 +408,7 @@ func (w *Watcher) observe(listeners []listener, declared []Declaration, now time
 		}
 		fold(key, &portState{
 			firstSeenAt: now,
-			inodeKey:    declaredInodeKey,
+			socketKey:   declaredSocketKey,
 			protocol:    initialProtocol(key),
 			target:      netip.AddrPortFrom(declaredProbeAddr, uint16(key.port)),
 			declared:    true,
@@ -449,7 +451,7 @@ func (w *Watcher) runProbes(ctx context.Context, pending []endpoint) {
 	w.mu.Lock()
 	for _, key := range pending {
 		if state, ok := w.state[key]; ok {
-			targets[key] = probeTarget{addr: state.target, inodeKey: state.inodeKey}
+			targets[key] = probeTarget{addr: state.target, socketKey: state.socketKey}
 		}
 	}
 	w.mu.Unlock()
@@ -472,8 +474,8 @@ func (w *Watcher) runProbes(ctx context.Context, pending []endpoint) {
 }
 
 type probeTarget struct {
-	addr     netip.AddrPort
-	inodeKey string
+	addr      netip.AddrPort
+	socketKey string
 }
 
 // record stores a probe result only if the socket it describes is still the one
@@ -483,7 +485,7 @@ func (w *Watcher) record(key endpoint, target probeTarget, protocol Protocol) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	state, ok := w.state[key]
-	if !ok || state.inodeKey != target.inodeKey {
+	if !ok || state.socketKey != target.socketKey {
 		return
 	}
 	state.protocol = protocol
@@ -513,18 +515,18 @@ func (w *Watcher) publish() {
 	w.snapshot = snapshot
 }
 
-// inodeKey identifies the set of sockets currently behind a port. A port bound
+// socketKey identifies the set of sockets currently behind a port. A port bound
 // on both IPv4 and IPv6 has two, and either being replaced is a reason to probe
 // again.
-func inodeKey(entries []listener) string {
-	inodes := make([]uint64, 0, len(entries))
+func socketKey(entries []listener) string {
+	sockets := make([]uint64, 0, len(entries))
 	for _, entry := range entries {
-		inodes = append(inodes, entry.Inode)
+		sockets = append(sockets, entry.Socket)
 	}
-	sort.Slice(inodes, func(i, j int) bool { return inodes[i] < inodes[j] })
-	parts := make([]string, 0, len(inodes))
-	for _, inode := range inodes {
-		parts = append(parts, strconv.FormatUint(inode, 10))
+	sort.Slice(sockets, func(i, j int) bool { return sockets[i] < sockets[j] })
+	parts := make([]string, 0, len(sockets))
+	for _, socket := range sockets {
+		parts = append(parts, strconv.FormatUint(socket, 10))
 	}
 	return strings.Join(parts, ",")
 }

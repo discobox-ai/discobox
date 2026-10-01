@@ -5,21 +5,19 @@
 // is first-hand here and second-hand everywhere else: the shims hold what each
 // exec's terminal shows and who its clients are, this process serves its own
 // TCP tunnels, and a keepalive lease is a file only a process in the sandbox can write. Stopping
-// is starting systemd's poweroff.target (see systemctlPowerOff for why not
-// `systemctl poweroff`). The container exits, the pool agent reports it
-// `stopped` like any container that exited, and the next sandbox-directed
-// request starts it again (ADR 0017 §§10, 12). Nothing outside the sandbox
-// takes part in the decision.
+// is the platform's power-off — systemd's poweroff.target on Linux,
+// shutdown(8) on darwin — the one part of the policy that is per platform
+// (ADR 0145 §4). The sandbox exits, the pool agent reports it `stopped` like
+// any sandbox that exited, and the next sandbox-directed request starts it
+// again (ADR 0017 §§10, 12). Nothing outside the sandbox takes part in the
+// decision.
 package autostop
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,9 +51,9 @@ type Config struct {
 	IdleTimeout time.Duration
 	// Interval defaults to DefaultInterval.
 	Interval time.Duration
-	// PowerOff stops the sandbox. It defaults to starting systemd's
-	// poweroff.target, and tests replace it: nothing else about the policy
-	// needs a real machine.
+	// PowerOff stops the sandbox. It defaults to this platform's power-off,
+	// and tests replace it: nothing else about the policy needs a real
+	// machine.
 	PowerOff func(context.Context) error
 	// Now defaults to time.Now.
 	Now    func() time.Time
@@ -127,7 +125,7 @@ func New(cfg Config) *Policy {
 		cfg.Interval = DefaultInterval
 	}
 	if cfg.PowerOff == nil {
-		cfg.PowerOff = systemctlPowerOff
+		cfg.PowerOff = platformPowerOff
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -329,23 +327,4 @@ func (a *activity) consider(at time.Time, what string) {
 	if at.After(a.at) {
 		a.at, a.what = at, what
 	}
-}
-
-// systemctlPowerOff asks systemd, which is PID 1 in the sandbox, to power it
-// off, and returns as soon as the job is queued.
-//
-// It starts poweroff.target directly rather than running `systemctl poweroff`,
-// which is the same job reached a worse way. `poweroff` asks logind first — the
-// image has none, so every stop logs its failure before falling back to this —
-// and then waits for the job, during which the shutdown it started kills this
-// unit and the waiting systemctl with it. Every stop that worked was reported
-// as one that failed. --no-block is what returns before that, and
-// replace-irreversibly is the job mode `poweroff` itself uses, so nothing
-// started afterwards can cancel the shutdown.
-func systemctlPowerOff(ctx context.Context) error {
-	out, err := exec.CommandContext(ctx, "systemctl", "start", "--no-block", "--job-mode=replace-irreversibly", "poweroff.target").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("start poweroff.target: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
 }

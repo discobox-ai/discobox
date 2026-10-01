@@ -1,6 +1,7 @@
 package ports
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,10 +35,10 @@ func TestParseProcNetTCPKeepsOnlyListeningSocketsOwnedByUID(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("parseProcNet returned %d listeners, want 2: %+v", len(got), got)
 	}
-	if got[0].Addr.String() != "127.0.0.1" || got[0].Port != 5173 || got[0].Inode != 41001 {
+	if got[0].Addr.String() != "127.0.0.1" || got[0].Port != 5173 || got[0].Socket != 41001 {
 		t.Errorf("first listener = %+v, want 127.0.0.1:5173 inode 41001", got[0])
 	}
-	if got[1].Addr.String() != "0.0.0.0" || got[1].Port != 8080 || got[1].Inode != 41002 {
+	if got[1].Addr.String() != "0.0.0.0" || got[1].Port != 8080 || got[1].Socket != 41002 {
 		t.Errorf("second listener = %+v, want 0.0.0.0:8080 inode 41002", got[1])
 	}
 }
@@ -91,22 +92,22 @@ func TestScanListenersReadsBothTablesAndToleratesAMissingOne(t *testing.T) {
 
 	// No net/tcp6: a kernel built without IPv6 has none, and that is not an
 	// error -- it reports the sockets it can see.
-	got, err := scanListeners(root, 1000)
+	got, err := Procfs{Root: root}.scan(context.Background(), 1000)
 	if err != nil {
-		t.Fatalf("scanListeners error = %v, want nil with net/tcp6 absent", err)
+		t.Fatalf("scan error = %v, want nil with net/tcp6 absent", err)
 	}
 	if len(got) != 1 || got[0].Port != 5173 {
-		t.Fatalf("scanListeners = %+v, want the single port 5173 listener", got)
+		t.Fatalf("scan = %+v, want the single port 5173 listener", got)
 	}
 }
 
 func TestScanListenersReportsNothingWithoutProcfs(t *testing.T) {
-	got, err := scanListeners(filepath.Join(t.TempDir(), "absent"), 1000)
+	got, err := Procfs{Root: filepath.Join(t.TempDir(), "absent")}.scan(context.Background(), 1000)
 	if err != nil {
-		t.Fatalf("scanListeners error = %v, want nil on a platform with no procfs", err)
+		t.Fatalf("scan error = %v, want nil on a platform with no procfs", err)
 	}
 	if len(got) != 0 {
-		t.Fatalf("scanListeners = %+v, want none", got)
+		t.Fatalf("scan = %+v, want none", got)
 	}
 }
 
@@ -125,7 +126,7 @@ func TestParseProcNetUDPKeepsOnlyUnconnectedSocketsOwnedByUID(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("parseProcNet returned %d sockets, want 1: %+v", len(got), got)
 	}
-	if got[0].Network != networkUDP || got[0].Port != 5353 || got[0].Addr.String() != "0.0.0.0" || got[0].Inode != 51001 {
+	if got[0].Network != networkUDP || got[0].Port != 5353 || got[0].Addr.String() != "0.0.0.0" || got[0].Socket != 51001 {
 		t.Errorf("socket = %+v, want udp 0.0.0.0:5353 inode 51001", got[0])
 	}
 }
@@ -158,9 +159,9 @@ func TestScanListenersSkipsUDPSocketsInTheEphemeralRange(t *testing.T) {
 		// 45000 again, as a TCP listener: the range says nothing about those.
 		"   0: 0100007F:AFC8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 51004 1 0000 100 0 0 10 0\n")
 
-	got, err := scanListeners(root, 1000)
+	got, err := Procfs{Root: root}.scan(context.Background(), 1000)
 	if err != nil {
-		t.Fatalf("scanListeners: %v", err)
+		t.Fatalf("scan: %v", err)
 	}
 	want := map[endpoint]bool{
 		{network: networkTCP, port: 45000}: true,
@@ -168,7 +169,7 @@ func TestScanListenersSkipsUDPSocketsInTheEphemeralRange(t *testing.T) {
 		{network: networkUDP, port: 55000}: true,
 	}
 	if len(got) != len(want) {
-		t.Fatalf("scanListeners = %+v, want %v", got, want)
+		t.Fatalf("scan = %+v, want %v", got, want)
 	}
 	for _, entry := range got {
 		if !want[endpoint{network: entry.Network, port: entry.Port}] {
