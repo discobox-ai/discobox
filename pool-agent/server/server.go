@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
 )
 
 type Registration struct {
@@ -30,7 +32,12 @@ type Config struct {
 	// Audit reads the pool proxy's audit trail over its control API.
 	Audit                 AuditReader
 	ControlPlanePublicKey string
-	Port                  int
+	// SandboxTokenKey verifies the tokens this pool issues to its own
+	// sandboxes (sandboxtoken), which the git-origins route accepts beside
+	// the control plane's. It is the public half of the pool's identity key;
+	// nil accepts control-plane tokens alone.
+	SandboxTokenKey ed25519.PublicKey
+	Port            int
 	// Listener, when set, is served instead of a TCP listener on Port. The
 	// pool agent always sets it, binding DISCOBOX_AGENT_LISTEN_URL with
 	// wire.Listen: the URL's scheme picks the transport, VSOCK on libkrun and
@@ -63,11 +70,21 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 	if err != nil {
 		return nil, err
 	}
+	var sandboxTokens *sandboxtoken.Verifier
+	if cfg.SandboxTokenKey != nil {
+		if sandboxTokens, err = sandboxtoken.NewVerifier(cfg.SandboxTokenKey); err != nil {
+			return nil, err
+		}
+	}
 	handler := newSandboxService(cfg.Identity, cfg.Runtime, cfg.Audit)
 	generated, err := workerapi.NewServer(handler, handler)
 	if err != nil {
 		return nil, err
 	}
+	router.Group(func(origins chi.Router) {
+		origins.Use(authenticator.OriginMiddleware(sandboxTokens))
+		registerSandboxOriginRoutes(origins, handler)
+	})
 	router.Group(func(protected chi.Router) {
 		protected.Use(authenticator.Middleware)
 		registerSandboxGitRoutes(protected, handler)

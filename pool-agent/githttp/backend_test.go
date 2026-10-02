@@ -22,7 +22,7 @@ func TestBackendEnvForwardsContentEncoding(t *testing.T) {
 	r.Header.Set("Content-Type", "application/x-git-upload-pack-request")
 	r.Header.Set("Content-Encoding", "gzip")
 
-	env := backendEnv(r, "/srv/repo", "/git-upload-pack")
+	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/git-upload-pack")
 	if !slices.Contains(env, "HTTP_CONTENT_ENCODING=gzip") {
 		t.Fatalf("HTTP_CONTENT_ENCODING missing from CGI environment: %v", env)
 	}
@@ -30,7 +30,7 @@ func TestBackendEnvForwardsContentEncoding(t *testing.T) {
 
 func TestBackendEnvOmitsContentEncodingWhenAbsent(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), "POST", "/repo.git/git-upload-pack", strings.NewReader("body"))
-	env := backendEnv(r, "/srv/repo", "/git-upload-pack")
+	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/git-upload-pack")
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "HTTP_CONTENT_ENCODING=") {
 			t.Fatalf("unencoded request must not claim an encoding: %q", entry)
@@ -54,7 +54,7 @@ func TestBackendEnvIsNotInheritedFromTheAgent(t *testing.T) {
 	t.Setenv("GIT_NAMESPACE", "hidden")
 
 	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack", nil)
-	env := backendEnv(r, "/srv/repo", "/info/refs")
+	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/info/refs")
 
 	want := []string{
 		"PATH=/usr/bin",
@@ -82,7 +82,7 @@ func TestBackendEnvForwardsGitProtocol(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack", nil)
 	r.Header.Set("Git-Protocol", "version=2")
 
-	env := backendEnv(r, "/srv/repo", "/info/refs")
+	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/info/refs")
 	if !slices.Contains(env, "GIT_PROTOCOL=version=2") {
 		t.Fatalf("GIT_PROTOCOL missing from CGI environment: %v", env)
 	}
@@ -94,7 +94,7 @@ func TestBackendEnvOmitsGitProtocolWhenAbsent(t *testing.T) {
 	t.Setenv("GIT_PROTOCOL", "version=2")
 
 	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack", nil)
-	env := backendEnv(r, "/srv/repo", "/info/refs")
+	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/info/refs")
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GIT_PROTOCOL=") {
 			t.Fatalf("request naming no protocol version must not claim one: %q", entry)
@@ -115,7 +115,7 @@ func TestServeBackendAnswersInTheProtocolVersionTheClientAsked(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		ServeBackend(w, r, repo, suffix, -1, -1)
+		ServeBackend(w, r, Repository{Path: repo, UID: -1, GID: -1}, suffix)
 	}))
 	defer server.Close()
 

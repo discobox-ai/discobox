@@ -52,6 +52,19 @@ so there is no remote", "the check exited nonzero, so it is not there". Ask for
 the value and read the answer, and prefer one write that both creates and
 corrects over deciding between add and update.
 
+## Serving a live origin
+
+A live origin is the developer's own repository, so the ref allow-list is the
+whole of what keeps a sandbox from the rest of it, and it holds only with every
+one of `githttp`'s restrictions in place. Each has a bypass of its own: the dumb
+protocol reads objects as files, a v2 upload-pack serves any object asked for
+by id (the `allow*SHA1InWant` switches do not stop it), and the repository's
+own `.git/config` can reveal refs unless the pool's switches come after it, on
+the command line. Do not forward `Git-Protocol` for a live origin, do not let it
+answer anything but the two upload-pack requests, and do not move a switch into
+the repository's config. `githttp/live_test.go` fetches by id under both
+protocols for this reason.
+
 ## Error responses
 
 A status this API reuses for several conditions needs a `type` to tell them apart.
