@@ -218,9 +218,6 @@ flowchart LR
     transport --> agent["sandbox agent / sandbox port"]
 ```
 
-- The boot's health wait is the runtime's own, so it takes the dial from the
-  container inspect it already made each pass rather than resolving the
-  sandbox again — the same dial `SandboxDialer` hands everyone else.
 - Resolving the dialer is where a sandbox that cannot be reached at all is
   refused (no container, no address — mapped to a status before the proxy sends
   anything); a failed dial after that is a 502.
