@@ -28,7 +28,9 @@ COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
 COPY secretformat ./secretformat
 COPY tarsums ./tarsums
+COPY vsock ./vsock
 COPY wellknown ./wellknown
+COPY wire ./wire
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pool-agent/cmd ./pool-agent/cmd
 COPY pool-agent ./pool-agent

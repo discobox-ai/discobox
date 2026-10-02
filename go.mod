@@ -12,6 +12,7 @@ require (
 	github.com/elazarl/goproxy v1.9.0
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
+	github.com/mdlayher/vsock v1.3.0
 	github.com/ogen-go/ogen v1.20.3
 	github.com/tc-hib/winres v0.3.1
 	github.com/things-go/go-socks5 v0.1.1
@@ -351,6 +352,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/modelcontextprotocol/go-sdk v1.6.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect

@@ -29,10 +29,10 @@ import (
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
-	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 const (

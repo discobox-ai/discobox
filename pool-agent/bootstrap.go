@@ -17,7 +17,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
-	"github.com/discobox-ai/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 const (
@@ -41,7 +41,7 @@ const (
 // Bootstrap is the VM boot contract used by the control plane and pool agent.
 //
 // Both directions are addressed by a single URL each, and the scheme alone
-// decides the transport (see pool-agent/wire). A backend is therefore
+// decides the transport (see the root wire package). A backend is therefore
 // expressed entirely in the URLs it renders — http:// for a pool that shares the
 // host network, vsock://2:3001 for a libkrun microVM, unix:///... for a guest
 // whose helper terminates the socket — with no transport-specific field here.

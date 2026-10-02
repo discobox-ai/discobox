@@ -50,10 +50,27 @@ TLS (span attribute `proxy.http.tunnel_upgraded`). Zig's HTTP client
 
 The sandbox-local bridge accepts localhost traffic from sandbox processes and
 splices it, protocol-agnostic, onto an mTLS connection to the pool proxy
-carrying the sandbox's client certificate. It lives in the dependency-light
-`proxy/bridge` subpackage so the `sandbox-agent` binary (and
-`pool-agent/buildkitagent`'s per-build forwarder) can embed it without pulling
-in the full pool proxy stack (goproxy, gormdb, cache, audit). Pool-agent wiring
+carrying the sandbox's client certificate. Its `Dialer` is how anything in a
+sandbox reaches a pool service — the bridge, and the credentials relay in
+`sandbox-agent/credentials` — and it has two layers:
+
+- **Transport**, chosen by the URL's scheme through [`wire`](../wire), the same
+  place every other transport in the system is chosen: `https://host:port`
+  dials TCP (a Docker pool's `https://discobox-pool-proxy:17080`),
+  `vsock://cid:port` an AF_VSOCK context, and `unix:///path` a socket, so a
+  sandbox with no network interface at all can still reach its pool (ADR 0144
+  §4). `http` is refused: nothing speaks plaintext to the pool.
+- **mTLS**, identical on every transport. The client certificate's common name
+  stays the tenant identity, so the proxy is unchanged and learns nothing about
+  hypervisors. The pool's certificate is verified against `serverName` from
+  `bridge.json`, or the URL's host when that is empty; a `vsock` or `unix` URL
+  has no host, so it needs `serverName`, and the pool states it in every bridge
+  config it stages.
+
+The bridge lives in the dependency-light `proxy/bridge` subpackage so the
+`sandbox-agent` binary (and `pool-agent/buildkitagent`'s per-build forwarder)
+can embed it without pulling in the full pool proxy stack (goproxy, gormdb,
+cache, audit). Pool-agent wiring
 (`pool-agent/proxyagent`) runs the pool host proxy as a systemd unit, prepares
 certificates, stages per-sandbox client material, and publishes sentinel sets
 through `ApplyConfig`.

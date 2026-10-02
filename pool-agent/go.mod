@@ -14,7 +14,6 @@ require (
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
 	github.com/hashicorp/yamux v0.1.2
-	github.com/mdlayher/vsock v1.3.0
 	github.com/moby/buildkit v0.20.2
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
@@ -63,6 +62,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
+	github.com/mdlayher/vsock v1.3.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect

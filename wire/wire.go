@@ -14,11 +14,16 @@
 // that terminates the agent API on VSOCK or a Unix socket needs no special case
 // above the transport layer either.
 //
-// The root module's endpoint package resolves the other hop — client to control
-// plane — by the same method. The two stay separate because this one owns
-// vsock, whose dependency belongs to the guest side rather than to the module
-// every component imports, and because each hop's listen and dial contracts
-// answer to its own callers.
+// A sandbox reaches its pool's services by the same vocabulary: the proxy
+// bridge and the credentials relay dial the URL their bridge.json names, and
+// wrap whatever this package dials in the sandbox's mTLS (ADR 0144 §4). That is
+// why the package lives in the root module rather than in pool-agent: the
+// in-sandbox side has to import it too (ADR 26-10-02-411).
+//
+// The endpoint package resolves the other hop — client to control plane — by
+// the same method. The two stay separate because each hop's listen and dial
+// contracts answer to their own callers: endpoint carries iroh and DNS
+// resolution, and this one carries vsock.
 package wire
 
 import (
@@ -31,7 +36,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/pool-agent/vsock"
+	"github.com/discobox-ai/discobox/vsock"
 )
 
 // LogicalHTTPBaseURL is the base URL used when the transport is not addressed

@@ -20,8 +20,6 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/endpoint"
-	guestvsock "github.com/discobox-ai/discobox/pool-agent/vsock"
-	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
@@ -29,6 +27,8 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 	"github.com/discobox-ai/discobox/server/providers/vmsize"
+	guestvsock "github.com/discobox-ai/discobox/vsock"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 const (

@@ -16,6 +16,12 @@
   directory must be describable by the index, or it leaks past that ceiling.
 - Preserve mTLS as the pool host proxy client identity boundary. Do not accept
   client identity from sandbox-supplied headers.
+- Anything in a sandbox that reaches a pool service dials through
+  `bridge.Dialer`, never a `tls.Dial` over `"tcp"` of its own: the URL's scheme
+  picks the transport (`wire`), and a sandbox in a host-VM pool has no network
+  to dial TCP over (ADR 0144 §4). The transport changes; the mTLS on top never
+  does. The sandbox DNS stub is the one exception: it exists to answer Docker's
+  embedded resolver, which only a networked sandbox has.
 - Policy and audit behavior must remain client-scoped. Destination rules,
   header injection rules, upgraded-stream metadata, and audit query surfaces
   must preserve the authenticated client ID.

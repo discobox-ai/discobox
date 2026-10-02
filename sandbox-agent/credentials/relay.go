@@ -4,15 +4,14 @@
 // It holds no credential and makes no authorization decision. Its whole job is
 // to put a URL in front of the sandbox that speaks the portable protocol, and
 // to carry each call to the pool over the sandbox's own mTLS client
-// certificate — the same material the egress bridge uses, so the identity a
-// request arrives with is the identity the sandbox already has and cannot
-// choose.
+// certificate — the same material, and the same bridge.Dialer, the egress
+// bridge uses, so the identity a request arrives with is the identity the
+// sandbox already has and cannot choose, over whichever transport the pool's
+// URL names.
 package credentials
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +22,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
 const (
@@ -44,6 +44,7 @@ const ListenAddress = agentcreds.DefaultAddress
 // needs. The file is shared with the proxy bridge, which reads the rest.
 type bridgeConfig struct {
 	CredentialsURL string `json:"credentialsUrl"`
+	ServerName     string `json:"serverName"`
 	MTLSCAPath     string `json:"mtlsCaPath"`
 	ClientCertPath string `json:"clientCertPath"`
 	ClientKeyPath  string `json:"clientKeyPath"`
@@ -75,34 +76,28 @@ func New(path string) (*Relay, error) {
 	if cfg.CredentialsURL == "" {
 		return nil, fmt.Errorf("%s names no pool credentials endpoint", path)
 	}
-	caPEM, err := os.ReadFile(cfg.MTLSCAPath)
+	pool, err := bridge.NewDialer(bridge.DialConfig{
+		URL:            cfg.CredentialsURL,
+		ServerName:     cfg.ServerName,
+		MTLSCAPath:     cfg.MTLSCAPath,
+		ClientCertPath: cfg.ClientCertPath,
+		ClientKeyPath:  cfg.ClientKeyPath,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("read mTLS CA: %w", err)
-	}
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("parse mTLS CA")
-	}
-	clientCert, err := tls.LoadX509KeyPair(cfg.ClientCertPath, cfg.ClientKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load client certificate: %w", err)
+		return nil, fmt.Errorf("pool credentials endpoint: %w", err)
 	}
 	// No client-wide timeout: the protocol client bounds each call itself,
 	// and a use waits on the pool's judge for far longer than any other call.
 	httpClient := &http.Client{
 		Transport: &http.Transport{
-			// Never proxied: this call goes to the pool over the sandbox's own
-			// network, and the sandbox's HTTP_PROXY points at the egress
-			// forwarder, which has no business carrying it.
-			Proxy: nil,
-			TLSClientConfig: &tls.Config{
-				RootCAs:      caPool,
-				Certificates: []tls.Certificate{clientCert},
-				MinVersion:   tls.VersionTLS12,
-			},
+			// Never proxied: this call goes straight to the pool, and the
+			// sandbox's HTTP_PROXY points at the egress forwarder, which has no
+			// business carrying it.
+			Proxy:          nil,
+			DialTLSContext: pool.DialTLSContext,
 		},
 	}
-	return &Relay{client: agentcreds.NewClient(cfg.CredentialsURL, agentcreds.WithHTTPClient(httpClient))}, nil
+	return &Relay{client: agentcreds.NewClient(pool.ServerURL(), agentcreds.WithHTTPClient(httpClient))}, nil
 }
 
 func (r *Relay) List(ctx context.Context) ([]agentcreds.Credential, error) {

@@ -13,9 +13,9 @@ import (
 
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
-	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/wellknown"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 // The gate: a sandbox's calls to the discobox API, which the proxy never sends

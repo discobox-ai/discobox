@@ -132,6 +132,7 @@ func runHookPublish(args []string) int {
 type bridgeConfig struct {
 	ListenAddress  string `json:"listenAddress"`
 	WorkerProxyURL string `json:"workerProxyUrl"`
+	ServerName     string `json:"serverName"`
 	MTLSCAPath     string `json:"mtlsCaPath"`
 	ClientCertPath string `json:"clientCertPath"`
 	ClientKeyPath  string `json:"clientKeyPath"`
@@ -206,6 +207,7 @@ func runProxyBridge(args []string) int {
 	forwarder, err := bridge.New(ctx, bridge.Config{
 		ListenAddress:  cfg.ListenAddress,
 		WorkerProxyURL: cfg.WorkerProxyURL,
+		ServerName:     cfg.ServerName,
 		MTLSCAPath:     cfg.MTLSCAPath,
 		ClientCertPath: cfg.ClientCertPath,
 		ClientKeyPath:  cfg.ClientKeyPath,

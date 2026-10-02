@@ -21,7 +21,7 @@
 //
 // An endpoint's capabilities are asked, not inferred: see
 // [Endpoint.AutoLaunchable] and [Endpoint.DirectlyDialable]. The pool agent's
-// own hop is resolved the same way by pool-agent/wire.
+// own hop, and a sandbox's hop to its pool, are resolved the same way by wire.
 package endpoint
 
 import (

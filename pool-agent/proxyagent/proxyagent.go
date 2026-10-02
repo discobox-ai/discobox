@@ -391,9 +391,15 @@ type SandboxMaterial struct {
 // of material, every thing the sandbox reaches the pool with (ADR 0031 §2).
 // DNSListenAddress is where the sandbox's DNS stub listens: the address its
 // container was created with as DNS server.
+//
+// The pool URLs are wire URLs: their scheme picks the transport the sandbox
+// dials, and every one carries mTLS on top (ADR 0144 §4). ServerName is the
+// name the pool's server certificate is verified as, stated apart from the URLs
+// because a vsock or unix URL has no host to take it from.
 type bridgeConfig struct {
 	ListenAddress    string `json:"listenAddress"`
 	PoolProxyURL     string `json:"workerProxyUrl"`
+	ServerName       string `json:"serverName,omitempty"`
 	CredentialsURL   string `json:"credentialsUrl,omitempty"`
 	DNSServer        string `json:"dnsServer,omitempty"`
 	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
@@ -585,6 +591,7 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	bridge := bridgeConfig{
 		ListenAddress:    SandboxForwarderListen,
 		PoolProxyURL:     PoolProxyURL,
+		ServerName:       ServerName,
 		CredentialsURL:   CredentialsURL,
 		DNSServer:        DNSServerAddress,
 		DNSListenAddress: sandboxDNSListenAddress,
@@ -612,6 +619,7 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	// sandbox-agent/nestedbridge package.
 	dockerBridge := bridgeConfig{
 		PoolProxyURL:   PoolProxyURL,
+		ServerName:     ServerName,
 		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
 		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
 		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),
@@ -641,6 +649,7 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	buildkitBridge := bridgeConfig{
 		ListenAddress:  SandboxBuildkitBridgeListen,
 		PoolProxyURL:   BuildkitMediatorURL,
+		ServerName:     ServerName,
 		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
 		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
 		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),
