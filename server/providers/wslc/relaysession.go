@@ -230,7 +230,7 @@ func dialGuest(vm *wslcsession.Session, target string) (net.Conn, error) {
 // creating it, so the container create would fail with a path error that names
 // no cause.
 func prepareGuestDirs(ctx context.Context, vm guestProcessStarter) error {
-	hostState := layout.NewHostMapping(GuestStateRoot)
+	hostState := layout.Container().HostMapping(GuestStateRoot)
 	dirs := []string{GuestSocketDir}
 	for _, tree := range dockerworker.RequiredHostDirs() {
 		dirs = append(dirs, hostState.HostPath(tree))

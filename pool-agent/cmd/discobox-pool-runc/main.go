@@ -22,6 +22,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	"github.com/discobox-ai/discobox/runcca"
 )
@@ -139,7 +140,7 @@ func runForwarderHook(args []string) int {
 			fmt.Fprintf(os.Stderr, "discobox-pool-runc: read hook state: %v\n", err)
 			return 0
 		}
-		if err := buildkitagent.StartBuildForwarder(ctx, state.ID, args[1], state.Pid); err != nil {
+		if err := buildkitagent.StartBuildForwarder(ctx, layout.Container(), state.ID, args[1], state.Pid); err != nil {
 			fmt.Fprintf(os.Stderr, "discobox-pool-runc: build egress unavailable: %v\n", err)
 		}
 	case "serve":
@@ -150,7 +151,7 @@ func runForwarderHook(args []string) int {
 		if err != nil {
 			return 1
 		}
-		if err := buildkitagent.ServeBuildForwarder(ctx, args[1], args[2], pid); err != nil {
+		if err := buildkitagent.ServeBuildForwarder(ctx, layout.Container(), args[1], args[2], pid); err != nil {
 			fmt.Fprintf(os.Stderr, "discobox-pool-runc: build forwarder: %v\n", err)
 			return 1
 		}
@@ -159,7 +160,7 @@ func runForwarderHook(args []string) int {
 		if err := json.NewDecoder(os.Stdin).Decode(&state); err != nil {
 			return 0
 		}
-		if err := buildkitagent.StopBuildForwarder(state.ID); err != nil {
+		if err := buildkitagent.StopBuildForwarder(layout.Container(), state.ID); err != nil {
 			fmt.Fprintf(os.Stderr, "discobox-pool-runc: build forwarder not reclaimed: %v\n", err)
 		}
 	}

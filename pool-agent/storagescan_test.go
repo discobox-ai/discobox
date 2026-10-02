@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/layout"
 )
 
 func testScanner(poolID string) *storageScanner {
@@ -89,7 +91,7 @@ func TestStaggerSpreadsPoolsButIsStablePerPool(t *testing.T) {
 func TestWalkPoolTreesReportsNothingWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if walk, ok := walkPoolTrees(ctx, "prj_1", "pool_1", []string{"sbx_a"}); ok || walk != nil {
+	if walk, ok := walkPoolTrees(ctx, layout.ContainerAt(t.TempDir()), "prj_1", "pool_1", []string{"sbx_a"}); ok || walk != nil {
 		t.Errorf("a canceled sweep returned a result: %+v", walk)
 	}
 }

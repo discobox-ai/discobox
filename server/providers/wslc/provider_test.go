@@ -58,8 +58,9 @@ func TestGuestStateRootIsOnThePersistedDisk(t *testing.T) {
 // The container's view must not move with it: only the daemon-side location
 // changes, which is what lets the agent stay backend-agnostic.
 func TestGuestStateRootRelocatesOnlyTheDaemonView(t *testing.T) {
-	mapping := layout.NewHostMapping(GuestStateRoot)
-	containerPath := layout.PoolData("prj", "pool")
+	container := layout.Container()
+	mapping := container.HostMapping(GuestStateRoot)
+	containerPath := container.PoolData("prj", "pool")
 	got := mapping.HostPath(containerPath)
 
 	if got == containerPath {

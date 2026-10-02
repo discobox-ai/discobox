@@ -8,32 +8,30 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/discobox-ai/discobox/layout"
 )
 
 func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
 
-	if want := filepath.Join(PoolSandboxMaterialRoot("project-1", "pool-1"), "sandbox-1"); material.MountSource != want {
+	if want := filepath.Join(PoolSandboxMaterialRoot(root, "project-1", "pool-1"), "sandbox-1"); material.MountSource != want {
 		t.Fatalf("MountSource = %q, want %q", material.MountSource, want)
 	}
 
 	dir := material.MountSource
 	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json", "bridge-docker.json"} {
-		if _, err := os.Stat(resolve(filepath.Join(dir, name))); err != nil {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatalf("expected staged file %q: %v", name, err)
 		}
 	}
 
 	// The CA private keys must never be exposed to a sandbox.
 	for _, leaked := range []string{"mtls-ca.key", "mitm-ca.key"} {
-		if _, err := os.Stat(resolve(filepath.Join(dir, leaked))); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(dir, leaked)); !os.IsNotExist(err) {
 			t.Fatalf("CA private key %q must not be staged into sandbox material", leaked)
 		}
 	}
@@ -63,13 +61,13 @@ func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
 // The sandbox's DNS stub reads these two fields from bridge.json: where to
 // listen (the DNS server its container was created with) and where to dial.
 func TestEnsureSandboxMaterialStagesDNS(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
-	data, err := os.ReadFile(resolve(filepath.Join(material.MountSource, "bridge.json")))
+	data, err := os.ReadFile(filepath.Join(material.MountSource, "bridge.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,73 +87,73 @@ func TestEnsureSandboxMaterialStagesDNS(t *testing.T) {
 }
 
 func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
 	materialDir := material.MountSource
-	clientCertDir := filepath.Join(layout.ProxyCerts("project-1", "pool-1"), "clients", "sandbox-1")
+	clientCertDir := filepath.Join(root.ProxyCerts("project-1", "pool-1"), "clients", "sandbox-1")
 	for _, dir := range []string{materialDir, clientCertDir} {
-		if _, err := os.Stat(resolve(dir)); err != nil {
+		if _, err := os.Stat(dir); err != nil {
 			t.Fatalf("expected %q to exist before removal: %v", dir, err)
 		}
 	}
 
-	if err := RemoveSandboxMaterial("project-1", "pool-1", "sandbox-1"); err != nil {
-		t.Fatalf("RemoveSandboxMaterial() error = %v", err)
+	if err := RemoveSandboxMaterial(root, "project-1", "pool-1", "sandbox-1"); err != nil {
+		t.Fatalf("RemoveSandboxMaterial(root, ) error = %v", err)
 	}
 	for _, dir := range []string{materialDir, clientCertDir} {
-		if _, err := os.Stat(resolve(dir)); !os.IsNotExist(err) {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Fatalf("expected %q removed, stat err = %v", dir, err)
 		}
 	}
 
 	// A repeated removal is a no-op.
-	if err := RemoveSandboxMaterial("project-1", "pool-1", "sandbox-1"); err != nil {
-		t.Fatalf("second RemoveSandboxMaterial() error = %v", err)
+	if err := RemoveSandboxMaterial(root, "project-1", "pool-1", "sandbox-1"); err != nil {
+		t.Fatalf("second RemoveSandboxMaterial(root, ) error = %v", err)
 	}
 }
 
 func TestPruneOrphanedMaterialRemovesOnlyOrphans(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	live, err := EnsureSandboxMaterial("project-1", "pool-1", "live-sandbox")
+	live, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "live-sandbox")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial(live) error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, live) error = %v", err)
 	}
-	orphan, err := EnsureSandboxMaterial("project-1", "pool-1", "orphan-sandbox")
+	orphan, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "orphan-sandbox")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial(orphan) error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, orphan) error = %v", err)
 	}
 	for _, id := range []string{"live-sandbox", "orphan-sandbox"} {
-		if err := UpsertSandboxSentinels("project-1", "pool-1", id, []string{"sk-" + id}); err != nil {
-			t.Fatalf("UpsertSandboxSentinels(%s) error = %v", id, err)
+		if err := UpsertSandboxSentinels(root, "project-1", "pool-1", id, []string{"sk-" + id}); err != nil {
+			t.Fatalf("UpsertSandboxSentinels(root, %s) error = %v", id, err)
 		}
 	}
 
 	// Age both so the grace period does not protect the orphan.
 	past := time.Now().Add(-time.Hour)
 	for _, id := range []string{"live-sandbox", "orphan-sandbox"} {
-		_ = os.Chtimes(resolve(filepath.Join(PoolSandboxMaterialRoot("project-1", "pool-1"), id)), past, past)
+		_ = os.Chtimes(filepath.Join(PoolSandboxMaterialRoot(root, "project-1", "pool-1"), id), past, past)
 	}
 
-	if err := PruneOrphanedMaterial("project-1", "pool-1", []string{"live-sandbox"}, time.Minute); err != nil {
-		t.Fatalf("PruneOrphanedMaterial() error = %v", err)
+	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", []string{"live-sandbox"}, time.Minute); err != nil {
+		t.Fatalf("PruneOrphanedMaterial(root, ) error = %v", err)
 	}
 
-	if _, err := os.Stat(resolve(live.MountSource)); err != nil {
+	if _, err := os.Stat(live.MountSource); err != nil {
 		t.Fatalf("live sandbox material should be kept: %v", err)
 	}
-	if _, err := os.Stat(resolve(orphan.MountSource)); !os.IsNotExist(err) {
+	if _, err := os.Stat(orphan.MountSource); !os.IsNotExist(err) {
 		t.Fatalf("orphan sandbox material should be removed, stat err = %v", err)
 	}
-	if _, err := os.Stat(resolve(filepath.Join(layout.ProxyCerts("project-1", "pool-1"), "clients", "orphan-sandbox"))); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root.ProxyCerts("project-1", "pool-1"), "clients", "orphan-sandbox")); !os.IsNotExist(err) {
 		t.Fatalf("orphan client cert should be removed, stat err = %v", err)
 	}
 
-	doc, err := readSecretsDoc(layout.ProxySecretsFile("project-1", "pool-1"))
+	doc, err := readSecretsDoc(root.ProxySecretsFile("project-1", "pool-1"))
 	if err != nil {
 		t.Fatalf("readSecretsDoc() error = %v", err)
 	}
@@ -170,22 +168,22 @@ func TestPruneOrphanedMaterialRemovesOnlyOrphans(t *testing.T) {
 // On a host daemon shared by two pools, pool A's prune (with only A's live set)
 // must never touch pool B's material, even though B's sandbox is not in A's set.
 func TestPruneOrphanedMaterialIsPoolScoped(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	poolBMaterial, err := EnsureSandboxMaterial("project-1", "pool-b", "sandbox-b")
+	poolBMaterial, err := EnsureSandboxMaterial(root, "project-1", "pool-b", "sandbox-b")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial(pool-b) error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, pool-b) error = %v", err)
 	}
 	// Age it past any grace window so only scoping — not the grace period —
 	// protects it.
 	past := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(resolve(poolBMaterial.MountSource), past, past)
+	_ = os.Chtimes(poolBMaterial.MountSource, past, past)
 
 	// Pool A prunes with an empty live set: it must not see pool B's material.
-	if err := PruneOrphanedMaterial("project-1", "pool-a", nil, time.Minute); err != nil {
-		t.Fatalf("PruneOrphanedMaterial(pool-a) error = %v", err)
+	if err := PruneOrphanedMaterial(root, "project-1", "pool-a", nil, time.Minute); err != nil {
+		t.Fatalf("PruneOrphanedMaterial(root, pool-a) error = %v", err)
 	}
-	if _, err := os.Stat(resolve(poolBMaterial.MountSource)); err != nil {
+	if _, err := os.Stat(poolBMaterial.MountSource); err != nil {
 		t.Fatalf("pool A reaped pool B's material: %v", err)
 	}
 }
@@ -194,57 +192,57 @@ func TestPruneOrphanedMaterialIsPoolScoped(t *testing.T) {
 // authoritative pool set must not reach another project's material even when
 // both projects host a pool of the same name on a shared daemon.
 func TestPruneOrphanedMaterialIsProjectScoped(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	otherProject, err := EnsureSandboxMaterial("project-2", "pool-1", "sandbox-b")
+	otherProject, err := EnsureSandboxMaterial(root, "project-2", "pool-1", "sandbox-b")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial(project-2) error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, project-2) error = %v", err)
 	}
 	past := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(resolve(otherProject.MountSource), past, past)
+	_ = os.Chtimes(otherProject.MountSource, past, past)
 
-	if err := PruneOrphanedMaterial("project-1", "pool-1", nil, time.Minute); err != nil {
-		t.Fatalf("PruneOrphanedMaterial(project-1) error = %v", err)
+	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", nil, time.Minute); err != nil {
+		t.Fatalf("PruneOrphanedMaterial(root, project-1) error = %v", err)
 	}
-	if _, err := os.Stat(resolve(otherProject.MountSource)); err != nil {
+	if _, err := os.Stat(otherProject.MountSource); err != nil {
 		t.Fatalf("project 1 reaped project 2's material: %v", err)
 	}
 }
 
 func TestPruneOrphanedMaterialProtectsFreshMaterial(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	fresh, err := EnsureSandboxMaterial("project-1", "pool-1", "fresh-sandbox")
+	fresh, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "fresh-sandbox")
 	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
 
 	// A recently staged orphan (mid-CreateSandbox) must survive the grace window.
-	if err := PruneOrphanedMaterial("project-1", "pool-1", nil, time.Hour); err != nil {
-		t.Fatalf("PruneOrphanedMaterial() error = %v", err)
+	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", nil, time.Hour); err != nil {
+		t.Fatalf("PruneOrphanedMaterial(root, ) error = %v", err)
 	}
-	if _, err := os.Stat(resolve(fresh.MountSource)); err != nil {
+	if _, err := os.Stat(fresh.MountSource); err != nil {
 		t.Fatalf("fresh material should be protected by grace period: %v", err)
 	}
 }
 
 func TestEnsureSandboxMaterialReusesClientCertificate(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	first, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	first, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
-		t.Fatalf("first EnsureSandboxMaterial() error = %v", err)
+		t.Fatalf("first EnsureSandboxMaterial(root, ) error = %v", err)
 	}
-	firstCert, err := os.ReadFile(resolve(filepath.Join(first.MountSource, "client.crt")))
+	firstCert, err := os.ReadFile(filepath.Join(first.MountSource, "client.crt"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	second, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	second, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
-		t.Fatalf("second EnsureSandboxMaterial() error = %v", err)
+		t.Fatalf("second EnsureSandboxMaterial(root, ) error = %v", err)
 	}
-	secondCert, err := os.ReadFile(resolve(filepath.Join(second.MountSource, "client.crt")))
+	secondCert, err := os.ReadFile(filepath.Join(second.MountSource, "client.crt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,9 +296,9 @@ func TestUnitEnvironmentOmitsAbsentProxyVars(t *testing.T) {
 }
 
 func TestSandboxEnvironmentExemptsThePoolByName(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	material, err := EnsureSandboxMaterial("proj", "pool", "sbx_1")
+	material, err := EnsureSandboxMaterial(root, "proj", "pool", "sbx_1")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial: %v", err)
 	}

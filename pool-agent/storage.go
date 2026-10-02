@@ -115,9 +115,9 @@ type PoolStorageWalk struct {
 
 // poolFilesystem is the cheap half: one statfs of the tree everything lives
 // under, taken on every report.
-func poolFilesystem() PoolStorage {
-	storage := PoolStorage{Root: layout.ContainerRoot}
-	if usage, ok := filesystemUsage(layout.ContainerRoot); ok {
+func poolFilesystem(root layout.Root) PoolStorage {
+	storage := PoolStorage{Root: root.Dir()}
+	if usage, ok := filesystemUsage(root.Dir()); ok {
 		storage.Filesystem = usage
 	}
 	return storage
@@ -133,21 +133,21 @@ func poolFilesystem() PoolStorage {
 // A canceled walk returns false and no partial result. A sweep that stopped
 // half way through would report every unvisited tree as empty, which is a
 // wrong answer rather than a missing one.
-func walkPoolTrees(ctx context.Context, projectID, poolID string, sandboxIDs []string) (*PoolStorageWalk, bool) {
+func walkPoolTrees(ctx context.Context, root layout.Root, projectID, poolID string, sandboxIDs []string) (*PoolStorageWalk, bool) {
 	started := time.Now()
 	walk := &PoolStorageWalk{
-		CacheBytes: treeBytes(ctx, layout.PoolCache(projectID, poolID)),
-		BuildBytes: treeBytes(ctx, layout.PoolBuild(projectID, poolID)),
+		CacheBytes: treeBytes(ctx, root.PoolCache(projectID, poolID)),
+		BuildBytes: treeBytes(ctx, root.PoolBuild(projectID, poolID)),
 		Sandboxes:  make([]SandboxStorage, 0, len(sandboxIDs)),
 	}
 	for _, sandboxID := range sandboxIDs {
 		entry := SandboxStorage{
 			SandboxID:    sandboxID,
-			DataBytes:    treeBytes(ctx, layout.SandboxData(projectID, poolID, sandboxID)),
-			ConfigBytes:  treeBytes(ctx, layout.SandboxConfig(projectID, poolID, sandboxID)),
-			SourcesBytes: treeBytes(ctx, layout.SandboxSources(projectID, poolID, sandboxID)),
-			SecretsBytes: treeBytes(ctx, layout.SandboxSecrets(projectID, poolID, sandboxID)),
-			OriginsBytes: treeBytes(ctx, layout.SandboxOrigins(projectID, poolID, sandboxID)),
+			DataBytes:    treeBytes(ctx, root.SandboxData(projectID, poolID, sandboxID)),
+			ConfigBytes:  treeBytes(ctx, root.SandboxConfig(projectID, poolID, sandboxID)),
+			SourcesBytes: treeBytes(ctx, root.SandboxSources(projectID, poolID, sandboxID)),
+			SecretsBytes: treeBytes(ctx, root.SandboxSecrets(projectID, poolID, sandboxID)),
+			OriginsBytes: treeBytes(ctx, root.SandboxOrigins(projectID, poolID, sandboxID)),
 		}
 		entry.TotalBytes = entry.DataBytes + entry.ConfigBytes + entry.SourcesBytes +
 			entry.SecretsBytes + entry.OriginsBytes

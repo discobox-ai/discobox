@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/agentcreds"
-	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -33,7 +32,7 @@ type fakeControlPlane struct {
 
 func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPlaneCredentials, *fakeControlPlane) {
 	t.Helper()
-	withTestRoot(t)
+	root := withTestRoot(t)
 	allow := true
 	fake := &fakeControlPlane{credentials: credentials, answer: judgeAnswer{Allow: &allow, Reason: "matches the approved use"}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,11 +64,11 @@ func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPla
 		}
 	}))
 	t.Cleanup(server.Close)
-	if err := WriteResolveContext(testProjectID, testPoolID, server.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, server.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 	broker := &controlPlaneCredentials{
-		contextPath: layout.ProxyResolveContextFile(testProjectID, testPoolID),
+		contextPath: root.ProxyResolveContextFile(testProjectID, testPoolID),
 		client:      server.Client(),
 	}
 	return broker, fake

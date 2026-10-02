@@ -21,8 +21,8 @@ import (
 // seen is not — waiting on that one would stall every sandbox-directed route
 // for the full budget before failing.
 func TestHostsSandboxTellsARebuildFromAnUnknownID(t *testing.T) {
-	withTestRoot(t)
-	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
 
 	if runtime.hostsSandbox("sbx_elsewhere") {
 		t.Fatal("a sandbox with no tree on this pool reads as hosted here")

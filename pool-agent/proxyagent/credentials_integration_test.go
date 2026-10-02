@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ import (
 func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	withTestRoot(t)
+	root := withTestRoot(t)
 
 	const realValue = "ghp_REALREALREALREALREALREALREALREAL12"
 
@@ -68,11 +69,11 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resolveResponseBody{Status: "approved", Value: realValue, ExpiresAt: &expiry})
 	}))
 	defer controlPlane.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
-	bundle, err := PrepareBundle(testProjectID, testPoolID)
+	bundle, err := PrepareBundle(root, testProjectID, testPoolID)
 	if err != nil {
 		t.Fatalf("prepare bundle: %v", err)
 	}
@@ -85,9 +86,9 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 	cfg := proxy.DefaultConfig()
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
-	cfg.DatabaseDSN = resolve(testProjectID + "-audit.db")
+	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
 	cfg.Recording.Enabled = false
-	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(testProjectID, testPoolID, live))
+	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(root, testProjectID, testPoolID, live))
 	if err != nil {
 		t.Fatalf("create proxy: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 func TestMintedSentinelIsNotSwappedForAnotherHost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	withTestRoot(t)
+	root := withTestRoot(t)
 
 	var sawAuthorization string
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,11 +143,11 @@ func TestMintedSentinelIsNotSwappedForAnotherHost(t *testing.T) {
 		t.Error("control plane was asked to resolve a sentinel used against an unapproved host")
 	}))
 	defer controlPlane.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
-	bundle, err := PrepareBundle(testProjectID, testPoolID)
+	bundle, err := PrepareBundle(root, testProjectID, testPoolID)
 	if err != nil {
 		t.Fatalf("prepare bundle: %v", err)
 	}
@@ -159,9 +160,9 @@ func TestMintedSentinelIsNotSwappedForAnotherHost(t *testing.T) {
 	cfg := proxy.DefaultConfig()
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
-	cfg.DatabaseDSN = resolve(testProjectID + "-audit.db")
+	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
 	cfg.Recording.Enabled = false
-	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(testProjectID, testPoolID, live))
+	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(root, testProjectID, testPoolID, live))
 	if err != nil {
 		t.Fatalf("create proxy: %v", err)
 	}
@@ -198,10 +199,13 @@ func TestMintedSentinelIsNotSwappedForAnotherHost(t *testing.T) {
 func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	withTestRoot(t)
+	root := withTestRoot(t)
 
 	var sawSandboxIDs, judgedSandboxIDs []string
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+		}
 		if strings.HasSuffix(r.URL.Path, "/judge-commands") {
 			var ask commandAskDoc
 			_ = json.NewDecoder(r.Body).Decode(&ask)
@@ -219,11 +223,11 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 		}}})
 	}))
 	defer controlPlane.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
-	bundle, err := PrepareBundle(testProjectID, testPoolID)
+	bundle, err := PrepareBundle(root, testProjectID, testPoolID)
 	if err != nil {
 		t.Fatalf("prepare bundle: %v", err)
 	}
@@ -235,7 +239,7 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 	live := newActivations()
 	listener := listenLocal(t)
 	go func() {
-		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(testProjectID, testPoolID), live, nil)
+		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(root, testProjectID, testPoolID), live, nil)
 	}()
 
 	client := agentcreds.NewClient("https://"+listener.Addr().String(), agentcreds.WithHTTPClient(mtlsClient(t, bundle, material)))
@@ -285,15 +289,15 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 func TestCredentialsEndpointRefusesAnUnknownCertificate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	bundle, err := PrepareBundle(testProjectID, testPoolID)
+	bundle, err := PrepareBundle(root, testProjectID, testPoolID)
 	if err != nil {
 		t.Fatalf("prepare bundle: %v", err)
 	}
 	listener := listenLocal(t)
 	go func() {
-		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(testProjectID, testPoolID), newActivations(), nil)
+		_ = serveCredentialsOn(ctx, testLogger(), listener, bundle, newControlPlaneCredentials(root, testProjectID, testPoolID), newActivations(), nil)
 	}()
 
 	// A client that trusts the server but presents nothing of its own.

@@ -37,8 +37,8 @@ var registryNamespacePattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*
 // old one with nothing left able to name it. The durable tree has the lifetime
 // wanted: it survives archive and is removed by purge, which is when those
 // repositories are removed too.
-func RegistryNamespacePath(projectID, poolID, sandboxID string) string {
-	return filepath.Join(layout.Sandbox(projectID, poolID, sandboxID), RegistryNamespaceFile)
+func RegistryNamespacePath(root layout.Root, projectID, poolID, sandboxID string) string {
+	return filepath.Join(root.Sandbox(projectID, poolID, sandboxID), RegistryNamespaceFile)
 }
 
 // ensureRegistryNamespace writes the sandbox's build-registry namespace, minting
@@ -59,11 +59,11 @@ func ensureRegistryNamespace(path string) error {
 		return fmt.Errorf("mint registry namespace: %w", err)
 	}
 	namespace := registryNamespacePrefix + hex.EncodeToString(raw)
-	if err := os.MkdirAll(filepath.Dir(resolve(path)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create registry namespace directory: %w", err)
 	}
 	//nolint:gosec // Readable inside the sandbox by design; see RegistryNamespaceFile.
-	if err := os.WriteFile(resolve(path), []byte(namespace+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(namespace+"\n"), 0o644); err != nil {
 		return fmt.Errorf("write registry namespace: %w", err)
 	}
 	return nil
@@ -75,7 +75,7 @@ func ensureRegistryNamespace(path string) error {
 // namespace this process cannot parse is a fault to report rather than to paper
 // over.
 func ReadRegistryNamespace(path string) (string, error) {
-	data, err := os.ReadFile(resolve(path))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}

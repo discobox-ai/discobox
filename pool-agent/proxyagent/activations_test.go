@@ -18,7 +18,7 @@ import (
 // one sandbox spend another's activation.
 
 func TestResolverTranslatesEphemeralToStableSentinel(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	var gotSentinel string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body resolveRequestBody
@@ -28,7 +28,7 @@ func TestResolverTranslatesEphemeralToStableSentinel(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resolveResponseBody{Status: "approved", Value: "real-token", ExpiresAt: &expiry})
 	}))
 	defer server.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, server.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, server.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
@@ -37,7 +37,7 @@ func TestResolverTranslatesEphemeralToStableSentinel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 
 	result, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{
 		ClientID: "sb-1", Sentinel: record.Sentinel, Host: "api.github.com",
@@ -66,17 +66,17 @@ func TestResolverTranslatesEphemeralToStableSentinel(t *testing.T) {
 // An ordinary injected sentinel has no approved use behind it, so there is
 // nothing for the audit row to name and the resolver must not invent one.
 func TestResolverReportsNoUseForAnOrdinarySentinel(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		expiry := time.Now().Add(time.Hour)
 		_ = json.NewEncoder(w).Encode(resolveResponseBody{Status: "approved", Value: "real-token", ExpiresAt: &expiry})
 	}))
 	defer server.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, server.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, server.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
-	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
+	resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())
 	result, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{
 		ClientID: "sb-1", Sentinel: "PLAIN-SENTINEL", Host: "api.github.com",
 	})
@@ -89,12 +89,12 @@ func TestResolverReportsNoUseForAnOrdinarySentinel(t *testing.T) {
 }
 
 func TestResolverRefusesEphemeralSentinelForAnotherHost(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("control plane must not be asked about an activation used against the wrong host")
 	}))
 	defer server.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, server.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, server.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
@@ -103,7 +103,7 @@ func TestResolverRefusesEphemeralSentinelForAnotherHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 
 	_, err = resolver.Resolve(context.Background(), proxy.SecretResolveRequest{
 		ClientID: "sb-1", Sentinel: record.Sentinel, Host: "evil.example.com",
@@ -114,12 +114,12 @@ func TestResolverRefusesEphemeralSentinelForAnotherHost(t *testing.T) {
 }
 
 func TestResolverRefusesAnotherSandboxesActivation(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("control plane must not be asked about another sandbox's activation")
 	}))
 	defer server.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, server.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, server.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestResolverRefusesAnotherSandboxesActivation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 
 	_, err = resolver.Resolve(context.Background(), proxy.SecretResolveRequest{
 		ClientID: "sb-2", Sentinel: record.Sentinel, Host: "api.github.com",
@@ -139,12 +139,12 @@ func TestResolverRefusesAnotherSandboxesActivation(t *testing.T) {
 }
 
 func TestResolverRefusesExpiredActivation(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("control plane must not be asked about a lapsed activation")
 	}))
 	defer server.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, server.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, server.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
@@ -156,7 +156,7 @@ func TestResolverRefusesExpiredActivation(t *testing.T) {
 	// Move the clock past the use window without sweeping, which is exactly the
 	// state a request racing expiry finds.
 	live.now = func() time.Time { return time.Now().Add(2 * activationTTL) }
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 
 	_, err = resolver.Resolve(context.Background(), proxy.SecretResolveRequest{
 		ClientID: "sb-1", Sentinel: record.Sentinel, Host: "api.github.com",

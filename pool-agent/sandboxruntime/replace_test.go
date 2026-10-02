@@ -20,7 +20,7 @@ import (
 // container, which a settled failure keeps for as long as its repair takes
 // (ADR 26-10-01-876 §4).
 func TestASpecChangeThatCannotGetItsImageKeepsTheContainer(t *testing.T) {
-	withTestRoot(t)
+	state := withTestRoot(t)
 	var mu sync.Mutex
 	var removed []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +54,7 @@ func TestASpecChangeThatCannotGetItsImageKeepsTheContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{client: cli, projectID: "proj_1", poolID: "pool_1"}
+	r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1"}
 
 	_, err = r.CreateSandbox(context.Background(), &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: "sbx_1",

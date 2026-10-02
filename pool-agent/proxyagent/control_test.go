@@ -11,24 +11,23 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
 func TestPrepareControlKeyIsCreatedOnceAndKept(t *testing.T) {
-	withTestRoot(t)
-	first, err := PrepareControlKey(testProjectID, testPoolID)
+	root := withTestRoot(t)
+	first, err := PrepareControlKey(root, testProjectID, testPoolID)
 	if err != nil {
-		t.Fatalf("first PrepareControlKey() error = %v", err)
+		t.Fatalf("first PrepareControlKey(root, ) error = %v", err)
 	}
-	second, err := PrepareControlKey(testProjectID, testPoolID)
+	second, err := PrepareControlKey(root, testProjectID, testPoolID)
 	if err != nil {
-		t.Fatalf("second PrepareControlKey() error = %v", err)
+		t.Fatalf("second PrepareControlKey(root, ) error = %v", err)
 	}
 	if !first.Equal(second) {
 		t.Fatal("a second call made a new key; the proxy would trust one and the agent sign with the other")
 	}
-	requireKeyIsPrivate(t, resolve(layout.ProxyControlKey(testProjectID, testPoolID)))
+	requireKeyIsPrivate(t, root.ProxyControlKey(testProjectID, testPoolID))
 }
 
 // The control key is a secret, and 0600 is what keeps it one. Windows has no
@@ -52,7 +51,7 @@ func requireKeyIsPrivate(t *testing.T, path string) {
 // The pool agent and the proxy unit can both be first. Whoever loses must end
 // up with the winner's key, not a key of its own.
 func TestPrepareControlKeyConcurrentCallersAgree(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	const callers = 16
 	keys := make([]ed25519.PrivateKey, callers)
 	errs := make([]error, callers)
@@ -61,7 +60,7 @@ func TestPrepareControlKeyConcurrentCallersAgree(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			keys[i], errs[i] = PrepareControlKey(testProjectID, testPoolID)
+			keys[i], errs[i] = PrepareControlKey(root, testProjectID, testPoolID)
 		}()
 	}
 	wg.Wait()
@@ -78,10 +77,10 @@ func TestPrepareControlKeyConcurrentCallersAgree(t *testing.T) {
 // The listener and the trust key come from one key, together: a control
 // listener with no trust key is served unauthenticated.
 func TestControlConfigTrustsTheKeysPublicHalf(t *testing.T) {
-	withTestRoot(t)
-	key, err := PrepareControlKey(testProjectID, testPoolID)
+	root := withTestRoot(t)
+	key, err := PrepareControlKey(root, testProjectID, testPoolID)
 	if err != nil {
-		t.Fatalf("PrepareControlKey() error = %v", err)
+		t.Fatalf("PrepareControlKey(root, ) error = %v", err)
 	}
 	cfg, err := controlConfig(testProjectID, testPoolID, key)
 	if err != nil {
@@ -111,24 +110,24 @@ func TestPrepareControlKeyReplacesAnUnusableKey(t *testing.T) {
 		"wrong length": base64.StdEncoding.EncodeToString([]byte("short")) + "\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			withTestRoot(t)
-			path := resolve(layout.ProxyControlKey(testProjectID, testPoolID))
+			root := withTestRoot(t)
+			path := root.ProxyControlKey(testProjectID, testPoolID)
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ReadControlKey(testProjectID, testPoolID); err == nil {
+			if _, err := ReadControlKey(root, testProjectID, testPoolID); err == nil {
 				t.Fatal("ReadControlKey accepted an unusable key")
 			}
-			key, err := PrepareControlKey(testProjectID, testPoolID)
+			key, err := PrepareControlKey(root, testProjectID, testPoolID)
 			if err != nil {
-				t.Fatalf("PrepareControlKey() over an unusable key = %v, want it replaced", err)
+				t.Fatalf("PrepareControlKey(root, ) over an unusable key = %v, want it replaced", err)
 			}
-			read, err := ReadControlKey(testProjectID, testPoolID)
+			read, err := ReadControlKey(root, testProjectID, testPoolID)
 			if err != nil || !read.Equal(key) {
-				t.Fatalf("ReadControlKey() after repair = %v, want the replacement key", err)
+				t.Fatalf("ReadControlKey(root, ) after repair = %v, want the replacement key", err)
 			}
 			requireKeyIsPrivate(t, path)
 		})
@@ -139,11 +138,11 @@ func TestPrepareControlKeyReplacesAnUnusableKey(t *testing.T) {
 // one would race the agent, and the proxy could end up trusting a key the agent
 // never signs with.
 func TestReadControlKeyNeverCreatesOne(t *testing.T) {
-	withTestRoot(t)
-	if _, err := ReadControlKey(testProjectID, testPoolID); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("ReadControlKey() with no key = %v, want not-exist", err)
+	root := withTestRoot(t)
+	if _, err := ReadControlKey(root, testProjectID, testPoolID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ReadControlKey(root, ) with no key = %v, want not-exist", err)
 	}
-	if _, err := os.Stat(resolve(layout.ProxyControlKey(testProjectID, testPoolID))); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(root.ProxyControlKey(testProjectID, testPoolID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("ReadControlKey created a key file: %v", err)
 	}
 }
@@ -152,22 +151,22 @@ func TestReadControlKeyNeverCreatesOne(t *testing.T) {
 // trust key, never one without the other — and keeps serving sandbox traffic.
 func TestProxyControlConfigIsOffWithoutAUsableKey(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
-	withTestRoot(t)
-	path := resolve(layout.ProxyControlKey(testProjectID, testPoolID))
+	root := withTestRoot(t)
+	path := root.ProxyControlKey(testProjectID, testPoolID)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if cfg := proxyControlConfig(testProjectID, testPoolID, logger); cfg != (proxy.ControlConfig{}) {
+	if cfg := proxyControlConfig(root, testProjectID, testPoolID, logger); cfg != (proxy.ControlConfig{}) {
 		t.Fatalf("control config with an unusable key = %+v, want it off entirely", cfg)
 	}
 
-	if _, err := PrepareControlKey(testProjectID, testPoolID); err != nil {
+	if _, err := PrepareControlKey(root, testProjectID, testPoolID); err != nil {
 		t.Fatal(err)
 	}
-	cfg := proxyControlConfig(testProjectID, testPoolID, logger)
+	cfg := proxyControlConfig(root, testProjectID, testPoolID, logger)
 	if cfg.ListenAddress != ControlListenAddress || cfg.TrustPublicKey == "" {
 		t.Fatalf("control config with a usable key = %+v, want the listener and its trust key", cfg)
 	}

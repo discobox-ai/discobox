@@ -46,8 +46,8 @@ const controlBaseURL = "http://" + ControlListenAddress
 // A new key is written to a temporary file and synced before it is linked into
 // place, and the directory is synced after, so a crash leaves either no key or
 // a whole one, never an empty file at the final path.
-func PrepareControlKey(projectID, poolID string) (ed25519.PrivateKey, error) {
-	path := resolve(layout.ProxyControlKey(projectID, poolID))
+func PrepareControlKey(root layout.Root, projectID, poolID string) (ed25519.PrivateKey, error) {
+	path := root.ProxyControlKey(projectID, poolID)
 	key, err := readControlKey(path)
 	switch {
 	case err == nil:
@@ -65,8 +65,8 @@ func PrepareControlKey(projectID, poolID string) (ed25519.PrivateKey, error) {
 // An error means the key is missing or unusable; the caller runs without the
 // control API rather than failing, because an audit read must not be able to
 // break sandbox egress.
-func ReadControlKey(projectID, poolID string) (ed25519.PrivateKey, error) {
-	return readControlKey(resolve(layout.ProxyControlKey(projectID, poolID)))
+func ReadControlKey(root layout.Root, projectID, poolID string) (ed25519.PrivateKey, error) {
+	return readControlKey(root.ProxyControlKey(projectID, poolID))
 }
 
 var errUnusableControlKey = errors.New("proxy control key is unusable")
@@ -137,8 +137,8 @@ func readControlKey(path string) (ed25519.PrivateKey, error) {
 // the proxy serves sandbox traffic without its control API. Losing the audit
 // read is the smaller failure; losing egress for every sandbox on the pool is
 // not one an audit read should be able to cause.
-func proxyControlConfig(projectID, poolID string, logger *slog.Logger) proxy.ControlConfig {
-	key, err := ReadControlKey(projectID, poolID)
+func proxyControlConfig(root layout.Root, projectID, poolID string, logger *slog.Logger) proxy.ControlConfig {
+	key, err := ReadControlKey(root, projectID, poolID)
 	if err == nil {
 		var cfg proxy.ControlConfig
 		if cfg, err = controlConfig(projectID, poolID, key); err == nil {
@@ -169,8 +169,8 @@ func controlConfig(projectID, poolID string, key ed25519.PrivateKey) (proxy.Cont
 // NewAuditClient returns a client for this pool's proxy control API, signing
 // with the pool's control key. It only reads the key; PrepareControlKey, run at
 // agent startup, is what creates or repairs it.
-func NewAuditClient(projectID, poolID string) (*proxy.ControlClient, error) {
-	key, err := ReadControlKey(projectID, poolID)
+func NewAuditClient(root layout.Root, projectID, poolID string) (*proxy.ControlClient, error) {
+	key, err := ReadControlKey(root, projectID, poolID)
 	if err != nil {
 		return nil, fmt.Errorf("read proxy control key: %w", err)
 	}

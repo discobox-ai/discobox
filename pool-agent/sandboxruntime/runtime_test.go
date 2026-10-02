@@ -380,12 +380,12 @@ func TestGitSafeDirectoriesIgnoresRemoteAndRelativeURLs(t *testing.T) {
 func TestDockerSandboxRuntimeDaemonPathTranslatesOnlyRelocatedState(t *testing.T) {
 	const containerPath = "/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
 
-	same := &DockerSandboxRuntime{hostState: layout.NewHostMapping("")}
+	same := &DockerSandboxRuntime{hostState: layout.Container().HostMapping("")}
 	if got := same.daemonPath(containerPath); got != containerPath {
 		t.Fatalf("daemon path = %q, want the container path unchanged", got)
 	}
 
-	relocated := &DockerSandboxRuntime{hostState: layout.NewHostMapping("/var/lib/docker/discobox")}
+	relocated := &DockerSandboxRuntime{hostState: layout.Container().HostMapping("/var/lib/docker/discobox")}
 	want := "/var/lib/docker/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
 	if got := relocated.daemonPath(containerPath); got != want {
 		t.Fatalf("daemon path = %q, want %q", got, want)
@@ -1685,8 +1685,8 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 	pushed := gitOutput(t, client, "rev-parse", "HEAD")
 
 	// The state tree is relocated under a writable root for this test.
-	withTestRoot(t)
-	runtime := &DockerSandboxRuntime{projectID: projectID}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: projectID}
 	source := workerapimodel.GitSource{
 		Kind:     workerclient.GitSourceKindGit,
 		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
@@ -1745,8 +1745,8 @@ func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) 
 	const projectID = "project-1"
 	const sandboxID = "sandbox-1"
 
-	withTestRoot(t)
-	runtime := &DockerSandboxRuntime{projectID: projectID}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: projectID}
 	target := runtime.sandboxSourcePath(sandboxID, "primary")
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
@@ -1803,8 +1803,8 @@ func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
 	git(t, client, "commit", "-m", "pushed")
 	pushed := gitOutput(t, client, "rev-parse", "HEAD")
 
-	withTestRoot(t)
-	runtime := &DockerSandboxRuntime{projectID: projectID}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: projectID}
 	source := workerapimodel.GitSource{
 		Kind:     workerclient.GitSourceKindGit,
 		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),

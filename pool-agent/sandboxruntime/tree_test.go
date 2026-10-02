@@ -21,6 +21,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/sandboxtree"
 	"github.com/discobox-ai/discobox/tarsums"
 )
@@ -173,7 +174,7 @@ func writeJSON(w http.ResponseWriter, value any) {
 // treeRuntime is a runtime whose Docker daemon holds no sandbox containers, so a
 // sandbox is data and nothing else -- which is the state both halves of a
 // transfer act on.
-func treeRuntime(t *testing.T, projectID, poolID string) (*DockerSandboxRuntime, *exportDaemon) {
+func treeRuntime(t *testing.T, root layout.Root, projectID, poolID string) (*DockerSandboxRuntime, *exportDaemon) {
 	t.Helper()
 	daemon := newExportDaemon()
 	server := httptest.NewServer(daemon)
@@ -182,7 +183,7 @@ func treeRuntime(t *testing.T, projectID, poolID string) (*DockerSandboxRuntime,
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli, projectID: projectID, poolID: poolID}, daemon
+	return &DockerSandboxRuntime{client: cli, root: root, projectID: projectID, poolID: poolID}, daemon
 }
 
 // treeFixture writes a sandbox tree under a relocated state root and returns
@@ -195,8 +196,8 @@ func treeFixture(t *testing.T) (*DockerSandboxRuntime, string) {
 
 func exportFixture(t *testing.T) (*DockerSandboxRuntime, *exportDaemon, string) {
 	t.Helper()
-	withTestRoot(t)
-	runtime, daemon := treeRuntime(t, "project-1", "pool-1")
+	state := withTestRoot(t)
+	runtime, daemon := treeRuntime(t, state, "project-1", "pool-1")
 	root := runtime.sandboxRoot("sbx-1")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
@@ -334,7 +335,7 @@ func TestTreeRoundTripPreservesModesSymlinksAndHardLinks(t *testing.T) {
 	}
 
 	// Restore into a second pool, addressed the way the destination would.
-	destination, _ := treeRuntime(t, "project-2", "pool-2")
+	destination, _ := treeRuntime(t, source.root, "project-2", "pool-2")
 	if err := destination.ImportTree(t.Context(), "sbx-2", bytes.NewReader(archive)); err != nil {
 		t.Fatal(err)
 	}

@@ -54,9 +54,9 @@ func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.Ce
 
 // newControlPlaneCredentials is the broker's client of the control plane for
 // one pool, authenticated by the scoped token the pool agent writes.
-func newControlPlaneCredentials(projectID, poolID string) *controlPlaneCredentials {
+func newControlPlaneCredentials(root layout.Root, projectID, poolID string) *controlPlaneCredentials {
 	return &controlPlaneCredentials{
-		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
+		contextPath: root.ProxyResolveContextFile(projectID, poolID),
 		client:      controlPlaneHTTPClient(),
 	}
 }

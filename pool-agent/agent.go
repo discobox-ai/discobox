@@ -30,7 +30,7 @@ import (
 // RunProxy runs the pool-scoped proxy server. It is the entrypoint for the
 // proxy systemd unit inside the pool container.
 func RunProxy(ctx context.Context, logger *slog.Logger) error {
-	return proxyagent.RunProxy(ctx, logger)
+	return proxyagent.RunProxy(ctx, layout.Container(), logger)
 }
 
 // RunAgent registers the pool, marks it ready, and serves the pool-agent HTTP endpoints.
@@ -39,27 +39,30 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		logger = slog.Default()
 	}
 	bootstrap := FromEnv()
+	// This agent runs in the pool container, so its state is the container's
+	// (ADR 0144 §1).
+	root := layout.Container()
 	// Publish the host-mount prefix for the proxy systemd unit, then prepare the
 	// proxy certificate bundle before booting systemd so the proxy unit and
 	// per-sandbox client certificates share a consistent CA without racing on
 	// first-time generation.
-	if err := proxyagent.WriteUnitEnvironment(bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+	if err := proxyagent.WriteUnitEnvironment(root, bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
 		return err
 	}
-	bundle, err := proxyagent.PrepareBundle(bootstrap.ProjectID, bootstrap.PoolID)
+	bundle, err := proxyagent.PrepareBundle(root, bootstrap.ProjectID, bootstrap.PoolID)
 	if err != nil {
 		return err
 	}
 	// The proxy control key is created here for the same reason as the CA: the
 	// proxy unit trusts its public half and this process signs with it, so it
 	// must exist before systemd starts the unit that reads it.
-	if _, err := proxyagent.PrepareControlKey(bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+	if _, err := proxyagent.PrepareControlKey(root, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
 		return fmt.Errorf("prepare proxy control key: %w", err)
 	}
 	// Render the shared builder's and its registry's configuration for the same
 	// reason and at the same point: both run as systemd units with a clean
 	// environment, and every path they own is pool-scoped (ADR 0044).
-	if err := buildkitagent.Prepare(bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
+	if err := buildkitagent.Prepare(root, bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
 		return err
 	}
 	systemd, err := agentsystemd.StartNamespace(ctx, logger)
@@ -86,14 +89,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// The identity key lives on the pool's durable storage, so an agent that
 	// restarts without its container is still this pool and spends no bootstrap
 	// token to prove it (ADR 0063).
-	keySource := FileKeySource{Path: layout.PoolIdentityKey(bootstrap.ProjectID, bootstrap.PoolID)}
+	keySource := FileKeySource{Path: root.PoolIdentityKey(bootstrap.ProjectID, bootstrap.PoolID)}
 	registration, err := Run(ctx, Config{Bootstrap: bootstrap, Client: client, KeySource: keySource})
 	if err != nil {
 		return err
 	}
 	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "storedKey", registration.FromStoredKey)
 
-	if err := startStatusReporter(ctx, logger, bootstrap, registration, client, statusReportInterval); err != nil {
+	if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, statusReportInterval); err != nil {
 		if !registration.FromStoredKey {
 			return err
 		}
@@ -107,14 +110,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		if err := startStatusReporter(ctx, logger, bootstrap, registration, client, statusReportInterval); err != nil {
+		if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, statusReportInterval); err != nil {
 			return err
 		}
 	}
 
-	startResolveTokenRefresher(ctx, logger, bootstrap, registration)
+	startResolveTokenRefresher(ctx, logger, root, bootstrap, registration)
 
-	return Serve(ctx, logger, bootstrap, registration, client)
+	return Serve(ctx, logger, root, bootstrap, registration, client)
 }
 
 const (
@@ -148,7 +151,7 @@ const (
 // Capacity is measured per report rather than captured at boot, so the
 // control plane schedules against current free space rather than whatever was
 // free when the pool started.
-func startStatusReporter(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, client StatusClient, interval time.Duration) error {
+func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, client StatusClient, interval time.Duration) error {
 	conditions := map[string]any{
 		"agent": map[string]any{
 			"version": "dev",
@@ -171,7 +174,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, bootstrap Boo
 			// Stat this project's own data tree. Its parent belongs to the pool
 			// container's root filesystem and would report the wrong backing
 			// filesystem.
-			AvailableStorageBytes: poolFreeStorageBytes(layout.ProjectData(bootstrap.ProjectID)),
+			AvailableStorageBytes: poolFreeStorageBytes(root.ProjectData(bootstrap.ProjectID)),
 			Conditions:            conditions,
 		})
 	}
@@ -210,7 +213,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, bootstrap Boo
 // discobox API (ADR 0140). They stay separate scopes so a future split of those
 // roles across processes is a change of who holds which token, not a change of
 // what a token means.
-func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration) {
+func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration) {
 	write := func() error {
 		token, err := poolauth.CreateTokenWithTTL(registration.PrivateKey, poolauth.Claims{
 			ProjectID: bootstrap.ProjectID,
@@ -220,7 +223,7 @@ func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, bootst
 		if err != nil {
 			return err
 		}
-		return proxyagent.WriteResolveContext(bootstrap.ProjectID, bootstrap.PoolID, bootstrap.ControlPlaneURL, token)
+		return proxyagent.WriteResolveContext(root, bootstrap.ProjectID, bootstrap.PoolID, bootstrap.ControlPlaneURL, token)
 	}
 	if err := write(); err != nil {
 		logger.Warn("write proxy resolve token", "error", err)
@@ -246,8 +249,8 @@ func ExecSystemdChildIfRequested() error {
 	return agentsystemd.ExecSystemdChildIfRequested()
 }
 
-// Serve starts the pool-agent HTTP server.
-func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporters ...SandboxStateClient) error {
+// Serve starts the pool-agent HTTP server, over pool state under root.
+func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, reporters ...SandboxStateClient) error {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return err
@@ -257,6 +260,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 		PoolID:                bootstrap.PoolID,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
 		HostMountPrefix:       bootstrap.HostMountPrefix,
+		Root:                  root,
 		HostStateRoot:         bootstrap.HostStateRoot,
 		SandboxIdleTimeout:    idleTimeout,
 		SharedMemoryBytes:     sandboxSharedMemoryBytes(poolCgroupRoot),
@@ -351,17 +355,17 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 			// collected rather than polling every sandbox a second time, so it
 			// only runs where the poller does (ADR 0071 resource accounting §2).
 			if resourceClient, ok := reporter.(PoolResourceClient); ok && poller != nil {
-				startPoolResourceReporter(ctx, logger, bootstrap, registration, runtime, poller, resourceClient)
+				startPoolResourceReporter(ctx, logger, root, bootstrap, registration, runtime, poller, resourceClient)
 			}
 		}
 	}
 	go runtime.WatchProxyMaterial(ctx, logger)
 	go runtime.WatchImages(ctx, logger)
-	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
+	return ServeWithRuntime(ctx, logger, root, bootstrap, registration, runtime)
 }
 
 // ServeWithRuntime starts the pool-agent HTTP server with an explicit sandbox runtime.
-func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime) error {
+func ServeWithRuntime(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime) error {
 	// The listen URL's scheme selects the transport, so a VSOCK-only or
 	// socket-only pool needs no special case here.
 	listener, err := wire.Listen(bootstrap.AgentListenURL)
@@ -372,7 +376,7 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 	// Audit stays a nil interface when the key cannot be read, so the relay
 	// answers 503 rather than the agent failing to serve anything at all.
 	var audit poolserver.AuditReader
-	if auditClient, err := proxyagent.NewAuditClient(bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+	if auditClient, err := proxyagent.NewAuditClient(root, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
 		logger.Warn("proxy audit relay disabled", "error", err)
 	} else {
 		audit = auditClient
@@ -475,7 +479,7 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	if projectID == "" || poolID == "" {
 		return fmt.Errorf("mediator unit environment names no pool")
 	}
-	bundle, err := proxyagent.PrepareBundle(projectID, poolID)
+	bundle, err := proxyagent.PrepareBundle(layout.Container(), projectID, poolID)
 	if err != nil {
 		return fmt.Errorf("prepare mediator certificates: %w", err)
 	}

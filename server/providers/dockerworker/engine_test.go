@@ -430,7 +430,7 @@ func TestContainerMountsBindEveryStateTreeAtItsContainerPath(t *testing.T) {
 	engine := newTestEngine(t, Config{})
 	mounts := engine.containerMounts("worker-1")
 
-	for _, tree := range layout.MountRoots() {
+	for _, tree := range layout.Container().MountRoots() {
 		if !hasMountWithReadOnly(mounts, tree, tree, false) {
 			t.Fatalf("mounts = %#v, missing bind mount for state tree %q", mounts, tree)
 		}
@@ -447,7 +447,7 @@ func TestContainerMountsRelocateOnlyTheHostSideOfStateTrees(t *testing.T) {
 	engine := newTestEngine(t, Config{HostStateRoot: "/var/lib/docker/discobox"})
 	mounts := engine.containerMounts("worker-1")
 
-	for _, tree := range layout.MountRoots() {
+	for _, tree := range layout.Container().MountRoots() {
 		host := "/var/lib/docker/discobox" + strings.TrimPrefix(tree, layout.ContainerRoot)
 		if !hasMountWithReadOnly(mounts, host, tree, false) {
 			t.Fatalf("mounts = %#v, state tree %q should bind from %q", mounts, tree, host)

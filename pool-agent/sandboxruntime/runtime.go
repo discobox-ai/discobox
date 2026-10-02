@@ -252,8 +252,10 @@ type DockerSandboxRuntime struct {
 	// sharedMemoryBytes sizes each sandbox container's /dev/shm; zero is
 	// Docker's 64 MiB default.
 	sharedMemoryBytes int64
-	// hostState translates a container path into the daemon's view of it. It is
-	// applied only where a path is handed to the daemon.
+	// root is where this pool's state is, as this process sees it.
+	root layout.Root
+	// hostState translates a path under root into the daemon's view of it. It
+	// is applied only where a path is handed to the daemon.
 	hostState layout.HostMapping
 	// powerLocks serializes power operations per sandbox (see power.go).
 	powerLocks sync.Map
@@ -285,8 +287,11 @@ type DockerSandboxRuntimeConfig struct {
 	PoolID                string
 	ControlPlanePublicKey string
 	HostMountPrefix       string
-	// HostStateRoot is where this pool's Docker daemon sees
-	// layout.ContainerRoot. Empty means no relocation.
+	// Root is where the runtime reads and writes pool state: the pool
+	// container's, layout.Container().
+	Root layout.Root
+	// HostStateRoot is where this pool's Docker daemon sees Root's state.
+	// Empty means it sees layout.ContainerRoot.
 	HostStateRoot string
 	// SandboxIdleTimeout is how long a sandbox runs idle before it powers
 	// itself off (ADR 0108). Zero leaves the sandbox-agent's default.
@@ -309,7 +314,8 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
 		sharedMemoryBytes:     cfg.SharedMemoryBytes,
 		hostMountPrefix:       cleanAbsPath(cfg.HostMountPrefix),
-		hostState:             layout.NewHostMapping(cfg.HostStateRoot),
+		root:                  cfg.Root,
+		hostState:             cfg.Root.HostMapping(cfg.HostStateRoot),
 	}, nil
 }
 
@@ -472,12 +478,12 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err != nil {
 		return nil, err
 	}
-	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.projectID, r.poolID, sandboxID)
+	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
 	sentinels, _ := req.Sentinels.Get()
-	if err := proxyagent.UpsertSandboxSentinels(r.projectID, r.poolID, sandboxID, sentinels); err != nil {
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels); err != nil {
 		return nil, err
 	}
 	// Nest the proxy material inside the config volume at /.discobox/config/proxy
@@ -1525,7 +1531,7 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 		if sentinels, ok := req.Sentinels.Get(); ok {
 			// Re-register the sandbox's sentinel set with the proxy so newly bound
 			// secrets resolve without a restart.
-			if err := proxyagent.UpsertSandboxSentinels(r.projectID, r.poolID, sandboxID, sentinels); err != nil {
+			if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels); err != nil {
 				return nil, err
 			}
 		}
@@ -1564,10 +1570,10 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	}
 	// Clean up proxy material even if the container was already gone, so a
 	// repeated delete still reclaims the client certificate and staged files.
-	if err := proxyagent.RemoveSandboxSentinels(r.projectID, r.poolID, sandboxID); err != nil {
+	if err := proxyagent.RemoveSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
-	if err := proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID); err != nil {
+	if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
 	// Before the tree goes, since the tree is what names them: every image this
@@ -1588,14 +1594,14 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 // under it. A sandbox that never built has no namespace staged, which is not an
 // error: there is nothing of its to remove.
 func (r *DockerSandboxRuntime) removePublishedImages(sandboxID string) error {
-	namespace, err := proxyagent.ReadRegistryNamespace(proxyagent.RegistryNamespacePath(r.projectID, r.poolID, sandboxID))
+	namespace, err := proxyagent.ReadRegistryNamespace(proxyagent.RegistryNamespacePath(r.root, r.projectID, r.poolID, sandboxID))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	return buildkitagent.RemoveRegistryNamespace(r.projectID, r.poolID, namespace)
+	return buildkitagent.RemoveRegistryNamespace(r.root, r.projectID, r.poolID, namespace)
 }
 
 const (
@@ -1650,7 +1656,7 @@ func (r *DockerSandboxRuntime) ReconcileProxyMaterial(ctx context.Context, minAg
 	if err != nil {
 		return err
 	}
-	return proxyagent.PruneOrphanedMaterial(r.projectID, r.poolID, live, minAge)
+	return proxyagent.PruneOrphanedMaterial(r.root, r.projectID, r.poolID, live, minAge)
 }
 
 func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, error) {
@@ -1708,15 +1714,15 @@ func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, log
 		logger.Warn("list sandbox containers", "error", err)
 		return
 	}
-	orphans, err := proxyagent.OrphanedSandboxIDs(r.projectID, r.poolID, live, minAge)
+	orphans, err := proxyagent.OrphanedSandboxIDs(r.root, r.projectID, r.poolID, live, minAge)
 	if err != nil {
 		logger.Warn("scan orphaned sandbox material", "error", err)
 	}
 	for _, sandboxID := range orphans {
-		if err := proxyagent.RemoveSandboxSentinels(r.projectID, r.poolID, sandboxID); err != nil {
+		if err := proxyagent.RemoveSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 			logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
 		}
-		if err := proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID); err != nil {
+		if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 			logger.Warn("remove sandbox proxy material", "sandboxID", sandboxID, "error", err)
 		}
 	}
@@ -1831,7 +1837,7 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 	reapUnknownPools(
 		r.poolsRoot(),
 		r.cachePoolsRoot(),
-		proxyagent.PoolsRoot(r.projectID),
+		proxyagent.PoolsRoot(r.root, r.projectID),
 		known, sandboxVolumeRetention, time.Now(), logger,
 	)
 	return nil
@@ -2672,24 +2678,24 @@ func sandboxHostname(sandboxID string) string {
 // provider mount disposable storage at /var/lib/discobox/cache without moving
 // durable sandbox state.
 func (r *DockerSandboxRuntime) poolCacheRoot() string {
-	return resolve(layout.PoolCache(r.projectID, r.poolID))
+	return r.root.PoolCache(r.projectID, r.poolID)
 }
 
 // sandboxesRoot is the parent of every sandbox's per-sandbox volume tree for
 // this pool. The volume reaper scans only under here, which is why it can never
 // touch another pool's data.
 func (r *DockerSandboxRuntime) sandboxesRoot() string {
-	return resolve(layout.PoolSandboxes(r.projectID, r.poolID))
+	return r.root.PoolSandboxes(r.projectID, r.poolID)
 }
 
 // poolsRoot is the parent of every pool's data subtree for this project on the
 // shared host. The pool-sync reaper enumerates it to find orphaned pools.
 func (r *DockerSandboxRuntime) poolsRoot() string {
-	return resolve(layout.ProjectPools(r.projectID))
+	return r.root.ProjectPools(r.projectID)
 }
 
 func (r *DockerSandboxRuntime) cachePoolsRoot() string {
-	return resolve(layout.ProjectCachePools(r.projectID))
+	return r.root.ProjectCachePools(r.projectID)
 }
 
 // projectFilters matches every managed sandbox container for this project
@@ -2702,27 +2708,27 @@ func (r *DockerSandboxRuntime) projectFilters() client.Filters {
 }
 
 func (r *DockerSandboxRuntime) sandboxDataRootPath(sandboxID string) string {
-	return resolve(layout.SandboxData(r.projectID, r.poolID, sandboxID))
+	return r.root.SandboxData(r.projectID, r.poolID, sandboxID)
 }
 
 func (r *DockerSandboxRuntime) sourceDataPath(sourceKey string) string {
-	return resolve(layout.SourceData(r.projectID, r.poolID, sourceKey))
+	return r.root.SourceData(r.projectID, r.poolID, sourceKey)
 }
 
 func (r *DockerSandboxRuntime) sandboxSourceDataPath(sandboxID, slug string) string {
-	return resolve(layout.SandboxSourceData(r.projectID, r.poolID, sandboxID, slug))
+	return r.root.SandboxSourceData(r.projectID, r.poolID, sandboxID, slug)
 }
 
 func (r *DockerSandboxRuntime) sandboxConfigRoot(sandboxID string) string {
-	return resolve(layout.SandboxConfig(r.projectID, r.poolID, sandboxID))
+	return r.root.SandboxConfig(r.projectID, r.poolID, sandboxID)
 }
 
 func (r *DockerSandboxRuntime) sandboxSecretsRoot(sandboxID string) string {
-	return resolve(layout.SandboxSecrets(r.projectID, r.poolID, sandboxID))
+	return r.root.SandboxSecrets(r.projectID, r.poolID, sandboxID)
 }
 
 func (r *DockerSandboxRuntime) sandboxSourcesRoot(sandboxID string) string {
-	return resolve(layout.SandboxSources(r.projectID, r.poolID, sandboxID))
+	return r.root.SandboxSources(r.projectID, r.poolID, sandboxID)
 }
 
 func (r *DockerSandboxRuntime) sandboxSourcePath(sandboxID, slug string) string {
@@ -2733,7 +2739,7 @@ func (r *DockerSandboxRuntime) sandboxSourcePath(sandboxID, slug string) string 
 // into and served out of, and which the sandbox sees, read-only, at
 // /.discobox/origins/<slug> (ADR 0058 §1).
 func (r *DockerSandboxRuntime) sandboxOriginPath(sandboxID, slug string) string {
-	return filepath.Join(resolve(layout.SandboxOrigins(r.projectID, r.poolID, sandboxID)), slug+".git")
+	return filepath.Join(r.root.SandboxOrigins(r.projectID, r.poolID, sandboxID), slug+".git")
 }
 
 func containerIPAddress(inspect container.InspectResponse) string {
@@ -2988,11 +2994,11 @@ func cleanAbsPath(value string) string {
 	return string(filepath.Separator) + filepath.Join(parts...)
 }
 
-// daemonPath converts a container path into the path this pool's Docker daemon
-// sees. Every mount source handed to the daemon goes through it; nothing else
-// needs to, because container paths are invariant.
-func (r *DockerSandboxRuntime) daemonPath(containerPath string) string {
-	return r.hostState.HostPath(containerPath)
+// daemonPath converts a path under the runtime's root into the path this pool's
+// Docker daemon sees. Every mount source handed to the daemon goes through it;
+// nothing else needs to, because everything else is read and written here.
+func (r *DockerSandboxRuntime) daemonPath(path string) string {
+	return r.hostState.HostPath(path)
 }
 
 // materializeGitSource brings target to the state source describes, running

@@ -5,6 +5,8 @@ package buildkitagent
 import (
 	"context"
 	"fmt"
+
+	"github.com/discobox-ai/discobox/layout"
 )
 
 // A per-build forwarder is built out of network namespaces, setns, and process
@@ -18,8 +20,8 @@ import (
 
 var errNotLinux = fmt.Errorf("per-build egress needs Linux network namespaces")
 
-func StartBuildForwarder(context.Context, string, string, int) error { return errNotLinux }
+func StartBuildForwarder(context.Context, layout.Root, string, string, int) error { return errNotLinux }
 
-func ServeBuildForwarder(context.Context, string, string, int) error { return errNotLinux }
+func ServeBuildForwarder(context.Context, layout.Root, string, string, int) error { return errNotLinux }
 
-func StopBuildForwarder(string) error { return errNotLinux }
+func StopBuildForwarder(layout.Root, string) error { return errNotLinux }

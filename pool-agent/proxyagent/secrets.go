@@ -48,8 +48,8 @@ var secretsFileMu sync.Mutex
 
 // UpsertSandboxSentinels registers a sandbox's sentinel set with the proxy by
 // updating SecretsFile. Passing an empty set removes the sandbox entry.
-func UpsertSandboxSentinels(projectID, poolID string, sandboxID string, sentinels []string) error {
-	path := layout.ProxySecretsFile(projectID, poolID)
+func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string) error {
+	path := root.ProxySecretsFile(projectID, poolID)
 	secretsFileMu.Lock()
 	defer secretsFileMu.Unlock()
 	doc, err := readSecretsDoc(path)
@@ -68,13 +68,13 @@ func UpsertSandboxSentinels(projectID, poolID string, sandboxID string, sentinel
 }
 
 // RemoveSandboxSentinels drops a sandbox's sentinel set from SecretsFile.
-func RemoveSandboxSentinels(projectID, poolID string, sandboxID string) error {
-	return UpsertSandboxSentinels(projectID, poolID, sandboxID, nil)
+func RemoveSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string) error {
+	return UpsertSandboxSentinels(root, projectID, poolID, sandboxID, nil)
 }
 
 // WriteResolveContext writes the resolve credential the proxy unit reads.
-func WriteResolveContext(projectID, poolID string, controlPlaneURL, token string) error {
-	return writeJSONAtomic(layout.ProxyResolveContextFile(projectID, poolID), resolveContext{
+func WriteResolveContext(root layout.Root, projectID, poolID string, controlPlaneURL, token string) error {
+	return writeJSONAtomic(root.ProxyResolveContextFile(projectID, poolID), resolveContext{
 		ControlPlaneURL: controlPlaneURL,
 		PoolID:          poolID,
 		Token:           token,
@@ -82,7 +82,7 @@ func WriteResolveContext(projectID, poolID string, controlPlaneURL, token string
 }
 
 func readSecretsDoc(path string) (secretsDoc, error) {
-	data, err := os.ReadFile(resolve(path))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return secretsDoc{Clients: map[string][]string{}}, nil
@@ -97,9 +97,6 @@ func readSecretsDoc(path string) (secretsDoc, error) {
 }
 
 func writeJSONAtomic(path string, value any) error {
-	// Resolve once: every operation below must act on the same location, and
-	// resolving each argument separately would rename across roots.
-	path = resolve(path)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -132,8 +129,8 @@ type secretResolver struct {
 	judge *judgeClient
 }
 
-func newSecretResolver(projectID, poolID string, live *activations) *secretResolver {
-	contextPath := layout.ProxyResolveContextFile(projectID, poolID)
+func newSecretResolver(root layout.Root, projectID, poolID string, live *activations) *secretResolver {
+	contextPath := root.ProxyResolveContextFile(projectID, poolID)
 	client := controlPlaneHTTPClient()
 	return &secretResolver{
 		contextPath: contextPath,
@@ -589,7 +586,7 @@ func (r *secretResolver) isEphemeralCandidate(req proxy.SecretResolveRequest) bo
 }
 
 func readResolveContext(path string) (resolveContext, error) {
-	data, err := os.ReadFile(resolve(path))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return resolveContext{}, err
 	}
@@ -683,7 +680,7 @@ func watchSecretsFile(ctx context.Context, publisher *policyPublisher, path stri
 	onError := publisher.onError
 	var lastMod time.Time
 	apply := func() {
-		info, err := os.Stat(resolve(path))
+		info, err := os.Stat(path)
 		if err != nil {
 			if !os.IsNotExist(err) && onError != nil {
 				onError(err)

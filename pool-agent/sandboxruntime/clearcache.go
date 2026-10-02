@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 )
@@ -198,8 +197,8 @@ func (r *DockerSandboxRuntime) clearCaches(ctx context.Context) error {
 	var errs []error
 	for _, dir := range []struct{ name, path string }{
 		{"pool cache", r.poolCacheRoot()},
-		{"proxy response cache", resolve(layout.ProxyCache(r.projectID, r.poolID))},
-		{"pool registry", resolve(buildkitagent.RegistryRoot(r.projectID, r.poolID))},
+		{"proxy response cache", r.root.ProxyCache(r.projectID, r.poolID)},
+		{"pool registry", buildkitagent.RegistryRoot(r.root, r.projectID, r.poolID)},
 	} {
 		if err := emptyDir(dir.path); err != nil {
 			errs = append(errs, fmt.Errorf("clear %s: %w", dir.name, err))
@@ -207,7 +206,7 @@ func (r *DockerSandboxRuntime) clearCaches(ctx context.Context) error {
 	}
 	pruneCtx, cancelPrune := context.WithTimeout(ctx, buildPruneTimeout)
 	defer cancelPrune()
-	if err := buildkitagent.PruneBuildCache(pruneCtx); err != nil {
+	if err := buildkitagent.PruneBuildCache(pruneCtx, r.root); err != nil {
 		errs = append(errs, err)
 	}
 	reclaimCtx, cancelReclaim := context.WithTimeout(ctx, imageReclaimTimeout)
