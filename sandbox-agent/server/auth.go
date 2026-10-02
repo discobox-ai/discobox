@@ -33,7 +33,15 @@ const (
 	// token that may ask the judge may read and write nothing in the sandbox,
 	// and a token for a discobox's own work cannot ask.
 	ScopeJudgeRun = "judge:run"
+	// ScopeRuntimeConfig gates the runtime-config intake, reading and
+	// delivering alike (ADR 0126 §3). It is the pool's alone: what a sandbox
+	// is told to be is not something its users may tell it, so no wildcard
+	// grants it and a token has to name it.
+	ScopeRuntimeConfig = "runtime-config"
 )
+
+// poolOnlyScopes are the scopes a "*" token does not carry.
+var poolOnlyScopes = map[string]bool{ScopeRuntimeConfig: true}
 
 type signedTokenClaimsContextKey struct{}
 
@@ -47,8 +55,12 @@ type SignedTokenClaims struct {
 func (c SignedTokenClaims) HasScope(scope string) bool {
 	for _, candidate := range c.Scopes {
 		switch candidate {
-		case scope, "*":
+		case scope:
 			return true
+		case "*":
+			if !poolOnlyScopes[scope] {
+				return true
+			}
 		case "terminal:*":
 			if strings.HasPrefix(scope, "terminal:") {
 				return true
@@ -231,6 +243,12 @@ func requiredRequestScope(r *http.Request) string {
 			return ScopeExecWrite
 		}
 		return ""
+	}
+	// The runtime-config intake is the pool's, on a scope nothing else
+	// carries, whatever the method: a route answering a method it does not
+	// serve must not be the one that needs no token scope at all.
+	if strings.HasSuffix(r.URL.Path, "/runtime-config") {
+		return ScopeRuntimeConfig
 	}
 	// Judging is asked for on its own scope. A judge runtime answers nobody
 	// else, so nothing else about it is reachable with this token either.

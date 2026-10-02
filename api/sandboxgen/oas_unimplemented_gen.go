@@ -97,6 +97,16 @@ func (UnimplementedHandler) GetSandboxExecScreen(ctx context.Context, params Get
 	return r, ht.ErrNotImplemented
 }
 
+// GetSandboxRuntimeConfig implements get-sandbox-runtime-config operation.
+//
+// Returns the runtime-config document the sandbox last applied - what the pool has told it it is
+// (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+func (UnimplementedHandler) GetSandboxRuntimeConfig(ctx context.Context, params GetSandboxRuntimeConfigParams) (r *SandboxRuntimeConfig, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSandboxService implements get-sandbox-service operation.
 //
 // Get a declared service in a sandbox.
@@ -205,6 +215,20 @@ func (UnimplementedHandler) ListSandboxServices(ctx context.Context, params List
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
 func (UnimplementedHandler) ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (r *SandboxToolsResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
+//
+// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
+// applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored
+// and the document the sandbox holds is returned; the same revision is a retry when the document
+// matches and a 409 when it does not. A document that fails validation (422) or cannot be written
+// whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token
+// carrying the pool-only runtime-config scope may deliver one.
+//
+// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+func (UnimplementedHandler) PutSandboxRuntimeConfig(ctx context.Context, req *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (r *SandboxRuntimeConfig, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

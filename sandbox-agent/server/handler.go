@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/agentstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
@@ -44,6 +45,9 @@ type handler struct {
 	// meta is the sandbox's meta file (ADR 0136), nil when the sandbox user's
 	// home did not resolve.
 	meta *meta.File
+	// runtimeConfig is the pool's runtime-config intake (ADR 0126 §3), nil
+	// when the sandbox was started without one.
+	runtimeConfig *intake.Intake
 }
 
 type terminalStore interface {
@@ -554,6 +558,13 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		response.MetaError = sandboxapi.NewOptString(err.Error())
 	} else {
 		response.Meta = sandboxapi.NewOptSandboxMeta(sandboxAgentMeta(current))
+	}
+	// The revision rides the poll the pool already runs, which is how it
+	// converges on what was applied rather than on what it sent (ADR 0126 §3).
+	if h.runtimeConfig != nil {
+		if revision := h.runtimeConfig.Revision(); revision > 0 {
+			response.RuntimeConfigRevision = sandboxapi.NewOptInt64(revision)
+		}
 	}
 	return &response, nil
 }

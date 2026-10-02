@@ -25,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
+	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
@@ -77,6 +78,11 @@ type Config struct {
 	// the pool-staged mTLS material and endpoint. Empty uses the documented
 	// mount path.
 	CredentialsBridgePath string
+	// RuntimeConfig is the runtime-config intake the pool delivers to (ADR
+	// 0126 §3). The binary opens it before loading sandbox.json, so the
+	// document it kept is applied before anything reads its files; nil leaves
+	// the routes answering that there is no intake.
+	RuntimeConfig *intake.Intake
 }
 
 func ConfigFromHarnessConfig(cfg config.Config) Config {
@@ -264,6 +270,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		ports:             portsWatch,
 		autostop:          idleStop,
 		meta:              metaFile,
+		runtimeConfig:     cfg.RuntimeConfig,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {

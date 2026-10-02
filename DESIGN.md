@@ -78,6 +78,11 @@ surface:
   not a REST contract and is not OpenAPI-generated. It is the hand-written
   `sandboxconfig` package — see `sandboxconfig/DESIGN.md` and
   `docs/adr/0012-sandbox-config-is-three-attribute-owned-layers.md`.
+- The runtime-config document a pool delivers to a running sandbox is both: a
+  sandbox-agent route whose schema (`SandboxRuntimeConfig`) is in
+  `api/openapi/server.yaml`, and the hand-written `sandboxconfig.RuntimeConfig`
+  the pool and the sandbox share. They are one wire shape; the sandbox agent
+  converts between them through JSON and a round-trip test holds them together.
 
 ## Module Boundaries
 
@@ -187,7 +192,7 @@ Root module package map:
 | [`proxy`](proxy) | The pool-scoped HTTP/HTTPS and SOCKS proxy: certificates, traffic policy, response caching, and audit. Run by the pool agent and sandbox agent. See [`proxy/DESIGN.md`](proxy/DESIGN.md). |
 | [`auditid`](auditid) | How an audit record's ID is written on an API. Three of the four trails of [ADR 0130](docs/adr/0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md) number their records with an `x/id` value; the pool proxy's numbers them by audit-database row, because that order is the write order a follower reads along, so its ID is written `http_<row>` above the database. In the root module, and deliberately dependency-free, because the proxy that owns the row, the pool agent and server that relay it, and the CLI that prints and parses it all have to spell it the same way, and the CLI cannot import the proxy to learn it. |
 | [`runcca`](runcca) | The runc wrapper that injects the sandbox's MITM CA into every container a nested Docker daemon creates. |
-| [`sandboxconfig`](sandboxconfig) | The sandbox's effective runtime config (`/etc/discobox/sandbox.json`) assembled from attribute-owned layers. See [`sandboxconfig/DESIGN.md`](sandboxconfig/DESIGN.md). |
+| [`sandboxconfig`](sandboxconfig) | The sandbox's effective runtime config (`/etc/discobox/sandbox.json`) assembled from attribute-owned layers, and the revisioned runtime-config document a pool delivers to a running sandbox (ADR 0126 §3). See [`sandboxconfig/DESIGN.md`](sandboxconfig/DESIGN.md). |
 | [`sandboxuser`](sandboxuser) | The identity a sandbox process runs as and the precedence between the layers that describe it. See [`sandboxuser/DESIGN.md`](sandboxuser/DESIGN.md). |
 | [`sandboxshell`](sandboxshell) | The exec env variable through which a client names its person's preferred shell (ADR 0138), shared by the CLI that sets it and the sandbox agent that honors it. |
 | [`sandboxservices`](sandboxservices) | Names of the services Discobox itself declares inside a sandbox, shared by the sandbox agent that reports them and the CLI that recognizes them. |

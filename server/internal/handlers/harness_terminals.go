@@ -55,6 +55,18 @@ func (h *Handler) UpdateSandboxAgentMeta(context.Context, *serverapi.UpdateSandb
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// GetSandboxRuntimeConfig and PutSandboxRuntimeConfig are the sandbox
+// agent's runtime-config intake, which its pool drives (ADR 0126 §3). The
+// control plane neither serves nor proxies them: what a sandbox is told is the
+// pool's to say.
+func (h *Handler) GetSandboxRuntimeConfig(context.Context, serverapi.GetSandboxRuntimeConfigParams) (serverapi.GetSandboxRuntimeConfigRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) PutSandboxRuntimeConfig(context.Context, *serverapi.SandboxRuntimeConfig, serverapi.PutSandboxRuntimeConfigParams) (serverapi.PutSandboxRuntimeConfigRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 // JudgeSandbox is the judge runtime's own route, which the pool reaches
 // through its agent (ADR 26-09-22-838 §2). The control plane routes judging rather
 // than answering it, so this route is neither served nor proxied here.

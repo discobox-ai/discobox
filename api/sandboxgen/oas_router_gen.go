@@ -17,17 +17,20 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn29AllowedHeaders = map[string]string{
+	rn30AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn39AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn18AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn38AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn17AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn37AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
+	}
+	rn14AllowedHeaders = map[string]string{
+		"PUT": "Content-Type",
 	}
 )
 
@@ -335,7 +338,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn29AllowedHeaders,
+													allowedHeaders: rn30AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -567,7 +570,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn38AllowedHeaders,
+													allowedHeaders: rn39AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -631,7 +634,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn17AllowedHeaders,
+									allowedHeaders: rn18AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -659,9 +662,42 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "PATCH",
-									allowedHeaders: rn37AllowedHeaders,
+									allowedHeaders: rn38AllowedHeaders,
 									acceptPost:     "",
 									acceptPatch:    "application/json",
+								})
+							}
+
+							return
+						}
+
+					case 'r': // Prefix: "runtime-config"
+
+						if l := len("runtime-config"); len(elem) >= l && elem[0:l] == "runtime-config" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleGetSandboxRuntimeConfigRequest([2]string{
+									args[0],
+									args[1],
+								}, elemIsEscaped, w, r)
+							case "PUT":
+								s.handlePutSandboxRuntimeConfigRequest([2]string{
+									args[0],
+									args[1],
+								}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET,PUT",
+									allowedHeaders: rn14AllowedHeaders,
+									acceptPost:     "",
+									acceptPatch:    "",
 								})
 							}
 
@@ -1583,6 +1619,40 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								r.operationID = "update-sandbox-agent-meta"
 								r.operationGroup = ""
 								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/meta"
+								r.args = args
+								r.count = 2
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 'r': // Prefix: "runtime-config"
+
+						if l := len("runtime-config"); len(elem) >= l && elem[0:l] == "runtime-config" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = GetSandboxRuntimeConfigOperation
+								r.summary = "Get the runtime-config document the sandbox has applied."
+								r.operationID = "get-sandbox-runtime-config"
+								r.operationGroup = ""
+								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config"
+								r.args = args
+								r.count = 2
+								return r, true
+							case "PUT":
+								r.name = PutSandboxRuntimeConfigOperation
+								r.summary = "Deliver the sandbox's runtime-config document."
+								r.operationID = "put-sandbox-runtime-config"
+								r.operationGroup = ""
+								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config"
 								r.args = args
 								r.count = 2
 								return r, true

@@ -1493,6 +1493,10 @@ components:
                 metaError:
                     description: Why the meta file could not be read. Present only when meta is absent.
                     type: string
+                runtimeConfigRevision:
+                    description: The revision of the runtime-config document the sandbox has applied (ADR 0126 §3). Absent while it has applied none.
+                    format: int64
+                    type: integer
                 observedAt:
                     format: date-time
                     type: string
@@ -1501,6 +1505,109 @@ components:
                 - sessions
                 - ports
                 - observedAt
+            type: object
+        SandboxRuntimeConfig:
+            additionalProperties: false
+            description: The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126 §3). Whole rather than incremental - a field that is absent is something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
+            properties:
+                revision:
+                    description: Orders documents. A sandbox applies a newer revision than it holds and ignores an older one.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                agent:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigAgent'
+                secretEnv:
+                    additionalProperties:
+                        type: string
+                    description: The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value never reaches a sandbox.
+                    type: object
+                proxy:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigProxy'
+                    description: Material for the sandbox's hop to its pool. Absent when it has none.
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxRuntimeConfigSource'
+                    type: array
+            required:
+                - revision
+                - agent
+            type: object
+        SandboxRuntimeConfigAgent:
+            additionalProperties: false
+            description: The sandbox-agent configuration the pool may change after create, applied into sandbox.json's agentRuntime.
+            properties:
+                idleTimeout:
+                    description: The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect on the agent's next start.
+                    type: string
+            type: object
+        SandboxRuntimeConfigProxy:
+            additionalProperties: false
+            description: Proxy client material and trust for the sandbox's hop to its pool. The sandbox writes each piece where its readers look and renders the bridge configs with its own paths.
+            properties:
+                mtlsCa:
+                    description: PEM CA the pool's mTLS endpoints present certificates from.
+                    type: string
+                mitmCa:
+                    description: PEM CA the egress proxy signs intercepted connections with.
+                    type: string
+                clientCert:
+                    description: This sandbox's PEM client certificate.
+                    type: string
+                clientKey:
+                    description: This sandbox's PEM client private key. Required on delivery; never returned, so a document read back omits it.
+                    type: string
+                egress:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigBridge'
+                    description: The loopback forwarder to the pool proxy, which also carries the credentials endpoint and the DNS stub.
+                nestedDocker:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigBridge'
+                    description: The forwarder for containers the sandbox's own dockerd creates.
+                buildkit:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigBridge'
+                    description: The forwarder to the pool's BuildKit mediator.
+                registryNamespace:
+                    description: The sandbox's namespace in the pool build registry.
+                    type: string
+            required:
+                - mtlsCa
+                - mitmCa
+                - clientCert
+            type: object
+        SandboxRuntimeConfigBridge:
+            additionalProperties: false
+            description: One sandbox-side forwarder to the pool.
+            properties:
+                listenAddress:
+                    type: string
+                upstreamUrl:
+                    type: string
+                credentialsUrl:
+                    type: string
+                dnsServer:
+                    type: string
+                dnsListenAddress:
+                    type: string
+            required:
+                - upstreamUrl
+            type: object
+        SandboxRuntimeConfigSource:
+            additionalProperties: false
+            description: One of the sandbox's sources as the pool sees it.
+            properties:
+                slug:
+                    type: string
+                originUrl:
+                    description: Where the source's origin is served, when it has one.
+                    type: string
+                commit:
+                    description: The commit the source is pinned to.
+                    type: string
+                delivered:
+                    description: The source is in place and the pool has settled the sandbox's spec on it. The sandbox's readiness gate clears once every source is delivered.
+                    type: boolean
+            required:
+                - slug
             type: object
         SandboxMeta:
             additionalProperties: false
@@ -9060,6 +9167,79 @@ paths:
             summary: Get sandbox-agent-reported status (git status, harness session state, active connections).
             tags:
                 - Sandbox Status
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config:
+        get:
+            description: Returns the runtime-config document the sandbox last applied - what the pool has told it it is (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
+            operationId: get-sandbox-runtime-config
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxRuntimeConfig'
+                    description: The document the sandbox applied.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response. 404 when the sandbox has applied none.
+            summary: Get the runtime-config document the sandbox has applied.
+            tags:
+                - Sandbox Runtime Config
+            x-sandbox-agent: true
+        put:
+            description: Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored and the document the sandbox holds is returned; the same revision is a retry when the document matches and a 409 when it does not. A document that fails validation (422) or cannot be written whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token carrying the pool-only runtime-config scope may deliver one.
+            operationId: put-sandbox-runtime-config
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxRuntimeConfig'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxRuntimeConfig'
+                    description: The document the sandbox now holds, which is the one delivered unless that one was older.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Deliver the sandbox's runtime-config document.
+            tags:
+                - Sandbox Runtime Config
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/judge:
         post:

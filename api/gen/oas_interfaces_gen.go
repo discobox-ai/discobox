@@ -209,6 +209,10 @@ type GetSandboxRes interface {
 	getSandboxRes()
 }
 
+type GetSandboxRuntimeConfigRes interface {
+	getSandboxRuntimeConfigRes()
+}
+
 type GetSandboxServiceRes interface {
 	getSandboxServiceRes()
 }
@@ -387,6 +391,10 @@ type MintSandboxAgentStatusTokensRes interface {
 
 type PurgeSandboxRes interface {
 	purgeSandboxRes()
+}
+
+type PutSandboxRuntimeConfigRes interface {
+	putSandboxRuntimeConfigRes()
 }
 
 type ReconcilePoolRes interface {

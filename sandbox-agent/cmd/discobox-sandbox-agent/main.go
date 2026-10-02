@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/dnsstub"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
+	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
 	"github.com/discobox-ai/discobox/sandbox-agent/server"
@@ -75,6 +76,14 @@ func run(args []string) int {
 		slog.Error("wire secrets volume", "error", err)
 		return 1
 	}
+	// Before sandbox.json is read: the intake puts back the files its kept
+	// document implies, which a restart may have lost (/run is a tmpfs), so
+	// nothing reads a file the pool already replaced (ADR 0126 §3). A restore
+	// that fails is not fatal — the pool's next delivery repairs it.
+	runtimeConfig, err := intake.Open(intake.DefaultLayout())
+	if err != nil {
+		slog.Warn("restore runtime config", "error", err)
+	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		slog.Error("load config", "error", err)
@@ -82,7 +91,9 @@ func run(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := server.Serve(ctx, slog.Default(), server.ConfigFromHarnessConfig(cfg)); err != nil && !errors.Is(err, context.Canceled) {
+	serverConfig := server.ConfigFromHarnessConfig(cfg)
+	serverConfig.RuntimeConfig = runtimeConfig
+	if err := server.Serve(ctx, slog.Default(), serverConfig); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("serve sandbox agent", "error", err)
 		return 1
 	}
