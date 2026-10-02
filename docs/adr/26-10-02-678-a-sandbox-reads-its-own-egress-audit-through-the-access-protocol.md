@@ -1,6 +1,6 @@
 # 26-10-02-678 — A sandbox reads its own egress audit through the access protocol
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-02
 - **Relates to**: [ADR 0130](0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md),
   whose pool trail this makes readable from inside the sandbox it is about, by
