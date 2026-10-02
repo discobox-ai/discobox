@@ -3119,6 +3119,7 @@ func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()          {}
 func (*ErrorResponseStatusCode) getSandboxExecRes()                 {}
 func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
 func (*ErrorResponseStatusCode) getSandboxExecScreenRes()           {}
+func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()        {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
 func (*ErrorResponseStatusCode) judgeSandboxRes()                   {}
 func (*ErrorResponseStatusCode) listExecEventsRes()                 {}
@@ -3130,6 +3131,7 @@ func (*ErrorResponseStatusCode) listSandboxExecsRes()               {}
 func (*ErrorResponseStatusCode) listSandboxServiceLogsRes()         {}
 func (*ErrorResponseStatusCode) listSandboxServicesRes()            {}
 func (*ErrorResponseStatusCode) listSandboxToolsRes()               {}
+func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()        {}
 func (*ErrorResponseStatusCode) restartSandboxServiceRes()          {}
 func (*ErrorResponseStatusCode) sendSandboxExecInputRes()           {}
 func (*ErrorResponseStatusCode) startSandboxExecRes()               {}
@@ -12380,6 +12382,144 @@ func (o OptSandboxPullProgress) Or(d SandboxPullProgress) SandboxPullProgress {
 	return d
 }
 
+// NewOptSandboxRuntimeConfigBridge returns new OptSandboxRuntimeConfigBridge with value set to v.
+func NewOptSandboxRuntimeConfigBridge(v SandboxRuntimeConfigBridge) OptSandboxRuntimeConfigBridge {
+	return OptSandboxRuntimeConfigBridge{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigBridge is optional SandboxRuntimeConfigBridge.
+type OptSandboxRuntimeConfigBridge struct {
+	Value SandboxRuntimeConfigBridge
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigBridge was set.
+func (o OptSandboxRuntimeConfigBridge) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigBridge) Reset() {
+	var v SandboxRuntimeConfigBridge
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigBridge) SetTo(v SandboxRuntimeConfigBridge) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigBridge) Get() (v SandboxRuntimeConfigBridge, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigBridge) Or(d SandboxRuntimeConfigBridge) SandboxRuntimeConfigBridge {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxRuntimeConfigProxy returns new OptSandboxRuntimeConfigProxy with value set to v.
+func NewOptSandboxRuntimeConfigProxy(v SandboxRuntimeConfigProxy) OptSandboxRuntimeConfigProxy {
+	return OptSandboxRuntimeConfigProxy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigProxy is optional SandboxRuntimeConfigProxy.
+type OptSandboxRuntimeConfigProxy struct {
+	Value SandboxRuntimeConfigProxy
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigProxy was set.
+func (o OptSandboxRuntimeConfigProxy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigProxy) Reset() {
+	var v SandboxRuntimeConfigProxy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigProxy) SetTo(v SandboxRuntimeConfigProxy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigProxy) Get() (v SandboxRuntimeConfigProxy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigProxy) Or(d SandboxRuntimeConfigProxy) SandboxRuntimeConfigProxy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxRuntimeConfigSecretEnv returns new OptSandboxRuntimeConfigSecretEnv with value set to v.
+func NewOptSandboxRuntimeConfigSecretEnv(v SandboxRuntimeConfigSecretEnv) OptSandboxRuntimeConfigSecretEnv {
+	return OptSandboxRuntimeConfigSecretEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigSecretEnv is optional SandboxRuntimeConfigSecretEnv.
+type OptSandboxRuntimeConfigSecretEnv struct {
+	Value SandboxRuntimeConfigSecretEnv
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigSecretEnv was set.
+func (o OptSandboxRuntimeConfigSecretEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigSecretEnv) Reset() {
+	var v SandboxRuntimeConfigSecretEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigSecretEnv) SetTo(v SandboxRuntimeConfigSecretEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigSecretEnv) Get() (v SandboxRuntimeConfigSecretEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigSecretEnv) Or(d SandboxRuntimeConfigSecretEnv) SandboxRuntimeConfigSecretEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeDisplayState returns new OptSandboxRuntimeDisplayState with value set to v.
 func NewOptSandboxRuntimeDisplayState(v SandboxRuntimeDisplayState) OptSandboxRuntimeDisplayState {
 	return OptSandboxRuntimeDisplayState{
@@ -18303,8 +18443,11 @@ type SandboxAgentStatusResponse struct {
 	// be read or is not valid, in which case metaError says why.
 	Meta OptSandboxMeta `json:"meta"`
 	// Why the meta file could not be read. Present only when meta is absent.
-	MetaError  OptString `json:"metaError"`
-	ObservedAt time.Time `json:"observedAt"`
+	MetaError OptString `json:"metaError"`
+	// The revision of the runtime-config document the sandbox has applied (ADR 0126 §3). Absent while
+	// it has applied none.
+	RuntimeConfigRevision OptInt64  `json:"runtimeConfigRevision"`
+	ObservedAt            time.Time `json:"observedAt"`
 }
 
 // GetSources returns the value of Sources.
@@ -18340,6 +18483,11 @@ func (s *SandboxAgentStatusResponse) GetMeta() OptSandboxMeta {
 // GetMetaError returns the value of MetaError.
 func (s *SandboxAgentStatusResponse) GetMetaError() OptString {
 	return s.MetaError
+}
+
+// GetRuntimeConfigRevision returns the value of RuntimeConfigRevision.
+func (s *SandboxAgentStatusResponse) GetRuntimeConfigRevision() OptInt64 {
+	return s.RuntimeConfigRevision
 }
 
 // GetObservedAt returns the value of ObservedAt.
@@ -18380,6 +18528,11 @@ func (s *SandboxAgentStatusResponse) SetMeta(val OptSandboxMeta) {
 // SetMetaError sets the value of MetaError.
 func (s *SandboxAgentStatusResponse) SetMetaError(val OptString) {
 	s.MetaError = val
+}
+
+// SetRuntimeConfigRevision sets the value of RuntimeConfigRevision.
+func (s *SandboxAgentStatusResponse) SetRuntimeConfigRevision(val OptInt64) {
+	s.RuntimeConfigRevision = val
 }
 
 // SetObservedAt sets the value of ObservedAt.
@@ -21406,6 +21559,324 @@ func (s *SandboxRuntimeAgentStatus) init() SandboxRuntimeAgentStatus {
 		*s = m
 	}
 	return m
+}
+
+// The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126
+// §3). Whole rather than incremental - a field that is absent is something the sandbox no longer
+// has. The Go type is sandboxconfig.RuntimeConfig.
+// Ref: #/components/schemas/SandboxRuntimeConfig
+type SandboxRuntimeConfig struct {
+	// Orders documents. A sandbox applies a newer revision than it holds and ignores an older one.
+	Revision int64                     `json:"revision"`
+	Agent    SandboxRuntimeConfigAgent `json:"agent"`
+	// The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value
+	// never reaches a sandbox.
+	SecretEnv OptSandboxRuntimeConfigSecretEnv `json:"secretEnv"`
+	// Material for the sandbox's hop to its pool. Absent when it has none.
+	Proxy   OptSandboxRuntimeConfigProxy `json:"proxy"`
+	Sources []SandboxRuntimeConfigSource `json:"sources"`
+}
+
+// GetRevision returns the value of Revision.
+func (s *SandboxRuntimeConfig) GetRevision() int64 {
+	return s.Revision
+}
+
+// GetAgent returns the value of Agent.
+func (s *SandboxRuntimeConfig) GetAgent() SandboxRuntimeConfigAgent {
+	return s.Agent
+}
+
+// GetSecretEnv returns the value of SecretEnv.
+func (s *SandboxRuntimeConfig) GetSecretEnv() OptSandboxRuntimeConfigSecretEnv {
+	return s.SecretEnv
+}
+
+// GetProxy returns the value of Proxy.
+func (s *SandboxRuntimeConfig) GetProxy() OptSandboxRuntimeConfigProxy {
+	return s.Proxy
+}
+
+// GetSources returns the value of Sources.
+func (s *SandboxRuntimeConfig) GetSources() []SandboxRuntimeConfigSource {
+	return s.Sources
+}
+
+// SetRevision sets the value of Revision.
+func (s *SandboxRuntimeConfig) SetRevision(val int64) {
+	s.Revision = val
+}
+
+// SetAgent sets the value of Agent.
+func (s *SandboxRuntimeConfig) SetAgent(val SandboxRuntimeConfigAgent) {
+	s.Agent = val
+}
+
+// SetSecretEnv sets the value of SecretEnv.
+func (s *SandboxRuntimeConfig) SetSecretEnv(val OptSandboxRuntimeConfigSecretEnv) {
+	s.SecretEnv = val
+}
+
+// SetProxy sets the value of Proxy.
+func (s *SandboxRuntimeConfig) SetProxy(val OptSandboxRuntimeConfigProxy) {
+	s.Proxy = val
+}
+
+// SetSources sets the value of Sources.
+func (s *SandboxRuntimeConfig) SetSources(val []SandboxRuntimeConfigSource) {
+	s.Sources = val
+}
+
+func (*SandboxRuntimeConfig) getSandboxRuntimeConfigRes() {}
+func (*SandboxRuntimeConfig) putSandboxRuntimeConfigRes() {}
+
+// The sandbox-agent configuration the pool may change after create, applied into sandbox.json's
+// agentRuntime.
+// Ref: #/components/schemas/SandboxRuntimeConfigAgent
+type SandboxRuntimeConfigAgent struct {
+	// The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect on
+	// the agent's next start.
+	IdleTimeout OptString `json:"idleTimeout"`
+}
+
+// GetIdleTimeout returns the value of IdleTimeout.
+func (s *SandboxRuntimeConfigAgent) GetIdleTimeout() OptString {
+	return s.IdleTimeout
+}
+
+// SetIdleTimeout sets the value of IdleTimeout.
+func (s *SandboxRuntimeConfigAgent) SetIdleTimeout(val OptString) {
+	s.IdleTimeout = val
+}
+
+// One sandbox-side forwarder to the pool.
+// Ref: #/components/schemas/SandboxRuntimeConfigBridge
+type SandboxRuntimeConfigBridge struct {
+	ListenAddress    OptString `json:"listenAddress"`
+	UpstreamUrl      string    `json:"upstreamUrl"`
+	CredentialsUrl   OptString `json:"credentialsUrl"`
+	DnsServer        OptString `json:"dnsServer"`
+	DnsListenAddress OptString `json:"dnsListenAddress"`
+}
+
+// GetListenAddress returns the value of ListenAddress.
+func (s *SandboxRuntimeConfigBridge) GetListenAddress() OptString {
+	return s.ListenAddress
+}
+
+// GetUpstreamUrl returns the value of UpstreamUrl.
+func (s *SandboxRuntimeConfigBridge) GetUpstreamUrl() string {
+	return s.UpstreamUrl
+}
+
+// GetCredentialsUrl returns the value of CredentialsUrl.
+func (s *SandboxRuntimeConfigBridge) GetCredentialsUrl() OptString {
+	return s.CredentialsUrl
+}
+
+// GetDnsServer returns the value of DnsServer.
+func (s *SandboxRuntimeConfigBridge) GetDnsServer() OptString {
+	return s.DnsServer
+}
+
+// GetDnsListenAddress returns the value of DnsListenAddress.
+func (s *SandboxRuntimeConfigBridge) GetDnsListenAddress() OptString {
+	return s.DnsListenAddress
+}
+
+// SetListenAddress sets the value of ListenAddress.
+func (s *SandboxRuntimeConfigBridge) SetListenAddress(val OptString) {
+	s.ListenAddress = val
+}
+
+// SetUpstreamUrl sets the value of UpstreamUrl.
+func (s *SandboxRuntimeConfigBridge) SetUpstreamUrl(val string) {
+	s.UpstreamUrl = val
+}
+
+// SetCredentialsUrl sets the value of CredentialsUrl.
+func (s *SandboxRuntimeConfigBridge) SetCredentialsUrl(val OptString) {
+	s.CredentialsUrl = val
+}
+
+// SetDnsServer sets the value of DnsServer.
+func (s *SandboxRuntimeConfigBridge) SetDnsServer(val OptString) {
+	s.DnsServer = val
+}
+
+// SetDnsListenAddress sets the value of DnsListenAddress.
+func (s *SandboxRuntimeConfigBridge) SetDnsListenAddress(val OptString) {
+	s.DnsListenAddress = val
+}
+
+// Proxy client material and trust for the sandbox's hop to its pool. The sandbox writes each piece
+// where its readers look and renders the bridge configs with its own paths.
+// Ref: #/components/schemas/SandboxRuntimeConfigProxy
+type SandboxRuntimeConfigProxy struct {
+	// PEM CA the pool's mTLS endpoints present certificates from.
+	MtlsCa string `json:"mtlsCa"`
+	// PEM CA the egress proxy signs intercepted connections with.
+	MitmCa string `json:"mitmCa"`
+	// This sandbox's PEM client certificate.
+	ClientCert string `json:"clientCert"`
+	// This sandbox's PEM client private key. Required on delivery; never returned, so a document read
+	// back omits it.
+	ClientKey OptString `json:"clientKey"`
+	// The loopback forwarder to the pool proxy, which also carries the credentials endpoint and the DNS
+	// stub.
+	Egress OptSandboxRuntimeConfigBridge `json:"egress"`
+	// The forwarder for containers the sandbox's own dockerd creates.
+	NestedDocker OptSandboxRuntimeConfigBridge `json:"nestedDocker"`
+	// The forwarder to the pool's BuildKit mediator.
+	Buildkit OptSandboxRuntimeConfigBridge `json:"buildkit"`
+	// The sandbox's namespace in the pool build registry.
+	RegistryNamespace OptString `json:"registryNamespace"`
+}
+
+// GetMtlsCa returns the value of MtlsCa.
+func (s *SandboxRuntimeConfigProxy) GetMtlsCa() string {
+	return s.MtlsCa
+}
+
+// GetMitmCa returns the value of MitmCa.
+func (s *SandboxRuntimeConfigProxy) GetMitmCa() string {
+	return s.MitmCa
+}
+
+// GetClientCert returns the value of ClientCert.
+func (s *SandboxRuntimeConfigProxy) GetClientCert() string {
+	return s.ClientCert
+}
+
+// GetClientKey returns the value of ClientKey.
+func (s *SandboxRuntimeConfigProxy) GetClientKey() OptString {
+	return s.ClientKey
+}
+
+// GetEgress returns the value of Egress.
+func (s *SandboxRuntimeConfigProxy) GetEgress() OptSandboxRuntimeConfigBridge {
+	return s.Egress
+}
+
+// GetNestedDocker returns the value of NestedDocker.
+func (s *SandboxRuntimeConfigProxy) GetNestedDocker() OptSandboxRuntimeConfigBridge {
+	return s.NestedDocker
+}
+
+// GetBuildkit returns the value of Buildkit.
+func (s *SandboxRuntimeConfigProxy) GetBuildkit() OptSandboxRuntimeConfigBridge {
+	return s.Buildkit
+}
+
+// GetRegistryNamespace returns the value of RegistryNamespace.
+func (s *SandboxRuntimeConfigProxy) GetRegistryNamespace() OptString {
+	return s.RegistryNamespace
+}
+
+// SetMtlsCa sets the value of MtlsCa.
+func (s *SandboxRuntimeConfigProxy) SetMtlsCa(val string) {
+	s.MtlsCa = val
+}
+
+// SetMitmCa sets the value of MitmCa.
+func (s *SandboxRuntimeConfigProxy) SetMitmCa(val string) {
+	s.MitmCa = val
+}
+
+// SetClientCert sets the value of ClientCert.
+func (s *SandboxRuntimeConfigProxy) SetClientCert(val string) {
+	s.ClientCert = val
+}
+
+// SetClientKey sets the value of ClientKey.
+func (s *SandboxRuntimeConfigProxy) SetClientKey(val OptString) {
+	s.ClientKey = val
+}
+
+// SetEgress sets the value of Egress.
+func (s *SandboxRuntimeConfigProxy) SetEgress(val OptSandboxRuntimeConfigBridge) {
+	s.Egress = val
+}
+
+// SetNestedDocker sets the value of NestedDocker.
+func (s *SandboxRuntimeConfigProxy) SetNestedDocker(val OptSandboxRuntimeConfigBridge) {
+	s.NestedDocker = val
+}
+
+// SetBuildkit sets the value of Buildkit.
+func (s *SandboxRuntimeConfigProxy) SetBuildkit(val OptSandboxRuntimeConfigBridge) {
+	s.Buildkit = val
+}
+
+// SetRegistryNamespace sets the value of RegistryNamespace.
+func (s *SandboxRuntimeConfigProxy) SetRegistryNamespace(val OptString) {
+	s.RegistryNamespace = val
+}
+
+// The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value
+// never reaches a sandbox.
+type SandboxRuntimeConfigSecretEnv map[string]string
+
+func (s *SandboxRuntimeConfigSecretEnv) init() SandboxRuntimeConfigSecretEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// One of the sandbox's sources as the pool sees it.
+// Ref: #/components/schemas/SandboxRuntimeConfigSource
+type SandboxRuntimeConfigSource struct {
+	Slug string `json:"slug"`
+	// Where the source's origin is served, when it has one.
+	OriginUrl OptString `json:"originUrl"`
+	// The commit the source is pinned to.
+	Commit OptString `json:"commit"`
+	// The source is in place and the pool has settled the sandbox's spec on it. The sandbox's readiness
+	// gate clears once every source is delivered.
+	Delivered OptBool `json:"delivered"`
+}
+
+// GetSlug returns the value of Slug.
+func (s *SandboxRuntimeConfigSource) GetSlug() string {
+	return s.Slug
+}
+
+// GetOriginUrl returns the value of OriginUrl.
+func (s *SandboxRuntimeConfigSource) GetOriginUrl() OptString {
+	return s.OriginUrl
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxRuntimeConfigSource) GetCommit() OptString {
+	return s.Commit
+}
+
+// GetDelivered returns the value of Delivered.
+func (s *SandboxRuntimeConfigSource) GetDelivered() OptBool {
+	return s.Delivered
+}
+
+// SetSlug sets the value of Slug.
+func (s *SandboxRuntimeConfigSource) SetSlug(val string) {
+	s.Slug = val
+}
+
+// SetOriginUrl sets the value of OriginUrl.
+func (s *SandboxRuntimeConfigSource) SetOriginUrl(val OptString) {
+	s.OriginUrl = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxRuntimeConfigSource) SetCommit(val OptString) {
+	s.Commit = val
+}
+
+// SetDelivered sets the value of Delivered.
+func (s *SandboxRuntimeConfigSource) SetDelivered(val OptBool) {
+	s.Delivered = val
 }
 
 // Requested existence. Power state is not requested: whether a sandbox is

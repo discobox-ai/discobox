@@ -375,6 +375,13 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/providers/{providerId}
 	GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (GetSandboxProviderInstanceRes, error)
+	// GetSandboxRuntimeConfig invokes get-sandbox-runtime-config operation.
+	//
+	// Returns the runtime-config document the sandbox last applied - what the pool has told it it is
+	// (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+	GetSandboxRuntimeConfig(ctx context.Context, params GetSandboxRuntimeConfigParams) (GetSandboxRuntimeConfigRes, error)
 	// GetSandboxService invokes get-sandbox-service operation.
 	//
 	// Get a declared service in a sandbox.
@@ -677,6 +684,17 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/purge
 	PurgeSandbox(ctx context.Context, params PurgeSandboxParams) (PurgeSandboxRes, error)
+	// PutSandboxRuntimeConfig invokes put-sandbox-runtime-config operation.
+	//
+	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
+	// applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored
+	// and the document the sandbox holds is returned; the same revision is a retry when the document
+	// matches and a 409 when it does not. A document that fails validation (422) or cannot be written
+	// whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token
+	// carrying the pool-only runtime-config scope may deliver one.
+	//
+	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+	PutSandboxRuntimeConfig(ctx context.Context, request *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (PutSandboxRuntimeConfigRes, error)
 	// ReconcilePool invokes reconcile-pool operation.
 	//
 	// Reconcile a pool.
@@ -6769,6 +6787,119 @@ func (c *Client) sendGetSandboxProviderInstance(ctx context.Context, params GetS
 	return result, nil
 }
 
+// GetSandboxRuntimeConfig invokes get-sandbox-runtime-config operation.
+//
+// Returns the runtime-config document the sandbox last applied - what the pool has told it it is
+// (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+func (c *Client) GetSandboxRuntimeConfig(ctx context.Context, params GetSandboxRuntimeConfigParams) (GetSandboxRuntimeConfigRes, error) {
+	res, err := c.sendGetSandboxRuntimeConfig(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSandboxRuntimeConfig(ctx context.Context, params GetSandboxRuntimeConfigParams) (res GetSandboxRuntimeConfigRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-sandbox-runtime-config"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSandboxRuntimeConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/runtime-config"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSandboxRuntimeConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetSandboxService invokes get-sandbox-service operation.
 //
 // Get a declared service in a sandbox.
@@ -12525,6 +12656,126 @@ func (c *Client) sendPurgeSandbox(ctx context.Context, params PurgeSandboxParams
 
 	stage = "DecodeResponse"
 	result, err := decodePurgeSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// PutSandboxRuntimeConfig invokes put-sandbox-runtime-config operation.
+//
+// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
+// applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored
+// and the document the sandbox holds is returned; the same revision is a retry when the document
+// matches and a 409 when it does not. A document that fails validation (422) or cannot be written
+// whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token
+// carrying the pool-only runtime-config scope may deliver one.
+//
+// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+func (c *Client) PutSandboxRuntimeConfig(ctx context.Context, request *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (PutSandboxRuntimeConfigRes, error) {
+	res, err := c.sendPutSandboxRuntimeConfig(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendPutSandboxRuntimeConfig(ctx context.Context, request *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (res PutSandboxRuntimeConfigRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("put-sandbox-runtime-config"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PutSandboxRuntimeConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/runtime-config"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePutSandboxRuntimeConfigRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePutSandboxRuntimeConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

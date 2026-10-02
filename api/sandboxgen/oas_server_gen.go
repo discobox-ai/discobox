@@ -68,6 +68,13 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (*SandboxExecScreen, error)
+	// GetSandboxRuntimeConfig implements get-sandbox-runtime-config operation.
+	//
+	// Returns the runtime-config document the sandbox last applied - what the pool has told it it is
+	// (ADR 0126 §3). Only a token carrying the pool-only runtime-config scope may read it.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+	GetSandboxRuntimeConfig(ctx context.Context, params GetSandboxRuntimeConfigParams) (*SandboxRuntimeConfig, error)
 	// GetSandboxService implements get-sandbox-service operation.
 	//
 	// Get a declared service in a sandbox.
@@ -144,6 +151,17 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/tools
 	ListSandboxTools(ctx context.Context, params ListSandboxToolsParams) (*SandboxToolsResponse, error)
+	// PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
+	//
+	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox
+	// applies atomically and keeps (ADR 0126 §3). A newer revision is applied; an older one is ignored
+	// and the document the sandbox holds is returned; the same revision is a retry when the document
+	// matches and a 409 when it does not. A document that fails validation (422) or cannot be written
+	// whole changes nothing. The applied revision is also reported on the sandbox's status. Only a token
+	// carrying the pool-only runtime-config scope may deliver one.
+	//
+	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/runtime-config
+	PutSandboxRuntimeConfig(ctx context.Context, req *SandboxRuntimeConfig, params PutSandboxRuntimeConfigParams) (*SandboxRuntimeConfig, error)
 	// RestartSandboxService implements restart-sandbox-service operation.
 	//
 	// Stops the service if it is running and starts it again under the same exec ID. A service that is

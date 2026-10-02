@@ -48,6 +48,20 @@ func encodeJudgeSandboxRequest(
 	return nil
 }
 
+func encodePutSandboxRuntimeConfigRequest(
+	req *SandboxRuntimeConfig,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeSendSandboxExecInputRequest(
 	req *SandboxExecInputBody,
 	r *http.Request,
