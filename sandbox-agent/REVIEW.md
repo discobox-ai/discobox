@@ -80,10 +80,23 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   belongs to the open file description, so it travels to the shim with the
   descriptor and outlives the supervisor closing its own copy; a POSIX record
   lock belongs to the process and would be released the moment it did.
+- **Only the shim takes the lock exclusively.** Every probe and wait in the
+  agent takes it shared. An agent-side exclusive lock, however brief, reads
+  as a live shim to a concurrent probe, and `Stop` then signals a pid that
+  may already be someone else's.
 - **The shim marks the lifetime descriptor close-on-exec before it starts
   anything** (`execs.HoldLifetime`). A command that inherited it would hold
   the lock past the shim's exit, and the exec would read as running for as
   long as anything it started did.
+- **A stop ends the command's session, not its process group.** An
+  interactive shell gives every job its own group; a group kill leaves a
+  terminal's background jobs running after the exec reads stopped.
+- **Never signal a session without asking whether it is still the
+  command's** (`signalSession`, `endSession`). Every exec command leads a
+  session, so "leads a session" does not identify one: a live leader must
+  have the start the shim recorded, which is stamped when the process
+  starts — never after the startup command is typed, which can be seconds
+  later.
 - **A lock that cannot be waited on is not a shim that ended.** Reading an
   error as "gone" demotes the exec to lost, and the terminal layer relaunches
   a lost terminal over the shim still running.

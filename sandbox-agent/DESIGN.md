@@ -146,15 +146,39 @@ flowchart LR
   `<runtime>/units/<unit>.lock`. The kernel releases that lock when the shim
   exits however it exits, so a held lock is a running unit, a free one is a
   shim that is gone — collected (removed) and reported on `Watch` — and no
-  file at all is an unloaded unit. One goroutine blocks on each lock; nothing
-  polls. An agent that restarts finds the same locks held and waits on them,
-  which is how it converges on shims it did not start.
-- `Stop` sends the shim SIGTERM — the shim ends its command's process group —
-  and SIGKILL after a grace period. There is no control group: a process the
-  command moved into a session of its own is not the supervisor's to end.
+  file at all is an unloaded unit. Only the shim holds it exclusively; the
+  agent's own probes and waits take it shared, so they never read as a shim.
+  One goroutine blocks on each lock; nothing polls. An agent that restarts
+  finds the same locks held and waits on them, which is how it converges on
+  shims it did not start.
+- Stopping a unit ends its command and everything in the command's session,
+  not only its shim — what systemd's control group does for a unit, done here
+  without one. The command leads a session of its own, so the session, not
+  the process group, is the unit of a stop: an interactive shell puts every
+  job in a group of its own, and a group kill would leave a terminal's
+  `cmd &` holding its port. `Stop` sends the shim SIGTERM; the shim sends the
+  session SIGTERM and SIGKILLs what is left of it once the command has exited
+  or a grace period runs out; `Stop` SIGKILLs a shim that has not gone within a
+  timeout derived from the shim's own. A shim that goes without recording its
+  command's exit — killed outright, or that last resort — has the command's
+  session killed when its lock is collected. Every one of those signals is
+  sent only while the session is still the command's: a live process holding
+  the number must have the start time the shim recorded the moment the
+  command started. Once the leader is gone, the shim's own stop — which ran
+  that command a moment ago — still ends what is left of its session; the
+  collection of a dead shim, which may come any time later, ends nothing
+  without a live, matching leader. The shim lingers after its command exits and the agent
+  may have been down when a shim went, so by the time anything signals, the
+  number may be another exec's. What escapes is a
+  process that left the session on purpose (`setsid`) — and, unlike under
+  systemd, what a command leaves running after it exits on its own: a stop
+  ends a session, but a unit whose command simply finished is never stopped,
+  and its shim's exit takes no control group with it.
 - The shim's own output goes to `<unit>.log` beside its lock, never to the
   agent's stderr: a shim outlives the agent, and a Go process writing to a
-  pipe whose reader is gone dies of SIGPIPE.
+  pipe whose reader is gone dies of SIGPIPE. The log is collected with the
+  unit when it is empty and kept when it is not — a shim writes there only
+  when it fails.
 - The Windows half of the lock is not written yet. It builds and reports
   every lock as unsupported, which the supervisor never reads as a shim that
   ended.
