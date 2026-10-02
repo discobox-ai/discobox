@@ -1,5 +1,7 @@
-// Package internalhttp provides the HTTP client the pool agent uses to reach
-// its own sandboxes.
+// Package internalhttp provides the transport for the pool agent's own HTTP:
+// the control-plane client's, and the base every sandbox transport builds on.
+// A sandbox is reached through the dial its runtime supplies
+// (sandboxruntime.Dialer.Transport), never through Client.
 //
 // It deliberately does NOT honor HTTP_PROXY. When a pool runs inside a
 // Discobox sandbox, that sandbox injects proxy environment variables into the
