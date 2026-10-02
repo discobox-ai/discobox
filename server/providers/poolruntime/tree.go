@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -57,7 +58,7 @@ func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 // budget, because a restore is the first thing that touches the host and it can
 // arrive while the pool is still coming up. The pool it settles on is returned
 // so the row created afterwards names the pool the data is actually on.
-func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, tree io.Reader) (string, error) {
+func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, sandboxPlatform platform.Platform, tree io.Reader) (string, error) {
 	if p.manager == nil {
 		return "", fmt.Errorf("pool manager is required")
 	}
@@ -65,6 +66,7 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 		ID:        ref.SandboxID,
 		ProjectID: ref.ProjectID,
 		PoolID:    poolID,
+		Platform:  sandboxPlatform,
 	})
 	if err != nil {
 		return "", err

@@ -523,6 +523,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.Image = ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
 	opts.SpecFingerprint = sb.Fingerprint()
 	opts.PoolID = sb.PoolID
+	opts.Platform = sb.Platform
 	opts.Name = sb.Name
 	opts.Description = sb.Description
 	opts.HarnessConfigID = sb.HarnessConfigID

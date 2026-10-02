@@ -128,6 +128,7 @@ func (s *Service) exportManifest(ctx context.Context, sb *model.Sandbox) (*sandb
 		Tags:        sb.Tags,
 		Harness:     harness,
 		Origin:      sb.Origin,
+		Platform:    sb.Platform,
 		Manifest:    sb.SandboxManifest,
 		Secrets:     secrets,
 	}
@@ -244,6 +245,17 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	if err != nil {
 		return nil, err
 	}
+	// A discobox moves between machines, not between platforms (ADR 0145 §8):
+	// its tree belongs to the platform it ran on, so neither a harness nor a
+	// pool of another one may take it.
+	if harnessConfig.Platform != spec.Platform {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("the archive holds a %s discobox, and harness %q runs %s; a discobox is not moved between platforms",
+				spec.Platform, harnessConfig.Slug, harnessConfig.Platform))
+	}
+	if err := refuseOtherPlatform(spec.Platform, pool); err != nil {
+		return nil, err
+	}
 
 	if s.sandboxProviders == nil {
 		return nil, fmt.Errorf("sandbox provider manager is required")
@@ -268,6 +280,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		ProjectID:       projectID,
 		CreatedByUserID: s.importingUserID(ctx),
 		PoolID:          pool.ID,
+		Platform:        spec.Platform,
 		Name:            name,
 		Description:     spec.Description,
 		SandboxManifest: spec.Manifest,
@@ -334,7 +347,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	}
 
 	ref := sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}
-	landedPool, err := provider.ImportTree(ctx, ref, pool.ID, tree)
+	landedPool, err := provider.ImportTree(ctx, ref, pool.ID, sb.Platform, tree)
 	if err != nil {
 		// The archive failing its own check surfaces here, through the pool
 		// agent's request body, and is the uploader's to fix: a 500 naming a

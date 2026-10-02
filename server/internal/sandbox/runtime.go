@@ -7,6 +7,7 @@ import (
 
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
@@ -76,12 +77,14 @@ type Provider interface {
 	// runtime and, at this point, no row either (ADR 0123 §3). The pool is named
 	// rather than read from runtime state for exactly that reason: there is no
 	// state yet to read it from. It returns the pool the tree landed on, which
-	// is what the caller records on the sandbox it then creates.
+	// is what the caller records on the sandbox it then creates. sandboxPlatform
+	// is the platform the tree belongs to, which the pool must host: a tree
+	// never lands on another platform (ADR 0145 §8).
 	//
 	// It writes the tree and nothing else. What it leaves behind is the shape
 	// an archived sandbox has, so the ordinary create that follows adopts it
 	// the way an unarchive does.
-	ImportTree(ctx context.Context, ref SandboxRef, poolID string, tree io.Reader) (string, error)
+	ImportTree(ctx context.Context, ref SandboxRef, poolID string, sandboxPlatform platform.Platform, tree io.Reader) (string, error)
 }
 
 // SandboxRef identifies the sandbox and its project ownership context.
@@ -192,6 +195,9 @@ type CreateOptions struct {
 	AgentServerURL              string
 	OAuthRedirectBase           string
 	PoolID                      string
+	// Platform is the sandbox's, which a pool-backed provider places by: a
+	// pool that hosts another platform refuses the sandbox (ADR 0145 §1).
+	Platform platform.Platform
 }
 
 // UpdateOptions carries the mutable subset of CreateOptions that can be applied

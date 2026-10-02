@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -21,7 +22,7 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: "pool-1", TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatalf("create pool bootstrap: %v", err)
 	}
-	registered, err := s.RegisterPool(ctx, "pool-1", h[:], "public", "ed25519")
+	registered, err := s.RegisterPool(ctx, "pool-1", platform.Pool(), h[:], "public", "ed25519")
 	if err != nil {
 		t.Fatalf("register pool: %v", err)
 	}
@@ -37,7 +38,7 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	if registered.State == model.PoolStateActive {
 		t.Fatal("registration wrote the reconciler's state")
 	}
-	updated, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
+	updated, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
 	if err != nil {
 		t.Fatalf("update status: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestUpdatePoolStatusLeavesReconcilerVerdictAlone(t *testing.T) {
 		t.Fatalf("record failure: %v", err)
 	}
 
-	updated, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1<<30, 1<<30, nil)
+	updated, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 1, 1<<30, 1<<30, nil)
 	if err != nil {
 		t.Fatalf("update status: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestSchedulablePoolForSandboxIgnoresCapacity(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 0, 0, 0, nil); err != nil {
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 0, 0, 0, nil); err != nil {
 		t.Fatalf("update status: %v", err)
 	}
 
@@ -146,7 +147,7 @@ func TestSchedulablePoolForSandboxUsesFreshHealthRatherThanLifecycle(t *testing.
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); err != nil {
@@ -166,7 +167,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: pool.ID, TokenHash: token[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	pool, err = s.RegisterPool(ctx, pool.ID, token[:], "durable-key", "ed25519")
+	pool, err = s.RegisterPool(ctx, pool.ID, platform.Pool(), token[:], "durable-key", "ed25519")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +175,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
 		t.Fatal(err)
 	}
-	reported, err := s.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1, 1, nil)
+	reported, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("startup placement = %v, want wait", err)
 	}
-	if _, err := s.UpdatePoolStatus(ctx, pool.ID, false, false, false, 1, 1, 1, nil); err != nil {
+	if _, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), false, false, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A reconcile holding a pre-heartbeat snapshot must not erase freshness.
@@ -206,7 +207,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("stale reconcile overwrote a negative heartbeat: %v", err)
 	}
-	if _, err := s.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); err != nil {
@@ -241,6 +242,7 @@ func sandboxForClaim(projectID, poolID string) *model.Sandbox {
 	return &model.Sandbox{
 		ProjectID: projectID,
 		PoolID:    poolID,
+		Platform:  platform.Pool(),
 	}
 }
 
@@ -270,7 +272,7 @@ func TestPurgeSpentPoolBootstrapTokens(t *testing.T) {
 	}
 
 	// The live token still redeems: purging must not touch it.
-	if _, err := s.RegisterPool(ctx, "pool-1", live[:], "public", "ed25519"); err != nil {
+	if _, err := s.RegisterPool(ctx, "pool-1", platform.Pool(), live[:], "public", "ed25519"); err != nil {
 		t.Fatalf("register pool with surviving live token: %v", err)
 	}
 }
@@ -279,7 +281,7 @@ func TestSchedulablePoolKeepsPreloadGateDespiteFreshHeartbeat(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	pool, err := s.GetPool(ctx, "project-1", "pool-1")
@@ -292,5 +294,55 @@ func TestSchedulablePoolKeepsPreloadGateDespiteFreshHeartbeat(t *testing.T) {
 	}
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("placement during preload = %v, want ErrNotFound", err)
+	}
+}
+
+// A pool hosts the one platform its agent declares, at registration and on
+// every heartbeat, and placement refuses a sandbox of any other — as a
+// mismatch naming both, not as a pool that is merely not ready yet, which a
+// caller would wait on forever (ADR 0145 §1).
+func TestSchedulablePoolForSandboxRefusesAnotherPlatform(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	h := sha256.Sum256([]byte("bootstrap-token"))
+	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: "pool-1", TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	arm := platform.Platform{OS: "linux", Arch: "arm64"}
+	registered, err := s.RegisterPool(ctx, "pool-1", arm, h[:], "public", "ed25519")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registered.Platform != arm {
+		t.Fatalf("registered platform = %q, want %q", registered.Platform, arm)
+	}
+	// The heartbeat is what a pool from before platforms corrects itself by.
+	amd := platform.Platform{OS: "linux", Arch: "amd64"}
+	updated, err := s.UpdatePoolStatus(ctx, "pool-1", amd, true, true, false, 1, 1<<30, 1<<30, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Platform != amd {
+		t.Fatalf("reported platform = %q, want %q", updated.Platform, amd)
+	}
+	updated.SetState(model.PoolStateActive)
+	if err := s.UpdatePoolWithGeneration(ctx, updated, updated.Generation); err != nil {
+		t.Fatal(err)
+	}
+
+	sb := sandboxForClaim("project-1", "pool-1")
+	sb.Platform = platform.Platform{OS: "darwin", Arch: "arm64"}
+	_, err = s.SchedulablePoolForSandbox(ctx, sb)
+	var mismatch *platform.MismatchError
+	if !errors.As(err, &mismatch) || errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want a platform mismatch", err)
+	}
+	if mismatch.Sandbox != sb.Platform || mismatch.Pool != amd {
+		t.Fatalf("mismatch = %+v", mismatch)
+	}
+	sb.Platform = amd
+	if _, err := s.SchedulablePoolForSandbox(ctx, sb); err != nil {
+		t.Fatalf("a sandbox of the pool's own platform: %v", err)
 	}
 }

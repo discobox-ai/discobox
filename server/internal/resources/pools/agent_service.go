@@ -13,6 +13,7 @@ import (
 	"github.com/go-faster/jx"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -53,12 +54,16 @@ func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolB
 	if projectID == "" || poolID == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
 		return nil, fmt.Errorf("projectId, poolId, bootstrapToken, and publicKey are required")
 	}
+	hosts, err := declaredPlatform(input.Platform)
+	if err != nil {
+		return nil, err
+	}
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	h := sha256.Sum256([]byte(input.BootstrapToken))
-	if _, err := s.store.RegisterPool(ctx, pool.ID, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), poolauth.KeyType)); err != nil {
+	if _, err := s.store.RegisterPool(ctx, pool.ID, hosts, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), poolauth.KeyType)); err != nil {
 		return nil, apperrors.NotFound(err, "pool bootstrap token not found")
 	}
 	if s.pools != nil {
@@ -67,6 +72,20 @@ func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolB
 		}
 	}
 	return &services.RegisterPoolResponseBody{}, nil
+}
+
+// declaredPlatform reads the platform a pool agent says its pool hosts. A pool
+// hosts exactly one (ADR 0145 §1), and an agent that cannot say which is
+// refused rather than recorded as hosting nothing.
+func declaredPlatform(declared string) (platform.Platform, error) {
+	hosts, err := platform.Parse(declared)
+	if err == nil && hosts.IsZero() {
+		err = errors.New("a pool agent must declare the platform its pool hosts")
+	}
+	if err != nil {
+		return platform.Platform{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return hosts, nil
 }
 
 // UpdatePoolStatus records an agent heartbeat. Only the authenticated pool
@@ -80,7 +99,11 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	if !ok || principal.Type != auth.PrincipalTypePool || principal.PoolID != poolID {
 		return nil, apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized to update this status")
 	}
-	pool, err := s.store.UpdatePoolStatus(ctx, poolID, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
+	hosts, err := declaredPlatform(input.Platform)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := s.store.UpdatePoolStatus(ctx, poolID, hosts, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}

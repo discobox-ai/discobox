@@ -3,11 +3,11 @@ package harnessconfigs
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -21,13 +21,18 @@ type imageMetadata struct {
 	harness.ImageMetadata
 }
 
+// imageInspector reads a harness image's manifest and the digest to pin it to,
+// for the one platform asked for. A multi-arch image has no single config
+// digest — it has one per architecture — so inspecting it without saying which
+// asks the wrong question, and the platform asked for is the one the harness
+// config records (ADR 0145 §1).
 type imageInspector interface {
-	Inspect(context.Context, string) (imageMetadata, error)
+	Inspect(ctx context.Context, imageRef string, target platform.Platform) (imageMetadata, error)
 }
 
 type defaultImageInspector struct{}
 
-func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
+func (defaultImageInspector) Inspect(ctx context.Context, imageRef string, target platform.Platform) (imageMetadata, error) {
 	// Prefer a locally present image. Once the daemon has inspected it, its
 	// metadata is authoritative — surface any label error instead of masking it
 	// with a doomed registry pull of the same (often :local) reference.
@@ -41,7 +46,10 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imag
 	remoteOptions := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(registryauth.Keychain()),
-		remote.WithPlatform(poolPlatform()),
+		// Always named: go-containerregistry answers linux/amd64 when nothing
+		// says otherwise, which is how an Apple Silicon Mac came to pin the
+		// amd64 digest of a harness image its arm64 pool would never hold.
+		remote.WithPlatform(v1.Platform{OS: target.OS, Architecture: target.Arch}),
 	}
 	// One GET, because it answers both questions: the descriptor carries the
 	// digest the registry serves this tag under, and resolves to the image for
@@ -93,25 +101,6 @@ func localImageDigest(inspected dockerclient.ImageInspectResult) string {
 		}
 	}
 	return inspected.ID
-}
-
-// poolPlatform is the platform a harness image is inspected for.
-//
-// A multi-arch image has no single config digest — it has one per architecture
-// — so asking for the image without saying which one is asking the wrong
-// question. go-containerregistry answers linux/amd64 when nothing says
-// otherwise, which is how an Apple Silicon Mac came to pin the amd64 digest of
-// a harness image its arm64 pool would never hold: the sandbox refused to
-// launch, reporting that the tag "now resolves to" a digest that had never
-// been anything else.
-//
-// The control plane's own architecture, and linux regardless of the control
-// plane's OS: the pool is a Linux machine, and on every provider that runs one
-// on this host — vz, wslc, libkrun, docker — it is this machine's architecture.
-// A cloud pool of a different architecture is not answered by this, and cannot
-// be by any single digest recorded once per harness config.
-func poolPlatform() v1.Platform {
-	return v1.Platform{OS: "linux", Architecture: runtime.GOARCH}
 }
 
 // inspectLocalImage inspects imageRef via the local Docker daemon. found is true
@@ -289,10 +278,10 @@ func newDevImageInspector(images []devimage.Image, fallback imageInspector) imag
 // the base whose layer it inherits. Keep in sync with the harness Dockerfiles.
 const sandboxAgentImageBuildArg = "SANDBOX_AGENT_IMAGE"
 
-func (d devImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
+func (d devImageInspector) Inspect(ctx context.Context, imageRef string, target platform.Platform) (imageMetadata, error) {
 	labels, ok := d.labelsByReference[strings.TrimSpace(imageRef)]
 	if !ok {
-		return d.fallback.Inspect(ctx, imageRef)
+		return d.fallback.Inspect(ctx, imageRef, target)
 	}
 	// A build-mode reference is content-addressed over that image's inputs, so
 	// it is its own freshness key; there is no digest until it is built.

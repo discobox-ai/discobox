@@ -82,6 +82,10 @@ components:
                     description: Harness config name
                     maxLength: 200
                     type: string
+                platform:
+                    description: Platform the harness's template runs on, as os/arch. A discobox on this harness runs on this platform and is placed only on a pool that hosts it.
+                    pattern: ^[a-z0-9]+/[a-z0-9]+$
+                    type: string
                 projectId:
                     description: Project ID
                     type: string
@@ -2443,6 +2447,10 @@ components:
                     description: Pool display name
                     maxLength: 200
                     type: string
+                platform:
+                    description: The one platform the pool hosts, as os/arch, declared by its agent. Empty until the agent first reports.
+                    pattern: ^[a-z0-9]+/[a-z0-9]+$
+                    type: string
                 projectId:
                     description: Project ID
                     type: string
@@ -2906,6 +2914,10 @@ components:
                     type: string
                 keyType:
                     type: string
+                platform:
+                    description: The one platform the pool hosts, as os/arch.
+                    pattern: ^[a-z0-9]+/[a-z0-9]+$
+                    type: string
                 poolId:
                     type: string
                 projectId:
@@ -2917,6 +2929,7 @@ components:
                 - poolId
                 - bootstrapToken
                 - publicKey
+                - platform
             type: object
         RegisterPoolResponseBody:
             additionalProperties: false
@@ -4078,6 +4091,10 @@ components:
                 originKey:
                     description: Where the sandbox belongs on the client that created it, and what listings filter on — the host and the primary source's root, or the host alone for a sandbox with no source. Absent for a sandbox created without an origin.
                     readOnly: true
+                    type: string
+                platform:
+                    description: Platform the sandbox runs on, as os/arch. Recorded at create from its harness config, immutable after.
+                    pattern: ^[a-z0-9]+/[a-z0-9]+$
                     type: string
                 projectId:
                     description: Project ID
@@ -5504,6 +5521,10 @@ components:
                 conditions: {}
                 degraded:
                     type: boolean
+                platform:
+                    description: The one platform the pool hosts, as os/arch. Declared on every report, so a pool that registered before platforms were recorded corrects what was assumed for it.
+                    pattern: ^[a-z0-9]+/[a-z0-9]+$
+                    type: string
                 ready:
                     type: boolean
                 schedulable:
@@ -5515,6 +5536,7 @@ components:
                 - availableCpuVcpus
                 - availableMemoryBytes
                 - availableStorageBytes
+                - platform
             type: object
         ReportPoolSandboxStatesBody:
             additionalProperties: false

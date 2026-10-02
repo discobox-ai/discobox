@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -67,7 +68,7 @@ func (*recordingProvider) ExportTree(context.Context, sandbox.SandboxRef, string
 	return nil, nil
 }
 
-func (*recordingProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ io.Reader) (string, error) {
+func (*recordingProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
 }
 

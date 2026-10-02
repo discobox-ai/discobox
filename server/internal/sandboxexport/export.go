@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/tarsums"
 )
@@ -119,7 +120,17 @@ type Spec struct {
 	// without which the sandbox's primary comes up with an empty private
 	// `/.discobox/data-per-source/<slug>` rather than the source's shared one,
 	// and its references with none (ADR 0123 §1).
-	Origin   *model.Origin `json:"origin,omitempty"`
+	Origin *model.Origin `json:"origin,omitempty"`
+	// Platform is what the sandbox ran on, and the only platform it may be
+	// restored onto: the tree is content, and a restore onto another platform
+	// is refused rather than approximated (ADR 0145 §8). An archive written
+	// before platforms were recorded holds a Linux sandbox, and reads as one on
+	// this machine's architecture, which is what the server's own migration
+	// takes such a sandbox to be.
+	//
+	// Like Tags, it was added without a format version: an older reader
+	// ignores it and restores the tree it was always going to restore.
+	Platform platform.Platform `json:"platform,omitzero"`
 	Manifest model.SandboxManifest
 	// Secrets are bindings, never values (ADR 0123 §1). Each names an
 	// environment variable and the secret it was bound to, by that secret's
@@ -138,9 +149,10 @@ func (s Spec) MarshalJSON() ([]byte, error) {
 		Tags        map[string]string `json:"tags,omitempty"`
 		Harness     Harness           `json:"harness"`
 		Origin      *model.Origin     `json:"origin,omitempty"`
+		Platform    platform.Platform `json:"platform,omitzero"`
 		Secrets     []SecretBinding   `json:"secrets,omitempty"`
 		model.SandboxManifest
-	}{Name: s.Name, Description: s.Description, Tags: s.Tags, Harness: s.Harness, Origin: s.Origin, Secrets: s.Secrets, SandboxManifest: s.Manifest})
+	}{Name: s.Name, Description: s.Description, Tags: s.Tags, Harness: s.Harness, Origin: s.Origin, Platform: s.Platform, Secrets: s.Secrets, SandboxManifest: s.Manifest})
 }
 
 func (s *Spec) UnmarshalJSON(data []byte) error {
@@ -150,6 +162,7 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 		Tags        map[string]string `json:"tags,omitempty"`
 		Harness     Harness           `json:"harness"`
 		Origin      *model.Origin     `json:"origin,omitempty"`
+		Platform    platform.Platform `json:"platform,omitzero"`
 		Secrets     []SecretBinding   `json:"secrets,omitempty"`
 		model.SandboxManifest
 	}
@@ -161,6 +174,10 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	s.Tags = decoded.Tags
 	s.Harness = decoded.Harness
 	s.Origin = decoded.Origin
+	s.Platform = decoded.Platform
+	if s.Platform.IsZero() {
+		s.Platform = platform.Pool()
+	}
 	s.Secrets = decoded.Secrets
 	s.Manifest = decoded.SandboxManifest
 	// An ID from the source server is meaningless here and dangerous if it

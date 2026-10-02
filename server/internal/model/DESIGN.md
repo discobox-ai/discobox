@@ -13,11 +13,11 @@ Public REST API schema types live under the root `api/model` package.
 | `Project` | Group for sandboxes, provider configuration, harness configuration, and pools. Carries the `default` project flag, default pool/harness config, archive retention, and sandbox upgrade policy. |
 | `ProjectMember` | Grants a user a role on a project. |
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
-| `Sandbox` | Main managed runtime/session resource. Belongs to a project and pool; embeds its spec as `SandboxManifest` (harness config, `harnessMode`, image, source, user) and carries observed runtime state, agent status, and resources. |
-| `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. The included harnesses are seeded as `builtIn` configs; a config is selectable only once `configured`. |
+| `Sandbox` | Main managed runtime/session resource. Belongs to a project and pool; embeds its spec as `SandboxManifest` (harness config, `harnessMode`, image, source, user) and carries its platform (from its harness config, immutable, outside the manifest so it moves no fingerprint), observed runtime state, agent status, and resources. |
+| `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. Records the platform its template runs on (ADR 0145 §1). The included harnesses are seeded as `builtIn` configs; a config is selectable only once `configured`. |
 | `HarnessConfigSecretBinding` | Binds a harness config env var to a project secret; materialized into `SandboxSecret` rows per sandbox. |
 | `SandboxProviderInstance` | Project-scoped backend identity: provider type, credentials, and connection config. Capacity and sharing policy live on `Pool`. |
-| `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Embeds its spec as `PoolManifest` (name, immutable provider instance, and the pool's size: CPU, memory, storage); carries the runtime lifecycle, agent identity and public key, `ready`/`schedulable`/`degraded` flags, reported capacity, image staging, resources, and heartbeat. Sandboxes in one pool share a cache, the pool's CPU and memory, and a kernel/host. |
+| `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Embeds its spec as `PoolManifest` (name, immutable provider instance, and the pool's size: CPU, memory, storage); carries the runtime lifecycle, the one platform its agent declares it hosts, agent identity and public key, `ready`/`schedulable`/`degraded` flags, reported capacity, image staging, resources, and heartbeat. Sandboxes in one pool share a cache, the pool's CPU and memory, and a kernel/host. |
 | `PoolBootstrapToken` | Short-lived, one-time token used by a starting pool agent to register its public key. |
 | `SandboxAccessIssuerKey` | Per-project, per-user issuer key used by the control plane to sign sandbox access tokens. `ProjectUserKey` is a type alias for it. |
 | `Secret` | Project-scoped encrypted credential (`token` or `oauth`). `WellKnownID` marks the secret that answers a well-known credential. |
@@ -169,6 +169,7 @@ erDiagram
         string name
         string created_by_user_id
         string pool_id
+        string platform
         string harness_config_id
         json source
         json source_code_references
@@ -184,6 +185,7 @@ erDiagram
         bool configured
         string image
         string image_digest
+        string platform
         string run_command
         string relaunch_command
         json files
@@ -207,6 +209,7 @@ erDiagram
         float cpu_vcpus
         int memory_bytes
         int storage_bytes
+        string platform
         bool ready
         bool schedulable
         bool degraded

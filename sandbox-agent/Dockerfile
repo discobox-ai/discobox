@@ -21,6 +21,7 @@ COPY declared ./declared
 COPY execstream ./execstream
 COPY harness ./harness
 COPY judge ./judge
+COPY platform ./platform
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
@@ -124,6 +125,7 @@ COPY health ./health
 COPY hostscope ./hostscope
 COPY imagecache ./imagecache
 COPY internal ./internal
+COPY platform ./platform
 COPY randomname ./randomname
 COPY releasemanifest ./releasemanifest
 COPY sandboxconfig ./sandboxconfig

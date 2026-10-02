@@ -1,7 +1,11 @@
 // Package harness defines coding-harness contracts and built-in drivers.
 package harness
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/discobox-ai/discobox/platform"
+)
 
 const (
 	TerminalIDEnv = "DISCOBOX_TERMINAL_ID"
@@ -168,7 +172,12 @@ type Definition struct {
 	Name        string
 	Description string
 	Image       string
-	Configure   *Configure
+	// Platform is what the harness's template runs on (ADR 0145 §1), and so
+	// what its image is inspected for and every sandbox on it is placed by. An
+	// included harness is a Linux image published for every architecture a pool
+	// runs, so it declares the platform a pool on this machine hosts.
+	Platform  platform.Platform
+	Configure *Configure
 }
 
 // Configure declares the provider resources and environment for an ephemeral

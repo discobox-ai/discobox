@@ -23,6 +23,7 @@ var regexMap = map[string]ogenregex.Regexp{
 	"^[A-Za-z0-9_-]+:http_[0-9]+$":           ogenregex.MustCompile("^[A-Za-z0-9_-]+:http_[0-9]+$"),
 	"^[A-Za-z_][A-Za-z0-9_]*$":               ogenregex.MustCompile("^[A-Za-z_][A-Za-z0-9_]*$"),
 	"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$": ogenregex.MustCompile("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"),
+	"^[a-z0-9]+/[a-z0-9]+$":                  ogenregex.MustCompile("^[a-z0-9]+/[a-z0-9]+$"),
 	"^[a-z0-9][a-z0-9-]*$":                   ogenregex.MustCompile("^[a-z0-9][a-z0-9-]*$"),
 	"^dns_[0-9]+$":                           ogenregex.MustCompile("^dns_[0-9]+$"),
 	"^http_[0-9]+$":                          ogenregex.MustCompile("^http_[0-9]+$"),

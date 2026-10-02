@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -260,11 +261,16 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	image := strings.TrimSpace(config.Image.Or(""))
 	imageDigest := ""
-	if harnessConfigID != "" && harnessMode != sandboxconfig.HarnessModeConfig {
-		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
-		if err != nil {
-			return nil, apperrors.NotFound(err, "harness config not found")
-		}
+	harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "harness config not found")
+	}
+	// The harness is the sandbox's template, so its platform is the sandbox's,
+	// in config mode as much as in run mode (ADR 0145 §1).
+	if err := refuseOtherPlatform(harnessConfig.Platform, pool); err != nil {
+		return nil, err
+	}
+	if harnessMode != sandboxconfig.HarnessModeConfig {
 		// A harness is only selectable once its configure flow has succeeded.
 		// harnessMode "config" is exempt: that is the configure flow itself.
 		if !harnessConfig.Configured {
@@ -294,6 +300,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		CreatedByUserID:    userID,
 		CreatedBySandboxID: createdBySandboxID,
 		PoolID:             pool.ID,
+		Platform:           harnessConfig.Platform,
 		Name:               config.Name,
 		Description:        services.OptStringPtr(config.Description),
 		SandboxManifest: model.SandboxManifest{
@@ -380,6 +387,24 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 // project with a harness configured and no default set with a shell, which is
 // indistinguishable from a working setup until you are inside the sandbox
 // wondering where the harness went.
+// refuseOtherPlatform refuses a sandbox of sandboxPlatform on a pool that
+// hosts another, with the platforms as the reason (ADR 0145 §1). It is the
+// placement check as create and import make it, before anything is written.
+//
+// A pool whose agent has not yet declared what it hosts is not refused here:
+// a pool still coming up is an ordinary target for a create, and the provider
+// makes the same check against the declared platform once the pool is
+// schedulable (store.SchedulablePoolForSandbox).
+func refuseOtherPlatform(sandboxPlatform platform.Platform, pool *model.Pool) error {
+	if pool.Platform.IsZero() {
+		return nil
+	}
+	if err := platform.Place(sandboxPlatform, pool.Platform); err != nil {
+		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("pool %q: %v", pool.Name, err))
+	}
+	return nil
+}
+
 func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (string, error) {
 	if project == nil {
 		return "", fmt.Errorf("project is required")

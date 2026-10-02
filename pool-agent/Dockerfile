@@ -21,6 +21,7 @@ COPY harness ./harness
 COPY hostscope ./hostscope
 COPY judge ./judge
 COPY layout ./layout
+COPY platform ./platform
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig

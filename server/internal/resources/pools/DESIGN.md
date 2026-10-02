@@ -189,6 +189,22 @@ Reconciliation is level-triggered: intent writers mark `(pool, id)` dirty and
 the engine (`internal/reconcile`) drives convergence; `ScanDirty` re-checks
 every pool as the drift and lost-mark backstop.
 
+## A pool hosts one platform
+
+A pool hosts exactly one platform (`os/arch`, the root `platform` package; ADR
+0145 §1), and its agent declares it: registration and every status heartbeat
+must name one, or are refused with 400 (`declaredPlatform`). Declaring it on
+every heartbeat is what lets a pool from before platforms — backfilled with this
+machine's Linux (`database` migrations) — correct itself, because an agent whose
+key survives a restart does not register again. It is empty only on a pool
+whose agent has not reported yet.
+
+`SchedulablePoolForSandbox` refuses a sandbox of any other platform with a
+`*platform.MismatchError` rather than `ErrNotFound`: a pool of the wrong
+platform is not one on its way up, and a caller that waited on it would wait
+for good. The check runs after the readiness gate, since only a reporting agent
+has declared what it hosts.
+
 ## Who owns which status field
 
 Every pool status field has exactly one writer, and writers must not overlap:
@@ -197,6 +213,7 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | --- | --- | --- |
 | `HealthCheckStartedAt` | server startup | `Store.BeginPoolHealthChecks`, before workers/listeners |
 | `PublicKey`, `KeyType`, `RegisteredAt` | pool agent | `RegisterPool` (bootstrap-token redemption; also stamps `LastSeenAt`) |
+| `Platform` | pool agent | `RegisterPool` and every `UpdatePoolStatus` heartbeat |
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |

@@ -167,6 +167,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			ProjectID:            bootstrap.ProjectID,
 			PoolID:               bootstrap.PoolID,
 			PrivateKey:           registration.PrivateKey,
+			Platform:             hostedPlatform(),
 			Ready:                true,
 			Schedulable:          true,
 			Degraded:             false,

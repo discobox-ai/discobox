@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/tarsums"
 )
@@ -384,5 +385,45 @@ func TestReadWithholdsTheTreesSumsFromADamagedExport(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+// The manifest says what platform the discobox ran on, so a destination can
+// refuse to restore it onto another (ADR 0145 §8). An archive written before
+// platforms were recorded holds a Linux discobox, and reads as one on the
+// platform a pool on this machine hosts — what the migration takes such a
+// sandbox to be.
+func TestSpecCarriesItsPlatformAndALegacyOneIsLinux(t *testing.T) {
+	manifest := sampleManifest()
+	darwin := platform.Platform{OS: "darwin", Arch: "arm64"}
+	manifest.Sandbox.Platform = darwin
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"platform":"darwin/arm64"`) {
+		t.Fatalf("manifest does not record the platform: %s", data)
+	}
+	var decoded Manifest
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Sandbox.Platform != darwin {
+		t.Fatalf("platform = %q, want %q", decoded.Sandbox.Platform, darwin)
+	}
+
+	manifest.Sandbox.Platform = platform.Platform{}
+	legacy, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacy), `"platform"`) {
+		t.Fatalf("an undeclared platform was written: %s", legacy)
+	}
+	if err := json.Unmarshal(legacy, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Sandbox.Platform != platform.Pool() {
+		t.Fatalf("legacy platform = %q, want %q", decoded.Sandbox.Platform, platform.Pool())
 	}
 }

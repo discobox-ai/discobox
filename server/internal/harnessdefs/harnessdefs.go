@@ -14,6 +14,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/registry"
+	"github.com/discobox-ai/discobox/platform"
 )
 
 // Seed describes a built-in harness config the server seeds into a project. It
@@ -26,6 +27,9 @@ type Seed struct {
 	Name string
 	// Image is the harness image, already resolved against any env override.
 	Image string
+	// Platform is what the harness's template runs on, which its image is
+	// inspected for and its config records (ADR 0145 §1).
+	Platform platform.Platform
 }
 
 // ShellSlug is the slug of the `shell` built-in. It is an ordinary registry
@@ -47,8 +51,10 @@ func Seeds(imageOverrides map[string]string, exact bool) []Seed {
 	definitions := registry.Definitions()
 	if exact {
 		names := map[string]string{}
+		platforms := map[string]platform.Platform{}
 		for _, definition := range definitions {
 			names[definition.ID] = definition.Name
+			platforms[definition.ID] = definition.Platform
 		}
 		slugs := make([]string, 0, len(imageOverrides))
 		for slug := range imageOverrides {
@@ -61,7 +67,14 @@ func Seeds(imageOverrides map[string]string, exact bool) []Seed {
 			if name == "" {
 				name = slug
 			}
-			out = append(out, Seed{Slug: slug, Name: name, Image: imageOverrides[slug]})
+			// A harness this binary has no definition for is still one of the
+			// release's Linux images, so it runs on the platform the included
+			// ones do.
+			seedPlatform, ok := platforms[slug]
+			if !ok {
+				seedPlatform = platform.Pool()
+			}
+			out = append(out, Seed{Slug: slug, Name: name, Image: imageOverrides[slug], Platform: seedPlatform})
 		}
 		return out
 	}
@@ -71,7 +84,7 @@ func Seeds(imageOverrides map[string]string, exact bool) []Seed {
 		if override := strings.TrimSpace(imageOverrides[definition.ID]); override != "" {
 			image = override
 		}
-		out = append(out, Seed{Slug: definition.ID, Name: definition.Name, Image: image})
+		out = append(out, Seed{Slug: definition.ID, Name: definition.Name, Image: image, Platform: definition.Platform})
 	}
 	return out
 }

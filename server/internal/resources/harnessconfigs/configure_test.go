@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -20,12 +21,14 @@ import (
 )
 
 type stubInspector struct {
-	byImage map[string]imageMetadata
-	calls   []string
+	byImage   map[string]imageMetadata
+	calls     []string
+	platforms []platform.Platform
 }
 
-func (s *stubInspector) Inspect(_ context.Context, image string) (imageMetadata, error) {
+func (s *stubInspector) Inspect(_ context.Context, image string, target platform.Platform) (imageMetadata, error) {
 	s.calls = append(s.calls, image)
+	s.platforms = append(s.platforms, target)
 	return s.byImage[image], nil
 }
 
@@ -383,7 +386,8 @@ func TestSeedBuiltInsRefreshesDigestForUnchangedImageReference(t *testing.T) {
 	}
 }
 
-// Seeding still writes nothing when neither the reference nor the digest moved.
+// Seeding still writes nothing when neither the reference, the digest, nor the
+// platform moved.
 func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
@@ -392,6 +396,7 @@ func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
 		Image: image, ImageDigest: "sha256:same", RunCommand: []string{"codex"},
+		Platform: platform.Pool(),
 	}); err != nil {
 		t.Fatalf("create config: %v", err)
 	}

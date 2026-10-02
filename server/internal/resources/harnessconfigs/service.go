@@ -10,6 +10,7 @@ import (
 
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 
@@ -69,7 +70,10 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if s.inspector == nil {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "image inspection is unavailable")
 	}
-	inspected, err := s.inspector.Inspect(ctx, image)
+	// A registered image is a Linux container template, so it runs on the
+	// platform a pool on this machine hosts, and is inspected for that one.
+	harnessPlatform := platform.Pool()
+	inspected, err := s.inspector.Inspect(ctx, image, harnessPlatform)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
@@ -125,6 +129,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		Name:        name,
 		Image:       image,
 		ImageDigest: imageDigest,
+		Platform:    harnessPlatform,
 	}
 	snapshotImageMetadata(config, inspected.ImageMetadata)
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
@@ -198,7 +203,7 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	if image == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config has no image to refresh")
 	}
-	metadata, err := s.inspector.Inspect(ctx, image)
+	metadata, err := s.inspector.Inspect(ctx, image, config.Platform)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
@@ -393,7 +398,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if existing != nil && !existing.BuiltIn {
 			return fmt.Errorf("built-in harness %s conflicts with a user-created harness config", seed.Slug)
 		}
-		metadata, inspectErr := s.inspector.Inspect(ctx, image)
+		metadata, inspectErr := s.inspector.Inspect(ctx, image, seed.Platform)
 		if inspectErr != nil {
 			if s.requireBuiltInImages {
 				return fmt.Errorf("inspect release harness %s (%s): %w", seed.Slug, image, inspectErr)
@@ -402,13 +407,13 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"slug", seed.Slug, "image", image, "error", inspectErr)
 			continue
 		}
-		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest {
+		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest && existing.Platform == seed.Platform {
 			continue
 		}
 		if existing == nil {
 			config := &model.HarnessConfig{
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
-				BuiltIn: true, Image: image, ImageDigest: metadata.Digest,
+				BuiltIn: true, Image: image, ImageDigest: metadata.Digest, Platform: seed.Platform,
 			}
 			snapshotImageMetadata(config, metadata.ImageMetadata)
 			// Born configured when there is nothing to collect. `shell` is the
@@ -427,6 +432,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		previousDigest := existing.ImageDigest
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
+		existing.Platform = seed.Platform
 		snapshotImageMetadata(existing, metadata.ImageMetadata)
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
@@ -477,7 +483,7 @@ func (s *Service) EnsureHarnessAvailable(ctx context.Context, projectID string) 
 		case s.inspector == nil:
 			reasons = append(reasons, fmt.Sprintf("%s (%s): image inspection is unavailable", seed.Slug, image))
 		default:
-			if _, inspectErr := s.inspector.Inspect(ctx, image); inspectErr != nil {
+			if _, inspectErr := s.inspector.Inspect(ctx, image, seed.Platform); inspectErr != nil {
 				reasons = append(reasons, fmt.Sprintf("%s (%s): %v", seed.Slug, image, inspectErr))
 				continue
 			}
