@@ -397,6 +397,7 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 		ID:        ref.SandboxID,
 		ProjectID: ref.ProjectID,
 		PoolID:    opts.PoolID,
+		Platform:  opts.Platform,
 	}
 	pool, err := p.schedulablePool(ctx, sb)
 	if err != nil {

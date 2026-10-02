@@ -304,8 +304,15 @@ const harnessesHint = "--harness · " + HarnessesKeyName + " enables, disables a
 // The listing is the one source of what harnesses there are: enabling one on
 // the harnesses screen puts it here without the window being reopened, and
 // disabling the one that was chosen falls back to the default rather than
-// leaving a name the run would be refused for.
-func (o *optionSet) setHarnesses(harnesses []Harness) {
+// leaving a name the run would be refused for. A harness no pool can run is
+// not offered at all, for the same reason (ADR 0145 §1).
+func (o *optionSet) setHarnesses(all []Harness) {
+	harnesses := make([]Harness, 0, len(all))
+	for _, harness := range all {
+		if !harness.Unhosted {
+			harnesses = append(harnesses, harness)
+		}
+	}
 	harness := o.opts[optHarness]
 	chosen := ""
 	if harness.idx > 0 && harness.idx < len(harness.choices) {

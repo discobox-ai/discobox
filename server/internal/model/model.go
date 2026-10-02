@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/judge"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -347,6 +348,11 @@ type HarnessConfig struct {
 	Env              map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`
 	Volumes          []harness.Volume      `gorm:"column:volumes;type:text;serializer:json" json:"volumes,omitempty" doc:"Declarative volumes snapshotted from the image label."`
 	AdditionalGroups []string              `gorm:"column:additional_groups;type:text;serializer:json" json:"additionalGroups,omitempty" doc:"Supplementary OS groups snapshotted from the image label."`
+	// Platform is what the harness's template runs on, and so what every
+	// sandbox on it runs on (ADR 0145 §1). A Linux image is inspected for the
+	// platform a pool on this machine hosts, and ImageDigest is that
+	// platform's digest.
+	Platform platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"Platform the harness's template runs on, as os/arch. A discobox on this harness runs on this platform and is placed only on a pool that hosts it."`
 	// ConfiguredFiles and ConfiguredSecretIDs record what the configure flow
 	// produced, kept separate from the image-declared baseline so Deconfigure can
 	// remove exactly what it created and leave the baseline intact.
@@ -588,15 +594,20 @@ type Pool struct {
 	PoolManifest `gorm:"embedded"`
 
 	// Runtime host state, reported by the pool agent and the provider.
-	PublicKey             string          `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
-	KeyType               string          `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
-	Ready                 bool            `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
-	Schedulable           bool            `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the pool accepts new sandboxes"`
-	Degraded              bool            `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the pool should be used only as fallback capacity"`
-	AvailableCPUVCPUs     float64         `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
-	AvailableMemoryBytes  int64           `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
-	AvailableStorageBytes int64           `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
-	Conditions            json.RawMessage `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
+	//
+	// Platform is the one platform the pool hosts (ADR 0145 §1), declared by
+	// its agent at registration and on every status report. It is empty until
+	// the agent first declares it.
+	Platform              platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"The one platform the pool hosts, as os/arch, declared by its agent. Empty until the agent first reports."`
+	PublicKey             string            `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
+	KeyType               string            `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
+	Ready                 bool              `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
+	Schedulable           bool              `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the pool accepts new sandboxes"`
+	Degraded              bool              `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the pool should be used only as fallback capacity"`
+	AvailableCPUVCPUs     float64           `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
+	AvailableMemoryBytes  int64             `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
+	AvailableStorageBytes int64             `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
+	Conditions            json.RawMessage   `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
 	// ProvisionProgress is what the provider driver is doing to bring this host
 	// up, for a client whose sandbox is waiting for a pool to take it. Unlike
 	// Conditions it is not agent-reported: the phases it names — fetching a VM
@@ -741,7 +752,12 @@ type Sandbox struct {
 	// caller created; nothing else reads it for authority.
 	CreatedBySandboxID *string `gorm:"column:created_by_sandbox_id;type:text;index" json:"createdBySandboxId,omitempty" doc:"Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create."`
 	PoolID             string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
-	Name               string  `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
+	// Platform is what the sandbox runs on, recorded at create from its
+	// harness config (ADR 0145 §1). It is outside SandboxManifest because it is
+	// not a spec that can change: a sandbox's tree belongs to its platform, so
+	// it is placed only on a pool of the same one, and is never moved off it.
+	Platform platform.Platform `gorm:"column:platform;not null;type:text;default:''" json:"platform,omitzero" doc:"Platform the sandbox runs on, as os/arch. Recorded at create from its harness config, immutable after."`
+	Name     string            `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
 	// Description is a copy of the sandbox's description, which lives with its
 	// tags in the meta file inside the sandbox (ADR 0136). Until the sandbox
 	// first reports (MetaObservedAt nil) it holds the description the sandbox

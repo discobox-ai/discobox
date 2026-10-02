@@ -29,6 +29,19 @@ flowchart LR
   server default image (`SetDefaultSandboxImage`) applies only when no harness
   image does, which means config mode without a caller image, or a config that
   declares none.
+- A sandbox's platform (`os/arch`, the root `platform` package) is its harness
+  config's, recorded on the row at create — run mode and config mode alike —
+  and never changed after (ADR 0145 §1). It is a column beside `PoolID`, not a
+  `SandboxManifest` field: it is not a spec that can drift, and adding it to the
+  manifest would have moved every sandbox's fingerprint. Placement is by
+  platform: `refuseOtherPlatform` answers 409 naming both platforms when the
+  chosen pool's agent has declared another, and lets a pool that has not
+  declared one yet through; the provider makes the same check against the
+  declared platform once the pool is schedulable
+  (`store.SchedulablePoolForSandbox`, `CreateOptions.Platform`), so a mismatch
+  fails the create's reconcile with that reason rather than waiting on a pool.
+  An upgrade never moves a sandbox onto a harness config of another platform
+  (`SandboxUpgradeTarget`).
 - Sandboxes that have no harness config converge by *upgrade*, not by
   migration. The target comes from the reserved `shell` built-in
   (`fallbackHarnessConfig`). Such a sandbox reports `available` regardless of
@@ -325,6 +338,12 @@ and is answered as a 400 about the archive rather than an error about the pool
   `RunCommand`, `Files`, `Volumes` and `Env` off the harness config row, so an
   image from one harness and a command from another is a container that starts
   and a harness that does not.
+- **A transfer stays on its platform** (ADR 0145 §8). The manifest records the
+  sandbox's platform; an archive from before platforms reads as Linux on the
+  platform a pool here hosts, which is what the migration took every such
+  sandbox to be. Import refuses, with 409 and before the upload, a destination
+  harness or a destination pool of any other platform, and passes the platform
+  to `Provider.ImportTree`, whose placement checks the pool it lands on.
 - **`Origin` travels beside the manifest.** It is a fact about the client, not
   the server, and a move does not change which machine's checkout the discobox
   belongs to. Two things need it: `OriginKey` is re-derived from it, which is

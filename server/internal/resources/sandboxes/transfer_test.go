@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -50,7 +51,7 @@ func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolI
 	return io.NopCloser(bytes.NewReader(p.exportTree)), nil
 }
 
-func (p *treeProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, tree io.Reader) (string, error) {
+func (p *treeProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ platform.Platform, tree io.Reader) (string, error) {
 	if p.countRows != nil {
 		p.sandboxesAtImport = p.countRows()
 	}
@@ -115,7 +116,7 @@ func configuredHarness(t *testing.T, st *store.Store, slug, name string) *model.
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: slug, Name: name, Configured: true,
 		Image: "ghcr.io/example/" + slug + ":v1", ImageDigest: "sha256:aaa",
-		RunCommand: []string{slug},
+		RunCommand: []string{slug}, Platform: platform.Pool(),
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -652,5 +653,78 @@ func TestImportDropsInvalidTags(t *testing.T) {
 	}
 	if len(result.Sandbox.Tags) != 0 {
 		t.Fatalf("imported tags = %v, want none", result.Sandbox.Tags)
+	}
+}
+
+// A discobox moves between machines, not between platforms (ADR 0145 §8):
+// an archive of another platform than the harness or the pool it is imported
+// onto is refused, before the tree is uploaded, and one of the same platform
+// is recorded as that platform.
+func TestImportRefusesAnotherPlatform(t *testing.T) {
+	ctx, svc, st, provider := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	darwin := platform.Platform{OS: "darwin", Arch: "arm64"}
+	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = darwin }, map[string]string{"data/x": "x"})
+	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
+	if err == nil || !strings.Contains(err.Error(), "darwin/arm64") {
+		t.Fatalf("err = %v, want a refusal naming the archive's platform", err)
+	}
+	var status interface{ StatusCode() int }
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict {
+		t.Errorf("err = %v, want a 409", err)
+	}
+	if provider.imported != nil {
+		t.Error("the tree was uploaded before the platform was refused")
+	}
+
+	// The pool's agent says it hosts another platform than the archive's.
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	archive = exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, nil)
+	if _, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{}); err == nil || !strings.Contains(err.Error(), riscv.String()) {
+		t.Fatalf("err = %v, want a refusal naming the pool's platform", err)
+	}
+
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
+	if err != nil {
+		t.Fatalf("import onto its own platform: %v", err)
+	}
+	if result.Sandbox.Platform != platform.Pool() {
+		t.Errorf("platform = %q, want %q", result.Sandbox.Platform, platform.Pool())
+	}
+}
+
+// The export records the platform the discobox runs on.
+func TestExportRecordsThePlatform(t *testing.T) {
+	ctx, svc, st, provider := transferFixture(t)
+	config := configuredHarness(t, st, "codex", "Codex")
+	sb := &model.Sandbox{
+		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
+		Platform: platform.Pool(),
+		SandboxManifest: model.SandboxManifest{
+			HarnessConfigID: &config.ID, Image: config.Image, ImageDigest: "sha256:pinned", HarnessMode: "run",
+		},
+	}
+	if err := st.CreateSandbox(ctx, sb); err != nil {
+		t.Fatal(err)
+	}
+	provider.exportTree = emptyTar(t)
+	stream, err := svc.ExportSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	defer stream.Close()
+	manifest, tree, err := sandboxexport.Read(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.Close()
+	if manifest.Sandbox.Platform != platform.Pool() {
+		t.Errorf("platform = %q, want %q", manifest.Sandbox.Platform, platform.Pool())
 	}
 }

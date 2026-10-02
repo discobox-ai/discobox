@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -225,8 +226,9 @@ func (s *Store) CreatePoolBootstrapToken(ctx context.Context, token *model.PoolB
 // the only thing ObservedGeneration means; the reconciler derives `active`
 // from RegisteredAt on the reconcile the registration marks dirty. It does not
 // write the health flags either: the agent reports those over its own
-// heartbeat, synchronously, immediately after this call returns.
-func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byte, publicKey, keyType string) (*model.Pool, error) {
+// heartbeat, synchronously, immediately after this call returns. The platform
+// the agent declares it hosts is recorded with its key (ADR 0145 §1).
+func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.Platform, tokenHash []byte, publicKey, keyType string) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
@@ -248,6 +250,7 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byt
 		if err := tx.Save(&token).Error; err != nil {
 			return err
 		}
+		pool.Platform = hosts
 		pool.PublicKey = publicKey
 		pool.KeyType = keyType
 		pool.RegisteredAt = &now
@@ -260,8 +263,8 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byt
 	return &pool, nil
 }
 
-// UpdatePoolStatus records an agent heartbeat: scheduling flags, reported
-// capacity, and conditions.
+// UpdatePoolStatus records an agent heartbeat: the platform the pool hosts,
+// scheduling flags, reported capacity, and conditions.
 //
 // It deliberately does not touch State or ErrorMessage. Health and State have
 // different owners: the agent knows whether it can take work right now, while
@@ -272,7 +275,7 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byt
 // that recovers is returned to `active` by the reconcile that proves it, not by
 // the heartbeat — the service layer marks an offline pool dirty when its agent
 // reports back in, which is what makes that reconcile prompt.
-func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Pool, error) {
+func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platform.Platform, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
@@ -292,6 +295,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pool, "id = ?", poolID).Error; err != nil {
 			return mapNotFound(err)
 		}
+		pool.Platform = hosts
 		pool.Ready = ready
 		pool.Schedulable = schedulable
 		pool.Degraded = degraded
@@ -365,6 +369,12 @@ func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resource
 // No capacity is gated: sandboxes share their pool's CPU, memory, and storage
 // with no per-sandbox reservation (docs/adr/0029).
 // There is no candidate search; the sandbox's assigned pool is its host.
+//
+// A pool that hosts another platform than the sandbox's is refused with a
+// *platform.MismatchError rather than ErrNotFound (ADR 0145 §1): it is not a
+// pool on its way up that waiting would fix, and the platforms are the reason.
+// It is checked once the pool is schedulable, because only a reporting agent
+// has declared what it hosts.
 func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error) {
 	if sandbox == nil || sandbox.PoolID == "" {
 		return nil, ErrNotFound
@@ -378,6 +388,9 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		(pool.State != model.PoolStateActive && pool.State != model.PoolStateOffline) ||
 		!pool.IsReady() || !pool.Schedulable {
 		return nil, ErrNotFound
+	}
+	if err := platform.Place(sandbox.Platform, pool.Platform); err != nil {
+		return nil, err
 	}
 	return pool, nil
 }

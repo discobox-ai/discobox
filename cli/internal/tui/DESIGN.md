@@ -2213,7 +2213,10 @@ inside a pane, where every key is the sandbox's.
 The listing is read at startup, not when the screen is opened, because the run
 options' harness choices are built from it (`optionSet.setHarnesses`): enabling
 one makes it selectable without the window being reopened, and the default leads
-the list so an unchanged option emits no `--harness` at all. It is the one source
+the list so an unchanged option emits no `--harness` at all. A harness whose
+platform no pool in the project hosts (`Harness.Unhosted`, ADR 0145 §1) is left
+out of the choices — create would refuse it — and stays on this screen, whose
+card names its platform and that no pool hosts it. It is the one source
 of what harnesses exist — `Session` carries none — and is re-read after every
 action rather than on a clock, except while the screen itself is up.
 

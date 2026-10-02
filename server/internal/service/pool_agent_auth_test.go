@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -28,10 +29,10 @@ func TestUpdatePoolStatusRequiresValidAgentAssertion(t *testing.T) {
 	privateKey := registerTestPool(ctx, t, svc, appStore, projectID, "pool-auth")
 	token := signTestAgentAssertion(t, projectID, "pool-auth", privateKey)
 
-	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+token, "pool-auth", services.UpdatePoolStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err != nil {
+	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+token, "pool-auth", services.UpdatePoolStatusBody{Platform: platform.Pool().String(), Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err != nil {
 		t.Fatalf("update pool status with valid assertion: %v", err)
 	}
-	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer wrong", "pool-auth", services.UpdatePoolStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
+	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer wrong", "pool-auth", services.UpdatePoolStatusBody{Platform: platform.Pool().String(), Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
 		t.Fatal("expected invalid assertion to be rejected")
 	}
 }
@@ -49,7 +50,7 @@ func TestUpdatePoolStatusRejectsCrossPoolAssertion(t *testing.T) {
 	otherToken := signTestAgentAssertion(t, projectID, "pool-other", otherPrivateKey)
 
 	// A valid assertion for pool-other must not authenticate the pool-auth route.
-	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+otherToken, "pool-auth", services.UpdatePoolStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
+	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+otherToken, "pool-auth", services.UpdatePoolStatusBody{Platform: platform.Pool().String(), Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
 		t.Fatal("expected cross-pool assertion to be rejected")
 	}
 }
@@ -59,7 +60,7 @@ func TestGetPoolIncludesAgentReportedStatus(t *testing.T) {
 	svc, appStore, db, projectID := newPoolAgentTestService(t)
 	privateKey := registerTestPool(ctx, t, svc, appStore, projectID, "pool-auth")
 	token := signTestAgentAssertion(t, projectID, "pool-auth", privateKey)
-	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+token, "pool-auth", services.UpdatePoolStatusBody{
+	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+token, "pool-auth", services.UpdatePoolStatusBody{Platform: platform.Pool().String(),
 		Ready:                 true,
 		Schedulable:           true,
 		AvailableCpuVcpus:     2,
@@ -163,7 +164,7 @@ func registerTestPool(ctx context.Context, t *testing.T, svc *service.Service, a
 	if err != nil {
 		t.Fatalf("encode public key: %v", err)
 	}
-	if _, err := svc.RegisterPool(ctx, services.RegisterPoolBody{ProjectId: projectID, PoolId: poolID, BootstrapToken: bootstrap, PublicKey: publicKeyText}); err != nil {
+	if _, err := svc.RegisterPool(ctx, services.RegisterPoolBody{Platform: platform.Pool().String(), ProjectId: projectID, PoolId: poolID, BootstrapToken: bootstrap, PublicKey: publicKeyText}); err != nil {
 		t.Fatalf("register pool: %v", err)
 	}
 	return privateKey

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/auditid"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -229,7 +230,7 @@ func TestStaleHeartbeatReadsOffline(t *testing.T) {
 
 	// The agent comes back: a heartbeat refreshes LastSeenAt, and the
 	// reconcile it triggers proves recovery.
-	if _, err := appStore.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+	if _, err := appStore.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
 	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
@@ -472,7 +473,7 @@ func (stubPoolProvider) ExportTree(context.Context, sandbox.SandboxRef, string, 
 	return nil, nil
 }
 
-func (stubPoolProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ io.Reader) (string, error) {
+func (stubPoolProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
 }
 
@@ -500,12 +501,13 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 	pool := &model.Pool{ID: "pool-1", ProjectID: provider.ProjectID,
 		PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID},
 		Ready:        true, Schedulable: true, RegisteredAt: &now, LastSeenAt: &now, StatusReportedAt: &now,
+		Platform: platform.Pool(),
 	}
 	pool.SetState(model.PoolStateActive)
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	sb := &model.Sandbox{ProjectID: pool.ProjectID, PoolID: pool.ID}
+	sb := &model.Sandbox{ProjectID: pool.ProjectID, PoolID: pool.ID, Platform: platform.Pool()}
 	manager.RegisterProvider("startup", startingPoolProvider{observe: func(ctx context.Context, _ sandbox.PoolManager, _ *model.Pool, images []string, begin func(context.Context) error) error {
 		if len(images) == 0 {
 			t.Fatal("startup received no project images")
@@ -517,7 +519,7 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 			return err
 		}
 		// An old ready heartbeat can arrive while the image load is in flight.
-		if _, err := appStore.UpdatePoolStatus(ctx, pool.ID, true, true, false, 0, 0, 0, nil); err != nil {
+		if _, err := appStore.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), true, true, false, 0, 0, 0, nil); err != nil {
 			return err
 		}
 		if _, err := appStore.SchedulablePoolForSandbox(ctx, sb); !errors.Is(err, store.ErrNotFound) {

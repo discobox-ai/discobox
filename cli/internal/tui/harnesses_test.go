@@ -866,3 +866,20 @@ func TestTheKeyListUnderAConfigureTerminalIsThePanes(t *testing.T) {
 		t.Fatalf("the pane's own way out is missing:\n%s", out)
 	}
 }
+
+// A harness no pool in the project hosts the platform of is not offered: a
+// discobox on it would be refused at create (ADR 0145 §1). It is still listed
+// on the harnesses screen, which is where a person learns why.
+func TestHarnessChoicesLeaveOutWhatNoPoolHosts(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource())
+	m.opts.setHarnesses([]Harness{
+		{Slug: "codex", Default: true},
+		{Slug: "xcode", Platform: "darwin/arm64", Unhosted: true},
+		{Slug: "shell"},
+	})
+	want := []string{"codex", "shell"}
+	if got := m.opts.opts[optHarness].choices; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("choices = %v, want %v", got, want)
+	}
+}

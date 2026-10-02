@@ -46,9 +46,17 @@ true of it, and true *by rule* rather than by slug:
 - The recorded digest is the one a daemon reports in `RepoDigests`, so the pool
   can compare it on either image store: from a registry, the digest the tag is
   served under (an index digest for a multi-platform image), fetched with one
-  `remote.Get` for `linux/<control plane GOARCH>` (`poolPlatform`); from the
-  local daemon, the `RepoDigests` entry, or the image ID for a never-pushed
-  local build.
+  `remote.Get` for the platform the config records; from the local daemon, the
+  `RepoDigests` entry, or the image ID for a never-pushed local build.
+- A config records the **platform** its template runs on (`os/arch`, ADR 0145
+  §1), and that platform is the one its image is inspected for, so the digest
+  it pins and the platform its sandboxes are placed by are one answer. A
+  registered image is a Linux container template, recorded as the platform a
+  pool on this machine hosts (`platform.Pool`); a built-in takes its catalog
+  entry's (`harness.Definition.Platform`, through `harnessdefs.Seed`), and
+  reseeding rewrites a built-in whose platform moved. A refresh re-inspects for
+  the platform the config already records. Sandboxes take the platform from
+  here at create (`resources/sandboxes`).
 - In build-mode dev (`SetDevelopmentImages`), `devImageInspector` answers first:
   it rebuilds the label set, inherited base layer included, from the dev image
   manifest's build args, because the image does not exist anywhere until a pool

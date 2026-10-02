@@ -84,7 +84,11 @@ under the root are translated.
 After registration, the pool host reports scheduling status every 30s
 (`/api/pools/{poolId}/status`). It sets `ready`, `schedulable`, and `degraded`
 booleans for control-plane scheduling, with available CPU, memory, and storage
-measured per report. Richer pressure/condition details can be sent as an opaque
+measured per report. Registration and every report also declare the one
+platform the pool hosts (`hostedPlatform`, ADR 0145 §1): a pool's sandboxes are
+containers on the agent's own kernel and architecture, so it is the agent's
+own. Repeating it on every report is how a pool from before platforms, which
+does not register again, corrects the platform the control plane assumed. Richer pressure/condition details can be sent as an opaque
 JSON blob for display. Repeating the report is what restores readiness the
 control plane cleared after a failed reconcile.
 

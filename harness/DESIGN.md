@@ -253,8 +253,8 @@ launchers, and configure scripts.
 - `harness.Driver` identifies one built-in harness's included image through
   `ID()` and `Definition()`, and nothing else. The definition catalog is an
   image shortcut — seeding reads only a definition's `ID` (the slug), `Name`,
-  and `Image` (`harnessdefs.Seeds`); runtime metadata comes from the
-  registered image label. A driver
+  `Image`, and `Platform` (`harnessdefs.Seeds`); runtime metadata comes from
+  the registered image label. A driver
   holds no behavior a harness image cannot declare for itself — that is what
   keeps a third-party harness a pure image-registration story.
 - A `Definition` names its image through `harness.ImageRef`, never as a
@@ -264,6 +264,13 @@ launchers, and configure scripts.
   are the images that shipped with it. One pair rather than a reference per
   harness: a release publishes them together, and independent references
   could disagree about which release a sandbox is running.
+- A `Definition` declares the **platform** its template runs on (`os/arch`,
+  the root `platform` package; ADR 0145 §1). It is the platform the image is
+  inspected for, the one its config records, and so the one every sandbox on
+  it runs on and is placed by: a sandbox lands only on a pool that hosts it,
+  and the CLI offers only harnesses some pool can run. Every included harness
+  is a Linux image published for each architecture a pool runs, so each
+  declares `platform.Pool()` — Linux on this machine's architecture.
 - Whether a harness has an interactive configure flow is the image's
   declaration (`config.command`), snapshotted as the config's config command;
   a `Definition`'s `Configure` field (set by `claude-code`, `codex-cli`, and `opencode`, nil

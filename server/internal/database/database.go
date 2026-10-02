@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/discobox-ai/discobox/hostscope"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/x/gormdb"
 )
@@ -142,7 +143,43 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := migrateCredentialVerdictNeeds(write); err != nil {
 		return err
 	}
+	if err := backfillPlatforms(write); err != nil {
+		return err
+	}
 	return rekeySandboxOrigins(write)
+}
+
+// backfillPlatforms gives every row written before platforms were recorded the
+// one it had (ADR 0145 §1): every pool, harness and sandbox until then was
+// Linux on the architecture of the pool it ran on, and a pool on this machine
+// is this machine's architecture (platform.Pool).
+//
+// Pools first, so a sandbox takes its own pool's. A pool's agent declares its
+// platform on every status report, so one that is not on this machine's
+// architecture corrects the pool within a heartbeat; a sandbox's platform is
+// fixed at create, so it is taken from its pool rather than assumed again.
+//
+// Idempotent, and chosen by what is still empty rather than by whether the
+// column was just added, so a start interrupted between AutoMigrate and here
+// finishes the job on the next one. An empty harness or sandbox platform is
+// never written since, so every one is a row from before. An empty pool
+// platform is also an unregistered pool whose agent has not declared one yet,
+// which is left alone: only a registered pool can be from before.
+func backfillPlatforms(db *gorm.DB) error {
+	assumed := platform.Pool().String()
+	if err := db.Model(&model.Pool{}).
+		Where("platform = '' AND registered_at IS NOT NULL").
+		UpdateColumn("platform", assumed).Error; err != nil {
+		return err
+	}
+	if err := db.Model(&model.HarnessConfig{}).
+		Where("platform = ''").
+		UpdateColumn("platform", assumed).Error; err != nil {
+		return err
+	}
+	return db.Exec(`UPDATE sandboxes
+		SET platform = COALESCE((SELECT pools.platform FROM pools WHERE pools.id = sandboxes.pool_id AND pools.platform <> ''), ?)
+		WHERE platform = ''`, assumed).Error
 }
 
 // backfillSecretValueUpdatedAt gives every secret written before

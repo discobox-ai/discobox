@@ -7,6 +7,7 @@ import (
 
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 )
 
 type recordingInspector struct {
@@ -14,7 +15,7 @@ type recordingInspector struct {
 	err   error
 }
 
-func (s *recordingInspector) Inspect(context.Context, string) (imageMetadata, error) {
+func (s *recordingInspector) Inspect(context.Context, string, platform.Platform) (imageMetadata, error) {
 	s.calls++
 	return imageMetadata{}, s.err
 }
@@ -67,7 +68,7 @@ func TestInspectInheritsTheBaseLayerInBuildMode(t *testing.T) {
 		harnessImage("discobox-harness-codex:dev-abc123", harnessMetadataJSON),
 	}, fallback)
 
-	metadata, err := inspector.Inspect(context.Background(), "discobox-harness-codex:dev-abc123")
+	metadata, err := inspector.Inspect(context.Background(), "discobox-harness-codex:dev-abc123", platform.Pool())
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
@@ -88,7 +89,7 @@ func TestInspectResolvesAnImageThatDeclaresNothing(t *testing.T) {
 		harnessImage("discobox-harness-shell:dev-abc123", ""),
 	}, fallback)
 
-	metadata, err := inspector.Inspect(context.Background(), "discobox-harness-shell:dev-abc123")
+	metadata, err := inspector.Inspect(context.Background(), "discobox-harness-shell:dev-abc123", platform.Pool())
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
@@ -110,7 +111,7 @@ func TestInspectResolvesBuildModeMetadataWithoutDaemonOrRegistry(t *testing.T) {
 		harnessImage("discobox-harness-codex:dev-abc123", harnessMetadataJSON),
 	}, fallback)
 
-	metadata, err := inspector.Inspect(context.Background(), "discobox-harness-codex:dev-abc123")
+	metadata, err := inspector.Inspect(context.Background(), "discobox-harness-codex:dev-abc123", platform.Pool())
 	if err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
@@ -136,7 +137,7 @@ func TestInspectFallsBackForImagesTheManifestDoesNotDescribe(t *testing.T) {
 		harnessImage("discobox-harness-codex:dev-abc123", harnessMetadataJSON),
 	}, fallback)
 
-	if _, err := inspector.Inspect(context.Background(), "ghcr.io/discobox-ai/other:v1"); err != nil {
+	if _, err := inspector.Inspect(context.Background(), "ghcr.io/discobox-ai/other:v1", platform.Pool()); err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
 	if fallback.calls != 1 {

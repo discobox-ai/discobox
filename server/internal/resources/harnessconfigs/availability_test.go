@@ -7,12 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 type unavailableInspector struct{ err error }
 
-func (i unavailableInspector) Inspect(context.Context, string) (imageMetadata, error) {
+func (i unavailableInspector) Inspect(context.Context, string, platform.Platform) (imageMetadata, error) {
 	return imageMetadata{}, i.err
 }
 

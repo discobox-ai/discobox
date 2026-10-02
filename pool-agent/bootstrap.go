@@ -16,6 +16,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/controlplane"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 )
@@ -142,21 +143,35 @@ type RegisterRequest struct {
 	BootstrapToken  string `json:"bootstrapToken"`
 	PublicKey       string `json:"publicKey"`
 	KeyType         string `json:"keyType"`
+	// Platform is the one platform this pool hosts (ADR 0145 §1).
+	Platform platform.Platform `json:"platform"`
+}
+
+// hostedPlatform is the one platform this pool hosts, which its agent declares
+// at registration and on every status report (ADR 0145 §1). A pool's sandboxes
+// are containers on the agent's own kernel and architecture, so it is the
+// agent's own platform.
+func hostedPlatform() platform.Platform {
+	return platform.Current()
 }
 
 // StatusRequest updates pool scheduling status using a signed pool assertion.
 type StatusRequest struct {
-	ControlPlaneURL       string             `json:"-"`
-	ProjectID             string             `json:"-"`
-	PoolID                string             `json:"-"`
-	PrivateKey            ed25519.PrivateKey `json:"-"`
-	Ready                 bool               `json:"ready"`
-	Schedulable           bool               `json:"schedulable"`
-	Degraded              bool               `json:"degraded"`
-	AvailableCPUVCPUs     float64            `json:"availableCpuVcpus"`
-	AvailableMemoryBytes  int64              `json:"availableMemoryBytes"`
-	AvailableStorageBytes int64              `json:"availableStorageBytes"`
-	Conditions            any                `json:"conditions,omitempty"`
+	ControlPlaneURL string             `json:"-"`
+	ProjectID       string             `json:"-"`
+	PoolID          string             `json:"-"`
+	PrivateKey      ed25519.PrivateKey `json:"-"`
+	// Platform is declared on every report, not only at registration: an
+	// agent whose key survives a restart does not register again, and the
+	// control plane learns what a pool from before platforms hosts from this.
+	Platform              platform.Platform `json:"platform"`
+	Ready                 bool              `json:"ready"`
+	Schedulable           bool              `json:"schedulable"`
+	Degraded              bool              `json:"degraded"`
+	AvailableCPUVCPUs     float64           `json:"availableCpuVcpus"`
+	AvailableMemoryBytes  int64             `json:"availableMemoryBytes"`
+	AvailableStorageBytes int64             `json:"availableStorageBytes"`
+	Conditions            any               `json:"conditions,omitempty"`
 }
 
 // SandboxState is one observation about one sandbox.
@@ -352,6 +367,7 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 		BootstrapToken:  bootstrap.Token,
 		PublicKey:       publicKey,
 		KeyType:         "ed25519",
+		Platform:        hostedPlatform(),
 	})
 	if err != nil {
 		return nil, err

@@ -39,17 +39,22 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 	if err != nil {
 		return nil, err
 	}
+	// So is what the project's pools host, which decides what `new` offers.
+	platforms, err := d.app.listPoolPlatforms(ctx, d.client, d.projectID)
+	if err != nil {
+		return nil, err
+	}
 	sorted := append([]apimodel.HarnessConfig(nil), configs...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.Before(sorted[j].CreatedAt) })
 
 	harnesses := make([]tui.Harness, 0, len(sorted))
 	for _, cfg := range sorted {
-		harnesses = append(harnesses, toTUIHarness(cfg, defaultID))
+		harnesses = append(harnesses, toTUIHarness(cfg, defaultID, platforms))
 	}
 	return harnesses, nil
 }
 
-func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
+func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string, platforms poolPlatforms) tui.Harness {
 	harness := tui.Harness{
 		ID:      cfg.ID,
 		Name:    strings.TrimSpace(cfg.Name),
@@ -65,6 +70,8 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		Error:          strings.TrimSpace(cfg.ConfigureError.Or("")),
 		Image:          cfg.Image.Or(""),
 		Digest:         cfg.ImageDigest.Or(""),
+		Platform:       cfg.Platform.Or(""),
+		Unhosted:       !platforms.run(cfg),
 		Run:            cfg.RunCommand,
 		Relaunch:       cfg.RelaunchCommand.Or(nil),
 		Updated:        cfg.UpdatedAt,

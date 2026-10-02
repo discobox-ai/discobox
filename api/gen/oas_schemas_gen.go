@@ -4359,6 +4359,9 @@ type HarnessConfig struct {
 	ImageDigest OptString `json:"imageDigest"`
 	// Harness config name.
 	Name string `json:"name"`
+	// Platform the harness's template runs on, as os/arch. A discobox on this harness runs on this
+	// platform and is placed only on a pool that hosts it.
+	Platform OptString `json:"platform"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Argv declared by the registered image to resume a previous harness session.
@@ -4466,6 +4469,11 @@ func (s *HarnessConfig) GetImageDigest() OptString {
 // GetName returns the value of Name.
 func (s *HarnessConfig) GetName() string {
 	return s.Name
+}
+
+// GetPlatform returns the value of Platform.
+func (s *HarnessConfig) GetPlatform() OptString {
+	return s.Platform
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -4591,6 +4599,11 @@ func (s *HarnessConfig) SetImageDigest(val OptString) {
 // SetName sets the value of Name.
 func (s *HarnessConfig) SetName(val string) {
 	s.Name = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *HarnessConfig) SetPlatform(val OptString) {
+	s.Platform = val
 }
 
 // SetProjectId sets the value of ProjectId.
@@ -13750,6 +13763,9 @@ type Pool struct {
 	MemoryBytes int64 `json:"memoryBytes"`
 	// Pool display name.
 	Name string `json:"name"`
+	// The one platform the pool hosts, as os/arch, declared by its agent. Empty until the agent first
+	// reports.
+	Platform OptString `json:"platform"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Backing sandbox provider instance.
@@ -13845,6 +13861,11 @@ func (s *Pool) GetMemoryBytes() int64 {
 // GetName returns the value of Name.
 func (s *Pool) GetName() string {
 	return s.Name
+}
+
+// GetPlatform returns the value of Platform.
+func (s *Pool) GetPlatform() OptString {
+	return s.Platform
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -14015,6 +14036,11 @@ func (s *Pool) SetMemoryBytes(val int64) {
 // SetName sets the value of Name.
 func (s *Pool) SetName(val string) {
 	s.Name = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *Pool) SetPlatform(val OptString) {
+	s.Platform = val
 }
 
 // SetProjectId sets the value of ProjectId.
@@ -16360,9 +16386,11 @@ type RegisterPoolBody struct {
 	Schema         OptURI    `json:"$schema"`
 	BootstrapToken string    `json:"bootstrapToken"`
 	KeyType        OptString `json:"keyType"`
-	PoolId         string    `json:"poolId"`
-	ProjectId      string    `json:"projectId"`
-	PublicKey      string    `json:"publicKey"`
+	// The one platform the pool hosts, as os/arch.
+	Platform  string `json:"platform"`
+	PoolId    string `json:"poolId"`
+	ProjectId string `json:"projectId"`
+	PublicKey string `json:"publicKey"`
 }
 
 // GetSchema returns the value of Schema.
@@ -16378,6 +16406,11 @@ func (s *RegisterPoolBody) GetBootstrapToken() string {
 // GetKeyType returns the value of KeyType.
 func (s *RegisterPoolBody) GetKeyType() OptString {
 	return s.KeyType
+}
+
+// GetPlatform returns the value of Platform.
+func (s *RegisterPoolBody) GetPlatform() string {
+	return s.Platform
 }
 
 // GetPoolId returns the value of PoolId.
@@ -16408,6 +16441,11 @@ func (s *RegisterPoolBody) SetBootstrapToken(val string) {
 // SetKeyType sets the value of KeyType.
 func (s *RegisterPoolBody) SetKeyType(val OptString) {
 	s.KeyType = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *RegisterPoolBody) SetPlatform(val string) {
+	s.Platform = val
 }
 
 // SetPoolId sets the value of PoolId.
@@ -17227,6 +17265,9 @@ type Sandbox struct {
 	// and the primary source's root, or the host alone for a sandbox with no source. Absent for a
 	// sandbox created without an origin.
 	OriginKey OptString `json:"originKey"`
+	// Platform the sandbox runs on, as os/arch. Recorded at create from its harness config, immutable
+	// after.
+	Platform OptString `json:"platform"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Pool the sandbox is scheduled into.
@@ -17302,6 +17343,11 @@ func (s *Sandbox) GetOrigin() OptOrigin {
 // GetOriginKey returns the value of OriginKey.
 func (s *Sandbox) GetOriginKey() OptString {
 	return s.OriginKey
+}
+
+// GetPlatform returns the value of Platform.
+func (s *Sandbox) GetPlatform() OptString {
+	return s.Platform
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -17392,6 +17438,11 @@ func (s *Sandbox) SetOrigin(val OptOrigin) {
 // SetOriginKey sets the value of OriginKey.
 func (s *Sandbox) SetOriginKey(val OptString) {
 	s.OriginKey = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *Sandbox) SetPlatform(val OptString) {
+	s.Platform = val
 }
 
 // SetProjectId sets the value of ProjectId.
@@ -25668,8 +25719,11 @@ type UpdatePoolStatusBody struct {
 	AvailableStorageBytes int64   `json:"availableStorageBytes"`
 	Conditions            jx.Raw  `json:"conditions"`
 	Degraded              bool    `json:"degraded"`
-	Ready                 bool    `json:"ready"`
-	Schedulable           bool    `json:"schedulable"`
+	// The one platform the pool hosts, as os/arch. Declared on every report, so a pool that registered
+	// before platforms were recorded corrects what was assumed for it.
+	Platform    string `json:"platform"`
+	Ready       bool   `json:"ready"`
+	Schedulable bool   `json:"schedulable"`
 }
 
 // GetSchema returns the value of Schema.
@@ -25700,6 +25754,11 @@ func (s *UpdatePoolStatusBody) GetConditions() jx.Raw {
 // GetDegraded returns the value of Degraded.
 func (s *UpdatePoolStatusBody) GetDegraded() bool {
 	return s.Degraded
+}
+
+// GetPlatform returns the value of Platform.
+func (s *UpdatePoolStatusBody) GetPlatform() string {
+	return s.Platform
 }
 
 // GetReady returns the value of Ready.
@@ -25740,6 +25799,11 @@ func (s *UpdatePoolStatusBody) SetConditions(val jx.Raw) {
 // SetDegraded sets the value of Degraded.
 func (s *UpdatePoolStatusBody) SetDegraded(val bool) {
 	s.Degraded = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *UpdatePoolStatusBody) SetPlatform(val string) {
+	s.Platform = val
 }
 
 // SetReady sets the value of Ready.

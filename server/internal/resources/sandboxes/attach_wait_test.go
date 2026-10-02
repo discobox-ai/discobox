@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/platform"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -237,7 +238,7 @@ func TestAwaitSandboxHTTPClientForServerWaitsForAPoolHeartbeat(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatalf("report pool status: %v", err)
 	}
 	select {
@@ -412,7 +413,7 @@ func TestProvisioningMarkIgnoresLiveness(t *testing.T) {
 
 	// The pool agent's status heartbeat: a whole-row save every 30 seconds,
 	// reporting the same capacity and the same readiness as last time.
-	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", true, true, false, 4, 1<<30, 1<<30, nil); err != nil {
+	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), true, true, false, 4, 1<<30, 1<<30, nil); err != nil {
 		t.Fatalf("pool status: %v", err)
 	}
 	if got := mark(); got != base {
@@ -582,6 +583,6 @@ func (*provisioningProvider) ExportTree(context.Context, sandbox.SandboxRef, str
 	return nil, nil
 }
 
-func (*provisioningProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ io.Reader) (string, error) {
+func (*provisioningProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
 }

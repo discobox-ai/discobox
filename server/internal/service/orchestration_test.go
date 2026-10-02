@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
@@ -866,6 +867,6 @@ func (noopSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, str
 	return nil, nil
 }
 
-func (noopSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ io.Reader) (string, error) {
+func (noopSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
 }

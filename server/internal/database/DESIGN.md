@@ -51,8 +51,12 @@ by what it is looking for and is idempotent:
    dropping the column (`moveSecretHostsToLists`, ADR 26-10-02-393 §6),
    dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows), the
-   sandbox state split (ADR 0034), and re-keying every sandbox origin to where
-   its source came from (`rekeySandboxOrigins`, ADR 0111 §4).
+   sandbox state split (ADR 0034), the platform backfill (`backfillPlatforms`,
+   ADR 0145 §1: every registered pool and every harness config is given Linux on
+   this machine's architecture, every sandbox its pool's; chosen by what is
+   still empty, so an interrupted start finishes it, and leaving an
+   unregistered pool for its agent to declare), and re-keying every sandbox
+   origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4).
 
 `AutoMigrate` creates tables, adds and widens columns, and creates missing
 indexes, but never drops any of them, never alters an index that already exists

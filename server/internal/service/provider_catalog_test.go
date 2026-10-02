@@ -12,6 +12,7 @@ import (
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/platform"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -167,7 +168,7 @@ func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 		t.Fatal(err)
 	}
 	poolID := createPoolForInstance(ctx, t, svc, projectID, instance.ID)
-	if _, err := st.UpdatePoolStatus(ctx, poolID, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, err := st.UpdatePoolStatus(ctx, poolID, platform.Pool(), true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.BeginPoolHealthChecks(ctx); err != nil {
@@ -745,6 +746,7 @@ func imagelessHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, 
 	clearSeededHarnessConfigs(ctx, t, st, projectID)
 	config := &model.HarnessConfig{
 		ProjectID: projectID, Slug: "imageless", Name: "Imageless", Configured: true,
+		Platform: platform.Pool(),
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create imageless harness config: %v", err)
@@ -770,6 +772,6 @@ func (*recordingSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRe
 	return nil, nil
 }
 
-func (*recordingSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ io.Reader) (string, error) {
+func (*recordingSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
 }

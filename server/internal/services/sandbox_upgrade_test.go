@@ -3,6 +3,7 @@ package services
 import (
 	"testing"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -129,5 +130,21 @@ func TestSandboxUpgradeWithoutAFallbackConfig(t *testing.T) {
 	}
 	if rendered := SandboxUpgrade(sb, nil); rendered != nil {
 		t.Fatalf("rendered %v with no fallback config", rendered)
+	}
+}
+
+// A harness config of another platform than the sandbox's is nothing to move
+// to: its digest is another platform's image (ADR 0145 §1).
+func TestSandboxUpgradeTargetStaysOnTheSandboxsPlatform(t *testing.T) {
+	config := shellConfig()
+	config.Platform = platform.Platform{OS: "linux", Arch: "riscv64"}
+	sb := sandboxWithHarness("harness-shell", "discobox-sandbox-agent:old", "sha256:old")
+	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
+	if target, available := SandboxUpgradeTarget(sb, config); target.Digest != "" || available {
+		t.Fatalf("target = %+v, available = %t; want nothing to move to", target, available)
+	}
+	config.Platform = sb.Platform
+	if target, available := SandboxUpgradeTarget(sb, config); target.Digest != "sha256:new" || !available {
+		t.Fatalf("target = %+v, available = %t; want the config's image on the same platform", target, available)
 	}
 }

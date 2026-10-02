@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/x/gormdb"
@@ -1593,5 +1594,108 @@ func TestMigrateBackfillsSecretValueUpdatedAt(t *testing.T) {
 	}
 	if !strings.HasSuffix(text, "+00:00") && !strings.HasSuffix(text, "Z") {
 		t.Fatalf("value_updated_at stored as %q, want UTC", text)
+	}
+}
+
+// A database from before platforms were recorded gains the column on every
+// table that places by it, and every existing row the platform it had: Linux
+// on this machine's architecture, the one a pool here hosts. A sandbox takes
+// its own pool's. A pool that never registered has no agent that declared
+// anything and is left for its agent to declare, and a second run changes
+// nothing.
+func TestMigrateBackfillsPlatforms(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Name: "provider", Type: "docker"}
+	if err := db.Write.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	registeredAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, pool := range []model.Pool{
+		{ID: "pool-registered", ProjectID: project.ID, RegisteredAt: &registeredAt, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "registered"}},
+		{ID: "pool-new", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "new"}},
+	} {
+		if err := db.Write.Create(&pool).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	config := model.HarnessConfig{ID: "hc-1", ProjectID: project.ID, Slug: "shell", Name: "Shell"}
+	if err := db.Write.Create(&config).Error; err != nil {
+		t.Fatal(err)
+	}
+	sandbox := model.Sandbox{ID: "sbx-1", ProjectID: project.ID, PoolID: "pool-registered", Name: "one", CreatedByUserID: "user-1"}
+	if err := db.Write.Create(&sandbox).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The schema those rows were written under: no platform anywhere.
+	for _, table := range []string{"pools", "harness_configs", "sandboxes"} {
+		if err := db.Write.Exec("ALTER TABLE " + table + " DROP COLUMN platform").Error; err != nil {
+			t.Fatalf("drop %s.platform: %v", table, err)
+		}
+	}
+
+	for range 2 {
+		if err := db.Migrate(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assumed := platform.Pool()
+	var pools []model.Pool
+	if err := db.Write.Order("id").Find(&pools).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, pool := range pools {
+		want := assumed
+		if pool.ID == "pool-new" {
+			want = platform.Platform{}
+		}
+		if pool.Platform != want {
+			t.Errorf("pool %s platform = %q, want %q", pool.ID, pool.Platform, want)
+		}
+	}
+	var gotConfig model.HarnessConfig
+	if err := db.Write.First(&gotConfig, "id = ?", config.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotConfig.Platform != assumed {
+		t.Errorf("harness config platform = %q, want %q", gotConfig.Platform, assumed)
+	}
+	var gotSandbox model.Sandbox
+	if err := db.Write.First(&gotSandbox, "id = ?", sandbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotSandbox.Platform != assumed {
+		t.Errorf("sandbox platform = %q, want %q", gotSandbox.Platform, assumed)
+	}
+
+	// A start interrupted after the columns were added, by which time the
+	// pool's agent had declared what it really hosts: the sandbox takes that.
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	if err := db.Write.Model(&model.Pool{}).Where("id = ?", "pool-registered").UpdateColumn("platform", riscv).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.Model(&model.Sandbox{}).Where("id = ?", sandbox.ID).UpdateColumn("platform", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.First(&gotSandbox, "id = ?", sandbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotSandbox.Platform != riscv {
+		t.Errorf("sandbox platform = %q, want its pool's %q", gotSandbox.Platform, riscv)
 	}
 }

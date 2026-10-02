@@ -391,8 +391,12 @@ type SandboxImageTarget struct {
 // always reported as upgradable, whatever its digest: what the upgrade changes
 // for it is adopting the config, and its digest matching already is not the
 // same as it being converged (ADR 0032 §4).
+//
+// A config of another platform than the sandbox's is nothing to move to: its
+// image is another platform's, and a sandbox never leaves its own
+// (ADR 0145 §1).
 func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (SandboxImageTarget, bool) {
-	if sandbox.HarnessMode == "config" || config == nil {
+	if sandbox.HarnessMode == "config" || config == nil || config.Platform != sandbox.Platform {
 		return SandboxImageTarget{}, false
 	}
 	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
