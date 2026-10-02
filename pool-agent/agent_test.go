@@ -677,7 +677,11 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		resp, err := httpClient.Get(baseURL + "/healthz")
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/healthz", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := httpClient.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
