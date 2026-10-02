@@ -24,7 +24,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolserver "github.com/discobox-ai/discobox/pool-agent/server"
 	agentsystemd "github.com/discobox-ai/discobox/pool-agent/systemd"
-	"github.com/discobox-ai/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 // RunProxy runs the pool-scoped proxy server. It is the entrypoint for the

@@ -34,7 +34,7 @@ on:
       # The kernel is built by vm-kernel.yml and changes on its own clock;
       # nothing under it reaches this build.
       - "!vm-image/kernel/**"
-      - "pool-agent/vsock/**"
+      - "vsock/**"
       - "pool-agent/cmd/discobox-vsock-guest/**"
       - ".github/workflows/vm-image.yml"
   # A VM image release is mostly a distribution snapshot, so it is rebuilt on a

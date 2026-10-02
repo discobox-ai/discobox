@@ -18,8 +18,8 @@ import (
 	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/layout"
-	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 const (

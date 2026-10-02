@@ -20,9 +20,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-cp-relay` | wslc guest half of the control-plane channel: multiplexes the guest's stdio with `cpmux` and serves the Unix socket the agent reaches the control plane through. |
 | `.` | Root `poolagent` Go package: boot contract, registration flow, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, and on-demand start (`autostart.go`). |
-| `wire` | Transport resolution from a URL scheme (`http`, `https`, `vsock`, `unix`) for both the control-plane dial and the agent's own listener. |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
-| `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
 | `poolauth` | Pool-to-control-plane assertions: PASETO v4.public signed with the pool's Ed25519 key. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
 | `githttp` | `git http-backend` CGI bridge behind the `git-repositories`/`git-origins` routes, run as the repository's owner. |
@@ -42,7 +40,8 @@ from the in-sandbox `sandbox-agent` API.
 1. The pool provider starts the pool container with the `poolagent.Bootstrap`
    contract rendered as `DISCOBOX_*` environment variables, which `FromEnv`
    reads back. The control plane and the agent's listener are one URL each, and
-   the scheme alone picks the transport (`wire`).
+   the scheme alone picks the transport ([`wire`](../wire), in the root
+   module).
 2. Before systemd boots, the agent writes the proxy unit's environment and
    prepares the proxy CA bundle and the BuildKit/registry configuration, then
    starts the child systemd namespace and the `childproc` reaper.

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/pool-agent/wire"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
+	"github.com/discobox-ai/discobox/wire"
 
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )

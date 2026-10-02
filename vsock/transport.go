@@ -1,6 +1,8 @@
 // Package vsock provides the guest-side AF_VSOCK transport used by local
-// libkrun and vz pools. HTTP remains the application protocol; this package only
-// supplies net.Listener and net.Conn implementations.
+// libkrun and vz pools, and by a sandbox that reaches its pool over VSOCK. HTTP
+// and TLS remain the application protocols; this package only supplies
+// net.Listener and net.Conn implementations. A component that dials a URL
+// reaches it through wire, from a vsock:// scheme.
 package vsock
 
 import (
@@ -21,10 +23,6 @@ const (
 	// the shared guest kernel even when the character device is not mounted
 	// into the container.
 	AnyCID = ^uint32(0)
-
-	// EnvControlPlanePort is inherited by the pool proxy systemd unit so all
-	// guest-to-control-plane HTTP uses the same VSOCK transport.
-	EnvControlPlanePort = "DISCOBOX_CONTROL_PLANE_VSOCK_PORT"
 )
 
 // Listen binds a guest AF_VSOCK listener on port.

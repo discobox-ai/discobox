@@ -29,7 +29,7 @@ ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
-COPY pool-agent/vsock ./pool-agent/vsock
+COPY vsock ./vsock
 COPY pool-agent/cmd/discobox-vsock-guest ./pool-agent/cmd/discobox-vsock-guest
 WORKDIR /src/pool-agent
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \

@@ -31,6 +31,8 @@ COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
 COPY tarsums ./tarsums
 COPY tools ./tools
+COPY vsock ./vsock
+COPY wire ./wire
 COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \

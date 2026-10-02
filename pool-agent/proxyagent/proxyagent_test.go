@@ -86,6 +86,39 @@ func TestEnsureSandboxMaterialStagesDNS(t *testing.T) {
 	}
 }
 
+// A Docker pool's sandboxes reach its services over TCP by the pool's DNS
+// name, so every bridge config names an https URL. The server name is stated
+// beside it because it is what a vsock or unix URL could not carry, and it is
+// the name the pool's one server certificate is issued for.
+func TestEnsureSandboxMaterialStagesPoolEndpoints(t *testing.T) {
+	withTestRoot(t)
+
+	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	if err != nil {
+		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+	}
+	for file, want := range map[string]struct{ pool, creds string }{
+		"bridge.json":          {"https://discobox-pool-proxy:17080", "https://discobox-pool-proxy:17083"},
+		"bridge-docker.json":   {"https://discobox-pool-proxy:17080", ""},
+		"bridge-buildkit.json": {"https://discobox-pool-proxy:17081", ""},
+	} {
+		data, err := os.ReadFile(resolve(filepath.Join(material.MountSource, file)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got bridgeConfig
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.PoolProxyURL != want.pool || got.CredentialsURL != want.creds {
+			t.Fatalf("%s: workerProxyUrl = %q, credentialsUrl = %q; want %q, %q", file, got.PoolProxyURL, got.CredentialsURL, want.pool, want.creds)
+		}
+		if got.ServerName != ServerName {
+			t.Fatalf("%s: serverName = %q, want %q", file, got.ServerName, ServerName)
+		}
+	}
+}
+
 func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
 	root := withTestRoot(t)
 
