@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
 )
 
 func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
@@ -647,6 +649,16 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	controlPlaneKey, _ := workerAgentTestSigner(t)
+	// A socket path of its own rather than a TCP port, so the test can dial
+	// what Serve listens on without racing another listener for the port.
+	// os.MkdirTemp keeps it short of the socket path limit t.TempDir can pass.
+	dir, err := os.MkdirTemp("", "pool-agent-serve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	listenURL := "unix://" + filepath.Join(dir, "agent.sock")
 	client := &stateRecordingClient{reports: make(chan poolagent.SandboxStateRequest, 8)}
 	served := make(chan error, 1)
 	go func() {
@@ -654,9 +666,34 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 			ControlPlaneURL: "http://control.example",
 			ProjectID:       "project-1",
 			PoolID:          "pool-1",
-			AgentListenURL:  "http://127.0.0.1:0",
+			ControlPlaneKey: controlPlaneKey,
+			AgentListenURL:  listenURL,
 		}, &poolagent.Registration{PrivateKey: privateKey}, runtime, client)
 	}()
+
+	baseURL, httpClient, err := wire.HTTPClient(listenURL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := httpClient.Get(baseURL + "/healthz")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		select {
+		case err := <-served:
+			t.Fatalf("Serve() returned before serving: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Serve() never answered /healthz: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	select {
 	case report := <-client.reports:
@@ -666,14 +703,15 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 		if len(report.States) != 1 || report.States[0].SandboxID != "sandbox-1" || report.States[0].State != sandboxruntime.StateRunning {
 			t.Fatalf("first report states = %+v, want sandbox-1 running", report.States)
 		}
-	case err := <-served:
-		t.Fatalf("Serve() returned before reporting: %v", err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("Serve() reported no sandbox state")
 	}
 	cancel()
 	select {
-	case <-served:
+	case err := <-served:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Serve() = %v, want context.Canceled once its context ended", err)
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Serve() did not return once its context ended")
 	}

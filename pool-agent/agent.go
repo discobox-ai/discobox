@@ -309,7 +309,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 			})
 		})
 		// Provisioning progress rides the same channel, reported by whoever is
-		// doing the work rather than derived from the Docker event stream, so it
+		// doing the work rather than derived from what the runtime observes, so it
 		// is a sink to hold rather than a stream to watch (ADR 0039). It shares
 		// the boot id and sequence, so the control plane orders progress and
 		// state against each other exactly as it already orders state.

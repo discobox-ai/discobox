@@ -2671,8 +2671,9 @@ func (r *MemorySandboxRuntime) WatchSandboxProgress(ctx context.Context, _ func(
 	<-ctx.Done()
 }
 
-// WatchSandboxVolumes reaps nothing: a tree here goes when its sandbox is
-// deleted, and there is no disk for one to be left behind on.
+// WatchSandboxVolumes reaps nothing. The archived and imported trees this
+// runtime holds stay until DeleteSandbox, whether the control plane holds them
+// or not.
 func (r *MemorySandboxRuntime) WatchSandboxVolumes(ctx context.Context, _ *slog.Logger, _ HeldSandboxes) {
 	<-ctx.Done()
 }
