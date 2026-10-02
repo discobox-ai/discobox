@@ -145,7 +145,7 @@ func (r *DockerSandboxRuntime) startUnlessRunning(ctx context.Context, sandboxID
 		// An archived sandbox has no container, so the lookup fails first. The
 		// archive check answers the more useful question, and only for a
 		// sandbox this pool actually holds.
-		if errors.Is(err, ErrNotFound) && r.SandboxIsArchived(sandboxID) {
+		if errors.Is(err, ErrNotFound) && r.isArchived(sandboxID) {
 			return false, ErrArchived
 		}
 		return false, err
@@ -190,7 +190,7 @@ func (r *DockerSandboxRuntime) sandboxContainer(ctx context.Context, sandboxID s
 		if !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
-		if r.SandboxIsArchived(sandboxID) || !r.hostsSandbox(sandboxID) {
+		if r.isArchived(sandboxID) || !r.hostsSandbox(sandboxID) {
 			return nil, nil
 		}
 		if !time.Now().Before(deadline) {
@@ -210,7 +210,7 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	// Archiving removes the container, so reaching here with a marked tree means
 	// a container survived a partial archive. Starting it would silently undo the
 	// archive and put the sandbox back beyond the reach of its retention policy.
-	if r.SandboxIsArchived(sandboxID) {
+	if r.isArchived(sandboxID) {
 		return ErrArchived
 	}
 	sb, err := r.GetSandbox(ctx, sandboxID)
@@ -228,10 +228,10 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	// Announce the transition before making it. The Docker event only arrives
 	// once the container is up, and waitForSandboxAgent can take a while after
 	// that, so without this nobody could ever observe `starting`.
-	r.PublishSandboxState(ctx, sandboxID, StateStarting)
+	r.publishSandboxState(ctx, sandboxID, StateStarting)
 	boot := r.beginBoot(sandboxID)
 	if _, err := r.client.ContainerStart(ctx, sb.ID, client.ContainerStartOptions{}); err != nil {
-		r.PublishSandboxState(ctx, sandboxID, StateStopped)
+		r.publishSandboxState(ctx, sandboxID, StateStopped)
 		r.endBoot(sandboxID, boot, err)
 		return err
 	}
@@ -326,7 +326,7 @@ func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string)
 	if err != nil {
 		return err
 	}
-	r.PublishSandboxState(ctx, sandboxID, StateStopping)
+	r.publishSandboxState(ctx, sandboxID, StateStopping)
 	timeout := sandboxStopTimeoutSeconds
 	_, err = r.client.ContainerStop(ctx, sb.ID, client.ContainerStopOptions{Timeout: &timeout})
 	return err

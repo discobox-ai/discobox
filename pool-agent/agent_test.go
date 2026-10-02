@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,6 +28,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
 )
 
 func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
@@ -616,4 +619,104 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// stateRecordingClient is a control plane that takes state reports and holds
+// no sandbox.
+type stateRecordingClient struct {
+	reports chan poolagent.SandboxStateRequest
+}
+
+func (c *stateRecordingClient) ReportSandboxStates(_ context.Context, req poolagent.SandboxStateRequest) error {
+	c.reports <- req
+	return nil
+}
+
+func (c *stateRecordingClient) ListHeldSandboxes(context.Context, poolagent.HeldSandboxesRequest) ([]string, error) {
+	return nil, nil
+}
+
+// Serve knows its runtime only as sandboxruntime.Runtime, so a runtime that is
+// not Docker drives the state channel the same way.
+func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runtime := poolagent.NewMemorySandboxRuntime()
+	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}); err != nil {
+		t.Fatalf("CreateSandbox() error = %v", err)
+	}
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlPlaneKey, _ := workerAgentTestSigner(t)
+	// A socket path of its own rather than a TCP port, so the test can dial
+	// what Serve listens on without racing another listener for the port.
+	// os.MkdirTemp keeps it short of the socket path limit t.TempDir can pass.
+	dir, err := os.MkdirTemp("", "pool-agent-serve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	listenURL := "unix://" + filepath.Join(dir, "agent.sock")
+	client := &stateRecordingClient{reports: make(chan poolagent.SandboxStateRequest, 8)}
+	served := make(chan error, 1)
+	go func() {
+		served <- poolagent.Serve(ctx, slog.New(slog.DiscardHandler), poolagent.Bootstrap{
+			ControlPlaneURL: "http://control.example",
+			ProjectID:       "project-1",
+			PoolID:          "pool-1",
+			ControlPlaneKey: controlPlaneKey,
+			AgentListenURL:  listenURL,
+		}, &poolagent.Registration{PrivateKey: privateKey}, runtime, client)
+	}()
+
+	baseURL, httpClient, err := wire.HTTPClient(listenURL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/healthz", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := httpClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		select {
+		case err := <-served:
+			t.Fatalf("Serve() returned before serving: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Serve() never answered /healthz: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	select {
+	case report := <-client.reports:
+		if !report.Complete || report.BootID == "" || report.Sequence != 1 {
+			t.Fatalf("first report = complete %v, boot %q, sequence %d; want the boot's first complete sync", report.Complete, report.BootID, report.Sequence)
+		}
+		if len(report.States) != 1 || report.States[0].SandboxID != "sandbox-1" || report.States[0].State != sandboxruntime.StateRunning {
+			t.Fatalf("first report states = %+v, want sandbox-1 running", report.States)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve() reported no sandbox state")
+	}
+	cancel()
+	select {
+	case err := <-served:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Serve() = %v, want context.Canceled once its context ended", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve() did not return once its context ended")
+	}
 }

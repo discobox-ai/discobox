@@ -48,9 +48,9 @@ func (r *DockerSandboxRuntime) sandboxRoot(sandboxID string) string {
 	return resolve(layout.Sandbox(r.projectID, r.poolID, sandboxID))
 }
 
-// SandboxIsArchived reports whether this pool holds the given sandbox as
+// isArchived reports whether this pool holds the given sandbox as
 // archived data.
-func (r *DockerSandboxRuntime) SandboxIsArchived(sandboxID string) bool {
+func (r *DockerSandboxRuntime) isArchived(sandboxID string) bool {
 	return sandboxIsArchived(r.sandboxRoot(sandboxID))
 }
 
@@ -105,7 +105,7 @@ func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID str
 		return err
 	}
 	if err == nil {
-		r.PublishSandboxState(ctx, sandboxID, StateStopping)
+		r.publishSandboxState(ctx, sandboxID, StateStopping)
 		if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 			return err
 		}

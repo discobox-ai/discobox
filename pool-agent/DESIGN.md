@@ -28,7 +28,7 @@ from the in-sandbox `sandbox-agent` API.
 | `githttp` | `git http-backend` CGI bridge behind the `git-repositories`/`git-origins` routes, run as the repository's owner. |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
-| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server, including the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, Git paths, the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
@@ -59,9 +59,11 @@ from the in-sandbox `sandbox-agent` API.
 6. The first status report is synchronous, so a pool that cannot mark itself
    ready fails its boot. When it is rejected under a stored key, the agent
    registers that same key again (`ForceRegister`) and retries.
-7. The agent starts the proxy unit's resolve-token refresher; the state,
-   progress, status-poll and resource loops; the proxy-material and image
-   reclaim loops; and finally the pool-local HTTP server.
+7. The agent starts the proxy unit's resolve-token refresher, builds its
+   Docker sandbox runtime and starts that runtime's image reclaim loop.
+8. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
+   progress, tree-reaper, status-poll and resource loops and the proxy-material
+   reclaim loop, and finally the pool-local HTTP server.
 
 After registration, the pool host reports scheduling status every 30s
 (`/api/pools/{poolId}/status`). It sets `ready`, `schedulable`, and `degraded`
@@ -205,6 +207,12 @@ The agent is the only component that can see whether a sandbox is running, so it
 says so on its own schedule rather than in reply to anything (ADR 0017 §10). The
 control plane holds no opinion about power state and never asks for one.
 
+The channel is part of `sandboxruntime.Runtime`: `Serve` subscribes with
+`WatchSandboxStates` and holds the progress sink with `WatchSandboxProgress`,
+and stamps every batch with its boot ID and sequence. Where an observation comes
+from is the runtime's — Docker events and container listings below, a
+hypervisor for a host-VM runtime — and nothing above the interface knows.
+
 Provisioning **progress** rides the same channel in its own `progress` array
 (ADR 0039): work underway that has no state transition to announce it. It is
 reported by whoever is doing the work rather than derived from the Docker event
@@ -232,7 +240,7 @@ Waiting for the sandbox agent is the last phase this agent can see. What happens
 after it is the sandbox agent's own boot, which reports on no channel this one
 owns; a client names that stage by inference instead (ADR 0060).
 
-Three deliveries, all load-bearing:
+The Docker runtime makes three deliveries, all load-bearing:
 
 - **Deltas**, from the Docker event stream — `start`, `die`, `stop`, `destroy`.
   `destroy` alone is not enough: a container that stops and stays put emits
@@ -1247,6 +1255,10 @@ standing loop (`WatchImages`). It owns that daemon, images land on it by sync an
 by pull, and they outlive the pool container in the pool's `/var/lib/docker`
 volume — so nothing else is positioned to clean them up, least of all a control
 plane that may be unreachable.
+
+The loop is the Docker runtime's, not part of `sandboxruntime.Runtime`, and
+`RunAgent` starts it beside the runtime it builds: a runtime that boots no OCI
+image has nothing to reclaim.
 
 `imagereap` holds the rules and is shared with the server, which reaps the
 daemon pool containers run *on* the same way. An image goes when it carries
