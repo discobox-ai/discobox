@@ -62,11 +62,11 @@ func TestComputeGitStatusCleanRepo(t *testing.T) {
 // sources are owned by the sandbox's resolved non-root user, so git status
 // must run as that user or its dubious-ownership guard refuses every source.
 func TestComputeGitStatusRunsAsGivenUser(t *testing.T) {
-	// The credential this asserts on is a uid/gid pair, which os/exec refuses
-	// to set on Windows ("exec user is not supported on windows"). The whole
-	// premise belongs to the Linux guest sandbox-agent serves.
-	if runtime.GOOS == "windows" {
-		t.Skip("a uid/gid credential cannot be applied on Windows; sandbox-agent runs in the Linux guest")
+	// The credential this asserts on is a uid/gid pair, which only a Linux
+	// sandbox has: elsewhere a sandbox has one account, the agent runs as it,
+	// and execs.AgentSysProcAttr gives no credential at all (ADR 0145 §5).
+	if runtime.GOOS != "linux" {
+		t.Skip("a uid/gid credential is applied only in a Linux sandbox")
 	}
 	dir := t.TempDir()
 	runGitCommand(t, dir, "init", "-b", "main")

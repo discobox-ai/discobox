@@ -185,8 +185,17 @@ type UnitStatus struct {
 	ExitedAt  *time.Time
 }
 
-type AuditRecorder interface {
+// ExecEventRecorder records one event in an exec's audit trail: the exec's id,
+// the event's type, its message, and its details. The server process records
+// through AuditRecorder; the exec-shim, its own OS process, is given one of its
+// own (ShimConfig.Events) for what only the shim sees -- a signal a client sent
+// down the attach stream.
+type ExecEventRecorder interface {
 	RecordExecEvent(context.Context, string, string, string, map[string]any) error
+}
+
+type AuditRecorder interface {
+	ExecEventRecorder
 	ObserveExec(context.Context, Exec) error
 	// SaveExecRecord persists an exec's immutable identity/metadata once at
 	// create; LoadExecRecords reads it back (joined with latest status). Together
@@ -1138,7 +1147,11 @@ func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]str
 //
 // An exec needs the whole identity, not just a credential: its environment
 // carries USER, LOGNAME and HOME, and `~` in a workdir expands against the home
-// of whoever it actually runs as.
+// of whoever it actually runs as. What the whole identity is, is the
+// platform's (runuser.Identity): on Linux ids, groups, name and home; where a
+// sandbox has one account, that account's name and home, and a request naming
+// another user, a uid or a group set is refused here with that reason rather
+// than run as the account anyway (ADR 0145 §5).
 func (m *Manager) ResolveUser(req CreateRequest) (*User, error) {
 	layers := m.layers(req.User)
 	if !sandboxuser.Named(layers.Manifest) && !sandboxuser.Named(layers.Request) {
@@ -1150,7 +1163,7 @@ func (m *Manager) ResolveUser(req CreateRequest) (*User, error) {
 		// happens to have a passwd entry -- and saying nothing cannot fail.
 		return nil, nil
 	}
-	resolved, err := runuser.Resolve(layers, sandboxuser.Complete)
+	resolved, err := runuser.Resolve(layers, runuser.Identity)
 	if err != nil {
 		return nil, err
 	}

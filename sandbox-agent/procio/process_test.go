@@ -134,7 +134,7 @@ func TestExitCodeUsesShellConventionForSignals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := start(t, Options{Command: []string{"sleep", "30"}, Env: os.Environ()})
 			waitForState(t, p, "S")
-			if err := p.Signal(tc.sig); err != nil {
+			if _, err := p.Signal(tc.sig); err != nil {
 				t.Fatalf("signal: %v", err)
 			}
 			if got := p.Wait().ExitCode; got != tc.want {
@@ -162,13 +162,22 @@ func TestSuspendStopsAnOrphanedProcessGroup(t *testing.T) {
 	p := start(t, Options{Command: []string{"sleep", "30"}, Env: os.Environ()})
 	waitForState(t, p, "S")
 
-	if err := p.Signal("TSTP"); err != nil {
+	suspended, err := p.Signal("TSTP")
+	if err != nil {
 		t.Fatalf("suspend: %v", err)
 	}
 	waitForState(t, p, "T")
+	// It is the mapping the exec's record reports.
+	if suspended.Delivered != "SIGSTOP" || !suspended.Mapped() {
+		t.Fatalf("suspend delivered %+v, want SIGSTOP reported as mapped", suspended)
+	}
 
-	if err := p.Signal("CONT"); err != nil {
+	resumed, err := p.Signal("CONT")
+	if err != nil {
 		t.Fatalf("resume: %v", err)
+	}
+	if resumed.Delivered != "SIGCONT" || resumed.Mapped() {
+		t.Fatalf("resume delivered %+v, want SIGCONT as asked", resumed)
 	}
 	waitForState(t, p, "S")
 }

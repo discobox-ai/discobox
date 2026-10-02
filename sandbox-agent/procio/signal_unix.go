@@ -5,7 +5,6 @@ package procio
 import (
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
 )
 
@@ -16,43 +15,28 @@ func terminateProcessGroup(cmd *exec.Cmd) {
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 }
 
-// signalProcessGroup maps a wire signal name onto the process group. The group
-// is the process's own: every process here starts in a new session, so
-// signaling the group reaches the command and anything it spawned.
-func signalProcessGroup(cmd *exec.Cmd, name string) error {
-	if cmd == nil || cmd.Process == nil {
-		return nil
+// posixSignals are the signals posixDeliveries delivers, by name.
+var posixSignals = map[string]syscall.Signal{
+	"SIGINT":  syscall.SIGINT,
+	"SIGTERM": syscall.SIGTERM,
+	"SIGKILL": syscall.SIGKILL,
+	"SIGHUP":  syscall.SIGHUP,
+	"SIGQUIT": syscall.SIGQUIT,
+	"SIGSTOP": syscall.SIGSTOP,
+	"SIGCONT": syscall.SIGCONT,
+}
+
+// signalProcessGroup delivers a wire signal name to the process group, as
+// posixDeliveries maps it. The group is the process's own: every process here
+// starts in a new session, so signaling the group reaches the command and
+// anything it spawned.
+func signalProcessGroup(cmd *exec.Cmd, name string) (Delivery, error) {
+	delivery := deliveryFor(posixDeliveries, name)
+	sig, ok := posixSignals[delivery.Delivered]
+	if !ok || cmd == nil || cmd.Process == nil {
+		return delivery, nil
 	}
-	trimmed := strings.TrimSpace(strings.ToUpper(name))
-	trimmed = strings.TrimPrefix(trimmed, "SIG")
-	switch trimmed {
-	case "INT":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
-	case "TERM":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-	case "KILL":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	case "HUP":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGHUP)
-	case "QUIT":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGQUIT)
-	case "TSTP":
-		// SIGSTOP, not SIGTSTP. Starting in a new session makes the process
-		// group orphaned by definition — no member has a parent in the same
-		// session — and the kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent
-		// to an orphaned group. SIGTSTP here would silently do nothing; SIGSTOP
-		// is never discarded, so a suspend from a client always lands.
-		//
-		// This is a client asking to stop a whole process. Ctrl-Z typed into a
-		// TTY process is a byte, not a signal: the line discipline delivers
-		// SIGTSTP to the foreground job, a child group of the shell that is not
-		// orphaned, which stops normally with its handler intact.
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGSTOP)
-	case "CONT":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGCONT)
-	default:
-		return nil
-	}
+	return delivery, syscall.Kill(-cmd.Process.Pid, sig)
 }
 
 // exitCodeFromState reports the exit status a shell would report. Go's ExitCode

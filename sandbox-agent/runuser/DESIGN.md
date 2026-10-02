@@ -5,7 +5,8 @@ somebody: **given what each layer asked for, who does the process actually run
 as?**
 
 Decision records: [ADR 0025](../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md),
-[ADR 0033](../../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md).
+[ADR 0033](../../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md),
+[ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md).
 
 The type, the layer precedence, and the `Fields` vocabulary belong to
 [`sandboxuser`](../../sandboxuser/DESIGN.md) in the root module. This package
@@ -27,16 +28,49 @@ u, err := runuser.Resolve(runuser.Layers{
 | Call | Use for |
 | --- | --- |
 | `Resolve(Layers, Fields) (User, error)` | Any identity you are about to launch a process as. |
-| `Current() *User` | The image layer: this process's own ids, nothing else. |
+| `Identity` | The fields a whole identity has on this platform — what a caller that launches *and* describes a process asks `Resolve` for. |
+| `Current() *User` | The image layer: this process's own ids on Linux; its own account by name and home elsewhere. |
 | `Groups([]string) []uint32` | Supplementary GIDs for a credential: unknown names dropped, duplicates collapsed. |
 | `LookupGroupID(string) (uint32, bool)` | One entry — a name or a numeric GID — to a GID. |
 | `LoginShell(string) (string, bool, error)` | The passwd shell field, which `os/user` does not expose; a missing entry is `false`, not an error. |
 
+## The platform seam
+
+How an identity is completed is the platform's. `Resolve`, `Current` and
+`Identity` are defined once per build (`platform_linux.go`,
+`platform_other.go`), so every platform has an implementation and no caller
+asks which one it got:
+
+| Platform | Resolver | An identity is |
+| --- | --- | --- |
+| Linux | `resolvePOSIX`: completion against `/etc/passwd` and `/etc/group`, below | uid, gid, groups, name, home (`sandboxuser.Complete`) |
+| darwin, windows | `resolveOneAccount` | the sandbox's one account: name and home |
+
+Off Linux a sandbox has one account and no POSIX ids
+([ADR 0145 §5](../../docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md)).
+The agent runs as that account and every exec inherits it, so nothing switches
+users and the resolution has exactly one answer — ADR 0025's contract, where
+the sandbox resolves its own identity, with nothing left to choose:
+
+- The image layer is the agent's own account (`os/user.Current`, a Windows
+  `DOMAIN\` prefix dropped).
+- The manifest names that account and nothing more. Naming another is an error
+  saying the sandbox was assembled wrong, not a switch.
+- A request may name the account again, or nothing. Another user, a uid, a
+  primary group, a group set or a home is a `*sandboxuser.OneAccountError`
+  naming the field and the platform — refused, never ignored.
+- Asking for `FieldUID`, `FieldGID` or `FieldGroups` is an `*UnresolvedError`:
+  they are not fields an identity has there, and a caller about to `setuid`
+  learns that instead of receiving a zero.
+
+Both resolvers build on every platform, so `resolveOneAccount` is tested on
+Linux; only the selection is per build.
+
 ## Declare what you cannot have
 
 `Fields` is the second half of the contract. A caller passes the set it
-genuinely needs (`sandboxuser.Credential` to launch, `sandboxuser.Complete` to
-also build `USER`/`LOGNAME`/`HOME`); anything required but undeterminable is an
+genuinely needs (`sandboxuser.Credential` to launch, `Identity` to also build
+`USER`/`LOGNAME`/`HOME`); anything required but undeterminable is an
 `*UnresolvedError` naming the field, and anything not required is cleared —
 absent rather than defaulted or half-filled.
 
@@ -47,6 +81,8 @@ creates it, then asks again for `Complete` and treats a failure as "no name or
 home yet" rather than an error.
 
 ## Rules it enforces
+
+These are the POSIX resolver's; the one-account resolver's are above.
 
 - **Ask, never default.** A missing id is read from the passwd entry. Never `0`,
   never `gid = uid` — that coincidence is a `useradd` default, not a fact.
@@ -68,7 +104,8 @@ home yet" rather than an error.
 
 This is the **only** package that resolves against the image's account database
 (ADR 0033 §6). `execs.userCredential` requires the ids rather than re-deriving
-them, and the login-shell parse lives here rather than in `execs`, so faking the
+them — on Linux; where a sandbox has one account it gives no credential at all,
+since the exec inherits the agent's account — and the login-shell parse lives here rather than in `execs`, so faking the
 database fakes it for every consumer — including the path that calls `setuid`.
 
 Consumers are `boot` (`resolveIdentity`) and `execs` (`Manager.ResolveUser`,
@@ -81,8 +118,9 @@ before the account exists. That is a different question from resolution.
 
 ## Testing
 
-`FixedDatabase() (restore func())` swaps the lookups, the passwd file, and the
-effective ids for a fixed table; use it with `t.Cleanup` from any package.
+`FixedDatabase() (restore func())` swaps the lookups, the passwd file, the
+effective ids, and the current OS account for a fixed table; use it with
+`t.Cleanup` from any package.
 `FixedEffectiveIDs(uid, gid) (restore func())` overrides just the image layer,
 for an image running as a uid with no passwd entry.
 

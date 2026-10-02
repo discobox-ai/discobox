@@ -61,7 +61,7 @@ func FixedDatabase() (restore func()) {
 	}
 
 	prevName, prevID, prevGroup := lookupUserByName, lookupUserByID, lookupGroupByName
-	prevIDs, prevPasswd := effectiveIDs, passwdPath
+	prevIDs, prevPasswd, prevCurrent := effectiveIDs, passwdPath, currentOSUser
 	lookupUserByName = func(name string) (*osuser.User, error) {
 		if u, ok := users[name]; ok {
 			return &u, nil
@@ -81,12 +81,18 @@ func FixedDatabase() (restore func()) {
 		return nil, osuser.UnknownGroupError(name)
 	}
 	effectiveIDs = func() (int64, int64) { return 1500, 1600 }
+	// The same account by name, for a platform whose image layer is an account
+	// rather than a pair of ids.
+	currentOSUser = func() (*osuser.User, error) {
+		u := users["image"]
+		return &u, nil
+	}
 	if passwdFile != "" {
 		passwdPath = passwdFile
 	}
 	return func() {
 		lookupUserByName, lookupUserByID, lookupGroupByName = prevName, prevID, prevGroup
-		effectiveIDs, passwdPath = prevIDs, prevPasswd
+		effectiveIDs, passwdPath, currentOSUser = prevIDs, prevPasswd, prevCurrent
 		if dir != "" {
 			_ = os.RemoveAll(dir)
 		}

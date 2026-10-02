@@ -27,17 +27,25 @@ func InAccountRange(id int64) bool {
 // and chowns them to that uid; with none it leaves them root's (ADR 0141).
 var errAccountWithoutUID = errors.New("a sandbox user that names an account must give its uid")
 
-// ValidateAccount reports whether u can be a sandbox's own user -- the one a
-// sandbox create records and boot provisions -- on top of Validate's in-layer
-// check. It is stricter than an exec's user, which names an account the sandbox
-// already has and may be anyone in it.
+// ValidateAccount reports whether u can be the own user of a sandbox whose
+// platform's OS is goos -- the one a sandbox create records and boot
+// provisions -- on top of Validate's in-layer check. It is stricter than an
+// exec's user, which names an account the sandbox already has and may be
+// anyone in it.
 //
-// Naming an account requires its uid, and each id must be root or in
+// On Linux, naming an account requires its uid, and each id must be root or in
 // [AccountIDMin, AccountIDMax]. An id outside them is an error, never clamped:
 // which id to use instead is the caller's to choose, and a client that has no
 // usable one of its own picks it before sending (ADR 0141). A user that names
 // only groups keeps the image's account and needs no uid.
-func (u *User) ValidateAccount() error {
+//
+// Elsewhere the sandbox has one account, which its template provisions and
+// its manifest names, so the user may name that account and nothing else: no
+// ids, no groups, no home (ValidateOneAccount, ADR 0145 §5).
+func (u *User) ValidateAccount(goos string) error {
+	if !HasPOSIXIDs(goos) {
+		return u.ValidateOneAccount(goos, "")
+	}
 	if err := u.Validate(); err != nil || u == nil {
 		return err
 	}

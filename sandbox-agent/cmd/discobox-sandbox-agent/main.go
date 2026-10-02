@@ -465,6 +465,7 @@ func runExecShim(args []string) int {
 	}
 	defer logStore.Close()
 	cfg.Logs = logStore
+	cfg.Events = logStore
 	// A flush failure (e.g. sqlite's busy_timeout exceeded under multi-process
 	// write contention) otherwise drops a bucket's transcript data with no
 	// signal at all; log it so it's at least observable.

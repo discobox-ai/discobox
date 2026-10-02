@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -509,13 +511,15 @@ func TestRunShimDoesNotLoseOutputRacingAttach(t *testing.T) {
 // A suspend request must actually stop the process. Every exec runs with Setsid,
 // which by definition orphans its process group, and the kernel discards
 // SIGTSTP sent to an orphaned group — so the obvious mapping silently does
-// nothing. This pins the stop and the resume.
+// nothing. This pins the stop and the resume, and that the mapping is said in
+// the exec's audit trail while a signal delivered as itself is not.
 func TestRunShimSuspendAndResume(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("process state is read from /proc")
 	}
 	dir := shimDir(t)
 	logs := newFakeLogSink()
+	events := &recordedEvents{}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	socketPath := filepath.Join(dir, "shim.sock")
@@ -528,6 +532,7 @@ func TestRunShimSuspendAndResume(t *testing.T) {
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
 			Logs:        logs,
+			Events:      events,
 		})
 	}()
 
@@ -548,6 +553,20 @@ func TestRunShimSuspendAndResume(t *testing.T) {
 		t.Fatalf("write resume frame: %v", err)
 	}
 	waitForProcessState(t, pid, "S", "resume did not restart the process")
+
+	// The frames are applied in order, so by the time the resume has landed
+	// the suspend's event has been recorded, and the resume recorded none.
+	recorded := events.snapshot()
+	if len(recorded) != 1 {
+		t.Fatalf("events = %+v, want the suspend's mapping alone", recorded)
+	}
+	got := recorded[0]
+	if got.execID != "exec_suspend" || got.typ != "exec.signal.mapped" ||
+		got.details["signal"] != "TSTP" || got.details["delivered"] != "SIGSTOP" ||
+		!strings.Contains(got.message, "signal TSTP delivered as SIGSTOP: sleep 30") ||
+		!strings.Contains(fmt.Sprint(got.details["reason"]), "orphaned") {
+		t.Fatalf("event = %+v, want TSTP recorded as delivered by SIGSTOP, and why", got)
+	}
 
 	_ = reader
 	cancel()
@@ -845,4 +864,28 @@ func attachShimConnForTest(ctx context.Context, t *testing.T, socketPath string)
 	}
 	_ = resp.Body.Close()
 	return conn, reader
+}
+
+// recordedEvents is an ExecEventRecorder that keeps what it was given.
+type recordedEvents struct {
+	mu     sync.Mutex
+	events []recordedEvent
+}
+
+type recordedEvent struct {
+	execID, typ, message string
+	details              map[string]any
+}
+
+func (r *recordedEvents) RecordExecEvent(_ context.Context, execID, typ, message string, details map[string]any) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, recordedEvent{execID: execID, typ: typ, message: message, details: details})
+	return nil
+}
+
+func (r *recordedEvents) snapshot() []recordedEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]recordedEvent(nil), r.events...)
 }

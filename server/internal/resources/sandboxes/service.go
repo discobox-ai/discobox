@@ -177,8 +177,11 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	// The account boot creates, and the one the pool agent chowns a source tree
 	// to before the sandbox exists; a user it cannot create with a usable uid
 	// is refused here rather than failing, or landing on root, later (ADR 0141).
+	// The rule is the sandbox's platform's, and every sandbox this control plane
+	// records is a Linux one: a platform without POSIX ids refuses any user but
+	// its one account (ADR 0145 §5).
 	user := services.SandboxUserToModel(config.User)
-	if err := user.ValidateAccount(); err != nil {
+	if err := user.ValidateAccount("linux"); err != nil {
 		return nil, err
 	}
 	// Names are unique within a project (idx_sandbox_project_name) because they

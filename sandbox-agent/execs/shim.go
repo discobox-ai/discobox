@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -37,12 +38,17 @@ type ShimConfig struct {
 	// Logs fails (see AsyncLogger) — otherwise that bucket's data is dropped
 	// with no signal at all.
 	OnLogFlushError func(error)
-	Rows            uint16
-	Cols            uint16
-	TTY             bool
-	Env             map[string]string
-	User            *User
-	Metadata        map[string]string
+	// Events records what this exec's shim alone sees in the exec's audit
+	// trail: a signal the platform could not deliver as asked, and what it
+	// delivered instead. Like Logs it is the shim's own connection to the
+	// sandbox's database.
+	Events   ExecEventRecorder
+	Rows     uint16
+	Cols     uint16
+	TTY      bool
+	Env      map[string]string
+	User     *User
+	Metadata map[string]string
 }
 
 type shimRuntime struct {
@@ -506,12 +512,55 @@ func (r *shimRuntime) handleAttachFrame(next frame.Frame) error {
 		if proc == nil {
 			return fmt.Errorf("exec has not started")
 		}
-		return proc.Signal(string(next.Payload))
+		delivery, err := proc.Signal(string(next.Payload))
+		if delivery.Mapped() {
+			r.recordSignal(delivery)
+		}
+		return err
 	case frame.CloseInput:
 		r.closeInput()
 		return nil
 	default:
 		return fmt.Errorf("unknown frame type %d", next.Type)
+	}
+}
+
+// signalEventTimeout bounds recording a mapped signal, which happens on the
+// attach stream's frame path: a busy database must not hold up the frames
+// behind it for longer than the write is worth.
+const signalEventTimeout = 5 * time.Second
+
+// recordSignal says in the exec's audit trail that a signal a client sent was
+// carried by something other than itself, or by nothing, and why. Without it
+// an interrupt that ended a Windows process outright, or a request the platform
+// could not carry at all, would look like the exec simply doing that on its own
+// (ADR 0145 §4). Failing to record is logged, not returned: whatever the
+// platform could do has been done, and an attach must not fail over its audit
+// row.
+func (r *shimRuntime) recordSignal(delivery procio.Delivery) {
+	if r.cfg.Events == nil {
+		return
+	}
+	message := "signal " + delivery.Requested + " delivered as " + delivery.Delivered
+	typ := "exec.signal.mapped"
+	if delivery.Delivered == "" {
+		message = "signal " + delivery.Requested + " not delivered"
+		typ = "exec.signal.undelivered"
+	}
+	r.mu.Lock()
+	status := r.status
+	r.mu.Unlock()
+	if what := describeExec(status); what != "" {
+		message += ": " + what
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), signalEventTimeout)
+	defer cancel()
+	if err := r.cfg.Events.RecordExecEvent(ctx, r.cfg.ExecID, typ, message, map[string]any{
+		"signal":    delivery.Requested,
+		"delivered": delivery.Delivered,
+		"reason":    delivery.Reason,
+	}); err != nil {
+		slog.Error("record exec signal", "execID", r.cfg.ExecID, "signal", delivery.Requested, "error", err)
 	}
 }
 

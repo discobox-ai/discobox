@@ -80,7 +80,7 @@ func TestParseRunUserIdentityIsAlwaysAnAccountTheAPIAccepts(t *testing.T) {
 			t.Fatalf("parseRunUserIdentity(%+v) asked for nobody", u)
 		}
 		sent := sandboxuser.User{Name: identity.Name, UID: sandboxuser.ID(identity.UID), GID: sandboxuser.ID(identity.GID), HomeDirectory: identity.HomeDirectory}
-		if err := sent.ValidateAccount(); err != nil {
+		if err := sent.ValidateAccount("linux"); err != nil {
 			t.Fatalf("parseRunUserIdentity(%+v) = %#v, which the API refuses: %v", u, identity, err)
 		}
 	}
