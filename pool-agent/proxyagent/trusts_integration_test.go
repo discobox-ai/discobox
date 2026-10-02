@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -102,7 +103,7 @@ func (f *fakeTrustControlPlane) approve() {
 func TestTrustRequestProbesThenGrantedPinTakesEffect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	withTestRoot(t)
+	root := withTestRoot(t)
 
 	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "ok")
@@ -113,11 +114,11 @@ func TestTrustRequestProbesThenGrantedPinTakesEffect(t *testing.T) {
 	fake := &fakeTrustControlPlane{t: t}
 	controlPlaneServer := httptest.NewServer(fake)
 	defer controlPlaneServer.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlaneServer.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlaneServer.URL, "tok"); err != nil {
 		t.Fatalf("write resolve context: %v", err)
 	}
 
-	bundle, err := PrepareBundle(testProjectID, testPoolID)
+	bundle, err := PrepareBundle(root, testProjectID, testPoolID)
 	if err != nil {
 		t.Fatalf("prepare bundle: %v", err)
 	}
@@ -129,16 +130,16 @@ func TestTrustRequestProbesThenGrantedPinTakesEffect(t *testing.T) {
 	cfg := proxy.DefaultConfig()
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
-	cfg.DatabaseDSN = resolve(testProjectID + "-audit.db")
+	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
 	cfg.Recording.Enabled = false
-	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(testProjectID, testPoolID, live))
+	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(root, testProjectID, testPoolID, live))
 	if err != nil {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
 	policy := newPolicyPublisher(server, cfg, live, func(err error) { t.Errorf("apply proxy config: %v", err) })
 	go func() { _ = server.ListenAndServe() }()
-	controlPlane := newControlPlaneCredentials(testProjectID, testPoolID)
+	controlPlane := newControlPlaneCredentials(root, testProjectID, testPoolID)
 	trusts := newHostTrusts(server, controlPlane, policy, func(err error) { t.Errorf("host trusts: %v", err) })
 	broker := &credentialBroker{sandboxID: "sb-1", controlPlan: controlPlane, activations: live, trusts: trusts}
 
@@ -185,7 +186,7 @@ func TestTrustRequestProbesThenGrantedPinTakesEffect(t *testing.T) {
 func TestTrustRequestRefusesASuppliedCAThatDoesNotMatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	withTestRoot(t)
+	root := withTestRoot(t)
 
 	origin := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer origin.Close()
@@ -199,24 +200,24 @@ func TestTrustRequestRefusesASuppliedCAThatDoesNotMatch(t *testing.T) {
 		t.Errorf("an ask with a CA the host does not answer to reached the control plane: %s %s", r.Method, r.URL.Path)
 	}))
 	defer controlPlaneServer.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlaneServer.URL, "tok"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlaneServer.URL, "tok"); err != nil {
 		t.Fatal(err)
 	}
-	bundle, err := PrepareBundle(testProjectID, testPoolID)
+	bundle, err := PrepareBundle(root, testProjectID, testPoolID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := proxy.DefaultConfig()
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
-	cfg.DatabaseDSN = resolve(testProjectID + "-audit.db")
+	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
 	cfg.Recording.Enabled = false
 	server, err := proxy.NewServer(ctx, cfg, bundle, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	controlPlane := newControlPlaneCredentials(testProjectID, testPoolID)
+	controlPlane := newControlPlaneCredentials(root, testProjectID, testPoolID)
 	broker := &credentialBroker{sandboxID: "sb-1", controlPlan: controlPlane, trusts: newHostTrusts(server, controlPlane, nil, nil)}
 
 	// A CA of our own making, which signed nothing the origin presents.

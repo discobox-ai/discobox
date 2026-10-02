@@ -19,8 +19,8 @@ const deliveryTestSandboxID = "sandbox-1"
 // inspected without a pool host.
 func deliveryTestRuntime(t *testing.T) *DockerSandboxRuntime {
 	t.Helper()
-	withTestRoot(t)
-	return &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	state := withTestRoot(t)
+	return &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
 }
 
 // deliveryTestRequest is a sandbox with one push-delivered primary source.

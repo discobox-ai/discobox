@@ -23,8 +23,8 @@ func TestPrepareSandboxVolumesLeavesSandboxHomeAlone(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("giving a file away requires root")
 	}
-	withTestRoot(t)
-	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
 	const sandboxID = "sandbox-1"
 	const uid, gid = 1000, 1000
 
@@ -67,8 +67,8 @@ func TestPrepareSandboxVolumesOwnsWhatItWrites(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skip("giving a file away requires root")
 	}
-	withTestRoot(t)
-	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
 	const sandboxID = "sandbox-1"
 
 	planted := map[string]string{
@@ -106,8 +106,8 @@ func TestPrepareSandboxVolumesGivesASourcelessSandboxPrivateSourceData(t *testin
 	if os.Getuid() != 0 {
 		t.Skip("giving a file away requires root")
 	}
-	withTestRoot(t)
-	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	state := withTestRoot(t)
+	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
 	const sandboxID = "sandbox-1"
 	const uid, gid = 1000, 1000
 	userUID, userGID := int64(uid), int64(gid)

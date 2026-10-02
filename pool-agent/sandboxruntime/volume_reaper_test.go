@@ -244,12 +244,12 @@ func TestReapUnknownPoolsReapsProxyOnlyLeftoverImmediately(t *testing.T) {
 // put another project's live pool in scope and delete the proxy material out
 // from under its running sandboxes, breaking egress with no log line.
 func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
-	withTestRoot(t)
-	agentA := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
-	agentB := &DockerSandboxRuntime{projectID: "proj_b", poolID: "pool_b"}
+	state := withTestRoot(t)
+	agentA := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
+	agentB := &DockerSandboxRuntime{root: state, projectID: "proj_b", poolID: "pool_b"}
 
 	// Project B has a live pool with staged proxy material and a data subtree.
-	liveProxyB := resolve(proxyagent.PoolSandboxMaterialRoot("proj_b", "pool_b"))
+	liveProxyB := proxyagent.PoolSandboxMaterialRoot(state, "proj_b", "pool_b")
 	liveDataB := agentB.sandboxesRoot()
 	for _, dir := range []string{liveProxyB, liveDataB} {
 		if err := os.MkdirAll(filepath.Join(dir, "sbx_live"), 0o755); err != nil {
@@ -265,7 +265,7 @@ func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
 		reapUnknownPools(
 			agentA.poolsRoot(),
 			agentA.cachePoolsRoot(),
-			resolve(proxyagent.PoolsRoot("proj_a")),
+			proxyagent.PoolsRoot(state, "proj_a"),
 			known, 24*time.Hour, at, quietLogger(),
 		)
 	}

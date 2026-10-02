@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/discobox-ai/discobox/layout"
 )
 
 // The pool registry keeps a repository per name under a fixed tree, which is
@@ -32,7 +34,7 @@ var repositoryNamespacePattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+
 // RemoveRegistryNamespace deletes every repository a sandbox published under
 // its namespace. It is idempotent: a sandbox that never built has no directory,
 // and that is not an error.
-func RemoveRegistryNamespace(projectID, poolID, namespace string) error {
+func RemoveRegistryNamespace(root layout.Root, projectID, poolID, namespace string) error {
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {
 		return nil
@@ -40,8 +42,8 @@ func RemoveRegistryNamespace(projectID, poolID, namespace string) error {
 	if !repositoryNamespacePattern.MatchString(namespace) {
 		return fmt.Errorf("registry namespace %q is not a repository path component", namespace)
 	}
-	dir := filepath.Join(RegistryRoot(projectID, poolID), registryRepositoriesDir, namespace)
-	if err := os.RemoveAll(resolve(dir)); err != nil {
+	dir := filepath.Join(RegistryRoot(root, projectID, poolID), registryRepositoriesDir, namespace)
+	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("remove registry namespace %s: %w", namespace, err)
 	}
 	return nil

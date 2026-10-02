@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/discobox-ai/discobox/layout"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -21,8 +22,8 @@ import (
 //
 // A build still running holds its records, and prune cannot release them; the
 // caller stops the sandboxes that start builds before asking.
-func PruneBuildCache(ctx context.Context) error {
-	conn, err := grpc.NewClient("unix://"+resolve(Socket),
+func PruneBuildCache(ctx context.Context, root layout.Root) error {
+	conn, err := grpc.NewClient("unix://"+root.System(Socket),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {

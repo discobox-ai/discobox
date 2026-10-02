@@ -11,20 +11,19 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 )
 
-func prepare(t *testing.T) string {
+func prepare(t *testing.T) layout.Root {
 	t.Helper()
-	root := t.TempDir()
-	buildkitagent.SetTestRoot(root)
-	t.Cleanup(func() { buildkitagent.SetTestRoot("") })
-	if err := buildkitagent.Prepare("proj", "pool", ""); err != nil {
+	root := layout.ContainerAt(t.TempDir())
+	if err := buildkitagent.Prepare(root, "proj", "pool", ""); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
 	return root
 }
 
-func read(t *testing.T, root, path string) string {
+// read reads one of the pool container's own files, as root relocates it.
+func read(t *testing.T, root layout.Root, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, path))
+	data, err := os.ReadFile(root.System(path))
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
@@ -37,16 +36,16 @@ func TestPreparePlacesStateOnTheDisposableTree(t *testing.T) {
 	// Builder state and registry blobs are regenerable, so they belong on the
 	// disposable cache tree rather than the durable one a backend must retain.
 	for _, dir := range []string{
-		buildkitagent.StateRoot("proj", "pool"),
-		buildkitagent.RegistryRoot("proj", "pool"),
+		buildkitagent.StateRoot(root, "proj", "pool"),
+		buildkitagent.RegistryRoot(root, "proj", "pool"),
 	} {
-		if !strings.Contains(dir, "/cache/") {
+		if !strings.Contains(filepath.ToSlash(dir), "/cache/") {
 			t.Errorf("%s is not on the disposable cache tree", dir)
 		}
 		if !strings.Contains(dir, "proj") || !strings.Contains(dir, "pool") {
 			t.Errorf("%s is not pool-scoped: two pools sharing a host would collide", dir)
 		}
-		if _, err := os.Stat(filepath.Join(root, dir)); err != nil {
+		if _, err := os.Stat(dir); err != nil {
 			t.Errorf("Prepare did not create %s: %v", dir, err)
 		}
 	}
@@ -90,7 +89,7 @@ func TestRegistryStoresBlobsUnderItsOwnPoolRootAndAllowsDeletes(t *testing.T) {
 	root := prepare(t)
 	env := read(t, root, buildkitagent.RegistryEnvironmentFile)
 
-	if !strings.Contains(env, "REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY="+buildkitagent.RegistryRoot("proj", "pool")) {
+	if !strings.Contains(env, "REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY="+buildkitagent.RegistryRoot(root, "proj", "pool")) {
 		t.Errorf("registry storage is not pool-scoped:\n%s", env)
 	}
 	// Without deletes enabled the registry only grows, and garbage collection
@@ -189,9 +188,7 @@ func lineFor(t *testing.T, body, name string) string {
 }
 
 func TestPrepareRejectsAnUnscopedPool(t *testing.T) {
-	buildkitagent.SetTestRoot(t.TempDir())
-	t.Cleanup(func() { buildkitagent.SetTestRoot("") })
-	if err := buildkitagent.Prepare("", "pool", ""); err == nil {
+	if err := buildkitagent.Prepare(layout.ContainerAt(t.TempDir()), "", "pool", ""); err == nil {
 		t.Error("Prepare accepted an empty project, which would write pool state to a shared path")
 	}
 }
@@ -201,12 +198,13 @@ func TestPrepareRejectsAnUnscopedPool(t *testing.T) {
 // writable by every sandbox in the pool. Being on the disposable tree is not
 // enough — it has to be outside that particular directory.
 func TestBuildStateIsOutsideTheSandboxVisibleCache(t *testing.T) {
-	cache := layout.PoolCache("proj", "pool")
+	root := layout.ContainerAt(t.TempDir())
+	cache := root.PoolCache("proj", "pool")
 	for _, dir := range []string{
-		buildkitagent.StateRoot("proj", "pool"),
-		buildkitagent.RegistryRoot("proj", "pool"),
+		buildkitagent.StateRoot(root, "proj", "pool"),
+		buildkitagent.RegistryRoot(root, "proj", "pool"),
 	} {
-		if dir == cache || strings.HasPrefix(dir, cache+"/") {
+		if dir == cache || strings.HasPrefix(dir, cache+string(filepath.Separator)) {
 			t.Errorf("%s is inside the sandbox-visible cache %s", dir, cache)
 		}
 	}
@@ -216,11 +214,9 @@ func TestBuildStateIsOutsideTheSandboxVisibleCache(t *testing.T) {
 // still inside the mount. Leaving them would make the move pointless, so
 // Prepare removes them rather than migrating them.
 func TestPreparePurgesPreADR0050BuildState(t *testing.T) {
-	root := t.TempDir()
-	buildkitagent.SetTestRoot(root)
-	t.Cleanup(func() { buildkitagent.SetTestRoot("") })
+	root := layout.ContainerAt(t.TempDir())
 
-	cache := filepath.Join(root, layout.PoolCache("proj", "pool"))
+	cache := root.PoolCache("proj", "pool")
 	legacyBuildkit := filepath.Join(cache, "buildkit")
 	legacyRegistry := filepath.Join(cache, "registry")
 	// A sandbox's own cache content sits in the same directory and must survive.
@@ -234,7 +230,7 @@ func TestPreparePurgesPreADR0050BuildState(t *testing.T) {
 		}
 	}
 
-	if err := buildkitagent.Prepare("proj", "pool", ""); err != nil {
+	if err := buildkitagent.Prepare(root, "proj", "pool", ""); err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
 

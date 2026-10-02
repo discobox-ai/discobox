@@ -46,11 +46,11 @@ const forwarderRuntimeDir = "/run/discobox/build-forwarders"
 // It must not return before the listener is up: runc starts the container as
 // soon as the hook returns, and a build step that raced ahead of its own proxy
 // would see connection refused rather than a working egress path.
-func StartBuildForwarder(ctx context.Context, containerID, sandboxID string, pid int) error {
+func StartBuildForwarder(ctx context.Context, root layout.Root, containerID, sandboxID string, pid int) error {
 	if containerID == "" || sandboxID == "" || pid <= 0 {
 		return fmt.Errorf("build forwarder needs a container, a sandbox and a pid")
 	}
-	if err := os.MkdirAll(resolve(forwarderRuntimeDir), 0o700); err != nil {
+	if err := os.MkdirAll(root.System(forwarderRuntimeDir), 0o700); err != nil {
 		return err
 	}
 	self, err := os.Executable()
@@ -65,9 +65,9 @@ func StartBuildForwarder(ctx context.Context, containerID, sandboxID string, pid
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("spawn build forwarder: %w", err)
 	}
-	ready := readyPath(containerID)
+	ready := readyPath(root, containerID)
 	for range 300 {
-		if _, err := os.Stat(resolve(ready)); err == nil {
+		if _, err := os.Stat(ready); err == nil {
 			return nil
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -78,13 +78,13 @@ func StartBuildForwarder(ctx context.Context, containerID, sandboxID string, pid
 // ServeBuildForwarder is the detached half. It enters the build step's network
 // namespace, binds loopback there, and forwards to the pool proxy over mTLS
 // with the owning sandbox's client certificate.
-func ServeBuildForwarder(ctx context.Context, containerID, sandboxID string, pid int) error {
+func ServeBuildForwarder(ctx context.Context, root layout.Root, containerID, sandboxID string, pid int) error {
 	projectID := os.Getenv(envProjectID)
 	poolID := os.Getenv(envPoolID)
 	if projectID == "" || poolID == "" {
 		return fmt.Errorf("build forwarder does not know its pool")
 	}
-	certDir := filepath.Join(layout.ProxyCerts(projectID, poolID), "clients", filepath.Clean(sandboxID))
+	certDir := filepath.Join(root.ProxyCerts(projectID, poolID), "clients", filepath.Clean(sandboxID))
 
 	listener, err := listenInNetns(ctx, pid)
 	if err != nil {
@@ -92,9 +92,9 @@ func ServeBuildForwarder(ctx context.Context, containerID, sandboxID string, pid
 	}
 	forwarder, err := bridge.New(ctx, bridge.Config{
 		WorkerProxyURL: PoolProxyURL,
-		MTLSCAPath:     resolve(filepath.Join(layout.ProxyCerts(projectID, poolID), "mtls-ca.crt")),
-		ClientCertPath: resolve(filepath.Join(certDir, "client.crt")),
-		ClientKeyPath:  resolve(filepath.Join(certDir, "client.key")),
+		MTLSCAPath:     filepath.Join(root.ProxyCerts(projectID, poolID), "mtls-ca.crt"),
+		ClientCertPath: filepath.Join(certDir, "client.crt"),
+		ClientKeyPath:  filepath.Join(certDir, "client.key"),
 	})
 	if err != nil {
 		_ = listener.Close()
@@ -102,11 +102,11 @@ func ServeBuildForwarder(ctx context.Context, containerID, sandboxID string, pid
 	}
 	defer forwarder.Close()
 
-	if err := os.WriteFile(resolve(pidPath(containerID)), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+	if err := os.WriteFile(pidPath(root, containerID), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
 		return err
 	}
 	// Written last: the create hook waits on this, so it must mean "bound".
-	if err := os.WriteFile(resolve(readyPath(containerID)), []byte("ok"), 0o600); err != nil {
+	if err := os.WriteFile(readyPath(root, containerID), []byte("ok"), 0o600); err != nil {
 		return err
 	}
 	return forwarder.Serve(listener)
@@ -115,15 +115,15 @@ func ServeBuildForwarder(ctx context.Context, containerID, sandboxID string, pid
 // StopBuildForwarder is the poststop hook's work. poststop runs even when a
 // container dies badly, which is what makes this a guaranteed teardown rather
 // than a best-effort one.
-func StopBuildForwarder(containerID string) error {
+func StopBuildForwarder(root layout.Root, containerID string) error {
 	if containerID == "" {
 		return nil
 	}
 	defer func() {
-		_ = os.Remove(resolve(pidPath(containerID)))
-		_ = os.Remove(resolve(readyPath(containerID)))
+		_ = os.Remove(pidPath(root, containerID))
+		_ = os.Remove(readyPath(root, containerID))
 	}()
-	data, err := os.ReadFile(resolve(pidPath(containerID)))
+	data, err := os.ReadFile(pidPath(root, containerID))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -164,13 +164,13 @@ func listenInNetns(ctx context.Context, pid int) (net.Listener, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	own, err := os.Open(resolve("/proc/thread-self/ns/net"))
+	own, err := os.Open("/proc/thread-self/ns/net")
 	if err != nil {
 		return nil, fmt.Errorf("open own netns: %w", err)
 	}
 	defer own.Close()
 
-	target, err := os.Open(resolve(fmt.Sprintf("/proc/%d/ns/net", pid)))
+	target, err := os.Open(fmt.Sprintf("/proc/%d/ns/net", pid))
 	if err != nil {
 		return nil, fmt.Errorf("open build netns: %w", err)
 	}
@@ -197,10 +197,10 @@ func listenInNetns(ctx context.Context, pid int) (net.Listener, error) {
 	return listener, nil
 }
 
-func pidPath(containerID string) string {
-	return filepath.Join(forwarderRuntimeDir, filepath.Clean(containerID)+".pid")
+func pidPath(root layout.Root, containerID string) string {
+	return filepath.Join(root.System(forwarderRuntimeDir), filepath.Clean(containerID)+".pid")
 }
 
-func readyPath(containerID string) string {
-	return filepath.Join(forwarderRuntimeDir, filepath.Clean(containerID)+".ready")
+func readyPath(root layout.Root, containerID string) string {
+	return filepath.Join(root.System(forwarderRuntimeDir), filepath.Clean(containerID)+".ready")
 }

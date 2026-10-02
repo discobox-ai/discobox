@@ -3,17 +3,15 @@ package proxyagent
 import (
 	"log/slog"
 	"testing"
+
+	"github.com/discobox-ai/discobox/layout"
 )
 
-// withTestRoot relocates this package's paths under a temporary directory for
-// the duration of one test.
-func withTestRoot(t *testing.T) string {
+// withTestRoot is a pool container's filesystem relocated under a temporary
+// directory, for one test.
+func withTestRoot(t *testing.T) layout.Root {
 	t.Helper()
-	dir := t.TempDir()
-	previous := testRoot
-	testRoot = dir
-	t.Cleanup(func() { testRoot = previous })
-	return dir
+	return layout.ContainerAt(t.TempDir())
 }
 
 // testLogger discards output: these tests assert on behavior, and a serving

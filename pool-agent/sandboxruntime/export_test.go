@@ -1,14 +1,14 @@
 package sandboxruntime
 
-import "testing"
+import (
+	"testing"
 
-// withTestRoot relocates the state tree under a temporary directory for the
-// duration of one test and returns that directory.
-func withTestRoot(t *testing.T) string {
+	"github.com/discobox-ai/discobox/layout"
+)
+
+// withTestRoot is a pool container's filesystem relocated under a temporary
+// directory, for one test.
+func withTestRoot(t *testing.T) layout.Root {
 	t.Helper()
-	dir := t.TempDir()
-	old := testRoot
-	testRoot = dir
-	t.Cleanup(func() { testRoot = old })
-	return dir
+	return layout.ContainerAt(t.TempDir())
 }

@@ -69,7 +69,7 @@ func parseHostMount(value string) HostMount {
 // failure is otherwise an opaque "bind source path does not exist" at container
 // create, long after the driver has finished.
 func RequiredHostDirs() []string {
-	return layout.MountRoots()
+	return layout.Container().MountRoots()
 }
 
 // NormalizeHostMounts cleans, deduplicates, and sorts host mounts.

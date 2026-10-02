@@ -9,22 +9,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/layout"
-
 	"github.com/discobox-ai/discobox/proxy"
 )
 
 func TestUpsertAndRemoveSentinels(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 
-	if err := UpsertSandboxSentinels(testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}); err != nil {
 		t.Fatalf("upsert sb-1: %v", err)
 	}
-	if err := UpsertSandboxSentinels(testProjectID, testPoolID, "sb-2", []string{"SENT-C"}); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-C"}); err != nil {
 		t.Fatalf("upsert sb-2: %v", err)
 	}
 
-	doc, err := readSecretsDoc(layout.ProxySecretsFile(testProjectID, testPoolID))
+	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
 	if err != nil {
 		t.Fatalf("read doc: %v", err)
 	}
@@ -32,10 +30,10 @@ func TestUpsertAndRemoveSentinels(t *testing.T) {
 		t.Fatalf("unexpected doc: %#v", doc.Clients)
 	}
 
-	if err := RemoveSandboxSentinels(testProjectID, testPoolID, "sb-1"); err != nil {
+	if err := RemoveSandboxSentinels(root, testProjectID, testPoolID, "sb-1"); err != nil {
 		t.Fatalf("remove sb-1: %v", err)
 	}
-	doc, _ = readSecretsDoc(layout.ProxySecretsFile(testProjectID, testPoolID))
+	doc, _ = readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
 	if _, ok := doc.Clients["sb-1"]; ok {
 		t.Fatal("sb-1 should be removed")
 	}
@@ -50,7 +48,7 @@ func TestUpsertAndRemoveSentinels(t *testing.T) {
 }
 
 func TestResolverApproved(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	var gotAuth, gotPath string
 	var gotBody resolveRequestBody
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,10 +62,10 @@ func TestResolverApproved(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if err := WriteResolveContext(testProjectID, testPoolID, srv.URL, "tok-123"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok-123"); err != nil {
 		t.Fatalf("write context: %v", err)
 	}
-	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
+	resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())
 	res, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "api.example.com"})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -92,14 +90,14 @@ func TestResolverApproved(t *testing.T) {
 }
 
 func TestResolverPendingIsDenied(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(resolveResponseBody{Status: "pending"})
 	}))
 	defer srv.Close()
-	_ = WriteResolveContext(testProjectID, testPoolID, srv.URL, "tok")
+	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
 
-	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
+	resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())
 	_, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h"})
 	if !errors.Is(err, proxy.ErrSecretResolveDenied) {
 		t.Fatalf("err = %v, want ErrSecretResolveDenied", err)
@@ -107,8 +105,8 @@ func TestResolverPendingIsDenied(t *testing.T) {
 }
 
 func TestResolverNoContextIsDenied(t *testing.T) {
-	withTestRoot(t)
-	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
+	root := withTestRoot(t)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())
 	_, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h"})
 	if !errors.Is(err, proxy.ErrSecretResolveDenied) {
 		t.Fatalf("err = %v, want ErrSecretResolveDenied when no context file", err)
@@ -121,9 +119,9 @@ func TestResolverNoContextIsDenied(t *testing.T) {
 // forwards and the control plane then refuses is a credential that fails
 // halfway, with the reason on the other side of the wire.
 func TestActivationHostCoversSubdomainsAndNothingAbove(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	live := newActivations()
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 
 	record, err := live.mint("sb-1", "STABLE", "use-1", []string{"github.com"}, "ghp_{base62:36}", nil)
 	if err != nil {
@@ -155,7 +153,7 @@ func TestActivationHostCoversSubdomainsAndNothingAbove(t *testing.T) {
 // for, so the control plane can attribute a refused credential without ever
 // learning that ephemeral sentinels exist (ADR 0031 §3, ADR 0132 §2).
 func TestReportTranslatesAnEphemeralSentinel(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	var got rejectionRequestBody
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,14 +162,14 @@ func TestReportTranslatesAnEphemeralSentinel(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
-	_ = WriteResolveContext(testProjectID, testPoolID, srv.URL, "tok")
+	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
 
 	live := newActivations()
 	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.example.com"}, "", []string{"curl"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 	err = resolver.Report(context.Background(), proxy.SecretReportRequest{
 		ClientID: "sb-1", Sentinel: record.Sentinel, Host: "api.example.com", Outcome: proxy.SecretRejected,
 	})
@@ -194,14 +192,14 @@ func TestReportTranslatesAnEphemeralSentinel(t *testing.T) {
 // the time it goes out. Translating it is what keeps the ephemeral string out
 // of the control plane, where a resolve of the same sentinel is refused.
 func TestReportTranslatesALapsedActivation(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	var got rejectionRequestBody
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&got)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
-	_ = WriteResolveContext(testProjectID, testPoolID, srv.URL, "tok")
+	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
 
 	now := time.Now()
 	live := newActivations()
@@ -217,7 +215,7 @@ func TestReportTranslatesALapsedActivation(t *testing.T) {
 		t.Fatal("the activation still authorizes a swap after its TTL")
 	}
 
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 	if err := resolver.Report(context.Background(), proxy.SecretReportRequest{
 		ClientID: "sb-1", Sentinel: record.Sentinel, Host: "api.example.com", Outcome: proxy.SecretRejectedAfterRetry,
 	}); err != nil {
@@ -239,21 +237,21 @@ func TestReportTranslatesALapsedActivation(t *testing.T) {
 // A sentinel this process minted for another sandbox is not this one's to
 // report, the same rule a resolve of it follows.
 func TestReportRefusesAnotherSandboxesSentinel(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	var called bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
-	_ = WriteResolveContext(testProjectID, testPoolID, srv.URL, "tok")
+	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
 
 	live := newActivations()
 	record, err := live.mint("sb-1", "STABLE-SENTINEL", "use-1", []string{"api.example.com"}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 	if err := resolver.Report(context.Background(), proxy.SecretReportRequest{
 		ClientID: "sb-2", Sentinel: record.Sentinel, Host: "api.example.com", Outcome: proxy.SecretRejected,
 	}); err != nil {

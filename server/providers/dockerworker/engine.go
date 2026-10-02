@@ -791,8 +791,9 @@ func (e *Engine) containerMounts(poolID string) []mount.Mount {
 	}
 	// The state trees come from the shared layout package, so the engine, the
 	// agent, and the proxy cannot drift on where anything lives.
-	hostState := layout.NewHostMapping(e.cfg.HostStateRoot)
-	for _, tree := range layout.MountRoots() {
+	state := layout.Container()
+	hostState := state.HostMapping(e.cfg.HostStateRoot)
+	for _, tree := range state.MountRoots() {
 		if hasHostMountSource(e.cfg.HostMounts, tree) {
 			continue
 		}

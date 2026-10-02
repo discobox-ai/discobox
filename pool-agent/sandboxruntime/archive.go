@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/discobox-ai/discobox/layout"
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
@@ -45,7 +44,7 @@ func sandboxIsArchived(root string) bool {
 }
 
 func (r *DockerSandboxRuntime) sandboxRoot(sandboxID string) string {
-	return resolve(layout.Sandbox(r.projectID, r.poolID, sandboxID))
+	return r.root.Sandbox(r.projectID, r.poolID, sandboxID)
 }
 
 // SandboxIsArchived reports whether this pool holds the given sandbox as
@@ -112,10 +111,10 @@ func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID str
 	}
 	// The proxy material is disposable: an unarchive recreates the container,
 	// and creation stages fresh material and a fresh client certificate for it.
-	if err := proxyagent.RemoveSandboxSentinels(r.projectID, r.poolID, sandboxID); err != nil {
+	if err := proxyagent.RemoveSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
-	return proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID)
+	return proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
 }
 
 // clearSandboxArchiveMarker un-archives a tree. Creation calls it, which is the

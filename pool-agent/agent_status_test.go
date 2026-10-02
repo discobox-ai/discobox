@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/layout"
 )
 
 type recordingStatusClient struct {
@@ -76,7 +78,7 @@ func TestStatusReporterKeepsReporting(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := startStatusReporter(ctx, logger, bootstrap, registration, client, time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 
@@ -103,7 +105,7 @@ func TestStatusReporterFailsBootOnFirstReportError(t *testing.T) {
 	client.setErr(errors.New("control plane rejected status"))
 	bootstrap, registration, logger := testReporterArgs()
 
-	err := startStatusReporter(t.Context(), logger, bootstrap, registration, client, time.Millisecond)
+	err := startStatusReporter(t.Context(), logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond)
 	if err == nil {
 		t.Fatal("start status reporter succeeded, want the boot report's error")
 	}
@@ -120,7 +122,7 @@ func TestStatusReporterRetriesAfterFailedReport(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := startStatusReporter(ctx, logger, bootstrap, registration, client, time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 
@@ -139,7 +141,7 @@ func TestStatusReporterStopsOnContextCancel(t *testing.T) {
 	bootstrap, registration, logger := testReporterArgs()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	if err := startStatusReporter(ctx, logger, bootstrap, registration, client, time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 	client.waitForCalls(t, 2)

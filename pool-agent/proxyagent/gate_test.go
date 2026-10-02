@@ -26,7 +26,7 @@ type gateCall struct {
 // own credential removed and the pool's word for who is calling put in its
 // place (ADR 0140 §§2–3).
 func TestTheGateForwardsALiveUseAsThePoolsWord(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	var seen []gateCall
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if allowJudgingAsk(w, r) {
@@ -42,11 +42,11 @@ func TestTheGateForwardsALiveUseAsThePoolsWord(t *testing.T) {
 		_, _ = io.WriteString(w, `{"id":"sbx_worker"}`)
 	}))
 	defer controlPlane.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
 		t.Fatal(err)
 	}
 	live := newActivations()
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 	use, err := live.mint("sb-1", "STABLE", "use-1", []string{GateHost()}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
@@ -152,15 +152,15 @@ func TestTheGateSendsOnlyAPathToTheControlPlane(t *testing.T) {
 // A call the gate let in keeps the use it went under when the control plane
 // then does not answer: the request may have reached it.
 func TestAGateCallThatFailsKeepsItsUse(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	unreachable := controlPlane.URL
 	controlPlane.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, unreachable, "pool-token"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, unreachable, "pool-token"); err != nil {
 		t.Fatal(err)
 	}
 	live := newActivations()
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 	// This is about the hop after the gate let the call in, so there is no
 	// judge in the way. With one, the ask to an unreachable control plane
 	// would be answered by nobody — which on a pool that has never had a
@@ -187,7 +187,7 @@ func TestAGateCallThatFailsKeepsItsUse(t *testing.T) {
 // to create, and what it is given — so a judge asks to see it, is shown it,
 // and the control plane still receives the call exactly as it was made.
 func TestTheGateShowsTheJudgeTheBodyItAsksFor(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	const sent = `{"prompt":"fix issue 43","grants":[{"id":"com.github.api","uses":[{"description":"push branch fix-43"}]}]}`
 	var shown atomic.Value
 	var forwarded atomic.Value
@@ -211,11 +211,11 @@ func TestTheGateShowsTheJudgeTheBodyItAsksFor(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer controlPlane.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
 		t.Fatal(err)
 	}
 	live := newActivations()
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 	use, err := live.mint("sb-1", "STABLE", "use-1", []string{GateHost()}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
@@ -243,7 +243,7 @@ func TestTheGateShowsTheJudgeTheBodyItAsksFor(t *testing.T) {
 // sandbox is told. The gate reaches the judge by a different path than the
 // proxy's swap does, so it is worth its own test.
 func TestTheGateRefusesACallTheJudgeDoesNot(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	// Written by the server's goroutine and read by the test, which is a race
 	// precisely when the test is about to fail.
 	var reached atomic.Bool
@@ -256,11 +256,11 @@ func TestTheGateRefusesACallTheJudgeDoesNot(t *testing.T) {
 		reached.Store(true)
 	}))
 	defer controlPlane.Close()
-	if err := WriteResolveContext(testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
 		t.Fatal(err)
 	}
 	live := newActivations()
-	resolver := newSecretResolver(testProjectID, testPoolID, live)
+	resolver := newSecretResolver(root, testProjectID, testPoolID, live)
 	use, err := live.mint("sb-1", "STABLE", "use-1", []string{GateHost()}, "", nil)
 	if err != nil {
 		t.Fatalf("mint: %v", err)

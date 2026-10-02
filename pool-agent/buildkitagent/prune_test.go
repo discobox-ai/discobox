@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/discobox-ai/discobox/layout"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"google.golang.org/grpc"
 )
@@ -31,16 +32,14 @@ func TestPruneBuildCacheAsksBuildkitdForEverything(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("buildkitd's socket is a guest path; the pool agent runs in the Linux guest")
 	}
-	root, err := os.MkdirTemp("", "bk")
+	dir, err := os.MkdirTemp("", "bk")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	old := testRoot
-	testRoot = root
-	t.Cleanup(func() { testRoot = old })
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	root := layout.ContainerAt(dir)
 
-	socket := resolve(Socket)
+	socket := root.System(Socket)
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +53,7 @@ func TestPruneBuildCacheAsksBuildkitdForEverything(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 
-	if err := PruneBuildCache(context.Background()); err != nil {
+	if err := PruneBuildCache(context.Background(), root); err != nil {
 		t.Fatalf("PruneBuildCache: %v", err)
 	}
 	select {

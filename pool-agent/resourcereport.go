@@ -8,6 +8,7 @@ import (
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
@@ -195,6 +196,7 @@ type ProcessResourceUsage struct {
 func startPoolResourceReporter(
 	ctx context.Context,
 	logger *slog.Logger,
+	root layout.Root,
 	bootstrap Bootstrap,
 	registration *Registration,
 	runtime sandboxruntime.Runtime,
@@ -209,6 +211,7 @@ func startPoolResourceReporter(
 	}
 	reporter := &poolResourceReporter{
 		logger:       logger,
+		root:         root,
 		bootstrap:    bootstrap,
 		registration: registration,
 		runtime:      runtime,
@@ -220,7 +223,7 @@ func startPoolResourceReporter(
 	// Reading CPU and memory is a handful of small files; walking disk is one
 	// pass over every inode the pool owns, and a schedule that suits one suits
 	// the other only by accident (ADR 0071 resource accounting §7).
-	reporter.storage = newStorageScanner(logger, bootstrap, func(ctx context.Context) []string {
+	reporter.storage = newStorageScanner(logger, root, bootstrap, func(ctx context.Context) []string {
 		ids, err := reporter.hostedSandboxIDs(ctx)
 		if err != nil {
 			logger.Warn("list sandboxes for storage scan", "error", err)
@@ -260,6 +263,7 @@ type sandboxResourceSample struct {
 
 type poolResourceReporter struct {
 	logger       *slog.Logger
+	root         layout.Root
 	bootstrap    Bootstrap
 	registration *Registration
 	runtime      sandboxruntime.Runtime
@@ -290,7 +294,7 @@ func (r *poolResourceReporter) report(ctx context.Context) {
 	// is the figure that answers "am I about to run out of disk". The walked
 	// attribution is whatever the scanner last completed, carrying its own
 	// timestamps so a reader can see how old it is.
-	storage := poolFilesystem()
+	storage := poolFilesystem(r.root)
 	storage.Walk = r.storage.Snapshot()
 	request := PoolResourceReportRequest{
 		ControlPlaneURL: r.bootstrap.ControlPlaneURL,

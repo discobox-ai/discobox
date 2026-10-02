@@ -1,10 +1,19 @@
 // Package layout is the single description of where Discobox stores state.
 //
-// Every path is expressed as the container sees it, rooted at ContainerRoot.
-// That root is deliberately invariant: the pool agent, the proxy, and the
-// sandbox agent all address state the same way no matter which backend they run
-// on. Only where that root is *mounted from* varies, and only a driver decides
-// it — see HostMapping.
+// Every path is resolved against a Root, and the pool's shape picks the root
+// (ADR 0144 §1):
+//
+//   - A pool whose agent runs in a container addresses state as the container
+//     sees it, under ContainerRoot. That view is deliberately invariant: the
+//     pool agent, the proxy, and the sandbox agent all address state the same
+//     way no matter which backend they run on. Only where that root is
+//     *mounted from* varies, and only a driver decides it — see HostMapping.
+//   - A pool whose agent runs on the host keeps state under the user's own
+//     data directory on that machine — see Host. ContainerRoot describes the
+//     container's view and is not one of the host roots.
+//
+// Both shapes lay out the same trees below their root, so everything an
+// accessor says about scoping holds for either.
 //
 // # Scoping
 //
@@ -20,6 +29,7 @@ package layout
 
 import (
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,40 +37,111 @@ import (
 // not vary by backend, platform, or driver.
 const ContainerRoot = "/var/lib/discobox"
 
-// The three trees under ContainerRoot. They are separate top-level roots so a
-// backend can mount them from different storage — durable state and disposable
-// cache do not have to share a device.
-const (
-	dataTree  = ContainerRoot + "/projects"
-	cacheTree = ContainerRoot + "/cache"
-	proxyTree = ContainerRoot + "/proxy"
-	// identityTree holds credentials that authenticate a pool to the control
-	// plane. It is deliberately not under dataTree: the pool-sync reaper and the
-	// volume reaper both enumerate that tree in order to delete from it, and a
-	// sandbox's own subtree is derived from it, so a key that authenticates as
-	// the pool belongs in neither (ADR 0063).
-	identityTree = ContainerRoot + "/identity"
-)
+// Root is where one process finds Discobox state. The zero value is the
+// container's view, Container.
+type Root struct {
+	// state is the directory the trees below are rooted at, as this process
+	// sees it.
+	state string
+	// system is where the pool container's own filesystem appears to this
+	// process: empty for "/", and a directory only for ContainerAt.
+	system string
+	// host marks a root on the user's own machine, which has no container
+	// filesystem around it.
+	host bool
+	// native marks a root on this machine's own filesystem, whose paths use
+	// the platform's separator. The container's view is slash-separated on
+	// every platform, including a Windows server rendering a pool's mounts.
+	native bool
+}
+
+func (r Root) join(elem ...string) string {
+	if r.native {
+		return filepath.Join(elem...)
+	}
+	return path.Join(elem...)
+}
+
+func (r Root) clean(p string) string {
+	if r.native {
+		return filepath.Clean(p)
+	}
+	return path.Clean(p)
+}
+
+// Container is the container's view of state: ContainerRoot, and the pool
+// container's filesystem at "/". It is the root of every pool whose agent runs
+// in a container, and of every server-side caller that hands a pool container
+// its mounts.
+func Container() Root {
+	return Root{}
+}
+
+// ContainerAt is the container's view with its whole filesystem relocated under
+// dir: state at dir + ContainerRoot, and every system path (System) under dir
+// too. It exists for tests, which have no container mounts and cannot write to
+// absolute container paths; production code has no reason to relocate a pool
+// container's state.
+func ContainerAt(dir string) Root {
+	dir = filepath.Clean(dir)
+	return Root{state: filepath.Join(dir, filepath.FromSlash(ContainerRoot)), system: dir, native: true}
+}
+
+// Dir is the directory every tree is rooted at, as this process sees it.
+func (r Root) Dir() string {
+	if r.state == "" {
+		return ContainerRoot
+	}
+	return r.state
+}
+
+// System is p, an absolute path in the pool container's own filesystem outside
+// the state trees (its /etc/discobox, /run/discobox, /proc), as this process
+// sees it. A host root has no container filesystem: a host pool runs none of
+// the units those files configure (ADR 0144 §3), so asking for one is a bug.
+func (r Root) System(p string) string {
+	if r.host {
+		panic("layout: a host root has no container filesystem, so no " + p)
+	}
+	if r.system == "" || p == "" {
+		return p
+	}
+	return filepath.Join(r.system, filepath.FromSlash(p))
+}
+
+// The four trees under a root. They are separate top-level roots so a backend
+// can mount them from different storage — durable state and disposable cache
+// do not have to share a device.
+func (r Root) dataTree() string  { return r.join(r.Dir(), "projects") }
+func (r Root) cacheTree() string { return r.join(r.Dir(), "cache") }
+func (r Root) proxyTree() string { return r.join(r.Dir(), "proxy") }
+
+// identityTree holds credentials that authenticate a pool to the control
+// plane. It is deliberately not under dataTree: the pool-sync reaper and the
+// volume reaper both enumerate that tree in order to delete from it, and a
+// sandbox's own subtree is derived from it, so a key that authenticates as the
+// pool belongs in neither (ADR 0063).
+func (r Root) identityTree() string { return r.join(r.Dir(), "identity") }
 
 // MountRoots returns the trees a backend must make available to a pool. Docker
 // does not create a missing bind source, so a driver whose host lacks these has
 // to create them before the pool container starts.
-func MountRoots() []string {
-	return []string{dataTree, cacheTree, proxyTree, identityTree}
+func (r Root) MountRoots() []string {
+	return []string{r.dataTree(), r.cacheTree(), r.proxyTree(), r.identityTree()}
 }
 
 // PoolIdentity is one pool's private credential directory. It is pool-scoped
 // because a shared host daemon runs every pool's container against the same
 // tree.
-func PoolIdentity(projectID, poolID string) string {
-	return path.Join(identityTree, projectID, poolID)
+func (r Root) PoolIdentity(projectID, poolID string) string {
+	return r.join(r.identityTree(), projectID, poolID)
 }
 
 // PoolIdentityKey is the pool agent's Ed25519 identity key: the key whose
 // public half the control plane records as Pool.PublicKey, and whose signature
 // authenticates every agent request afterwards.
-func PoolIdentityKey(projectID, poolID string) string {
-	return path.Join(PoolIdentity(projectID, poolID), "agent.key")
+func (r Root) PoolIdentityKey(projectID, poolID string) string {
+	return r.join(r.PoolIdentity(projectID, poolID), "agent.key")
 }
 
 // --- durable pool and sandbox state ----------------------------------------
@@ -68,50 +149,50 @@ func PoolIdentityKey(projectID, poolID string) string {
 // ProjectData is the root of one project's durable state. It is the shallowest
 // path the pool-sync reaper needs, and it is already project-scoped so a reaper
 // can never see another project's pools.
-func ProjectData(projectID string) string {
-	return path.Join(dataTree, projectID)
+func (r Root) ProjectData(projectID string) string {
+	return r.join(r.dataTree(), projectID)
 }
 
 // ProjectPools is the parent of every pool's durable subtree in a project. The
 // reaper enumerates it to find pools with no live counterpart.
-func ProjectPools(projectID string) string {
-	return path.Join(ProjectData(projectID), "pools")
+func (r Root) ProjectPools(projectID string) string {
+	return r.join(r.ProjectData(projectID), "pools")
 }
 
 // PoolData is one pool's durable subtree.
-func PoolData(projectID, poolID string) string {
-	return path.Join(ProjectPools(projectID), poolID)
+func (r Root) PoolData(projectID, poolID string) string {
+	return r.join(r.ProjectPools(projectID), poolID)
 }
 
 // PoolSandboxes is the parent of every sandbox's tree for one pool. The volume
 // reaper scans only here, which is what stops it touching another pool's data.
-func PoolSandboxes(projectID, poolID string) string {
-	return path.Join(PoolData(projectID, poolID), "sandboxes")
+func (r Root) PoolSandboxes(projectID, poolID string) string {
+	return r.join(r.PoolData(projectID, poolID), "sandboxes")
 }
 
 // PoolSourceData is the parent of durable data shared by sandboxes in one pool
 // according to source identity. Unlike PoolSandboxes, deleting one sandbox
 // must not remove anything below this tree.
-func PoolSourceData(projectID, poolID string) string {
-	return path.Join(PoolData(projectID, poolID), "data-per-source")
+func (r Root) PoolSourceData(projectID, poolID string) string {
+	return r.join(r.PoolData(projectID, poolID), "data-per-source")
 }
 
 // SourceData is one source's durable pool-local data directory. sourceKey is
 // an opaque key resolved before the pool boundary; layout does not interpret
 // source identity.
-func SourceData(projectID, poolID, sourceKey string) string {
-	return path.Join(PoolSourceData(projectID, poolID), sourceKey)
+func (r Root) SourceData(projectID, poolID, sourceKey string) string {
+	return r.join(r.PoolSourceData(projectID, poolID), sourceKey)
 }
 
 // Sandbox is one sandbox's tree.
-func Sandbox(projectID, poolID, sandboxID string) string {
-	return path.Join(PoolSandboxes(projectID, poolID), sandboxID)
+func (r Root) Sandbox(projectID, poolID, sandboxID string) string {
+	return r.join(r.PoolSandboxes(projectID, poolID), sandboxID)
 }
 
 // SandboxData, SandboxConfig, SandboxSecrets, and SandboxSources are the
 // per-sandbox subtrees mounted into a sandbox container.
-func SandboxData(projectID, poolID, sandboxID string) string {
-	return path.Join(Sandbox(projectID, poolID, sandboxID), "data")
+func (r Root) SandboxData(projectID, poolID, sandboxID string) string {
+	return r.join(r.Sandbox(projectID, poolID, sandboxID), "data")
 }
 
 // SandboxSourceData is the source data a sandbox keeps to itself, mounted at
@@ -120,35 +201,35 @@ func SandboxData(projectID, poolID, sandboxID string) string {
 // is a private source: it lives inside SandboxData, at the path it is mounted
 // on, so it is the sandbox's alone and survives and travels exactly as the
 // rest of that tree does.
-func SandboxSourceData(projectID, poolID, sandboxID, slug string) string {
-	return path.Join(SandboxData(projectID, poolID, sandboxID), ".discobox", "data-per-source", slug)
+func (r Root) SandboxSourceData(projectID, poolID, sandboxID, slug string) string {
+	return r.join(r.SandboxData(projectID, poolID, sandboxID), ".discobox", "data-per-source", slug)
 }
 
-func SandboxConfig(projectID, poolID, sandboxID string) string {
-	return path.Join(Sandbox(projectID, poolID, sandboxID), "config")
+func (r Root) SandboxConfig(projectID, poolID, sandboxID string) string {
+	return r.join(r.Sandbox(projectID, poolID, sandboxID), "config")
 }
 
-func SandboxSecrets(projectID, poolID, sandboxID string) string {
-	return path.Join(Sandbox(projectID, poolID, sandboxID), "secrets")
+func (r Root) SandboxSecrets(projectID, poolID, sandboxID string) string {
+	return r.join(r.Sandbox(projectID, poolID, sandboxID), "secrets")
 }
 
-func SandboxSources(projectID, poolID, sandboxID string) string {
-	return path.Join(Sandbox(projectID, poolID, sandboxID), "sources")
+func (r Root) SandboxSources(projectID, poolID, sandboxID string) string {
+	return r.join(r.Sandbox(projectID, poolID, sandboxID), "sources")
 }
 
 // SandboxOrigins holds one bare repository per push-delivered source, which the
 // client pushes into and the sandbox sees as its `origin` (ADR 0058). Unlike
 // the subtrees above it is not itself mounted: each repository under it is
 // bound individually, read-only, at /.discobox/origins/<slug>.
-func SandboxOrigins(projectID, poolID, sandboxID string) string {
-	return path.Join(Sandbox(projectID, poolID, sandboxID), "origins")
+func (r Root) SandboxOrigins(projectID, poolID, sandboxID string) string {
+	return r.join(r.Sandbox(projectID, poolID, sandboxID), "origins")
 }
 
 // --- disposable cache ------------------------------------------------------
 
 // ProjectCachePools is the parent of every pool's cache in a project.
-func ProjectCachePools(projectID string) string {
-	return path.Join(cacheTree, "projects", projectID, "pools")
+func (r Root) ProjectCachePools(projectID string) string {
+	return r.join(r.cacheTree(), "projects", projectID, "pools")
 }
 
 // PoolCache is the cache shared by every sandbox one pool runs. It is separate
@@ -157,8 +238,8 @@ func ProjectCachePools(projectID string) string {
 // It is bind-mounted whole into every sandbox, so everything under it is a
 // harness-declared target path mirrored onto the host, and nothing under it is
 // privileged. Pool-agent state belongs in PoolBuild instead (ADR 0050).
-func PoolCache(projectID, poolID string) string {
-	return path.Join(ProjectCachePools(projectID), poolID, "cache")
+func (r Root) PoolCache(projectID, poolID string) string {
+	return r.join(r.ProjectCachePools(projectID), poolID, "cache")
 }
 
 // PoolBuild holds the pool's own build machinery: BuildKit's state and the pool
@@ -168,8 +249,8 @@ func PoolCache(projectID, poolID string) string {
 //
 // Disposable like its sibling: everything here rebuilds from the sandboxes'
 // sources.
-func PoolBuild(projectID, poolID string) string {
-	return path.Join(ProjectCachePools(projectID), poolID, "build")
+func (r Root) PoolBuild(projectID, poolID string) string {
+	return r.join(r.ProjectCachePools(projectID), poolID, "build")
 }
 
 // --- proxy material --------------------------------------------------------
@@ -183,8 +264,8 @@ func PoolBuild(projectID, poolID string) string {
 // wider than the isolation boundary it is meant to enforce.
 //
 // Per-client certificates live below it, keyed by sandbox ID.
-func ProxyCerts(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "certs")
+func (r Root) ProxyCerts(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "certs")
 }
 
 // ProxyControlKey is the private key the pool agent signs proxy control API
@@ -192,23 +273,23 @@ func ProxyCerts(projectID, poolID string) string {
 // ProxyCerts because that directory already holds the MITM CA's private key,
 // which is the same custody: readable on the pool, never mounted into a
 // sandbox.
-func ProxyControlKey(projectID, poolID string) string {
-	return path.Join(ProxyCerts(projectID, poolID), "control-ed25519.key")
+func (r Root) ProxyControlKey(projectID, poolID string) string {
+	return r.join(r.ProxyCerts(projectID, poolID), "control-ed25519.key")
 }
 
 // ProxyProjectPools is the parent of every pool's proxy subtree in a project.
-func ProxyProjectPools(projectID string) string {
-	return path.Join(proxyTree, "projects", projectID, "pools")
+func (r Root) ProxyProjectPools(projectID string) string {
+	return r.join(r.proxyTree(), "projects", projectID, "pools")
 }
 
 // ProxyPool is one pool's proxy subtree.
-func ProxyPool(projectID, poolID string) string {
-	return path.Join(ProxyProjectPools(projectID), poolID)
+func (r Root) ProxyPool(projectID, poolID string) string {
+	return r.join(r.ProxyProjectPools(projectID), poolID)
 }
 
 // ProxyPoolSandboxes is where one pool stages each sandbox's proxy material.
-func ProxyPoolSandboxes(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "sandboxes")
+func (r Root) ProxyPoolSandboxes(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "sandboxes")
 }
 
 // ProxyAuditDB is one pool's proxy audit database.
@@ -216,23 +297,23 @@ func ProxyPoolSandboxes(projectID, poolID string) string {
 // It is pool-scoped because it records the requests that pool's sandboxes made.
 // A database shared across pools on one daemon would interleave the audit trails
 // of different projects, which is a disclosure problem as much as a storage one.
-func ProxyAuditDB(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "audit.db")
+func (r Root) ProxyAuditDB(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "audit.db")
 }
 
 // ProxyCache, ProxyStreams, and ProxyBodies hold one pool's proxy response
 // cache and recorded traffic. Each is pool-scoped for the same reason as the
 // audit database: the contents are that pool's traffic.
-func ProxyCache(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "cache")
+func (r Root) ProxyCache(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "cache")
 }
 
-func ProxyStreams(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "streams")
+func (r Root) ProxyStreams(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "streams")
 }
 
-func ProxyBodies(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "bodies")
+func (r Root) ProxyBodies(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "bodies")
 }
 
 // ProxySecretsFile is the sentinel registry the proxy watches for one pool.
@@ -240,8 +321,8 @@ func ProxyBodies(projectID, poolID string) string {
 // It is pool-scoped because the file names sandboxes belonging to that pool. A
 // shared file would be overwritten by whichever pool wrote last, silently losing
 // another pool's sentinels.
-func ProxySecretsFile(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "secrets.json")
+func (r Root) ProxySecretsFile(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "secrets.json")
 }
 
 // ProxyResolveContextFile is the credential the proxy unit reads to resolve
@@ -251,45 +332,49 @@ func ProxySecretsFile(projectID, poolID string) string {
 // secret-resolve token. Sharing it across pools on one daemon would let a pool's
 // proxy present another pool's credential — an authorization bug, not just lost
 // state.
-func ProxyResolveContextFile(projectID, poolID string) string {
-	return path.Join(ProxyPool(projectID, poolID), "resolve-context.json")
+func (r Root) ProxyResolveContextFile(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "resolve-context.json")
 }
 
 // --- host translation ------------------------------------------------------
 
-// HostMapping translates a container path into the path the Docker daemon sees.
+// HostMapping translates a path under a container root into the path the
+// Docker daemon sees.
 //
 // The pool agent creates sandbox containers through the daemon, so any path it
 // hands over must be valid on the *daemon's* filesystem, which is not
 // necessarily where the agent reads and writes. This is the only place that
-// difference is expressed: everything else uses container paths.
+// difference is expressed: everything else uses the root's own paths.
 type HostMapping struct {
+	// from is the root mapped from.
+	from Root
+	// hostRoot is where the daemon sees it, or empty for ContainerRoot.
 	hostRoot string
 }
 
-// NewHostMapping maps ContainerRoot onto hostRoot. An empty hostRoot means the
-// daemon sees the same paths the container does, which is the case whenever the
-// state root is bind-mounted at the same location.
-func NewHostMapping(hostRoot string) HostMapping {
-	return HostMapping{hostRoot: strings.TrimRight(strings.TrimSpace(hostRoot), "/")}
+// HostMapping maps this root's state directory onto hostRoot. An empty hostRoot
+// means the daemon sees state at ContainerRoot, which is the case whenever the
+// state root is bind-mounted at the same location in the pool container.
+func (r Root) HostMapping(hostRoot string) HostMapping {
+	return HostMapping{from: r, hostRoot: strings.TrimRight(strings.TrimSpace(hostRoot), "/")}
 }
 
-// HostPath converts a container path under ContainerRoot into the daemon's view
-// of it. Paths outside ContainerRoot are returned unchanged: they are already
-// daemon paths, such as a developer's own source directory bound into a sandbox.
-func (m HostMapping) HostPath(containerPath string) string {
-	if m.hostRoot == "" || containerPath == "" {
-		return containerPath
+// HostPath converts a path under the root into the daemon's view of it. Paths
+// outside the root are returned unchanged: they are already daemon paths, such
+// as a developer's own source directory bound into a sandbox.
+func (m HostMapping) HostPath(p string) string {
+	if p == "" || (m.hostRoot == "" && m.from.Dir() == ContainerRoot) {
+		return p
 	}
-	cleaned := path.Clean(containerPath)
-	if cleaned != ContainerRoot && !strings.HasPrefix(cleaned, ContainerRoot+"/") {
-		return containerPath
+	rest, ok := strings.CutPrefix(m.from.clean(p), m.from.Dir())
+	if !ok || (rest != "" && rest[0] != '/' && rest[0] != filepath.Separator) {
+		return p
 	}
-	return m.hostRoot + strings.TrimPrefix(cleaned, ContainerRoot)
+	return m.HostRoot() + filepath.ToSlash(rest)
 }
 
-// HostRoot is where the daemon sees ContainerRoot, or ContainerRoot itself when
-// no translation applies.
+// HostRoot is where the daemon sees the root's state directory: ContainerRoot
+// itself when no translation applies.
 func (m HostMapping) HostRoot() string {
 	if m.hostRoot == "" {
 		return ContainerRoot

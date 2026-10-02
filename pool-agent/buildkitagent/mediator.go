@@ -365,11 +365,11 @@ func stripInsecure(requested []string) []string {
 // pool's proxy certificate bundle. Client certificates are required, not
 // optional: an unauthenticated connection is a build with no owner.
 func ClientTLSConfig(serverCert, serverKey, mtlsCA string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(resolve(serverCert), resolve(serverKey))
+	cert, err := tls.LoadX509KeyPair(serverCert, serverKey)
 	if err != nil {
 		return nil, fmt.Errorf("load mediator server certificate: %w", err)
 	}
-	caPEM, err := readFile(resolve(mtlsCA))
+	caPEM, err := readFile(mtlsCA)
 	if err != nil {
 		return nil, fmt.Errorf("read mTLS CA: %w", err)
 	}

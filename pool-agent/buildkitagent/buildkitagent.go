@@ -6,10 +6,9 @@
 // rather than in each sandbox so a pool's sandboxes share one build cache;
 // `docker run` stays in the sandbox, because a nested run's bind mounts name
 // sandbox paths that do not exist out here.
-// Every path here is a Linux path: the pool agent runs inside the pool's guest,
-// and these are its cache tree and the buildkitd configuration under it.
-// path rather than path/filepath keeps that true on any machine that merely
-// compiles the tests.
+// Every path here is under a layout.Root: the pool container's, in production,
+// and a relocated one in tests. The constants below are the pool container's
+// own paths, and Root.System is how a caller reaches them.
 package buildkitagent
 
 import (
@@ -18,6 +17,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -98,15 +98,15 @@ const (
 // StateRoot is buildkitd's state directory: the content store, snapshots, and
 // the solver cache that makes this shared at all. It lives on the pool's
 // disposable build tree because it is regenerable and pool-scoped.
-func StateRoot(projectID, poolID string) string {
-	return path.Join(layout.PoolBuild(projectID, poolID), "buildkit")
+func StateRoot(root layout.Root, projectID, poolID string) string {
+	return filepath.Join(root.PoolBuild(projectID, poolID), "buildkit")
 }
 
 // RegistryRoot is the pool registry's blob storage. It holds build output, not
 // cache, but it is still regenerable from the sandboxes' sources, so it shares
 // the disposable tree rather than the durable one.
-func RegistryRoot(projectID, poolID string) string {
-	return path.Join(layout.PoolBuild(projectID, poolID), "registry")
+func RegistryRoot(root layout.Root, projectID, poolID string) string {
+	return filepath.Join(root.PoolBuild(projectID, poolID), "registry")
 }
 
 // legacyRoots are where StateRoot and RegistryRoot used to live: inside
@@ -116,19 +116,19 @@ func RegistryRoot(projectID, poolID string) string {
 // They are deleted rather than migrated. Both trees are regenerable, and a
 // leftover copy is not merely wasted disk: it stays inside the mount, which is
 // the exact thing the move was for.
-func legacyRoots(projectID, poolID string) []string {
-	cache := layout.PoolCache(projectID, poolID)
-	return []string{path.Join(cache, "buildkit"), path.Join(cache, "registry")}
+func legacyRoots(root layout.Root, projectID, poolID string) []string {
+	cache := root.PoolCache(projectID, poolID)
+	return []string{filepath.Join(cache, "buildkit"), filepath.Join(cache, "registry")}
 }
 
 // purgeLegacyRoots removes the pre-ADR-0050 locations. A failure is logged by
 // the caller rather than fatal: the pool must still boot, and what is left
 // behind is stale cache -- wasteful and wrong, but not a reason to have no
 // builder at all.
-func purgeLegacyRoots(projectID, poolID string) error {
+func purgeLegacyRoots(root layout.Root, projectID, poolID string) error {
 	var errs []error
-	for _, dir := range legacyRoots(projectID, poolID) {
-		if err := os.RemoveAll(resolve(dir)); err != nil {
+	for _, dir := range legacyRoots(root, projectID, poolID) {
+		if err := os.RemoveAll(dir); err != nil {
 			errs = append(errs, fmt.Errorf("remove legacy build state %s: %w", dir, err))
 		}
 	}
@@ -160,37 +160,37 @@ const gcKeepStorage = "10000,10000,50000"
 // mitmCASource is the pool's MITM CA, as produced by the proxy's certificate
 // bundle. Prepare copies it to MITMCAPath so the runc wrapper can find it
 // without knowing which pool it serves.
-func Prepare(projectID, poolID, mitmCASource string) error {
+func Prepare(root layout.Root, projectID, poolID, mitmCASource string) error {
 	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(poolID) == "" {
 		return fmt.Errorf("buildkit configuration needs a project and pool")
 	}
 	// Before creating the new roots, so a pool that has already been through
 	// this cannot pay for the walk twice, and so the sandbox-visible cache is
 	// clean by the time any sandbox mounts it (ADR 0050).
-	if err := purgeLegacyRoots(projectID, poolID); err != nil {
+	if err := purgeLegacyRoots(root, projectID, poolID); err != nil {
 		slog.Warn("purge build state left inside the sandbox-visible cache", "error", err)
 	}
-	stateRoot := StateRoot(projectID, poolID)
-	registryRoot := RegistryRoot(projectID, poolID)
-	for _, dir := range []string{stateRoot, registryRoot, path.Dir(Socket)} {
-		if err := os.MkdirAll(resolve(dir), 0o700); err != nil {
+	stateRoot := StateRoot(root, projectID, poolID)
+	registryRoot := RegistryRoot(root, projectID, poolID)
+	for _, dir := range []string{stateRoot, registryRoot, root.System(path.Dir(Socket))} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
-	if err := os.MkdirAll(resolve(path.Dir(ConfigFile)), 0o755); err != nil {
+	if err := os.MkdirAll(root.System(path.Dir(ConfigFile)), 0o755); err != nil {
 		return err
 	}
 	// Only buildkitd reads this, and it runs as root in the pool container.
-	if err := os.WriteFile(resolve(ConfigFile), []byte(renderConfig()), 0o600); err != nil {
+	if err := os.WriteFile(root.System(ConfigFile), []byte(renderConfig()), 0o600); err != nil {
 		return fmt.Errorf("write buildkitd config: %w", err)
 	}
-	if err := os.WriteFile(resolve(UnitEnvironmentFile), []byte(renderUnitEnvironment(stateRoot, projectID, poolID)), 0o600); err != nil {
+	if err := os.WriteFile(root.System(UnitEnvironmentFile), []byte(renderUnitEnvironment(stateRoot, projectID, poolID)), 0o600); err != nil {
 		return fmt.Errorf("write buildkitd unit environment: %w", err)
 	}
-	if err := os.WriteFile(resolve(RegistryEnvironmentFile), []byte(renderRegistryEnvironment(registryRoot)), 0o600); err != nil {
+	if err := os.WriteFile(root.System(RegistryEnvironmentFile), []byte(renderRegistryEnvironment(registryRoot)), 0o600); err != nil {
 		return fmt.Errorf("write registry unit environment: %w", err)
 	}
-	if err := stageMITMCA(mitmCASource); err != nil {
+	if err := stageMITMCA(root, mitmCASource); err != nil {
 		return err
 	}
 	return nil
@@ -199,11 +199,11 @@ func Prepare(projectID, poolID, mitmCASource string) error {
 // stageMITMCA copies the pool's MITM CA where the runc wrapper looks for it. A
 // missing source is not an error: a pool with no MITM proxy has nothing to
 // inject, and the wrapper already treats an absent CA as "nothing to do".
-func stageMITMCA(source string) error {
+func stageMITMCA(root layout.Root, source string) error {
 	if strings.TrimSpace(source) == "" {
 		return nil
 	}
-	data, err := os.ReadFile(resolve(source))
+	data, err := os.ReadFile(source)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -211,7 +211,7 @@ func stageMITMCA(source string) error {
 		return fmt.Errorf("read pool MITM CA %s: %w", source, err)
 	}
 	//nolint:gosec // A trust anchor is public and must be readable inside every build container.
-	if err := os.WriteFile(resolve(MITMCAPath), data, 0o644); err != nil {
+	if err := os.WriteFile(root.System(MITMCAPath), data, 0o644); err != nil {
 		return fmt.Errorf("stage pool MITM CA: %w", err)
 	}
 	return nil

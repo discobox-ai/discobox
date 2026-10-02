@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/layout"
 )
 
 const (
@@ -55,6 +57,7 @@ const (
 // behind. Deriving the interval from the measured cost means there is no tree
 // size at which the schedule stops making sense.
 type storageScanner struct {
+	root      layout.Root
 	projectID string
 	poolID    string
 	logger    *slog.Logger
@@ -71,11 +74,12 @@ type storageScanner struct {
 	last *PoolStorageWalk
 }
 
-func newStorageScanner(logger *slog.Logger, bootstrap Bootstrap, sandboxIDs func(context.Context) []string) *storageScanner {
+func newStorageScanner(logger *slog.Logger, root layout.Root, bootstrap Bootstrap, sandboxIDs func(context.Context) []string) *storageScanner {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &storageScanner{
+		root:        root,
 		projectID:   bootstrap.ProjectID,
 		poolID:      bootstrap.PoolID,
 		logger:      logger,
@@ -119,7 +123,7 @@ func (s *storageScanner) run(ctx context.Context) {
 // next. It reports false only when the context ended, which is the one case
 // where there is no next.
 func (s *storageScanner) sweep(ctx context.Context) (time.Duration, bool) {
-	walk, ok := walkPoolTrees(ctx, s.projectID, s.poolID, s.sandboxIDs(ctx))
+	walk, ok := walkPoolTrees(ctx, s.root, s.projectID, s.poolID, s.sandboxIDs(ctx))
 	if !ok {
 		return 0, false
 	}

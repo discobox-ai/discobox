@@ -86,10 +86,10 @@ func TestAMalformedNamespaceIsReported(t *testing.T) {
 // minted a fresh one would orphan everything published under the old one with
 // nothing left able to name it.
 func TestTheNamespaceSurvivesArchivingTheMaterial(t *testing.T) {
-	withTestRoot(t)
+	root := withTestRoot(t)
 	const projectID, poolID, sandboxID = "project-1", "pool-1", "sbx_one"
 
-	material, err := EnsureSandboxMaterial(projectID, poolID, sandboxID)
+	material, err := EnsureSandboxMaterial(root, projectID, poolID, sandboxID)
 	if err != nil {
 		t.Fatalf("stage material: %v", err)
 	}
@@ -99,10 +99,10 @@ func TestTheNamespaceSurvivesArchivingTheMaterial(t *testing.T) {
 	}
 
 	// Archive: the material goes, the sandbox's durable tree stays.
-	if err := RemoveSandboxMaterial(projectID, poolID, sandboxID); err != nil {
+	if err := RemoveSandboxMaterial(root, projectID, poolID, sandboxID); err != nil {
 		t.Fatalf("remove material: %v", err)
 	}
-	durable, err := ReadRegistryNamespace(RegistryNamespacePath(projectID, poolID, sandboxID))
+	durable, err := ReadRegistryNamespace(RegistryNamespacePath(root, projectID, poolID, sandboxID))
 	if err != nil {
 		t.Fatalf("the namespace did not survive the archive: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestTheNamespaceSurvivesArchivingTheMaterial(t *testing.T) {
 	}
 
 	// Unarchive: the same namespace is staged again, not a new one.
-	if _, err := EnsureSandboxMaterial(projectID, poolID, sandboxID); err != nil {
+	if _, err := EnsureSandboxMaterial(root, projectID, poolID, sandboxID); err != nil {
 		t.Fatalf("re-stage material: %v", err)
 	}
 	again, err := ReadRegistryNamespace(filepath.Join(material.MountSource, RegistryNamespaceFile))
