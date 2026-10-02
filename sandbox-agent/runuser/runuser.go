@@ -16,6 +16,14 @@
 // users and groups exist -- so it is usable only from inside the sandbox. The
 // control plane and the pool agent cannot resolve these names and must not try
 // (ADR 0025 §4); they use sandboxuser.Merge, which has no way to.
+//
+// How an identity is completed is the platform's, behind one required seam:
+// Resolve, Current and Identity are defined once per platform. On Linux they
+// complete uids and gids against the passwd and group files (resolvePOSIX).
+// Everywhere else a sandbox has one account and no POSIX ids, so the only
+// answer is that account (resolveOneAccount, ADR 0145 §5). Both resolvers are
+// built on every platform, which is what lets the single-account one be tested
+// on Linux.
 package runuser
 
 import (
@@ -55,20 +63,22 @@ var (
 	effectiveIDs      = func() (int64, int64) { return int64(os.Getuid()), int64(os.Getgid()) }
 )
 
-// Current is the image layer: who this process already is. Inside a sandbox
-// that is the image's own account -- boot runs as PID 1 before anything has
-// called setuid, and the agent's unit sets no User=, so the running ids are the
-// ones the Dockerfile's USER directive selected.
+// currentPOSIX is the image layer where processes run by uid and gid: who
+// this process already is. Inside a Linux sandbox that is the image's own
+// account -- boot runs as PID 1 before anything has called setuid, and the
+// agent's unit sets no User=, so the running ids are the ones the Dockerfile's
+// USER directive selected.
 //
 // It reports ids only. Completing them to a name and home is Resolve's job, and
 // whether that completion is required is the caller's to declare.
-func Current() *User {
+func currentPOSIX() *User {
 	uid, gid := effectiveIDs()
 	return &User{UID: &uid, GID: &gid}
 }
 
-// Resolve merges the layers by precedence (sandboxuser.Merge) and then
-// completes every field in need against the image's own account database.
+// resolvePOSIX is Resolve where processes run by uid and gid: it merges the
+// layers by precedence (sandboxuser.Merge) and then completes every field in
+// need against the image's own account database.
 //
 // Completion asks; it never defaults (ADR 0025 §6). A name supplies both ids
 // from its passwd entry; a uid with no group supplies the gid of that uid's
@@ -85,7 +95,7 @@ func Current() *User {
 //
 // Fields outside need are cleared rather than half-filled, so an unrequested
 // field cannot be mistaken for a resolved one.
-func Resolve(l Layers, need Fields) (User, error) {
+func resolvePOSIX(l Layers, need Fields) (User, error) {
 	for _, layer := range []*User{l.Request, l.Manifest, l.Image} {
 		if err := layer.Validate(); err != nil {
 			return User{}, err

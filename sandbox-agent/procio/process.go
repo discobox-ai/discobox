@@ -168,8 +168,11 @@ func (p *Process) Wait() Status {
 	return status
 }
 
-// Signal delivers a named signal to the process group.
-func (p *Process) Signal(name string) error { return signalProcessGroup(p.cmd, name) }
+// Signal delivers a named signal to the process group, by the platform's
+// nearest mechanism when it cannot deliver the signal itself, and reports what
+// it became. A Delivery that is Mapped is something the exec's record has to
+// say, because the client asked for something else.
+func (p *Process) Signal(name string) (Delivery, error) { return signalProcessGroup(p.cmd, name) }
 
 // Terminate asks the process group to stop.
 func (p *Process) Terminate() { terminateProcessGroup(p.cmd) }

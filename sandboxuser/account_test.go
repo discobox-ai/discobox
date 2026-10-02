@@ -22,7 +22,7 @@ func TestValidateAccountAcceptsRootAndTheGuestRange(t *testing.T) {
 		{GroupName: "docker"},
 		{GID: ID(2000)},
 	} {
-		if err := u.ValidateAccount(); err != nil {
+		if err := u.ValidateAccount("linux"); err != nil {
 			t.Errorf("ValidateAccount(%+v) = %v, want nil", u, err)
 		}
 	}
@@ -37,7 +37,7 @@ func TestValidateAccountRequiresTheUIDOfANamedAccount(t *testing.T) {
 		{Name: "ada", HomeDirectory: "/Users/ada"},
 		{HomeDirectory: "/Users/ada"},
 	} {
-		err := u.ValidateAccount()
+		err := u.ValidateAccount("linux")
 		if err == nil || !strings.Contains(err.Error(), "uid") {
 			t.Errorf("ValidateAccount(%+v) = %v, want the missing uid named", u, err)
 		}
@@ -58,7 +58,7 @@ func TestValidateAccountRefusesIDsOutsideTheGuestRange(t *testing.T) {
 		{&User{Name: "ada", UID: ID(-1)}, "uid -1"},
 		{&User{GID: ID(20)}, "gid 20"},
 	} {
-		err := tc.user.ValidateAccount()
+		err := tc.user.ValidateAccount("linux")
 		if err == nil || !strings.Contains(err.Error(), tc.field) {
 			t.Errorf("ValidateAccount(%+v) = %v, want %s refused", tc.user, err, tc.field)
 		}
@@ -67,7 +67,7 @@ func TestValidateAccountRefusesIDsOutsideTheGuestRange(t *testing.T) {
 
 func TestValidateAccountKeepsTheInLayerCheck(t *testing.T) {
 	u := &User{Name: "ada", UID: ID(1000), GID: ID(1000), GroupName: "docker"}
-	if err := u.ValidateAccount(); err == nil {
+	if err := u.ValidateAccount("linux"); err == nil {
 		t.Fatal("ValidateAccount accepted both a gid and a group name")
 	}
 }

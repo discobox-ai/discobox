@@ -57,10 +57,22 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
 - Credentials must set supplementary groups explicitly. `NoSetGroups` leaves the
   child holding the *agent's* groups — the agent is root — so a process dropped
   to the sandbox user silently inherits root's groups and none of its own.
-- Identity resolution is cross-platform; keep it out of `_unix.go` files. Only
-  the credential and `SysProcAttr` construction are platform-specific
-  (`execs/process_unix.go`, `execs/process_windows.go`). Run
+- Identity resolution is per platform only behind `runuser`'s seam
+  (`platform_linux.go`, `platform_other.go`), and both resolvers build
+  everywhere so the one-account one is tested on Linux; keep identity logic out
+  of `_unix.go` files, because darwin is unix and has no POSIX ids here. Only
+  the credential and `SysProcAttr` construction are otherwise per platform
+  (`execs/credential_linux.go`, `execs/credential_darwin.go`,
+  `execs/process_unix.go`, `execs/process_windows.go`). Run
   `go tool task check:windows` before relying on that split.
+- Off Linux, a request naming another user, a uid or a group set is refused
+  with `sandboxuser.OneAccountError`, never dropped. Do not "tolerate" one by
+  clearing the fields: that runs the exec as the one account while its record
+  says it asked for someone else (ADR 0145 §5).
+- A signal a platform cannot deliver as asked is mapped to its nearest real
+  mechanism and recorded as an exec event. A new mapping goes in `procio`'s
+  delivery tables with a `Reason`; one with no reason is a signal delivered as
+  itself.
 
 ## Reading the working tree at boot
 

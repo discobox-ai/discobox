@@ -1,6 +1,9 @@
 package services
 
 import (
+	"errors"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -240,5 +243,35 @@ func TestSandboxToAPIIncludesTheCreatingSandbox(t *testing.T) {
 		if got != tc.want || set != (tc.want != "") {
 			t.Fatalf("createdBySandboxId = %q (set %t), want %q", got, set, tc.want)
 		}
+	}
+}
+
+// A sandbox on a platform without POSIX ids has one account, so its create may
+// name that account and nothing more. A uid or a group set is refused as a bad
+// request saying why, never dropped on the way to a sandbox that cannot honor
+// it (ADR 0145 §5).
+func TestSandboxUserValidateAccountRefusesIDsOffLinux(t *testing.T) {
+	name, uid := "ada", 501
+	if err := (SandboxUserFields{Name: &name}).ValidateAccount("darwin"); err != nil {
+		t.Fatalf("the account by name = %v, want nil", err)
+	}
+	for _, tc := range []struct {
+		fields SandboxUserFields
+		want   string
+	}{
+		{SandboxUserFields{Name: &name, UID: &uid}, "a uid (501)"},
+		{SandboxUserFields{AdditionalGroups: []string{"staff"}}, "a group set (staff)"},
+	} {
+		err := tc.fields.ValidateAccount("darwin")
+		var statusErr interface{ StatusCode() int }
+		if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest ||
+			!strings.Contains(err.Error(), "no POSIX ids") || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ValidateAccount(%+v) = %v, want a 400 naming %q and why", tc.fields, err, tc.want)
+		}
+	}
+	// The same uid is an account a Linux sandbox may be created with.
+	linuxUID := 1000
+	if err := (SandboxUserFields{Name: &name, UID: &linuxUID}).ValidateAccount("linux"); err != nil {
+		t.Fatalf("a Linux account = %v, want nil", err)
 	}
 }
