@@ -2,6 +2,7 @@ package poolagent
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -377,6 +378,13 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 	} else {
 		audit = auditClient
 	}
+	// The git-origins route verifies the tokens this pool issues its sandboxes
+	// against its own identity key (ADR 0126 §4).
+	var sandboxTokenKey ed25519.PublicKey
+	if registration != nil {
+		// An ed25519.PrivateKey's public half is always an ed25519.PublicKey.
+		sandboxTokenKey, _ = registration.PrivateKey.Public().(ed25519.PublicKey)
+	}
 	return poolserver.Serve(ctx, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
@@ -386,6 +394,7 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 		Runtime:               runtime,
 		Audit:                 audit,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
+		SandboxTokenKey:       sandboxTokenKey,
 		Listener:              listener,
 	})
 }

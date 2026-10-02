@@ -150,6 +150,12 @@ type GitRepositoryLocation struct {
 	// the process (there is no sandbox container user to impersonate).
 	UID int
 	GID int
+	// Live marks the developer's own Git directory served as a source's
+	// origin, rather than a repository this pool owns (ADR 0126 §4): it is
+	// served fetch-only, and advertises HEAD, the branch HEAD names, and Refs.
+	Live bool
+	// Refs are the refs the source declares, for a live origin.
+	Refs []string
 }
 
 // AssignedPort describes a runtime-assigned port mapping.
@@ -234,8 +240,10 @@ type Runtime interface {
 	// in it can be reached.
 	SandboxBooting(sandboxID string) bool
 	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error)
-	// GitOriginPath serves the bare origin repository of a push-delivered
-	// source, which the client pushes into (ADR 0058 §3).
+	// GitOriginPath is the repository behind a source's origin route: the
+	// developer's live Git directory when this pool can see it (ADR 0126 §4),
+	// and otherwise the bare origin repository the client pushes into
+	// (ADR 0058 §3).
 	GitOriginPath(ctx context.Context, sandboxID, slug string) (GitRepositoryLocation, error)
 	// SandboxDialer resolves how to reach port inside the sandbox — its agent
 	// on SandboxAgentPort, or a port something in it listens on — and returns
@@ -1040,6 +1048,9 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 			}
 			project = layer
 		}
+	}
+	if err := r.writeLiveOrigins(sandboxID, sources); err != nil {
+		return nil, nil, fmt.Errorf("record live origins: %w", err)
 	}
 	// These sources are resolved by the Docker daemon, so they are the only
 	// place a container path has to become a daemon path. A local source bind
@@ -2086,27 +2097,18 @@ func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID,
 	return GitRepositoryLocation{Path: repoPath, UID: uid, GID: gid}, nil
 }
 
-// GitOriginPath is where a push-delivered source's origin repository lives. It
-// is bare, so unlike GitRepositoryPath there is no `.git` to probe for: HEAD is
-// what every repository has and a directory does not.
-//
-// It exists from provisioning onwards, before the source has been delivered,
-// which is the whole point — it is what the client pushes into while the sandbox
-// parks (ADR 0058 §4).
+// GitOriginPath is where a source's origin is served from; see
+// originLocation. A bare origin is probed for HEAD rather than `.git`, which
+// is what every repository has and a directory does not, and it exists from
+// provisioning onwards, before the source has been delivered, which is the
+// whole point — it is what the client pushes into while the sandbox parks
+// (ADR 0058 §4).
 func (r *DockerSandboxRuntime) GitOriginPath(ctx context.Context, sandboxID, slug string) (GitRepositoryLocation, error) {
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
 		return GitRepositoryLocation{}, err
 	}
-	repoPath := r.sandboxOriginPath(sandboxID, slug)
-	if _, err := os.Stat(filepath.Join(repoPath, "HEAD")); err != nil {
-		if os.IsNotExist(err) {
-			return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, slug)
-		}
-		return GitRepositoryLocation{}, err
-	}
-	uid, gid := sandboxUserFromEnv(sb.Env)
-	return GitRepositoryLocation{Path: repoPath, UID: uid, GID: gid}, nil
+	return r.originLocation(sandboxID, slug, sb.Env)
 }
 
 // sandboxUserFromEnv recovers the sandbox's resolved user from the
@@ -2385,6 +2387,7 @@ type MemorySandboxRuntime struct {
 	archived        map[string]struct{}
 	gitRepositories map[string]map[string]string
 	gitOrigins      map[string]map[string]string
+	liveOrigins     map[string]map[string]GitRepositoryLocation
 	// trees stands in for the durable tree on disk: the tar bytes a sandbox was
 	// imported with, handed back by an export.
 	trees map[string][]byte
@@ -2396,6 +2399,7 @@ func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 		archived:        map[string]struct{}{},
 		gitRepositories: map[string]map[string]string{},
 		gitOrigins:      map[string]map[string]string{},
+		liveOrigins:     map[string]map[string]GitRepositoryLocation{},
 		trees:           map[string][]byte{},
 	}
 }
@@ -2622,6 +2626,9 @@ func (r *MemorySandboxRuntime) GitOriginPath(_ context.Context, sandboxID, slug 
 	if r.sandboxes[sandboxID] == nil {
 		return GitRepositoryLocation{}, ErrNotFound
 	}
+	if live, ok := r.liveOrigins[sandboxID][slug]; ok {
+		return live, nil
+	}
 	origins := r.gitOrigins[sandboxID]
 	if origins == nil || origins[slug] == "" {
 		return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, slug)
@@ -2650,6 +2657,17 @@ func (r *MemorySandboxRuntime) SetGitOriginPath(sandboxID, slug, path string) {
 		r.gitOrigins[sandboxID] = map[string]string{}
 	}
 	r.gitOrigins[sandboxID][slug] = path
+}
+
+// SetLiveGitOrigin serves path as slug's live origin, advertising refs, ahead
+// of any bare origin SetGitOriginPath gave it.
+func (r *MemorySandboxRuntime) SetLiveGitOrigin(sandboxID, slug, path string, refs []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.liveOrigins[sandboxID] == nil {
+		r.liveOrigins[sandboxID] = map[string]GitRepositoryLocation{}
+	}
+	r.liveOrigins[sandboxID][slug] = GitRepositoryLocation{Path: path, UID: -1, GID: -1, Live: true, Refs: refs}
 }
 
 func sandboxContainerName(poolID, sandboxID string) string {

@@ -14,6 +14,7 @@ import (
 	"aidanwoods.dev/go-paseto"
 
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
 )
 
 const (
@@ -152,6 +153,44 @@ func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(withSignedTokenClaims(r.Context(), claims)))
 	})
+}
+
+// OriginMiddleware authenticates the git-origins route, the one route a
+// sandbox's own token reaches (ADR 0126 §4). A token this pool issued to a
+// sandbox (sandboxtoken) is accepted for that sandbox's path and no other;
+// anything else is a control-plane token, authenticated exactly as Middleware
+// does. A nil verifier accepts control-plane tokens alone.
+//
+// Accepting the sandbox token here rather than in Middleware is what confines
+// it: routes behind Middleware rely on its tokens coming from the control
+// plane, and several require no scope at all.
+func (a *SignedTokenAuthenticator) OriginMiddleware(sandboxTokens *sandboxtoken.Verifier) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		controlPlane := a.Middleware(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenText, ok := bearerToken(r.Header.Get("Authorization"))
+			if !ok || sandboxTokens == nil {
+				controlPlane.ServeHTTP(w, r)
+				return
+			}
+			sandbox, err := sandboxTokens.Verify(tokenText)
+			if err != nil {
+				controlPlane.ServeHTTP(w, r)
+				return
+			}
+			claims := SignedTokenClaims{
+				ProjectID: sandbox.ProjectID,
+				PoolID:    sandbox.PoolID,
+				SandboxID: sandbox.SandboxID,
+				Scopes:    sandbox.Scopes,
+			}
+			if err := a.authorizeRequestPath(r.URL.Path, claims); err != nil {
+				a.reject(r, w, http.StatusForbidden, reasonForbidden, err)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(withSignedTokenClaims(r.Context(), claims)))
+		})
+	}
 }
 
 // Reasons a request was refused. They are coarse on purpose: enough to tell a

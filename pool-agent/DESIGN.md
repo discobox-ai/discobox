@@ -24,11 +24,12 @@ from the in-sandbox `sandbox-agent` API.
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
 | `poolauth` | Pool-to-control-plane assertions: PASETO v4.public signed with the pool's Ed25519 key. |
+| `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
-| `githttp` | `git http-backend` CGI bridge behind the `git-repositories`/`git-origins` routes, run as the repository's owner. |
+| `githttp` | `git http-backend` CGI bridge behind the `git-repositories`/`git-origins` routes, run as the repository's owner. A live origin is served fetch-only with a ref allow-list; see [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
-| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server, including the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
+| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server, including the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`; it also records each local source's live origin for the `git-origins` route (`origin.go`). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
@@ -608,7 +609,10 @@ not match its bootstrap identity. It must also reject sandbox operation requests
 without a short-lived PASETO v4.public bearer token signed by the control-plane
 key supplied in bootstrap metadata. Tokens are audience-bound to `pool-agent`,
 carry `project_id`, `pool_id`, optional `sandbox_id`, and scopes, and generated
-API operations must authorize against those scopes. Sandbox operation handlers
+API operations must authorize against those scopes. The `git-origins` route
+alone also accepts a token this pool issued to the sandbox it names
+(`sandboxtoken`, scope `origin:fetch`; see [Git origins](#git-origins)); no
+other route does, since several require no scope at all. Sandbox operation handlers
 under this route own only local runtime work; control-plane persistence, user
 authorization, and desired-state orchestration remain outside this module.
 
@@ -621,6 +625,56 @@ namespace, not this one, so `localhost` in a forwarded connection means what
 the user meant. `.../udp/attach` (scope `udp:connect`) is registered the same
 way for the datagram tunnel
 ([ADR 0109](../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)).
+
+### Git origins
+
+`.../sandboxes/{sandbox_id}/git-origins/{slug}.git` serves each source's
+origin, whichever kind it is, so a sandbox is only ever handed a URL
+([ADR 0126 §4](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)).
+`GitOriginPath` picks the repository per request:
+
+```mermaid
+flowchart TD
+  req["git-origins/{slug}.git"] --> rec{"slug in live-origins.json?"}
+  rec -->|yes| vis{"developer's .git visible<br/>here, a real directory?"}
+  vis -->|yes| live["live origin: the developer's .git<br/>fetch-only, ref allow-list,<br/>run as its owner"]
+  vis -->|no| bare
+  rec -->|no| bare{"origins/{slug}.git exists?"}
+  bare -->|yes| pushed["bare origin (ADR 0058)<br/>client pushes, sandbox fetches"]
+  bare -->|no| nf["404"]
+```
+
+- **The record.** Every create that builds volumes rewrites
+  `sandboxes/{sandbox}/live-origins.json`: each clone-delivered local source's
+  Git directory, as the request named it, and the refs it declares. It is
+  pool-private, beside the volumes rather than in one, and does not travel with
+  an export — a path on this host means nothing to another pool, whose own
+  create writes its own.
+- **Visibility.** The Git directory is opened through the host mount prefix
+  (`hostMountedLocalDirectory`). One that has gone, or is no longer a real
+  directory, is not served; the bare origin answers instead, and the sandbox
+  cannot tell which it got.
+- **Fetch-only.** A live origin answers only the two smart upload-pack
+  requests. receive-pack is refused whatever the token allows, and so is the
+  dumb protocol, which hands out objects as plain files whatever is advertised
+  (`http.getanyfile=false` besides).
+- **Ref allow-list.** `uploadpack.hideRefs=refs/` hides everything, then the
+  allowed refs are revealed: the branch `HEAD` names, read per request, and the
+  source's declared refs — its checkout branch or tag and its dirty-workspace
+  snapshot ref. `HEAD` itself is always advertised. The switches are given on
+  the command line, which git reads after the repository's own config, so the
+  developer's `.git/config` cannot widen them.
+- **No fetch by object id.** The `uploadpack.allow*SHA1InWant` and
+  `allowRefInWant` switches are forced off, and a live origin is answered in
+  protocol v0 whatever the client asks for: a v2 upload-pack serves any object
+  asked for by id, advertised or not, whatever those switches say. v0 refuses
+  a want that no advertised ref reaches.
+- **Tokens.** The route accepts the control plane's tokens as every route does
+  (`sandbox:read` to fetch, `sandbox:write` to push into a bare origin) and,
+  alone among routes, a token this pool issued to the sandbox it names
+  (`sandboxtoken`, `origin:fetch`), which fetches and never pushes.
+- A fetch racing the developer's own `git gc` can fail on a pruned object, as
+  the read-only bind always could.
 
 ## Sandbox DNS
 
@@ -752,7 +806,8 @@ flowchart LR
   it is this sandbox's alone and is kept, deleted, and exported exactly as the
   rest of that tree is. A sandbox created before the name was reserved may have
   a reference holding it; `sourceDataPlan` leaves that layout as it was.
-- Every source with a `LocalDirectory` gets an origin bound, read-only, directly
+- Every source with a `LocalDirectory` has its origin served over Git HTTP
+  ([Git origins](#git-origins)) and also gets it bound, read-only, directly
   onto `/.discobox/origins/<slug>` — the same `<slug>` as the corresponding
   `/.discobox/sources/<slug>`. `ensureOriginRemote` points the repository's
   `origin` remote at that in-sandbox path, so `git fetch origin` and `git rebase
