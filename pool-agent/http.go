@@ -44,7 +44,8 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 	c := &HTTPClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		// Never http.DefaultClient: it proxies when the pool runs inside a
-		// sandbox, and this client speaks to the pool's own sandboxes.
+		// sandbox, and the control plane is reached directly, never through
+		// that sandbox's egress proxy.
 		client:                       internalhttp.Client,
 		registerPath:                 defaultRegisterPath,
 		statusPath:                   defaultStatusPath,
