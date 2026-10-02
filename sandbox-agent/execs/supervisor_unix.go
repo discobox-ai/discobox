@@ -8,18 +8,24 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
-// lockFile takes an exclusive flock on file, waiting for it when wait is set
-// and reporting false rather than waiting when it is not.
+// lockFile takes a flock on file — exclusive or shared — waiting for it when
+// wait is set and reporting false rather than waiting when it is not.
 //
 // It is flock and must stay flock. A flock belongs to the open file
 // description, so it passes to the shim with the descriptor and is released
 // only when the last process holding that description exits — which is what
 // makes it a shim's lifetime. A POSIX record lock (fcntl) belongs to a process
 // instead: the supervisor closing its own copy would release it.
-func lockFile(file *os.File, wait bool) (bool, error) {
-	how := syscall.LOCK_EX
+func lockFile(file *os.File, exclusive, wait bool) (bool, error) {
+	how := syscall.LOCK_SH
+	if exclusive {
+		how = syscall.LOCK_EX
+	}
 	if !wait {
 		how |= syscall.LOCK_NB
 	}
@@ -66,6 +72,123 @@ func terminateProcess(pid int) error {
 
 func killProcess(pid int) error {
 	return translateKillError(syscall.Kill(pid, syscall.SIGKILL))
+}
+
+// processInfo is what the supervisor needs to know of a process it did not
+// start: when it started, which is how a pid is told apart from a later
+// process that reused the number, and whether it has exited and waits only to
+// be reaped, which no signal can end.
+type processInfo struct {
+	started time.Time
+	exited  bool
+}
+
+// startTolerance is how far a process's start time, as the kernel reports it,
+// may sit from the one the shim recorded for its command and still be that
+// command. The shim records the time just after the process starts, and Linux
+// reports boot time in whole seconds.
+const startTolerance = 2 * time.Second
+
+// isCommand reports whether pid is still the command that a shim recorded as
+// starting at started — alive, leading its own session, and started then
+// rather than some later process that reused the number.
+func isCommand(pid int, started time.Time) bool {
+	info, err := inspectProcess(pid)
+	if err != nil || info.exited {
+		return false
+	}
+	if sid, err := unix.Getsid(pid); err != nil || sid != pid {
+		return false
+	}
+	return info.started.Sub(started).Abs() <= startTolerance
+}
+
+// sessionMembers lists the live processes in session sid. Every exec command
+// leads a session of its own (agentSysProcAttr), and what it starts stays in
+// that session unless it leaves on purpose, so the session — not the process
+// group — is the nearest thing to the control group systemd ends a unit with:
+// an interactive shell puts each job in a group of its own.
+func sessionMembers(sid int) ([]int, error) {
+	pids, err := processes()
+	if err != nil {
+		return nil, err
+	}
+	var out []int
+	for _, pid := range pids {
+		if member, err := unix.Getsid(pid); err != nil || member != sid {
+			continue
+		}
+		if info, err := inspectProcess(pid); err != nil || info.exited {
+			continue
+		}
+		out = append(out, pid)
+	}
+	return out, nil
+}
+
+// sessionStillOurs reports whether session sid is still the one a command
+// that started at started leads. While a live process holds the number it must
+// be that command; once the leader has gone, what is left in the session is
+// taken to be its own — a session id stays its leader's for as long as
+// anything in the session is alive, so a number reused by a new leader would
+// have found the old session empty.
+//
+// That last step holds only for a caller that knows the command was alive a
+// moment ago: the shim, stopping the command it ran. A newer session can lose
+// its own leader too, so a caller looking at a pid recorded any length of time
+// ago — the supervisor collecting a shim that died while the agent was down —
+// requires a live, matching leader instead (isCommand).
+func sessionStillOurs(sid int, started time.Time) bool {
+	if info, err := inspectProcess(sid); err == nil && !info.exited {
+		return isCommand(sid, started)
+	}
+	return true
+}
+
+// signalSession sends sig to every live process in the session of the command
+// that started at started, and to nothing if that number is now someone
+// else's.
+func signalSession(sid int, started time.Time, sig syscall.Signal) error {
+	if !sessionStillOurs(sid, started) {
+		return nil
+	}
+	members, err := sessionMembers(sid)
+	if err != nil {
+		return err
+	}
+	for _, pid := range members {
+		_ = syscall.Kill(pid, sig)
+	}
+	return nil
+}
+
+// endSession kills everything in the session of the command that started at
+// started, and nothing if that number is now someone else's.
+func endSession(sid int, started time.Time) error {
+	if !sessionStillOurs(sid, started) {
+		return nil
+	}
+	return killSession(sid)
+}
+
+// killSession SIGKILLs session sid until nothing in it is left alive. It goes
+// round more than once because a member may fork between being listed and
+// being killed, and a killed process takes a moment to become a zombie.
+func killSession(sid int) error {
+	for range 20 {
+		members, err := sessionMembers(sid)
+		if err != nil {
+			return err
+		}
+		if len(members) == 0 {
+			return nil
+		}
+		for _, pid := range members {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return errors.New("session still has live processes")
 }
 
 func translateKillError(err error) error {

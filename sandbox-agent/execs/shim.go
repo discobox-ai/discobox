@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/discobox-ai/discobox/execstream/frame"
@@ -66,7 +67,9 @@ type shimRuntime struct {
 	outputWG  sync.WaitGroup
 	startMu   sync.Mutex
 	stream    *shimruntime.Runtime
-	mu        sync.Mutex
+	// started is when proc was started; guarded by startMu, like proc.
+	started time.Time
+	mu      sync.Mutex
 	// inputClosed records that stdin has been closed, so a later write reports
 	// it rather than failing on a closed descriptor.
 	inputClosed bool
@@ -94,10 +97,66 @@ func RunShim(ctx context.Context, cfg ShimConfig) error {
 	go r.serve()
 	select {
 	case <-ctx.Done():
-		r.terminate()
+		r.stop()
 		return ctx.Err()
 	case <-r.done:
 		return nil
+	}
+}
+
+// shimStopGrace is how long a shim asked to stop gives its command to end on
+// SIGTERM before it kills the command's session.
+const shimStopGrace = 5 * time.Second
+
+// shimKillDrain bounds the wait, after the kill, for the command's exit to be
+// recorded; shimShutdownTimeout bounds closing the shim's own server. With
+// shimStopGrace they are the longest a stop can take, which is what the
+// Supervisor's stop timeout is built from.
+const (
+	shimKillDrain       = 2 * time.Second
+	shimShutdownTimeout = 2 * time.Second
+)
+
+// stop ends the command because the shim was asked to stop, and does not
+// return while anything the command started is still there. SIGTERM to the
+// command's whole session first, so everything in it can clean up; SIGKILL to
+// all of it once the command has exited or the grace runs out. That is what
+// systemd's control group does to a unit, and the Supervisor has none, so the
+// shim is what keeps a stop honest there.
+//
+// It is the session rather than the process group because an interactive
+// shell puts each job in a group of its own: a terminal's `npm run dev &`
+// would outlive a group kill and keep its port. The command leads its session
+// (agentSysProcAttr), so the session id is its pid — but the shim lingers
+// after its command exits, and by the time a stop arrives that number may be
+// another command's. endSession and signalSession settle which it is from
+// the start time recorded here.
+func (r *shimRuntime) stop() {
+	// startMu, not mu: it is what startProcess holds when it sets proc.
+	r.startMu.Lock()
+	proc, started := r.proc, r.started
+	r.startMu.Unlock()
+	if proc == nil {
+		return
+	}
+	sid := int(proc.PID())
+	proc.Terminate()
+	_ = signalSession(sid, started, syscall.SIGTERM)
+	grace := time.NewTimer(shimStopGrace)
+	defer grace.Stop()
+	select {
+	case <-r.exited:
+	case <-grace.C:
+	}
+	// Whether the command ended on SIGTERM or not, what it left running in
+	// its session was asked to stop too.
+	_ = endSession(sid, started)
+	// The exit is recorded once the output is drained, which a killed session
+	// leaves nothing to hold up; the bound is for a process that left the
+	// session with the output still open.
+	select {
+	case <-r.exited:
+	case <-time.After(shimKillDrain):
 	}
 }
 
@@ -173,6 +232,11 @@ func (r *shimRuntime) startProcess(opts procio.Options) error {
 		return err
 	}
 	r.proc = proc
+	// Taken the moment the process exists, before anything is typed into it:
+	// it is what the exec records as its start, and what a stop or the
+	// supervisor later checks the pid against to know it is still this
+	// command (isCommand).
+	r.started = time.Now().UTC()
 	r.status.PID = proc.PID()
 
 	if tty := proc.TTY(); tty != nil {
@@ -419,10 +483,10 @@ func (r *shimRuntime) startCommand() error {
 		r.markStartFailed(err)
 		return err
 	}
-	now := time.Now().UTC()
+	started := r.started
 	r.mu.Lock()
 	r.status.Status = StatusRunning
-	r.status.StartedAt = &now
+	r.status.StartedAt = &started
 	r.mu.Unlock()
 	if err := r.writeStatus(); err != nil {
 		r.terminate()
@@ -667,7 +731,7 @@ func (r *shimRuntime) terminate() {
 func (r *shimRuntime) close() {
 	r.terminate()
 	if r.server != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), shimShutdownTimeout)
 		_ = r.server.Shutdown(ctx)
 		cancel()
 	}

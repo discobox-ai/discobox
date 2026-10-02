@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	osexec "os/exec"
 	"os/signal"
 	"path/filepath"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 )
 
 // TestMain lets this test binary be its own exec shim. Both unit managers
@@ -75,7 +78,18 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 
 	t.Run("Stop", func(t *testing.T) {
 		agent := startContractAgent(t, newUnits, contractRuntimeDir(t), newContractAudit())
-		exec := agent.run(t, "sleep 600")
+		// A command that ignores SIGTERM, a child that inherits that, and a job
+		// in a process group of its own — what an interactive shell makes of
+		// `cmd &`. A stop has to end all three, which takes more than asking
+		// and more than a group kill.
+		// It says when the trap is in place, because a stop that lands before
+		// it would be answered by SIGTERM alone.
+		trapped := filepath.Join(t.TempDir(), "trapped")
+		exec := agent.run(t, fmt.Sprintf("set -m; trap '' TERM; sleep 600 & : > %q; sleep 600; :", trapped))
+		waitUntil(t, "the command to ignore SIGTERM", func() bool {
+			_, err := os.Stat(trapped)
+			return err == nil
+		})
 		running := agent.waitFor(t, exec.ID, "running", func(exec Exec) bool {
 			return exec.Status == StatusRunning && exec.PID > 0
 		})
@@ -93,9 +107,10 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		if status.Loaded {
 			t.Fatalf("unit %s is still loaded after a stop", exec.Unit)
 		}
-		// The command, not only the shim: stopping a unit ends what it ran.
-		waitUntil(t, "the stopped command to exit", func() bool {
-			return syscall.Kill(int(running.PID), 0) != nil
+		// The command, not only the shim: stopping a unit ends what it ran, all
+		// of its session.
+		waitUntil(t, "the stopped command's session to exit", func() bool {
+			return sessionGone(int(running.PID))
 		})
 		// And the stop is the last word: what the unit going away reports
 		// afterwards does not turn a requested stop into a lost exec.
@@ -112,9 +127,9 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		first := startContractAgent(t, newUnits, runtimeDir, audit)
 		survivor := first.run(t, "sleep 600")
 		finisher := first.run(t, fmt.Sprintf("while [ ! -e %q ]; do sleep 0.05; done; exit 3", release))
-		for _, exec := range []Exec{survivor, finisher} {
-			first.waitFor(t, exec.ID, "running", func(exec Exec) bool { return exec.Status == StatusRunning })
-		}
+		isRunning := func(exec Exec) bool { return exec.Status == StatusRunning && exec.PID > 0 }
+		survivorCommand := first.waitFor(t, survivor.ID, "running", isRunning).PID
+		first.waitFor(t, finisher.ID, "running", isRunning)
 		// The agent goes away. Its shims do not.
 		first.stop()
 
@@ -143,6 +158,78 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		second.waitFor(t, survivor.ID, "the killed shim's exec to read lost", func(exec Exec) bool {
 			return exec.Status == StatusLost
 		})
+		// A shim that went without ending its command does not leave it behind.
+		waitUntil(t, "the killed shim's command to exit", func() bool {
+			return sessionGone(int(survivorCommand))
+		})
+	})
+}
+
+// sessionGone reports whether nothing in session sid is alive.
+func sessionGone(sid int) bool {
+	members, err := sessionMembers(sid)
+	return err == nil && len(members) == 0
+}
+
+// A shim that went without recording its command's exit has the command's
+// session ended — but only while the pid is still that command. The shim may
+// have gone while the agent was down, or before a reboot left its unit behind,
+// and by then the number can be another exec's command, which also leads a
+// session of its own.
+func TestOrphanedCommandIsEndedOnlyWhileItIsStillThatCommand(t *testing.T) {
+	dir := t.TempDir()
+	start := func(t *testing.T) *osexec.Cmd {
+		t.Helper()
+		cmd := osexec.CommandContext(t.Context(), "sleep", "600") //nolint:gosec // a fixed command, as a stand-in for an orphaned exec.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		})
+		return cmd
+	}
+	orphan := func(t *testing.T, pid int, started time.Time) unitState {
+		t.Helper()
+		runtimePath := filepath.Join(dir, fmt.Sprintf("%d.json", pid))
+		if err := writeRuntime(runtimePath, Exec{ID: "ex", Status: StatusRunning, PID: int64(pid), StartedAt: &started}); err != nil {
+			t.Fatal(err)
+		}
+		return unitState{RuntimePath: runtimePath}
+	}
+
+	other := start(t)
+	// Recorded an hour before this process started: the number was reused.
+	endOrphanedCommand(orphan(t, other.Process.Pid, time.Now().Add(-time.Hour)))
+	time.Sleep(100 * time.Millisecond)
+	if sessionGone(other.Process.Pid) {
+		t.Fatal("a process that reused an orphan's pid was killed")
+	}
+
+	// A session whose leader is gone, with a member still running: what
+	// another exec looks like after its command started a server and exited.
+	// The orphan's record cannot say whose session that is any more.
+	leaderless := osexec.CommandContext(t.Context(), "sh", "-c", "sleep 600 & exit 0") //nolint:gosec // a fixed command.
+	leaderless.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	leaderlessStart := time.Now()
+	if err := leaderless.Run(); err != nil {
+		t.Fatal(err)
+	}
+	sid := leaderless.Process.Pid
+	t.Cleanup(func() { _ = killSession(sid) })
+	waitUntil(t, "the leaderless session's member", func() bool { return !sessionGone(sid) })
+	endOrphanedCommand(orphan(t, sid, leaderlessStart))
+	time.Sleep(100 * time.Millisecond)
+	if sessionGone(sid) {
+		t.Fatal("a session whose leader was gone was killed on the strength of an old record")
+	}
+
+	command := start(t)
+	endOrphanedCommand(orphan(t, command.Process.Pid, time.Now()))
+	waitUntil(t, "the orphaned command to be killed", func() bool {
+		return sessionGone(command.Process.Pid)
 	})
 }
 
@@ -311,4 +398,50 @@ func contractRuntimeDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
+}
+
+// An exec's start is when its process started, not when the shim finished
+// typing its startup command into it. The shim waits for a line editor before
+// it types — up to a bound, for a program that never runs one — and a start
+// stamped after that wait sits seconds from the kernel's, which is what the
+// supervisor checks a pid against before it kills anything (isCommand).
+func TestShimRecordsTheStartBeforeTypingTheStartupCommand(t *testing.T) {
+	dir := shimDir(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID: "exec_started",
+			// No line editor ever takes this terminal, so the shim waits its
+			// whole bound before typing.
+			Command:        []string{"sleep", "30"},
+			StartupCommand: []string{"true"},
+			Workdir:        dir,
+			SocketPath:     socketPath,
+			RuntimePath:    filepath.Join(dir, "runtime.json"),
+			Rows:           24,
+			Cols:           80,
+			TTY:            true,
+		})
+	}()
+	asked := time.Now()
+	started, err := shimproxy.StartJSON[Exec](ctx, socketPath)
+	if err != nil {
+		t.Fatalf("start shim: %v", err)
+	}
+	if started.StartedAt == nil {
+		t.Fatal("no start recorded")
+	}
+	if late := started.StartedAt.Sub(asked); late > time.Second {
+		t.Fatalf("start recorded %s after the shim was asked to start; it must be the process's start", late)
+	}
+	if !isCommand(int(started.PID), *started.StartedAt) {
+		t.Fatal("the recorded start does not identify the running command")
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
 }

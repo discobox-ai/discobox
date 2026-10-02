@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 // The Supervisor's lifetime lock is a flock, which passes to a child with its
@@ -15,7 +16,7 @@ import (
 // gives the supervisor its own way to hold a shim's lifetime (ADR 0145 §4).
 // Until then it builds, and reports every lock as unsupported — which the
 // supervisor never reads as a shim that ended.
-func lockFile(*os.File, bool) (bool, error) { return false, errors.ErrUnsupported }
+func lockFile(*os.File, bool, bool) (bool, error) { return false, errors.ErrUnsupported }
 
 func shimSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
@@ -36,3 +37,11 @@ func killProcess(pid int) error {
 	}
 	return process.Kill()
 }
+
+// Windows has no sessions to end; the supervisor's half there waits on the
+// same work as lockFile.
+func isCommand(int, time.Time) bool { return false }
+
+func signalSession(int, time.Time, syscall.Signal) error { return errors.ErrUnsupported }
+
+func endSession(int, time.Time) error { return errors.ErrUnsupported }

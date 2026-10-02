@@ -28,9 +28,10 @@ const (
 )
 
 // defaultSupervisorStopTimeout is how long Stop waits for a shim it asked to
-// end before it kills it. The shim's own shutdown is a couple of seconds: it
-// signals its command's process group and closes its socket.
-const defaultSupervisorStopTimeout = 10 * time.Second
+// end before it kills it: the longest the shim's own stop takes — the grace it
+// gives its command, the wait after the kill, and closing its server — and a
+// margin, so a shim doing exactly what it should is never the one killed.
+const defaultSupervisorStopTimeout = shimStopGrace + shimKillDrain + shimShutdownTimeout + 3*time.Second
 
 // Supervisor is the UnitManager for a sandbox without systemd (ADR 0145 §4).
 // The agent starts each shim itself, in a session of its own so it outlives
@@ -47,6 +48,12 @@ const defaultSupervisorStopTimeout = 10 * time.Second
 // whose lock nobody holds is a shim that is gone, and it is collected — removed
 // — the way systemd collects a transient unit.
 //
+// Only the shim ever holds the lock exclusively. Everything in this process
+// that asks about it — the probe behind Status and Stop, the goroutine waiting
+// for the shim to end — takes it shared, so the supervisor's own questions can
+// never read as a shim that is still there: a shared lock is refused only
+// while an exclusive one is held.
+//
 // It is never a source of exit status. That is the shim's own runtime write
 // (ADR 0115 §1), which lands before the shim exits and so before its lock is
 // released.
@@ -62,10 +69,13 @@ type Supervisor struct {
 }
 
 // unitState is what a unit's lifetime file holds: the shim's pid, which Stop
-// signals only while the lock says the shim is still the one holding it.
+// signals only while the lock says the shim is still the one holding it, and
+// the exec's runtime file, which says what the shim's command was when the
+// shim went.
 type unitState struct {
-	PID       int       `json:"pid"`
-	StartedAt time.Time `json:"startedAt"`
+	PID         int       `json:"pid"`
+	StartedAt   time.Time `json:"startedAt"`
+	RuntimePath string    `json:"runtimePath,omitempty"`
 }
 
 // NewSupervisor returns a supervisor that keeps its units in dir.
@@ -143,7 +153,7 @@ func (s *Supervisor) Start(ctx context.Context, req StartRequest) (StartResult, 
 	}
 	defer lifetime.Close()
 	abandon := func() { _ = os.Remove(lifetime.Name()) }
-	if ok, err := lockFile(lifetime, false); err != nil || !ok {
+	if ok, err := lockFile(lifetime, true, false); err != nil || !ok {
 		abandon()
 		if err == nil {
 			err = errors.New("lifetime lock is held")
@@ -177,7 +187,7 @@ func (s *Supervisor) Start(ctx context.Context, req StartRequest) (StartResult, 
 	// Reap it. The shim is this process's child until this process exits, and
 	// a zombie holds no lock but would still answer a signal.
 	go func() { _ = cmd.Wait() }()
-	state, err := json.Marshal(unitState{PID: pid, StartedAt: time.Now().UTC()})
+	state, err := json.Marshal(unitState{PID: pid, StartedAt: time.Now().UTC(), RuntimePath: req.RuntimePath})
 	if err == nil {
 		_, err = lifetime.WriteAt(state, 0)
 	}
@@ -419,9 +429,12 @@ func (s *Supervisor) await(unit string, ch chan struct{}) {
 	if file, err := os.Open(s.lockPath(unit)); errors.Is(err, fs.ErrNotExist) {
 		ended = true
 	} else if err == nil {
-		if ok, err := lockFile(file, true); err == nil && ok {
+		if ok, err := lockFile(file, false, true); err == nil && ok {
+			if state, err := s.readState(unit); err == nil {
+				endOrphanedCommand(state)
+			}
 			_ = os.Remove(s.lockPath(unit))
-			_ = os.Remove(s.logPath(unit))
+			removeIfEmpty(s.logPath(unit))
 			ended = true
 		}
 		file.Close()
@@ -444,14 +457,49 @@ func (s *Supervisor) await(unit string, ch chan struct{}) {
 	}
 }
 
-// lockHeld reports whether something holds the lock on path, without waiting.
+// endOrphanedCommand ends the command of a shim that went without recording
+// that its command did. A shim killed outright — SIGKILL, out of memory, or
+// Stop's last resort against a shim that would not end — cannot end its command
+// on the way out, and nothing else would: systemd's control group does this
+// for a unit, and here there is no control group, so the command's session is
+// what is ended. A command that exited is left alone, because its pid may
+// already be someone else's.
+func endOrphanedCommand(state unitState) {
+	if state.RuntimePath == "" {
+		return
+	}
+	exec, err := readRuntime(state.RuntimePath)
+	if err != nil || settled(exec) || exec.PID <= 0 || exec.StartedAt == nil {
+		return
+	}
+	// Only while the command itself is still alive and is that command. The
+	// shim may have gone long ago — while the agent was down, or before a
+	// reboot that left this file behind — so a session whose leader is gone is
+	// left alone here, unlike in the shim's own stop: by now it may be another
+	// exec's, whose command started a server and exited.
+	if pid := int(exec.PID); isCommand(pid, *exec.StartedAt) {
+		_ = endSession(pid, *exec.StartedAt)
+	}
+}
+
+// removeIfEmpty removes a shim's log once the shim has gone, unless it said
+// something. A shim writes there only when it fails — a bad argument, a socket
+// it could not bind, a panic — and that is exactly the output worth keeping
+// after it has gone, as systemd's journal would have.
+func removeIfEmpty(path string) {
+	if info, err := os.Stat(path); err == nil && info.Size() == 0 {
+		_ = os.Remove(path)
+	}
+}
+
+// lockHeld reports whether a shim holds the lock on path, without waiting.
 func lockHeld(path string) (bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return false, err
 	}
 	defer file.Close()
-	acquired, err := lockFile(file, false)
+	acquired, err := lockFile(file, false, false)
 	if err != nil {
 		return false, err
 	}
