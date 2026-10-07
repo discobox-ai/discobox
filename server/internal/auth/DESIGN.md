@@ -20,17 +20,22 @@ flowchart LR
 `internal/server`'s `NewApp` installs both as chi middleware on the one router
 that serves every listener, in this order:
 
-- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DiscobotAuthenticator, DefaultUserAuthenticator)`
-- `Authorization(SandboxRoleAuthorizer, ProjectAuthorizer, PoolRouteAuthorizer, AuthenticatedAuthorizer)`
+- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DiscobotAuthenticator, PoolBootstrapAuthenticator, IrohPeerAuthenticator, DefaultUserAuthenticator)`,
+  with `DefaultUserAuthenticator` left out when `authRequired` is set
+- `Authorization(SandboxRoleAuthorizer, ProjectAuthorizer, PoolRouteAuthorizer, SSHConnectAuthorizer, AuthenticatedAuthorizer)`
 
 Paths matched by `IsPublicPath` bypass both phases: `/healthz`,
-`/openapi.yaml`, `/docs`, `/docs/*`, `/ssh` (the SSH endpoint discovery
-document), and `/ssh/connect` (SSH carried over HTTP, which authenticates
-inside the SSH protocol).
+`/openapi.yaml`, `/docs`, `/docs/*`, and `/ssh` (the SSH endpoint discovery
+document, only the host's public key).
 
-`internal/sshd`'s SSH control-plane ingress (ADR 0024), over either its TCP
-listener or `/ssh/connect`, does not use `Authentication`/`Authorization`:
-identity is decided during the SSH key exchange. Its `PublicKeyCallback`
+`/ssh/connect`, SSH carried over HTTP, is not public: it passes both phases
+like any route, and `SSHConnectAuthorizer` admits it only for a user
+principal discobot did not assert — the CLI, its one client, as the default
+user, or as its enrolled iroh peer. A pool agent, a sandbox, or an asserted
+person is refused, and with `authRequired` only the CLI over iroh reaches
+SSH. Past that gate `internal/sshd`'s SSH
+control-plane ingress (ADR 0024) does not use `Authentication`/`Authorization`
+again: identity is decided during the SSH key exchange. Its `PublicKeyCallback`
 records the matched grant in `ssh.Permissions`; after the handshake it builds
 an `auth.Principal` from that grant and carries it via `WithPrincipal` on the
 connection's context — a transport-specific authenticator. See
@@ -81,9 +86,31 @@ Current authenticators:
   and `ScopeAll` within that project. Like the sandbox authenticator it
   **fails rather than stepping aside** once a request carries an assertion,
   and a server not configured with the key refuses every assertion.
+- `PoolBootstrapAuthenticator` applies to `/api/pools/register` alone, when
+  nothing before it claimed the request: a starting pool agent redeeming its
+  bootstrap token, before it has any other credential. The principal
+  (`PrincipalTypePoolBootstrap`) carries nothing; the token in the body is
+  the credential, redeemed by the pools service (short-lived, one-time,
+  stored hashed). It is before the default user so registration never
+  depended on it, which is what keeps it working under `authRequired`.
+- `IrohPeerAuthenticator` applies to a request on an iroh stream, when
+  nothing before it claimed the request. The iroh listener tags each stream
+  with the enrolled identity its peer proved at admission
+  (`endpoint.IrohPeerConn`, read in the server's `ConnContext`: the
+  certificate's identity for a client that dialed with an ephemeral key, ADR
+  0104), and this checks that identity against the enrollments
+  (`irohd.Admission`) again on every request, so a revoked peer is refused on
+  its next request rather than its next connection. A peer no longer enrolled
+  is a 401, never passed on to the default user. An enrolled peer is the
+  operator's own client and acts as the default user (ADR 0095 §1), with
+  `Principal.IrohPeer` naming which.
 - `DefaultUserAuthenticator` authenticates every other request as the
   configured default user with `ScopeAll`, in the current single-user server
-  mode.
+  mode. With `authRequired` (ADR 26-10-07-005) it is not in the chain at all,
+  on any listener: a request is discobot's, an enrolled iroh peer's, a pool
+  agent's, or a sandbox's, or it is a 401. That is configuration, not
+  transport — over local IPC or HTTP the CLI is refused like anything else;
+  over iroh it is its enrolled peer. The public paths still answer.
 
 ## Authorization
 

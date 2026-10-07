@@ -878,3 +878,102 @@ func TestPreferredBinds(t *testing.T) {
 		})
 	}
 }
+
+// Each stream the listener accepts says which enrolled identity its peer
+// proved: the one a certificate named for a client that dialed with an
+// ephemeral key, and the client's own for one that dialed with its enrolled
+// key. The server authenticates requests by it.
+func TestIrohStreamsCarryTheIdentityTheirPeerProved(t *testing.T) {
+	enrolled := newSecretKey(t)
+	enrolledID, err := IrohIDFromPublicKey(enrolled.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	server := newIrohEndpointForTest(t, IrohConfig{
+		SecretKey: newSecretKey(t),
+		Authorize: func(context.Context, IrohID) error { return nil },
+	})
+	addrs, err := server.DirectAddrs()
+	if err != nil {
+		t.Fatalf("DirectAddrs() error = %v", err)
+	}
+	listener, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	t.Cleanup(cleanup)
+	type peerKey struct{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		peer, _ := r.Context().Value(peerKey{}).(IrohID)
+		_, _ = io.WriteString(w, peer.String())
+	})
+	httpServer := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
+			if peer, ok := conn.(*IrohPeerConn); ok {
+				return context.WithValue(ctx, peerKey{}, peer.Peer)
+			}
+			return ctx
+		},
+	}
+	go func() { _ = httpServer.Serve(listener) }()
+	t.Cleanup(func() { _ = httpServer.Close() })
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+
+	ephemeral := newSecretKey(t)
+	ephemeralID, err := IrohIDFromPublicKey(ephemeral.Public().(ed25519.PublicKey))
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	cert, err := SignPeerCert(enrolled, ephemeralID, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("SignPeerCert() error = %v", err)
+	}
+	certified := newIrohEndpointForTest(t, IrohConfig{SecretKey: ephemeral, Certificate: &cert, Locate: func(IrohID) []string { return addrs }})
+	if got := irohPing(t, irohClient(t, certified, serverID)); got != enrolledID.String() {
+		t.Fatalf("certificate-bearing client's stream says %q, want the enrolled %s (not the ephemeral %s)", got, enrolledID, ephemeralID)
+	}
+
+	plain := newIrohEndpointForTest(t, IrohConfig{SecretKey: enrolled, Locate: func(IrohID) []string { return addrs }})
+	if got := irohPing(t, irohClient(t, plain, serverID)); got != enrolledID.String() {
+		t.Fatalf("plain client's stream says %q, want its own %s", got, enrolledID)
+	}
+}
+
+// One client process dials several connections with one ephemeral key, so
+// the identity its certificate proved lasts until the last of them closes,
+// not the first; and a key cannot speak for two identities at once.
+func TestIrohClaimOutlivesAllButTheLastConnection(t *testing.T) {
+	var e IrohEndpoint
+	var ephemeral, enrolled, other IrohID
+	ephemeral[0], enrolled[0], other[0] = 1, 2, 3
+
+	releaseFirst, err := e.holdClaim(ephemeral, enrolled)
+	if err != nil {
+		t.Fatalf("first holdClaim() error = %v", err)
+	}
+	releaseSecond, err := e.holdClaim(ephemeral, enrolled)
+	if err != nil {
+		t.Fatalf("second holdClaim() error = %v", err)
+	}
+	if _, err := e.holdClaim(ephemeral, other); err == nil {
+		t.Fatal("one key held claims for two identities at once")
+	}
+
+	releaseFirst()
+	if got := e.claimFor(ephemeral); got != enrolled {
+		t.Fatalf("after the first connection closed, claimFor() = %s, want %s while the second is open", got, enrolled)
+	}
+	releaseSecond()
+	if got := e.claimFor(ephemeral); got != ephemeral {
+		t.Fatalf("after both closed, claimFor() = %s, want the key itself", got)
+	}
+	if _, err := e.holdClaim(ephemeral, other); err != nil {
+		t.Fatalf("holdClaim() for another identity once none is live: %v", err)
+	}
+}

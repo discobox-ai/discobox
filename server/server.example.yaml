@@ -100,6 +100,17 @@
 # Environment: DISCOBOX_ENCRYPTION_KEY
 #encryptionKey:
 
+# Never serve the default user, who holds every scope, on any listener.
+# Every request must then authenticate: a discobot assertion, an enrolled
+# iroh peer, or a pool agent's or sandbox's own credential. The local CLI
+# over local IPC or HTTP is refused, and so SSH is reachable only over
+# iroh. Health, the API spec, and docs still answer. An enrolled iroh
+# peer authenticates as the operator's own client, so the CLI still
+# reaches the server over iroh. Requires discobotPublicKey or an iroh
+# endpoint in listen.
+# Environment: DISCOBOX_AUTH_REQUIRED
+#authRequired: false
+
 # Base64 of discobot's Ed25519 public key. When set, a request carrying a
 # discobot assertion acts as the person it names, in the project it
 # names; discobox keeps no users of its own. Unset, every assertion is

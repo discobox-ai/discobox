@@ -73,12 +73,9 @@ func IsPublicPath(path string) bool {
 	// /ssh (ADR 0024) serves the SSH endpoint discovery document — only the
 	// server's host *public* key, which is not a credential — and it must be
 	// fetchable (discobox admin ssh-config) before any other credential exists,
-	// the same rule that puts docs/openapi/health here.
-	// /ssh/connect carries an SSH connection over this transport, the only way
-	// SSH reaches the server (ADR 0024, ADR 0057). It needs no HTTP auth
-	// because SSH authenticates inside its own protocol, by public key, before
-	// any channel exists.
-	return path == "/healthz" || path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/") || path == "/ssh" || path == "/ssh/connect"
+	// the same rule that puts docs/openapi/health here. /ssh/connect, the SSH
+	// connection itself, is not public: see SSHConnectAuthorizer.
+	return path == "/healthz" || path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/") || path == "/ssh"
 }
 
 type defaultProjectIDContextKey struct{}

@@ -14,6 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/handlers"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
@@ -39,6 +40,13 @@ type AppOptions struct {
 	// DiscobotPublicKey verifies discobot's assertions of who a request is for
 	// (ADR 26-10-07-005 §2). Nil refuses every assertion.
 	DiscobotPublicKey ed25519.PublicKey
+	// AuthRequired leaves the default user out of authentication altogether
+	// (authRequired), so every request authenticates as someone.
+	AuthRequired bool
+	// IrohAdmission is the enrolled-peer gate the iroh listener admits by,
+	// checked again per request by IrohPeerAuthenticator. Nil when this
+	// server does not listen on iroh.
+	IrohAdmission auth.IrohAdmission
 
 	// SSHIngress is what GET /ssh serves: the endpoint SSH clients should dial
 	// and the host key to pin. It is resolved by the caller because the
@@ -191,7 +199,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	// ID is dialed only over iroh, and a server not listening on it answers
 	// nothing there.
 	var addressPeerID string
-	if hasIrohEndpoint(opts.ListenEndpoints) {
+	if config.HasIrohEndpoint(opts.ListenEndpoints) {
 		addressPeerID = opts.ServerPeer.ID
 	}
 	appServices := service.New(appStore, reconcileEngine, service.Options{
@@ -238,21 +246,30 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Peers:          appServices,
 		Judges:         appServices.Judges(),
 	}
-	router := chi.NewRouter()
-	router.Use(auth.Authentication(
+	authenticators := []auth.Authenticator{
 		// First, so a forwarded sandbox call can never reach the default user.
 		auth.SandboxForwardAuthenticator{Store: appStore},
 		auth.PoolAuthenticator{Store: appStore},
 		// Before the default user, so an assertion is never answered as it.
 		auth.DiscobotAuthenticator{PublicKey: opts.DiscobotPublicKey},
-		auth.DefaultUserAuthenticator{UserID: opts.UserID},
-	))
+		// Before the default user, so registration never depends on it.
+		auth.PoolBootstrapAuthenticator{},
+		// Last before the default user: a request over iroh that nothing else
+		// claimed is its enrolled peer's.
+		auth.IrohPeerAuthenticator{Admission: opts.IrohAdmission, UserID: opts.UserID},
+	}
+	if !opts.AuthRequired {
+		authenticators = append(authenticators, auth.DefaultUserAuthenticator{UserID: opts.UserID})
+	}
+	router := chi.NewRouter()
+	router.Use(auth.Authentication(authenticators...))
 	router.Use(auth.Authorization(
 		// First, so a sandbox is held to its role before any authorizer that
 		// admits every authenticated principal.
 		auth.SandboxRoleAuthorizer{Store: appStore},
 		auth.ProjectAuthorizer{Store: appStore},
 		auth.PoolRouteAuthorizer{},
+		auth.SSHConnectAuthorizer{},
 		auth.AuthenticatedAuthorizer{},
 	))
 	RegisterHealthRoutes(router)

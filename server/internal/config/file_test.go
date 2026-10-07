@@ -333,3 +333,27 @@ func TestRefreshExampleReplacesAStaleReference(t *testing.T) {
 		t.Fatalf("directory holds %d entries, want only the reference", len(entries))
 	}
 }
+
+// Requiring authentication with neither discobot's key nor an iroh endpoint,
+// whose enrolled peers authenticate, would leave nobody able to, so it is
+// refused (ADR 26-10-07-005).
+func TestAuthRequiredNeedsSomeoneToAuthenticate(t *testing.T) {
+	clearConfigEnv(t)
+	writeConfigFile(t, "authRequired: true\n")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "requires discobotPublicKey") {
+		t.Fatalf("Load() error = %v, want it to require discobotPublicKey", err)
+	}
+
+	clearConfigEnv(t)
+	writeConfigFile(t, "authRequired: true\ndiscobotPublicKey: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\n")
+	cfg, err := Load()
+	if err != nil || !cfg.AuthRequired {
+		t.Fatalf("Load() = %v, %v; want authRequired on", cfg, err)
+	}
+
+	clearConfigEnv(t)
+	writeConfigFile(t, "authRequired: true\nlisten: [unix://, iroh://]\n")
+	if cfg, err := Load(); err != nil || !cfg.AuthRequired {
+		t.Fatalf("Load() with an iroh endpoint = %v, %v; want authRequired on", cfg, err)
+	}
+}

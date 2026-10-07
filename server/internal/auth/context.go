@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 type principalKey struct{}
@@ -25,7 +27,23 @@ type Principal struct {
 	// against member rows; discobox keeps no users of its own. Empty for the
 	// default user and for pool and sandbox principals.
 	Issuer string
-	Scopes []string
+	// IrohPeer is the enrolled iroh identity a user principal was
+	// authenticated by (IrohPeerAuthenticator), when it was. Empty otherwise.
+	IrohPeer string
+	Scopes   []string
+}
+
+type irohPeerKey struct{}
+
+// WithIrohPeer marks a connection's context with the iroh identity its peer
+// proved at admission, for IrohPeerAuthenticator to check per request.
+func WithIrohPeer(ctx context.Context, peer endpoint.IrohID) context.Context {
+	return context.WithValue(ctx, irohPeerKey{}, peer)
+}
+
+func irohPeerFromContext(ctx context.Context) (endpoint.IrohID, bool) {
+	peer, ok := ctx.Value(irohPeerKey{}).(endpoint.IrohID)
+	return peer, ok
 }
 
 const (
@@ -34,6 +52,10 @@ const (
 	// PrincipalTypeSandbox is a sandbox's own call, forwarded by the pool that
 	// hosts it. It holds the sandbox role and nothing else.
 	PrincipalTypeSandbox = "sandbox"
+	// PrincipalTypePoolBootstrap is a starting pool agent redeeming its
+	// bootstrap token at PoolRegisterPath, before it holds any other
+	// credential. It exists on that one route and nowhere else.
+	PrincipalTypePoolBootstrap = "pool-bootstrap"
 
 	ScopeAll = "*"
 )
@@ -46,6 +68,7 @@ func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 	principal.SandboxID = strings.TrimSpace(principal.SandboxID)
 	principal.ProjectID = strings.TrimSpace(principal.ProjectID)
 	principal.Issuer = strings.TrimSpace(principal.Issuer)
+	principal.IrohPeer = strings.TrimSpace(principal.IrohPeer)
 	principal.Scopes = normalizeScopes(principal.Scopes)
 	return context.WithValue(ctx, principalKey{}, principal)
 }

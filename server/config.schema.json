@@ -15,6 +15,10 @@
         "null"
       ]
     },
+    "authRequired": {
+      "description": "Never serve the default user, who holds every scope, on any listener. Every request must then authenticate: a discobot assertion, an enrolled iroh peer, or a pool agent's or sandbox's own credential. The local CLI over local IPC or HTTP is refused, and so SSH is reachable only over iroh. Health, the API spec, and docs still answer. An enrolled iroh peer authenticates as the operator's own client, so the CLI still reaches the server over iroh. Requires discobotPublicKey or an iroh endpoint in listen. Environment: DISCOBOX_AUTH_REQUIRED (takes precedence over this file).",
+      "type": "boolean"
+    },
     "cacheDir": {
       "description": "Reproducible data that may be deleted. Defaults to \u003cXDG cache home\u003e/discobox. Environment: DISCOBOX_CACHE_DIR (takes precedence over this file).",
       "examples": [

@@ -280,6 +280,29 @@ func (PoolRouteAuthorizer) Authorize(r *http.Request) (bool, error) {
 	return true, nil
 }
 
+// SSHConnectPath carries an SSH connection over the API's own transport, the
+// only way SSH reaches the server (ADR 0024, ADR 0057).
+const SSHConnectPath = "/ssh/connect"
+
+// SSHConnectAuthorizer admits SSHConnectPath for the CLI, its only client: a
+// user principal that is not one discobot asserted. SSH then authenticates
+// its key inside its own protocol as before; this is the HTTP credential in
+// front of it, so SSH is reached only by someone the server already
+// authenticated. A pool agent, a sandbox, or a person discobot vouches for
+// is refused. With authRequired no such user exists, so SSH is unreachable.
+type SSHConnectAuthorizer struct{}
+
+func (SSHConnectAuthorizer) Authorize(r *http.Request) (bool, error) {
+	if r.URL.Path != SSHConnectPath {
+		return false, nil
+	}
+	principal, ok := PrincipalFromContext(r.Context())
+	if !ok || principal.Type != PrincipalTypeUser || principal.UserID == "" || principal.Asserted() {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("SSH is reached by the CLI's own user")}
+	}
+	return true, nil
+}
+
 // AuthenticatedAuthorizer authorizes explicitly listed routes for any
 // authenticated principal. It is intentionally allow-list based; routes not
 // listed here must be authorized by a more specific authorizer.
@@ -323,7 +346,7 @@ func (e authorizationError) StatusCode() int {
 var authenticatedAllowedPaths = []string{
 	"/harness-definitions",
 	"/harness-definitions/",
-	"/api/pools/register",
+	PoolRegisterPath,
 	// Enrolling and revoking peers (ADR 0095 §1, enrolled iroh IDs). There is no
 	// resource-specific authorizer for it: the resource is server-scoped, so
 	// there is no project membership to check, and an enrolled peer

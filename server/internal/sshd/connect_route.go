@@ -6,6 +6,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/discobox-ai/discobox/server/internal/auth"
 )
 
 // RegisterConnectRoute serves SSH over the transport the API already answers
@@ -14,12 +16,11 @@ import (
 // listener (ADR 0057) — so `discobox tools ssh` reaches it the way the CLI
 // already reaches the server, and needs no new surface.
 //
-// The route is unauthenticated at the HTTP layer on purpose: SSH authenticates
-// inside its own protocol, by public key, before any channel exists. Gating it
-// with HTTP auth would not make it safer — it would only mean a second
-// credential in front of the one that already decides.
+// The route is authenticated at the HTTP layer like any other, and admitted
+// only for the CLI's own user (auth.SSHConnectAuthorizer); SSH then
+// authenticates the key inside its own protocol before any channel exists.
 func RegisterConnectRoute(router chi.Router, server *Server) {
-	router.Get("/ssh/connect", func(w http.ResponseWriter, r *http.Request) {
+	router.Get(auth.SSHConnectPath, func(w http.ResponseWriter, r *http.Request) {
 		if server == nil {
 			http.Error(w, "SSH is not configured", http.StatusServiceUnavailable)
 			return

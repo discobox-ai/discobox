@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/ed25519"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -160,6 +162,66 @@ func (a DiscobotAuthenticator) Authenticate(r *http.Request) (Principal, bool, e
 		ProjectID: claims.ProjectID,
 		Issuer:    discobot.Issuer,
 		Scopes:    []string{ScopeAll},
+	}, true, nil
+}
+
+// PoolRegisterPath is where a starting pool agent redeems its bootstrap token.
+const PoolRegisterPath = "/api/pools/register"
+
+// PoolBootstrapAuthenticator authenticates a request to PoolRegisterPath that
+// no earlier authenticator claimed, as PrincipalTypePoolBootstrap. The
+// bootstrap token in its body is the credential, and the pools service
+// redeems it: short-lived, one-time, stored hashed. This only lets the
+// request reach that check, whether or not the default user is served
+// (authRequired); a sandbox's forwarded call is still the sandbox's, and is
+// refused by its role.
+type PoolBootstrapAuthenticator struct{}
+
+func (PoolBootstrapAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
+	if r.URL.Path != PoolRegisterPath {
+		return Principal{}, false, nil
+	}
+	return Principal{Type: PrincipalTypePoolBootstrap}, true, nil
+}
+
+// IrohAdmission is the enrolled-peer gate an iroh connection was admitted by
+// (irohd.Admission): authorized_ids and the managed enrollments.
+type IrohAdmission interface {
+	Authorize(ctx context.Context, peer endpoint.IrohID) error
+}
+
+// IrohPeerAuthenticator authenticates a request that arrived over iroh by the
+// enrolled identity its peer proved (WithIrohPeer), when nothing before it
+// claimed the request. That identity is checked against the enrollments again
+// for every request, not only when the connection was admitted, so revoking
+// a peer ends its access on its next request. A peer that is no longer
+// enrolled is refused rather than passed on, since the next authenticator
+// may be the default user.
+//
+// An enrolled peer is the operator's own client and acts as the default user
+// (ADR 0095 §1), with IrohPeer recording which one. It is what lets the CLI
+// reach a server that requires authentication (authRequired) over iroh.
+type IrohPeerAuthenticator struct {
+	Admission IrohAdmission
+	UserID    string
+}
+
+func (a IrohPeerAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
+	peer, ok := irohPeerFromContext(r.Context())
+	if !ok {
+		return Principal{}, false, nil
+	}
+	if a.Admission == nil {
+		return Principal{}, false, errors.New("this server has no iroh enrollments to check the peer against")
+	}
+	if err := a.Admission.Authorize(r.Context(), peer); err != nil {
+		return Principal{}, false, fmt.Errorf("iroh peer %s refused: %w", peer.Short(), err)
+	}
+	return Principal{
+		Type:     PrincipalTypeUser,
+		UserID:   a.UserID,
+		IrohPeer: peer.String(),
+		Scopes:   []string{ScopeAll},
 	}, true, nil
 }
 

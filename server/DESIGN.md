@@ -389,6 +389,17 @@ line beside the address — `without discovery, dial …`, the same address with
 this host's direct sockets attached as `?addr=` parameters (`irohFallbackURL`,
 ADR 0097 §3) — which `Parse` accepts.
 
+Whether reaching an endpoint is enough is one setting for the whole server,
+never derived from a transport. Unset (the default, single-user mode), every
+listener answers a request with no credential as the default user. Set,
+`authRequired` (`DISCOBOX_AUTH_REQUIRED`), every listener — local IPC, HTTP,
+iroh — answers only a proven identity: discobot's assertions, an enrolled iroh
+peer (the CLI over iroh, rechecked per request), and the pool and sandbox
+callers' own credentials (ADR 26-10-07-005; [auth](internal/auth/DESIGN.md)).
+It requires `discobotPublicKey` or an iroh endpoint in `listen`. A starting
+server cannot then ask the one it replaces to shut down (`/shutdown` is the
+default user's), so that one must be stopped first.
+
 ### The Server's Own Peer ID
 
 `GET /peer` serves this server's peer ID, resolved when the iroh endpoint was
@@ -521,8 +532,10 @@ flowchart TD
 The file is the operator's way back into a server whose API is what they are
 trying to reach, and is deliberately unreachable from that API. The table is
 the managed layer, served by `/peers` and `discobox admin peer`. Both are
-read per connection, so enrolling and revoking take effect on the next dial
-without a restart, and neither tears down a connection already established.
+read per connection, so enrolling takes effect on the next dial without a
+restart. They are read again per request, by `auth.IrohPeerAuthenticator`,
+so revoking also refuses an established connection's next request, though
+it does not tear the connection down.
 
 The wait exists because the server binds before it initializes: `configureIroh`
 runs ahead of `database.New`, so the gate is built before there is a store to

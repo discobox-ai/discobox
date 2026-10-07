@@ -70,6 +70,95 @@ type IrohEndpoint struct {
 	mu       sync.Mutex
 	endpoint *iroh.Endpoint
 	closed   bool
+
+	// claims maps the identity a certificate-bearing peer's handshake proved
+	// (its ephemeral key, ADR 0104) to the enrolled identity its certificate
+	// proved, for as long as any connection admitted with that pair is open,
+	// so each stream can say who it is (IrohPeerConn). One client process
+	// dials several connections with one ephemeral key (an API client, its
+	// git and SSH proxies, a redial before the old connection is seen to
+	// close), so an entry counts its connections and goes with the last. A
+	// peer without a certificate is its own identity and has no entry.
+	claimsMu sync.Mutex
+	claims   map[IrohID]*irohClaim
+}
+
+type irohClaim struct {
+	identity IrohID
+	conns    int
+}
+
+// holdClaim records that a connection from peer proved identity, and returns
+// the release to call when that connection closes. A peer already speaking
+// for another identity on a live connection is refused: its streams could not
+// then say whose they are.
+func (e *IrohEndpoint) holdClaim(peer, identity IrohID) (func(), error) {
+	e.claimsMu.Lock()
+	defer e.claimsMu.Unlock()
+	if e.claims == nil {
+		e.claims = map[IrohID]*irohClaim{}
+	}
+	claim := e.claims[peer]
+	if claim != nil && claim.identity != identity {
+		return nil, fmt.Errorf("endpoint %s already speaks for %s on another connection", peer, claim.identity)
+	}
+	if claim == nil {
+		claim = &irohClaim{identity: identity}
+		e.claims[peer] = claim
+	}
+	claim.conns++
+	return func() {
+		e.claimsMu.Lock()
+		defer e.claimsMu.Unlock()
+		if claim.conns--; claim.conns == 0 && e.claims[peer] == claim {
+			delete(e.claims, peer)
+		}
+	}, nil
+}
+
+// claimFor is the enrolled identity a stream from peer speaks for: the one a
+// live connection's certificate proved, or peer itself.
+func (e *IrohEndpoint) claimFor(peer IrohID) IrohID {
+	e.claimsMu.Lock()
+	defer e.claimsMu.Unlock()
+	if claim := e.claims[peer]; claim != nil {
+		return claim.identity
+	}
+	return peer
+}
+
+// IrohPeerConn is a stream an iroh listener accepted, carrying the identity
+// its peer proved when the connection was admitted: the enrolled one, whether
+// the peer dialed with it or presented a certificate for it. The server reads
+// it to authenticate the requests on the stream, so that identity is checked
+// again per request rather than only at admission.
+type IrohPeerConn struct {
+	*iroh.StreamConn
+	Peer IrohID
+}
+
+// irohPeerListener presents each accepted stream as an IrohPeerConn.
+type irohPeerListener struct {
+	*iroh.Listener
+	endpoint *IrohEndpoint
+}
+
+func (l irohPeerListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	stream, ok := conn.(*iroh.StreamConn)
+	if !ok {
+		_ = conn.Close()
+		return nil, fmt.Errorf("iroh listener accepted a %T, not a stream", conn)
+	}
+	addr, ok := stream.RemoteAddr().(iroh.Addr)
+	if !ok {
+		_ = stream.Close()
+		return nil, fmt.Errorf("iroh stream's remote address is a %T", stream.RemoteAddr())
+	}
+	return &IrohPeerConn{StreamConn: stream, Peer: l.endpoint.claimFor(IrohID(addr.ID))}, nil
 }
 
 // NewIrohEndpoint prepares an endpoint. Binding is deferred to first use, so
@@ -698,7 +787,7 @@ func (e *IrohEndpoint) Listen() (net.Listener, string, func(), error) {
 	if err != nil {
 		return nil, "", nil, err
 	}
-	listener := ep.Listener(iroh.ListenOptions{Authorize: e.authorize})
+	listener := irohPeerListener{Listener: ep.Listener(iroh.ListenOptions{Authorize: e.authorize}), endpoint: e}
 	// The address is only known once the endpoint is bound, which is why
 	// Listen reports what it ended up with rather than echoing what it was
 	// given.
@@ -759,6 +848,19 @@ func (e *IrohEndpoint) authorize(conn *iroh.Conn) error {
 	if err := e.cfg.Authorize(e.ctx, claimed); err != nil {
 		irohLogf(IrohLogWarn, "accept: refused %s: %v", claimed.Short(), err)
 		return err
+	}
+	if claimed != peer {
+		// Admission runs before the listener accepts any of this connection's
+		// streams, so the claim is held before the first one is presented.
+		release, err := e.holdClaim(peer, claimed)
+		if err != nil {
+			irohLogf(IrohLogWarn, "accept: refused %s: %v", peer.Short(), err)
+			return err
+		}
+		go func() {
+			_ = conn.Wait(e.ctx)
+			release()
+		}()
 	}
 	irohLogf(IrohLogInfo, "accept: admitted %s", claimed.Short())
 	return nil

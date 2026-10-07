@@ -123,6 +123,7 @@ type Config struct {
 
 	// discobot, the team-facing control plane in front of this server (ADR
 	// 26-10-07-005).
+	AuthRequired      bool   `yaml:"authRequired" env:"DISCOBOX_AUTH_REQUIRED" doc:"Never serve the default user, who holds every scope, on any listener. Every request must then authenticate: a discobot assertion, an enrolled iroh peer, or a pool agent's or sandbox's own credential. The local CLI over local IPC or HTTP is refused, and so SSH is reachable only over iroh. Health, the API spec, and docs still answer. An enrolled iroh peer authenticates as the operator's own client, so the CLI still reaches the server over iroh. Requires discobotPublicKey or an iroh endpoint in listen."`
 	DiscobotPublicKey string `yaml:"discobotPublicKey" env:"DISCOBOX_DISCOBOT_PUBLIC_KEY" doc:"Base64 of discobot's Ed25519 public key. When set, a request carrying a discobot assertion acts as the person it names, in the project it names; discobox keeps no users of its own. Unset, every assertion is refused." example:"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="`
 
 	// Reconcile engine settings.
@@ -425,6 +426,17 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// HasIrohEndpoint reports whether listen names an iroh endpoint, the one
+// transport whose peers prove an enrolled identity.
+func HasIrohEndpoint(listen []string) bool {
+	for _, raw := range listen {
+		if parsed, err := endpoint.Parse(raw); err == nil && parsed.Scheme == "iroh" {
+			return true
+		}
+	}
+	return false
+}
+
 // validate rejects a configuration the server cannot run on. Messages name the
 // YAML key rather than the environment variable, because the key is what the
 // schema, the editor, and this package all agree on; the variable that set it
@@ -463,6 +475,9 @@ func (c *Config) validate(configured func(string) bool) error {
 		if _, err := discobot.ParsePublicKey(c.DiscobotPublicKey); err != nil {
 			return fmt.Errorf("discobotPublicKey: %w", err)
 		}
+	}
+	if c.AuthRequired && c.DiscobotPublicKey == "" && !HasIrohEndpoint(c.Listen) {
+		return fmt.Errorf("authRequired requires discobotPublicKey or an iroh endpoint in listen: without either nobody can authenticate")
 	}
 	if c.DispatcherPollInterval <= 0 {
 		return fmt.Errorf("dispatcherPollInterval must be greater than 0")

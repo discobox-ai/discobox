@@ -10,6 +10,13 @@ CLI already drives.
 It binds no listener. The one way in is `GET /ssh/connect` on the API router
 (ADR 0057); there is no `Serve(net.Listener)` and no port to configure.
 
+That route is authenticated over HTTP first: `auth.SSHConnectAuthorizer`
+admits only the CLI's own user, which is what lets the CLI's `ProxyCommand`
+open the tunnel. The SSH client on the other end still needs a registered
+key, in `authorized_keys` or a project's keys (ADR 0024 §5), and which layer
+it matched still decides what the session may do. With
+`authRequired` that user is the CLI over iroh, as its enrolled peer.
+
 ## Why this package authenticates independently of `internal/auth`
 
 `internal/auth`'s `Authentication`/`Authorization` middleware chain is HTTP

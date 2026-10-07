@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/judge/jev"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -115,6 +116,14 @@ func Run(ctx context.Context) error {
 		// mid-flight. Liveness comes from ReadHeaderTimeout,
 		// IdleTimeout, and websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
+		// A stream the iroh listener accepted carries the enrolled identity
+		// its peer proved, for IrohPeerAuthenticator.
+		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
+			if peer, ok := conn.(*endpoint.IrohPeerConn); ok {
+				return auth.WithIrohPeer(ctx, peer.Peer)
+			}
+			return ctx
+		},
 	}
 	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
 	// listeners are released promptly instead of dying with the process. Armed
@@ -166,6 +175,12 @@ func Run(ctx context.Context) error {
 		}
 	}
 
+	// Nil, not a nil *irohd.Admission, when there is no iroh listener: an
+	// interface holding a nil pointer is not nil.
+	var irohGate auth.IrohAdmission
+	if irohAdmission != nil {
+		irohGate = irohAdmission
+	}
 	var discobotKey ed25519.PublicKey
 	if cfg.DiscobotPublicKey != "" {
 		// Validated with the configuration; parsed again for the key itself.
@@ -205,6 +220,8 @@ func Run(ctx context.Context) error {
 		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
 		DiscobotPublicKey:              discobotKey,
+		AuthRequired:                   cfg.AuthRequired,
+		IrohAdmission:                  irohGate,
 		SecretSealer:                   sealer,
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,

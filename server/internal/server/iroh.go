@@ -7,6 +7,7 @@ import (
 	"net/netip"
 
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/irohd"
 	"github.com/discobox-ai/discobox/server/internal/services"
 )
@@ -36,7 +37,7 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 	// trying to find (ADR 0052 §6) — and for an operator comparing it against
 	// what a client recorded. Every other caller asks for it (ADR 0098).
 	log.Printf("this server's peer ID is %s", id)
-	if !hasIrohEndpoint(listenEndpoints) {
+	if !config.HasIrohEndpoint(listenEndpoints) {
 		return nil, id, nil, nil
 	}
 	level, err := endpoint.ParseIrohLogLevel(logLevel)
@@ -52,8 +53,9 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 	}
 	// Built here and handed its store once NewApp returns: this runs before
 	// the database exists, so the managed layer cannot be captured (ADR 0095
-	// §4, enrolled iroh IDs). Both layers are consulted per connection rather than cached, so
-	// enrolling or revoking takes effect on the next connection without a
+	// §4, enrolled iroh IDs). Both layers are consulted per connection, and
+	// again per request by auth.IrohPeerAuthenticator, rather than cached, so
+	// enrolling or revoking takes effect without a
 	// restart — the contract sshd's authorized_keys has.
 	admission := irohd.NewAdmission(dataDir)
 	// Once, here, where somebody who has just upgraded is reading.
@@ -80,19 +82,6 @@ func configureIroh(ctx context.Context, dataDir string, listenEndpoints, relayUR
 	watch := irohd.NewListenerWatch()
 	watch.Start(ctx)
 	return admission, id, watch, nil
-}
-
-func hasIrohEndpoint(listenEndpoints []string) bool {
-	for _, raw := range listenEndpoints {
-		parsed, err := endpoint.Parse(raw)
-		if err != nil {
-			continue
-		}
-		if parsed.Scheme == "iroh" {
-			return true
-		}
-	}
-	return false
 }
 
 // irohFallbackURL renders a listener's address with this host's direct socket

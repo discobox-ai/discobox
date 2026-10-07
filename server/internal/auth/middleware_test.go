@@ -145,3 +145,44 @@ func TestDefaultUserAuthenticatorGrantsAllScopes(t *testing.T) {
 		t.Fatalf("default principal scopes = %#v, want all scopes", principal.Scopes)
 	}
 }
+
+// SSH's only client is the CLI, so /ssh/connect is for a user principal that
+// discobot did not assert, and for no pool agent or sandbox.
+func TestSSHConnectAuthorizerAdmitsOnlyTheCLIsUser(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		principal Principal
+		want      bool
+	}{
+		{"the default user", Principal{Type: PrincipalTypeUser, UserID: "user-default", Scopes: []string{ScopeAll}}, true},
+		{"a person discobot asserted", Principal{Type: PrincipalTypeUser, UserID: "usr_priya", Issuer: "discobot"}, false},
+		{"a pool agent", Principal{Type: PrincipalTypePool, PoolID: "pool-1"}, false},
+		{"a sandbox", Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-1"}, false},
+		{"a pool registering", Principal{Type: PrincipalTypePoolBootstrap}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(WithPrincipal(context.Background(), tc.principal), http.MethodGet, SSHConnectPath, nil)
+			ok, err := (SSHConnectAuthorizer{}).Authorize(req)
+			if ok != tc.want || (err == nil) != tc.want {
+				t.Fatalf("Authorize = %v, %v; want admitted %v", ok, err, tc.want)
+			}
+		})
+	}
+	other := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects", nil)
+	if ok, err := (SSHConnectAuthorizer{}).Authorize(other); ok || err != nil {
+		t.Fatalf("Authorize(/projects) = %v, %v; want it not to apply", ok, err)
+	}
+}
+
+// A starting pool agent reaches registration with no credential of its own;
+// the bootstrap token in the body is checked by the pools service.
+func TestPoolBootstrapAuthenticatorAppliesOnlyToRegistration(t *testing.T) {
+	register := httptest.NewRequestWithContext(context.Background(), http.MethodPost, PoolRegisterPath, nil)
+	if principal, ok, err := (PoolBootstrapAuthenticator{}).Authenticate(register); !ok || err != nil || principal.Type != PrincipalTypePoolBootstrap {
+		t.Fatalf("Authenticate(register) = %#v, %v, %v", principal, ok, err)
+	}
+	other := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects", nil)
+	if _, ok, err := (PoolBootstrapAuthenticator{}).Authenticate(other); ok || err != nil {
+		t.Fatalf("Authenticate(/projects) = %v, %v; want it not to apply", ok, err)
+	}
+}
