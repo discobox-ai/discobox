@@ -1039,6 +1039,7 @@ func marshalSecretValue(val apigen.SecretValue) ([]byte, error) {
 		RefreshToken:         val.RefreshToken.Or(""),
 		TokenURL:             strings.TrimSpace(val.TokenUrl.Or("")),
 		ClientID:             strings.TrimSpace(val.ClientId.Or("")),
+		ClientSecret:         val.ClientSecret.Or(""),
 		AccessTokenExpiresAt: val.AccessTokenExpiresAt.Or(0),
 		SubscriptionType:     strings.TrimSpace(val.SubscriptionType.Or("")),
 		TokenRequestEncoding: string(val.TokenRequestEncoding.Or("")),

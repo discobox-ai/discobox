@@ -5307,6 +5307,9 @@ components:
                 clientId:
                     description: OAuth client the grant belongs to (type=oauth)
                     type: string
+                clientSecret:
+                    description: The OAuth client's secret, for a confidential client, which must authenticate on refresh as well as on the code exchange (RFC 6749 §6). Sent with each refresh, sealed with the value, never returned (type=oauth). Absent for a public client.
+                    type: string
                 refreshToken:
                     description: OAuth refresh token, spent server-side to renew the access token (type=oauth). Never returned.
                     type: string

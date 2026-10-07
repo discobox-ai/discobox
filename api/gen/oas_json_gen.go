@@ -42708,6 +42708,12 @@ func (s *SecretValue) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ClientSecret.Set {
+			e.FieldStart("clientSecret")
+			s.ClientSecret.Encode(e)
+		}
+	}
+	{
 		if s.RefreshToken.Set {
 			e.FieldStart("refreshToken")
 			s.RefreshToken.Encode(e)
@@ -42745,15 +42751,16 @@ func (s *SecretValue) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretValue = [8]string{
+var jsonFieldsNameOfSecretValue = [9]string{
 	0: "accessTokenExpiresAt",
 	1: "clientId",
-	2: "refreshToken",
-	3: "scopes",
-	4: "subscriptionType",
-	5: "token",
-	6: "tokenRequestEncoding",
-	7: "tokenUrl",
+	2: "clientSecret",
+	3: "refreshToken",
+	4: "scopes",
+	5: "subscriptionType",
+	6: "token",
+	7: "tokenRequestEncoding",
+	8: "tokenUrl",
 }
 
 // Decode decodes SecretValue from json.
@@ -42783,6 +42790,16 @@ func (s *SecretValue) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"clientId\"")
+			}
+		case "clientSecret":
+			if err := func() error {
+				s.ClientSecret.Reset()
+				if err := s.ClientSecret.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"clientSecret\"")
 			}
 		case "refreshToken":
 			if err := func() error {

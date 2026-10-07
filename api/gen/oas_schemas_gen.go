@@ -25182,6 +25182,10 @@ type SecretValue struct {
 	AccessTokenExpiresAt OptInt64 `json:"accessTokenExpiresAt"`
 	// OAuth client the grant belongs to (type=oauth).
 	ClientId OptString `json:"clientId"`
+	// The OAuth client's secret, for a confidential client, which must authenticate on refresh as well
+	// as on the code exchange (RFC 6749 §6). Sent with each refresh, sealed with the value, never
+	// returned (type=oauth). Absent for a public client.
+	ClientSecret OptString `json:"clientSecret"`
 	// OAuth refresh token, spent server-side to renew the access token (type=oauth). Never returned.
 	RefreshToken OptString `json:"refreshToken"`
 	// What the grant may do, as the authorization server returned it. Recorded rather than assumed -- a
@@ -25206,6 +25210,11 @@ func (s *SecretValue) GetAccessTokenExpiresAt() OptInt64 {
 // GetClientId returns the value of ClientId.
 func (s *SecretValue) GetClientId() OptString {
 	return s.ClientId
+}
+
+// GetClientSecret returns the value of ClientSecret.
+func (s *SecretValue) GetClientSecret() OptString {
+	return s.ClientSecret
 }
 
 // GetRefreshToken returns the value of RefreshToken.
@@ -25246,6 +25255,11 @@ func (s *SecretValue) SetAccessTokenExpiresAt(val OptInt64) {
 // SetClientId sets the value of ClientId.
 func (s *SecretValue) SetClientId(val OptString) {
 	s.ClientId = val
+}
+
+// SetClientSecret sets the value of ClientSecret.
+func (s *SecretValue) SetClientSecret(val OptString) {
+	s.ClientSecret = val
 }
 
 // SetRefreshToken sets the value of RefreshToken.

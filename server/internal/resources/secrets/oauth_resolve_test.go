@@ -141,6 +141,61 @@ func TestResolveOAuthRefreshesExpiredToken(t *testing.T) {
 // server that takes the refresh request form-encoded, as RFC 6749 defines it
 // (xAI's, which the opencode harness captures). JSON stays the default, since
 // every secret stored before the encoding was recorded was refreshed that way.
+// A confidential client authenticates its refresh as it did its code exchange
+// (RFC 6749 §6); a public client refreshes with its client ID alone. The
+// secret rides every rotation, since it belongs to the client, not the grant.
+func TestResolveOAuthRefreshSendsAConfidentialClientsSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		secret string
+	}{
+		{"public client", ""},
+		{"confidential client", "cs-1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			svc, st := newResolveFixture(t)
+
+			tokenSrv := newOAuthTokenServer(t, "new-access", "rt-2", 3600)
+			sec := mustOAuthSecret(t, st, "linear", model.SecretValue{
+				Token:                "old-access",
+				RefreshToken:         "rt-1",
+				TokenURL:             tokenSrv.server.URL,
+				ClientID:             "client-x",
+				ClientSecret:         tc.secret,
+				AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(),
+				TokenRequestEncoding: model.OAuthTokenRequestForm,
+			})
+			mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+			createSandbox(t, st, "sb-1", "pool-1")
+			mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OA")
+
+			if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-OA", "api.linear.app"); err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			got, sent := tokenSrv.lastBody["client_secret"]
+			if tc.secret == "" && sent {
+				t.Fatalf("a public client's refresh sent client_secret %q", got)
+			}
+			if tc.secret != "" && got != tc.secret {
+				t.Fatalf("refresh client_secret = %q, want %q (body %#v)", got, tc.secret, tokenSrv.lastBody)
+			}
+
+			reloaded, err := st.GetSecret(ctx, "project-1", sec.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			val, err := st.OpenSecretValue(ctx, reloaded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if val.RefreshToken != "rt-2" || val.ClientSecret != tc.secret {
+				t.Fatalf("persisted value = %#v, want rt-2 with the same client secret", val)
+			}
+		})
+	}
+}
+
 func TestResolveOAuthRefreshesWithTheRecordedEncoding(t *testing.T) {
 	for _, tc := range []struct {
 		name        string

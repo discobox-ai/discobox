@@ -1166,6 +1166,12 @@ type SecretValue struct {
 	TokenURL             string `json:"tokenUrl,omitempty"`
 	ClientID             string `json:"clientId,omitempty"`
 	AccessTokenExpiresAt int64  `json:"accessTokenExpiresAt,omitempty"` // unix milliseconds; 0 means unknown
+	// ClientSecret is a confidential client's secret, which must authenticate
+	// each refresh as it did the code exchange (RFC 6749 §6). Empty for a
+	// public client, which refreshes with its client ID alone. Whoever ran the
+	// sign-in supplies it (ADR 26-10-07-005 §4); it is sealed with the rest of
+	// the value and, like the refresh token, never leaves the server.
+	ClientSecret string `json:"clientSecret,omitempty"`
 	// TokenRequestEncoding is how the refresh request's body is encoded:
 	// empty for JSON, OAuthTokenRequestForm for application/x-www-form-urlencoded.
 	// It is a property of the authorization server, not of the grant, and it is

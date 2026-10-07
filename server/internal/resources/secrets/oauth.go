@@ -177,6 +177,12 @@ func refreshOAuthToken(ctx context.Context, val *model.SecretValue) (*model.Secr
 		"refresh_token": val.RefreshToken,
 		"client_id":     clientID,
 	}
+	// A confidential client authenticates its refresh too (RFC 6749 §6), in
+	// the body as client_secret_post, which every endpoint that takes a
+	// client secret accepts. A public client sends none.
+	if val.ClientSecret != "" {
+		fields["client_secret"] = val.ClientSecret
+	}
 	// RFC 6749 §6 defines the refresh request as form-encoded, but the
 	// endpoints this was first written for (Anthropic's among them) take JSON,
 	// and a secret stored before the encoding was recorded was refreshed as

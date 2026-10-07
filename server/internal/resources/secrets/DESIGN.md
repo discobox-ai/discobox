@@ -421,7 +421,7 @@ whole secret listing with it.
 
 The value goes in and never comes back. `SecretValue` is a request shape only:
 the token, and for an OAuth credential the refresh token, token URL, client id,
-scopes, subscription type and access-token expiry. That is enough to register
+client secret, scopes, subscription type and access-token expiry. That is enough to register
 one by hand — a credential captured somewhere else, or rotated outside a
 configure flow — rather than only through a harness's login.
 
@@ -435,6 +435,14 @@ decrypted leaves the summary empty rather than failing the read.
 `oauth` means *renews itself*. Creating one without a refresh token and a token
 URL is refused: what has been handed over is a token that will expire and stay
 expired, and the type would promise a refresh nothing can perform.
+
+A refresh is the client's to authenticate, as the code exchange was (RFC 6749
+§6). A public client (PKCE, no secret) refreshes with its client id alone; a
+confidential one also needs its client secret, which whoever ran the sign-in
+hands over with the tokens (ADR 26-10-07-005 §4: discobot signs in, discobox
+refreshes). It is sealed with the rest of the value, sent as `client_secret`
+in the refresh body when present, carried through every rotation, and never
+returned. The server runs no authorization flow of its own.
 
 ## A token may expire, and suggest its renewal
 

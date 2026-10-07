@@ -645,6 +645,48 @@ func TestAnOAuthSecretIsRegisteredAndDescribed(t *testing.T) {
 	}
 }
 
+// Whoever ran the sign-in hands over a confidential client's secret with the
+// tokens (ADR 26-10-07-005 §4). It is kept, sealed with the value, for
+// refreshes, and nothing the API returns carries it.
+func TestOAuthSecretKeepsTheClientSecretItIsGiven(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newResolveFixture(t)
+
+	secret, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
+		Name: "linear",
+		Type: serverapi.CreateSecretBodyTypeOAuth,
+		Host: serverapi.NewOptString("api.linear.app"),
+		Value: serverapi.SecretValue{
+			Token:        serverapi.NewOptString("lin_oauth_access"),
+			RefreshToken: serverapi.NewOptString("lin_oauth_refresh"),
+			TokenUrl:     serverapi.NewOptString("https://api.linear.app/oauth/token"),
+			ClientId:     serverapi.NewOptString("client-x"),
+			ClientSecret: serverapi.NewOptString("lin_client_secret"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	val, err := st.OpenSecretValue(ctx, secret)
+	if err != nil {
+		t.Fatalf("open value: %v", err)
+	}
+	if val.ClientSecret != "lin_client_secret" {
+		t.Fatalf("stored client secret = %q", val.ClientSecret)
+	}
+	listed, err := svc.ListSecrets(ctx, "project-1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	body, err := json.Marshal(listed)
+	if err != nil {
+		t.Fatalf("marshal listing: %v", err)
+	}
+	if strings.Contains(string(body), "lin_client_secret") {
+		t.Fatalf("the listing carries the client secret: %s", body)
+	}
+}
+
 // An oauth secret is one that renews itself. Without the material for that,
 // calling it oauth promises a refresh nothing can perform.
 func TestOAuthWithoutRefreshMaterialIsRefused(t *testing.T) {
