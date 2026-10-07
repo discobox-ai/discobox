@@ -1,6 +1,6 @@
 # 26-10-01-324 — A server may judge with Jev instead of a judge discobox
 
-- **Status**: Accepted
+- **Status**: Accepted (§3's unsure marking as what goes on, and §7's sending only unsure refusals with hazards refusing on their own, superseded under `jevUnsure: harness` by [26-10-07-937](26-10-07-937-every-jev-refusal-goes-to-the-judge-discobox.md); §6 extended by it)
 - **Date**: 2026-10-01
 - **Relates to**: [ADR 26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
   §§1–2, whose judge discobox this offers an alternative to;

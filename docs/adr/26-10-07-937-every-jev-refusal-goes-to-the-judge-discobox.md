@@ -1,6 +1,6 @@
 # 26-10-07-937 — Every Jev refusal goes to the judge discobox
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-07
 - **Supersedes**: in [26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md),
   under `jevUnsure: harness` only: §3's marking of a refusal as *unsure* as
