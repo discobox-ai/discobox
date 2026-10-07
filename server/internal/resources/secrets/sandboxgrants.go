@@ -44,10 +44,10 @@ type SandboxGrants struct {
 //
 // A discobox giving them is held to what it may hand on, as when it approves a
 // request (ADR 26-09-30-782 §1): each grant is made under a live delegation
-// grant it holds of that secret, covering the hosts — the one that lets it last
-// longest, a lifetime it named fitting within it and one it did not fitted to
-// it — and the project's judge must find its uses within that delegation's,
-// asked once every grant has passed what can refuse it without the judge.
+// grant it holds of that secret, covering the hosts and fitting the lifetime,
+// whose uses the project's judge finds its uses within — the longest-lived
+// that does, asked once every grant has passed what can refuse it without the
+// judge. A lifetime it did not name is then fitted to that delegation.
 func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID string, requested []apimodel.SandboxGrant) (SandboxGrants, error) {
 	var out SandboxGrants
 	if len(requested) == 0 {
@@ -61,6 +61,12 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID
 		out.Grantor = principal.SandboxID
 	}
 	var credentials []string
+	// What each grant a discobox gives may be made under, and whether its
+	// lifetime was named, by index: which delegation it is made under, and so
+	// how long a lifetime nobody named lasts, waits for the judge.
+	var fitting [][]*model.SecretGrant
+	var namedTTL []bool
+	var ttls []int64
 	boundTo := map[string]string{}
 	for _, in := range requested {
 		if byDiscobox {
@@ -80,8 +86,9 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID
 		if err := guardGrantHosts(secret, hosts); err != nil {
 			return SandboxGrants{}, err
 		}
+		// A lifetime fitted to a delegation later only ever shortens, never
+		// to forever, so one within the secret's limit now stays within it.
 		ttl := in.GrantTTLSeconds.Or(secret.MaxGrantTTL)
-		var delegation *model.SecretGrant
 		if byDiscobox {
 			delegations, err := s.delegationsOf(ctx, projectID, principal.SandboxID, secret.ID, hosts)
 			if err != nil {
@@ -92,14 +99,12 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID
 					"no delegation grant this discobox holds hands on %s to %s, so it cannot give it to the discobox it creates; create it without the grant and let it ask", secret.Name, strings.Join(hosts, ", ")))
 			}
 			named := in.GrantTTLSeconds.IsSet()
-			if delegation, err = chooseDelegation(delegations, ttl, named); err != nil {
+			if delegations, err = delegationsFitting(delegations, ttl, named); err != nil {
 				return SandboxGrants{}, err
 			}
-			if !named {
-				if ttl, err = fitTTL(delegation, ttl, time.Now().UTC()); err != nil {
-					return SandboxGrants{}, err
-				}
-			}
+			fitting = append(fitting, delegations)
+			namedTTL = append(namedTTL, named)
+			ttls = append(ttls, ttl)
 		}
 		if err := guardGrantTTL(secret, ttl); err != nil {
 			return SandboxGrants{}, err
@@ -127,7 +132,7 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID
 			grant.ExpiresAt = &expires
 		}
 		out.Grants = append(out.Grants, grant)
-		out.Delegations = append(out.Delegations, delegation)
+		out.Delegations = append(out.Delegations, nil)
 		credential := secret.Name
 		if id := strings.TrimSpace(in.WellKnownId.Or("")); id != "" {
 			credential = id
@@ -148,19 +153,37 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID, sandboxID
 		}
 	}
 	if byDiscobox {
-		// Asked at once, not one after another: the create is a discobox's own
-		// call, held open by its pool's gate for two minutes, and each ask is
-		// bounded to fit inside that on its own (judges' delegationBound) —
-		// one after another, two slow ones would not. The first refusal
-		// cancels the rest, and is the answer.
+		// Grants are asked about at once, not one after another: the create
+		// is a discobox's own call, held open by its pool's gate for two
+		// minutes, and each grant's asks are bounded together to fit inside
+		// that (services.DelegationBound) — one grant after another, two slow
+		// ones would not. The first refusal cancels the rest, and is the
+		// answer.
 		judging, judgingCtx := errgroup.WithContext(ctx)
 		for i, grant := range out.Grants {
 			judging.Go(func() error {
-				return s.judgeDelegation(judgingCtx, projectID, principal.SandboxID, out.Delegations[i], credentials[i], grant.Hosts, grant.Uses, "", sandboxID)
+				delegation, err := s.judgeDelegations(judgingCtx, projectID, principal.SandboxID, fitting[i], credentials[i], grant.Hosts, grant.Uses, "", sandboxID)
+				out.Delegations[i] = delegation
+				return err
 			})
 		}
 		if err := judging.Wait(); err != nil {
 			return SandboxGrants{}, err
+		}
+		now := time.Now().UTC()
+		for i, grant := range out.Grants {
+			if namedTTL[i] {
+				continue
+			}
+			ttl, err := fitTTL(out.Delegations[i], ttls[i], now)
+			if err != nil {
+				return SandboxGrants{}, err
+			}
+			grant.ExpiresAt = nil
+			if ttl > 0 {
+				expires := now.Add(time.Duration(ttl) * time.Second)
+				grant.ExpiresAt = &expires
+			}
 		}
 	}
 	return out, nil

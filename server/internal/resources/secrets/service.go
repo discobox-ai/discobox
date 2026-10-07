@@ -386,15 +386,17 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	}
 	secretID := strings.TrimSpace(input.SecretId.Or(""))
 	var secret *model.Secret
-	// The delegation a discobox's approval is made under: chosen here, held to
-	// again in the transaction, and what the approval is traced to.
+	// The delegations a discobox's approval may be made under, found here; the
+	// one it is made under is the judge's to settle, is held to again in the
+	// transaction, and is what the approval is traced to.
+	var delegations []*model.SecretGrant
 	var delegation *model.SecretGrant
 	if approverIsSandbox {
 		if err := refuseDelegatedApproval(req); err != nil {
 			return nil, err
 		}
 		named, namedTTL := input.GrantTTLSeconds.IsSet(), input.GrantTTLSeconds.Or(0)
-		if delegation, secret, err = s.delegationFor(ctx, projectID, principal.SandboxID, req, secretID, hosts, namedTTL, named); err != nil {
+		if delegations, secret, err = s.delegationsFor(ctx, projectID, principal.SandboxID, req, secretID, hosts, namedTTL, named); err != nil {
 			return nil, err
 		}
 	} else if req.WellKnownID != "" {
@@ -501,7 +503,8 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 
 	// Whether the uses a discobox hands on fall within what it was delegated is
 	// the judge's reading, asked before the transaction because it takes a
-	// while; the delegation it was asked about is held to again inside it. It
+	// while; it settles which delegation the approval is made under, and that
+	// one is held to again inside the transaction. It
 	// is asked last, once every check that can refuse the approval without it
 	// has passed — a discobox cannot change the secret, so its binding and
 	// limit are what the transaction will find — so a verdict is the decision
@@ -519,7 +522,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if req.WellKnownID != "" {
 			credential = req.WellKnownID
 		}
-		if err := s.judgeDelegation(ctx, projectID, principal.SandboxID, delegation, credential, hosts, approvedUses, req.ID, req.SandboxID); err != nil {
+		if delegation, err = s.judgeDelegations(ctx, projectID, principal.SandboxID, delegations, credential, hosts, approvedUses, req.ID, req.SandboxID); err != nil {
 			return nil, err
 		}
 	}

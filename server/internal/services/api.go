@@ -567,6 +567,17 @@ type JudgeService interface {
 	JudgeDelegation(ctx context.Context, projectID string, ask DelegationAsk) (judge.Answer, error)
 }
 
+// DelegationBound is how long the judge may take over the uses one grant a
+// discobox hands on, across every delegation it is asked about. The approval
+// or create that asks is a discobox's own call, held open by its pool's gate
+// for two minutes (pool-agent's gateHTTPTimeout) — less than an ordinary ask's
+// bound, a judge brought up and then thinking — so the question is answered
+// inside it, with room left for the verdict, the approval's transaction, and
+// the way back: the discobox then reads why it was refused rather than the
+// gate giving up on a silence. The asker bounds its asks together by it, and
+// the judge bounds each by it alone.
+const DelegationBound = 100 * time.Second
+
 // DelegationAsk is a discobox about to hand a credential on by approving
 // another discobox's request: whether the uses it would grant fall within the
 // uses of the delegation grant it approves under (ADR 26-09-30-782 §3). It is
