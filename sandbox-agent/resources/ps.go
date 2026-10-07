@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -12,9 +13,25 @@ import (
 
 // psSampler is darwin's Sampler. A macOS sandbox is a whole guest, so the
 // sandbox is every process in it, and its totals are the per-process rollup —
-// there is no cgroup to charge against, which makes Source "proc" and
-// CurrentBytes the summed resident size, exactly as on a Linux sandbox whose
-// cgroup cannot be read.
+// there is no cgroup to charge against, which makes Source "proc".
+//
+// A sum over the processes alive now is not a cumulative counter: it falls
+// whenever one exits, and the pool agent reads a counter that fell as no rate
+// at all — a build of short-lived compilers would look idle exactly while it
+// is busiest (ADR 0071). So this sampler keeps the one thing Linux's cgroup
+// keeps for it: the CPU time of processes that have exited, each at its last
+// sample, added to every total after. That makes the total monotonic. It still
+// undercounts what a process spent after its last sample and every process
+// that lived entirely between two, and it starts again from the live sum when
+// the agent restarts — which a counter falling across a restart already means
+// to the pool.
+//
+// Memory is the one total that is not the rollup. A guest's summed resident
+// size counts the shared system libraries once per process, and a guest runs
+// hundreds of them, so it can exceed the machine several times over. The whole
+// machine is the sandbox, so its memory in use — everything but its free pages,
+// page cache included, as a cgroup's memory.current includes it — is the
+// direct answer, and the machine's size is its limit.
 //
 // A process's CPU time and resident size are behind libproc on darwin, which
 // is cgo; ps is the system's own reader of them, so the sample runs it.
@@ -29,7 +46,28 @@ type psSampler struct {
 	ps func(ctx context.Context) ([]byte, error)
 	// kernel reads every process's command and start time.
 	kernel func() (map[int]kernelProc, error)
+	// memory reads the machine's memory in use and its size, in bytes.
+	memory func() (current, limit int64, err error)
+
+	// mu is held for a whole sample, ps included: two overlapping status
+	// calls would otherwise record their processes out of order, counting
+	// a process twice or a total below the one just reported.
+	mu sync.Mutex
+	// live is each process's CPU time at the last sample, by its identity.
+	live map[processKey]cpuTime
+	// exited is the CPU time of every process seen to exit, at its last
+	// sample.
+	exited cpuTime
 }
+
+// processKey identifies one process across samples: a PID alone is reused.
+type processKey struct {
+	pid        int
+	startTicks uint64
+}
+
+// cpuTime is a cumulative CPU figure, in microseconds.
+type cpuTime struct{ total, user int64 }
 
 // psRow is one process as ps reports it.
 type psRow struct {
@@ -50,30 +88,37 @@ type kernelProc struct {
 	startTicks uint64
 }
 
-func (s psSampler) Sample(ctx context.Context) Usage {
+func (s *psSampler) Sample(ctx context.Context) Usage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	usage := Usage{ObservedAt: time.Now().UTC(), Source: "proc"}
 	rows, err := s.rows(ctx)
 	if err != nil {
 		return usage
 	}
-	// A kernel table that cannot be read leaves the totals true and the
-	// candidates without the identity a candidate needs, so it names none.
+	// A kernel table that cannot be read leaves every process without the
+	// identity a candidate and the CPU bookkeeping need (see retire).
 	kernel, err := s.kernel()
 	if err != nil {
 		kernel = nil
 	}
 	all := make([]ProcessUsage, 0, len(rows))
+	live := make(map[processKey]cpuTime, len(rows))
+	unidentified := map[int]cpuTime{}
 	for _, row := range rows {
-		usage.CPU.UsageUsec += row.cpuUsec
-		usage.CPU.UserUsec += row.userUsec
+		cpu := cpuTime{total: row.cpuUsec, user: row.userUsec}
 		usage.Memory.VirtualBytes += row.virtualBytes
 		usage.Memory.ResidentBytes += row.residentBytes
 		proc, ok := kernel[row.pid]
 		if !ok {
-			// Started or gone between ps and the sysctl: counted, but with no
-			// start time it cannot be told from a process that reuses its PID.
+			unidentified[row.pid] = cpu
+			// Started or gone between ps and the sysctl: its memory and its
+			// place in the process count are counted, but with no start time it
+			// cannot be told from a process that reuses its PID, so it is no
+			// candidate and its CPU is retire's to place.
 			continue
 		}
+		live[processKey{pid: row.pid, startTicks: proc.startTicks}] = cpu
 		all = append(all, ProcessUsage{
 			PID:           row.pid,
 			Command:       proc.comm,
@@ -84,17 +129,60 @@ func (s psSampler) Sample(ctx context.Context) Usage {
 			ResidentBytes: row.residentBytes,
 		})
 	}
+	s.retire(live, unidentified)
+	// The total is what is remembered — live and exited — so that nothing
+	// counted once can leave it.
+	usage.CPU.UsageUsec, usage.CPU.UserUsec = s.exited.total, s.exited.user
+	for _, cpu := range s.live {
+		usage.CPU.UsageUsec += cpu.total
+		usage.CPU.UserUsec += cpu.user
+	}
 	usage.CPU.SystemUsec = max(usage.CPU.UsageUsec-usage.CPU.UserUsec, 0)
-	usage.Memory.CurrentBytes = usage.Memory.ResidentBytes
+	if current, limit, err := s.memory(); err == nil {
+		usage.Memory.CurrentBytes = current
+		usage.Memory.LimitBytes = limit
+	} else {
+		// The rollup's answer, as on a Linux sandbox with no cgroup to read.
+		usage.Memory.CurrentBytes = usage.Memory.ResidentBytes
+	}
 	usage.ProcessCount = len(rows)
 	usage.Processes = topCandidates(all)
 	return usage
 }
 
+// retire records this sample's live processes and adds every process that
+// has exited since the last sample to the exited total. s.mu is held.
+//
+// A process ps listed but the kernel's table did not name — the whole guest,
+// when the table could not be read — has no identity this sample. One
+// already remembered under its PID is carried forward rather than retired,
+// at the larger of its two figures: if it is the same process its time only
+// grew, and if another process has taken the PID the old one is retired at
+// no less than its last figure on the next sample — more, and the new
+// process's time counted twice, only if the newcomer has already outrun it;
+// the total may overcount there but never falls. One not remembered is left
+// out of the total until a sample can name it, so if it exits first it is
+// the undercount of a process that lived between two samples, never a total
+// that fell.
+func (s *psSampler) retire(live map[processKey]cpuTime, unidentified map[int]cpuTime) {
+	for key, last := range s.live {
+		if _, ok := live[key]; ok {
+			continue
+		}
+		if cpu, ok := unidentified[key.pid]; ok {
+			live[key] = cpuTime{total: max(cpu.total, last.total), user: max(cpu.user, last.user)}
+			continue
+		}
+		s.exited.total += last.total
+		s.exited.user += last.user
+	}
+	s.live = live
+}
+
 // Collect reads the exec's process and every process descended from it: on
 // darwin there is no cgroup to say which processes are the exec's, and its
 // process tree is the nearest thing.
-func (s psSampler) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSample, error) {
+func (s *psSampler) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSample, error) {
 	sampledAt := time.Now().UTC()
 	data := execSnapshot(ex)
 	processes := []map[string]any{}
@@ -119,7 +207,7 @@ func (s psSampler) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSa
 	return resourceSample(ex, sampledAt, "darwin-ps", data)
 }
 
-func (s psSampler) rows(ctx context.Context) ([]psRow, error) {
+func (s *psSampler) rows(ctx context.Context) ([]psRow, error) {
 	out, err := s.ps(ctx)
 	if err != nil {
 		return nil, err

@@ -41,9 +41,10 @@ import (
 	"time"
 )
 
-// DefaultInterval is how often the watcher rescans the socket table. Only newly appeared
-// sockets cost anything beyond the two file reads, so this is set by how quickly
-// a port should show up rather than by scan cost — well inside the 15s cadence
+// DefaultInterval is how often the watcher rescans the socket table. Only newly
+// appeared sockets cost anything beyond the scan itself — a few procfs reads on
+// Linux, one lsof run on darwin — so this is set by how quickly a port should
+// show up rather than by scan cost — well inside the 15s cadence
 // pool-agent polls status on (ADR 0030), so a port is rarely more than one
 // control-plane poll old.
 const DefaultInterval = 5 * time.Second

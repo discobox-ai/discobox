@@ -11,9 +11,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// NewSampler is darwin's: ps and the kernel's process table.
+// NewSampler is darwin's: ps, the kernel's process table, and the VM
+// system's page counts.
 func NewSampler() Sampler {
-	return psSampler{ps: runPS, kernel: kernelProcs}
+	return &psSampler{ps: runPS, kernel: kernelProcs, memory: machineMemory}
 }
 
 // psPath is where macOS ships ps, named absolutely so a sandbox user's PATH
@@ -61,4 +62,19 @@ func kernelProcs() (map[int]kernelProc, error) {
 		}
 	}
 	return out, nil
+}
+
+// machineMemory is the machine's memory in use — every page but the free
+// ones — and its size.
+func machineMemory() (current, limit int64, err error) {
+	size, err := unix.SysctlUint64("hw.memsize")
+	if err != nil {
+		return 0, 0, fmt.Errorf("read hw.memsize: %w", err)
+	}
+	free, err := unix.SysctlUint32("vm.page_free_count")
+	if err != nil {
+		return 0, 0, fmt.Errorf("read vm.page_free_count: %w", err)
+	}
+	limit = int64(size)
+	return max(limit-int64(free)*int64(os.Getpagesize()), 0), limit, nil
 }

@@ -14,9 +14,11 @@ import (
 
 // Sampler is the observation seam for resource counters (ADR 0145 §4). Every
 // platform the sandbox agent runs on has one, made by NewSampler, and the
-// contract is the same on each: cumulative counters, never a rate (ADR 0071),
-// and no state held between samples — sandbox-agent's status is computed fresh
-// on every call and never pushed on its own initiative (ADR 0030).
+// contract is the same on each: cumulative counters, never a rate (ADR 0071).
+// A sampler keeps no sampling state — sandbox-agent's status is computed fresh
+// on every call and never pushed on its own initiative (ADR 0030) — except
+// where a platform has no cumulative counter of its own to read: darwin's
+// remembers the CPU time of exited processes, which a cgroup keeps on Linux.
 type Sampler interface {
 	// Sample reads the whole sandbox's usage: its totals and its candidate
 	// processes.
