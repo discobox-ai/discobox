@@ -894,7 +894,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 
 	// On the window's own directory, the run names no source at all: that is
 	// already what `discobox new` would use, and passing it would only repeat it.
-	if req := m.opts.request(""); req.Source != "" {
+	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "" {
 		t.Fatalf("source = %q, want the CLI's own default", req.Source)
 	}
 
@@ -902,7 +902,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	if m.list.folder.key != testKey("/src/obot") {
 		t.Fatalf("folder = %q", m.list.folder.label)
 	}
-	if req := m.opts.request(""); req.Source != "/src/obot" {
+	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", req.Source)
 	}
 	if !strings.Contains(m.opts.command(""), "-C /src/obot") {

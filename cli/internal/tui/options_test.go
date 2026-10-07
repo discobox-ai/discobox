@@ -99,7 +99,7 @@ func TestWithNoProjectDefaultNoHarnessIsClaimed(t *testing.T) {
 	if harness.choices[0] != unsetHarness {
 		t.Fatalf("leading choice = %q, want %q", harness.choices[0], unsetHarness)
 	}
-	if m.opts.request("").Harness != "" {
+	if m.opts.request("", m.opts.opts[optSource].selected()).Harness != "" {
 		t.Fatal("an unset harness must emit no --harness")
 	}
 	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, unsetHarness) {
@@ -156,7 +156,7 @@ func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	m.opts.chooseSource(sourceNone)
 
-	req := m.opts.request("do a thing")
+	req := m.opts.request("do a thing", m.opts.opts[optSource].selected())
 	if !req.NoSource {
 		t.Fatal("request should ask for --no-source")
 	}
@@ -181,7 +181,7 @@ func TestATypedSourceSurvivesARefresh(t *testing.T) {
 	m.opts.chooseSource("/src/elsewhere@main")
 	m.opts.setSources(m.list.sources())
 
-	if got := m.opts.request("").Source; got != "/src/elsewhere@main" {
+	if got := m.opts.request("", m.opts.opts[optSource].selected()).Source; got != "/src/elsewhere@main" {
 		t.Fatalf("source = %q, want the one that was typed", got)
 	}
 	if got := m.opts.typedSource(); got != "/src/elsewhere@main" {
@@ -204,7 +204,7 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 	}
 	// Followed there, the source is the folder again and emits no -C: the
 	// header already says where the next discobox is cut from.
-	if req := m.opts.request(""); req.Source != "/src/obot" {
+	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the list moved to", req.Source)
 	}
 
@@ -213,7 +213,7 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 	if m.list.folder.key != testKey("https://github.com/acme/foo") {
 		t.Fatalf("folder = %q, want the repository URL's own", m.list.folder.label)
 	}
-	if req := m.opts.request(""); req.Source != "https://github.com/acme/foo" {
+	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "https://github.com/acme/foo" {
 		t.Fatalf("source = %q, want the remote repository", req.Source)
 	}
 
@@ -257,7 +257,7 @@ func TestAWindowOnARepositoryURLCutsFromTheURL(t *testing.T) {
 	if seen != 1 {
 		t.Fatalf("values = %v, want the URL once: the listing holds it too", source.values)
 	}
-	if req := m.opts.request("fix it"); req.Source != url {
+	if req := m.opts.request("fix it", m.opts.opts[optSource].selected()); req.Source != url {
 		t.Fatalf("source = %q, want the URL, since -C is the only thing that says so", req.Source)
 	}
 	if cmd := m.opts.command("fix it"); !strings.Contains(cmd, "-C "+url) {
@@ -277,7 +277,7 @@ func TestAWindowOnARepositoryURLKeepsItsRef(t *testing.T) {
 	ds.session.OriginKey = testKey(url)
 	m := newTestModel(t, ds)
 
-	if req := m.opts.request("fix it"); req.Source != url+"@v2" {
+	if req := m.opts.request("fix it", m.opts.opts[optSource].selected()); req.Source != url+"@v2" {
 		t.Fatalf("source = %q, want the ref the window was opened on", req.Source)
 	}
 	if cmd := m.opts.command("fix it"); !strings.Contains(cmd, "-C "+url+"@v2") {
@@ -313,7 +313,7 @@ func TestASourcelessFolderElsewhereCutsFromTheWindowsOwn(t *testing.T) {
 	if strings.ContainsRune(m.opts.sourceLabel(), 0) {
 		t.Fatalf("the panel carries the no-source sentinel: %q", m.opts.sourceLabel())
 	}
-	if req := m.opts.request("x"); req.NoSource || req.Source == sourceNone {
+	if req := m.opts.request("x", m.opts.opts[optSource].selected()); req.NoSource || req.Source == sourceNone {
 		t.Fatalf("request = %+v, want a create from the window's own source", req)
 	}
 }

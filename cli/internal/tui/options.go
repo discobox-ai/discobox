@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -137,6 +138,11 @@ type optionSet struct {
 	// The listing does not hold it, so where a discobox cut from it is filed
 	// is kept here for the list to follow it there.
 	named Source
+	// lastCut is the answer the last create's own question took
+	// (askWhereToCutFrom). It is not the row's setting — that answer is not a
+	// filter — but it is what the next asking opens on, so creating again from
+	// the same place is one Enter. Empty until the question has been answered.
+	lastCut string
 }
 
 // Source is one place the project's discoboxes have been cut from, as the
@@ -414,12 +420,15 @@ func (o *optionSet) rebuildSources() {
 	for _, source := range o.known {
 		add(source.Value)
 	}
-	// The folder the header is on, and a source named by hand, are both things
-	// the listing cannot be relied on to hold: a folder whose discoboxes were
-	// all cut from somewhere else is still a folder you can cut from, and a
-	// path typed into the field has to survive the next refresh of the listing.
+	// The folder the header is on, a source named by hand, and the last
+	// create's answer are all things the listing cannot be relied on to hold:
+	// a folder whose discoboxes were all cut from somewhere else is still a
+	// folder you can cut from, a path typed into the field has to survive the
+	// next refresh of the listing, and the last answer can be such a path,
+	// which the next create's question has to be able to open on.
 	add(o.sourceDir())
 	add(o.source)
+	add(o.lastCut)
 	choices = append(choices, noSourceChoice)
 	values = append(values, sourceNone)
 
@@ -608,6 +617,11 @@ func (o *optionSet) sourceDialog(run bool) *dialog {
 		return nil
 	})
 	menu.cursor = opt.idx
+	if run && o.lastCut != "" {
+		if i := slices.Index(opt.values, o.lastCut); i >= 0 {
+			menu.cursor = i
+		}
+	}
 	answer := "Enter cuts the next discobox from that"
 	if run {
 		answer = "Enter creates the discobox from that"
@@ -703,8 +717,11 @@ func (o *optionSet) moveTo(i int) {
 }
 
 // request is what Enter actually asks for: the options as `discobox new`'s
-// arguments, with the prompt from the composer.
-func (o *optionSet) request(prompt string) RunRequest {
+// arguments, with the prompt from the composer. The source is passed rather
+// than read off the row, because the answer to a create's own question is cut
+// from without moving the row (askWhereToCutFrom); everything else passes what
+// the row has selected.
+func (o *optionSet) request(prompt, source string) RunRequest {
 	req := RunRequest{
 		Detach: o.opts[optDetach].changed(),
 		Env:    append([]string(nil), o.opts[optEnv].items...),
@@ -722,7 +739,7 @@ func (o *optionSet) request(prompt string) RunRequest {
 	// A window opened on a repository URL has no such default to lean on: -C is
 	// a flag, not something the shell is holding, so a command previewed without
 	// it would cut from the directory rather than from the URL Enter uses.
-	switch source := o.opts[optSource].selected(); {
+	switch {
 	case source == sourceNone:
 		req.NoSource = true
 	case source != o.session.Directory || o.session.Remote != "":
@@ -839,7 +856,7 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 // argument, which is exactly what -p is. Trailing words would be inventing a
 // tokenization the user did not type.
 func (o *optionSet) command(prompt string) string {
-	req := o.request(prompt)
+	req := o.request(prompt, o.opts[optSource].selected())
 	args := []string{"discobox"}
 	if req.Server != "" {
 		args = append(args, "--server", req.Server)

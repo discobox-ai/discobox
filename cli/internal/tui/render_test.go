@@ -272,7 +272,7 @@ func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 		t.Error("the panel should show the command it describes")
 	}
 	// And what the panel describes is what Enter asks for.
-	req := m.opts.request(m.prompt.Value())
+	req := m.opts.request(m.prompt.Value(), m.opts.opts[optSource].selected())
 	if req.Harness != "codex" || req.IncludeDirty != "true" || !req.Detach {
 		t.Errorf("request = %+v", req)
 	}

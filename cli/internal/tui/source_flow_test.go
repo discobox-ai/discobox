@@ -80,7 +80,7 @@ func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 	}
 	send(t, m, keyPress("enter"))
 
-	if got := m.opts.request("").Source; got != "/src/typed@wip" {
+	if got := m.opts.request("", m.opts.opts[optSource].selected()).Source; got != "/src/typed@wip" {
 		t.Fatalf("source = %q, want what was typed", got)
 	}
 	// The ref is not a folder, so the list follows the directory half of it.
@@ -139,9 +139,10 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 		}
 	}
 
-	// Answering it creates: the answer is what the run was waiting for, and it
-	// is the same answer the Source row takes, so the header moves onto that
-	// folder and the next Enter asks nothing.
+	// Answering it creates: the answer is what the run was waiting for. It is
+	// where this one discobox is cut from, not a filter, so the header stays on
+	// every folder and the next create asks again.
+	sourceBefore := m.opts.opts[optSource].selected()
 	send(t, m, keyPress("2"))
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %v, want the create the question interrupted", ds.runs)
@@ -152,8 +153,48 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
 	}
-	if m.list.folder.key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the header to have followed the answer", m.list.folder.label)
+	if m.list.folder.key != everyFolder.key {
+		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
+	}
+	if got := m.opts.opts[optSource].selected(); got != sourceBefore {
+		t.Fatalf("source row = %q, want it left at %q", got, sourceBefore)
+	}
+	if m.opts.folder != "" {
+		t.Fatalf("panel folder = %q, want it left on every folder", m.opts.folder)
+	}
+	// It asks again, opening on the last answer, so the same place is one Enter.
+	if !m.askWhereToCutFrom() {
+		t.Fatal("the next create from every folder should ask again")
+	}
+	if got := dialogLabels(m.dialog)[m.dialog.cursor]; got != "/src/obot" {
+		t.Fatalf("question opens on %q, want the last answer", got)
+	}
+	send(t, m, keyPress("enter"))
+	if len(ds.runs) != 2 || ds.runs[1].Source != "/src/obot" {
+		t.Fatalf("runs = %v, want Enter to cut from the last answer again", ds.runs)
+	}
+}
+
+// A header on one folder has named where to cut from, so a create from it asks
+// nothing.
+func TestCreatingWithOneFolderShownAsksNothing(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"))
+	filterTo(t, m, "/src/obot")
+	if m.focus == focusFilter {
+		send(t, m, keyPress("down"))
+	}
+	send(t, m, keyPress("esc"))
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"))
+
+	if m.dialog != nil {
+		t.Fatalf("dialog = %q, want no question with one folder shown", m.dialog.title)
+	}
+	if len(ds.runs) != 1 || ds.runs[0].Source != "/src/obot" {
+		t.Fatalf("runs = %v, want one cut from the folder the header is on", ds.runs)
 	}
 }
 
@@ -180,6 +221,9 @@ func TestTheCreateQuestionTakesNoSourceForAnAnswer(t *testing.T) {
 
 	if len(ds.runs) != 1 || !ds.runs[0].NoSource {
 		t.Fatalf("runs = %v, want one discobox created with nothing checked out", ds.runs)
+	}
+	if m.list.folder.key != everyFolder.key || m.opts.folder != "" {
+		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
 	}
 }
 
@@ -246,5 +290,19 @@ func TestAPathTypedIntoTheCreateQuestionRunsWhenItChecksOut(t *testing.T) {
 	}
 	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
+	}
+	if m.list.folder.key != everyFolder.key || m.opts.folder != "" {
+		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
+	}
+	if got := m.opts.opts[optSource].selected(); got == "/src/elsewhere" {
+		t.Fatalf("source row = %q, want the answer left off the row", got)
+	}
+	// A path typed by hand is not in the listing, but the next asking still
+	// offers it and opens on it.
+	if !m.askWhereToCutFrom() {
+		t.Fatal("the next create from every folder should ask again")
+	}
+	if got := dialogLabels(m.dialog)[m.dialog.cursor]; got != "/src/elsewhere" {
+		t.Fatalf("question opens on %q, want the typed path", got)
 	}
 }

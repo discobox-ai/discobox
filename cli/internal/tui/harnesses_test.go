@@ -367,7 +367,7 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 
 	// Nothing chosen means the default, which is what an empty --harness does.
 	m.opts.opts[optHarness].idx = 0
-	if m.opts.request("").Harness != "" {
+	if m.opts.request("", m.opts.opts[optSource].selected()).Harness != "" {
 		t.Fatal("the leading choice is the project default and should emit no flag")
 	}
 }

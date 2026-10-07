@@ -2092,9 +2092,8 @@ source) because the window opens on it before any listing has landed to name
 it; a saved server no longer registered opens as every server. A view saved
 when the filter held one tag (`tag` in the state file) opens on that tag and is
 rewritten as `tags` the next time it moves. On `all
-folders` a create still asks where to cut from (`askWhereToCutFrom`), so the
-first prompt in a fresh directory asks, and answering narrows the folder —
-which is then what that directory opens on.
+folders` a create asks where to cut from (`askWhereToCutFrom`), and answering
+it leaves the view on every folder.
 
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
 is written through `DataSource.SaveDraft`, keyed by the session's directory, and
@@ -2408,10 +2407,16 @@ Every other choice in the header names the directory a new discobox is cut from;
 that one names them all, and the source silently fell back to whichever
 directory the window happened to be running in — a discobox cut from somewhere
 nobody named. Enter opens the Source row's own list instead
-(`sourceDialog(true)`), so the answer is a choice the panel already offers, and
-answering it moves the header onto that folder: the next Enter has a place to
-cut from and asks nothing. A window whose session has not landed yet is on no
-folder for a different reason — nothing has told it which, and it has no
+(`sourceDialog(true)`), so the answer is a choice the panel already offers.
+The answer is where this one discobox is cut from, not a filter: `request`
+takes it without the Source row moving, so the header and the row stay on
+every folder, the list still shows them all after the create, and the next
+create asks again — opening on the last answer (`lastCut`), so creating from the
+same place again is one Enter. That answer lives as long as the window, by
+choice: unlike the view and the draft it is not saved, and a new window opens
+the question on its own directory. A header on one folder has named the place,
+so a create from it asks nothing. A window whose session has not landed yet is
+on no folder for a different reason — nothing has told it which, and it has no
 directory or sources to offer — so it is left to `discobox new`'s own
 resolution, the way a prompt submitted before the harnesses land is.
 

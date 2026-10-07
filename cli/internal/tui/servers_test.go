@@ -24,7 +24,7 @@ func TestRunOptionsOfferAServerOnlyWhenThereIsAChoice(t *testing.T) {
 	if got := row.display(); got != "alpha (primary)" {
 		t.Fatalf("Server row = %q, want the primary, saying so", got)
 	}
-	if req := opts.request("fix it"); req.Server != "" {
+	if req := opts.request("fix it", opts.opts[optSource].selected()); req.Server != "" {
 		t.Fatalf("untouched request Server = %q, want the primary", req.Server)
 	}
 	if strings.Contains(opts.command("fix it"), "--server") {
@@ -32,7 +32,7 @@ func TestRunOptionsOfferAServerOnlyWhenThereIsAChoice(t *testing.T) {
 	}
 
 	row.cycle(1)
-	if req := opts.request("fix it"); req.Server != "beta" {
+	if req := opts.request("fix it", opts.opts[optSource].selected()); req.Server != "beta" {
 		t.Fatalf("request Server = %q, want beta", req.Server)
 	}
 	if got := opts.command("fix it"); !strings.Contains(got, "--server beta") {

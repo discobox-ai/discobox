@@ -1060,8 +1060,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.typed {
 			return m.resolveSource(msg)
 		}
+		if msg.run {
+			return m.cutFrom(msg.source)
+		}
 		m.opts.chooseSource(msg.source)
-		return m.sourceApplied(msg.run)
+		return m.followSource()
 
 	case sourceResolvedMsg:
 		if msg.err != nil {
@@ -1071,8 +1074,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.askForSource(msg.typed, msg.err.Error(), msg.run)
 			return nil
 		}
+		if msg.run {
+			m.opts.named = msg.source
+			return m.cutFrom(msg.source.Value)
+		}
 		m.opts.nameSource(msg.source)
-		return m.sourceApplied(msg.run)
+		return m.followSource()
 
 	case paneOpenedMsg:
 		return m.paneOpened(msg)
@@ -2304,7 +2311,7 @@ func (m *Model) run() tea.Cmd {
 	if m.askWhereToCutFrom() {
 		return nil
 	}
-	return m.runRequest(m.opts.request(m.prompt.Value()))
+	return m.runRequest(m.opts.request(m.prompt.Value(), m.opts.opts[optSource].selected()))
 }
 
 // askWhereToCutFrom stops a create the window has no folder for and asks what
@@ -2315,8 +2322,9 @@ func (m *Model) run() tea.Cmd {
 // them all — so the source fell back to whatever directory the window happens
 // to be running in, and Enter cut from somewhere nobody had named. The question
 // is the Source row's own list (sourceDialog), so the answer is a choice the
-// panel already offers, and answering it moves the header onto that folder: the
-// next Enter has a place to cut from and asks nothing.
+// panel already offers. Answering it cuts this one discobox from there and
+// leaves the header on every folder (cutFrom): the list was showing them all,
+// and still does once the create is done. The next asking opens on that answer.
 //
 // A window whose session has not landed yet is on no folder for a different
 // reason — nothing has told it which — and has no directory or sources to
@@ -2357,8 +2365,11 @@ func (m *Model) resolveSource(msg sourceChosenMsg) tea.Cmd {
 	if msg.source == "" {
 		// Nothing typed is the folder the field offered as its placeholder,
 		// which is where the window was cutting from already.
+		if msg.run {
+			return m.cutFrom(m.opts.sourceDir())
+		}
 		m.opts.chooseSource("")
-		return m.sourceApplied(msg.run)
+		return m.followSource()
 	}
 	return func() tea.Msg {
 		resolved, err := m.ds.ResolveSource(m.ctx, msg.source)
@@ -2376,17 +2387,16 @@ type sourceResolvedMsg struct {
 	err    error
 }
 
-// sourceApplied is what happens once a source is settled: the list follows it,
-// and an answer given to a create's own question carries that create on.
-func (m *Model) sourceApplied(run bool) tea.Cmd {
-	cmd := m.followSource()
-	if !run {
-		return cmd
-	}
-	// The request is built again rather than resumed, because the panel is what
-	// a run is made of and the answer has just changed it. The follow's status
-	// line goes with it: the create says what it is doing from here.
-	return m.runRequest(m.opts.request(m.prompt.Value()))
+// cutFrom carries on the create whose own question a source answered. The
+// question is only asked with the header on every folder, and its answer is
+// where this one discobox comes from, not a filter: the Source row and the
+// header are not moved, so the list still shows every folder once the create
+// is done. The next create asks again, opening on this answer so that the same
+// place is one Enter away.
+func (m *Model) cutFrom(source string) tea.Cmd {
+	m.opts.lastCut = source
+	m.opts.rebuildSources()
+	return m.runRequest(m.opts.request(m.prompt.Value(), source))
 }
 
 // runRequest is a run past the questions about the harness it lands on, from
