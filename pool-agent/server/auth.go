@@ -184,7 +184,13 @@ func (a *SignedTokenAuthenticator) OriginMiddleware(sandboxTokens *sandboxtoken.
 				SandboxID: sandbox.SandboxID,
 				Scopes:    sandbox.Scopes,
 			}
-			if err := a.authorizeRequestPath(r.URL.Path, claims); err != nil {
+			// Checked against the escaped path, which is what the router
+			// matches and every handler after this reads its ids from. The
+			// decoded path is a different string once a segment carries an
+			// escaped slash: a project id of "p%2Fpool%2Fx%2Fsandboxes%2Fmine"
+			// decodes to a path whose first sandbox is the token's own while
+			// the router serves, and autoStart starts, the one named after it.
+			if err := a.authorizeRequestPath(r.URL.EscapedPath(), claims); err != nil {
 				a.reject(r, w, http.StatusForbidden, reasonForbidden, err)
 				return
 			}

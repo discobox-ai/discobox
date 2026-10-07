@@ -224,3 +224,60 @@ func TestALiveOriginIsFetchOnly(t *testing.T) {
 		}
 	}
 }
+
+// hideRefs reveals by prefix, so a declared ref that no longer exists would
+// reveal whatever the developer later creates beneath its name: deleting the
+// declared branch and making declared/x, or leaving HEAD on an unborn branch
+// with refs under it. Only refs that exist are revealed, and an existing ref
+// has nothing beneath it.
+func TestALiveOriginRevealsNothingBeneathARefThatIsGone(t *testing.T) {
+	f := newLiveFixture(t)
+	f.git("branch", "-D", "declared")
+	f.git("branch", "declared/private", "private")
+	f.git("symbolic-ref", "HEAD", "refs/heads/unborn")
+	f.git("branch", "unborn/private", "private")
+
+	if got, want := f.advertisedRefs("2"), []string(nil); !slices.Equal(got, want) {
+		t.Fatalf("with every allowed ref gone the origin advertised %v, want nothing", got)
+	}
+	client := t.TempDir()
+	runGit(t, client, "init", "-q")
+	if !gitFails(t, client, "fetch", f.url, f.hidden) {
+		t.Fatal("a commit only refs beneath a vanished allowed ref reach was fetched by id")
+	}
+}
+
+// A name that is a namespace rather than a ref would reveal everything in it.
+func TestAnAdvertisedRefMustBeAFullRefName(t *testing.T) {
+	for _, ref := range []string{"refs/heads", "refs/heads/", "refs/", "refs//x", "heads/main", "refs/heads/a..b", "refs/heads/*"} {
+		if validAdvertisedRef(ref) {
+			t.Errorf("validAdvertisedRef(%q) = true", ref)
+		}
+	}
+	for _, ref := range []string{"refs/heads/main", "refs/tags/v1", "refs/discobox/run/run-1"} {
+		if !validAdvertisedRef(ref) {
+			t.Errorf("validAdvertisedRef(%q) = false", ref)
+		}
+	}
+}
+
+// http-backend reads the last service parameter and Go the first, so a
+// request naming both is a push wherever it is judged.
+func TestARequestNamingBothServicesIsAPush(t *testing.T) {
+	f := newLiveFixture(t)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, f.url+"/info/refs?service=git-upload-pack&service=git-receive-pack", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsReceivePack(req) {
+		t.Fatal("a request naming receive-pack second was not taken for a push")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("live origin answered %d, want 403", resp.StatusCode)
+	}
+}
