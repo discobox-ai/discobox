@@ -952,14 +952,18 @@ func mapPoolClientError(err error) error {
 		return fmt.Errorf("pool-agent request failed: %w", unexpected)
 	}
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
-		// Two different conditions share this status, and only the type tells
-		// them apart. Archived means the pool agent did nothing and will keep
-		// doing nothing until someone unarchives the sandbox; already-exists
-		// means the caller's work is done. Reporting the first as the second
-		// let a refused create settle as a converged, healthy sandbox that had
-		// no container at all.
-		if poolErrorType(statusErr) == poolapimodel.ErrorTypeSandboxArchived {
+		// Several conditions share this status, and only the type tells them
+		// apart. Archived means the pool agent did nothing and will keep doing
+		// nothing until someone unarchives the sandbox; no container means the
+		// same until someone repairs it; already-exists means the caller's
+		// work is done. Reporting either of the first two as the third let a
+		// refused create settle as a converged, healthy sandbox that had no
+		// container at all.
+		switch poolErrorType(statusErr) {
+		case poolapimodel.ErrorTypeSandboxArchived:
 			return sandbox.ErrArchived
+		case poolapimodel.ErrorTypeSandboxNoContainer:
+			return sandbox.ErrNoContainer
 		}
 		return sandbox.ErrAlreadyExists
 	}

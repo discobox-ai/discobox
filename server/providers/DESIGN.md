@@ -905,14 +905,17 @@ lost) with its recorded cause instead of a bare capacity error.
 ## Pool-agent errors
 
 `mapPoolClientError` turns a pool-agent HTTP failure into a `sandbox` contract
-error. Status alone is not enough at 409: the agent answers both "already
-exists" and "archived" with it, and the two call for opposite responses — the
-first says the caller's create is done, the second that nothing will run until
-someone unarchives the sandbox. The agent therefore stamps the archived 409 with
-the RFC 7807 `type` in `poolapimodel.ErrorTypeSandboxArchived`, and that type is
-the only part of an error body this package treats as a contract; title and
-detail are prose for people. Collapsing the two let the create path — which
-treats `ErrAlreadyExists` as success — swallow a create the agent had refused,
+error. Status alone is not enough at 409: the agent answers "already exists",
+"archived", and "no container" with it, and they call for different responses
+— the first says the caller's create is done, the second that nothing will run
+until someone unarchives the sandbox, the third that nothing will run until
+someone repairs it. The agent therefore stamps the last two with the RFC 7807
+`type` in `poolapimodel.ErrorTypeSandboxArchived` and
+`poolapimodel.ErrorTypeSandboxNoContainer`, mapped to `sandbox.ErrArchived` and
+`sandbox.ErrNoContainer`; that type is the only part of an error body this
+package treats as a contract, and title and detail are prose for people.
+Collapsing archived into already-exists let the create path — which treats
+`ErrAlreadyExists` as success — swallow a create the agent had refused,
 settling a sandbox with no container as converged and `ready`.
 
 ## Pool-agent client leases

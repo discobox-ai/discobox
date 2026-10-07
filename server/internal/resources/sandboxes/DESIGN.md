@@ -63,7 +63,13 @@ responses carry the sandbox as it read *before* the instruction took effect, so
 a caller learns the outcome by re-reading the sandbox once the agent's report
 has landed. `DesiredState` answers existence only: `present`,
 `archived`, or `deleted`. Start, stop, and restart are refused with 409 on an
-archived sandbox — it has no container to power.
+archived sandbox — it has no container to power. One refused for want of a
+runtime is also a 409 (`instructionRefusal`) saying why and what to do, since
+the row is here and none of these is a missing sandbox: no container on the
+pool (`ErrNoContainer`) is repaired; still archived on the pool
+(`ErrArchived`) is an unarchive the pool has not caught up with, waited out,
+or one that failed, repaired; no runtime at all (`ErrNotFound`, which is also a create not yet placed
+on a pool) is waited out while it is being created and repaired otherwise.
 
 ## Attach waits, acquire does not
 

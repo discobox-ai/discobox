@@ -54,12 +54,15 @@ corrects over deciding between add and update.
 
 ## Error responses
 
-A status this API reuses for two conditions needs a `type` to tell them apart.
-409 is both "already exists" and "archived", and the control plane acts on them
-in opposite ways, so `mapRuntimeError` stamps the archived one with
-`model.ErrorTypeSandboxArchived` and `NewError` copies it onto the response. Do
-not let a caller's only signal be the detail string: it is prose, it is written
-for people, and nothing stops it being reworded.
+A status this API reuses for several conditions needs a `type` to tell them apart.
+409 is "already exists", "archived", and "no container", and the control plane
+acts on each differently, so `mapRuntimeError` stamps the last two with
+`model.ErrorTypeSandboxArchived` and `model.ErrorTypeSandboxNoContainer` and
+`NewError` copies the type onto the response. A handler returns runtime errors
+through `mapRuntimeError`, never bare: a bare sentinel reaches `NewError` with no
+status and goes out as a 500. Do not let a caller's only signal be the detail
+string: it is prose, it is written for people, and nothing stops it being
+reworded.
 
 ## Running is not ready
 

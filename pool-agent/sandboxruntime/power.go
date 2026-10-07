@@ -140,14 +140,8 @@ func (r *DockerSandboxRuntime) startUnlessRunning(ctx context.Context, sandboxID
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
-	sb, err := r.GetSandbox(ctx, sandboxID)
+	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil {
-		// An archived sandbox has no container, so the lookup fails first. The
-		// archive check answers the more useful question, and only for a
-		// sandbox this pool actually holds.
-		if errors.Is(err, ErrNotFound) && r.SandboxIsArchived(sandboxID) {
-			return false, ErrArchived
-		}
 		return false, err
 	}
 	if sb.Status == StatusRunning {
@@ -206,6 +200,34 @@ func (r *DockerSandboxRuntime) sandboxContainer(ctx context.Context, sandboxID s
 	}
 }
 
+// powerTarget returns the container a power operation acts on, and says why
+// there is none when there is not.
+//
+// No container is three different answers, and only this tier can tell them
+// apart. An archived sandbox has none by intent (ADR 0022 §5). One whose tree
+// this pool holds is a sandbox being rebuilt or one that needs repair — it is
+// not missing, and calling it missing sent an explicit start back as a bare
+// "sandbox not found" while an attach to the same sandbox answered that it
+// needed repair. Only an id whose tree is not here is not found.
+//
+// It does not wait for a rebuild. That wait belongs to the route the control
+// plane itself waits on (see EnsureSandboxRunning); a power instruction is a
+// command that wants an answer, and for a sandbox nothing is rebuilding the
+// wait would only delay the one it gets.
+func (r *DockerSandboxRuntime) powerTarget(ctx context.Context, sandboxID string) (*Sandbox, error) {
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if err == nil || !errors.Is(err, ErrNotFound) {
+		return sb, err
+	}
+	switch {
+	case r.SandboxIsArchived(sandboxID):
+		return nil, ErrArchived
+	case r.hostsSandbox(sandboxID):
+		return nil, ErrNoContainer
+	}
+	return nil, err
+}
+
 func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string) error {
 	// Archiving removes the container, so reaching here with a marked tree means
 	// a container survived a partial archive. Starting it would silently undo the
@@ -213,7 +235,7 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	if r.SandboxIsArchived(sandboxID) {
 		return ErrArchived
 	}
-	sb, err := r.GetSandbox(ctx, sandboxID)
+	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil {
 		return err
 	}
@@ -322,7 +344,7 @@ func (r *DockerSandboxRuntime) SandboxBooting(sandboxID string) bool {
 }
 
 func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string) error {
-	sb, err := r.GetSandbox(ctx, sandboxID)
+	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil {
 		return err
 	}

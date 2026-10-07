@@ -357,6 +357,16 @@ those calls for the whole wait and then said "sandbox not found". Either way the
 sandbox with a tree and no container is `ErrNoContainer`, a 409 that says it is
 being rebuilt or needs repair.
 
+**Explicit power instructions answer the same way, without the wait**
+(`powerTarget`). A `start`, `stop`, or `restart` of a sandbox with no container
+is `ErrArchived` when its tree is marked archived, `ErrNoContainer` when the
+tree is here, and `ErrNotFound` (404) only when it is not. They do not wait for
+a rebuild: an instruction is a command that wants an answer, and the control
+plane does not wait on it. The handlers map these like every other runtime
+error, and the no-container 409 carries `ErrorTypeSandboxNoContainer` so the
+control plane can tell it from "already exists" (see [Pool Agent API
+Model](api/model/DESIGN.md)).
+
 **Audit reads never start a sandbox** (`requireRunning`). The harness-hooks and
 exec-events reads are what the sandbox recorded about itself (ADR 0130), and
 starting a stopped sandbox to read them would undo the stop they may be read to

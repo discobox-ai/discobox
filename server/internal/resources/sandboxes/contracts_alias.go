@@ -27,6 +27,7 @@ type ImageUnavailableError = contract.ImageUnavailableError
 var ErrNotFound = contract.ErrNotFound
 var ErrAlreadyExists = contract.ErrAlreadyExists
 var ErrArchived = contract.ErrArchived
+var ErrNoContainer = contract.ErrNoContainer
 var ErrImageUnavailable = contract.ErrImageUnavailable
 var ErrNotRunning = contract.ErrNotRunning
 var ErrAlreadyRunning = contract.ErrAlreadyRunning
