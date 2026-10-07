@@ -254,9 +254,10 @@ type DockerSandboxRuntime struct {
 	sharedMemoryBytes int64
 	// root is where this pool's state is, as this process sees it.
 	root layout.Root
-	// hostState translates a path under root into the daemon's view of it. It
-	// is applied only where a path is handed to the daemon.
-	hostState layout.HostMapping
+	// hostStateRoot is where the daemon sees root's state; empty means it
+	// sees the paths root itself names. It is applied, through root, only where a path is
+	// handed to the daemon (daemonPath), so root and its translation are one.
+	hostStateRoot string
 	// powerLocks serializes power operations per sandbox (see power.go).
 	powerLocks sync.Map
 	// booting holds the boot under way of each sandbox whose container is
@@ -291,7 +292,7 @@ type DockerSandboxRuntimeConfig struct {
 	// container's, layout.Container().
 	Root layout.Root
 	// HostStateRoot is where this pool's Docker daemon sees Root's state.
-	// Empty means it sees layout.ContainerRoot.
+	// Empty means it sees the paths Root itself names.
 	HostStateRoot string
 	// SandboxIdleTimeout is how long a sandbox runs idle before it powers
 	// itself off (ADR 0108). Zero leaves the sandbox-agent's default.
@@ -315,7 +316,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		sharedMemoryBytes:     cfg.SharedMemoryBytes,
 		hostMountPrefix:       cleanAbsPath(cfg.HostMountPrefix),
 		root:                  cfg.Root,
-		hostState:             cfg.Root.HostMapping(cfg.HostStateRoot),
+		hostStateRoot:         cfg.HostStateRoot,
 	}, nil
 }
 
@@ -2998,7 +2999,7 @@ func cleanAbsPath(value string) string {
 // Docker daemon sees. Every mount source handed to the daemon goes through it;
 // nothing else needs to, because everything else is read and written here.
 func (r *DockerSandboxRuntime) daemonPath(path string) string {
-	return r.hostState.HostPath(path)
+	return r.root.HostMapping(r.hostStateRoot).HostPath(path)
 }
 
 // materializeGitSource brings target to the state source describes, running

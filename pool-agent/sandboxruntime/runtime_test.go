@@ -15,7 +15,6 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/layout"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/sandboxconfig"
@@ -380,12 +379,12 @@ func TestGitSafeDirectoriesIgnoresRemoteAndRelativeURLs(t *testing.T) {
 func TestDockerSandboxRuntimeDaemonPathTranslatesOnlyRelocatedState(t *testing.T) {
 	const containerPath = "/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
 
-	same := &DockerSandboxRuntime{hostState: layout.Container().HostMapping("")}
+	same := &DockerSandboxRuntime{}
 	if got := same.daemonPath(containerPath); got != containerPath {
 		t.Fatalf("daemon path = %q, want the container path unchanged", got)
 	}
 
-	relocated := &DockerSandboxRuntime{hostState: layout.Container().HostMapping("/var/lib/docker/discobox")}
+	relocated := &DockerSandboxRuntime{hostStateRoot: "/var/lib/docker/discobox"}
 	want := "/var/lib/docker/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
 	if got := relocated.daemonPath(containerPath); got != want {
 		t.Fatalf("daemon path = %q, want %q", got, want)

@@ -95,14 +95,23 @@ func (r Root) Dir() string {
 	return r.state
 }
 
+// containerOnly panics when r is a host root. A host pool has no pool
+// container: no filesystem of its own around the state, no mounts, and no
+// Docker daemon to translate a path for (ADR 0144 §§1, 3). Asking a host root
+// for any of those is a bug, and an answer would be a path that does not exist
+// on the user's machine.
+func (r Root) containerOnly(what string) {
+	if r.host {
+		panic("layout: a host root has no pool container, so no " + what)
+	}
+}
+
 // System is p, an absolute path in the pool container's own filesystem outside
 // the state trees (its /etc/discobox, /run/discobox, /proc), as this process
-// sees it. A host root has no container filesystem: a host pool runs none of
-// the units those files configure (ADR 0144 §3), so asking for one is a bug.
+// sees it. A host root has none: a host pool runs none of the units those
+// files configure (ADR 0144 §3).
 func (r Root) System(p string) string {
-	if r.host {
-		panic("layout: a host root has no container filesystem, so no " + p)
-	}
+	r.containerOnly(p)
 	if r.system == "" || p == "" {
 		return p
 	}
@@ -125,8 +134,10 @@ func (r Root) identityTree() string { return r.join(r.Dir(), "identity") }
 
 // MountRoots returns the trees a backend must make available to a pool. Docker
 // does not create a missing bind source, so a driver whose host lacks these has
-// to create them before the pool container starts.
+// to create them before the pool container starts. A host root has no pool
+// container to mount them into.
 func (r Root) MountRoots() []string {
+	r.containerOnly("mount roots")
 	return []string{r.dataTree(), r.cacheTree(), r.proxyTree(), r.identityTree()}
 }
 
@@ -348,14 +359,18 @@ func (r Root) ProxyResolveContextFile(projectID, poolID string) string {
 type HostMapping struct {
 	// from is the root mapped from.
 	from Root
-	// hostRoot is where the daemon sees it, or empty for ContainerRoot.
+	// hostRoot is where the daemon sees it, or empty when the daemon sees the
+	// same paths this process does.
 	hostRoot string
 }
 
 // HostMapping maps this root's state directory onto hostRoot. An empty hostRoot
-// means the daemon sees state at ContainerRoot, which is the case whenever the
-// state root is bind-mounted at the same location in the pool container.
+// means the daemon sees the same paths this process does: the case whenever the
+// state root is bind-mounted at the same location in the pool container, and
+// for a test whose fake daemon shares the test's filesystem. A
+// host root has no daemon to map for.
 func (r Root) HostMapping(hostRoot string) HostMapping {
+	r.containerOnly("Docker daemon to map " + hostRoot + " for")
 	return HostMapping{from: r, hostRoot: strings.TrimRight(strings.TrimSpace(hostRoot), "/")}
 }
 
@@ -363,7 +378,7 @@ func (r Root) HostMapping(hostRoot string) HostMapping {
 // outside the root are returned unchanged: they are already daemon paths, such
 // as a developer's own source directory bound into a sandbox.
 func (m HostMapping) HostPath(p string) string {
-	if p == "" || (m.hostRoot == "" && m.from.Dir() == ContainerRoot) {
+	if p == "" || m.hostRoot == "" {
 		return p
 	}
 	rest, ok := strings.CutPrefix(m.from.clean(p), m.from.Dir())
@@ -373,11 +388,11 @@ func (m HostMapping) HostPath(p string) string {
 	return m.HostRoot() + filepath.ToSlash(rest)
 }
 
-// HostRoot is where the daemon sees the root's state directory: ContainerRoot
-// itself when no translation applies.
+// HostRoot is where the daemon sees the root's state directory: the root's own
+// directory when no translation applies.
 func (m HostMapping) HostRoot() string {
 	if m.hostRoot == "" {
-		return ContainerRoot
+		return m.from.Dir()
 	}
 	return m.hostRoot
 }
