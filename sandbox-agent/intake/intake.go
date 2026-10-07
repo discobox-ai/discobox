@@ -60,20 +60,44 @@ var ErrInvalid = errors.New("invalid runtime config")
 // the same revision.
 var ErrConflict = errors.New("a different runtime config was already applied at this revision")
 
+// Owner is the sandbox a kept document was applied for, as sandbox.json names
+// it.
+type Owner struct {
+	ProjectID string `json:"projectId"`
+	SandboxID string `json:"sandboxId"`
+	PoolID    string `json:"poolId"`
+}
+
+// keptDocument is the state file: the document, and whose it is.
+//
+// The owner is there because the file travels. /var/lib/discobox is a data
+// volume an export carries, so a sandbox brought up again elsewhere starts
+// with the document its old pool sent — and that document's revision would
+// then outrank everything its new pool sends, whose revisions owe nothing to
+// the old pool's. A document is restored only into the sandbox and pool it was
+// applied for.
+type keptDocument struct {
+	Owner    Owner                       `json:"owner"`
+	Document sandboxconfig.RuntimeConfig `json:"document"`
+}
+
 // Intake applies runtime-config documents and remembers the last one.
 type Intake struct {
 	layout Layout
+	owner  Owner
 
 	mu      sync.Mutex
 	applied *sandboxconfig.RuntimeConfig
 }
 
-// Open returns the intake for layout and applies the document it last kept,
-// if any, so the files a restart lost (/run is a tmpfs) are back before
-// anything reads them. The intake is usable even when that fails — the error
-// says why nothing was restored, and the pool's next delivery repairs it.
-func Open(layout Layout) (*Intake, error) {
-	in := &Intake{layout: layout}
+// Open returns the intake for owner's sandbox, and applies the document it
+// last kept, if that was owner's, so the files a restart lost (/run is a
+// tmpfs) are back before anything reads them. The intake is usable even when
+// that fails — the error says why nothing was restored, and the pool's next
+// delivery repairs it. A document kept for another sandbox or pool is not
+// restored and orders nothing; the first delivery replaces it.
+func Open(layout Layout, owner Owner) (*Intake, error) {
+	in := &Intake{layout: layout, owner: owner}
 	data, err := os.ReadFile(layout.StatePath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return in, nil
@@ -81,10 +105,14 @@ func Open(layout Layout) (*Intake, error) {
 	if err != nil {
 		return in, fmt.Errorf("read kept runtime config: %w", err)
 	}
-	var kept sandboxconfig.RuntimeConfig
-	if err := json.Unmarshal(data, &kept); err != nil {
+	var file keptDocument
+	if err := json.Unmarshal(data, &file); err != nil {
 		return in, fmt.Errorf("decode kept runtime config %s: %w", layout.StatePath, err)
 	}
+	if file.Owner != owner {
+		return in, fmt.Errorf("kept runtime config %s was applied for %+v, not this sandbox (%+v); not restored", layout.StatePath, file.Owner, owner)
+	}
+	kept := file.Document
 	// The kept document carries no client key (see plan); the key is the one
 	// already in the proxy directory, which is its only copy on disk.
 	if kept.Proxy != nil && kept.Proxy.ClientKey == "" {
@@ -169,9 +197,12 @@ func (in *Intake) commit(doc sandboxconfig.RuntimeConfig, keep bool) error {
 //
 // The readiness marker brackets the rest: a document that withholds readiness
 // removes the marker before anything else changes, and one that grants it
-// writes the marker after everything else is in place. Either way a gate is
-// never open over files from two documents. The state file is last, so a kept
-// document is never newer than the files it describes.
+// writes the marker after everything else is in place — the state file
+// included, since a failed rename there rolls the rest back, and a waiter that
+// had already seen the marker would be running over files that no longer
+// exist. Either way a gate is never open over files from two documents. The
+// state file comes after every file it describes, so a kept document is never
+// newer than they are.
 func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, error) {
 	ready := filepath.Join(in.layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 	var ops []op
@@ -196,19 +227,19 @@ func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, error)
 	if changed {
 		ops = append(ops, manifest)
 	}
-	if delivered {
-		//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
-		ops = append(ops, op{path: ready, data: []byte{}, mode: 0o644})
-	}
 	if keep {
 		// /var/lib/discobox is a data volume, which an export carries, so the
 		// kept document leaves the client key out: client.key in the proxy
 		// directory stays the one copy, and a restore reads it from there.
-		state, err := json.MarshalIndent(WithoutClientKey(doc), "", "  ")
+		state, err := json.MarshalIndent(keptDocument{Owner: in.owner, Document: WithoutClientKey(doc)}, "", "  ")
 		if err != nil {
 			return nil, err
 		}
 		ops = append(ops, op{path: in.layout.StatePath, data: state, mode: 0o600})
+	}
+	if delivered {
+		//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
+		ops = append(ops, op{path: ready, data: []byte{}, mode: 0o644})
 	}
 	return ops, nil
 }

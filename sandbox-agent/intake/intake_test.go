@@ -20,6 +20,8 @@ import (
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
+var testOwner = Owner{ProjectID: "prj_1", SandboxID: "sbx_1", PoolID: "pool_1"}
+
 func testLayout(t *testing.T) Layout {
 	t.Helper()
 	root := t.TempDir()
@@ -223,7 +225,7 @@ func snapshot(t *testing.T, layout Layout) map[string]string {
 func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 	layout := testLayout(t)
 	writeManifest(t, layout, "30m0s")
-	in, err := Open(layout)
+	in, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +296,7 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 
 func TestApplyIgnoresAnOlderRevision(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout)
+	in, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +322,7 @@ func TestApplyIgnoresAnOlderRevision(t *testing.T) {
 
 func TestApplySameRevisionIsARetryOrAConflict(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout)
+	in, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +360,7 @@ func TestApplyThatFailsLeavesThePreviousStateIntact(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			layout := testLayout(t)
 			writeManifest(t, layout, "30m0s")
-			in, err := Open(layout)
+			in, err := Open(layout, testOwner)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -390,7 +392,7 @@ func TestApplyThatFailsLeavesThePreviousStateIntact(t *testing.T) {
 func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 	layout := testLayout(t)
 	writeManifest(t, layout, "30m0s")
-	in, err := Open(layout)
+	in, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +431,7 @@ func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 func TestOpenReappliesTheKeptDocument(t *testing.T) {
 	layout := testLayout(t)
 	writeManifest(t, layout, "30m0s")
-	first, err := Open(layout)
+	first, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +451,7 @@ func TestOpenReappliesTheKeptDocument(t *testing.T) {
 		t.Fatal("the kept document carries the client key; client.key must be its only copy on disk")
 	}
 
-	second, err := Open(layout)
+	second, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,8 +474,40 @@ func TestOpenReappliesTheKeptDocument(t *testing.T) {
 	}
 }
 
+// The kept document travels with an export; brought up under another pool, it
+// is not this sandbox's, and its revision must not order what the new pool
+// sends.
+func TestOpenDoesNotRestoreAnotherOwnersDocument(t *testing.T) {
+	layout := testLayout(t)
+	first, err := Open(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := testDocument(t, 9)
+	doc.Proxy = nil
+	if _, err := first.Apply(doc); err != nil {
+		t.Fatal(err)
+	}
+
+	moved := testOwner
+	moved.PoolID = "pool_2"
+	second, err := Open(layout, moved)
+	if err == nil {
+		t.Fatal("restoring another pool's document reported no error")
+	}
+	if _, ok := second.Applied(); ok || second.Revision() != 0 {
+		t.Fatalf("another pool's document was restored at revision %d", second.Revision())
+	}
+	fresh := testDocument(t, 1)
+	fresh.Proxy = nil
+	held, err := second.Apply(fresh)
+	if err != nil || held.Revision != 1 {
+		t.Fatalf("the new pool's first document: held %d, err %v", held.Revision, err)
+	}
+}
+
 func TestOpenWithNothingKept(t *testing.T) {
-	in, err := Open(testLayout(t))
+	in, err := Open(testLayout(t), testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +518,7 @@ func TestOpenWithNothingKept(t *testing.T) {
 
 func TestReadinessFollowsDelivery(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout)
+	in, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,16 +553,20 @@ func TestReadinessFollowsDelivery(t *testing.T) {
 
 func TestReadinessIsRemovedFirstAndPublishedLast(t *testing.T) {
 	layout := testLayout(t)
-	in := &Intake{layout: layout}
+	in := &Intake{layout: layout, owner: testOwner}
 	ready := filepath.Join(layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 
 	delivered, err := in.plan(testDocument(t, 1), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The state file is last; readiness is just before it.
-	if got := delivered[len(delivered)-2]; got.path != ready || got.remove {
-		t.Fatalf("second-to-last op = %+v, want the readiness write", got)
+	// Readiness is last, after the state file: a failed state rename rolls
+	// everything back, and must do so before any gate has opened.
+	if got := delivered[len(delivered)-1]; got.path != ready || got.remove {
+		t.Fatalf("last op = %+v, want the readiness write", got)
+	}
+	if got := delivered[len(delivered)-2]; got.path != layout.StatePath {
+		t.Fatalf("second-to-last op = %+v, want the state file", got)
 	}
 
 	pending := testDocument(t, 1)
@@ -544,7 +582,7 @@ func TestReadinessIsRemovedFirstAndPublishedLast(t *testing.T) {
 
 func TestADocumentWithoutProxyRemovesTheMaterial(t *testing.T) {
 	layout := testLayout(t)
-	in, err := Open(layout)
+	in, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +604,7 @@ func TestADocumentWithoutProxyRemovesTheMaterial(t *testing.T) {
 func TestEmptyIdleTimeoutClearsTheManifestValue(t *testing.T) {
 	layout := testLayout(t)
 	writeManifest(t, layout, "30m0s")
-	in, err := Open(layout)
+	in, err := Open(layout, testOwner)
 	if err != nil {
 		t.Fatal(err)
 	}
