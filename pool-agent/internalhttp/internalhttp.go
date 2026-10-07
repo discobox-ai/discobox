@@ -7,14 +7,20 @@
 // Discobox sandbox, that sandbox injects proxy environment variables into the
 // pool container so the pool's *egress* can cross the surrounding MITM proxy.
 // http.DefaultClient picks those up for every request, including the pool
-// agent's calls to sandboxes on its own private Docker network — which the
-// egress proxy has no business carrying and rejects, surfacing as
-// "sandbox-agent health returned 500 Internal Server Error" during sandbox
-// creation.
+// agent's own calls to its sandboxes — which the egress proxy has no business
+// carrying and rejects, which once surfaced as "sandbox-agent health returned
+// 500 Internal Server Error" during sandbox creation.
 //
-// Agent-to-sandbox traffic never leaves the pool's own network, so the correct
-// answer is not a NO_PROXY entry (whose value would have to track a subnet the
-// pool does not choose) but a client that never proxies at all.
+// Traffic built on this transport goes by the route its caller chose: the
+// control plane's URL, or the connection a sandbox's runtime dials — a
+// container address, a guest socket, a session the sandbox opened outward.
+// For the control-plane client, a proxy would replace that route with its
+// own. A sandbox transport ignores the address it is asked to dial, so there
+// a proxy would instead turn every request into a proxy request sent to the
+// sandbox — absolute-form, and with the egress proxy's credentials, when its
+// URL carries any, handed to code the pool does not trust. The answer is
+// therefore not a NO_PROXY entry (whose value would have to track routes the
+// pool does not choose) but a transport that never proxies.
 package internalhttp
 
 import (
