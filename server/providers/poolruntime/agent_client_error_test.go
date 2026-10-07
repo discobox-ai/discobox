@@ -28,7 +28,7 @@ func poolStatusError(status int, errorType string) error {
 	return &poolclient.ErrorModelStatusCode{StatusCode: status, Response: response}
 }
 
-// A conflict is two different conditions on this API, and only the type tells
+// A conflict is several different conditions on this API, and only the type tells
 // them apart. Reporting archived as already-exists let the reconciler swallow a
 // create the pool agent had refused, settling a sandbox with no container as
 // converged and `ready`.
@@ -40,6 +40,7 @@ func TestMapPoolClientErrorSeparatesTheTwoConflicts(t *testing.T) {
 		want      error
 	}{
 		{"archived carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxArchived, sandbox.ErrArchived},
+		{"no container carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxNoContainer, sandbox.ErrNoContainer},
 		{"a bare conflict is already-exists", http.StatusConflict, "", sandbox.ErrAlreadyExists},
 		{"an unrelated type is already-exists", http.StatusConflict, "https://discobox.ai/errors/other", sandbox.ErrAlreadyExists},
 		{"not found is unchanged", http.StatusNotFound, "", sandbox.ErrNotFound},
@@ -57,6 +58,9 @@ func TestMapPoolClientErrorSeparatesTheTwoConflicts(t *testing.T) {
 func TestArchivedIsNotAlreadyExists(t *testing.T) {
 	if errors.Is(sandbox.ErrArchived, sandbox.ErrAlreadyExists) {
 		t.Fatal("ErrArchived matches ErrAlreadyExists; the create path would swallow a refused create")
+	}
+	if errors.Is(sandbox.ErrNoContainer, sandbox.ErrAlreadyExists) {
+		t.Fatal("ErrNoContainer matches ErrAlreadyExists; the create path would swallow a refused create")
 	}
 }
 

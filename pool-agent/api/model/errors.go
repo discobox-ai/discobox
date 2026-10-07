@@ -22,3 +22,12 @@ const ErrorTypeSandboxArchived = "https://discobox.ai/errors/sandbox-archived"
 // deliberately not a 409, which an older control plane reads as "already
 // exists" and settles as a healthy sandbox.
 const ErrorTypeSandboxImageUnavailable = "https://discobox.ai/errors/sandbox-image-unavailable"
+
+// ErrorTypeSandboxNoContainer is the RFC 7807 `type` a pool agent sets on the
+// 409 it returns for a sandbox whose tree it holds and that has no container:
+// one being rebuilt, or one whose container was lost and that needs repair.
+//
+// It is a third meaning of 409, and like archived it calls for a response that
+// "already exists" does not: nothing is running, and repair is what gives the
+// sandbox a container again.
+const ErrorTypeSandboxNoContainer = "https://discobox.ai/errors/sandbox-no-container"

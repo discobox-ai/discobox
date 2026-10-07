@@ -711,9 +711,34 @@ func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID stri
 		return nil, err
 	}
 	if err := instructSandbox(ctx, s.store, provider, sandbox, instruction); err != nil {
-		return nil, err
+		return nil, instructionRefusal(err, instruction)
 	}
 	return sandbox, nil
+}
+
+// instructionRefusal gives a refusal of a power instruction for want of a
+// runtime the status it means. The row is here, so none of these is the
+// sandbox missing: each says its runtime is not there to power, and why. Left
+// as plain errors they went out as a 500 naming nothing the caller could do.
+func instructionRefusal(err error, instruction sandboxInstruction) error {
+	var message string
+	switch {
+	case errors.Is(err, ErrNoContainer):
+		message = fmt.Sprintf("cannot %s sandbox: it has no container on its pool; it is being rebuilt, or repair it to give it one", instruction)
+	case errors.Is(err, ErrArchived):
+		// The row is present here — an archived row was refused before the
+		// instruction went out — so this is an unarchive the pool has not
+		// caught up with, or one that failed and settled, and unarchiving
+		// again would be refused. Repair is the way out of the second.
+		message = fmt.Sprintf("cannot %s sandbox: it is still archived on its pool; try again shortly while its unarchive converges, or repair it if the unarchive failed", instruction)
+	case errors.Is(err, ErrNotFound):
+		// Not only the pool's 404: a sandbox whose create has not placed it on
+		// a pool yet reads the same way.
+		message = fmt.Sprintf("cannot %s sandbox: it has no runtime on its pool, either not yet created or lost; if it is not being created, repair it", instruction)
+	default:
+		return err
+	}
+	return apperrors.StatusError{Status: http.StatusConflict, Message: message, Cause: err}
 }
 
 func (s *Service) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provider, error) {

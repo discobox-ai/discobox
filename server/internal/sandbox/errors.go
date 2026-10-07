@@ -23,6 +23,14 @@ var (
 	// create settle as a converged, healthy sandbox with no container.
 	ErrArchived = errors.New("sandbox is archived; unarchive it to use it")
 
+	// ErrNoContainer indicates the pool holds the sandbox's data and has no
+	// container for it: one being rebuilt, or one whose container was lost and
+	// that nothing is rebuilding. It is distinct from ErrNotFound because the
+	// sandbox is not missing, and from ErrAlreadyExists although the pool agent
+	// reports it as 409 too: nothing is running, and repair is what gives the
+	// sandbox a container again.
+	ErrNoContainer = errors.New("sandbox has no container on its pool: it is being rebuilt, or it needs repair")
+
 	// ErrNotRunning indicates the runtime sandbox is not running.
 	ErrNotRunning = errors.New("sandbox not running")
 

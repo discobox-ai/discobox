@@ -147,7 +147,9 @@ func (s *sandboxService) PoolClearCache(ctx context.Context, params workerapi.Po
 // instruction and answer with acceptance alone. The resulting state — starting,
 // then running or stopped — is published on the agent's own state-reporting
 // channel, because a response cannot express a transition that has not finished
-// (ADR 0017 §§9-10).
+// (ADR 0017 §§9-10). A refusal is mapped like any other runtime error, so an id
+// this pool does not hold is a 404 and a sandbox with no container a 409 that
+// says why.
 func (s *sandboxService) PoolStartSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolStartSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return nil, err
@@ -157,7 +159,7 @@ func (s *sandboxService) PoolStartSandbox(ctx context.Context, req *workerapimod
 		return nil, err
 	}
 	if err := s.runtime.StartSandbox(ctx, params.SandboxId, &converted); err != nil {
-		return nil, err
+		return nil, mapRuntimeError(err)
 	}
 	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
@@ -171,7 +173,7 @@ func (s *sandboxService) PoolStopSandbox(ctx context.Context, req *workerapimode
 		return nil, err
 	}
 	if err := s.runtime.StopSandbox(ctx, params.SandboxId, &converted); err != nil {
-		return nil, err
+		return nil, mapRuntimeError(err)
 	}
 	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
@@ -185,7 +187,7 @@ func (s *sandboxService) PoolRestartSandbox(ctx context.Context, req *workerapim
 		return nil, err
 	}
 	if err := s.runtime.RestartSandbox(ctx, params.SandboxId, &converted); err != nil {
-		return nil, err
+		return nil, mapRuntimeError(err)
 	}
 	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
@@ -317,6 +319,11 @@ func mapRuntimeError(err error) error {
 	// tell this 409 from the already-exists one above to act on it at all.
 	if errors.Is(err, sandboxruntime.ErrArchived) {
 		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxArchived)
+	}
+	// A sandbox whose tree is here and whose container is not is a third 409,
+	// and the one that sends the caller to repair it.
+	if errors.Is(err, sandboxruntime.ErrNoContainer) {
+		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxNoContainer)
 	}
 	if errors.Is(err, sandboxruntime.ErrImageUnavailable) {
 		return newTypedStatusError(http.StatusUnprocessableEntity, err.Error(), workerapimodel.ErrorTypeSandboxImageUnavailable)
