@@ -1,6 +1,6 @@
 ---
-name: verify
-description: Recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), and the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, or the runc wrapper.
+name: verify-recipes
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, and a change to a skill (`.discobox/skills`, `.agents/skills`) via a headless agent in an isolated HOME. Inside a discobox, the generic `verify` skill (from `.discobox/skills/verify`) reads it first and records what it learns here; outside one, Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, or a skill.
 ---
 
 # Verifying the console
@@ -66,3 +66,40 @@ sudo install -m 0755 $S/runc.orig /opt/discobox/bin/runc   # always restore
   kind forwards the caller's proxy env into the node, so its containerd's env
   (`/proc/$(pidof containerd)/environ`) shows what the wrapper left there.
   Delete the cluster afterwards.
+
+# Verifying a skill change (`.discobox/skills`, `.agents/skills`)
+
+The surface is an agent loading the skill. Install it the way
+`sandbox-agent/terminal/skills.go` does — the image's skills, then
+`.discobox/skills`, into both `.claude/skills` and `.agents/skills` of an
+isolated `HOME` — and run a headless agent in a throwaway repo built to reach
+the changed instruction. A changed `.agents/skills/<name>` is a project skill:
+the harness reads it from the repo it runs in, so copy it into the throwaway
+repo's `.agents/skills/` and link `.claude/skills -> ../.agents/skills` there,
+as this repository does: Claude Code reads only a repo's `.claude/skills`
+(a run with the skill in `.agents/skills` alone did not list it).
+
+```bash
+S=<scratchpad>; H=$S/home; mkdir -p $H/.claude
+cp ~/.claude/.credentials.json ~/.claude/settings.json $H/.claude/; cp ~/.claude.json $H/
+for d in .claude/skills .agents/skills; do mkdir -p $H/$d
+  cp -r /usr/local/share/discobox/skills/. .discobox/skills/. $H/$d/; done
+# in a throwaway git repo holding the scenario:
+env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+  -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN -u CLAUDE_CODE_CHILD_SESSION \
+  -u CLAUDE_CODE_SESSION_ATTENDED -u CLAUDE_CODE_EXECPATH -u CLAUDE_EFFORT \
+  HOME=$H claude -p '/<skill>' --model sonnet --dangerously-skip-permissions \
+  --output-format stream-json --verbose > $S/run.jsonl
+```
+
+- The box's credential file is a sentinel the proxy swaps, so copies of it
+  authenticate; the unset `CLAUDE_CODE_*` variables keep the run from
+  attaching to your session.
+- Prove which copy loaded by grepping `run.jsonl` for a phrase only the new
+  text has. A personal `~/.claude/skills/<name>` outranks Claude Code's
+  built-in of the same name.
+- Read what it did from the `tool_use` entries
+  (`jq 'select(.type=="assistant") | .message.content[]'`) and the repo's
+  `git status`, not only its final report.
+- Baseline against the original (the built-in, or the skill at `HEAD`) on an
+  identical copy of the repo before calling a behavior a regression.
