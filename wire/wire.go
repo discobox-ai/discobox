@@ -32,6 +32,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -222,6 +223,17 @@ func VSOCKURL(cid, port uint32) string {
 // VSOCKListenURL renders a listen URL for a VSOCK port.
 func VSOCKListenURL(port uint32) string {
 	return fmt.Sprintf("vsock://:%d", port)
+}
+
+// UnixURL renders a dial or listen URL for a Unix socket path. A POSIX path
+// takes the authority-less form; a Windows drive path takes the opaque form,
+// since "unix://C:/..." would parse the drive letter as the host.
+func UnixURL(path string) string {
+	slashed := filepath.ToSlash(path)
+	if strings.HasPrefix(slashed, "/") {
+		return "unix://" + slashed
+	}
+	return "unix:" + slashed
 }
 
 // TCPListenURL renders a listen URL for a TCP port on all interfaces.
