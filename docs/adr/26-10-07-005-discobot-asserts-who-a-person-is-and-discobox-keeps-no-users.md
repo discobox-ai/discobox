@@ -1,6 +1,6 @@
 # 26-10-07-005 — discobot asserts who a person is, and discobox keeps no users
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-07
 - **Relates to**: [ADR 0011](0011-oauth-secrets-refresh-server-side-on-resolve.md),
   whose server-side refresh this keeps and extends with a client secret;
