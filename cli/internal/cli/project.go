@@ -239,7 +239,7 @@ default project is refused too; make another project the default first.`, Args: 
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "project", "deleted", func(arg string) (string, error) {
+		return runActionMany(cmd, args, "project", "delete", "deleted", func(arg string) (string, error) {
 			projectID, err := a.resolveProjectID(cmd.Context(), client, arg)
 			if err != nil {
 				return "", err

@@ -119,7 +119,7 @@ Delegate to **one** subagent with this brief, filled in:
 > 1. **The reproduction** — the steps above now give the right result.
 > 2. **Each should-now-be-true sentence** — observed directly.
 > 3. **Edges** — the neighbouring inputs and flags, the error path, doing it
->    twice, doing it after a restart (`admin box restart`), and what is left
+>    twice, doing it after a restart (`discobox restart`), and what is left
 >    behind afterwards.
 > 4. **Regression** — the ordinary flow of the area still works: at minimum
 >    create a box, run a command in it, purge it.

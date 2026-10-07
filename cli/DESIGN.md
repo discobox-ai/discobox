@@ -836,6 +836,16 @@ archiving needs no runtime, and a name the listing still shows must not come
 back as no such discobox. Purging has no root spelling: destroying data now is
 not an everyday verb, and stays `admin box purge`.
 
+`discobox start|stop|restart DISCOBOX...` (`internal/cli/lifecycle.go`) are the
+everyday power commands, and `admin box start|stop|restart` stay the raw forms
+that take an ID, accept `--force`, and print the record the API answered with.
+They resolve arguments by `rm`'s rule over the same listing, and report through
+`runActionMany`. A discobox driving the ones it created runs them under the
+sandbox role (ADR 26-10-02-478 §1), where every call is judged against the use
+it was approved for; so when every argument is a full ID the listing is not
+fetched, and the command makes only the call its use names. The in-box skills
+teach these forms.
+
 Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
 `SandboxDisplayName`: the primary terminal's window title once something has set

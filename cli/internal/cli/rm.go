@@ -78,7 +78,7 @@ To destroy a discobox and its data now, use "discobox admin box purge".`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "archived", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "discobox", "archive", "archived", func(arg string) (string, error) {
 				// listedName: every argument here is a discobox, so the NAME
 				// `discobox ls` prints can be typed back. Two discoboxes under
 				// one window title make that argument ambiguous, and it is

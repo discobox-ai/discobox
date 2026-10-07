@@ -247,7 +247,7 @@ discobox-access request --json <<'EOF'
     {"description": "discobox secret request deny <request-id>: deny a pending credential request"},
     {"description": "discobox admin terminal ls --discobox-id <discobox-id>, discobox admin terminal screen <terminal-id> --discobox-id <discobox-id> [--scrollback N], and discobox admin terminal wait <terminal-id> --discobox-id <discobox-id> [flags]: read what a discobox I created shows in its terminals"},
     {"description": "discobox admin terminal input <terminal-id> --discobox-id <discobox-id> [--literal] <keys or text>: type keys and messages into the terminal of a discobox I created, to answer its questions or tell it to continue"},
-    {"description": "discobox admin box start <discobox-id>, discobox admin box stop <discobox-id>, and discobox admin box restart <discobox-id>: start, stop, or restart a discobox I created"}
+    {"description": "discobox start <discobox-id>, discobox stop <discobox-id>, and discobox restart <discobox-id>: start, stop, or restart a discobox I created"}
   ],
   "grantTTLSeconds": 28800,
   "wait": true
@@ -338,13 +338,13 @@ request above, as their own uses — reading (`ls`, `screen`, `wait`) and typing
 
 A worker that has stopped — `discobox admin box ls` shows it, and `screen`
 answers that it is stopped rather than starting it — is started again with
-`discobox admin box start`, and a wedged one with `restart`. Stop a worker
+`discobox start`, and a wedged one with `discobox restart`. Stop a worker
 only when you are done with it: stopping ends whatever it is doing. Its
 workspace and uncommitted work survive either way.
 
 ```bash
-discobox-access run --use <id> -- discobox admin box start <discobox-id>
-discobox-access run --use <id> -- discobox admin box stop <discobox-id>
+discobox-access run --use <id> -- discobox start <discobox-id>
+discobox-access run --use <id> -- discobox stop <discobox-id>
 ```
 
 If a start fails, the error says why; a worker it cannot bring back is a

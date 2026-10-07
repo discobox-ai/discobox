@@ -509,7 +509,7 @@ func (a *App) newHarnessDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "harness config", "deleted", func(arg string) (string, error) {
+		return runActionMany(cmd, args, "harness config", "delete", "deleted", func(arg string) (string, error) {
 			harnessID, err := a.resolveHarnessConfigID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err
