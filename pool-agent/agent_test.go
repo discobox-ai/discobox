@@ -640,6 +640,9 @@ func (c *stateRecordingClient) ListHeldSandboxes(context.Context, poolagent.Held
 // Serve knows its runtime only as sandboxruntime.Runtime, so a runtime that is
 // not Docker drives the state channel the same way.
 func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX host: a unix:// endpoint cannot name a path with a drive letter")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runtime := poolagent.NewMemorySandboxRuntime()
