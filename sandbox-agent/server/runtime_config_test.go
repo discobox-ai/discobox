@@ -25,7 +25,7 @@ func runtimeConfigRouter(t *testing.T) (http.Handler, func(scopes ...string) str
 		ProxyDir:    filepath.Join(root, "etc", "proxy"),
 		SecretsPath: filepath.Join(root, "run", "secrets.json"),
 		StatePath:   filepath.Join(root, "var", "runtime-config.json"),
-	})
+	}, intake.Owner{ProjectID: "project-1", SandboxID: "sandbox-1", PoolID: "worker-1"})
 	if err != nil {
 		t.Fatal(err)
 	}

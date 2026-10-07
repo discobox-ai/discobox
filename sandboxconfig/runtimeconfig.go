@@ -180,9 +180,9 @@ func (p RuntimeProxy) validate() error {
 			errs = append(errs, fmt.Errorf("proxy.%s: %w", ca.name, err))
 		}
 	}
-	// A keypair that does not load is a hop that does not work, and the
-	// readiness gate is held for exactly that hop: refuse it here rather than
-	// let the forwarders find out.
+	// A keypair that does not load is a hop that does not work: refuse it
+	// here, before anything is written, rather than let the forwarders find
+	// out.
 	if _, err := tls.X509KeyPair([]byte(p.ClientCert), []byte(p.ClientKey)); err != nil {
 		errs = append(errs, fmt.Errorf("proxy client keypair: %w", err))
 	}

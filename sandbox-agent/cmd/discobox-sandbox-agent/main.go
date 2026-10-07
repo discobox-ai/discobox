@@ -76,18 +76,26 @@ func run(args []string) int {
 		slog.Error("wire secrets volume", "error", err)
 		return 1
 	}
-	// Before sandbox.json is read: the intake puts back the files its kept
-	// document implies, which a restart may have lost (/run is a tmpfs), so
-	// nothing reads a file the pool already replaced (ADR 0126 §3). A restore
-	// that fails is not fatal — the pool's next delivery repairs it.
-	runtimeConfig, err := intake.Open(intake.DefaultLayout())
-	if err != nil {
-		slog.Warn("restore runtime config", "error", err)
-	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		slog.Error("load config", "error", err)
 		return 1
+	}
+	// Before anything is served: the intake puts back the files its kept
+	// document implies, which a restart may have lost (/run is a tmpfs), so
+	// nothing reads a file the pool already replaced (ADR 0126 §3). It is
+	// opened after sandbox.json only because sandbox.json names whose sandbox
+	// this is, which decides whether the kept document is this sandbox's to
+	// restore; what a restore writes into sandbox.json takes effect on the next
+	// start, as an idle-timeout change always has. A restore that fails is not
+	// fatal — the pool's next delivery repairs it.
+	runtimeConfig, err := intake.Open(intake.DefaultLayout(), intake.Owner{
+		ProjectID: cfg.Identity.ProjectID,
+		SandboxID: cfg.Identity.SandboxID,
+		PoolID:    cfg.Identity.PoolID,
+	})
+	if err != nil {
+		slog.Warn("restore runtime config", "error", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
