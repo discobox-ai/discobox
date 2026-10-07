@@ -8,6 +8,11 @@ import (
 	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
+// These are the POSIX resolver's tests. They call resolvePOSIX and
+// currentPOSIX directly rather than the platform's Resolve and Current, so the
+// Linux behavior is pinned on every platform the tests run on, the way
+// oneaccount_test.go pins the single-account one.
+
 // Completion, given a single layer. Precedence between layers is
 // sandboxuser.Merge's matrix; this is the half that asks the account database.
 func TestResolveCompletesAgainstTheAccountDatabase(t *testing.T) {
@@ -46,7 +51,7 @@ func TestResolveCompletesAgainstTheAccountDatabase(t *testing.T) {
 			if need == 0 {
 				need = sandboxuser.Credential
 			}
-			got, err := Resolve(Layers{Manifest: &tc.in}, need)
+			got, err := resolvePOSIX(Layers{Manifest: &tc.in}, need)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("Resolve = %#v, want an error", got)
@@ -80,11 +85,11 @@ func TestResolveOnlyAnswersWhatWasAsked(t *testing.T) {
 
 	// A uid with no passwd entry cannot yield a name or a home...
 	orphan := Layers{Manifest: &User{UID: sandboxuser.ID(4242424), GID: sandboxuser.ID(7)}}
-	if _, err := Resolve(orphan, sandboxuser.Complete); err == nil {
+	if _, err := resolvePOSIX(orphan, sandboxuser.Complete); err == nil {
 		t.Fatal("asking for a name the database cannot supply must fail")
 	}
 	// ...but a caller that does not need them is served.
-	got, err := Resolve(orphan, sandboxuser.FieldUID|sandboxuser.FieldGID)
+	got, err := resolvePOSIX(orphan, sandboxuser.FieldUID|sandboxuser.FieldGID)
 	if err != nil {
 		t.Fatalf("credential-only resolve: %v", err)
 	}
@@ -97,7 +102,7 @@ func TestResolveOnlyAnswersWhatWasAsked(t *testing.T) {
 
 	// The same clearing applies to fields that *could* have been resolved: an
 	// unrequested field must not travel on looking like an answer.
-	got, err = Resolve(Layers{Manifest: &User{Name: "dev"}}, sandboxuser.FieldUID)
+	got, err = resolvePOSIX(Layers{Manifest: &User{Name: "dev"}}, sandboxuser.FieldUID)
 	if err != nil {
 		t.Fatalf("uid-only resolve: %v", err)
 	}
@@ -113,12 +118,12 @@ func TestResolveOnlyAnswersWhatWasAsked(t *testing.T) {
 // rather than surfacing later as a blank.
 func TestResolveNamesTheFieldItCouldNotResolve(t *testing.T) {
 	t.Cleanup(FixedDatabase())
-	_, err := Resolve(Layers{Manifest: &User{Name: "dev"}}, sandboxuser.Complete)
+	_, err := resolvePOSIX(Layers{Manifest: &User{Name: "dev"}}, sandboxuser.Complete)
 	if err != nil {
 		t.Fatalf("dev resolves fully: %v", err)
 	}
 
-	_, err = Resolve(Layers{Manifest: &User{GroupName: "docker"}}, sandboxuser.Credential)
+	_, err = resolvePOSIX(Layers{Manifest: &User{GroupName: "docker"}}, sandboxuser.Credential)
 	var unresolved *sandboxuser.UnresolvedError
 	if !errors.As(err, &unresolved) {
 		t.Fatalf("err = %v, want an UnresolvedError", err)
@@ -134,7 +139,7 @@ func TestResolveNamesTheFieldItCouldNotResolve(t *testing.T) {
 // usual developer account where the two are equal.
 func TestCurrentIsTheImageIdentity(t *testing.T) {
 	t.Cleanup(FixedDatabase())
-	current := Current()
+	current := currentPOSIX()
 	if current.UID == nil || *current.UID != 1500 {
 		t.Fatalf("uid = %v, want the fixture's 1500", current.UID)
 	}
@@ -142,7 +147,7 @@ func TestCurrentIsTheImageIdentity(t *testing.T) {
 		t.Fatalf("gid = %v, want the fixture's 1600, which is deliberately not the uid", current.GID)
 	}
 
-	resolved, err := Resolve(Layers{Image: current}, sandboxuser.Complete)
+	resolved, err := resolvePOSIX(Layers{Image: current}, sandboxuser.Complete)
 	if err != nil {
 		t.Fatalf("resolve the image identity: %v", err)
 	}
@@ -156,7 +161,7 @@ func TestCurrentIsTheImageIdentity(t *testing.T) {
 func TestResolveReportsAnImageUserWithNoAccount(t *testing.T) {
 	t.Cleanup(FixedDatabase())
 	t.Cleanup(FixedEffectiveIDs(4242424, 4242424))
-	if _, err := Resolve(Layers{Image: Current()}, sandboxuser.Complete); err == nil {
+	if _, err := resolvePOSIX(Layers{Image: currentPOSIX()}, sandboxuser.Complete); err == nil {
 		t.Fatal("an image uid with no passwd entry must not resolve to a blank name")
 	}
 }

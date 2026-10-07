@@ -108,6 +108,7 @@ func TestExportWritesTheNamedSubtrees(t *testing.T) {
 // it for the user the manifest names, and it stays behind with the image's
 // other excluded paths while the rest of home travels.
 func TestExportLeavesOutWhatTheManifestExcludes(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	t.Setenv("DISCOBOX_USER_UID", "1000")
 	t.Setenv("DISCOBOX_USER_GID", "2000")

@@ -105,6 +105,7 @@ func TestManagerPreservesExecTermOverrides(t *testing.T) {
 }
 
 func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	runner := &fakeUnitManager{}
 	uid := int64(1000)
 	gid := int64(1001)
@@ -214,6 +215,7 @@ func testEffectiveEnv() map[string]string {
 }
 
 func TestManagerExecRequestOverridesDefaultUserAndWorkdir(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	runner := &fakeUnitManager{}
 	defaultUID := int64(1000)
@@ -640,6 +642,7 @@ func (m *fakeUnitManager) Watch(ctx context.Context) (<-chan string, error) {
 // declared groups -- `exec --user dev` used to run with an empty supplementary
 // set while the identical default-user exec kept "docker".
 func TestManagerKeepsManifestGroupsForAnExplicitlyNamedUser(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	uid := int64(1000)
 	gid := int64(1000)
@@ -688,6 +691,7 @@ func TestManagerKeepsManifestGroupsForAnExplicitlyNamedUser(t *testing.T) {
 // those, so an exec can run with fewer groups than the sandbox declares. Merging
 // would make the manifest a floor no caller could get under.
 func TestManagerRequestGroupsReplaceTheManifests(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	uid := int64(1000)
 	gid := int64(1000)
@@ -738,6 +742,7 @@ func TestManagerRequestGroupsReplaceTheManifests(t *testing.T) {
 // cannot carry groups without ids. Dropping them instead fails open, granting
 // the ambient set the caller explicitly asked to narrow.
 func TestManagerRequestGroupsSurviveAManifestWithNoUser(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
@@ -798,6 +803,7 @@ func TestManagerRequestGroupsSurviveAManifestWithNoUser(t *testing.T) {
 // the one that was asked for: more access than was requested, in the direction
 // nobody notices.
 func TestManagerRequestPrimaryGroupSurvivesTheIdentityFallback(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	uid := int64(1000)
 	gid := int64(2000)
@@ -909,6 +915,7 @@ func TestManagerRequestPrimaryGroupSurvivesTheIdentityFallback(t *testing.T) {
 // on the sandbox's default (the primary source directory) — writing uploads
 // into the source tree is the bug this expansion exists to prevent.
 func TestManagerExpandsTildeWorkdirAgainstUserHome(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	for _, tc := range []struct {
 		name    string
 		workdir string
@@ -1005,6 +1012,7 @@ func TestManagerTildeWorkdirResolvesToTheRunningIdentitysHome(t *testing.T) {
 // leading `~`/`~/` is special, and a relative path still joins the working
 // root as before.
 func TestManagerLeavesNonTildeWorkdirsAlone(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	runner := &fakeUnitManager{}
 	uid := int64(1000)
 	gid := int64(1000)
@@ -1079,6 +1087,7 @@ func uidOf(user *User) int64 {
 // %LOCAL_SUBNETS%. Expanding it outside against a blank would have produced
 // real paths pointing at the wrong place (ADR 0033 §5).
 func TestManagerExpandsDeferredHomeTokenInEnv(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	runner := &fakeUnitManager{}
 	manager, err := NewManagerWithConfig(ManagerConfig{
@@ -1103,6 +1112,7 @@ func TestManagerExpandsDeferredHomeTokenInEnv(t *testing.T) {
 // visibly wrong; "/.claude" is a real path that silently is not the one anyone
 // meant.
 func TestManagerLeavesTheHomeTokenWhenNoHomeIsKnown(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedEffectiveIDs(4242424, 4242424))
 	runner := &fakeUnitManager{}
 	manager, err := NewManagerWithConfig(ManagerConfig{
