@@ -128,3 +128,40 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
   `git status`, not only its final report.
 - Baseline against the original (the built-in, or the skill at `HEAD`) on an
   identical copy of the repo before calling a behavior a regression.
+
+# Verifying a server/API change against an isolated server
+
+The `task dev` loop's server is the user's; run a second one from your own
+build rather than reconfiguring it. `discobox-server` takes no flags and
+starts for real, so isolate everything first.
+
+```bash
+S=<scratchpad>; SOCK=$(mktemp -d /tmp/v.XXXX)   # sockets: short path, see below
+(cd server && go build -o $S/discobox-server ./cmd/discobox-server)
+env -i HOME=$HOME PATH=$PATH DISCOBOX_ENV_FILE=$S/empty.env \
+  DISCOBOX_DATA_DIR=$S/data DISCOBOX_STATE_DIR=$S/state \
+  DISCOBOX_CONFIG_DIR=$S/config DISCOBOX_CACHE_DIR=$S/cache \
+  DISCOBOX_SERVER_LISTEN=unix://$SOCK/s.sock,http://127.0.0.1:18471 \
+  $S/discobox-server > $S/server.log 2>&1 &
+until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
+```
+
+- Name a `unix://` socket of your own in `DISCOBOX_SERVER_LISTEN`: otherwise
+  the default socket is added, which the dev loop may hold. Unix socket paths
+  over ~100 bytes fail with `bind: invalid argument`, so a scratchpad path is
+  too long; use `/tmp`.
+- It needs a reachable Docker API (`initialize app` fails otherwise) and
+  creates a real pool per project: `discobox-vm-pool_<id>` containers,
+  `discobox-pool-pool_<id>-docker` and anonymous volumes, and
+  `discobox-sbnet-pool_<id>` networks. Remove only those named for *this*
+  server's pool IDs, read from its own API (`GET /projects/<id>/pools`)
+  before stopping it. Never select by the `discobox-vm-pool_` prefix or by
+  what is new since a snapshot: the dev loop recreates its own pool
+  containers at any time, and on 10-08 a snapshot diff removed its default
+  pool's container.
+- `$!` of a backgrounded shell function is the subshell, not the server.
+  Stop the server by its own pid (`pgrep -f $S/discobox-server`) *before*
+  removing its pools, or it recreates them.
+- The server's config file is found by XDG (`~/.config/discobox`), not
+  `DISCOBOX_CONFIG_DIR`; none there means defaults plus your env.
+- With `DISCOBOX_ENCRYPTION_KEY` unset, secret values are stored unsealed.
