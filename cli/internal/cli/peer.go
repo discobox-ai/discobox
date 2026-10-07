@@ -167,7 +167,7 @@ func (a *App) newPeerRemoveCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "peer", "revoked", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "peer", "revoke", "revoked", func(arg string) (string, error) {
 				res, err := client.DeletePeer(cmd.Context(), apiclientgen.DeletePeerParams{PeerId: arg})
 				if err != nil {
 					return "", err

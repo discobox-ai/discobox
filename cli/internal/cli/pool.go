@@ -272,7 +272,7 @@ func (a *App) newPoolDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "pool", "deleted", func(arg string) (string, error) {
+		return runActionMany(cmd, args, "pool", "delete", "deleted", func(arg string) (string, error) {
 			poolID, err := a.resolvePoolID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err

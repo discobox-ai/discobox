@@ -257,7 +257,7 @@ To destroy a discobox and its data now, use "discobox admin box purge".`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "archived", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "discobox", "archive", "archived", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -294,7 +294,7 @@ starts on first use, the same as any other stopped discobox.`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "unarchived", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "discobox", "unarchive", "unarchived", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -335,7 +335,7 @@ To keep the data, use "discobox rm", which archives instead.`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "discobox", "purged", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "discobox", "purge", "purged", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err

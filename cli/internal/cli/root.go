@@ -257,6 +257,9 @@ and an Enter. See "%[1]s new --help" for everything new takes.`, name),
 	cmd.AddCommand(app.newRunCommand("run", "r", true))
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newRemoveCommand())
+	for _, action := range sandboxLifecycles {
+		cmd.AddCommand(app.newLifecycleCommand(action))
+	}
 	cmd.AddCommand(app.newShellCommand())
 	cmd.AddCommand(app.newCPCommand())
 	cmd.AddCommand(app.newAttachCommand())

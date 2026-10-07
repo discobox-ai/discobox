@@ -195,7 +195,7 @@ func (a *App) newSecretGrantRevokeCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "secret grant", "deleted", func(arg string) (string, error) {
+		return runActionMany(cmd, args, "secret grant", "delete", "deleted", func(arg string) (string, error) {
 			res, err := client.RevokeSecretGrant(cmd.Context(), apiclientgen.RevokeSecretGrantParams{ProjectId: projectID, GrantId: arg})
 			if err != nil {
 				return "", err
@@ -441,7 +441,7 @@ func (a *App) newSecretDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runActionMany(cmd, args, "secret", "deleted", func(arg string) (string, error) {
+		return runActionMany(cmd, args, "secret", "delete", "deleted", func(arg string) (string, error) {
 			secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err
