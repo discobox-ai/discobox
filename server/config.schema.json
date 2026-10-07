@@ -114,6 +114,16 @@
       "description": "Converge locally built images onto each Docker daemon before it hosts a development pool. Environment: DISCOBOX_DEV_DOCKER_IMAGE_SYNC (takes precedence over this file).",
       "type": "boolean"
     },
+    "discobotPublicKey": {
+      "description": "Base64 of discobot's Ed25519 public key. When set, a request carrying a discobot assertion acts as the person it names, in the project it names; discobox keeps no users of its own. Unset, every assertion is refused. Environment: DISCOBOX_DISCOBOT_PUBLIC_KEY (takes precedence over this file).",
+      "examples": [
+        "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "dispatcherPollInterval": {
       "default": "1s",
       "description": "How often the job dispatcher polls for work. Environment: DISPATCHER_POLL_INTERVAL (takes precedence over this file).",

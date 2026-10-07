@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/imagecache"
 	"github.com/discobox-ai/discobox/judge/jev"
+	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
@@ -164,6 +166,14 @@ func Run(ctx context.Context) error {
 		}
 	}
 
+	var discobotKey ed25519.PublicKey
+	if cfg.DiscobotPublicKey != "" {
+		// Validated with the configuration; parsed again for the key itself.
+		if discobotKey, err = discobot.ParsePublicKey(cfg.DiscobotPublicKey); err != nil {
+			return fmt.Errorf("discobotPublicKey: %w", err)
+		}
+	}
+
 	// Jev is asked by this server itself, so its client is built here, from
 	// the key the configuration already insisted on (ADR 26-10-01-324 §1).
 	var judgeJev *jev.Client
@@ -194,6 +204,7 @@ func Run(ctx context.Context) error {
 		IrohListener:                   irohListenerService(irohWatch),
 		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
+		DiscobotPublicKey:              discobotKey,
 		SecretSealer:                   sealer,
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,

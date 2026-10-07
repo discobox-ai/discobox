@@ -20,7 +20,7 @@ flowchart LR
 `internal/server`'s `NewApp` installs both as chi middleware on the one router
 that serves every listener, in this order:
 
-- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DefaultUserAuthenticator)`
+- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DiscobotAuthenticator, DefaultUserAuthenticator)`
 - `Authorization(SandboxRoleAuthorizer, ProjectAuthorizer, PoolRouteAuthorizer, AuthenticatedAuthorizer)`
 
 Paths matched by `IsPublicPath` bypass both phases: `/healthz`,
@@ -69,6 +69,18 @@ Current authenticators:
   public key, and requires the signed `project_id` and `pool_id` claims to
   match the route pool. The principal carries the signed `PoolID` and
   `Scopes`. It must not trust the URL or body alone for pool identity.
+- `DiscobotAuthenticator` applies to a request carrying a discobot assertion
+  (`discobot.AssertionHeader`): discobot, the team-facing control plane in
+  front of this server, vouching for the person the request is for
+  ([ADR 26-10-07-005](../../../docs/adr/26-10-07-005-discobot-asserts-who-a-person-is-and-discobox-keeps-no-users.md)
+  §2). discobox keeps no users of its own: the assertion is a PASETO
+  v4.public token verified against discobot's configured public key
+  (`discobotPublicKey`), issued by `discobot` for `discobox`, expiring within
+  five minutes. The principal is `PrincipalTypeUser` with the asserted
+  person as `UserID`, the signed project as `ProjectID`, `Issuer` `discobot`,
+  and `ScopeAll` within that project. Like the sandbox authenticator it
+  **fails rather than stepping aside** once a request carries an assertion,
+  and a server not configured with the key refuses every assertion.
 - `DefaultUserAuthenticator` authenticates every other request as the
   configured default user with `ScopeAll`, in the current single-user server
   mode.
@@ -116,14 +128,20 @@ Current authorizers:
   `/api/projects/{projectId}/...` routes by user principal and project
   membership. It resolves `/projects/default` and `/api/projects/default` to the
   user's default project and rewrites the path before the handler sees the
-  request.
+  request. A person discobot asserted is authorized by the signed project
+  instead: that project and no other, `default` meaning it, and no member row
+  read (membership is discobot's). An assertion naming no project reaches no
+  project route.
 - `PoolRouteAuthorizer` authorizes pool principals on the same allow-listed
   pool runtime routes `PoolAuthenticator` applies to. Services still verify
   resource-specific authorization, such as matching the authenticated
   principal's `PoolID` to the path `poolId`.
 - `AuthenticatedAuthorizer` authorizes explicitly allow-listed routes for any
   authenticated principal. It exists for routes that require authentication but
-  do not have a resource-specific authorizer.
+  do not have a resource-specific authorizer. A person discobot asserted holds
+  a project, not the server: of these routes they reach only
+  `assertedAllowedPaths` (listing and creating projects and the read-only
+  catalogs), never `/shutdown`, `/peers`, or pool registration.
 
 The authenticated allow-list is hard-coded in `authenticatedAllowedPaths`.
 Entries ending in `/` are prefixes; entries without a trailing `/` require exact
@@ -177,8 +195,9 @@ authorization must use the authenticated pool principal and request metadata.
 
 ## Principal Context
 
-`Principal` (`Type`, `UserID`, `PoolID`, `Scopes`) is the only request identity
-stored in context. Use `WithPrincipal`, `PrincipalFromContext`, and `UserID` to
+`Principal` (`Type`, `UserID`, `PoolID`, `SandboxID`, `ProjectID`, `Issuer`,
+`Scopes`) is the only request identity stored in context. `Issuer` names who
+vouched for a user principal (discobot) and `Asserted()` reports one. Use `WithPrincipal`, `PrincipalFromContext`, and `UserID` to
 read/write it. `WithPrincipal` trims fields and de-duplicates scopes.
 
 Rules:
@@ -204,6 +223,9 @@ Rules:
 
 - [`sandbox`](sandbox/DESIGN.md) (`sandboxauth`): the per-project/user sandbox
   access issuer key and the short-lived sandbox access tokens it signs.
+- `discobot`: verifies discobot's assertions of the person a request is for
+  (`Verify`), and `Sign`, the format's reference. discobot's own signer is
+  outside this repository.
 - `poolagent` (`poolagentauth`): the server-owned issuer key, stored in
   `server_state` under `worker_agent_request_issuer`, that signs the
   control plane's short-lived PASETO v4.public tokens to pool agents

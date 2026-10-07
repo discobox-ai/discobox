@@ -34,6 +34,22 @@ func (a ProjectAuthorizer) Authorize(r *http.Request) (bool, error) {
 	if !ok || principal.Type != PrincipalTypeUser || principal.UserID == "" {
 		return false, authorizationError{status: http.StatusForbidden, err: errors.New("project access requires a user")}
 	}
+	// A person discobot vouches for acts in the one project discobot signed,
+	// and "default" means that one. Who is in which project is discobot's to
+	// know, so no member row is read (ADR 26-10-07-005 §2).
+	if principal.Asserted() {
+		if principal.ProjectID == "" {
+			return false, authorizationError{status: http.StatusForbidden, err: errors.New("the discobot assertion names no project")}
+		}
+		if projectID == "default" {
+			*r = *r.WithContext(context.WithValue(r.Context(), defaultProjectIDContextKey{}, principal.ProjectID))
+			return true, nil
+		}
+		if projectID != principal.ProjectID {
+			return false, authorizationError{status: http.StatusForbidden, err: errors.New("the discobot assertion is for another project")}
+		}
+		return true, nil
+	}
 	if projectID == "default" {
 		project, err := a.Store.GetDefaultProjectForUser(r.Context(), principal.UserID)
 		if err != nil {
@@ -277,6 +293,13 @@ func (AuthenticatedAuthorizer) Authorize(r *http.Request) (bool, error) {
 	if !ok || principal.Type == "" {
 		return false, authorizationError{status: http.StatusForbidden, err: errors.New("authenticated access required")}
 	}
+	// A person discobot vouches for holds a project, not this server: of the
+	// server-scoped routes they reach only listing and creating projects and
+	// the read-only catalogs, never shutdown, peer enrollment, or pool
+	// registration.
+	if principal.Asserted() && !isAssertedAllowedPath(r.URL.Path) {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a discobot assertion does not reach this route")}
+	}
 	return true, nil
 }
 
@@ -330,8 +353,27 @@ var authenticatedAllowedPaths = []string{
 	"/shutdown",
 }
 
+// assertedAllowedPaths is the part of authenticatedAllowedPaths a person
+// discobot vouches for may reach.
+var assertedAllowedPaths = []string{
+	"/harness-definitions",
+	"/harness-definitions/",
+	"/projects",
+	"/providers/catalog",
+}
+
 func isAuthenticatedAllowedPath(path string) bool {
-	for _, allowed := range authenticatedAllowedPaths {
+	return matchesAllowedPath(authenticatedAllowedPaths, path)
+}
+
+func isAssertedAllowedPath(path string) bool {
+	return matchesAllowedPath(assertedAllowedPaths, path)
+}
+
+// matchesAllowedPath reports whether path is in an allow-list, where an entry
+// ending in "/" is a prefix and any other entry must match exactly.
+func matchesAllowedPath(list []string, path string) bool {
+	for _, allowed := range list {
 		if strings.HasSuffix(allowed, "/") {
 			if strings.HasPrefix(path, allowed) {
 				return true

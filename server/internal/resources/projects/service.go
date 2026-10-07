@@ -48,6 +48,12 @@ func NewService(store *store.Store, providers ProviderInstances, pools Pools, ha
 }
 
 func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
+	// A person discobot vouches for is in whichever projects discobot says;
+	// discobox keeps no membership for them (ADR 26-10-07-005 §2), so the
+	// list is every project and discobot shows each person theirs.
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Asserted() {
+		return s.store.ListProjects(ctx)
+	}
 	if userID, err := auth.UserID(ctx); err == nil {
 		return s.store.ListProjectsForUser(ctx, userID)
 	}
@@ -91,12 +97,17 @@ func (s *Service) CreateProject(ctx context.Context, input services.CreateProjec
 	if err := s.store.CreateProject(ctx, project); err != nil {
 		return nil, err
 	}
-	if _, err := s.store.CreateProjectMemberIfNotExists(ctx, &model.ProjectMember{
-		ProjectID: project.ID,
-		UserID:    userID,
-		Role:      "owner",
-	}); err != nil {
-		return nil, s.abandon(ctx, project.ID, err)
+	// A person discobot vouches for is a member of whatever discobot says, so
+	// no member row is written for them (ADR 26-10-07-005 §2); they own the
+	// project, and are in it once discobot asserts it.
+	if principal, _ := auth.PrincipalFromContext(ctx); !principal.Asserted() {
+		if _, err := s.store.CreateProjectMemberIfNotExists(ctx, &model.ProjectMember{
+			ProjectID: project.ID,
+			UserID:    userID,
+			Role:      "owner",
+		}); err != nil {
+			return nil, s.abandon(ctx, project.ID, err)
+		}
 	}
 	if err := s.harnesses.SeedBuiltIns(ctx, project.ID); err != nil {
 		return nil, s.abandon(ctx, project.ID, err)
@@ -195,6 +206,13 @@ func (s *Service) SetDefaultProject(ctx context.Context, projectID string) (*mod
 	userID, err := auth.UserID(ctx)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusForbidden, "setting the default project requires a user")
+	}
+	// For a person discobot vouches for, "default" is the project their
+	// assertion names, and the flag is a column every member of the project
+	// shares: setting it would give the project's other members a second
+	// default and leave one nobody can delete.
+	if principal, _ := auth.PrincipalFromContext(ctx); principal.Asserted() {
+		return nil, apperrors.NewStatusError(http.StatusForbidden, "a discobot assertion's default project is the one it names; it is not set here")
 	}
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")

@@ -344,6 +344,54 @@ func TestCreateProjectRejectsUnauthorizedSource(t *testing.T) {
 	}
 }
 
+// A person discobot vouches for is in whichever projects discobot says
+// (ADR 26-10-07-005 §2). discobox lists them every project, without reading
+// member rows, and lets them copy from the project their assertion names and
+// no other.
+func TestADiscobotAssertedPersonListsEveryProjectAndCopiesOnlyFromTheirs(t *testing.T) {
+	svc, st, ctx := newService(t)
+	source := seedSourceProject(ctx, t, st)
+	other := &model.Project{ID: id.NewString(id.PrefixProject), OwnerUserID: "someone-else", Name: "Other"}
+	if err := st.CreateProject(ctx, other); err != nil {
+		t.Fatalf("create other project: %v", err)
+	}
+	// usr_priya is in no member row at all.
+	asserted := auth.WithPrincipal(context.Background(), auth.Principal{
+		Type: auth.PrincipalTypeUser, UserID: "usr_priya", ProjectID: source.ID, Issuer: "discobot", Scopes: []string{auth.ScopeAll},
+	})
+
+	listed, err := svc.ListProjects(asserted)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("listed %d projects, want both", len(listed))
+	}
+
+	_, err = svc.CreateProject(asserted, services.CreateProjectBody{Name: "Elsewhere", CopyFromProjectId: apigen.NewOptString(other.ID)})
+	statusOf(t, err, http.StatusForbidden)
+
+	created, err := svc.CreateProject(asserted, services.CreateProjectBody{Name: "Data platform", CopyFromProjectId: apigen.NewOptString("default")})
+	if err != nil {
+		t.Fatalf("create from the asserted project: %v", err)
+	}
+	if created.OwnerUserID != "usr_priya" {
+		t.Fatalf("owner = %q, want the asserted person", created.OwnerUserID)
+	}
+	// discobox keeps no membership for them, even of what they created.
+	if member, err := st.IsProjectMember(ctx, created.ID, "usr_priya"); err != nil || member {
+		t.Fatalf("IsProjectMember = %v, %v; want no member row", member, err)
+	}
+
+	// Their default is the project their assertion names; the flag on the row
+	// is the default user's and is not theirs to move.
+	_, err = svc.SetDefaultProject(asserted, source.ID)
+	statusOf(t, err, http.StatusForbidden)
+	if got, err := st.GetProject(ctx, source.ID); err != nil || !got.Default {
+		t.Fatalf("source project default = %v, %v; want it left as it was", got, err)
+	}
+}
+
 func TestSetDefaultProjectMovesTheFlag(t *testing.T) {
 	svc, st, ctx := newService(t)
 	source := seedSourceProject(ctx, t, st)

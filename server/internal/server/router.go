@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"time"
 
@@ -35,6 +36,9 @@ const (
 type AppOptions struct {
 	HarnessImages map[string]string
 	UserID        string
+	// DiscobotPublicKey verifies discobot's assertions of who a request is for
+	// (ADR 26-10-07-005 §2). Nil refuses every assertion.
+	DiscobotPublicKey ed25519.PublicKey
 
 	// SSHIngress is what GET /ssh serves: the endpoint SSH clients should dial
 	// and the host key to pin. It is resolved by the caller because the
@@ -239,6 +243,8 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		// First, so a forwarded sandbox call can never reach the default user.
 		auth.SandboxForwardAuthenticator{Store: appStore},
 		auth.PoolAuthenticator{Store: appStore},
+		// Before the default user, so an assertion is never answered as it.
+		auth.DiscobotAuthenticator{PublicKey: opts.DiscobotPublicKey},
 		auth.DefaultUserAuthenticator{UserID: opts.UserID},
 	))
 	router.Use(auth.Authorization(

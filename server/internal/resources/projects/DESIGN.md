@@ -6,12 +6,19 @@ flag the `default` alias resolves.
 
 - `/projects` admits any authenticated principal. Listing is scoped to the
   caller's memberships when the `internal/auth` principal is a user; a non-user
-  principal lists every project.
+  principal lists every project, and so does a person discobot asserted,
+  whose memberships are discobot's to know (ADR 26-10-07-005 §2).
 - Create and set-default require a user principal, checked in the service. The
   creating user becomes the project's owner and only member. Every
   `/projects/{id}` route (get, update, delete, set-default) reaches this
   package already gated by `auth.ProjectAuthorizer`, which requires a user
   member and resolves `default` to that user's default project.
+- A person discobot asserted (ADR 26-10-07-005 §2) is a member of what
+  discobot says, so none of this writes or reads a member row for them: they
+  own a project they create without becoming its member, the authorizer
+  admits them to the project their assertion names, and set-default refuses
+  them, since their `default` is that project and the flag is a column the
+  project's other members share.
 - A project is addressed by ID. Its name is the only human-facing handle, and
   is unique per owner (`idx_project_owner_name`) so clients can resolve it
   unambiguously; create and rename check it first to report a conflict rather
@@ -42,7 +49,8 @@ flag the `default` alias resolves.
 
 Creation seeds the built-in harnesses into every project, then optionally
 copies providers, pools, and configured harnesses from a source project the
-caller is a member of. See
+caller is a member of (for a person discobot asserted, the project their
+assertion names, and only that one). See
 [ADR 0023](../../../../docs/adr/0023-projects-are-created-by-copy-and-deleted-only-when-empty.md)
 for what is copied and why.
 

@@ -19,7 +19,13 @@ type Principal struct {
 	// user who created the sandbox, whose authority what it creates carries.
 	SandboxID string
 	ProjectID string
-	Scopes    []string
+	// Issuer names who asserted a user principal, when someone did: discobot,
+	// for the person a request is for (ADR 26-10-07-005 §2). Such a principal
+	// acts only in ProjectID, which discobot signed, and is not checked
+	// against member rows; discobox keeps no users of its own. Empty for the
+	// default user and for pool and sandbox principals.
+	Issuer string
+	Scopes []string
 }
 
 const (
@@ -39,6 +45,7 @@ func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 	principal.PoolID = strings.TrimSpace(principal.PoolID)
 	principal.SandboxID = strings.TrimSpace(principal.SandboxID)
 	principal.ProjectID = strings.TrimSpace(principal.ProjectID)
+	principal.Issuer = strings.TrimSpace(principal.Issuer)
 	principal.Scopes = normalizeScopes(principal.Scopes)
 	return context.WithValue(ctx, principalKey{}, principal)
 }
@@ -70,6 +77,12 @@ func ActingUserID(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("authenticated user or sandbox is required")
 	}
 	return principal.UserID, nil
+}
+
+// Asserted reports whether the principal is a person another service vouched
+// for (see Issuer), rather than one this server authenticated itself.
+func (p Principal) Asserted() bool {
+	return p.Type == PrincipalTypeUser && p.Issuer != ""
 }
 
 // HasScope reports whether the principal carries the requested authorization

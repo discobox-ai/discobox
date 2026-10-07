@@ -100,6 +100,14 @@
 # Environment: DISCOBOX_ENCRYPTION_KEY
 #encryptionKey:
 
+# Base64 of discobot's Ed25519 public key. When set, a request carrying a
+# discobot assertion acts as the person it names, in the project it
+# names; discobox keeps no users of its own. Unset, every assertion is
+# refused.
+# Example: discobotPublicKey: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+# Environment: DISCOBOX_DISCOBOT_PUBLIC_KEY
+#discobotPublicKey:
+
 # How often the job dispatcher polls for work.
 # Environment: DISPATCHER_POLL_INTERVAL
 #dispatcherPollInterval: 1s

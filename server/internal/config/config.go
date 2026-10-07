@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/releasemanifest"
+	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/x/gormdb"
@@ -119,6 +120,10 @@ type Config struct {
 
 	// Secret encryption settings.
 	EncryptionKey string `yaml:"encryptionKey" env:"DISCOBOX_ENCRYPTION_KEY" doc:"Base64 of the 32-byte AES key that seals stored secrets; generate one with: openssl rand -base64 32. Secrets are stored unsealed when empty. Keep it: secrets sealed with a key cannot be read without it." example:"-"`
+
+	// discobot, the team-facing control plane in front of this server (ADR
+	// 26-10-07-005).
+	DiscobotPublicKey string `yaml:"discobotPublicKey" env:"DISCOBOX_DISCOBOT_PUBLIC_KEY" doc:"Base64 of discobot's Ed25519 public key. When set, a request carrying a discobot assertion acts as the person it names, in the project it names; discobox keeps no users of its own. Unset, every assertion is refused." example:"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="`
 
 	// Reconcile engine settings.
 	DispatcherPollInterval         time.Duration `yaml:"dispatcherPollInterval" env:"DISPATCHER_POLL_INTERVAL" default:"1s" doc:"How often the job dispatcher polls for work."`
@@ -453,6 +458,11 @@ func (c *Config) validate(configured func(string) bool) error {
 	case gormdb.DriverSQLite, gormdb.DriverPostgres:
 	default:
 		return fmt.Errorf("databaseDriver must be one of: sqlite, postgres")
+	}
+	if c.DiscobotPublicKey != "" {
+		if _, err := discobot.ParsePublicKey(c.DiscobotPublicKey); err != nil {
+			return fmt.Errorf("discobotPublicKey: %w", err)
+		}
 	}
 	if c.DispatcherPollInterval <= 0 {
 		return fmt.Errorf("dispatcherPollInterval must be greater than 0")

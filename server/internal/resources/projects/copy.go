@@ -12,6 +12,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -42,6 +43,18 @@ func (s *Service) resolveCopyPlan(ctx context.Context, userID string, input serv
 		source *model.Project
 		err    error
 	)
+	// A person discobot vouches for may copy from the project discobot signed,
+	// and "default" means that one; whether they are in any other is not
+	// discobox's to know (ADR 26-10-07-005 §2).
+	principal, _ := auth.PrincipalFromContext(ctx)
+	if principal.Asserted() {
+		if sourceID == "default" {
+			sourceID = principal.ProjectID
+		}
+		if sourceID == "" || sourceID != principal.ProjectID {
+			return copyPlan{}, apperrors.NewStatusError(http.StatusForbidden, "source project access denied: the discobot assertion is for another project")
+		}
+	}
 	// POST /projects carries no project path parameter, so the "default" alias
 	// the project authorizer resolves for project-scoped routes has to be
 	// resolved here instead.
@@ -53,12 +66,14 @@ func (s *Service) resolveCopyPlan(ctx context.Context, userID string, input serv
 	if err != nil {
 		return copyPlan{}, apperrors.NotFound(err, "source project not found")
 	}
-	member, err := s.store.IsProjectMember(ctx, source.ID, userID)
-	if err != nil {
-		return copyPlan{}, err
-	}
-	if !member {
-		return copyPlan{}, apperrors.NewStatusError(http.StatusForbidden, "source project access denied")
+	if !principal.Asserted() {
+		member, err := s.store.IsProjectMember(ctx, source.ID, userID)
+		if err != nil {
+			return copyPlan{}, err
+		}
+		if !member {
+			return copyPlan{}, apperrors.NewStatusError(http.StatusForbidden, "source project access denied")
+		}
 	}
 
 	plan := copyPlan{source: source}

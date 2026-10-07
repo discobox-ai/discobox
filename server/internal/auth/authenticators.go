@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -124,6 +126,40 @@ func (a SandboxForwardAuthenticator) Authenticate(r *http.Request) (Principal, b
 		ProjectID: sandbox.ProjectID,
 		PoolID:    pool.ID,
 		UserID:    sandbox.CreatedByUserID,
+	}, true, nil
+}
+
+// DiscobotAuthenticator authenticates a request discobot signed for a person
+// (ADR 26-10-07-005 §2): the assertion in discobot.AssertionHeader, verified
+// against discobot's public key. The principal is that person, acting in the
+// project the assertion names, with discobot as its issuer.
+//
+// Like the sandbox authenticator it fails rather than stepping aside once a
+// request carries an assertion: one that fell through would be answered as
+// the default user. A server not configured with discobot's key refuses
+// every assertion for the same reason.
+type DiscobotAuthenticator struct {
+	PublicKey ed25519.PublicKey
+}
+
+func (a DiscobotAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
+	token := strings.TrimSpace(r.Header.Get(discobot.AssertionHeader))
+	if token == "" {
+		return Principal{}, false, nil
+	}
+	if len(a.PublicKey) == 0 {
+		return Principal{}, false, errors.New("discobot assertion refused: this server is not configured to trust discobot")
+	}
+	claims, err := discobot.Verify(a.PublicKey, token)
+	if err != nil {
+		return Principal{}, false, fmt.Errorf("discobot assertion refused: %w (server clock %s)", err, time.Now().UTC().Format(time.RFC3339))
+	}
+	return Principal{
+		Type:      PrincipalTypeUser,
+		UserID:    claims.UserID,
+		ProjectID: claims.ProjectID,
+		Issuer:    discobot.Issuer,
+		Scopes:    []string{ScopeAll},
 	}, true, nil
 }
 
