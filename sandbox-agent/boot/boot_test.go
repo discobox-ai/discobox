@@ -17,6 +17,7 @@ import (
 // image declared a %HOME%-templated volume (e.g. claude-code's), since an
 // empty expansion is refused as a missing path.
 func TestResolveIdentityWithNoUserConfiguredResolvesTheImagesOwnUser(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
 		t.Setenv(key, "")
@@ -45,6 +46,7 @@ func TestResolveIdentityWithNoUserConfiguredResolvesTheImagesOwnUser(t *testing.
 // naming the cause, rather than carry blanks downstream to resurface as a
 // missing path.
 func TestResolveIdentityRejectsAnImageUidWithNoPasswdEntry(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	t.Cleanup(runuser.FixedEffectiveIDs(4242, 4242))
 	for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
@@ -62,6 +64,7 @@ func TestResolveIdentityRejectsAnImageUidWithNoPasswdEntry(t *testing.T) {
 // A missing gid is read from the account's own entry, never copied from the
 // uid: uid==gid is a useradd coincidence, not a rule (ADR 0025 §6).
 func TestResolveIdentityReadsAMissingGidFromTheAccount(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	t.Setenv("DISCOBOX_USER_UID", "1000")
 	t.Setenv("DISCOBOX_USER_GID", "")
@@ -82,6 +85,7 @@ func TestResolveIdentityReadsAMissingGidFromTheAccount(t *testing.T) {
 
 // A primary group given by name resolves against the image's group file.
 func TestResolveIdentityResolvesAGroupName(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	t.Cleanup(runuser.FixedDatabase())
 	t.Setenv("DISCOBOX_USER_UID", "1000")
 	t.Setenv("DISCOBOX_USER_GID", "")

@@ -75,6 +75,7 @@ func TestPrimaryExecIDConst(t *testing.T) {
 // sandbox start/resume lost every group the image declared (e.g. "docker")
 // while plain execs kept them.
 func TestPrimaryTerminalRunsWithTheExecDefaultUsersGroups(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	dir := shorttmp.Dir(t)
 	uid := int64(1000)
 	gid := int64(1000)

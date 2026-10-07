@@ -78,6 +78,7 @@ func TestShellCommandIsALoginShell(t *testing.T) {
 }
 
 func TestManagerRunsResolvedShellForShellRequest(t *testing.T) {
+	skipWithoutPOSIXIDs(t)
 	writePasswd(t, "")
 	runner := &fakeUnitManager{}
 	manager, err := NewManagerWithConfig(ManagerConfig{
