@@ -23,6 +23,16 @@ func TestNewSamplerReadsThisMachine(t *testing.T) {
 	}
 }
 
+func TestMachineMemory(t *testing.T) {
+	current, limit, err := machineMemory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current <= 0 || limit <= 0 || current > limit {
+		t.Fatalf("memory = %d in use of %d, want some of the machine in use", current, limit)
+	}
+}
+
 func TestKernelProcsKnowsThisProcess(t *testing.T) {
 	procs, err := kernelProcs()
 	if err != nil {

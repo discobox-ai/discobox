@@ -60,15 +60,21 @@ counters, never rates** (ADR 0071). On Linux, `resources.Procfs` reads cgroup
 v2 at `/sys/fs/cgroup` — a private cgroup namespace makes that this container's
 own cgroup presented as the root — and falls back to a per-process rollup over
 `/proc` when it cannot, recording which in `source`. On darwin the sandbox is a
-whole guest with no cgroup, so its totals are always the rollup (`source:
-proc`, `currentBytes` the summed resident size), read from `ps` and the
-kernel's process table.
+whole guest with no cgroup, so its CPU totals are always the rollup (`source:
+proc`), read from `ps` and the kernel's process table, plus the CPU time of
+every process seen to exit, at its last sample — without that a sum over live
+processes falls whenever one exits, and the pool reads a falling counter as no
+rate; `currentBytes` and
+`limitBytes` are the machine's own memory in use and size, because a guest's
+summed resident size counts every shared system library once per process.
 
 Turning counters into "how busy" belongs to the pool agent, which polls every
 sandbox in its pool on one tick and can therefore difference all of them over
 the same window. Computing a rate here would give each sandbox its own slightly
 different window and make the pool's ranking incomparable. It also keeps this
-endpoint genuinely computed-fresh, with no sampling state of its own.
+endpoint genuinely computed-fresh, with no sampling state of its own — except
+darwin's exited-process CPU above, the one thing a cgroup keeps that a darwin
+guest has nowhere to read from.
 
 Memory is reported twice because both numbers are true and neither substitutes
 for the other: `currentBytes` is what the host charges the cgroup (including
@@ -95,9 +101,11 @@ platform.
 | How does an idle sandbox stop? | `autostop`'s default `PowerOff` | `poweroff.target` | `shutdown -h now` |
 
 - **Selected at compile time.** `platform_darwin.go` and a `!darwin` file in
-  each package pick the implementation, so a platform without one does not
-  build. Windows has no sandbox yet and takes the procfs files, which find
-  nothing there.
+  each package pick the implementation. Every non-darwin build takes Linux's,
+  because the tree must still cross-compile for Windows (`check:windows`),
+  where no sandbox runs yet and the procfs readers find nothing. A new
+  sandbox platform adds its own file and narrows the `!darwin` tag; nothing
+  fails the build until it does.
 - **Only the reading is platform code.** What `lsof` and `ps` print is parsed
   in untagged files, so those parsers' tests run in every CI lane; the tagged
   files only run the program or the sysctl. darwin shells out rather than reading
