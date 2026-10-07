@@ -209,13 +209,15 @@ creates nothing. A grant a sandbox makes records the sandbox as its granter
 A discobox giving them is held to what it may hand on, as when it approves a
 request
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
-§1): each grant is made under a live delegation grant it holds of that secret
-covering the host (`delegationsOf`, `chooseDelegation`), its lifetime fitted
-to it or refused if the one it named does not fit, and once every grant has
-passed what can refuse it without the judge, the judge is asked of each
-(`judgeDelegation`, the new discobox as `ForSandboxID`). The create's
-transaction holds each grant to its delegation again (`HoldDelegations`), so
-a delegation revoked in between creates nothing.
+§1): each grant is made under a live delegation grant it holds of that secret,
+covering the host and fitting the lifetime it named (`delegationsOf`,
+`delegationsFitting`), whose uses the judge finds its uses within — chosen as
+an approval's is ([below](#delegation-grants)), every grant at once, once
+every grant has passed what can refuse it without the judge
+(`judgeDelegations`, the new discobox as `ForSandboxID`). A lifetime it did
+not name is then fitted to the delegation chosen. The create's transaction
+holds each grant to its delegation again (`HoldDelegations`), so a delegation
+revoked in between creates nothing.
 
 ## Delegation grants
 
@@ -245,18 +247,35 @@ and a discobox that needs both holds two grants.
   (`ListLiveDelegationGrants`), not by choosing among the project's — its
   `ListSecrets` holds only those (`store.DelegatedTo`): one that
   covers the host asked for, of the secret marked for a well-known credential,
-  and — when it was delegated more than one that fits — the one it names. Of that secret's delegations the approval is made under one,
-  the one that lets the grant last longest (`delegationFor`), and that one is
-  read again by its ID in the approval's transaction (`delegatedTTL`): still
-  live and covering the host, with a lifetime nobody named fitted to its
-  remaining time and one the approver named refused if it does not fit.
-  Whether the uses handed on — the request's, or the ones the approver
-  narrowed them to — fall within that delegation's uses is a reading, so it is
-  asked of the project's judge (`judgeDelegation`, through
+  and — when it was delegated more than one that fits — the one it names.
+- **An approval is made under one delegation that holds it.** Of that
+  secret's delegations, those the lifetime fits are candidates
+  (`delegationsFor`, `delegationsFitting`): one the approver named must end no
+  later than the delegation, and one nobody named needs a delegation with
+  time left. Whether the uses handed on — the request's, or the ones the
+  approver narrowed them to — fall within a delegation's uses is a reading, so
+  it is asked of the project's judge (`judgeDelegations`, through
   `services.JudgeService.JudgeDelegation`) before the transaction — last,
-  after every check that can refuse without it — and the transaction refuses a
-  delegation whose uses changed since. Anything but an explicit yes refuses,
-  including no judge at all. The delegation verdict names the delegation grant
+  after every check that can refuse without it — once per candidate, each on
+  its own: never against several delegations' uses together, which no one
+  delegation the grant is bounded by, held to, and traced to would hold.
+  The approval is made under the longest-lived the judge says yes to.
+  - **Asks go one after another, and the first yes ends them**, so the one
+    allow verdict an approval leaves names the delegation it was made under,
+    and the project's judge — shared with every request — is asked no more
+    than the choice needs. They share one deadline
+    (`services.DelegationBound`) that fits the pool gate's two minutes.
+    Candidates whose uses read the same are asked once, of the longest-lived.
+  - **Anything but an explicit yes refuses**, including no judge at all. A
+    refusal under every candidate names each one's reason; a judge that could
+    not answer about one, when none said yes, is the refusal given instead,
+    since that one might have.
+  - **The chosen delegation is read again** by its ID in the approval's
+    transaction (`delegatedTTL`): still live and covering the host, with the
+    uses the judge read, a lifetime nobody named fitted to its remaining time
+    and one the approver named refused if it does not fit.
+
+  The delegation verdict names the delegation grant
   (`GrantID`) and the request being approved (`SecretRequestID`), and the
   request names the grant the approval minted: that chain is how a handed-on
   grant is traced to the delegation that allowed it. A request that names no uses is a person's, since a grant without

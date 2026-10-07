@@ -18,12 +18,13 @@ import (
 
 // A discobox approving a request hands on a credential, and may hand on only
 // what it was delegated (ADR 26-09-30-782 §3). These are the facts of that
-// bound — which credential, where it may go, for how long — held against the
-// live delegation grants the approver holds. At least one must hold all of
-// them, and the approval is made under that one: it is chosen once, checked
-// again by its ID in the approval's transaction, and is the grant every later
-// question about the approval — whether its uses fall within the delegation's,
-// what the verdict records — is asked of.
+// bound — which credential, where it may go, for how long, and for what — held
+// against the live delegation grants the approver holds. At least one must
+// hold all of them, and the approval is made under that one: of the
+// delegations that hold the facts, the longest-lived the judge finds the uses
+// within. It is checked again by its ID in the approval's transaction, and is
+// the grant every later question about the approval — what the verdict
+// records, how long the grant lasts — is asked of.
 
 // refuseDelegatedApproval says why a discobox may not approve this request at
 // all, whatever it was delegated, or nothing when it may try.
@@ -42,18 +43,18 @@ func refuseDelegatedApproval(req *model.SecretRequest) error {
 	return nil
 }
 
-// delegationFor chooses the delegation grant a discobox approves a request
+// delegationsFor are the delegation grants a discobox may approve a request
 // under, and the secret it answers with: the secret of a live delegation it
 // holds that fits the request — the well-known credential it asked for, the
 // secret the approver named, and hosts that cover every one asked for. The
 // approver does not choose among the project's secrets, only among what it was
 // delegated; when that is more than one secret, it names which.
 //
-// Of that secret's delegations it takes the one that lets the grant last
-// longest: the lifetime the approver named must fit within it, and one it did
-// not name is fitted to it later (delegatedTTL). ttl is the lifetime named, and
-// is read only when named.
-func (s *Service) delegationFor(ctx context.Context, projectID, approverID string, req *model.SecretRequest, chosenID string, hosts []string, ttl int64, named bool) (*model.SecretGrant, *model.Secret, error) {
+// Of that secret's delegations, those a grant's lifetime fits are returned
+// (delegationsFitting); which of them the approval is made under is the
+// judge's to settle, by which of their uses hold the request's
+// (judgeDelegations). ttl is the lifetime named, and is read only when named.
+func (s *Service) delegationsFor(ctx context.Context, projectID, approverID string, req *model.SecretRequest, chosenID string, hosts []string, ttl int64, named bool) ([]*model.SecretGrant, *model.Secret, error) {
 	delegations, err := s.store.ListLiveDelegationGrants(ctx, projectID, approverID)
 	if err != nil {
 		return nil, nil, err
@@ -112,22 +113,50 @@ func (s *Service) delegationFor(ctx context.Context, projectID, approverID strin
 	for _, only := range fits {
 		secret = only
 	}
-	delegation, err := chooseDelegation(bySecret[secret.ID], ttl, named)
+	fitting, err := delegationsFitting(bySecret[secret.ID], ttl, named)
 	if err != nil {
 		return nil, nil, err
 	}
-	return delegation, secret, nil
+	return fitting, secret, nil
 }
 
-// chooseDelegation is the delegation, of those that fit, a grant is made
-// under: the one that lets it last longest, which a lifetime the grantor
-// named must fit within.
-func chooseDelegation(delegations []*model.SecretGrant, ttl int64, named bool) (*model.SecretGrant, error) {
-	delegation := longestLived(delegations)
-	if named && !outlastedBy(delegation, ttl, time.Now().UTC()) {
-		return nil, outlastsDelegation()
+// delegationsFitting are the delegations, of those that hold a grant's secret
+// and hosts, its lifetime fits: one the grantor named must end no later than
+// the delegation, and one it did not is fitted to what the delegation has left,
+// which must be something. They are the ones the judge is asked about, longest-
+// lived first — the order a grant prefers them in, since one made under a
+// delegation that lasts longer may last longer. Of delegations whose uses say
+// the same, only the longest-lived is kept: the judge would be asked the same
+// question of each, and only that one could be chosen.
+func delegationsFitting(delegations []*model.SecretGrant, ttl int64, named bool) ([]*model.SecretGrant, error) {
+	now := time.Now().UTC()
+	var fitting []*model.SecretGrant
+	for _, delegation := range delegations {
+		if named {
+			if !outlastedBy(delegation, ttl, now) {
+				continue
+			}
+		} else if _, err := fitTTL(delegation, ttl, now); err != nil {
+			continue
+		}
+		fitting = append(fitting, delegation)
 	}
-	return delegation, nil
+	if len(fitting) == 0 {
+		if named {
+			return nil, outlastsDelegation()
+		}
+		return nil, lapsingDelegation()
+	}
+	slices.SortStableFunc(fitting, func(a, b *model.SecretGrant) int { return -lifetimeOrder(a, b) })
+	var out []*model.SecretGrant
+	for _, delegation := range fitting {
+		if !slices.ContainsFunc(out, func(kept *model.SecretGrant) bool {
+			return slices.Equal(useDescriptions(kept.Uses), useDescriptions(delegation.Uses))
+		}) {
+			out = append(out, delegation)
+		}
+	}
+	return out, nil
 }
 
 // delegationsOf are the live delegations a discobox holds of one secret that
@@ -197,8 +226,7 @@ func fitTTL(delegation *model.SecretGrant, ttl int64, now time.Time) (int64, err
 	}
 	remaining := int64(delegation.ExpiresAt.Sub(now) / time.Second)
 	if remaining < 1 {
-		return 0, apperrors.NewStatusError(http.StatusForbidden,
-			"the delegation grant this would be made under is lapsing, with nothing left to hand on; leave it for a person")
+		return 0, lapsingDelegation()
 	}
 	if ttl <= 0 || ttl > remaining {
 		return remaining, nil
@@ -206,41 +234,72 @@ func fitTTL(delegation *model.SecretGrant, ttl int64, now time.Time) (int64, err
 	return ttl, nil
 }
 
-// judgeDelegation asks the project's judge whether the uses a discobox is
-// about to hand on fall within the uses of the delegation it approves under,
-// and refuses unless the judge says yes (ADR 26-09-30-782 §3). No judge, a judge
-// that cannot answer, and a judge that asks for something it cannot be shown
-// all refuse: the request then waits for a person.
+// judgeDelegations asks the project's judge whether the uses a discobox is
+// about to hand on fall within the uses of each delegation it may hand them on
+// under, and returns the one the grant is made under: the first of delegations
+// — longest-lived first, as delegationsFitting orders them — the judge says
+// yes to (ADR 26-09-30-782 §3). One is enough; the uses are never read against
+// several delegations' together, since the grant is bounded by, held to, and
+// traced to one.
+//
+// The delegations are asked about one after another, and the first yes ends
+// it: each answer is recorded against the delegation it was asked of, so the
+// one allow verdict an approval leaves is the delegation it was made under,
+// and a judge shared with every request in the project is asked no more than
+// the choice needs. The asks share one deadline (services.DelegationBound), as
+// the rounds of one request do, so together they fit inside the pool gate's
+// two minutes; one asked when it has run out is one the judge could not answer.
+//
+// No judge, a judge that cannot answer, and a judge that asks for something it
+// cannot be shown all refuse: the request then waits for a person. A judge
+// that could not answer about some delegation, when none was found to hold the
+// uses, is the refusal given, since that one might have.
 //
 // requestID is the request being approved, empty for a grant given on a
 // create; forSandboxID is the discobox the uses go to either way.
-func (s *Service) judgeDelegation(ctx context.Context, projectID, approverID string, delegation *model.SecretGrant, credential string, hosts []string, uses []model.SecretUse, requestID, forSandboxID string) error {
+func (s *Service) judgeDelegations(ctx context.Context, projectID, approverID string, delegations []*model.SecretGrant, credential string, hosts []string, uses []model.SecretUse, requestID, forSandboxID string) (*model.SecretGrant, error) {
 	if s.judge == nil {
-		return apperrors.NewStatusError(http.StatusForbidden,
+		return nil, apperrors.NewStatusError(http.StatusForbidden,
 			"no judge can say whether these uses are within what this discobox was delegated, so it hands nothing on; leave it for a person")
 	}
-	answer, err := s.judge.JudgeDelegation(ctx, projectID, services.DelegationAsk{
-		ApproverID:        approverID,
-		RequestID:         requestID,
-		ForSandboxID:      forSandboxID,
-		DelegationGrantID: delegation.ID,
-		Delegated:         useDescriptions(delegation.Uses),
-		Uses:              useDescriptions(uses),
-		Credential:        credential,
-		Hosts:             hosts,
-	})
-	if err != nil {
-		return err
-	}
-	if !answer.Decided() || !answer.Allow {
-		reason := strings.TrimSpace(answer.Reason)
-		if reason == "" {
-			reason = "it gave no reason"
+	ctx, cancel := context.WithTimeout(ctx, services.DelegationBound)
+	defer cancel()
+	var reasons []string
+	var unanswered error
+	for _, delegation := range delegations {
+		answer, err := s.judge.JudgeDelegation(ctx, projectID, services.DelegationAsk{
+			ApproverID:        approverID,
+			RequestID:         requestID,
+			ForSandboxID:      forSandboxID,
+			DelegationGrantID: delegation.ID,
+			Delegated:         useDescriptions(delegation.Uses),
+			Uses:              useDescriptions(uses),
+			Credential:        credential,
+			Hosts:             hosts,
+		})
+		switch {
+		case err != nil:
+			if unanswered == nil {
+				unanswered = err
+			}
+		case answer.Decided() && answer.Allow:
+			return delegation, nil
+		default:
+			reason := strings.TrimSpace(answer.Reason)
+			if reason == "" {
+				reason = "it gave no reason"
+			}
+			if len(delegations) > 1 {
+				reason = "under " + delegation.ID + ", " + reason
+			}
+			reasons = append(reasons, reason)
 		}
-		return apperrors.NewStatusError(http.StatusForbidden, fmt.Sprintf(
-			"the judge did not find these uses within what this discobox was delegated: %s; narrow them, or leave it for a person", reason))
 	}
-	return nil
+	if unanswered != nil {
+		return nil, unanswered
+	}
+	return nil, apperrors.NewStatusError(http.StatusForbidden, fmt.Sprintf(
+		"the judge did not find these uses within what this discobox was delegated: %s; narrow them, or leave it for a person", strings.Join(reasons, "; ")))
 }
 
 // useDescriptions is what a list of uses says, in order: the sentences a
@@ -253,18 +312,18 @@ func useDescriptions(uses []model.SecretUse) []string {
 	return out
 }
 
-// longestLived is the delegation that lets a grant last longest: one that never
-// lapses, else the one that lapses last.
-func longestLived(delegations []*model.SecretGrant) *model.SecretGrant {
-	best := delegations[0]
-	for _, delegation := range delegations[1:] {
-		switch {
-		case best.ExpiresAt == nil:
-		case delegation.ExpiresAt == nil || delegation.ExpiresAt.After(*best.ExpiresAt):
-			best = delegation
-		}
+// lifetimeOrder compares two delegations by how long a grant made under them
+// may last: one that never lapses longest, else the one that lapses last.
+func lifetimeOrder(a, b *model.SecretGrant) int {
+	switch {
+	case a.ExpiresAt == nil && b.ExpiresAt == nil:
+		return 0
+	case a.ExpiresAt == nil:
+		return 1
+	case b.ExpiresAt == nil:
+		return -1
 	}
-	return best
+	return a.ExpiresAt.Compare(*b.ExpiresAt)
 }
 
 // outlastedBy reports whether a grant of ttl seconds — zero is forever — ends
@@ -279,4 +338,9 @@ func outlastedBy(delegation *model.SecretGrant, ttl int64, now time.Time) bool {
 func outlastsDelegation() error {
 	return apperrors.NewStatusError(http.StatusForbidden,
 		"a grant this discobox hands on may not outlast the delegation grant it is made under; leave the lifetime out to fit it, or grant it for less")
+}
+
+func lapsingDelegation() error {
+	return apperrors.NewStatusError(http.StatusForbidden,
+		"the delegation grant this would be made under is lapsing, with nothing left to hand on; leave it for a person")
 }

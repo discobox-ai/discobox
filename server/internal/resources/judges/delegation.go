@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -55,7 +54,7 @@ func (s *Service) JudgeDelegation(ctx context.Context, projectID string, ask ser
 		return judge.Answer{}, apperrors.NewStatusError(http.StatusBadRequest, "a delegation cannot be judged: "+err.Error())
 	}
 
-	bound := min(s.judgeBound(), delegationBound)
+	bound := min(s.judgeBound(), services.DelegationBound)
 	ctx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
 	decided, err := s.put(ctx, project, judgeSandbox, job, bound)
@@ -91,12 +90,3 @@ func (s *Service) JudgeDelegation(ctx context.Context, projectID string, ask ser
 	}
 	return decided.Answer, nil
 }
-
-// delegationBound is how long the judge may take over a delegation. The
-// approval that asks it is a discobox's own call, held open by its pool's gate
-// for two minutes (pool-agent's gateHTTPTimeout) — less than an ordinary ask's
-// bound, a judge brought up and then thinking — so the question is answered
-// inside it, with room left for the verdict, the approval's transaction, and
-// the way back: the discobox then reads why it was refused rather than the
-// gate giving up on a silence.
-const delegationBound = 100 * time.Second
