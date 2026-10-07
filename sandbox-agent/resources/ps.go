@@ -94,6 +94,10 @@ func (s *psSampler) Sample(ctx context.Context) Usage {
 	usage := Usage{ObservedAt: time.Now().UTC(), Source: "proc"}
 	rows, err := s.rows(ctx)
 	if err != nil {
+		// No processes is what says "no sample": the status handler omits
+		// a sample that counted none rather than report its zeroes, so the
+		// pool keeps differencing against the last real one. The CPU
+		// bookkeeping is untouched, so the next sample carries on from it.
 		return usage
 	}
 	// A kernel table that cannot be read leaves every process without the

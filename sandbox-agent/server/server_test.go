@@ -663,3 +663,46 @@ func TestListExecEventsRequiresExecReadScope(t *testing.T) {
 		}
 	}
 }
+
+// stubSampler answers every sample with the same usage.
+type stubSampler struct{ usage resources.Usage }
+
+func (s stubSampler) Sample(context.Context) resources.Usage { return s.usage }
+
+func (stubSampler) Collect(context.Context, execs.Exec) (agentstore.ResourceSample, error) {
+	return agentstore.ResourceSample{}, nil
+}
+
+// TestGetSandboxAgentStatusOmitsAnEmptyResourceSample covers what a failed
+// read means to the pool: a sample that counted no processes is left out of
+// the status rather than reported as zeroes, so the pool keeps differencing
+// against the last real sample instead of against a counter reset to zero.
+func TestGetSandboxAgentStatusOmitsAnEmptyResourceSample(t *testing.T) {
+	ctx := context.Background()
+	empty := &handler{
+		ports:           ports.New(ports.Config{Scanner: ports.Procfs{Root: t.TempDir()}}),
+		resourceSampler: stubSampler{usage: resources.Usage{ObservedAt: time.Now().UTC(), Source: "proc"}},
+	}
+	status, err := empty.GetSandboxAgentStatus(ctx, sandboxapi.GetSandboxAgentStatusParams{})
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if status.Resources.Set {
+		t.Fatalf("resources = %+v, want none for a sample with no processes", status.Resources.Value)
+	}
+
+	sampled := &handler{
+		ports: ports.New(ports.Config{Scanner: ports.Procfs{Root: t.TempDir()}}),
+		resourceSampler: stubSampler{usage: resources.Usage{
+			ObservedAt: time.Now().UTC(), Source: "proc", ProcessCount: 3,
+			CPU: resources.CPUUsage{UsageUsec: 42},
+		}},
+	}
+	status, err = sampled.GetSandboxAgentStatus(ctx, sandboxapi.GetSandboxAgentStatusParams{})
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if got, ok := status.Resources.Get(); !ok || got.CPU.UsageUsec != 42 {
+		t.Fatalf("resources = %+v (set %v), want the sample", got, ok)
+	}
+}
