@@ -83,7 +83,7 @@ func TestHTTPClientOverUnixTransport(t *testing.T) {
 		t.Fatalf("temp dir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	socket := unixURL(filepath.Join(dir, "cp.sock"))
+	socket := UnixURL(filepath.Join(dir, "cp.sock"))
 
 	listener, err := Listen(socket)
 	if err != nil {
@@ -173,6 +173,14 @@ func TestURLBuildersRoundTrip(t *testing.T) {
 	if err != nil || got.Scheme != "http" || !strings.HasSuffix(got.Host, ":3002") {
 		t.Fatalf("TCPListenURL round trip = %+v, err=%v", got, err)
 	}
+	// A Windows path has a drive letter where a URL's host would go, so it
+	// must round-trip as well as a POSIX one does.
+	for _, path := range []string{"/run/discobox/cp.sock", "C:/Users/me/AppData/Local/Temp/cp.sock"} {
+		got, err := Parse(UnixURL(path))
+		if err != nil || got.Scheme != "unix" || got.Path != filepath.ToSlash(path) {
+			t.Fatalf("UnixURL(%q) round trip = %+v, err=%v", path, got, err)
+		}
+	}
 }
 
 // A vsock endpoint must produce a dialer on every platform even though dialing
@@ -190,15 +198,4 @@ func TestVSOCKDialerResolvesOnAllPlatforms(t *testing.T) {
 	if dial == nil {
 		t.Fatal("DialContext returned no dialer")
 	}
-}
-
-// unixURL renders a socket path as a unix endpoint URL. A POSIX path uses the
-// authority-less form; a Windows drive path must use the opaque form, since
-// "unix://C:/..." would parse the drive letter as the host.
-func unixURL(path string) string {
-	slashed := filepath.ToSlash(path)
-	if strings.HasPrefix(slashed, "/") {
-		return "unix://" + slashed
-	}
-	return "unix:" + slashed
 }

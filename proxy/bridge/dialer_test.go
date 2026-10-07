@@ -14,6 +14,7 @@ import (
 
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/proxy/bridge"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 const poolServerName = "discobox-pool-proxy"
@@ -84,7 +85,7 @@ func unixPool(t *testing.T, bundle *proxy.CertificateBundle) string {
 		t.Fatalf("listen unix: %v", err)
 	}
 	servePool(t, listener, bundle)
-	return "unix://" + socket
+	return wire.UnixURL(socket)
 }
 
 func dialConfig(material proxy.ClientMaterial, url, serverName string) bridge.DialConfig {
