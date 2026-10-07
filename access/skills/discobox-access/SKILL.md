@@ -373,3 +373,8 @@ Failures go to stderr, with `--json` as `{"error":{"code":"...","message":"..."}
 
 Exit status: `0` fine, `1` the call failed or the answer was no, `2` you
 invoked it wrongly. Under `run`, your command's own status passes through.
+
+To see exactly what was sent and answered, put `--debug` before the command
+(`discobox-access --debug run --use ... -- ...`): every call to the credentials
+service is printed on stderr with its body and the answer's. A credential's
+value shows as `<redacted>`.

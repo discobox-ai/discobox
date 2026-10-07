@@ -43,6 +43,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -63,8 +64,16 @@ const (
 	exitUsage = 2
 )
 
+// debugHTTP is set by --debug for one Run: every call to the credentials
+// service is printed to stderr (debug.go).
+var debugHTTP bool
+
 // Run executes the CLI and returns a process exit status.
 func Run(args []string) int {
+	debugHTTP = len(args) > 0 && args[0] == debugFlag
+	if debugHTTP {
+		args = args[1:]
+	}
 	if len(args) == 0 {
 		usage(os.Stderr)
 		return exitUsage
@@ -106,7 +115,11 @@ func newClient() *agentcreds.Client {
 	if base == "" {
 		base = agentcreds.DefaultBaseURL
 	}
-	return agentcreds.NewClient(base, agentcreds.WithToken(os.Getenv(agentcreds.TokenEnv)))
+	options := []agentcreds.ClientOption{agentcreds.WithToken(os.Getenv(agentcreds.TokenEnv))}
+	if debugHTTP {
+		options = append(options, agentcreds.WithHTTPClient(&http.Client{Transport: debugTransport{next: http.DefaultTransport}}))
+	}
+	return agentcreds.NewClient(base, options...)
 }
 
 func usage(w io.Writer) {
@@ -198,6 +211,13 @@ func usage(w io.Writer) {
 
   %[1]s trusts [--json]
       Show the hosts this sandbox trusts and what each was trusted for.
+
+  %[1]s --debug COMMAND ...
+      Before any command, print every call it makes to the credentials
+      service on stderr: the method and URL, the JSON request body, the
+      status, and the response body. A credential's value is printed as
+      <redacted>, and no header is printed. The lines are plain text even
+      with --json. Use it to see what a failure was answered with.
 
 There is no command that prints a credential's value on its own. "run" is the
 only way to use one — the value goes straight into the child it names and

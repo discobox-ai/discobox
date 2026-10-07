@@ -81,6 +81,15 @@ Rules the shape depends on:
 - **Failures carry a stable code**, so an agent branches on a token rather than
   on wording. `Code` and `Message` both come from `agentcreds` — the CLI does
   not invent its own classification, and the message never repeats the code.
+- **`--debug` shows the wire, never a value.** Given before the command, it
+  prints every call to the credentials service on stderr: method and URL, the
+  JSON request body, the status, and the response body (`debug.go`, a
+  round-tripper given to `agentcreds.WithHTTPClient`). No header is printed,
+  so no token is, and a use response's `value` is printed as `<redacted>`; a
+  use response it cannot read as a JSON object is not shown at all. A debug
+  line that carried the value would be the unjudged way to take one that
+  [ADR 0092](../docs/adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md)
+  rules out. The lines are plain text even under `--json`.
 - **Exit status is meaningful.** `0` success, `1` the call failed (a missing
   `--use` included: it is reported by code `invalid`), `2` the invocation could
   not be parsed (bad flags, no command, an unreadable `--json` body), and for
