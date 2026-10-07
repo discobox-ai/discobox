@@ -257,3 +257,4 @@ duplicated number.
 | [26-10-02-054](26-10-02-054-commands-are-judged-by-default-and-requests-by-opt-in.md) | Commands are judged by default, and requests by opt-in | Accepted (relaxes [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md) for a server that turns command judging off) |
 | [26-10-02-411](26-10-02-411-wire-joins-the-root-module-because-a-sandbox-dials-vsock.md) | `wire` joins the root module, because a sandbox dials VSOCK | Accepted (supersedes [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §2's placement of `wire` and `vsock` in the pool-agent module) |
 | [26-10-07-640](26-10-07-640-jevs-claim-of-approval-hazard-is-told-what-its-evidence-is.md) | Jev's claim-of-approval hazard is told what its evidence is | Accepted |
+| [26-10-07-937](26-10-07-937-every-jev-refusal-goes-to-the-judge-discobox.md) | Every Jev refusal goes to the judge discobox | Proposed |
