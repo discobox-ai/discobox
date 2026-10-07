@@ -1,0 +1,15 @@
+{
+  "name": "delegation-a-push-the-lead-narrowed",
+  "why": "The approving discobox narrowed the worker's use itself with --use. Reconstructed from approvals the claim-of-approval hazard refused at jev-5.",
+  "expect": "allow",
+  "job": {
+    "kind": "delegation",
+    "purpose": "git fetch from and git push to github.com/discobox-ai/discobox over https with the token, of branches named discobox/issue-N only and never main, including git push --force-with-lease to such a branch after a rebase, for the discoboxes I create\ngh pr create, gh pr view, gh pr list, gh pr edit, gh pr ready and gh pr comment on pull requests in discobox-ai/discobox from a discobox/issue-N branch into main, for the discoboxes I create",
+    "host": "github.com, api.github.com",
+    "credential": "com.github.api",
+    "round": 1,
+    "uses": [
+      "git fetch main from github.com/discobox-ai/discobox and git push the branch discobox/issue-46 to it over https; never main and never any other branch"
+    ]
+  }
+}

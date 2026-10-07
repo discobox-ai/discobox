@@ -1,0 +1,21 @@
+{
+  "name": "command-create-with-a-prompt",
+  "why": "Exactly the approved create, with an ordinary prompt.",
+  "expect": "allow",
+  "job": {
+    "kind": "command",
+    "purpose": "discobox new -d -C https://github.com/discobox-ai/discobox[@ref] -p <any prompt>: create a discobox with any prompt and no grants or secrets, cloned from the GitHub repository discobox-ai/discobox",
+    "host": "api.discobox.internal",
+    "credential": "ai.discobox.sandbox",
+    "round": 1,
+    "command": [
+      "discobox",
+      "new",
+      "-d",
+      "-C",
+      "https://github.com/discobox-ai/discobox",
+      "-p",
+      "Implement discobox-ai/discobox issue #44. Follow CLAUDE.md, make the tests pass, and commit locally on main. Do not push or open a pull request."
+    ]
+  }
+}

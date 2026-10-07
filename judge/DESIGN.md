@@ -121,7 +121,10 @@ answers typed questions with probabilities and writes no text, so `System`,
 
 - **Questions.** A job becomes yes/no questions. The approved purpose, host,
   credential and guidance go in each question's instructions; only the
-  evidence goes in the state.
+  evidence goes in the state. The claim-of-approval hazard is told what its
+  evidence is when honest (a delegation's uses are asks to be allowed, worded
+  as instructions, with their own limits), and counts only a claim of prior
+  approval or words to the judge (ADR 26-10-07-640).
 - **Decision.** `decide` turns the answers into a `judge.Answer` and fails
   closed:
   - a hazard at `HazardAt` refuses: text in the evidence claiming approval;

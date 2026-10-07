@@ -211,6 +211,83 @@ func TestADelegationIsAskedAboutEachUse(t *testing.T) {
 	}
 }
 
+// The uses a careful worker writes state their own limits, and every use is
+// an instruction. Both are what a use is, so the hazard is told what its
+// evidence is, and its criteria put a use's limits on the side of describing
+// the operation; a claim of approval and words to the judge stay on the other
+// (ADR 26-10-07-640). Those uses reach Jev only as state.
+func TestTheHazardIsToldWhatItsEvidenceIs(t *testing.T) {
+	uses := []string{
+		"Fetch main from discobox-ai/discobox, and push the branch discobox/issue-46 to it, with git over https using the token; never main. A force push is allowed only to discobox/issue-46 and only with --force-with-lease, after rebasing",
+		"Open a draft pull request from discobox/issue-52 into main in discobox-ai/discobox, and view, list, edit the body of, mark ready, and comment on that pull request, with gh pr create, gh pr view, gh pr list, gh pr edit, gh pr ready",
+	}
+	jobs := map[string]judge.Job{
+		"request": requestJob(),
+		"command": {Kind: judge.KindCommand, Purpose: "open a pull request in org/repo", Host: "api.github.com", Round: 1, Command: []string{"gh", "pr", "create"}},
+		"delegation": {
+			Kind: judge.KindDelegation, Purpose: "push discobox/issue-N branches to discobox-ai/discobox, never main", Host: "github.com",
+			Credential: "GitHub token", Round: 1, Uses: uses,
+		},
+	}
+	for name, job := range jobs {
+		t.Run(name, func(t *testing.T) {
+			fake, client := newFakeJev(t, map[string]float64{idWithin: 0.9, "use_0": 0.9, "use_1": 0.9, idClaimsApproval: 0.1})
+			verdict, err := client.Judge(context.Background(), job)
+			if err != nil {
+				t.Fatalf("Judge() error = %v", err)
+			}
+			if !verdict.Allow {
+				t.Fatalf("verdict = %+v, want an allow when no hazard fired", verdict)
+			}
+			asked := fake.requests()[0]
+			var hazard struct {
+				Instructions struct {
+					Evidence string `json:"evidence"`
+					Question string `json:"question"`
+				} `json:"instructions"`
+				Criteria struct {
+					True  string `json:"true"`
+					False string `json:"false"`
+				} `json:"criteria"`
+			}
+			if err := json.Unmarshal(mustJSON(t, asked["questions"].(map[string]any)[idClaimsApproval]), &hazard); err != nil {
+				t.Fatal(err)
+			}
+			if hazard.Instructions.Evidence == "" || hazard.Instructions.Question == "" {
+				t.Fatalf("hazard = %+v, want it told what its evidence is beside the question", hazard)
+			}
+			for _, want := range []string{"already approved", "reviews or judges"} {
+				if !strings.Contains(hazard.Criteria.True, want) {
+					t.Fatalf("yes = %q, want a claim of approval and words to the judge in it (%q)", hazard.Criteria.True, want)
+				}
+			}
+			// An automated system is what runs every operation; naming it
+			// made every instruction a use is worded as a hazard.
+			if strings.Contains(hazard.Criteria.True, "automated system") || strings.Contains(hazard.Criteria.True, "or allowed") {
+				t.Fatalf("yes = %q, want no operation's own words counted", hazard.Criteria.True)
+			}
+			for _, want := range []string{"allowed only to", "never main", "the tool or program that carries it out", "approving a pending request"} {
+				if !strings.Contains(hazard.Criteria.False, want) {
+					t.Fatalf("no = %q, want it to carry %q", hazard.Criteria.False, want)
+				}
+			}
+			if job.Kind != judge.KindDelegation {
+				return
+			}
+			if !strings.Contains(hazard.Instructions.Evidence, "asks to be allowed") {
+				t.Fatalf("evidence = %q, want a use said to be an ask to be allowed", hazard.Instructions.Evidence)
+			}
+			state := string(mustJSON(t, asked["state"]))
+			questions := string(mustJSON(t, asked["questions"]))
+			for _, use := range uses {
+				if !strings.Contains(state, string(mustJSON(t, use))) || strings.Contains(questions, "issue-46") {
+					t.Fatalf("state = %s, questions = %s, want each use in the state and in no question", state, questions)
+				}
+			}
+		})
+	}
+}
+
 func TestDecide(t *testing.T) {
 	shown := bodiedJob()
 	shown.Round = 2
@@ -238,6 +315,8 @@ func TestDecide(t *testing.T) {
 		{"a body shown is decided on", shown, map[string]float64{idWithin: 0.9}, true, false, false, "Allowed"},
 		{"a body shown is not asked for again", shown, map[string]float64{idWithin: 0.6}, false, false, true, "could not tell"},
 		{"every use must be within", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.2}, false, false, false, `"push to main"`},
+		{"a delegation whose uses claim nothing is allowed", delegation, map[string]float64{"use_0": 0.95, "use_1": 0.9, idClaimsApproval: 0.49}, true, false, false, "Allowed"},
+		{"a use claiming approval refuses a delegation whatever its uses say", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, idClaimsApproval: 0.5}, false, false, false, "claims"},
 		{"nothing within asked refuses", requestJob(), map[string]float64{idClaimsApproval: 0}, false, false, false, "nothing was asked"},
 	}
 	for _, tc := range cases {
