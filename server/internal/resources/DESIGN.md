@@ -125,18 +125,32 @@ there is nothing to reach, so the bound is `judge.Timeout` alone. Everything
 around the call is unchanged: the question read from the live grant, standing
 rows (Jev proposes none, but rows a judge discobox left still cover until they
 lapse), the re-check of the use, and the verdict recorded first. A Jev verdict
-names its `Model`, the `Probabilities` it was decided from, and
-`jev.QuestionsVersion` as its prompt version, in place of a discobox, harness
-and image. Jev refusing the key, being too busy, or saying something that is
+names its `Model`, the `Probabilities` it was decided from, `JevInput` (exactly
+what Jev was sent, `jev.Verdict.Input`), and `jev.QuestionsVersion` as its
+prompt version, in place of a discobox, harness and image. Jev refusing the key, being too busy, or saying something that is
 not an answer are each no verdict, and what Jev said goes to the log, not to
 the discobox.
 
 With `jevUnsure: harness`, the default, a project keeps its judge discobox, and `put` asks it
-about exactly the jobs Jev refused as unsure (`jev.Verdict.Unsure`). Its
-answer is the verdict, recorded with Jev's model and probabilities beside the
-discobox that decided. The bound is a judge discobox's, since one may have to
-be reached. A judge discobox that cannot be had leaves Jev's refusal standing
-and recorded, rather than no verdict.
+about every job Jev does not allow (ADR 26-10-07-937): a clear no, a no Jev
+could not tell, and a hazard alike, for commands, requests and delegations. Jev
+alone decides only its allows. An ask to be shown the body is not a refusal: it
+goes back to the pool. A later round is Jev's only when Jev asked for it
+(`jevsRound`): nothing in an ask names the round before it, so that round is
+looked for as the recorded body ask (`store.BodyAsks`, read from the primary,
+since a replica may not have it yet) for the same discobox, use and request
+one round earlier, within the bound. A round that finds Jev's own ask, and no
+judge discobox's, is put to Jev first again. Every other later round goes to
+the judge discobox alone, whether the discobox asked for it or the search
+missed, so Jev never decides a round it did not ask to see; a miss costs a
+discobox call. The judge discobox's answer is the
+verdict, recorded with Jev's model, probabilities and input beside the discobox
+that decided. The bound is a judge discobox's, since one may have to be
+reached. A judge discobox that cannot be had, or runs out the bound, leaves
+Jev's refusal standing and recorded rather than no verdict: the re-check of
+the use and the record run on a deadline of their own (`recordTimeout`), not
+the judge's. A round the discobox took over has no Jev refusal to stand, so a
+discobox that cannot answer it is no verdict.
 
 Judge-mode discoboxes are left out of listings unless asked for
 (`store.IncludingJudges`, the API's `includeJudge`, `discobox admin box ls

@@ -550,9 +550,13 @@ type approvedUses struct {
 	asked *int
 }
 
-func (a approvedUses) ApprovedUse(context.Context, string, string, string, string) (services.ApprovedUse, error) {
+func (a approvedUses) ApprovedUse(ctx context.Context, _, _, _, _ string) (services.ApprovedUse, error) {
 	if a.asked != nil {
 		*a.asked++
+	}
+	// The real one reads the store, which fails on a context that is done.
+	if err := ctx.Err(); err != nil {
+		return services.ApprovedUse{}, err
 	}
 	if a.err != nil {
 		return services.ApprovedUse{}, a.err
@@ -671,15 +675,22 @@ func newAnsweringJudge(t *testing.T, answer sandboxapi.JudgeAnswer) *answeringJu
 		}
 		fake.mu.Lock()
 		fake.jobs = append(fake.jobs, job)
+		answer := fake.answer
 		fake.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		// Through the pointer: by value, an unset optional field marshals to
 		// nothing and takes the whole encode with it.
-		answer := fake.answer
 		_ = json.NewEncoder(w).Encode(&answer)
 	}))
 	t.Cleanup(fake.server.Close)
 	return fake
+}
+
+// say changes what it answers from the next ask on.
+func (f *answeringJudge) say(answer sandboxapi.JudgeAnswer) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.answer = answer
 }
 
 func (f *answeringJudge) asked() []sandboxapi.JudgeJob {

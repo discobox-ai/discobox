@@ -150,16 +150,19 @@ type answer struct {
 	Noul *float64 `json:"noul"`
 }
 
-// ask sends one request and returns the probability of yes for each question,
-// and the versioned model that answered. Every question asked must come back
-// as a noul between 0 and 1; anything else is no answer.
-func (c *Client) ask(ctx context.Context, state any, questions map[string]question) (map[string]float64, string, error) {
-	body, err := json.Marshal(request{State: state, Model: c.model, Questions: questions})
-	if err != nil {
-		return nil, "", err
-	}
+// input is the body of the request that asks Jev questions about state: what
+// Jev is sent, byte for byte, and what a verdict records it was sent.
+func (c *Client) input(state any, questions map[string]question) (json.RawMessage, error) {
+	return json.Marshal(request{State: state, Model: c.model, Questions: questions})
+}
+
+// ask sends input, the body c.input built, and returns the probability of yes
+// for each of questions, and the versioned model that answered. Every
+// question asked must come back as a noul between 0 and 1; anything else is
+// no answer.
+func (c *Client) ask(ctx context.Context, input json.RawMessage, questions map[string]question) (map[string]float64, string, error) {
 	var answered response
-	if err := c.post(ctx, body, &answered); err != nil {
+	if err := c.post(ctx, input, &answered); err != nil {
 		return nil, "", err
 	}
 	probabilities := make(map[string]float64, len(questions))

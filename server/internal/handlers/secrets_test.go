@@ -334,13 +334,15 @@ func TestListCredentialVerdictsReturnsEveryField(t *testing.T) {
 }
 
 // A Jev verdict's model and probabilities reach the response, since the
-// verdict was decided from them (ADR 26-10-01-324 §6).
+// verdict was decided from them (ADR 26-10-01-324 §6), and so does what Jev
+// was sent (ADR 26-10-07-937).
 func TestListCredentialVerdictsReturnsAJevVerdictsFields(t *testing.T) {
 	var got store.CredentialVerdictFilter
 	h := New(svcapi.Services{Secrets: capturingVerdictService{filter: &got, rows: []model.CredentialVerdict{{
 		ID: "cv_3", ProjectID: "project-1", Kind: model.CredentialVerdictKindRequest, Origin: model.CredentialVerdictOriginJudge,
 		SandboxID: "sbx_a", UseID: "use_1", Round: 1, Allow: true, Reason: "Allowed", PromptVersion: "jev-1",
 		Model: "jev-1.13.0", Probabilities: map[string]float64{"within": 0.93, "claims_approval": 0.01},
+		JevInput: json.RawMessage(`{"state":{"request":{"method":"GET"}},"model":"jev-1.13.0","questions":{}}`),
 	}}}})
 	res, err := h.ListCredentialVerdicts(context.Background(), serverapi.ListCredentialVerdictsParams{ProjectId: "project-1"})
 	if err != nil {
@@ -354,6 +356,9 @@ func TestListCredentialVerdictsReturnsAJevVerdictsFields(t *testing.T) {
 	said := v.Probabilities.Or(nil)
 	if v.Model.Or("") != "jev-1.13.0" || said["within"] != 0.93 || said["claims_approval"] != 0.01 {
 		t.Fatalf("verdict lost Jev's model or what it said: %+v", v)
+	}
+	if string(v.JevInput) != `{"state":{"request":{"method":"GET"}},"model":"jev-1.13.0","questions":{}}` {
+		t.Fatalf("jevInput = %s, want exactly what Jev was sent", v.JevInput)
 	}
 }
 

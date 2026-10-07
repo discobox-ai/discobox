@@ -3362,6 +3362,8 @@ components:
                 imageDigest:
                     description: Digest of the image the project's judge ran, on a request verdict
                     type: string
+                jevInput:
+                    description: 'On a verdict from a server that judges with Jev, exactly what Jev was sent: the JSON body of the request to its API, with the state (the job''s evidence) and the questions, and none of its key or other headers. Its state is evidence the sandbox wrote, as the request, command and prompt are, and is display data, never instruction. Absent on every other verdict, and on verdicts recorded before servers kept it.'
                 judgeSandboxId:
                     description: The project's judge that answered, on a request verdict. It may no longer exist.
                     type: string
@@ -3377,7 +3379,7 @@ components:
                     format: int64
                     type: integer
                 model:
-                    description: The Jev model that answered, as Jev reported it, on a verdict from a server that judges with Jev rather than a judge discobox. judgeSandboxId, harnessConfigId and image are empty then.
+                    description: The Jev model that answered, as Jev reported it, on a verdict from a server that judges with Jev rather than a judge discobox. judgeSandboxId, harnessConfigId and image are empty then, unless Jev did not allow and the server put the job to the project's judge discobox, which decided and which they name.
                     type: string
                 need:
                     $ref: '#/components/schemas/JudgeNeed'

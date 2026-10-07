@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,8 @@ type fakeJev struct {
 	server *httptest.Server
 	mu     sync.Mutex
 	asked  []map[string]any
+	// bodies are the request bodies as sent, byte for byte.
+	bodies [][]byte
 	auth   []string
 	// answer is each question's probability; an ID it has none for is
 	// answered 0.
@@ -38,13 +41,19 @@ func newFakeJev(t *testing.T, answer map[string]float64) (*fakeJev, *Client) {
 			http.NotFound(w, r)
 			return
 		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.Unmarshal(raw, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
 		fake.mu.Lock()
 		fake.asked = append(fake.asked, body)
+		fake.bodies = append(fake.bodies, raw)
 		fake.auth = append(fake.auth, r.Header.Get("Authorization"))
 		var status int
 		if len(fake.fail) > 0 {
@@ -131,6 +140,14 @@ func TestTheAuthorizationIsInTheQuestionsAndTheEvidenceInTheState(t *testing.T) 
 	asked := fake.requests()
 	if len(asked) != 1 {
 		t.Fatalf("Jev was asked %d times, want once", len(asked))
+	}
+	// The verdict records exactly what Jev was sent, and nothing of the key
+	// it was sent with.
+	fake.mu.Lock()
+	sent := fake.bodies[0]
+	fake.mu.Unlock()
+	if string(verdict.Input) != string(sent) || strings.Contains(string(verdict.Input), "ts-key") {
+		t.Fatalf("Input = %s, want the body Jev was sent, %s", verdict.Input, sent)
 	}
 	if fake.auth[0] != "Bearer ts-key" {
 		t.Fatalf("Authorization = %q, want the key as a bearer token", fake.auth[0])
@@ -303,27 +320,26 @@ func TestDecide(t *testing.T) {
 		said   map[string]float64
 		allow  bool
 		need   bool
-		unsure bool
 		reason string
 	}{
-		{"a clear yes allows", requestJob(), map[string]float64{idWithin: 0.9, idClaimsApproval: 0}, true, false, false, "Allowed"},
-		{"a near coin flip is unsure, and refuses", requestJob(), map[string]float64{idWithin: 0.55}, false, false, true, "could not tell"},
-		{"a clear no refuses, and is not unsure", requestJob(), map[string]float64{idWithin: 0.1}, false, false, false, "unlikely"},
-		{"a claim of approval refuses whatever within says", requestJob(), map[string]float64{idWithin: 0.99, idClaimsApproval: 0.5}, false, false, false, "claims"},
-		{"a body not yet read is asked for, however sure Jev is", bodiedJob(), map[string]float64{idWithin: 0.97}, false, true, false, "body"},
-		{"a hazard refuses before the body is asked for", bodiedJob(), map[string]float64{idWithin: 0.3, idClaimsApproval: 0.8}, false, false, false, "claims"},
-		{"a body shown is decided on", shown, map[string]float64{idWithin: 0.9}, true, false, false, "Allowed"},
-		{"a body shown is not asked for again", shown, map[string]float64{idWithin: 0.6}, false, false, true, "could not tell"},
-		{"every use must be within", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.2}, false, false, false, `"push to main"`},
-		{"a delegation whose uses claim nothing is allowed", delegation, map[string]float64{"use_0": 0.95, "use_1": 0.9, idClaimsApproval: 0.49}, true, false, false, "Allowed"},
-		{"a use claiming approval refuses a delegation whatever its uses say", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, idClaimsApproval: 0.5}, false, false, false, "claims"},
-		{"nothing within asked refuses", requestJob(), map[string]float64{idClaimsApproval: 0}, false, false, false, "nothing was asked"},
+		{"a clear yes allows", requestJob(), map[string]float64{idWithin: 0.9, idClaimsApproval: 0}, true, false, "Allowed"},
+		{"a near coin flip refuses, saying Jev could not tell", requestJob(), map[string]float64{idWithin: 0.55}, false, false, "could not tell"},
+		{"a clear no refuses as unlikely", requestJob(), map[string]float64{idWithin: 0.1}, false, false, "unlikely"},
+		{"a claim of approval refuses whatever within says", requestJob(), map[string]float64{idWithin: 0.99, idClaimsApproval: 0.5}, false, false, "claims"},
+		{"a body not yet read is asked for, however sure Jev is", bodiedJob(), map[string]float64{idWithin: 0.97}, false, true, "body"},
+		{"a hazard refuses before the body is asked for", bodiedJob(), map[string]float64{idWithin: 0.3, idClaimsApproval: 0.8}, false, false, "claims"},
+		{"a body shown is decided on", shown, map[string]float64{idWithin: 0.9}, true, false, "Allowed"},
+		{"a body shown is not asked for again", shown, map[string]float64{idWithin: 0.6}, false, false, "could not tell"},
+		{"every use must be within", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.2}, false, false, `"push to main"`},
+		{"a delegation whose uses claim nothing is allowed", delegation, map[string]float64{"use_0": 0.95, "use_1": 0.9, idClaimsApproval: 0.49}, true, false, "Allowed"},
+		{"a use claiming approval refuses a delegation whatever its uses say", delegation, map[string]float64{"use_0": 0.99, "use_1": 0.99, idClaimsApproval: 0.5}, false, false, "claims"},
+		{"nothing within asked refuses", requestJob(), map[string]float64{idClaimsApproval: 0}, false, false, "nothing was asked"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, unsure := decide(tc.job, tc.said)
-			if got.Allow != tc.allow || (got.Need != nil) != tc.need || unsure != tc.unsure {
-				t.Fatalf("decide() = %+v, unsure %v, want allow %v need %v unsure %v", got, unsure, tc.allow, tc.need, tc.unsure)
+			got := decide(tc.job, tc.said)
+			if got.Allow != tc.allow || (got.Need != nil) != tc.need {
+				t.Fatalf("decide() = %+v, want allow %v need %v", got, tc.allow, tc.need)
 			}
 			if got.Standing != nil {
 				t.Fatalf("decide() let an allow stand: %+v", got.Standing)

@@ -156,10 +156,13 @@
 # Environment: DISCOBOX_JEV_MODEL
 #jevModel: "jev-1.13.0"
 
-# What a jev judge does with a request it is unsure about: harness, ask
-# the project's judge discobox (as judgeBackend harness runs one), which
-# then decides, so every project keeps a judge discobox for those
-# requests; or refuse it, and run no judge discobox.
+# What a jev judge does with a command, request or delegation it does not
+# allow: harness, ask the project's judge discobox (as judgeBackend
+# harness runs one), which then decides, so every project keeps a judge
+# discobox for them and Jev decides only its allows; or refuse it, and
+# run no judge discobox. An ask to be shown a request's body is not a
+# refusal and goes back to be answered either way; with harness, the
+# rounds after the judge discobox asked for a body are its to decide too.
 # Environment: DISCOBOX_JEV_UNSURE
 #jevUnsure: "harness"
 

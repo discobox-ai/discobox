@@ -186,7 +186,9 @@ func (a *App) printCredentialVerdictRecord(ctx context.Context, out io.Writer, a
 	if asJSON {
 		return writeTerminalSafeJSON(out, &verdicts[0])
 	}
-	return writeCredentialVerdictBlocks(out, verdicts[:1])
+	// One record is printed in full, which for a Jev verdict includes exactly
+	// what Jev was sent.
+	return writeCredentialVerdictBlocks(out, verdicts[:1], true)
 }
 
 // printSandboxTrailRecord reads one record the discobox keeps inside itself.

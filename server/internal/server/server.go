@@ -206,7 +206,7 @@ func Run(ctx context.Context) error {
 		ArchiveRetention:               cfg.ArchiveRetention,
 		Judging:                        judges.Judging{Commands: cfg.JudgeCommands, Requests: cfg.JudgeCredentials},
 		JudgeJev:                       judgeJev,
-		JudgeJevFallback:               cfg.JevUnsure == config.JevUnsureHarness,
+		JudgeJevFallback:               cfg.JevRefusal == config.JevRefusalHarness,
 		ServerDefaults: dockerworker.ServerDefaults{
 			PoolImage:      cfg.DockerPoolImage,
 			Release:        cfg.Release,

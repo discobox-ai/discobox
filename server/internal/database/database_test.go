@@ -1551,6 +1551,64 @@ func TestMigrateNormalizesCredentialVerdictTimesToUTC(t *testing.T) {
 	}
 }
 
+// A verdict written before jev_input existed keeps its row and reads back with
+// no Jev input, and the column the upgrade adds holds what Jev was sent byte
+// for byte (ADR 26-10-07-937).
+func TestMigrateAddsTheJevInputColumnToExistingVerdicts(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	if err := db.Write.Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	// The table as a server before the column had it, with a Jev verdict in it.
+	if err := db.Write.Exec("ALTER TABLE credential_verdicts DROP COLUMN jev_input").Error; err != nil {
+		t.Fatalf("drop jev_input: %v", err)
+	}
+	if err := db.Write.Exec("INSERT INTO credential_verdicts (id, project_id, kind, origin, sandbox_id, use_id, allow, model, created_at) " +
+		"VALUES ('cv_legacy', 'project-1', 'request', 'judge', 'sbx_a', 'use_1', false, 'jev-1.13.0', '2026-10-01 10:00:00+00:00')").Error; err != nil {
+		t.Fatalf("create legacy verdict: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+	var legacy model.CredentialVerdict
+	if err := db.Write.First(&legacy, "id = ?", "cv_legacy").Error; err != nil {
+		t.Fatalf("read legacy verdict: %v", err)
+	}
+	if legacy.Model != "jev-1.13.0" || legacy.JevInput != nil {
+		t.Fatalf("legacy verdict = %+v, want it kept, with no Jev input", legacy)
+	}
+	sent := json.RawMessage(`{"state":{"command":["gh","pr","view"]},"model":"jev-1.13.0","questions":{"within":{"type":"noul","instructions":"\u003cplaceholder\u003e"}}}`)
+	if err := db.Write.Create(&model.CredentialVerdict{
+		ID: "cv_jev", ProjectID: "project-1", Kind: "command", Origin: "judge", SandboxID: "sbx_a", UseID: "use_1",
+		Model: "jev-1.13.0", JevInput: sent,
+	}).Error; err != nil {
+		t.Fatalf("create verdict: %v", err)
+	}
+	var got model.CredentialVerdict
+	if err := db.Write.First(&got, "id = ?", "cv_jev").Error; err != nil {
+		t.Fatalf("read verdict: %v", err)
+	}
+	if string(got.JevInput) != string(sent) {
+		t.Fatalf("JevInput = %s, want exactly %s", got.JevInput, sent)
+	}
+}
+
 // A secret written before value_updated_at existed gets the time its value was
 // last written, so its lifetime does not restart on the next rename.
 func TestMigrateBackfillsSecretValueUpdatedAt(t *testing.T) {

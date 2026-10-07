@@ -170,7 +170,7 @@ Keep files split by resource area:
 | `pools.go` | Pool persistence: CRUD, agent registration and heartbeats, bootstrap tokens, telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `secrets.go`, `secret_grants.go` | Secrets (sealed values), secret requests, and host-scoped grants. |
 | `sandbox_secrets.go` | Sandbox secret assignments and agent credentials. |
-| `credential_verdicts.go` | Recorded credential verdicts, command and request: written per decision, read per project through `CredentialVerdictFilter`. |
+| `credential_verdicts.go` | Recorded credential verdicts, command and request: written per decision, read per project through `CredentialVerdictFilter`; the judge reads its standing allows (`StandingVerdicts`) and a round's asks for a body (`BodyAsks`, from the primary: a read-after-write that decides who answers the next round) directly. |
 | `ssh_keys.go` | Project SSH keys. |
 | `peers.go` | Enrolled peers, looked up by ID or validated prefix. |
 | `server_state.go` | Server-wide key/value markers (e.g. one-time seeding). |

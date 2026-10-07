@@ -1619,7 +1619,12 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 `request`, a request the proxy observed; and `delegation`, a discobox handing a
 credential on. The control plane records each `judge` before it answers. A
 `command` row of origin `sandbox` predates that: a discobox's own judge's word.
-`RTT` is the round trip each asker timed.
+`RTT` is the round trip each asker timed. `--prompt` prints each verdict in
+full; `--jev-input` does too, with exactly what Jev was sent on a server that
+judges with Jev (the request body to its API, laid out with `json.Indent`,
+which changes only whitespace), and escaped as data like the prompt. A verdict
+the judge discobox decided after Jev did not allow names both
+(ADR 26-10-07-937).
 `refresh` is the asks for a new value of a token and how each closed
 (ADR 26-09-25-122 §6), two events per request — `asked`, then `answered` or
 `dismissed` — so a follower reading forward by time sees the answer arrive
@@ -1684,7 +1689,7 @@ records.
   the pool the discobox runs on — resolved from the discobox, since a record ID
   is only unique on one pool, with `--pool` for a discobox that is gone — and
   shows the fields no listing carries. `cvd_…` is a verdict, printed like
-  `creds --prompt`. `evt_…` is a hook or an exec event, and since the sandbox
+  `creds --prompt --jev-input`. `evt_…` is a hook or an exec event, and since the sandbox
   agent numbers both from one sequence, both trails are asked; an ID is in at
   most one. A read that fails for a reason of its own (a stopped discobox
   answers 409) is reported as that, not as "no such record". Recorded bodies

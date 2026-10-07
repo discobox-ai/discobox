@@ -59,8 +59,9 @@ type Service struct {
 	// so (ADR 26-10-01-324). It is the server's choice, like enabled: no
 	// project has a judge discobox then, and every job goes to Jev.
 	jev *jev.Client
-	// jevFallback sends what Jev is unsure of on to the project's judge
-	// discobox, which every project then keeps (jevUnsure: harness).
+	// jevFallback sends every job Jev refuses on to the project's judge
+	// discobox, which every project then keeps (jevUnsure: harness,
+	// ADR 26-10-07-937).
 	jevFallback bool
 }
 
@@ -82,7 +83,7 @@ func (j Judging) Any() bool { return j.Commands || j.Requests }
 
 // New is the judges service. jevClient is nil for a server whose judge is a
 // discobox per project, and the Jev it asks otherwise; jevFallback has Jev's
-// unsure refusals put to the project's judge discobox instead.
+// refusals put to the project's judge discobox, which decides them.
 func New(appStore *store.Store, sandboxes Sandboxes, logger *slog.Logger, judging Judging, jevClient *jev.Client, jevFallback bool) *Service {
 	if logger == nil {
 		logger = slog.Default()
@@ -227,9 +228,9 @@ func (s *Service) wanted(ctx context.Context, project *model.Project, record boo
 	}
 	// Jev is asked by this server, so no discobox is wanted to ask, and one
 	// left from before the server switched is taken away like any other
-	// judge nothing wants — unless what Jev is unsure of goes on to one.
+	// judge nothing wants — unless what Jev refuses goes on to one.
 	if s.jev != nil && !s.jevFallback {
-		return nil, "this server judges with Jev and refuses what it is unsure of, so it runs no judge discobox", nil
+		return nil, "this server judges with Jev and lets its refusals stand, so it runs no judge discobox", nil
 	}
 	poolID, err := s.judgePool(ctx, project, record)
 	if err != nil {

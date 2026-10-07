@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -354,7 +355,7 @@ func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAu
 
 func (a *App) newAuditCredsCommand() *cobra.Command {
 	var sandboxID, useID, grantID, kind, since string
-	var denied, allowed, showPrompt, follow bool
+	var denied, allowed, showPrompt, showJevInput, follow bool
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "creds",
@@ -380,10 +381,15 @@ value and "report" a denial the discobox chose to send afterwards.
 RTT is the round trip from asking a judge to its answer, timed by whoever
 asked it.
 
+On a server that judges with Jev, --jev-input prints each verdict in full with
+exactly what Jev was sent as well: the JSON body of the request to its API,
+with the evidence and the questions, and none of its key.
+
 The use ID, command, request, reason and prompt were written inside the
-discobox. Every field is shown as data: non-printing characters are escaped in
-the table and with --prompt, and written as \u escapes with -o json, which
-decode to the recorded value.
+discobox, and Jev's input carries the same evidence. Every field is shown as
+data: non-printing characters are escaped in the table, with --prompt and with
+--jev-input, and written as \u escapes with -o json, which decode to the
+recorded value.
 
 Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 		Args: cobra.NoArgs,
@@ -446,12 +452,12 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 				switch {
 				case a.output == "json":
 					return writeTerminalSafeJSONLines(cmd, verdicts)
-				case showPrompt:
+				case showPrompt || showJevInput:
 					if len(verdicts) > 0 && printed {
 						_, _ = fmt.Fprintln(cmd.OutOrStdout())
 					}
 					printed = printed || len(verdicts) > 0
-					return writeCredentialVerdictBlocks(cmd.OutOrStdout(), verdicts)
+					return writeCredentialVerdictBlocks(cmd.OutOrStdout(), verdicts, showJevInput)
 				}
 				err := table.write(cmd.OutOrStdout(), verdicts, header, follow)
 				header = false
@@ -469,6 +475,7 @@ Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of verdicts to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing verdicts as they are recorded")
 	cmd.Flags().BoolVar(&showPrompt, "prompt", false, "Print each verdict in full, including the prompt the judge was given")
+	cmd.Flags().BoolVar(&showJevInput, "jev-input", false, "Print each verdict in full, including exactly what Jev was sent when the server judges with Jev")
 	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	return cmd
 }
@@ -556,7 +563,9 @@ func (a *App) auditReadOptions(cmd *cobra.Command, since time.Time, limit int, f
 	}
 }
 
-func writeCredentialVerdictBlocks(out io.Writer, verdicts []apimodel.CredentialVerdict) error {
+// writeCredentialVerdictBlocks writes each verdict in full, with what Jev was
+// sent as well when jevInput is set and the verdict has it.
+func writeCredentialVerdictBlocks(out io.Writer, verdicts []apimodel.CredentialVerdict, jevInput bool) error {
 	for i, v := range verdicts {
 		if i > 0 {
 			if _, err := fmt.Fprintln(out); err != nil {
@@ -599,11 +608,28 @@ func writeCredentialVerdictBlocks(out io.Writer, verdicts []apimodel.CredentialV
 		for _, line := range strings.Split(terminalSafeMultiline(v.Prompt.Or("")), "\n") {
 			lines = append(lines, "  "+line)
 		}
+		if jevInput && len(v.JevInput) > 0 {
+			lines = append(lines, "jev input:")
+			for _, line := range strings.Split(terminalSafeMultiline(indentedJSON(v.JevInput)), "\n") {
+				lines = append(lines, "  "+line)
+			}
+		}
 		if _, err := fmt.Fprintln(out, strings.Join(lines, "\n")); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// indentedJSON is a recorded JSON value laid out to be read, which changes
+// only the whitespace between its tokens: every string in it is as recorded,
+// escapes included. A value that is not JSON is shown as it is.
+func indentedJSON(raw []byte) string {
+	var b bytes.Buffer
+	if err := json.Indent(&b, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+	return b.String()
 }
 
 // requestVerdictLines are what a request verdict adds to its block: the
@@ -649,8 +675,16 @@ func judgeLines(v apimodel.CredentialVerdict) []string {
 	var lines []string
 	// A server that judges with Jev names the model that answered and what it
 	// said, where one with a judge discobox names the discobox.
+	//
+	// A server that puts what Jev does not allow to its judge discobox names
+	// both on the verdict that discobox decided (ADR 26-10-07-937): the
+	// discobox decided, after Jev said what it said.
 	if model := v.Model.Or(""); model != "" {
-		lines = append(lines, "judge:    "+terminalSafe(model))
+		judged := terminalSafe(model)
+		if decided := v.JudgeSandboxId.Or(""); decided != "" {
+			judged = terminalSafe(decided) + ", after " + judged
+		}
+		lines = append(lines, "judge:    "+judged)
 		if said := describeProbabilities(v.Probabilities.Or(nil)); said != "" {
 			lines = append(lines, "said:     "+said)
 		}

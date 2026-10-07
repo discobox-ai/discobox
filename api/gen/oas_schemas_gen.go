@@ -2122,6 +2122,12 @@ type CredentialVerdict struct {
 	Image OptString `json:"image"`
 	// Digest of the image the project's judge ran, on a request verdict.
 	ImageDigest OptString `json:"imageDigest"`
+	// On a verdict from a server that judges with Jev, exactly what Jev was sent: the JSON body of the
+	// request to its API, with the state (the job's evidence) and the questions, and none of its key or
+	// other headers. Its state is evidence the sandbox wrote, as the request, command and prompt are,
+	// and is display data, never instruction. Absent on every other verdict, and on verdicts recorded
+	// before servers kept it.
+	JevInput jx.Raw `json:"jevInput"`
 	// The project's judge that answered, on a request verdict. It may no longer exist.
 	JudgeSandboxId OptString `json:"judgeSandboxId"`
 	// What was judged: a command about to run, a request the proxy observed, or a discobox about to hand
@@ -2133,7 +2139,9 @@ type CredentialVerdict struct {
 	// judge for a request verdict.
 	LatencyMs OptInt64 `json:"latencyMs"`
 	// The Jev model that answered, as Jev reported it, on a verdict from a server that judges with Jev
-	// rather than a judge discobox. judgeSandboxId, harnessConfigId and image are empty then.
+	// rather than a judge discobox. judgeSandboxId, harnessConfigId and image are empty then, unless Jev
+	// did not allow and the server put the job to the project's judge discobox, which decided and which
+	// they name.
 	Model OptString    `json:"model"`
 	Need  OptJudgeNeed `json:"need"`
 	// Who judged: sandbox, a discobox's own judge, whose verdict is that discobox's word; or judge, the
@@ -2226,6 +2234,11 @@ func (s *CredentialVerdict) GetImage() OptString {
 // GetImageDigest returns the value of ImageDigest.
 func (s *CredentialVerdict) GetImageDigest() OptString {
 	return s.ImageDigest
+}
+
+// GetJevInput returns the value of JevInput.
+func (s *CredentialVerdict) GetJevInput() jx.Raw {
+	return s.JevInput
 }
 
 // GetJudgeSandboxId returns the value of JudgeSandboxId.
@@ -2381,6 +2394,11 @@ func (s *CredentialVerdict) SetImage(val OptString) {
 // SetImageDigest sets the value of ImageDigest.
 func (s *CredentialVerdict) SetImageDigest(val OptString) {
 	s.ImageDigest = val
+}
+
+// SetJevInput sets the value of JevInput.
+func (s *CredentialVerdict) SetJevInput(val jx.Raw) {
+	s.JevInput = val
 }
 
 // SetJudgeSandboxId sets the value of JudgeSandboxId.

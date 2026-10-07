@@ -279,6 +279,48 @@ func TestAuditCredsPromptShowsJevsVerdict(t *testing.T) {
 	}
 }
 
+// jevInputVerdict is a command Jev refused and the project's judge discobox
+// then allowed, with what Jev was sent: the discobox's argv in its state, one
+// element of which carries a right-to-left override.
+const jevInputVerdict = `{"credentialVerdicts":[{
+	"id":"cvd_1","projectId":"project-1","kind":"command","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
+	"allow":true,"volunteered":false,"createdAt":"2026-10-07T10:00:00Z","command":["discobox","new","-p","fix it` + "\u202e" + `"],
+	"reason":"creating a discobox from the repository","prompt":"{}","promptVersion":"2","latencyMs":2400,
+	"model":"jev-1.13.0","probabilities":{"within":0.25,"claims_approval":0.02},"judgeSandboxId":"sbx_judge",
+	"jevInput":{"state":{"command":["discobox","new","-p","fix it` + "\u202e" + `"]},"model":"jev-1.13.0","questions":{"within":{"type":"noul"}}}
+}]}`
+
+// --jev-input prints exactly what Jev was sent, laid out and escaped as data,
+// and the verdict names the judge discobox that decided after Jev
+// (ADR 26-10-07-937). Without it, the block leaves Jev's input out.
+func TestAuditCredsJevInputShowsWhatJevWasSent(t *testing.T) {
+	_, out, err := runAuditCreds(t, jevInputVerdict, "--jev-input")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	for _, want := range []string{
+		"judge:    sbx_judge, after jev-1.13.0",
+		"said:     claims_approval 0.02, within 0.25",
+		"jev input:\n  {\n    \"state\": {\n      \"command\": [",
+		`"fix it\u202e"`,
+		`"questions": {`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.ContainsRune(out, 0x202e) {
+		t.Fatalf("output is not terminal-safe:\n%s", out)
+	}
+	_, out, err = runAuditCreds(t, jevInputVerdict, "--prompt")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if strings.Contains(out, "jev input:") || !strings.Contains(out, "prompt:") {
+		t.Fatalf("--prompt printed Jev's input, or no prompt:\n%s", out)
+	}
+}
+
 // An allow the judge let stand says what it stands for and until when, and a
 // request it covered says so rather than reading as the judge's own answer.
 func TestAuditCredsShowsStandingAllows(t *testing.T) {
@@ -650,7 +692,7 @@ func TestADelegationVerdictSaysWhatItWasJudgedUnder(t *testing.T) {
 		t.Fatalf("judged = %q, want the delegation grant", got)
 	}
 	var out strings.Builder
-	if err := writeCredentialVerdictBlocks(&out, []apimodel.CredentialVerdict{v}); err != nil {
+	if err := writeCredentialVerdictBlocks(&out, []apimodel.CredentialVerdict{v}, false); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "command:") {

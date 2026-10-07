@@ -55,9 +55,9 @@ func (s *Service) JudgeDelegation(ctx context.Context, projectID string, ask ser
 	}
 
 	bound := min(s.judgeBound(), services.DelegationBound)
-	ctx, cancel := context.WithTimeout(ctx, bound)
+	judgeCtx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
-	decided, err := s.put(ctx, project, judgeSandbox, job, bound)
+	decided, err := s.put(judgeCtx, project, judgeSandbox, job, bound)
 	if err != nil {
 		return judge.Answer{}, err
 	}

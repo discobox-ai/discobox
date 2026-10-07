@@ -102,6 +102,31 @@ func (s *Store) ListCredentialVerdicts(ctx context.Context, projectID string, fi
 	return out, err
 }
 
+// BodyAsks returns the verdicts that asked to be shown a request's body for
+// one discobox and one use, in one round, recorded at or after since, newest
+// first. A pool asks again with the body under the same discobox and use and
+// the next round, and nothing else ties the rounds of one ask together, so
+// which ask a row belongs to — the request it was about — is the caller's to
+// match.
+//
+// It reads the primary, not a read replica: the row it looks for was written
+// there moments before the next round asks, and it decides who answers that
+// round, so a replica that has not caught up must not be what answers.
+func (s *Store) BodyAsks(ctx context.Context, projectID, sandboxID, useID string, round int, since time.Time) ([]model.CredentialVerdict, error) {
+	db, err := s.getWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.CredentialVerdict
+	// UTC for the reason StandingVerdicts compares in it.
+	err = db.Where("project_id = ? AND sandbox_id = ? AND use_id = ?", projectID, sandboxID, useID).
+		Where("kind = ? AND origin = ? AND round = ?", model.CredentialVerdictKindRequest, model.CredentialVerdictOriginJudge, round).
+		Where("need IS NOT NULL AND need <> 'null' AND created_at >= ?", since.UTC()).
+		Order("created_at DESC").Order("id DESC").
+		Find(&out).Error
+	return out, err
+}
+
 // StandingVerdicts returns the allows the project's judge let stand for one
 // discobox and one use that still stand at now, newest first (ADR 26-09-25-428
 // §3). Which of them covers a request — its host and its route — is the

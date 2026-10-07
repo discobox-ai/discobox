@@ -1540,7 +1540,15 @@ type CredentialVerdict struct {
 	// verdict, which is what every row written before Jev already is.
 	Model         string             `gorm:"column:model;not null;type:text;default:''" json:"model,omitempty" doc:"The Jev model that answered, when the server judges with Jev rather than a judge discobox"`
 	Probabilities map[string]float64 `gorm:"column:probabilities;type:text;serializer:json" json:"probabilities,omitempty" doc:"The probability of yes Jev gave each question the verdict was decided from, by question ID"`
-	Volunteered   bool               `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
+	// JevInput is exactly what Jev was sent when it was asked: the JSON body
+	// of the request to its API, with the state and the questions, and none
+	// of the key. It is the job's evidence in Jev's shape, so it carries what
+	// Prompt does — a discobox's request, command and stdin, redacted before
+	// the job was built, never a credential's value — and is display data the
+	// same way. Null on every other verdict, which is what every row written
+	// before it already is, so adding the column is the whole upgrade.
+	JevInput    json.RawMessage `gorm:"column:jev_input;type:text;serializer:json" json:"jevInput,omitempty" doc:"Exactly what Jev was sent, when it was asked: the JSON body of the request to its API, with the state and the questions"`
+	Volunteered bool            `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
 	// StandingRoute and StandingUntil are an allow the judge let stand, as
 	// the control plane admitted it (ADR 26-09-25-428): until then, a request
 	// from the same discobox, under the same use, to the same host, whose

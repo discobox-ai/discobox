@@ -370,15 +370,15 @@ func TestLoadJudgeBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.JudgeBackend != JudgeBackendHarness || cfg.JevModel != "jev-1.13.0" || cfg.JevUnsure != JevUnsureHarness {
-		t.Fatalf("JudgeBackend, JevModel, JevUnsure = %q, %q, %q, want auto to choose the judge discobox with no key",
-			cfg.JudgeBackend, cfg.JevModel, cfg.JevUnsure)
+	if cfg.JudgeBackend != JudgeBackendHarness || cfg.JevModel != "jev-1.13.0" || cfg.JevRefusal != JevRefusalHarness {
+		t.Fatalf("JudgeBackend, JevModel, JevRefusal = %q, %q, %q, want auto to choose the judge discobox with no key",
+			cfg.JudgeBackend, cfg.JevModel, cfg.JevRefusal)
 	}
 
-	// auto, with a key to ask Jev with, is Jev, and what Jev is unsure of goes
-	// to the judge discobox unless the server says to refuse it.
+	// auto, with a key to ask Jev with, is Jev, and what Jev refuses goes to
+	// the judge discobox unless the server says to let the refusal stand.
 	t.Setenv("DISCOBOX_JEV_API_KEY", "ts-key")
-	if cfg, err = Load(); err != nil || cfg.JudgeBackend != JudgeBackendJev || cfg.JevUnsure != JevUnsureHarness {
+	if cfg, err = Load(); err != nil || cfg.JudgeBackend != JudgeBackendJev || cfg.JevRefusal != JevRefusalHarness {
 		t.Fatalf("Load() = %+v, %v, want auto to choose Jev given a key", cfg, err)
 	}
 	t.Setenv("DISCOBOX_JUDGE_BACKEND", "harness")
@@ -399,9 +399,9 @@ func TestLoadJudgeBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.JudgeBackend != JudgeBackendJev || cfg.JevAPIKey != "ts-key" || cfg.JevModel != "jev-preview" || cfg.JevUnsure != JevUnsureRefuse {
-		t.Fatalf("cfg = %q, %q, %q, %q, want Jev with its key and model, refusing what it is unsure of",
-			cfg.JudgeBackend, cfg.JevAPIKey, cfg.JevModel, cfg.JevUnsure)
+	if cfg.JudgeBackend != JudgeBackendJev || cfg.JevAPIKey != "ts-key" || cfg.JevModel != "jev-preview" || cfg.JevRefusal != JevRefusalRefuse {
+		t.Fatalf("cfg = %q, %q, %q, %q, want Jev with its key and model, letting its refusals stand",
+			cfg.JudgeBackend, cfg.JevAPIKey, cfg.JevModel, cfg.JevRefusal)
 	}
 
 	t.Setenv("DISCOBOX_JEV_UNSURE", "llm")

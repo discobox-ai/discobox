@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -235,5 +236,44 @@ func TestStandingVerdictsAreTheLiveAllowsForOneUse(t *testing.T) {
 	}
 	if got, want := verdictIDs(rows), []string{"cv_live_new", "cv_live_old"}; !slices.Equal(got, want) {
 		t.Fatalf("StandingVerdicts() = %v, want %v", got, want)
+	}
+}
+
+// BodyAsks reads one discobox's asks for a body under one use, in one round,
+// since a time: what ties a later round of an ask to the one before it.
+func TestBodyAsksAreOneRoundsAsksForABody(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	project := &model.Project{Name: "rounds"}
+	if err := st.CreateProject(ctx, project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	at := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	request := func(id, sandbox, use string, round int, need bool, created time.Time) model.CredentialVerdict {
+		v := model.CredentialVerdict{ID: id, ProjectID: project.ID, Kind: model.CredentialVerdictKindRequest,
+			Origin: model.CredentialVerdictOriginJudge, SandboxID: sandbox, UseID: use, Round: round, CreatedAt: created}
+		if need {
+			v.Need = &judge.Need{Body: true}
+		}
+		return v
+	}
+	for _, v := range []model.CredentialVerdict{
+		request("cv_ask", "sbx_a", "use_1", 1, true, at),
+		request("cv_decided", "sbx_a", "use_1", 1, false, at),
+		request("cv_round2", "sbx_a", "use_1", 2, true, at),
+		request("cv_other_use", "sbx_a", "use_2", 1, true, at),
+		request("cv_other_box", "sbx_b", "use_1", 1, true, at),
+		request("cv_old", "sbx_a", "use_1", 1, true, at.Add(-time.Hour)),
+	} {
+		if err := st.CreateCredentialVerdict(ctx, &v); err != nil {
+			t.Fatalf("create verdict %s: %v", v.ID, err)
+		}
+	}
+	rows, err := st.BodyAsks(ctx, project.ID, "sbx_a", "use_1", 1, at.Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("BodyAsks() error = %v", err)
+	}
+	if got := verdictIDs(rows); !slices.Equal(got, []string{"cv_ask"}) {
+		t.Fatalf("BodyAsks() = %v, want only the round's ask for a body", got)
 	}
 }

@@ -91,9 +91,6 @@ type Run struct {
 	Answer  string        `json:"answer"`
 	Error   string        `json:"error,omitempty"`
 	Elapsed time.Duration `json:"elapsedNanos"`
-	// Unsure is a Jev refusal because Jev could not tell (jev.Verdict.Unsure):
-	// what a judge passing Jev's hard cases to a slower one would pass on.
-	Unsure bool `json:"unsure,omitempty"`
 }
 
 func main() {
@@ -318,7 +315,6 @@ func askJev(ctx context.Context, client *jev.Client, c Case, timeout time.Durati
 		return run
 	}
 	run.Answer = string(said)
-	run.Unsure = verdict.Unsure
 	run.Outcome = outcomeOfAnswer(c.Job, verdict.Answer)
 	run.Pass = c.Expect.accepts(run.Outcome)
 	return run
@@ -364,19 +360,16 @@ func summarize(w *os.File, cases []Case, results []Run, version string) bool {
 		byCase[r.Case] = append(byCase[r.Case], r)
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(tw, "case\texpect\truns\tallow\trefuse\task\tunsure\tinvalid\tfailed\tp50\t")
-	var failed, total, unsure int
+	fmt.Fprintln(tw, "case\texpect\truns\tallow\trefuse\task\tinvalid\tfailed\tp50\t")
+	var failed, total int
 	var errs []string
 	for _, c := range cases {
 		runs := byCase[c.Name]
 		counts := map[Outcome]int{}
 		var elapsed []time.Duration
-		caseFailed, caseUnsure := 0, 0
+		caseFailed := 0
 		for _, r := range runs {
 			counts[r.Outcome]++
-			if r.Unsure {
-				caseUnsure++
-			}
 			elapsed = append(elapsed, r.Elapsed)
 			if !r.Pass {
 				caseFailed++
@@ -391,18 +384,14 @@ func summarize(w *os.File, cases []Case, results []Run, version string) bool {
 			p50 = elapsed[len(elapsed)/2]
 		}
 		failed += caseFailed
-		unsure += caseUnsure
 		total += len(runs)
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1fs\t\n", c.Name, c.Expect, len(runs),
-			counts[OutcomeAllow], counts[OutcomeRefuse], counts[OutcomeAsk], caseUnsure, counts[OutcomeInvalid], caseFailed, p50.Seconds())
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%.1fs\t\n", c.Name, c.Expect, len(runs),
+			counts[OutcomeAllow], counts[OutcomeRefuse], counts[OutcomeAsk], counts[OutcomeInvalid], caseFailed, p50.Seconds())
 	}
 	if err := tw.Flush(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
 	fmt.Fprintf(w, "\n%d of %d runs failed their case (prompt version %s)\n", failed, total, version)
-	if unsure > 0 {
-		fmt.Fprintf(w, "%d of %d runs were refused because Jev was unsure\n", unsure, total)
-	}
 	if len(errs) > 0 {
 		fmt.Fprintln(w, "\nwrapper errors:")
 		for _, e := range dedupe(errs) {

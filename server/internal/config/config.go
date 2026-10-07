@@ -167,11 +167,14 @@ type Config struct {
 	// JevModel is pinned to a version by default, because the thresholds the
 	// judge decides Jev's probabilities against were tuned on one.
 	JevModel string `yaml:"jevModel" env:"DISCOBOX_JEV_MODEL" default:"jev-1.13.0" doc:"The Jev model asked when judgeBackend is jev. A version rather than the jev-latest alias, which moves when TypeSafe ships a new one."`
-	// JevUnsure is what happens to a request Jev cannot tell about: put to
-	// the project's judge discobox, which each project then keeps, or
-	// refused. Put by default: an unsure refusal is a request a correct
-	// judge mostly allows, and the judge discobox is there to settle it.
-	JevUnsure string `yaml:"jevUnsure" env:"DISCOBOX_JEV_UNSURE" enum:"harness,refuse" default:"harness" doc:"What a jev judge does with a request it is unsure about: harness, ask the project's judge discobox (as judgeBackend harness runs one), which then decides, so every project keeps a judge discobox for those requests; or refuse it, and run no judge discobox."`
+	// JevRefusal is what happens to a job Jev does not allow: put to the
+	// project's judge discobox, which each project then keeps, or refused.
+	// Put by default (ADR 26-10-07-937): Jev's refusals included requests
+	// and commands a correct judge allows at every score, and the judge
+	// discobox is there to settle them. The key's name, jevUnsure, is older
+	// than that: it once sent on only the refusals Jev was unsure of, and
+	// servers' configuration files still spell it that way.
+	JevRefusal string `yaml:"jevUnsure" env:"DISCOBOX_JEV_UNSURE" enum:"harness,refuse" default:"harness" doc:"What a jev judge does with a command, request or delegation it does not allow: harness, ask the project's judge discobox (as judgeBackend harness runs one), which then decides, so every project keeps a judge discobox for them and Jev decides only its allows; or refuse it, and run no judge discobox. An ask to be shown a request's body is not a refusal and goes back to be answered either way; with harness, the rounds after the judge discobox asked for a body are its to decide too."`
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own retention. Zero means
@@ -491,8 +494,8 @@ func (c *Config) validate(configured func(string) bool) error {
 		if strings.TrimSpace(c.JevModel) == "" {
 			return fmt.Errorf("jevModel is required when judgeBackend is jev")
 		}
-		if c.JevUnsure != JevUnsureRefuse && c.JevUnsure != JevUnsureHarness {
-			return fmt.Errorf("jevUnsure must be one of: %s, %s", JevUnsureRefuse, JevUnsureHarness)
+		if c.JevRefusal != JevRefusalRefuse && c.JevRefusal != JevRefusalHarness {
+			return fmt.Errorf("jevUnsure must be one of: %s, %s", JevRefusalRefuse, JevRefusalHarness)
 		}
 	default:
 		return fmt.Errorf("judgeBackend must be one of: %s, %s, %s", JudgeBackendAuto, JudgeBackendHarness, JudgeBackendJev)
@@ -507,10 +510,10 @@ const (
 	JudgeBackendJev     = "jev"
 )
 
-// What jevUnsure does with a request Jev cannot tell about.
+// What JevRefusal (jevUnsure) does with a job Jev does not allow.
 const (
-	JevUnsureRefuse  = "refuse"
-	JevUnsureHarness = "harness"
+	JevRefusalRefuse  = "refuse"
+	JevRefusalHarness = "harness"
 )
 
 func defaultDatabaseDSN(dataDir string) string {

@@ -161,6 +161,28 @@ func TestAuditGetRoutesByRecordID(t *testing.T) {
 	}
 }
 
+// One verdict printed in full includes exactly what Jev was sent.
+func TestAuditGetPrintsWhatJevWasSent(t *testing.T) {
+	sandboxID, err := idpkg.New("sbx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"credentialVerdicts":[{"id":"cvd_one","projectId":"project-1","sandboxId":"` + sandboxID +
+			`","useId":"use_1","allow":false,"volunteered":false,"createdAt":"2026-10-07T10:00:00Z","kind":"command","origin":"judge",
+			"command":["gh"],"model":"jev-1.13.0","jevInput":{"state":{"command":["gh","\u001b[2J"]},"model":"jev-1.13.0","questions":{}}}]}`))
+	}
+	stdout, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, "cvd_one")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !strings.Contains(stdout, "jev input:") || !strings.Contains(stdout, `"model": "jev-1.13.0"`) ||
+		!strings.Contains(stdout, `"\u001b[2J"`) || strings.ContainsRune(stdout, 0x1b) {
+		t.Fatalf("record = %s, want Jev's input in full, escaped", stdout)
+	}
+}
+
 func TestAuditGetJSONIsTheRecord(t *testing.T) {
 	sandboxID, err := idpkg.New("sbx")
 	if err != nil {

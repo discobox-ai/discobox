@@ -4326,6 +4326,12 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if len(s.JevInput) != 0 {
+			e.FieldStart("jevInput")
+			e.Raw(s.JevInput)
+		}
+	}
+	{
 		if s.JudgeSandboxId.Set {
 			e.FieldStart("judgeSandboxId")
 			s.JudgeSandboxId.Encode(e)
@@ -4445,7 +4451,7 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCredentialVerdict = [31]string{
+var jsonFieldsNameOfCredentialVerdict = [32]string{
 	0:  "$schema",
 	1:  "allow",
 	2:  "command",
@@ -4456,27 +4462,28 @@ var jsonFieldsNameOfCredentialVerdict = [31]string{
 	7:  "id",
 	8:  "image",
 	9:  "imageDigest",
-	10: "judgeSandboxId",
-	11: "kind",
-	12: "latencyMs",
-	13: "model",
-	14: "need",
-	15: "origin",
-	16: "probabilities",
-	17: "projectId",
-	18: "prompt",
-	19: "promptVersion",
-	20: "reason",
-	21: "request",
-	22: "role",
-	23: "round",
-	24: "sandboxId",
-	25: "secretRequestId",
-	26: "standingRoute",
-	27: "standingUntil",
-	28: "standingVerdictId",
-	29: "useId",
-	30: "volunteered",
+	10: "jevInput",
+	11: "judgeSandboxId",
+	12: "kind",
+	13: "latencyMs",
+	14: "model",
+	15: "need",
+	16: "origin",
+	17: "probabilities",
+	18: "projectId",
+	19: "prompt",
+	20: "promptVersion",
+	21: "reason",
+	22: "request",
+	23: "role",
+	24: "round",
+	25: "sandboxId",
+	26: "secretRequestId",
+	27: "standingRoute",
+	28: "standingUntil",
+	29: "standingVerdictId",
+	30: "useId",
+	31: "volunteered",
 }
 
 // Decode decodes CredentialVerdict from json.
@@ -4603,6 +4610,17 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
+		case "jevInput":
+			if err := func() error {
+				v, err := d.RawAppend(nil)
+				s.JevInput = jx.Raw(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"jevInput\"")
+			}
 		case "judgeSandboxId":
 			if err := func() error {
 				s.JudgeSandboxId.Reset()
@@ -4674,7 +4692,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"probabilities\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -4746,7 +4764,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"round\"")
 			}
 		case "sandboxId":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -4798,7 +4816,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"standingVerdictId\"")
 			}
 		case "useId":
-			requiredBitSet[3] |= 1 << 5
+			requiredBitSet[3] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.UseId = string(v)
@@ -4810,7 +4828,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"useId\"")
 			}
 		case "volunteered":
-			requiredBitSet[3] |= 1 << 6
+			requiredBitSet[3] |= 1 << 7
 			if err := func() error {
 				v, err := d.Bool()
 				s.Volunteered = bool(v)
@@ -4833,8 +4851,8 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 	for i, mask := range [4]uint8{
 		0b10001010,
 		0b00000000,
-		0b00000010,
-		0b01100001,
+		0b00000100,
+		0b11000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

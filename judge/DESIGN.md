@@ -133,12 +133,18 @@ answers typed questions with probabilities and writes no text, so `System`,
     shape.
   - an allow needs every "within" question at `AllowAt` (0.8). Jev's
     probabilities are calibrated, and a value near 0.5 means it cannot tell.
-  - anything else refuses. It is marked `Verdict.Unsure` when the weakest
-    "within" is at `UnsureAt` or above: Jev could not tell, rather than said
-    no. A server may put those to its judge discobox instead (`jevUnsure`,
-    ADR 26-10-01-324 §7).
+  - anything else refuses. Its reason says Jev could not tell when the
+    weakest "within" is at `UnsureAt` or above, and that it is unlikely
+    below; the two refuse alike. A server may put every refusal, hazards
+    included, to its judge discobox, which decides it and the rounds it
+    asks for (`jevUnsure`, ADR 26-10-07-937), so Jev alone decides only its
+    allows.
 - **What it never does.** It never lets an allow stand. The reason is composed
   from whichever question decided.
+- **What it was sent.** `Verdict.Input` is the exact JSON body of the request
+  to Jev's API — state, questions and model, never the key — which a server
+  records on the verdict. Its state is the job's evidence and holds nothing
+  `Prompt` does not.
 - **Versioning.** `QuestionsVersion` names the questions and thresholds
   together. Change any of them and change it.
 

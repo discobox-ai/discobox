@@ -68,9 +68,9 @@ func (s *Service) JudgeCommand(ctx context.Context, poolID string, ask services.
 	}
 
 	bound := s.judgeBound()
-	ctx, cancel := context.WithTimeout(ctx, bound)
+	judgeCtx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
-	decided, err := s.put(ctx, project, judgeSandbox, job, bound)
+	decided, err := s.put(judgeCtx, project, judgeSandbox, job, bound)
 	if err != nil {
 		return judge.Answer{}, err
 	}
@@ -80,14 +80,17 @@ func (s *Service) JudgeCommand(ctx context.Context, poolID string, ask services.
 	if decided.Need != nil {
 		decided.Answer = judge.Answer{Reason: "the judge asked to be shown more, and a command has nothing more to show"}
 	}
+	// What follows the verdict has a deadline of its own, as for a request,
+	// so a judge discobox that ran the judge's out leaves Jev's refusal
+	// checked and recorded.
+	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancelRecord()
 	// Asked again after the verdict, as for a request: a grant revoked while
 	// the judge read the command mints nothing.
-	if _, err := s.uses.ApprovedCredentialUse(ctx, poolID, ask.SandboxID, ask.UseID); err != nil {
+	if _, err := s.uses.ApprovedCredentialUse(recordCtx, poolID, ask.SandboxID, ask.UseID); err != nil {
 		return judge.Answer{}, err
 	}
 
-	recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
-	defer cancelRecord()
 	prompt, err := judge.Prompt(job)
 	if err != nil {
 		return judge.Answer{}, err
