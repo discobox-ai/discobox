@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/adrg/xdg"
 )
 
 // accessors is every exported path accessor, called with fixed IDs.
@@ -78,102 +80,91 @@ func TestContainerAtRelocatesStateAndSystemPaths(t *testing.T) {
 	}
 }
 
-// The daemon sees a relocated container's state where it would see the real
-// container's, so the paths a test hands a fake daemon are the production ones.
+// A relocated root's daemon sees what the agent sees unless a driver says it
+// keeps the state elsewhere, and then only paths under the root move.
 func TestHostMappingTranslatesFromARelocatedRoot(t *testing.T) {
 	root := ContainerAt(t.TempDir())
-	if got, want := root.HostMapping("").HostPath(root.PoolData("prj", "pool")),
-		"/var/lib/discobox/projects/prj/pools/pool"; got != want {
+	data := root.PoolData("prj", "pool")
+	if got := root.HostMapping("").HostPath(data); got != data {
+		t.Fatalf("HostPath = %q, want it unchanged with no relocation", got)
+	}
+	if got, want := root.HostMapping("/var/lib/docker/discobox").HostPath(data),
+		"/var/lib/docker/discobox/projects/prj/pools/pool"; got != want {
 		t.Fatalf("HostPath = %q, want %q", got, want)
 	}
-	if got, want := root.HostMapping("/var/lib/docker/discobox").HostPath(root.Dir()),
-		"/var/lib/docker/discobox"; got != want {
-		t.Fatalf("HostPath(root) = %q, want %q", got, want)
-	}
-	if outside := filepath.Join(filepath.Dir(root.Dir()), "discoboxfoo"); root.HostMapping("").HostPath(outside) != outside {
+	if outside := filepath.Join(filepath.Dir(root.Dir()), "discoboxfoo"); root.HostMapping("/x").HostPath(outside) != outside {
 		t.Fatalf("HostPath(%q) was translated; a sibling of the root is not under it", outside)
 	}
 }
 
-func TestHostRootHasNoContainerFilesystem(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("System on a host root did not panic")
-		}
-	}()
-	Root{state: t.TempDir(), host: true, native: true}.System("/etc/discobox/proxy.env")
-}
-
-// ADR 0144 §1: the host root is the user's data directory, by the convention
-// the server's own data directory already follows on each platform.
-func TestHostStatePerOS(t *testing.T) {
-	for name, tc := range map[string]struct {
-		goos string
-		env  map[string]string
-		home string
-		want string
-	}{
-		"macOS": {
-			goos: "darwin", home: "/Users/ada",
-			want: "/Users/ada/Library/Application Support/discobox/pool-agent",
-		},
-		"macOS with XDG_DATA_HOME": {
-			goos: "darwin", home: "/Users/ada", env: map[string]string{"XDG_DATA_HOME": "/Volumes/data/"},
-			want: "/Volumes/data/discobox/pool-agent",
-		},
-		"Windows": {
-			goos: "windows", home: `C:\Users\ada`, env: map[string]string{"LOCALAPPDATA": `C:\Users\ada\AppData\Local`},
-			want: `C:\Users\ada\AppData\Local\discobox\pool-agent`,
-		},
-		"Windows without LOCALAPPDATA": {
-			goos: "windows", home: `C:\Users\ada`,
-			want: `C:\Users\ada\AppData\Local\discobox\pool-agent`,
-		},
-		"Windows with XDG_DATA_HOME": {
-			goos: "windows", home: `C:\Users\ada`, env: map[string]string{"XDG_DATA_HOME": `D:\data`, "LOCALAPPDATA": `C:\Users\ada\AppData\Local`},
-			want: `D:\data\discobox\pool-agent`,
-		},
-		"Linux": {
-			goos: "linux", home: "/home/ada",
-			want: "/home/ada/.local/share/discobox/pool-agent",
-		},
+func TestHostRootHasNoPoolContainer(t *testing.T) {
+	host := Root{state: t.TempDir(), host: true, native: true}
+	for name, ask := range map[string]func(){
+		"System":      func() { host.System("/etc/discobox/proxy.env") },
+		"MountRoots":  func() { host.MountRoots() },
+		"HostMapping": func() { host.HostMapping("") },
 	} {
-		got, err := hostState(tc.goos, func(key string) string { return tc.env[key] }, tc.home)
-		if err != nil {
-			t.Errorf("%s: %v", name, err)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("%s: hostState = %q, want %q", name, got, tc.want)
-		}
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s on a host root did not panic", name)
+				}
+			}()
+			ask()
+		}()
+	}
+	// Its own state paths are what a host root is for.
+	if got := host.PoolData("prj", "pool"); !strings.HasPrefix(got, host.Dir()) {
+		t.Errorf("PoolData = %q, want it under %q", got, host.Dir())
 	}
 }
 
-// Without a data directory there is nowhere durable to put a pool's identity,
-// and a temporary directory would cost the pool its identity on reboot.
-func TestHostStateRefusesWithoutADataDirectory(t *testing.T) {
-	for _, goos := range []string{"darwin", "windows", "linux"} {
-		if got, err := hostState(goos, func(string) string { return "" }, ""); err == nil {
-			t.Errorf("%s: hostState = %q, want an error", goos, got)
-		}
+// setXDG sets env for one test and reloads xdg from it, then reloads xdg from
+// the real environment afterwards. The reload is registered before any
+// t.Setenv, so it runs after every one of them has been restored.
+func setXDG(t *testing.T, env map[string]string) {
+	t.Helper()
+	t.Cleanup(xdg.Reload)
+	for key, value := range env {
+		t.Setenv(key, value)
 	}
+	xdg.Reload()
 }
 
-func TestHostResolvesOnThisMachine(t *testing.T) {
-	if privileged() {
-		if _, err := Host(); err == nil {
-			t.Fatal("Host() succeeded in a privileged process")
-		}
-		return
-	}
+// ADR 0144 §1: the host root is the server's own data directory, resolved the
+// same way, with the pool agent's state beside the server's.
+func TestHostStateIsUnderTheServersDataDirectory(t *testing.T) {
 	data := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", data)
-	root, err := Host()
+	setXDG(t, map[string]string{"XDG_DATA_HOME": data})
+	got, err := hostState()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := root.Dir(), filepath.Join(data, "discobox", HostStateName); got != want {
-		t.Fatalf("Dir() = %q, want %q", got, want)
+	if want := filepath.Join(data, "discobox", HostStateName); got != want {
+		t.Fatalf("hostState = %q, want %q", got, want)
+	}
+}
+
+// A relative XDG_DATA_HOME is not one: the server ignores it and uses the
+// platform default, and a host pool has to land in that same place rather
+// than refuse to start.
+func TestHostStateIgnoresARelativeDataHome(t *testing.T) {
+	setXDG(t, map[string]string{"XDG_DATA_HOME": "relative/data"})
+	got, err := hostState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(got) || strings.Contains(filepath.ToSlash(got), "relative/data") {
+		t.Fatalf("hostState = %q, want the platform default", got)
+	}
+}
+
+func TestHostRefusesAPrivilegedProcess(t *testing.T) {
+	if !privileged() {
+		t.Skip("this process is not privileged")
+	}
+	if _, err := Host(); err == nil {
+		t.Fatal("Host() succeeded in a privileged process")
 	}
 }
 

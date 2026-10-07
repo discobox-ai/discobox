@@ -374,9 +374,10 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 // SandboxMaterial describes how a sandbox container is wired to the pool
 // proxy.
 type SandboxMaterial struct {
-	// MountSource is the pool-host path (as handed to the container runtime)
-	// holding the sandbox's proxy material. It is bind-mounted read-only into
-	// the container at SandboxProxyMount.
+	// MountSource is the directory holding the sandbox's proxy material, as
+	// the agent's layout.Root names it. It is bind-mounted read-only into the
+	// container at SandboxProxyMount, after the runtime translates it to the
+	// daemon's view (daemonPath).
 	MountSource string
 	// Env holds the proxy-related environment variables injected into the
 	// sandbox so its processes route outbound traffic through the local

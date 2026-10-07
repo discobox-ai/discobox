@@ -66,21 +66,20 @@ from the in-sandbox `sandbox-agent` API.
 ### State Root
 
 Every path the agent, the proxy and the builder read or write is resolved
-against one `layout.Root`, chosen by the pool's shape and handed down from the
-entrypoint — never a package global, and never `layout.ContainerRoot` spelled
-out. A pool whose agent runs in a container uses `layout.Container()`, so its
-paths are `/var/lib/discobox/...` exactly as before. A pool whose agent runs on
-the host uses `layout.Host()`: `<data dir>/discobox/pool-agent` (XDG_DATA_HOME,
-else `~/Library/Application Support` on macOS and `%LOCALAPPDATA%` on Windows),
-owned by the user the agent runs as and refused to a privileged process
-([ADR 0144](../docs/adr/0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md)
-§§1, 6). Only the container shape has a container filesystem, so `Root.System`
-— the agent's `/etc/discobox`, `/run/discobox` — is meaningless on a host root.
+against one `layout.Root`, handed down from the entrypoint — never a package
+global, and never `layout.ContainerRoot` spelled out. Every entrypoint here is
+the container shape and chooses `layout.Container()`, so its paths are
+`/var/lib/discobox/...`. `layout` also offers `Host()`, the per-OS root
+[ADR 0144](../docs/adr/0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md)
+§1 calls for, and a host root has no pool container: `Root.System` (the
+agent's `/etc/discobox`, `/run/discobox`), `MountRoots` and `HostMapping` panic
+on one.
 
 Tests use `layout.ContainerAt(dir)`, the container's whole filesystem relocated
-under a temporary directory. `Root.HostMapping` translates from whichever root
-the agent holds, so the mount sources a test hands a fake daemon are the
-production `/var/lib/discobox` paths.
+under a temporary directory. With no `HostStateRoot`, `daemonPath` hands the
+daemon the paths the agent itself uses, so a fake daemon sharing the test's
+filesystem finds the files where the test wrote them; with one, only paths
+under the root are translated.
 
 After registration, the pool host reports scheduling status every 30s
 (`/api/pools/{poolId}/status`). It sets `ready`, `schedulable`, and `degraded`
