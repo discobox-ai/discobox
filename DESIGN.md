@@ -35,10 +35,19 @@ At the system boundary, Discobox comprises these cooperating concepts:
   serves from inside each sandbox; the server reaches it through the pool
   agent's sandbox-directed routes.
 
+People are outside this boundary. The server keeps no users, memberships, or
+roles beyond its single-user default: a team-facing front end (discobot) signs
+in its people, decides who may do what, and asserts the person behind each
+request, which the server verifies, records, and propagates (ADR
+26-10-07-005; [`server/internal/auth`](server/internal/auth/DESIGN.md)). The
+same front end runs OAuth sign-in and the first code exchange; the server
+stores the raw values and refreshes them.
+
 ```mermaid
 flowchart LR
     cli["CLI"] -->|"generated client"| server["Server / control plane"]
     clients["API clients"] --> server
+    front["Team front end (discobot)"] -->|"asserts the person"| server
     server -->|"Go interface"| provider["Sandbox provider"]
     provider -->|"delegates access"| sandbox["Pool-local sandbox operations API"]
     server -->|"REST/OpenAPI through provider"| sandbox
