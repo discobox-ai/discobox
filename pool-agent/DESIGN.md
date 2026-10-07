@@ -688,9 +688,12 @@ flowchart TD
 - **Ref allow-list.** `uploadpack.hideRefs=refs/` hides everything, then the
   allowed refs are revealed: the branch `HEAD` names, read per request, and the
   source's declared refs — its checkout branch or tag and its dirty-workspace
-  snapshot ref. `HEAD` itself is always advertised. The switches are given on
-  the command line, which git reads after the repository's own config, so the
-  developer's `.git/config` cannot widen them.
+  snapshot ref. `HEAD` itself is always advertised. Only the allowed refs that
+  exist at that moment are revealed, because a hideRefs entry is a prefix: a
+  declared branch the developer has since deleted would otherwise reveal
+  whatever they create beneath its name. The switches are given on the command
+  line, which git reads after the repository's own config, so the developer's
+  `.git/config` cannot widen them.
 - **No fetch by object id.** The `uploadpack.allow*SHA1InWant` and
   `allowRefInWant` switches are forced off, and a live origin is answered in
   protocol v0 whatever the client asks for: a v2 upload-pack serves any object
@@ -699,7 +702,10 @@ flowchart TD
 - **Tokens.** The route accepts the control plane's tokens as every route does
   (`sandbox:read` to fetch, `sandbox:write` to push into a bare origin) and,
   alone among routes, a token this pool issued to the sandbox it names
-  (`sandboxtoken`, `origin:fetch`), which fetches and never pushes.
+  (`sandboxtoken`), which fetches and never pushes: `origin:fetch` is the only
+  scope one may carry, refused otherwise on issue and on verify, and its
+  sandbox is checked against the escaped path the router serves, not the
+  decoded one an escaped slash can make name another sandbox.
 - A fetch racing the developer's own `git gc` can fail on a pruned object, as
   the read-only bind always could.
 

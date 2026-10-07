@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"aidanwoods.dev/go-paseto"
+
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 )
 
@@ -100,5 +102,43 @@ func TestAnExpiredTokenIsRefused(t *testing.T) {
 	}
 	if _, err := verifier.Verify(token); err == nil {
 		t.Fatal("an expired token verified")
+	}
+}
+
+// The routes that accept a sandbox token read its scopes the way they read the
+// control plane's, where "*" or sandbox:write is a push. So no other scope is
+// ever issued, and a token carrying one is refused even with a good signature.
+func TestASandboxTokenCarriesOnlyOriginFetch(t *testing.T) {
+	public, private := testKey(t)
+	for _, scope := range []string{"*", "sandbox:write", "sandbox:*"} {
+		claims := testClaims()
+		claims.Scopes = []string{ScopeOriginFetch, scope}
+		if _, err := Issue(private, claims, time.Hour); err == nil {
+			t.Errorf("issued a token carrying %q", scope)
+		}
+	}
+
+	secretKey, err := paseto.NewV4AsymmetricSecretKeyFromEd25519(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	token := paseto.NewToken()
+	token.SetAudience(Audience)
+	token.SetIssuedAt(now)
+	token.SetNotBefore(now)
+	token.SetExpiration(now.Add(time.Hour))
+	token.SetString("project_id", "project-1")
+	token.SetString("pool_id", "pool-1")
+	token.SetString("sandbox_id", "sandbox-1")
+	if err := token.Set("scopes", []string{ScopeOriginFetch, "*"}); err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := NewVerifier(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifier.Verify(token.V4Sign(secretKey, nil)); err == nil {
+		t.Fatal("verified a sandbox token carrying \"*\"")
 	}
 }

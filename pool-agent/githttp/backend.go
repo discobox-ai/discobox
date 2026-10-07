@@ -149,9 +149,11 @@ func ServeBackend(w http.ResponseWriter, r *http.Request, repo Repository, suffi
 }
 
 // IsReceivePack reports whether r is a push: the advertisement a push starts
-// with, or the pack it sends.
+// with, or the pack it sends. Every service parameter counts, not the first:
+// http-backend reads the last one, so a request naming both must not pass
+// for a fetch here.
 func IsReceivePack(r *http.Request) bool {
-	return r.URL.Query().Get("service") == "git-receive-pack" ||
+	return slices.Contains(r.URL.Query()["service"], "git-receive-pack") ||
 		(r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack"))
 }
 
@@ -160,7 +162,7 @@ func IsReceivePack(r *http.Request) bool {
 func uploadPackRequest(r *http.Request, suffix string) bool {
 	switch suffix {
 	case "/info/refs":
-		return r.Method == http.MethodGet && r.URL.Query().Get("service") == "git-upload-pack"
+		return r.Method == http.MethodGet && slices.Equal(r.URL.Query()["service"], []string{"git-upload-pack"})
 	case "/git-upload-pack":
 		return r.Method == http.MethodPost
 	default:
@@ -191,56 +193,102 @@ func liveOriginArgs(refs []string) []string {
 // declared refs, and the branch HEAD names now. HEAD is read per request
 // because no push ever updates a live origin: where the developer is now is
 // what `git rebase origin/<branch>` in the sandbox is rebasing onto.
+//
+// Only the allowed refs that exist right now are revealed. A hideRefs entry
+// is a prefix, so revealing refs/heads/feature also reveals
+// refs/heads/feature/x — harmless while feature exists, since git keeps a ref
+// and refs beneath it from existing together, and a leak the moment the
+// developer deletes feature and creates one beneath it. A ref that exists has
+// nothing beneath it, so revealing only those reveals exactly them; the same
+// rule turns away a name that is a namespace rather than a ref.
 func liveAdvertisedRefs(ctx context.Context, repo Repository) ([]string, error) {
-	refs := make([]string, 0, len(repo.Refs)+1)
+	candidates := make([]string, 0, len(repo.Refs)+1)
 	for _, ref := range repo.Refs {
 		if !validAdvertisedRef(ref) {
 			return nil, fmt.Errorf("live origin ref %q is not a full ref name", ref)
 		}
-		refs = append(refs, ref)
+		candidates = append(candidates, ref)
 	}
 	head, err := headBranch(ctx, repo)
 	if err != nil {
 		return nil, err
 	}
-	if head != "" && !slices.Contains(refs, head) {
-		refs = append(refs, head)
+	if head != "" && validAdvertisedRef(head) && !slices.Contains(candidates, head) {
+		candidates = append(candidates, head)
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	// for-each-ref matches its patterns by prefix too, so what it lists is
+	// filtered back down to the names asked for.
+	out, err := repositoryGit(ctx, repo, append([]string{"for-each-ref", "--format=%(refname)", "--"}, candidates...)...)
+	if err != nil {
+		return nil, fmt.Errorf("list live origin refs: %w", err)
+	}
+	var refs []string
+	for _, ref := range strings.Split(out, "\n") {
+		if slices.Contains(candidates, ref) && !slices.Contains(refs, ref) {
+			refs = append(refs, ref)
+		}
 	}
 	return refs, nil
 }
 
-// validAdvertisedRef accepts a full ref name under refs/ with nothing that
-// would change how a hideRefs entry reads: a leading "!" or "^" is syntax
-// there, not part of the name.
+// validAdvertisedRef accepts a full ref name, refs/<kind>/<name>, with nothing
+// that would change how a hideRefs entry reads: a leading "!" or "^" is
+// syntax there, not part of the name.
 func validAdvertisedRef(ref string) bool {
-	if !strings.HasPrefix(ref, "refs/") || len(ref) == len("refs/") {
+	rest, ok := strings.CutPrefix(ref, "refs/")
+	if !ok || !strings.Contains(strings.Trim(rest, "/"), "/") {
 		return false
 	}
-	return !strings.ContainsAny(ref, " \t\r\n\x00~^:?*[\\") && !strings.Contains(ref, "..") && !strings.HasSuffix(ref, "/")
+	return !strings.ContainsAny(ref, " \t\r\n\x00~^:?*[\\") && !strings.Contains(ref, "..") && !strings.Contains(ref, "//") && !strings.HasSuffix(ref, "/")
 }
 
-// headBranch is the branch HEAD names, or empty when HEAD is detached. It
-// runs as the repository's owner, in the backend's own environment, for the
-// same reasons the backend does.
+// headBranch is the branch HEAD names, or empty when HEAD is detached.
 func headBranch(ctx context.Context, repo Repository) (string, error) {
-	//nolint:gosec // The executable and arguments are fixed.
-	cmd := exec.CommandContext(ctx, "git", "symbolic-ref", "--quiet", "HEAD")
+	out, err := repositoryGit(ctx, repo, "symbolic-ref", "--quiet", "HEAD")
+	// --quiet makes "HEAD is not a symbolic ref" exit 1 and say nothing, which
+	// is git's own answer for a detached HEAD; anything else is a failure.
+	var gitErr *repositoryGitError
+	if errors.As(err, &gitErr) && gitErr.exitCode == 1 && gitErr.stderr == "" {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read live origin HEAD: %w", err)
+	}
+	return out, nil
+}
+
+// repositoryGit runs git against repo's Git directory and returns what it
+// printed. It runs as the repository's owner, in the backend's own
+// environment, for the same reasons the backend does.
+func repositoryGit(ctx context.Context, repo Repository, args ...string) (string, error) {
+	//nolint:gosec // The executable is fixed and the arguments are fixed or validated ref names.
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = append(baseEnv(), "GIT_DIR="+repo.Path)
 	cmd.SysProcAttr = execidentity.SysProcAttr(repo.UID, repo.GID)
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := childproc.Run(cmd)
-	// --quiet makes "HEAD is not a symbolic ref" exit 1 and say nothing, which
-	// is git's own answer for a detached HEAD; anything else is a failure.
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && stderr.Len() == 0 {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("read live origin HEAD: %w: %s", err, strings.TrimSpace(stderr.String()))
+	if err := childproc.Run(cmd); err != nil {
+		var exitErr *exec.ExitError
+		code := -1
+		if errors.As(err, &exitErr) {
+			code = exitErr.ExitCode()
+		}
+		return "", &repositoryGitError{err: err, exitCode: code, stderr: strings.TrimSpace(stderr.String())}
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
+
+type repositoryGitError struct {
+	err      error
+	exitCode int
+	stderr   string
+}
+
+func (e *repositoryGitError) Error() string { return fmt.Sprintf("%v: %s", e.err, e.stderr) }
+func (e *repositoryGitError) Unwrap() error { return e.err }
 
 // backendEnv is the environment git http-backend runs in. It is built from
 // nothing rather than inherited from the pool agent, because of what sits on

@@ -108,7 +108,9 @@ func sourceDeclaredRefs(source workerapimodel.GitSource) []string {
 		}
 	}
 	if workspace, ok := source.Workspace.Get(); ok && workspace.Mode.Or(workerclient.GitSourceWorkspaceModeClean) == workerclient.GitSourceWorkspaceModeDirty {
-		if ref := strings.TrimSpace(optString(workspace.SnapshotRef)); strings.HasPrefix(ref, "refs/") {
+		// A full ref, refs/<kind>/<name>: anything shorter names a namespace,
+		// and revealing one would reveal every ref in it.
+		if ref := strings.TrimSpace(optString(workspace.SnapshotRef)); strings.HasPrefix(ref, "refs/") && strings.Count(strings.Trim(ref, "/"), "/") >= 2 {
 			refs = append(refs, ref)
 		}
 	}

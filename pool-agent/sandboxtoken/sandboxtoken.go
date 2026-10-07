@@ -28,6 +28,27 @@ const (
 	ScopeOriginFetch = "origin:fetch"
 )
 
+// validScope is every scope a sandbox token may carry. It is a closed list,
+// enforced on both sides: the routes that accept these tokens read their
+// scopes the way they read the control plane's, where "*" or sandbox:write
+// would mean a push, so a scope outside it is refused when a token is issued
+// and refused again when one is verified.
+func validScope(scope string) bool {
+	return scope == ScopeOriginFetch
+}
+
+func validScopes(scopes []string) error {
+	if len(scopes) == 0 {
+		return errors.New("a sandbox token needs at least one scope")
+	}
+	for _, scope := range scopes {
+		if !validScope(scope) {
+			return fmt.Errorf("a sandbox token cannot carry scope %q", scope)
+		}
+	}
+	return nil
+}
+
 // Claims say which sandbox a token speaks for and what it may do.
 type Claims struct {
 	ProjectID string
@@ -45,8 +66,8 @@ func Issue(privateKey ed25519.PrivateKey, claims Claims, ttl time.Duration) (str
 	if claims.ProjectID == "" || claims.PoolID == "" || claims.SandboxID == "" {
 		return "", errors.New("project_id, pool_id and sandbox_id claims are required")
 	}
-	if len(claims.Scopes) == 0 {
-		return "", errors.New("a sandbox token needs at least one scope")
+	if err := validScopes(claims.Scopes); err != nil {
+		return "", err
 	}
 	if ttl <= 0 {
 		return "", fmt.Errorf("sandbox token lifetime %s must be positive", ttl)
@@ -108,6 +129,9 @@ func (v *Verifier) Verify(tokenText string) (Claims, error) {
 	}
 	if err := token.Get("scopes", &claims.Scopes); err != nil {
 		return Claims{}, fmt.Errorf("read scopes claim: %w", err)
+	}
+	if err := validScopes(claims.Scopes); err != nil {
+		return Claims{}, err
 	}
 	return claims, nil
 }

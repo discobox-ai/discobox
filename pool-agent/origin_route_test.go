@@ -14,6 +14,7 @@ import (
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
 )
@@ -22,6 +23,7 @@ import (
 // live origin, the developer's own repository, and its hooks are a bare
 // origin the client pushes into.
 type originRoute struct {
+	runtime          *poolagent.MemorySandboxRuntime
 	server           *httptest.Server
 	developer        string
 	bare             string
@@ -66,7 +68,7 @@ func newOriginRoute(t *testing.T) *originRoute {
 	}
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	return &originRoute{server: server, developer: developer, bare: bare, poolKey: poolKey, signControlPlane: signControlPlane}
+	return &originRoute{runtime: runtime, server: server, developer: developer, bare: bare, poolKey: poolKey, signControlPlane: signControlPlane}
 }
 
 func (o *originRoute) url(sandboxID, route, slug string) string {
@@ -174,5 +176,39 @@ func TestASandboxTokenReachesOnlyItsOwnOrigins(t *testing.T) {
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("GET %s with a sandbox token = %d, want 401", strings.SplitN(path, "?", 2)[0], resp.StatusCode)
 		}
+	}
+}
+
+// The token is checked against the path the router serves. An escaped slash
+// in an id makes the decoded path name a different sandbox than the router
+// does: here it names the token's own sandbox-2, while the route, and the
+// on-demand start in front of it, would act on sandbox-1.
+func TestASandboxTokenCannotReachAnotherSandboxThroughAnEscapedPath(t *testing.T) {
+	o := newOriginRoute(t)
+	token := o.sandboxToken(t, "sandbox-2")
+	if err := o.runtime.StopSandbox(t.Context(), "sandbox-1", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	smuggled := o.server.URL + "/api/project/project-1%2Fpool%2Fpool-1%2Fsandboxes%2Fsandbox-2/pool/pool-1/sandboxes/sandbox-1/git-origins/primary.git/info/refs?service=git-upload-pack"
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, smuggled, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("sandbox-2's token on an escaped path to sandbox-1 = %d, want 403", resp.StatusCode)
+	}
+	sandbox, err := o.runtime.GetSandbox(t.Context(), "sandbox-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.Status != sandboxruntime.StatusStopped {
+		t.Fatalf("sandbox-1 is %s after another sandbox's request, want it left stopped", sandbox.Status)
 	}
 }
