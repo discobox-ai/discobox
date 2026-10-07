@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +166,23 @@ func readManifestIdleTimeouts(t *testing.T, layout Layout) (effective, provenanc
 	return manifest.AgentRuntime.IdleTimeout, manifest.Provenance.Runtime.AgentRuntime.IdleTimeout
 }
 
+// assertMode checks a file's POSIX permission bits. Windows has none — every
+// file reports 0666 or 0444 — so there is nothing to assert there; the sandbox
+// these modes protect is Linux or macOS.
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %#o, want %#o", path, got, want)
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -225,12 +243,8 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 	if secrets["GH_TOKEN"] != "discobox-sentinel-1" || len(secrets) != 1 {
 		t.Fatalf("secrets = %v", secrets)
 	}
-	if info, err := os.Stat(layout.SecretsPath); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("secrets mode = %v, %v; want 0600", info, err)
-	}
-	if info, err := os.Stat(filepath.Dir(layout.SecretsPath)); err != nil || info.Mode().Perm() != 0o700 {
-		t.Fatalf("secrets dir mode = %v, %v; want 0700", info, err)
-	}
+	assertMode(t, layout.SecretsPath, 0o600)
+	assertMode(t, filepath.Dir(layout.SecretsPath), 0o700)
 
 	if effective, provenance := readManifestIdleTimeouts(t, layout); effective != "45m0s" || provenance != "45m0s" {
 		t.Fatalf("manifest idle timeout = %q / %q, want 45m0s in both", effective, provenance)
@@ -239,9 +253,7 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 	if got := readFile(t, filepath.Join(layout.ProxyDir, clientKeyFile)); got != doc.Proxy.ClientKey {
 		t.Fatalf("client key not written")
 	}
-	if info, err := os.Stat(filepath.Join(layout.ProxyDir, clientKeyFile)); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("client key mode = %v, %v; want 0600", info, err)
-	}
+	assertMode(t, filepath.Join(layout.ProxyDir, clientKeyFile), 0o600)
 	if got := readFile(t, filepath.Join(layout.ProxyDir, registryNamespaceFile)); got != "ns-0123abcd\n" {
 		t.Fatalf("registry namespace = %q", got)
 	}
