@@ -92,17 +92,18 @@ func TestReadManifestFileRefusesWhatIsNotALayer(t *testing.T) {
 		file string
 		says string
 	}{
-		"not json":         {`{`, "parse manifest file"},
-		"a foreign key":    {`{"io.discobox.reclaim": {}}`, `"io.discobox.reclaim" is not a layer`},
-		"a bare prefix":    {`{"io.discobox.image.v1.": {}}`, "is not a layer"},
-		"a string layer":   {`{"io.discobox.image.v1": "{}"}`, "must be a JSON object"},
-		"a null layer":     {`{"io.discobox.image.v1": null}`, "must be a JSON object"},
-		"not an object":    {`[]`, "parse manifest file"},
-		"a wrong version":  {`{"io.discobox.image.v1": {"apiVersion": "discobox.dev/image/v2"}}`, "unsupported apiVersion"},
-		"a bad platform":   {`{"io.discobox.image.v1": {"platform": "darwin"}}`, "not an os/arch pair"},
-		"a numeric layer":  {`{"io.discobox.image.v1": 1}`, "must be a JSON object"},
-		"an array layer":   {`{"io.discobox.image.v1": []}`, "must be a JSON object"},
-		"a key with space": {`{"io.discobox.image.v1.10 base ": {"env": {}}, "x": {}}`, "is not a layer"},
+		"not json":                  {`{`, "parse manifest file"},
+		"a foreign key":             {`{"io.discobox.reclaim": {}}`, `"io.discobox.reclaim" is not a layer`},
+		"a bare prefix":             {`{"io.discobox.image.v1.": {}}`, "is not a layer"},
+		"a string layer":            {`{"io.discobox.image.v1": "{}"}`, "must be a JSON object"},
+		"a null layer":              {`{"io.discobox.image.v1": null}`, "must be a JSON object"},
+		"not an object":             {`[]`, "parse manifest file"},
+		"a contributed layer twice": {`{"io.discobox.image.v1.10-x": {"account": "a"}, "io.discobox.image.v1. 10-x": {"account": "b"}}`, "names layer \"io.discobox.image.v1.10-x\" twice"},
+		"a layer twice":             {`{"io.discobox.image.v1": {"account": "a"}, " io.discobox.image.v1 ": {"account": "b"}}`, "names layer \"io.discobox.image.v1\" twice"},
+		"a wrong version":           {`{"io.discobox.image.v1": {"apiVersion": "discobox.dev/image/v2"}}`, "unsupported apiVersion"},
+		"a bad platform":            {`{"io.discobox.image.v1": {"platform": "darwin"}}`, "not an os/arch pair"},
+		"a numeric layer":           {`{"io.discobox.image.v1": 1}`, "must be a JSON object"},
+		"an array layer":            {`{"io.discobox.image.v1": []}`, "must be a JSON object"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			labels, err := ReadManifestFile([]byte(tc.file))

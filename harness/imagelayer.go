@@ -112,13 +112,23 @@ func ReadManifestFile(data []byte) (map[string]string, error) {
 	}
 	labels := make(map[string]string, len(layers))
 	for key, raw := range layers {
-		if _, ok := layerName(key); !ok && strings.TrimSpace(key) != ImageLabel {
+		// Each key is stored as the layer it resolves to, the image's own or
+		// a contributed one by its trimmed name, so that two keys naming one
+		// layer — differing only in space the resolver trims — are refused
+		// rather than left to map order to choose between on each read.
+		canonical := ImageLabel
+		if name, ok := layerName(key); ok {
+			canonical = ImageLayerLabelPrefix + name
+		} else if strings.TrimSpace(key) != ImageLabel {
 			return nil, fmt.Errorf("manifest file key %q is not a layer: want %s or %s<NN>-<name>", key, ImageLabel, ImageLayerLabelPrefix)
 		}
 		if trimmed := strings.TrimSpace(string(raw)); trimmed == "" || trimmed[0] != '{' {
 			return nil, fmt.Errorf("manifest file layer %q must be a JSON object", key)
 		}
-		labels[strings.TrimSpace(key)] = string(raw)
+		if _, dup := labels[canonical]; dup {
+			return nil, fmt.Errorf("manifest file names layer %q twice", canonical)
+		}
+		labels[canonical] = string(raw)
 	}
 	return labels, nil
 }

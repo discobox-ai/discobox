@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -335,7 +336,12 @@ func inspectManifestFile(ref, overlayDir string) (imageMetadata, error) {
 	if overlayDir == "" {
 		return imageMetadata{}, fmt.Errorf("manifest file reference %q: this server has no overlay directory to read manifest files from", ref)
 	}
-	rel, err := filepath.Rel(filepath.Clean(overlayDir), filepath.Clean(path))
+	// A configured directory may be relative, and a reference never is.
+	overlayDir, err = filepath.Abs(overlayDir)
+	if err != nil {
+		return imageMetadata{}, fmt.Errorf("resolve overlay directory: %w", err)
+	}
+	rel, err := filepath.Rel(overlayDir, filepath.Clean(path))
 	if err != nil || rel == "." || !filepath.IsLocal(rel) {
 		return imageMetadata{}, fmt.Errorf("manifest file reference %q is not in the overlay directory %s: a manifest file is read from there and nowhere else", ref, overlayDir)
 	}
@@ -344,12 +350,43 @@ func inspectManifestFile(ref, overlayDir string) (imageMetadata, error) {
 		return imageMetadata{}, fmt.Errorf("open overlay directory: %w", err)
 	}
 	defer root.Close()
-	data, err := root.ReadFile(rel)
+	data, err := readManifestFile(root, rel)
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("read manifest file %q: %w", ref, err)
 	}
 	sum := sha256.Sum256(data)
 	return parseManifestFile("sha256:"+hex.EncodeToString(sum[:]), data)
+}
+
+// maxManifestFileBytes bounds what a manifest file read buffers. An overlay
+// also holds the agent's binaries, and a reference to one of those must not
+// have the server read a binary whole into memory, once per request, to learn
+// it is not JSON. A manifest is a few kilobytes.
+const maxManifestFileBytes = 1 << 20
+
+// readManifestFile reads the regular file at rel under root, refusing one
+// larger than maxManifestFileBytes before buffering it.
+func readManifestFile(root *os.Root, rel string) ([]byte, error) {
+	file, err := root.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("not a regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxManifestFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxManifestFileBytes {
+		return nil, fmt.Errorf("larger than %d bytes, which no manifest is", maxManifestFileBytes)
+	}
+	return data, nil
 }
 
 // manifestFileSource is what a manifest file's errors say they are about.
