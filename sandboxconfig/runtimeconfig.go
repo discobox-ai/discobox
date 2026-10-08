@@ -9,10 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"path"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
 // RuntimeConfig is the pool's whole view of a running sandbox: one document
@@ -153,8 +154,10 @@ var registryNamespacePattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*
 
 // Validate refuses a document the sandbox could not apply whole. Everything a
 // delivery can be wrong about is checked here, before anything is written, so
-// that a refused document leaves the sandbox exactly as it was.
-func (c RuntimeConfig) Validate() error {
+// that a refused document leaves the sandbox exactly as it was. paths is the
+// sandbox's own platform's path rules, which a source target is judged by
+// (ADR 0145 §6): `C:\workspace\app` is a target on Windows and not on Linux.
+func (c RuntimeConfig) Validate(paths sandboxpath.Paths) error {
 	var errs []error
 	if c.Revision < 1 {
 		errs = append(errs, fmt.Errorf("revision must be at least 1, got %d", c.Revision))
@@ -181,8 +184,8 @@ func (c RuntimeConfig) Validate() error {
 			errs = append(errs, fmt.Errorf("source %q is named twice", source.Slug))
 		}
 		seen[source.Slug] = true
-		if source.Target != "" && (!path.IsAbs(source.Target) || path.Clean(source.Target) != source.Target) {
-			errs = append(errs, fmt.Errorf("source %q target %q is not a clean absolute path", source.Slug, source.Target))
+		if source.Target != "" && (!paths.IsAbs(source.Target) || paths.Clean(source.Target) != source.Target) {
+			errs = append(errs, fmt.Errorf("source %q target %q is not a clean absolute %s path", source.Slug, source.Target, pathsOS(paths)))
 		}
 		if source.OriginURL != "" {
 			if _, err := url.Parse(source.OriginURL); err != nil {
@@ -199,6 +202,14 @@ func (c RuntimeConfig) Validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// pathsOS names the platform a path was judged for, in a refusal.
+func pathsOS(paths sandboxpath.Paths) string {
+	if paths.OS() == "" {
+		return "POSIX"
+	}
+	return paths.OS()
 }
 
 func (p RuntimeProxy) validate() error {

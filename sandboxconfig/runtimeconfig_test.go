@@ -3,6 +3,9 @@ package sandboxconfig
 import (
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
 func TestRuntimeConfigValidate(t *testing.T) {
@@ -12,7 +15,7 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		SecretEnv: map[string]string{"GH_TOKEN": "sentinel"},
 		Sources:   []RuntimeSource{{Slug: "primary", Target: "/workspace", OriginURL: "https://pool/origins/primary", OriginToken: "token"}},
 	}
-	if err := valid.Validate(); err != nil {
+	if err := valid.Validate(sandboxpath.Paths{}); err != nil {
 		t.Fatalf("valid document: %v", err)
 	}
 	for name, tc := range map[string]struct {
@@ -32,10 +35,10 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		}, "no target"},
 		"relative target": {func(c *RuntimeConfig) {
 			c.Sources = []RuntimeSource{{Slug: "primary", Target: "workspace"}}
-		}, "clean absolute path"},
+		}, "is not a clean absolute"},
 		"unclean target": {func(c *RuntimeConfig) {
 			c.Sources = []RuntimeSource{{Slug: "primary", Target: "/workspace/../etc"}}
-		}, "clean absolute path"},
+		}, "is not a clean absolute"},
 		"multi-line token": {func(c *RuntimeConfig) {
 			c.Sources = []RuntimeSource{{Slug: "primary", Target: "/workspace", OriginToken: "a\nprotocol=http"}}
 		}, "single line"},
@@ -53,7 +56,7 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			doc := valid
 			tc.mutate(&doc)
-			err := doc.Validate()
+			err := doc.Validate(sandboxpath.Paths{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Validate() = %v, want an error naming %q", err, tc.want)
 			}
@@ -84,5 +87,31 @@ func TestRuntimeConfigSameDocument(t *testing.T) {
 	b.SecretEnv = map[string]string{"A": "x"}
 	if a.SameDocument(b) {
 		t.Fatal("documents that differ compare the same")
+	}
+}
+
+// A source target is judged by the sandbox's own platform (ADR 0145 §6): a
+// drive path is a target on Windows and not on Linux, and the reverse.
+func TestRuntimeConfigTargetsAreTheSandboxPlatforms(t *testing.T) {
+	windows := sandboxpath.For(platform.Platform{OS: "windows", Arch: "amd64"})
+	linux := sandboxpath.For(platform.Platform{OS: "linux", Arch: "amd64"})
+	doc := func(target string) RuntimeConfig {
+		return RuntimeConfig{Revision: 1, Sources: []RuntimeSource{{Slug: "primary", Target: target, OriginURL: "https://pool/o"}}}
+	}
+	for _, tc := range []struct {
+		paths  sandboxpath.Paths
+		target string
+		ok     bool
+	}{
+		{windows, `C:\workspace\app`, true},
+		{windows, "/workspace/app", false},
+		{windows, `C:\workspace\..\app`, false},
+		{linux, "/workspace/app", true},
+		{linux, `C:\workspace\app`, false},
+	} {
+		err := doc(tc.target).Validate(tc.paths)
+		if (err == nil) != tc.ok {
+			t.Errorf("Validate(%s) of target %q = %v, want ok=%v", tc.paths.OS(), tc.target, err, tc.ok)
+		}
 	}
 }

@@ -24,7 +24,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
 // Layout is where a document's files land.
@@ -38,6 +40,9 @@ type Layout struct {
 	// StatePath is where the last applied document is kept. It holds the
 	// sandbox's client key, so it is the agent's alone (0600).
 	StatePath string
+	// Paths is this sandbox's platform's path rules, which a document's
+	// source targets are judged by. The zero value judges POSIX paths.
+	Paths sandboxpath.Paths
 }
 
 // DefaultLayout is the paths the sandbox's readers use. The state file sits
@@ -50,6 +55,9 @@ func DefaultLayout() Layout {
 		ProxyDir:    filepath.Join(sandboxconfig.SandboxConfigDir, "proxy"),
 		SecretsPath: "/run/discobox/secrets/secrets.json",
 		StatePath:   "/var/lib/discobox/runtime-config.json",
+		// The agent runs inside the sandbox, so its own platform is the
+		// sandbox's.
+		Paths: sandboxpath.For(platform.Current()),
 	}
 }
 
@@ -122,7 +130,7 @@ func Open(layout Layout, owner Owner) (*Intake, error) {
 		}
 		kept.Proxy.ClientKey = string(key)
 	}
-	if err := kept.Validate(); err != nil {
+	if err := kept.Validate(layout.Paths); err != nil {
 		return in, fmt.Errorf("kept runtime config %s: %w", layout.StatePath, err)
 	}
 	// The state file already holds this document; only its files are put back.
@@ -177,7 +185,7 @@ func (in *Intake) Apply(doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeC
 			return sandboxconfig.RuntimeConfig{}, fmt.Errorf("%w (revision %d)", ErrConflict, doc.Revision)
 		}
 	}
-	if err := doc.Validate(); err != nil {
+	if err := doc.Validate(in.layout.Paths); err != nil {
 		return sandboxconfig.RuntimeConfig{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	if err := in.commit(doc, true); err != nil {
