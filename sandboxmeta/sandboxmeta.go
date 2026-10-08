@@ -240,6 +240,19 @@ func TagStrings(tags map[string]string) []string {
 	return out
 }
 
+// ParseTag reads one tag as TagStrings spells it: `key=value`, or `key` alone
+// for a plain label. The value runs from the first `=`, so it may hold more.
+func ParseTag(text string) (key, value string, err error) {
+	key, value, _ = strings.Cut(text, "=")
+	if err := ValidateKey(key); err != nil {
+		return "", "", fmt.Errorf("tag %q: %w", text, err)
+	}
+	if err := ValidateValue(key, value); err != nil {
+		return "", "", fmt.Errorf("tag %q: %w", text, err)
+	}
+	return key, value, nil
+}
+
 // FormatTags is TagStrings joined with commas: the form one listing column
 // holds.
 func FormatTags(tags map[string]string) string {

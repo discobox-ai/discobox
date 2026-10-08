@@ -423,6 +423,9 @@ prompt and none of `new`'s flags.
 `delete` is an alias for it. A NAME two boxes share is refused rather than
 guessed at. `discobox admin box purge` destroys one and its data.
 `discobox start`, `stop`, and `restart` take boxes the same way.
+`discobox tag BOX KEY[=VALUE]... [--rm KEY]...` sets and removes a box's tags
+from outside it (starting it if it is stopped), and `discobox ls --tag KEY`
+lists by them.
 
 Do not invent flags for them. Name the command and say to check `--help`.
 
@@ -439,7 +442,7 @@ With it, you may create discoboxes with `discobox new`, cut from the directory
 you run it in; list and read them (`admin box ls`, `admin box get`); read
 and type into the terminals of the ones you created (`admin terminal screen`,
 `input`, `wait`); start, stop, and restart the ones you created
-(`discobox start`, `stop`, `restart`); and list and answer credential
+(`discobox start`, `stop`, `restart`); tag them (`discobox tag`); and list and answer credential
 requests (`discobox secret request ls`, `approve`, `deny`). Nothing else: the
 user's other commands above need their machine or reach further than a box
 may, and are refused. A box you create is the user's,

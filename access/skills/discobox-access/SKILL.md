@@ -110,7 +110,7 @@ getting them wrong is then impossible:
 | ID | What it is for | Delivered in | Sent to |
 | --- | --- | --- | --- |
 | `com.github.api` | GitHub: repositories over HTTPS, the REST and GraphQL API as `gh` uses it, and the Copilot API | `GH_TOKEN` | `github.com`, and the hosts beneath it such as `api.github.com`; `githubcopilot.com` too when named, as `--hosts api.github.com,githubcopilot.com` for Copilot CLI |
-| `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes, read and type into the terminals of the ones you created and start and stop them, and answer credential requests | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
+| `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes, read and type into the terminals of the ones you created, start and stop them, and tag them, and answer credential requests | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
 
 ```bash
 discobox-access request com.github.api --use "Open a pull request against the current repo" --why "the task asks for a PR" --wait
@@ -247,7 +247,8 @@ discobox-access request --json <<'EOF'
     {"description": "discobox secret request deny <request-id>: deny a pending credential request"},
     {"description": "discobox admin terminal ls --discobox-id <discobox-id>, discobox admin terminal screen <terminal-id> --discobox-id <discobox-id> [--scrollback N], and discobox admin terminal wait <terminal-id> --discobox-id <discobox-id> [flags]: read what a discobox I created shows in its terminals"},
     {"description": "discobox admin terminal input <terminal-id> --discobox-id <discobox-id> [--literal] <keys or text>: type keys and messages into the terminal of a discobox I created, to answer its questions or tell it to continue"},
-    {"description": "discobox start <discobox-id>, discobox stop <discobox-id>, and discobox restart <discobox-id>: start, stop, or restart a discobox I created"}
+    {"description": "discobox start <discobox-id>, discobox stop <discobox-id>, and discobox restart <discobox-id>: start, stop, or restart a discobox I created"},
+    {"description": "discobox tag <discobox-id> KEY[=VALUE]... and discobox tag <discobox-id> --rm KEY...: set or remove the tags of a discobox I created, to mark it for its user"}
   ],
   "grantTTLSeconds": 28800,
   "wait": true
