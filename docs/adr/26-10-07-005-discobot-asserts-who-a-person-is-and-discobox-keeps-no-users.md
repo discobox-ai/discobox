@@ -10,7 +10,7 @@
 
 ## Context
 
-discobot (its own repository, `github.com/discobox/discobot`) is a
+discobot (its own repository, `github.com/discobox-ai/discobot`) is a
 team-facing control plane for the agents that run in
 discoboxes: a conversation with an agent, a live map of which discoboxes reach
 which systems, and the credentials and approvals behind it. Building it showed
