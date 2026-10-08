@@ -85,7 +85,7 @@ var registry = []Credential{
 	{
 		ID:          DiscoboxSandbox,
 		Name:        "discobox",
-		Description: "The discobox API, reached through this discobox's pool: create, list, and get discoboxes, give a new one uses of project secrets, read and type into the terminals of the ones it created and start and stop them, and answer credential requests.",
+		Description: "The discobox API, reached through this discobox's pool: create, list, and get discoboxes, give a new one uses of project secrets, read and type into the terminals of the ones it created, start and stop them, and tag them, and answer credential requests.",
 		Hosts:       []string{"api.discobox.internal"},
 		EnvVar:      "DISCOBOX_TOKEN",
 		Gate:        true,

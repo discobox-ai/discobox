@@ -428,7 +428,10 @@ reading and typing into its terminals
 starting, stopping, and restarting it
 ([ADR 26-10-02-478](../../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md)),
 which are the same power instructions a person sends and need nothing of the
-service beyond the role's ownership check; and reading and answering the
+service beyond the role's ownership check; changing its description and tags
+([ADR 26-10-08-447](../../../../docs/adr/26-10-08-447-a-discobox-tags-the-discoboxes-it-creates.md)),
+whose write into the discobox leases the `exec:write` its terminal input
+already does; and reading and answering the
 secret requests it files, within what the creator was delegated
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
 §§2–3). Nothing cascades by it: no archive, no purge, no inherited grant.

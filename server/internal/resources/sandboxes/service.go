@@ -549,17 +549,18 @@ func authorizeRequestedScopes(ctx context.Context, scopes []string) error {
 	}
 	principal, ok := auth.PrincipalFromContext(ctx)
 	if ok && principal.Type == auth.PrincipalTypeSandbox {
-		// A sandbox holds no scopes. The sandbox role admits two kinds of call
-		// of its that reach a discobox it created: the push into its origin (ADR
-		// 26-09-24-630 §2), and reading and typing into its terminals (ADR
-		// 26-10-01-397 §1). Those scopes are all this allows, so a route added
-		// to the role by mistake reaches no legacy terminal, tunnel, or sandbox
-		// HTTP. Attaching is refused where it waits (AwaitSandboxHTTPClient).
+		// A sandbox holds no scopes. The sandbox role admits three kinds of
+		// call of its that reach a discobox it created: the push into its
+		// origin (ADR 26-09-24-630 §2), reading and typing into its terminals
+		// (ADR 26-10-01-397 §1), and writing its meta file (ADR 26-10-08-447
+		// §1). Those scopes are all this allows, so a route added to the role
+		// by mistake reaches no legacy terminal, tunnel, or sandbox HTTP.
+		// Attaching is refused where it waits (AwaitSandboxHTTPClient).
 		for _, scope := range scopes {
 			switch scope {
 			case poolagentauth.ScopeSandboxWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite:
 			default:
-				return apperrors.NewStatusError(http.StatusForbidden, "a discobox may only push source into another or drive its terminals: "+scope)
+				return apperrors.NewStatusError(http.StatusForbidden, "a discobox may only push source into another, drive its terminals, or change its meta: "+scope)
 			}
 		}
 		return nil

@@ -125,7 +125,7 @@ Current authorizers:
 - `SandboxRoleAuthorizer` answers every request a sandbox principal makes, and
   only those: it allows the routes of the sandbox role (`sandboxRole`: discobox
   create, list, and get; source delivery, terminal screen, wait, and input,
-  and start, stop, and restart on discoboxes it created; secret requests list, get, approve, and deny;
+  start, stop, and restart, and meta changes, on discoboxes it created; secret requests list, get, approve, and deny;
   secrets list) in the sandbox's own project, resolving `default` to it, and refuses
   everything else — including the any-authenticated routes below, which is
   why it runs first. It is decided by the route; no grant or use text is
@@ -142,6 +142,9 @@ Current authorizers:
   its power — `start`, `stop`, and `restart`, but not archive, purge,
   repair, or upgrade — only for a discobox the caller created
   ([ADR 26-10-02-478](../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md));
+  its meta — `PATCH .../meta`, its description and tags, but not its name —
+  only for a discobox the caller created
+  ([ADR 26-10-08-447](../../../docs/adr/26-10-08-447-a-discobox-tags-the-discoboxes-it-creates.md));
   and a secret request's get, approve, and deny only when a discobox the
   caller created filed it — the request's owner. A request filed by no
   discobox, or by one that is gone, has no owner and is a person's to answer.

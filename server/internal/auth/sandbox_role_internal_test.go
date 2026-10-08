@@ -194,6 +194,46 @@ func TestSandboxRolePowersOnlyWhatItCreated(t *testing.T) {
 	}
 }
 
+// A discobox changes the meta only of discoboxes it created — not a person's,
+// and not its own through the API; renaming one stays out (ADR 26-10-08-447).
+func TestSandboxRoleTagsOnlyWhatItCreated(t *testing.T) {
+	authorizer := SandboxRoleAuthorizer{Store: roleStore(t)}
+	lead := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: "proj-1", UserID: "user-1"}
+	worker := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-worker", ProjectID: "proj-1", UserID: "user-1"}
+	for _, tc := range []struct {
+		name         string
+		caller       Principal
+		method, path string
+		want         int
+	}{
+		{"tag its worker", lead, http.MethodPatch, "/projects/default/sandboxes/sbx-worker/meta", http.StatusOK},
+		{"tag its worker by its project", lead, http.MethodPatch, "/api/projects/proj-1/sandboxes/sbx-worker/meta", http.StatusOK},
+		{"tag a person's discobox", lead, http.MethodPatch, "/projects/default/sandboxes/sbx-persons/meta", http.StatusForbidden},
+		{"tag itself", worker, http.MethodPatch, "/projects/default/sandboxes/sbx-worker/meta", http.StatusForbidden},
+		{"tag nothing", lead, http.MethodPatch, "/projects/default/sandboxes/sbx-none/meta", http.StatusNotFound},
+		{"tag its worker in another project", lead, http.MethodPatch, "/projects/proj-2/sandboxes/sbx-worker/meta", http.StatusForbidden},
+		{"rename its worker", lead, http.MethodPatch, "/projects/default/sandboxes/sbx-worker", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequestWithContext(WithPrincipal(context.Background(), tc.caller), tc.method, tc.path, nil)
+			ok, err := authorizer.Authorize(r)
+			got := http.StatusOK
+			if err != nil {
+				var status interface{ StatusCode() int }
+				if !errors.As(err, &status) {
+					t.Fatalf("error %v carries no status", err)
+				}
+				got = status.StatusCode()
+			} else if !ok {
+				t.Fatal("the role stepped aside for a sandbox's call; it must answer every one")
+			}
+			if got != tc.want {
+				t.Fatalf("status = %d (%v), want %d", got, err, tc.want)
+			}
+		})
+	}
+}
+
 // A discobox reads and answers only the requests of discoboxes it created
 // (ADR 26-09-30-782 §2). A request from a discobox a person made, from one that
 // is gone, or from no discobox at all is a person's to answer.
