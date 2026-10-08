@@ -58,12 +58,14 @@ A live origin is the developer's own repository, so the ref allow-list is the
 whole of what keeps a sandbox from the rest of it, and it holds only with every
 one of `githttp`'s restrictions in place. Each has a bypass of its own: the dumb
 protocol reads objects as files, a v2 upload-pack serves any object asked for
-by id (the `allow*SHA1InWant` switches do not stop it), and the repository's
-own `.git/config` can reveal refs unless the pool's switches come after it, on
-the command line. Do not forward `Git-Protocol` for a live origin, do not let it
-answer anything but the two upload-pack requests, and do not move a switch into
-the repository's config. `githttp/live_test.go` fetches by id under both
-protocols for this reason.
+by id (the `allow*SHA1InWant` switches do not stop it), and hideRefs reveals
+by prefix, so any design that lets the backend read the developer's refs for
+itself — checked first or not — serves whatever appears beneath an allowed
+name before it reads them. Do not forward `Git-Protocol` for a live origin, do
+not let it answer anything but the two upload-pack requests, and do not point
+the backend at the developer's repository instead of its snapshot.
+`githttp/live_test.go` fetches by id under both protocols, and mutates the
+developer's refs after a snapshot is taken, for these reasons.
 
 ## Error responses
 

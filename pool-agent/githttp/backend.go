@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,10 +85,11 @@ type Repository struct {
 //     reaches every object in the repository whatever is advertised, so
 //     anything but the two upload-pack endpoints is refused here and
 //     http.getanyfile is off besides.
-//   - Every ref under refs/ is hidden, then the allowed ones are revealed. The
-//     switches come from the command line, which git reads after the
-//     repository's own configuration, so nothing in its .git/config can
-//     reveal another ref or turn on a fetch by object id.
+//   - Not the developer's repository itself but a snapshot of it
+//     (liveSnapshot): a repository holding the allowed refs and nothing
+//     else, borrowing the developer's objects. What it advertises is fixed
+//     before the backend starts, and the developer's own .git/config is never
+//     read.
 //   - Protocol v0, whatever the client asks for. A v2 upload-pack serves any
 //     object it is asked for by id, advertised or not and whatever
 //     uploadpack.allow*SHA1InWant says, so a hidden ref's commits would be one
@@ -104,12 +107,14 @@ func ServeBackend(w http.ResponseWriter, r *http.Request, repo Repository, suffi
 			http.Error(w, "a live origin is served fetch-only, over git's smart protocol", http.StatusForbidden)
 			return
 		}
-		refs, err := liveAdvertisedRefs(r.Context(), repo)
+		snapshot, err := liveSnapshot(r.Context(), repo)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		args = liveOriginArgs(refs)
+		defer func() { _ = os.RemoveAll(snapshot) }()
+		repo.Path = snapshot
+		args = liveOriginArgs()
 	}
 	//nolint:gosec // The executable is fixed and every argument is either fixed or a validated ref name; request data is passed through CGI env/stdin.
 	cmd := exec.CommandContext(r.Context(), "git", append(args, "http-backend")...)
@@ -170,10 +175,12 @@ func uploadPackRequest(r *http.Request, suffix string) bool {
 	}
 }
 
-// liveOriginArgs are the switches a live repository is served under; see
-// ServeBackend.
-func liveOriginArgs(refs []string) []string {
-	args := []string{
+// liveOriginArgs are the switches a live repository's snapshot is served
+// under; see ServeBackend. The snapshot's own configuration is the pool's, but
+// they are given on the command line all the same, so what they say does not
+// depend on what liveSnapshot writes.
+func liveOriginArgs() []string {
+	return []string{
 		"-c", "http.receivepack=false",
 		"-c", "http.uploadpack=true",
 		"-c", "http.getanyfile=false",
@@ -181,62 +188,218 @@ func liveOriginArgs(refs []string) []string {
 		"-c", "uploadpack.allowReachableSHA1InWant=false",
 		"-c", "uploadpack.allowTipSHA1InWant=false",
 		"-c", "uploadpack.allowRefInWant=false",
-		"-c", "uploadpack.hideRefs=refs/",
 	}
-	for _, ref := range refs {
-		args = append(args, "-c", "uploadpack.hideRefs=!"+ref)
-	}
-	return args
 }
 
-// liveAdvertisedRefs is the allow-list for one request: the repository's
-// declared refs, and the branch HEAD names now. HEAD is read per request
-// because no push ever updates a live origin: where the developer is now is
-// what `git rebase origin/<branch>` in the sandbox is rebasing onto.
+// liveSnapshot builds the repository one live request is served from and
+// returns its path; the caller removes it. It is a bare repository holding
+// HEAD and the allow-list — the repository's declared refs and the branch
+// HEAD names now, each that exists, at the object it names now — and nothing
+// else, with the developer's objects lent through objects/info/alternates.
 //
-// Only the allowed refs that exist right now are revealed. A hideRefs entry
-// is a prefix, so revealing refs/heads/feature also reveals
-// refs/heads/feature/x — harmless while feature exists, since git keeps a ref
-// and refs beneath it from existing together, and a leak the moment the
-// developer deletes feature and creates one beneath it. A ref that exists has
-// nothing beneath it, so revealing only those reveals exactly them; the same
-// rule turns away a name that is a namespace rather than a ref.
-func liveAdvertisedRefs(ctx context.Context, repo Repository) ([]string, error) {
+// HEAD is read per request because no push ever updates a live origin: where
+// the developer is now is what `git rebase origin/<branch>` in the sandbox is
+// rebasing onto.
+//
+// Serving the developer's repository with hideRefs revealing the allowed refs
+// would be shorter and is not equivalent. A hideRefs entry reveals by prefix,
+// so revealing refs/heads/feature also reveals refs/heads/feature/x, and
+// checking first that feature exists leaves the gap between the check and the
+// backend reading the refs for itself: delete feature and create
+// feature/private in it, and the private branch is served. Here the backend
+// reads only refs this function wrote, so there is no other ref to reveal and
+// no later moment at which one could appear.
+func liveSnapshot(ctx context.Context, repo Repository) (string, error) {
 	candidates := make([]string, 0, len(repo.Refs)+1)
 	for _, ref := range repo.Refs {
 		if !validAdvertisedRef(ref) {
-			return nil, fmt.Errorf("live origin ref %q is not a full ref name", ref)
+			return "", fmt.Errorf("live origin ref %q is not a full ref name", ref)
 		}
 		candidates = append(candidates, ref)
 	}
 	head, err := headBranch(ctx, repo)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if head != "" && validAdvertisedRef(head) && !slices.Contains(candidates, head) {
 		candidates = append(candidates, head)
 	}
+	refs, err := resolveRefs(ctx, repo, candidates)
+	if err != nil {
+		return "", err
+	}
+	headValue := "ref: " + head
+	if head == "" {
+		// Detached: HEAD is a commit, and the snapshot's HEAD is that commit.
+		id, err := repositoryGit(ctx, repo, "rev-parse", "--verify", "--quiet", "HEAD")
+		if err != nil {
+			return "", fmt.Errorf("read live origin HEAD: %w", err)
+		}
+		headValue = id
+	} else if !validAdvertisedRef(head) {
+		// HEAD names something no allow-list could hold; serve it unborn.
+		headValue = "ref: refs/heads/.unborn"
+	}
+	format, err := repositoryGit(ctx, repo, "rev-parse", "--show-object-format")
+	if err != nil {
+		return "", fmt.Errorf("read live origin object format: %w", err)
+	}
+	objects, err := filepath.Abs(filepath.Join(repo.Path, "objects"))
+	if err != nil {
+		return "", err
+	}
+
+	shallow, err := readShallow(repo.Path, format)
+	if err != nil {
+		return "", err
+	}
+
+	dir, err := os.MkdirTemp("", "discobox-live-origin-")
+	if err != nil {
+		return "", err
+	}
+	if err := writeSnapshot(dir, headValue, format, objects, refs, shallow, repo.UID, repo.GID); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
+// readShallow is the object ids in the repository's shallow file, if it has
+// one. This is the one read of the developer's repository that is not git
+// running as its owner, so it is the pool agent, as root, reading a file the
+// developer controls — and what it reads is copied into a file the developer
+// owns and that upload-pack echoes back in its errors. So it is opened through
+// os.Root, which refuses a link leading out of the Git directory, it must be a
+// regular file, and only lines that are object ids of the repository's format
+// are taken: anything else fails the request without saying what it held.
+func readShallow(gitDir, objectFormat string) ([]string, error) {
+	root, err := os.OpenRoot(gitDir)
+	if err != nil {
+		return nil, fmt.Errorf("open live origin: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	file, err := root.Open("shallow")
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open live origin shallow file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat live origin shallow file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("live origin shallow file is not a regular file")
+	}
+	size := 41
+	if objectFormat == "sha256" {
+		size = 65
+	}
+	// A line per shallow commit, so a cap well past any real one bounds the
+	// read without ever cutting a genuine file short.
+	data, err := io.ReadAll(io.LimitReader(file, 64<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read live origin shallow file: %w", err)
+	}
+	var ids []string
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		if len(line) != size-1 || strings.Trim(line, "0123456789abcdef") != "" {
+			return nil, errors.New("live origin shallow file holds something other than object ids")
+		}
+		ids = append(ids, line)
+	}
+	return ids, nil
+}
+
+// snapshotRef is one allowed ref and the object it names.
+type snapshotRef struct {
+	name string
+	id   string
+}
+
+// resolveRefs is each candidate that exists, with the object it names.
+// for-each-ref matches its patterns by prefix, so what it lists is filtered
+// back down to the names asked for.
+func resolveRefs(ctx context.Context, repo Repository, candidates []string) ([]snapshotRef, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	// for-each-ref matches its patterns by prefix too, so what it lists is
-	// filtered back down to the names asked for.
-	out, err := repositoryGit(ctx, repo, append([]string{"for-each-ref", "--format=%(refname)", "--"}, candidates...)...)
+	out, err := repositoryGit(ctx, repo, append([]string{"for-each-ref", "--format=%(objectname) %(refname)", "--"}, candidates...)...)
 	if err != nil {
 		return nil, fmt.Errorf("list live origin refs: %w", err)
 	}
-	var refs []string
-	for _, ref := range strings.Split(out, "\n") {
-		if slices.Contains(candidates, ref) && !slices.Contains(refs, ref) {
-			refs = append(refs, ref)
+	var refs []snapshotRef
+	for _, line := range strings.Split(out, "\n") {
+		id, name, ok := strings.Cut(line, " ")
+		if ok && slices.Contains(candidates, name) {
+			refs = append(refs, snapshotRef{name: name, id: id})
 		}
 	}
 	return refs, nil
 }
 
-// validAdvertisedRef accepts a full ref name, refs/<kind>/<name>, with nothing
-// that would change how a hideRefs entry reads: a leading "!" or "^" is
-// syntax there, not part of the name.
+// writeSnapshot lays the snapshot repository out in dir, owned by uid:gid,
+// which is who the backend serving it runs as.
+func writeSnapshot(dir, head, objectFormat, objects string, refs []snapshotRef, shallow []string, uid, gid int) error {
+	config := "[core]\n\trepositoryformatversion = 0\n\tbare = true\n"
+	if objectFormat != "sha1" {
+		config = "[core]\n\trepositoryformatversion = 1\n\tbare = true\n[extensions]\n\tobjectformat = " + objectFormat + "\n"
+	}
+	var packed strings.Builder
+	for _, ref := range refs {
+		packed.WriteString(ref.id + " " + ref.name + "\n")
+	}
+	files := map[string]string{
+		"HEAD":                    head + "\n",
+		"config":                  config,
+		"packed-refs":             packed.String(),
+		"objects/info/alternates": objects + "\n",
+	}
+	// A shallow repository's history stops at the commits this names; without
+	// it the backend walks into parents that are not there.
+	if len(shallow) > 0 {
+		files["shallow"] = strings.Join(shallow, "\n") + "\n"
+	}
+	// Owner-only throughout: the snapshot is read by the backend, which runs
+	// as its owner, and by nothing else.
+	created := []string{dir}
+	for _, sub := range []string{"refs", "objects", "objects/info"} {
+		path := filepath.Join(dir, sub)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return err
+		}
+		created = append(created, path)
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			return err
+		}
+		created = append(created, path)
+	}
+	if uid < 0 {
+		return nil
+	}
+	// Each path this function created, by name: nothing else is in dir, and
+	// nothing is walked that could have been swapped for a link.
+	for _, path := range created {
+		if err := os.Lchown(path, uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validAdvertisedRef accepts a full ref name, refs/<kind>/<name>, of the
+// shape git itself would accept: a namespace is never one, and nothing in it
+// may reach for-each-ref as a pattern or a packed-refs line as anything but a
+// name.
 func validAdvertisedRef(ref string) bool {
 	rest, ok := strings.CutPrefix(ref, "refs/")
 	if !ok || !strings.Contains(strings.Trim(rest, "/"), "/") {

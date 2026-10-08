@@ -664,7 +664,7 @@ origin, whichever kind it is, so a sandbox is only ever handed a URL
 flowchart TD
   req["git-origins/{slug}.git"] --> rec{"slug in live-origins.json?"}
   rec -->|yes| vis{"developer's .git visible<br/>here, a real directory?"}
-  vis -->|yes| live["live origin: the developer's .git<br/>fetch-only, ref allow-list,<br/>run as its owner"]
+  vis -->|yes| live["live origin: a per-request snapshot of<br/>the developer's allowed refs, fetch-only,<br/>run as the .git's owner"]
   vis -->|no| bare
   rec -->|no| bare{"origins/{slug}.git exists?"}
   bare -->|yes| pushed["bare origin (ADR 0058)<br/>client pushes, sandbox fetches"]
@@ -685,15 +685,18 @@ flowchart TD
   requests. receive-pack is refused whatever the token allows, and so is the
   dumb protocol, which hands out objects as plain files whatever is advertised
   (`http.getanyfile=false` besides).
-- **Ref allow-list.** `uploadpack.hideRefs=refs/` hides everything, then the
-  allowed refs are revealed: the branch `HEAD` names, read per request, and the
-  source's declared refs — its checkout branch or tag and its dirty-workspace
-  snapshot ref. `HEAD` itself is always advertised. Only the allowed refs that
-  exist at that moment are revealed, because a hideRefs entry is a prefix: a
-  declared branch the developer has since deleted would otherwise reveal
-  whatever they create beneath its name. The switches are given on the command
-  line, which git reads after the repository's own config, so the developer's
-  `.git/config` cannot widen them.
+- **Ref allow-list.** A live request is never served from the developer's
+  repository itself but from a snapshot of it (`liveSnapshot`): a temporary
+  bare repository holding `HEAD` and the allowed refs that exist at that
+  moment, each at the object it names then, with the developer's objects lent
+  through `objects/info/alternates`. The allowed refs are the branch `HEAD`
+  names, read per request, and the source's declared refs — its checkout
+  branch or tag and its dirty-workspace snapshot ref. The snapshot is what the
+  backend reads, so nothing else is there to advertise: not by a prefix match
+  (hideRefs reveals `feature/x` with `feature`, which a check-then-serve of the
+  developer's repository leaves open between the check and the backend), and
+  not through the developer's `.git/config`, which is never read. It is
+  removed once the request is answered.
 - **No fetch by object id.** The `uploadpack.allow*SHA1InWant` and
   `allowRefInWant` switches are forced off, and a live origin is answered in
   protocol v0 whatever the client asks for: a v2 upload-pack serves any object
