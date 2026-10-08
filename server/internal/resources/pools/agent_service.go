@@ -74,14 +74,12 @@ func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolB
 	return &services.RegisterPoolResponseBody{}, nil
 }
 
-// declaredPlatform reads the platform a pool agent says its pool hosts. A pool
-// hosts exactly one (ADR 0145 §1), and an agent that cannot say which is
-// refused rather than recorded as hosting nothing.
-func declaredPlatform(declared string) (platform.Platform, error) {
-	hosts, err := platform.Parse(declared)
-	if err == nil && hosts.IsZero() {
-		err = errors.New("a pool agent must declare the platform its pool hosts")
-	}
+// declaredPlatform reads the platform a pool agent says its pool hosts (ADR
+// 0145 §1). One that is not an os/arch pair is refused. None at all is an
+// agent from before platforms, which still has to be able to report: the
+// zero platform it returns is resolved by store.recordPoolPlatform.
+func declaredPlatform(declared services.OptString) (platform.Platform, error) {
+	hosts, err := platform.Parse(declared.Or(""))
 	if err != nil {
 		return platform.Platform{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}

@@ -390,10 +390,8 @@ func TestReadWithholdsTheTreesSumsFromADamagedExport(t *testing.T) {
 
 // The manifest says what platform the discobox ran on, so a destination can
 // refuse to restore it onto another (ADR 0145 §8). An archive written before
-// platforms were recorded holds a Linux discobox, and reads as one on the
-// platform a pool on this machine hosts — what the migration takes such a
-// sandbox to be.
-func TestSpecCarriesItsPlatformAndALegacyOneIsLinux(t *testing.T) {
+// platforms were recorded names none, and is not guessed at.
+func TestSpecCarriesItsPlatformAndALegacyOneHasNone(t *testing.T) {
 	manifest := sampleManifest()
 	darwin := platform.Platform{OS: "darwin", Arch: "arm64"}
 	manifest.Sandbox.Platform = darwin
@@ -423,7 +421,7 @@ func TestSpecCarriesItsPlatformAndALegacyOneIsLinux(t *testing.T) {
 	if err := json.Unmarshal(legacy, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Sandbox.Platform != platform.Pool() {
-		t.Fatalf("legacy platform = %q, want %q", decoded.Sandbox.Platform, platform.Pool())
+	if !decoded.Sandbox.Platform.IsZero() {
+		t.Fatalf("legacy platform = %q, want none", decoded.Sandbox.Platform)
 	}
 }

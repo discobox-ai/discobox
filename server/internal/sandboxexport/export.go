@@ -124,9 +124,9 @@ type Spec struct {
 	// Platform is what the sandbox ran on, and the only platform it may be
 	// restored onto: the tree is content, and a restore onto another platform
 	// is refused rather than approximated (ADR 0145 §8). An archive written
-	// before platforms were recorded holds a Linux sandbox, and reads as one on
-	// this machine's architecture, which is what the server's own migration
-	// takes such a sandbox to be.
+	// before platforms were recorded has none, and is not guessed at: it
+	// reads as no platform, and the sandbox it becomes takes its pool's when
+	// it is placed, as every sandbox from before platforms does.
 	//
 	// Like Tags, it was added without a format version: an older reader
 	// ignores it and restores the tree it was always going to restore.
@@ -175,9 +175,6 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	s.Harness = decoded.Harness
 	s.Origin = decoded.Origin
 	s.Platform = decoded.Platform
-	if s.Platform.IsZero() {
-		s.Platform = platform.Pool()
-	}
 	s.Secrets = decoded.Secrets
 	s.Manifest = decoded.SandboxManifest
 	// An ID from the source server is meaningless here and dangerous if it

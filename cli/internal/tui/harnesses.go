@@ -767,12 +767,12 @@ func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
 	if h.Digest != "" {
 		fmt.Fprintln(&b, label("Digest"), h.Digest)
 	}
-	if h.Platform != "" {
-		platform := h.Platform
+	if h.Platforms != "" {
+		platforms := h.Platforms
 		if h.Unhosted {
-			platform += st.dimText.Render("  no pool hosts it")
+			platforms += st.dimText.Render("  no pool hosts one")
 		}
-		fmt.Fprintln(&b, label("Platform"), platform)
+		fmt.Fprintln(&b, label("Platform"), platforms)
 	}
 	if len(h.Run) > 0 {
 		fmt.Fprintln(&b, label("Run"), st.command.Render(strings.Join(h.Run, " ")))

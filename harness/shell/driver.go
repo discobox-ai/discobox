@@ -9,10 +9,7 @@
 // registry entry. It has no image.json: it has nothing to override.
 package shell
 
-import (
-	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/platform"
-)
+import "github.com/discobox-ai/discobox/harness"
 
 type Driver struct{}
 
@@ -23,6 +20,5 @@ func (Driver) Definition() harness.Definition {
 		ID: harness.ShellSlug, Name: "Shell",
 		Description: "An interactive login shell, with no coding harness on top.",
 		Image:       harness.ImageRef("discobox-harness-shell"),
-		Platform:    platform.Pool(),
 	}
 }

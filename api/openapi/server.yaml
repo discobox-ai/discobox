@@ -82,10 +82,12 @@ components:
                     description: Harness config name
                     maxLength: 200
                     type: string
-                platform:
-                    description: Platform the harness's template runs on, as os/arch. A discobox on this harness runs on this platform and is placed only on a pool that hosts it.
-                    pattern: ^[a-z0-9]+/[a-z0-9]+$
-                    type: string
+                platforms:
+                    description: Platforms the harness's image is published for, as os/arch. A discobox on this harness runs on its pool's platform, and is placed only on a pool that hosts one of these. Absent on a harness not inspected since platforms were recorded, which rules no pool out.
+                    items:
+                        pattern: ^[a-z0-9]+/[a-z0-9]+$
+                        type: string
+                    type: array
                 projectId:
                     description: Project ID
                     type: string
@@ -2915,7 +2917,7 @@ components:
                 keyType:
                     type: string
                 platform:
-                    description: The one platform the pool hosts, as os/arch.
+                    description: The one platform the pool hosts, as os/arch. An agent from before platforms sends none, and its pool keeps the platform recorded for it.
                     pattern: ^[a-z0-9]+/[a-z0-9]+$
                     type: string
                 poolId:
@@ -2929,7 +2931,6 @@ components:
                 - poolId
                 - bootstrapToken
                 - publicKey
-                - platform
             type: object
         RegisterPoolResponseBody:
             additionalProperties: false
@@ -4093,7 +4094,7 @@ components:
                     readOnly: true
                     type: string
                 platform:
-                    description: Platform the sandbox runs on, as os/arch. Recorded at create from its harness config, immutable after.
+                    description: Platform the sandbox runs on, as os/arch — its pool's, which its harness's image is published for. Absent until its pool has declared one; immutable after.
                     pattern: ^[a-z0-9]+/[a-z0-9]+$
                     type: string
                 projectId:
@@ -5522,7 +5523,7 @@ components:
                 degraded:
                     type: boolean
                 platform:
-                    description: The one platform the pool hosts, as os/arch. Declared on every report, so a pool that registered before platforms were recorded corrects what was assumed for it.
+                    description: The one platform the pool hosts, as os/arch. Declared on every report, because an agent whose key survives a restart does not register again. An agent from before platforms sends none, and its pool keeps the platform recorded for it.
                     pattern: ^[a-z0-9]+/[a-z0-9]+$
                     type: string
                 ready:
@@ -5536,7 +5537,6 @@ components:
                 - availableCpuVcpus
                 - availableMemoryBytes
                 - availableStorageBytes
-                - platform
             type: object
         ReportPoolSandboxStatesBody:
             additionalProperties: false

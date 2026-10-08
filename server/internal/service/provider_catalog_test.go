@@ -746,7 +746,6 @@ func imagelessHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, 
 	clearSeededHarnessConfigs(ctx, t, st, projectID)
 	config := &model.HarnessConfig{
 		ProjectID: projectID, Slug: "imageless", Name: "Imageless", Configured: true,
-		Platform: platform.Pool(),
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create imageless harness config: %v", err)

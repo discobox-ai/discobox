@@ -133,18 +133,42 @@ func TestSandboxUpgradeWithoutAFallbackConfig(t *testing.T) {
 	}
 }
 
-// A harness config of another platform than the sandbox's is nothing to move
-// to: its digest is another platform's image (ADR 0145 §1).
+// A harness config whose image is not published for the sandbox's platform is
+// nothing to move to (ADR 0145 §1). One published for it, or one whose
+// platforms nobody has read, is.
 func TestSandboxUpgradeTargetStaysOnTheSandboxsPlatform(t *testing.T) {
 	config := shellConfig()
-	config.Platform = platform.Platform{OS: "linux", Arch: "riscv64"}
+	config.Platforms = platform.NewSet(platform.Platform{OS: "linux", Arch: "riscv64"})
 	sb := sandboxWithHarness("harness-shell", "discobox-sandbox-agent:old", "sha256:old")
 	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
 	if target, available := SandboxUpgradeTarget(sb, config); target.Digest != "" || available {
 		t.Fatalf("target = %+v, available = %t; want nothing to move to", target, available)
 	}
-	config.Platform = sb.Platform
-	if target, available := SandboxUpgradeTarget(sb, config); target.Digest != "sha256:new" || !available {
-		t.Fatalf("target = %+v, available = %t; want the config's image on the same platform", target, available)
+	for _, platforms := range []platform.Set{platform.NewSet(sb.Platform, config.Platforms[0]), nil} {
+		config.Platforms = platforms
+		if target, available := SandboxUpgradeTarget(sb, config); target.Digest != "sha256:new" || !available {
+			t.Fatalf("platforms %q: target = %+v, available = %t; want the config's image", platforms, target, available)
+		}
+	}
+}
+
+// The API answers with the sandbox's platform, so a client can tell what a
+// discobox runs on, and says nothing for a sandbox that has none recorded yet.
+func TestSandboxToAPIIncludesThePlatform(t *testing.T) {
+	sb := sandboxWithHarness("", "img", "sha256:a")
+	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
+	out, err := SandboxToAPI(sb, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out.Platform.Or(""); got != "linux/arm64" {
+		t.Fatalf("platform = %q, want linux/arm64", got)
+	}
+	out, err = SandboxToAPI(sandboxWithHarness("", "img", "sha256:a"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Platform.IsSet() {
+		t.Fatalf("platform = %q, want none for a sandbox with no platform recorded", out.Platform.Value)
 	}
 }

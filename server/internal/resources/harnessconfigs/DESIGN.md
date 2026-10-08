@@ -46,17 +46,27 @@ true of it, and true *by rule* rather than by slug:
 - The recorded digest is the one a daemon reports in `RepoDigests`, so the pool
   can compare it on either image store: from a registry, the digest the tag is
   served under (an index digest for a multi-platform image), fetched with one
-  `remote.Get` for the platform the config records; from the local daemon, the
-  `RepoDigests` entry, or the image ID for a never-pushed local build.
-- A config records the **platform** its template runs on (`os/arch`, ADR 0145
-  §1), and that platform is the one its image is inspected for, so the digest
-  it pins and the platform its sandboxes are placed by are one answer. A
-  registered image is a Linux container template, recorded as the platform a
-  pool on this machine hosts (`platform.Pool`); a built-in takes its catalog
-  entry's (`harness.Definition.Platform`, through `harnessdefs.Seed`), and
-  reseeding rewrites a built-in whose platform moved. A refresh re-inspects for
-  the platform the config already records. Sandboxes take the platform from
-  here at create (`resources/sandboxes`).
+  `remote.Get`; from the local daemon, the `RepoDigests` entry, or the image ID
+  for a never-pushed local build. An index digest is what lets one pin serve a
+  pool of each platform the index lists.
+- A config records the **platforms** its image is published for (`os/arch`,
+  ADR 0145 §1), read with the labels by every inspection — create, refresh and
+  seed (`snapshotImageMetadata`): every platform a registry image's index lists,
+  attestation entries aside. A local image the daemon pulled is reported there
+  as the daemon's one platform, so its platforms are asked of its registry by
+  the digest the daemon recorded (`registryPlatforms`), and are left unread when
+  the registry cannot answer. Only an image built locally, which has no registry
+  digest — a development build — is recorded as the one platform it was built
+  for.
+  The labels are read from the platform a pool on this machine hosts when the
+  index lists it, and from the first it lists otherwise (`publishedImage`). A
+  build-mode development reference records none, since the pool that runs it
+  builds it for its own platform. Seeding compares the platforms as well as the
+  reference and digest, so a built-in recorded before platforms were is
+  rewritten at the next start. An empty set — a config not inspected since —
+  rules no pool out. There is no platform on a harness's catalog entry
+  (`harness.Definition`): the image is the template, and its index is what
+  declares where it runs. Sandboxes are placed by it (`resources/sandboxes`).
 - In build-mode dev (`SetDevelopmentImages`), `devImageInspector` answers first:
   it rebuilds the label set, inherited base layer included, from the dev image
   manifest's build args, because the image does not exist anywhere until a pool

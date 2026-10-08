@@ -530,12 +530,12 @@ type Harness struct {
 
 	Image  string
 	Digest string
-	// Platform is what the harness's template runs on, as os/arch, and
-	// Unhosted that no pool in the project hosts it (ADR 0145 §1). A discobox
-	// is created only on a harness some pool can run, so the `new` picker
-	// leaves an unhosted one out; this screen lists every one.
-	Platform string
-	Unhosted bool
+	// Platforms is what the harness's image is published for, as os/arch,
+	// and Unhosted that no pool in the project hosts any of them (ADR 0145
+	// §1). A discobox is created only on a harness some pool can run, so the
+	// `new` picker leaves an unhosted one out; this screen lists every one.
+	Platforms string
+	Unhosted  bool
 
 	Run      []string
 	Relaunch []string

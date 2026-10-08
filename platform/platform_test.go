@@ -99,3 +99,44 @@ func TestPlaceRefusesAnotherPlatform(t *testing.T) {
 		t.Fatal("an undeclared sandbox platform was placed")
 	}
 }
+
+// A set is what an image publishes: an index's attestation entries
+// (unknown/unknown) and duplicates are dropped, and the order is stable.
+func TestNewSetKeepsOnlyPlatforms(t *testing.T) {
+	arm := Platform{OS: "linux", Arch: "arm64"}
+	amd := Platform{OS: "linux", Arch: "amd64"}
+	got := NewSet(arm, Platform{OS: "unknown", Arch: "unknown"}, amd, arm, Platform{})
+	if got.String() != "linux/amd64, linux/arm64" {
+		t.Fatalf("set = %q", got)
+	}
+	if !got.Contains(arm) || got.Contains(Platform{OS: "darwin", Arch: "arm64"}) {
+		t.Fatalf("Contains is wrong for %q", got)
+	}
+}
+
+// A multi-arch image runs on a pool of any platform it publishes; a
+// single-arch one is refused elsewhere, saying what it was published for; an
+// image nobody has read rules nothing out.
+func TestSetPublishes(t *testing.T) {
+	arm := Platform{OS: "linux", Arch: "arm64"}
+	amd := Platform{OS: "linux", Arch: "amd64"}
+	if err := NewSet(arm, amd).Publishes(amd); err != nil {
+		t.Fatalf("a multi-arch image refused: %v", err)
+	}
+	err := NewSet(arm).Publishes(amd)
+	var unpublished *UnpublishedError
+	if !errors.As(err, &unpublished) || !strings.Contains(err.Error(), "linux/arm64 only") || !strings.Contains(err.Error(), "linux/amd64") {
+		t.Fatalf("err = %v, want the refusal to say what the image is published for and what the pool hosts", err)
+	}
+	if err := (Set{}).Publishes(amd); err != nil {
+		t.Fatalf("an unread image refused: %v", err)
+	}
+}
+
+// A set travels as a JSON array of os/arch strings.
+func TestSetJSON(t *testing.T) {
+	data, err := json.Marshal(NewSet(Platform{OS: "linux", Arch: "arm64"}))
+	if err != nil || string(data) != `["linux/arm64"]` {
+		t.Fatalf("marshaled %s, %v", data, err)
+	}
+}

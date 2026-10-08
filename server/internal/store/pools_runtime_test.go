@@ -346,3 +346,120 @@ func TestSchedulablePoolForSandboxRefusesAnotherPlatform(t *testing.T) {
 		t.Fatalf("a sandbox of the pool's own platform: %v", err)
 	}
 }
+
+// An agent from before platforms declares none and still reports. Its pool
+// keeps whatever was recorded for it, and nothing is guessed when nothing was:
+// the pool may be any architecture. Placement on such a pool works as it did
+// before platforms, settling no sandbox's platform.
+func TestAnAgentThatDeclaresNoPlatformIsNotGuessedAt(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	schedulablePool(t, s, "pool-1", platform.Platform{})
+	pool, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pool.Platform.IsZero() {
+		t.Fatalf("platform = %q, want none guessed", pool.Platform)
+	}
+	if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-1", ProjectID: "project-1", PoolID: "pool-1", Name: "one", CreatedByUserID: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: "sbx-1", ProjectID: "project-1", PoolID: "pool-1"}); err != nil {
+		t.Fatalf("placement on an undeclared pool: %v", err)
+	}
+	if sb, err := s.GetSandbox(ctx, "project-1", "sbx-1"); err != nil || !sb.Platform.IsZero() {
+		t.Fatalf("sandbox platform = %v, %v; want none written", sb.Platform, err)
+	}
+
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", riscv, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Platform{}, true, true, false, 1, 1, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pool.Platform != riscv {
+		t.Fatalf("platform = %q, want the recorded %q kept", pool.Platform, riscv)
+	}
+}
+
+// schedulablePool brings a pool to where placement accepts it, hosting hosts.
+func schedulablePool(t *testing.T, s *store.Store, poolID string, hosts platform.Platform) {
+	t.Helper()
+	ctx := context.Background()
+	createTestPool(t, s, "project-1", poolID)
+	pool, err := s.UpdatePoolStatus(ctx, poolID, hosts, true, true, false, 1, 1<<30, 1<<30, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.SetState(model.PoolStateActive)
+	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A sandbox created while its pool's agent had declared nothing takes the
+// pool's platform when it is placed, written to its row — provided its
+// harness's image is published for it. A single-platform image on a pool of
+// another platform is refused, saying what it is published for, and the row
+// is left without a platform rather than given one it cannot run on.
+func TestPlacementSettlesASandboxsPlatform(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	schedulablePool(t, s, "pool-1", riscv)
+	for slug, published := range map[string]platform.Set{
+		"multi":  platform.NewSet(platform.Pool(), riscv),
+		"single": platform.NewSet(platform.Pool()),
+	} {
+		if err := s.CreateHarnessConfig(ctx, &model.HarnessConfig{ID: "hc-" + slug, ProjectID: "project-1", Slug: slug, Name: slug, Platforms: published}); err != nil {
+			t.Fatal(err)
+		}
+		harnessID := "hc-" + slug
+		if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-" + slug, ProjectID: "project-1", PoolID: "pool-1", Name: slug, CreatedByUserID: "user-1",
+			SandboxManifest: model.SandboxManifest{HarnessConfigID: &harnessID}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The stand-in a provider places with carries no platform: the row was
+	// written before the pool declared one.
+	standIn := func(id string) *model.Sandbox {
+		return &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: "pool-1"}
+	}
+
+	if _, err := s.SchedulablePoolForSandbox(ctx, standIn("sbx-multi")); err != nil {
+		t.Fatalf("a multi-platform harness on a pool of one of its platforms: %v", err)
+	}
+	if sb, err := s.GetSandbox(ctx, "project-1", "sbx-multi"); err != nil || sb.Platform != riscv {
+		t.Fatalf("platform = %v, %v; want the pool's %q recorded", sb.Platform, err, riscv)
+	}
+
+	_, err := s.SchedulablePoolForSandbox(ctx, standIn("sbx-single"))
+	var unpublished *platform.UnpublishedError
+	if !errors.As(err, &unpublished) || errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want the image's platforms as the refusal", err)
+	}
+	if sb, err := s.GetSandbox(ctx, "project-1", "sbx-single"); err != nil || !sb.Platform.IsZero() {
+		t.Fatalf("platform = %v, %v; want none recorded", sb.Platform, err)
+	}
+}
+
+// An import places its tree before the row exists, with a stand-in that
+// carries the archive's platform; one from before platforms carries none and
+// lands on its pool rather than being refused as no platform at all.
+func TestPlacementOfAStandInFromBeforePlatforms(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	schedulablePool(t, s, "pool-1", riscv)
+	if _, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: "sbx-new", ProjectID: "project-1", PoolID: "pool-1"}); err != nil {
+		t.Fatalf("a stand-in with no platform: %v", err)
+	}
+	_, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: "sbx-new", ProjectID: "project-1", PoolID: "pool-1", Platform: platform.Pool()})
+	var mismatch *platform.MismatchError
+	if riscv != platform.Pool() && !errors.As(err, &mismatch) {
+		t.Fatalf("err = %v, want a stand-in of another platform refused", err)
+	}
+}
