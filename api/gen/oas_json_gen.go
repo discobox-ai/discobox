@@ -28776,7 +28776,7 @@ func (s *SandboxAgentMeta) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("observedAt")
-		json.EncodeDateTime(e, s.ObservedAt)
+		json.EncodeTimeFormat(e, s.ObservedAt, "2006-01-02T15:04:05.999999999Z07:00")
 	}
 }
 
@@ -28807,7 +28807,7 @@ func (s *SandboxAgentMeta) Decode(d *jx.Decoder) error {
 		case "observedAt":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := json.DecodeDateTime(d)
+				v, err := json.DecodeTimeFormat(d, "2006-01-02T15:04:05.999999999Z07:00")
 				s.ObservedAt = v
 				if err != nil {
 					return err
