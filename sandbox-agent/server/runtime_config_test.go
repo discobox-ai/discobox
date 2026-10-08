@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -187,7 +189,7 @@ func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 			BuildKit:          bridge("buildkit"),
 			RegistryNamespace: "ns",
 		},
-		Sources: []sandboxconfig.RuntimeSource{{Slug: "primary", OriginURL: "https://pool/o", Commit: "abc", Delivered: true}},
+		Sources: []sandboxconfig.RuntimeSource{{Slug: "primary", Target: "/workspace", OriginURL: "https://pool/o", OriginToken: "token", Commit: "abc", Delivered: true}},
 	}
 	assertEveryFieldSet(t, reflect.ValueOf(full), "RuntimeConfig")
 
@@ -248,5 +250,114 @@ func TestRuntimeConfigNeverAnswersWithTheClientKey(t *testing.T) {
 	}
 	if doc.Proxy.ClientKey != "key" {
 		t.Fatal("redacting the answer changed the held document")
+	}
+}
+
+// materializedCheckout is a source checkout carrying the materialized marker,
+// as the converger leaves one, with the given project layer.
+func materializedCheckout(t *testing.T, projectLayer string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+dir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "--quiet")
+	if projectLayer != "" {
+		if err := os.MkdirAll(filepath.Join(dir, ".discobox"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".discobox", "project.json"), []byte(projectLayer), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("add", "-A")
+	run("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "--allow-empty", "-m", "init")
+	if err := os.WriteFile(filepath.Join(dir, ".git", sandboxconfig.SourceMaterializedMarker), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func getPath(t *testing.T, router http.Handler, path, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+	return resp
+}
+
+func TestSourceProjectLayerIsReadForThePool(t *testing.T) {
+	router, token := runtimeConfigRouter(t)
+	pool := token(ScopeRuntimeConfig)
+	withLayer := materializedCheckout(t, `{"runCommand":["make"]}`)
+	without := materializedCheckout(t, "")
+	pending := t.TempDir()
+	doc := &sandboxconfig.RuntimeConfig{Revision: 1, Sources: []sandboxconfig.RuntimeSource{
+		{Slug: "primary", Target: withLayer, OriginURL: "https://pool/primary.git"},
+		{Slug: "execs", Target: without, OriginURL: "https://pool/execs.git"},
+		{Slug: "pending", Target: pending, OriginURL: "https://pool/pending.git"},
+	}}
+	if resp := serveRuntimeConfig(t, router, http.MethodPut, pool, doc); resp.Code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", resp.Code, resp.Body.String())
+	}
+	layerPath := func(slug string) string {
+		return "/api/projects/project-1/sandboxes/sandbox-1/sources/" + slug + "/project-layer"
+	}
+
+	resp := getPath(t, router, layerPath("primary"), pool)
+	var got struct {
+		Slug         string         `json:"slug"`
+		Commit       string         `json:"commit"`
+		ProjectLayer map[string]any `json:"projectLayer"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); resp.Code != http.StatusOK || err != nil || got.Slug != "primary" || len(got.Commit) != 40 || got.ProjectLayer["runCommand"] == nil {
+		t.Fatalf("GET primary = %d %s", resp.Code, resp.Body.String())
+	}
+	// A slug is a path segment, and one that spells another route's name is
+	// still this route, on this scope.
+	resp = getPath(t, router, layerPath("execs"), pool)
+	if resp.Code != http.StatusOK || bytes.Contains(resp.Body.Bytes(), []byte("projectLayer")) {
+		t.Fatalf("GET a source with no project layer = %d %s, want 200 and none", resp.Code, resp.Body.String())
+	}
+	if resp := getPath(t, router, layerPath("pending"), pool); resp.Code != http.StatusConflict {
+		t.Fatalf("GET an unmaterialized source = %d %s, want 409", resp.Code, resp.Body.String())
+	}
+	if resp := getPath(t, router, layerPath("nope"), pool); resp.Code != http.StatusNotFound {
+		t.Fatalf("GET an unknown source = %d %s, want 404", resp.Code, resp.Body.String())
+	}
+	for name, scopes := range map[string][]string{
+		"wildcard":        {"*"},
+		"exec read":       {ScopeExecRead, ScopeExecWrite},
+		"status":          {ScopeStatusRead},
+		"no scope at all": {},
+	} {
+		for _, slug := range []string{"primary", "execs"} {
+			if resp := getPath(t, router, layerPath(slug), token(scopes...)); resp.Code != http.StatusForbidden {
+				t.Errorf("GET %s with %s = %d, want 403", slug, name, resp.Code)
+			}
+		}
+	}
+
+	// The same sources ride the status poll, in the document's order.
+	status := getPath(t, router, "/api/projects/project-1/sandboxes/sandbox-1/status", token(ScopeStatusRead))
+	var body struct {
+		SourceStates []struct {
+			Slug     string `json:"slug"`
+			State    string `json:"state"`
+			Revision int64  `json:"revision"`
+		} `json:"sourceStates"`
+	}
+	if err := json.Unmarshal(status.Body.Bytes(), &body); err != nil || len(body.SourceStates) != 3 ||
+		body.SourceStates[0].Slug != "primary" || body.SourceStates[0].State != "waiting" || body.SourceStates[0].Revision != 1 {
+		t.Fatalf("status sourceStates = %+v (%v), body %s", body.SourceStates, err, status.Body.String())
 	}
 }

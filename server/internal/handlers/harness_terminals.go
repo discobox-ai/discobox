@@ -67,6 +67,13 @@ func (h *Handler) PutSandboxRuntimeConfig(context.Context, *serverapi.SandboxRun
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// GetSandboxSourceProjectLayer is the read the pool settles a sandbox's spec
+// with once the sandbox has materialized a source (ADR 0126 §4). Like the
+// intake beside it, it is the pool's route, neither served nor proxied here.
+func (h *Handler) GetSandboxSourceProjectLayer(context.Context, serverapi.GetSandboxSourceProjectLayerParams) (serverapi.GetSandboxSourceProjectLayerRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 // JudgeSandbox is the judge runtime's own route, which the pool reaches
 // through its agent (ADR 26-09-22-838 §2). The control plane routes judging rather
 // than answering it, so this route is neither served nor proxied here.

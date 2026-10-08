@@ -33,6 +33,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/secretswatch"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
+	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourcesready"
 	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
@@ -133,6 +134,9 @@ type agentRuntime struct {
 	// a second, independently constructed copy of "wait for delivery" is how
 	// one of them goes stale.
 	awaitSources func(context.Context) error
+	// sourceConverger clones the sources the runtime-config document names
+	// and answers their origins' credential helper (ADR 0126 §4).
+	sourceConverger *sourceconverge.Converger
 }
 
 // defaultListenAddress is where the agent serves when the manifest names no
@@ -257,6 +261,15 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	} else if err := metaFile.Seed(cfg.Description); err != nil {
 		slog.Default().Warn("seed sandbox meta description", "path", metaFile.Path(), "error", err)
 	}
+	// git runs with the sandbox's own environment, so a clone takes the route
+	// off the box a user's fetch does, and as whoever owns each checkout; the
+	// default user is who that normally is.
+	sourceConverger := sourceconverge.New(sourceconverge.Config{
+		Manifest:         cfg.Sources,
+		Env:              cfg.Env,
+		User:             execManager.DefaultUser(),
+		CredentialHelper: gitCredentialHelper(cfg.RuntimeDir),
+	})
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
@@ -273,6 +286,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		autostop:          idleStop,
 		meta:              metaFile,
 		runtimeConfig:     cfg.RuntimeConfig,
+		sourceConverger:   sourceConverger,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {
@@ -323,7 +337,22 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		autostop:     idleStop,
 		listenAddr:   cfg.ListenAddress,
 		awaitSources: awaitSources,
+
+		sourceConverger: sourceConverger,
 	}, nil
+}
+
+// gitCredentialHelper is the credential helper each source's origin is
+// configured with: this binary's git-credential mode, against the socket the
+// converger answers on. Without a path to this binary there is no helper to
+// name, and origins are configured without one.
+func gitCredentialHelper(runtimeDir string) string {
+	executable, err := os.Executable()
+	if err != nil {
+		slog.Default().Warn("no git credential helper for source origins", "error", err)
+		return ""
+	}
+	return sourceconverge.HelperCommand(executable, sourceconverge.SocketPath(runtimeDir))
 }
 
 // newServiceManager resolves where this sandbox's service declarations live
@@ -578,6 +607,20 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		}
 	}()
 	go serveCredentials(ctx, logger, cfg.CredentialsBridgePath)
+	// The sources converge on the document the intake holds: the one it
+	// restored at start, here, and each one delivered after, from the
+	// handler (ADR 0126 §4).
+	go func() {
+		if err := built.sourceConverger.ServeCredentials(ctx, sourceconverge.SocketPath(cfg.RuntimeDir)); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Warn("sandbox agent git credential socket stopped", "error", err)
+		}
+	}()
+	go built.sourceConverger.Run(ctx)
+	if cfg.RuntimeConfig != nil {
+		if applied, ok := cfg.RuntimeConfig.Applied(); ok {
+			built.sourceConverger.Converge(applied)
+		}
+	}
 	httpServer := &http.Server{
 		Addr:              built.listenAddr,
 		Handler:           built.router,

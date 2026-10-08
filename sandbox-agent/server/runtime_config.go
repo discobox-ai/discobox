@@ -9,6 +9,7 @@ import (
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
+	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
@@ -46,7 +47,66 @@ func (h *handler) PutSandboxRuntimeConfig(_ context.Context, req *sandboxapi.San
 	case err != nil:
 		return nil, err
 	}
+	// The sources converge on what the sandbox now holds, which is this
+	// document unless it was out of date; converging on the held one again is
+	// a no-op for every source already materialized.
+	if h.sourceConverger != nil {
+		h.sourceConverger.Converge(held)
+	}
 	return runtimeConfigToWire(intake.WithoutClientKey(held))
+}
+
+// GetSandboxSourceProjectLayer answers with a materialized source's project
+// layer, which the pool reads to settle the sandbox's spec before it marks the
+// source delivered (ADR 0055, ADR 0126 §4).
+func (h *handler) GetSandboxSourceProjectLayer(ctx context.Context, params sandboxapi.GetSandboxSourceProjectLayerParams) (*sandboxapi.SandboxSourceProjectLayer, error) {
+	if h.sourceConverger == nil {
+		return nil, errRuntimeConfigUnavailable
+	}
+	layer, err := h.sourceConverger.ProjectLayer(ctx, params.Slug)
+	switch {
+	case errors.Is(err, sourceconverge.ErrUnknownSource):
+		return nil, statusError{status: http.StatusNotFound, message: err.Error()}
+	case errors.Is(err, sourceconverge.ErrNotMaterialized):
+		return nil, statusError{status: http.StatusConflict, message: err.Error()}
+	case errors.Is(err, sourceconverge.ErrInvalidProjectLayer):
+		return nil, statusError{status: http.StatusUnprocessableEntity, message: err.Error()}
+	case err != nil:
+		return nil, err
+	}
+	out := &sandboxapi.SandboxSourceProjectLayer{Slug: layer.Slug, Commit: layer.Commit}
+	if layer.Layer != nil {
+		var object sandboxapi.SandboxSourceProjectLayerProjectLayer
+		if err := object.UnmarshalJSON(layer.Layer); err != nil {
+			return nil, statusError{status: http.StatusUnprocessableEntity, message: err.Error()}
+		}
+		out.ProjectLayer = sandboxapi.NewOptSandboxSourceProjectLayerProjectLayer(object)
+	}
+	return out, nil
+}
+
+// sandboxAgentSourceStates is the converger's per-source report on the wire.
+func sandboxAgentSourceStates(states []sourceconverge.SourceState) []sandboxapi.SandboxAgentSourceState {
+	if len(states) == 0 {
+		return nil
+	}
+	out := make([]sandboxapi.SandboxAgentSourceState, 0, len(states))
+	for _, state := range states {
+		wire := sandboxapi.SandboxAgentSourceState{
+			Slug:      state.Slug,
+			State:     sandboxapi.SandboxAgentSourceStateState(state.State),
+			Revision:  state.Revision,
+			UpdatedAt: state.UpdatedAt,
+		}
+		if state.Commit != "" {
+			wire.Commit = sandboxapi.NewOptString(state.Commit)
+		}
+		if state.Error != "" {
+			wire.Error = sandboxapi.NewOptString(state.Error)
+		}
+		out = append(out, wire)
+	}
+	return out
 }
 
 var errRuntimeConfigUnavailable = statusError{status: http.StatusServiceUnavailable, message: "the runtime-config intake is not available in this sandbox"}

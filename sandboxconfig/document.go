@@ -135,7 +135,38 @@ type Source struct {
 	// verified in the repository rather than assumed, so naming one that does
 	// not exist (a push-delivered source has no remote at all) costs nothing.
 	UpstreamRef string `json:"upstreamRef,omitempty"`
+	// RefName and RefType are the branch or tag the source is checked out
+	// at, as the create request named them; RefType is "branch" or "tag".
+	// With the runtime-config document's pinned commit they are what the
+	// sandbox agent checks out when it clones the source (ADR 0126 §4): a
+	// branch is created at the pin, anything else is a detached checkout.
+	RefName string `json:"refName,omitempty"`
+	RefType string `json:"refType,omitempty"`
+	// UpstreamURL is the remote the client's own checkout of this source
+	// tracks. A clone adds it as the "upstream" remote once, so the
+	// project's real remote is known inside the sandbox.
+	UpstreamURL string `json:"upstreamUrl,omitempty"`
+	// Workspace is the client's uncommitted work, delivered as a snapshot
+	// commit on the source's origin and restored into the working tree, all
+	// unstaged, by the clone. Absent for a clean checkout.
+	Workspace *SourceWorkspace `json:"workspace,omitempty"`
 }
+
+// SourceWorkspace is a dirty workspace's snapshot: a commit on SnapshotRef
+// whose parent is BaseCommit and whose tree is the client's working tree.
+type SourceWorkspace struct {
+	BaseCommit  string `json:"baseCommit"`
+	SnapshotRef string `json:"snapshotRef"`
+}
+
+// SourceMaterializedMarker is the file, inside a source checkout's .git
+// directory, that says the checkout has been materialized: cloned, checked
+// out and its workspace restored, once. Whoever materializes a source writes
+// it last and reads it first, because materializing again over a workspace
+// the sandbox has been using since would discard its work. It lives under
+// .git so it is never an untracked file in the working tree. The sandbox agent
+// writes the commit it materialized into it; a pool's is empty.
+const SourceMaterializedMarker = "discobox-materialized"
 
 // User is the sandbox user identity as the manifest publishes it. It is an
 // alias rather than a parallel type: the manifest, the pool agent, and the

@@ -3139,6 +3139,7 @@ func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
 func (*ErrorResponseStatusCode) getSandboxExecScreenRes()           {}
 func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()        {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
+func (*ErrorResponseStatusCode) getSandboxSourceProjectLayerRes()   {}
 func (*ErrorResponseStatusCode) judgeSandboxRes()                   {}
 func (*ErrorResponseStatusCode) listExecEventsRes()                 {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
@@ -12690,6 +12691,52 @@ func (o OptSandboxRuntimeRuntimeState) Or(d SandboxRuntimeRuntimeState) SandboxR
 	return d
 }
 
+// NewOptSandboxSourceProjectLayerProjectLayer returns new OptSandboxSourceProjectLayerProjectLayer with value set to v.
+func NewOptSandboxSourceProjectLayerProjectLayer(v SandboxSourceProjectLayerProjectLayer) OptSandboxSourceProjectLayerProjectLayer {
+	return OptSandboxSourceProjectLayerProjectLayer{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSourceProjectLayerProjectLayer is optional SandboxSourceProjectLayerProjectLayer.
+type OptSandboxSourceProjectLayerProjectLayer struct {
+	Value SandboxSourceProjectLayerProjectLayer
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSourceProjectLayerProjectLayer was set.
+func (o OptSandboxSourceProjectLayerProjectLayer) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSourceProjectLayerProjectLayer) Reset() {
+	var v SandboxSourceProjectLayerProjectLayer
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSourceProjectLayerProjectLayer) SetTo(v SandboxSourceProjectLayerProjectLayer) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSourceProjectLayerProjectLayer) Get() (v SandboxSourceProjectLayerProjectLayer, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSourceProjectLayerProjectLayer) Or(d SandboxSourceProjectLayerProjectLayer) SandboxSourceProjectLayerProjectLayer {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxStorageUsage returns new OptSandboxStorageUsage with value set to v.
 func NewOptSandboxStorageUsage(v SandboxStorageUsage) OptSandboxStorageUsage {
 	return OptSandboxStorageUsage{
@@ -18440,6 +18487,143 @@ func (s *SandboxAgentSessionStatus) SetExecStatus(val string) {
 	s.ExecStatus = val
 }
 
+// One source's convergence onto its target. A materialized source is not by itself ready - the pool
+// still settles the sandbox's spec on it and says so with the document's delivered (ADR 0055).
+// Ref: #/components/schemas/SandboxAgentSourceState
+type SandboxAgentSourceState struct {
+	Slug string `json:"slug"`
+	// Waiting - nothing to clone yet (no origin, or an origin with no commits); cloning - being
+	// materialized now; materialized - cloned, checked out and its workspace restored, once; failed -
+	// the last attempt failed, see error, and it is retried.
+	State SandboxAgentSourceStateState `json:"state"`
+	// The commit the source was materialized at, as its materialized marker records it - not where the
+	// sandbox has moved it since. Absent for a source a pool materialized, whose marker records none.
+	Commit OptString `json:"commit"`
+	// Why the last attempt failed. Present only when state is failed.
+	Error OptString `json:"error"`
+	// The runtime-config revision this state was reached under.
+	Revision  int64     `json:"revision"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSlug returns the value of Slug.
+func (s *SandboxAgentSourceState) GetSlug() string {
+	return s.Slug
+}
+
+// GetState returns the value of State.
+func (s *SandboxAgentSourceState) GetState() SandboxAgentSourceStateState {
+	return s.State
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxAgentSourceState) GetCommit() OptString {
+	return s.Commit
+}
+
+// GetError returns the value of Error.
+func (s *SandboxAgentSourceState) GetError() OptString {
+	return s.Error
+}
+
+// GetRevision returns the value of Revision.
+func (s *SandboxAgentSourceState) GetRevision() int64 {
+	return s.Revision
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *SandboxAgentSourceState) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSlug sets the value of Slug.
+func (s *SandboxAgentSourceState) SetSlug(val string) {
+	s.Slug = val
+}
+
+// SetState sets the value of State.
+func (s *SandboxAgentSourceState) SetState(val SandboxAgentSourceStateState) {
+	s.State = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxAgentSourceState) SetCommit(val OptString) {
+	s.Commit = val
+}
+
+// SetError sets the value of Error.
+func (s *SandboxAgentSourceState) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetRevision sets the value of Revision.
+func (s *SandboxAgentSourceState) SetRevision(val int64) {
+	s.Revision = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *SandboxAgentSourceState) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// Waiting - nothing to clone yet (no origin, or an origin with no commits); cloning - being
+// materialized now; materialized - cloned, checked out and its workspace restored, once; failed -
+// the last attempt failed, see error, and it is retried.
+type SandboxAgentSourceStateState string
+
+const (
+	SandboxAgentSourceStateStateWaiting      SandboxAgentSourceStateState = "waiting"
+	SandboxAgentSourceStateStateCloning      SandboxAgentSourceStateState = "cloning"
+	SandboxAgentSourceStateStateMaterialized SandboxAgentSourceStateState = "materialized"
+	SandboxAgentSourceStateStateFailed       SandboxAgentSourceStateState = "failed"
+)
+
+// AllValues returns all SandboxAgentSourceStateState values.
+func (SandboxAgentSourceStateState) AllValues() []SandboxAgentSourceStateState {
+	return []SandboxAgentSourceStateState{
+		SandboxAgentSourceStateStateWaiting,
+		SandboxAgentSourceStateStateCloning,
+		SandboxAgentSourceStateStateMaterialized,
+		SandboxAgentSourceStateStateFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentSourceStateState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentSourceStateStateWaiting:
+		return []byte(s), nil
+	case SandboxAgentSourceStateStateCloning:
+		return []byte(s), nil
+	case SandboxAgentSourceStateStateMaterialized:
+		return []byte(s), nil
+	case SandboxAgentSourceStateStateFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentSourceStateState) UnmarshalText(data []byte) error {
+	switch SandboxAgentSourceStateState(data) {
+	case SandboxAgentSourceStateStateWaiting:
+		*s = SandboxAgentSourceStateStateWaiting
+		return nil
+	case SandboxAgentSourceStateStateCloning:
+		*s = SandboxAgentSourceStateStateCloning
+		return nil
+	case SandboxAgentSourceStateStateMaterialized:
+		*s = SandboxAgentSourceStateStateMaterialized
+		return nil
+	case SandboxAgentSourceStateStateFailed:
+		*s = SandboxAgentSourceStateStateFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/SandboxAgentStatusEntry
 type SandboxAgentStatusEntry struct {
 	SandboxId string `json:"sandboxId"`
@@ -18517,8 +18701,11 @@ type SandboxAgentStatusResponse struct {
 	MetaError OptString `json:"metaError"`
 	// The revision of the runtime-config document the sandbox has applied (ADR 0126 §3). Absent while
 	// it has applied none.
-	RuntimeConfigRevision OptInt64  `json:"runtimeConfigRevision"`
-	ObservedAt            time.Time `json:"observedAt"`
+	RuntimeConfigRevision OptInt64 `json:"runtimeConfigRevision"`
+	// How far the sandbox has converged each source the applied runtime-config document names (ADR 0126
+	// §4). Absent while no document names a source.
+	SourceStates []SandboxAgentSourceState `json:"sourceStates"`
+	ObservedAt   time.Time                 `json:"observedAt"`
 }
 
 // GetSources returns the value of Sources.
@@ -18559,6 +18746,11 @@ func (s *SandboxAgentStatusResponse) GetMetaError() OptString {
 // GetRuntimeConfigRevision returns the value of RuntimeConfigRevision.
 func (s *SandboxAgentStatusResponse) GetRuntimeConfigRevision() OptInt64 {
 	return s.RuntimeConfigRevision
+}
+
+// GetSourceStates returns the value of SourceStates.
+func (s *SandboxAgentStatusResponse) GetSourceStates() []SandboxAgentSourceState {
+	return s.SourceStates
 }
 
 // GetObservedAt returns the value of ObservedAt.
@@ -18604,6 +18796,11 @@ func (s *SandboxAgentStatusResponse) SetMetaError(val OptString) {
 // SetRuntimeConfigRevision sets the value of RuntimeConfigRevision.
 func (s *SandboxAgentStatusResponse) SetRuntimeConfigRevision(val OptInt64) {
 	s.RuntimeConfigRevision = val
+}
+
+// SetSourceStates sets the value of SourceStates.
+func (s *SandboxAgentStatusResponse) SetSourceStates(val []SandboxAgentSourceState) {
+	s.SourceStates = val
 }
 
 // SetObservedAt sets the value of ObservedAt.
@@ -21899,12 +22096,21 @@ func (s *SandboxRuntimeConfigSecretEnv) init() SandboxRuntimeConfigSecretEnv {
 	return m
 }
 
-// One of the sandbox's sources as the pool sees it.
+// One of the sandbox's sources as the pool sees it. The sandbox clones each source that has an
+// origin onto its target and reports how far it got on its status (sourceStates); how it is checked
+// out is the create-time placement in sandbox.json (ADR 0126 §4).
 // Ref: #/components/schemas/SandboxRuntimeConfigSource
 type SandboxRuntimeConfigSource struct {
 	Slug string `json:"slug"`
-	// Where the source's origin is served, when it has one.
+	// The absolute in-sandbox path the source's checkout lives at. Required with originUrl.
+	Target OptString `json:"target"`
+	// Where the source's origin is served, when it has one. The sandbox clones from it and keeps it as
+	// the checkout's origin remote.
 	OriginUrl OptString `json:"originUrl"`
+	// The bearer token originUrl takes, when it takes one - the pool's sandbox token, scope origin:fetch.
+	//  The sandbox's git reads it through the agent's credential helper, so it is never written into the
+	// checkout.
+	OriginToken OptString `json:"originToken"`
 	// The commit the source is pinned to.
 	Commit OptString `json:"commit"`
 	// The source is in place and the pool has settled the sandbox's spec on it. The sandbox's readiness
@@ -21917,9 +22123,19 @@ func (s *SandboxRuntimeConfigSource) GetSlug() string {
 	return s.Slug
 }
 
+// GetTarget returns the value of Target.
+func (s *SandboxRuntimeConfigSource) GetTarget() OptString {
+	return s.Target
+}
+
 // GetOriginUrl returns the value of OriginUrl.
 func (s *SandboxRuntimeConfigSource) GetOriginUrl() OptString {
 	return s.OriginUrl
+}
+
+// GetOriginToken returns the value of OriginToken.
+func (s *SandboxRuntimeConfigSource) GetOriginToken() OptString {
+	return s.OriginToken
 }
 
 // GetCommit returns the value of Commit.
@@ -21937,9 +22153,19 @@ func (s *SandboxRuntimeConfigSource) SetSlug(val string) {
 	s.Slug = val
 }
 
+// SetTarget sets the value of Target.
+func (s *SandboxRuntimeConfigSource) SetTarget(val OptString) {
+	s.Target = val
+}
+
 // SetOriginUrl sets the value of OriginUrl.
 func (s *SandboxRuntimeConfigSource) SetOriginUrl(val OptString) {
 	s.OriginUrl = val
+}
+
+// SetOriginToken sets the value of OriginToken.
+func (s *SandboxRuntimeConfigSource) SetOriginToken(val OptString) {
+	s.OriginToken = val
 }
 
 // SetCommit sets the value of Commit.
@@ -22607,6 +22833,61 @@ func (s *SandboxServicesResponse) SetServices(val []SandboxService) {
 }
 
 func (*SandboxServicesResponse) listSandboxServicesRes() {}
+
+// A materialized source's project layer, .discobox/project.json in its working tree, as the sandbox
+// read it.
+// Ref: #/components/schemas/SandboxSourceProjectLayer
+type SandboxSourceProjectLayer struct {
+	Slug string `json:"slug"`
+	// The commit checked out in the source when it was read.
+	Commit string `json:"commit"`
+	// The file's JSON object. Absent when the source has no project layer.
+	ProjectLayer OptSandboxSourceProjectLayerProjectLayer `json:"projectLayer"`
+}
+
+// GetSlug returns the value of Slug.
+func (s *SandboxSourceProjectLayer) GetSlug() string {
+	return s.Slug
+}
+
+// GetCommit returns the value of Commit.
+func (s *SandboxSourceProjectLayer) GetCommit() string {
+	return s.Commit
+}
+
+// GetProjectLayer returns the value of ProjectLayer.
+func (s *SandboxSourceProjectLayer) GetProjectLayer() OptSandboxSourceProjectLayerProjectLayer {
+	return s.ProjectLayer
+}
+
+// SetSlug sets the value of Slug.
+func (s *SandboxSourceProjectLayer) SetSlug(val string) {
+	s.Slug = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *SandboxSourceProjectLayer) SetCommit(val string) {
+	s.Commit = val
+}
+
+// SetProjectLayer sets the value of ProjectLayer.
+func (s *SandboxSourceProjectLayer) SetProjectLayer(val OptSandboxSourceProjectLayerProjectLayer) {
+	s.ProjectLayer = val
+}
+
+func (*SandboxSourceProjectLayer) getSandboxSourceProjectLayerRes() {}
+
+// The file's JSON object. Absent when the source has no project layer.
+type SandboxSourceProjectLayerProjectLayer map[string]jx.Raw
+
+func (s *SandboxSourceProjectLayerProjectLayer) init() SandboxSourceProjectLayerProjectLayer {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
 
 // One sandbox's durable footprint, by the tree that holds it, walked fresh.
 // There is deliberately no cache figure: cache is one pool-shared tree keyed by

@@ -978,7 +978,7 @@ func (r *DockerSandboxRuntime) recordedProjectLayer(sandboxID string) (*sandboxc
 //
 // Materialization is idempotent, so a repeat create that has nothing new to
 // deliver is a no-op; once a source has actually been finished, a marker (see
-// gitMaterializedMarkerName) makes every later create a true no-op too, so a
+// gitMaterializedMarkerPath) makes every later create a true no-op too, so a
 // stray duplicate call can't reset/clean a workspace the sandbox has been
 // using since.
 func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
@@ -1461,6 +1461,13 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 				// fetched.
 				BaseCommit:  sourceBaseCommit(source.git),
 				UpstreamRef: sourceUpstreamRef(source.git),
+				// How the sandbox agent checks the source out when it clones
+				// it from the origin the runtime-config document names (ADR
+				// 0126 §4).
+				RefName:     sourceRefName(source.git),
+				RefType:     sourceRefType(source.git),
+				UpstreamURL: strings.TrimSpace(optString(source.git.UpstreamUrl)),
+				Workspace:   sourceWorkspace(source.git),
 				// The client still owes this one: the sandbox holds its harness
 				// launch until the push lands and this pool agent reports the
 				// sandbox settled.
@@ -3119,7 +3126,7 @@ func (r *DockerSandboxRuntime) daemonPath(path string) string {
 // delivery, parks an empty repository the client pushes into and finalizes on
 // the resume) and then records a marker; every later call returns immediately.
 // Re-materializing a workspace the sandbox has been using is destructive, not
-// merely redundant — see gitMaterializedMarkerName.
+// merely redundant — see gitMaterializedMarkerPath.
 //
 // A push-delivered source's target and its origin repository are both owned by
 // the sandbox user (prepareSandboxVolumes chowns the target, initGitOrigin the
@@ -3663,15 +3670,12 @@ func gitSourceAwaitsPush(source workerapimodel.GitSource) bool {
 	return ok && string(delivery) == string(workerclient.GitSourceDeliveryPush)
 }
 
-// gitMaterializedMarkerName records, inside a source's .git directory, that
-// materializeGitSource has already finished checking it out and restoring its
-// workspace once, so no later create touches the workspace again. It lives
-// under .git rather than the worktree so it never appears as an untracked file
-// the sandbox user sees.
-const gitMaterializedMarkerName = "discobox-materialized"
-
+// gitMaterializedMarkerPath is where a source records that materializeGitSource
+// has already finished checking it out and restoring its workspace once, so no
+// later create touches the workspace again. The sandbox agent reads and writes
+// the same marker when it materializes a source itself (ADR 0126 §4).
 func gitMaterializedMarkerPath(target string) string {
-	return filepath.Join(target, ".git", gitMaterializedMarkerName)
+	return filepath.Join(target, ".git", sandboxconfig.SourceMaterializedMarker)
 }
 
 // gitSourceMaterialized reports whether a source has already been finalized
@@ -3742,6 +3746,38 @@ func sourceBaseCommit(source workerapimodel.GitSource) string {
 		return ""
 	}
 	return strings.TrimSpace(optString(checkout.Commit))
+}
+
+// sourceRefName and sourceRefType are the branch or tag the create request
+// checked the source out at, empty when it named none.
+func sourceRefName(source workerapimodel.GitSource) string {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(optString(checkout.RefName))
+}
+
+func sourceRefType(source workerapimodel.GitSource) string {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(optString(checkout.RefType)))
+}
+
+// sourceWorkspace is a dirty workspace's snapshot, nil for a clean one. A
+// dirty workspace missing either half is passed on as it is, for the clone
+// to refuse, as restoreGitWorkspace does here.
+func sourceWorkspace(source workerapimodel.GitSource) *sandboxconfig.SourceWorkspace {
+	workspace, ok := source.Workspace.Get()
+	if !ok || workspace.Mode.Or(workerclient.GitSourceWorkspaceModeClean) != workerclient.GitSourceWorkspaceModeDirty {
+		return nil
+	}
+	return &sandboxconfig.SourceWorkspace{
+		BaseCommit:  strings.TrimSpace(optString(workspace.BaseCommit)),
+		SnapshotRef: strings.TrimSpace(optString(workspace.SnapshotRef)),
+	}
 }
 
 // sourceUpstreamRef is the remote-tracking ref the source would fetch upstream

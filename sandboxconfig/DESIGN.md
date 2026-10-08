@@ -20,7 +20,12 @@ control plane's resolved harness config.
   sandbox-agent's runc wrapper. `Files` is the harness config's configured-file
   overlay. Each `Source` carries its ownership (`UID`/`GID`, absent when the
   pool cannot know them), the `BaseCommit`/`UpstreamRef` the agent's diff stat
-  measures from, and `AwaitsDelivery` (see Readiness). `Git` is authorship,
+  measures from, `AwaitsDelivery` (see Readiness), and how the sandbox agent
+  checks it out when it clones it (ADR 0126 §4): `RefName`/`RefType`,
+  `UpstreamURL`, and a dirty `Workspace` snapshot. `SourceMaterializedMarker`
+  is the file inside a checkout's `.git` that says it has been materialized
+  once; whoever materializes a source — the pool today, the sandbox agent once
+  it is handed an origin — reads it first and writes it last. `Git` is authorship,
   never run identity — a separate field precisely because `User` is shared with
   `exec create`, where a committer has no meaning
   ([ADR 0042](../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md));
@@ -151,7 +156,12 @@ sandbox, delivered as one revisioned document to the sandbox agent's
   resolved value (the Secrets rule below is unchanged). `Proxy` — the CAs, the
   sandbox's client keypair (the key is delivered, never read back), the three bridges (egress, nested Docker, BuildKit)
   and the registry namespace; the sandbox renders the bridge configs with its own
-  paths. `Sources` — per source, origin URL, pinned commit and `Delivered`.
+  paths. `Sources` — per source, its in-sandbox `Target` (required with an
+  origin), `OriginURL`, `OriginToken` (the pool's `origin:fetch` sandbox token,
+  when the origin takes one), pinned `Commit` and `Delivered`. The agent
+  clones each from its origin
+  ([`sandbox-agent/sourceconverge`](../sandbox-agent/DESIGN.md)); how it is
+  checked out stays in `sandbox.json`'s `Source` of the same slug.
 - **Whole, not incremental** (ADR 0017): absent means the sandbox no longer has
   it. One revision names one document: newer applies, older is ignored, the same
   revision with different content is a conflict (`SameDocument`).
@@ -160,8 +170,9 @@ sandbox, delivered as one revisioned document to the sandbox agent's
   source, so it means what the readiness file always meant (ADR 0055).
 - **`Validate` is the whole refusal.** Everything a delivery can be wrong about —
   revision, durations, env names, PEM CAs, a keypair that does not load, bridge
-  URLs, the namespace — is checked before anything is written, so a refused
-  document changes nothing.
+  URLs, the namespace, a source target that is not a clean absolute path, an
+  origin with no target, a token that is not one line — is checked before
+  anything is written, so a refused document changes nothing.
 - The wire schema is `SandboxRuntimeConfig` in `api/openapi/server.yaml`; the
   sandbox agent converts the generated type to this one through JSON, and its
   round-trip test fails when the two drift. The agent's apply side is
