@@ -91,6 +91,16 @@ and that the process started after the build (no `ps` in the image: walk
 - A swapped credential needs `discobox-access run`, which the dev server
   refuses without a judge (no default harness) unless `judgeCommands: false`.
 - Clean up: `d rm <id>`, `d secret delete <name>`, stop origins by pid.
+- No dev pool (the sandbox-agent image will not build) → run the proxy
+  without one: a scratchpad module (`replace` the repo and goproxy's fork as
+  the root `go.mod` does, copy `go.sum`, `GOWORK=off`) whose `main` calls
+  `proxy.PrepareCertificates`, `proxy.NewServer` on `proxy.DefaultConfig()`,
+  and `bridge.New` for a plain `http://127.0.0.1:<port>` to point
+  `HTTPS_PROXY` at; trust the MITM CA with `--cacert` (curl) or
+  `PERL_LWP_SSL_CA_FILE` (LWP, extrepo). An origin on loopback is dialed
+  directly (trust its CA through the process's `SSL_CERT_FILE`); anything
+  else chains through the outer proxy, which the proxy picks up from the
+  environment.
 
 # Verifying a skill change (`.discobox/skills`, `.agents/skills`)
 
