@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/discobox-ai/discobox/execstream/frame"
@@ -124,22 +123,15 @@ const (
 // systemd's control group does to a unit, and the Supervisor has none, so the
 // shim is what keeps a stop honest there.
 //
-// A terminal's session gets SIGHUP with the SIGTERM, because a stopped
-// terminal is a terminal that went away, and SIGHUP is how a program is told
-// that. An interactive shell ignores SIGTERM and exits on SIGHUP, so without
-// it every terminal's stop — a delete, a relaunch, a revive — would sit out
-// the whole grace before the kill. It is what systemd's SendSIGHUP= sends
-// beside the SIGTERM for the same reason. SIGCONT follows both, as systemd
-// sends it: a stopped process — a Ctrl-Z'd editor, a harness's suspended
-// child — holds them pending and would meet the SIGKILL without ever having
-// seen them.
+// What the session is sent first — SIGTERM, a terminal's SIGHUP, and the
+// SIGCONT that lets a stopped process act on them — is askSessionToStop's.
 //
 // It is the session rather than the process group because an interactive
 // shell puts each job in a group of its own: a terminal's `npm run dev &`
 // would outlive a group kill and keep its port. The command leads its session
 // (agentSysProcAttr), so the session id is its pid — but the shim lingers
 // after its command exits, and by the time a stop arrives that number may be
-// another command's. endSession and signalSession settle which it is from
+// another command's. askSessionToStop and endSession settle which it is from
 // the start time recorded here.
 func (r *shimRuntime) stop() {
 	// startMu, not mu: it is what startProcess holds when it sets proc.
@@ -151,11 +143,7 @@ func (r *shimRuntime) stop() {
 	}
 	sid := int(proc.PID())
 	proc.Terminate()
-	_ = signalSession(sid, started, syscall.SIGTERM)
-	if proc.TTY() != nil {
-		_ = signalSession(sid, started, syscall.SIGHUP)
-	}
-	_ = signalSession(sid, started, syscall.SIGCONT)
+	_ = askSessionToStop(sid, started, proc.TTY() != nil)
 	grace := time.NewTimer(shimStopGrace)
 	defer grace.Stop()
 	select {

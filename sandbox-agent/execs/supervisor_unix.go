@@ -162,6 +162,33 @@ func signalSession(sid int, started time.Time, sig syscall.Signal) error {
 	return nil
 }
 
+// askSessionToStop asks everything in the session of the command that
+// started at started to end, and asks nothing if that number is now someone
+// else's: SIGTERM to all of it, and for a terminal SIGHUP with it, then
+// SIGCONT.
+//
+// A terminal's session gets SIGHUP because a stopped terminal is a terminal
+// that went away, and SIGHUP is how a program is told that. An interactive
+// shell ignores SIGTERM and exits on SIGHUP, so without it every terminal's
+// stop — a delete, a relaunch, a revive — would sit out the shim's whole grace
+// before the kill. It is what systemd's SendSIGHUP= sends beside the SIGTERM
+// for the same reason. SIGCONT follows, as systemd sends it: a stopped process
+// — a Ctrl-Z'd editor, a harness's suspended child — holds the others pending
+// and would meet the SIGKILL without ever having seen them.
+func askSessionToStop(sid int, started time.Time, terminal bool) error {
+	signals := []syscall.Signal{syscall.SIGTERM}
+	if terminal {
+		signals = append(signals, syscall.SIGHUP)
+	}
+	signals = append(signals, syscall.SIGCONT)
+	for _, sig := range signals {
+		if err := signalSession(sid, started, sig); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // endSession kills everything in the session of the command that started at
 // started, and nothing if that number is now someone else's.
 func endSession(sid int, started time.Time) error {
