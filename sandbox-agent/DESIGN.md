@@ -157,9 +157,11 @@ flowchart LR
   the process group, is the unit of a stop: an interactive shell puts every
   job in a group of its own, and a group kill would leave a terminal's
   `cmd &` holding its port. `Stop` sends the shim SIGTERM; the shim sends the
-  session SIGTERM and SIGKILLs what is left of it once the command has exited
-  or a grace period runs out; `Stop` SIGKILLs a shim that has not gone within a
-  timeout derived from the shim's own. A shim that goes without recording its
+  session SIGTERM — and, for a terminal, SIGHUP, since a stopped terminal is
+  one that went away and an interactive shell exits on that, not on SIGTERM —
+  and SIGKILLs what is left of it once the command has exited or a grace
+  period runs out; `Stop` SIGKILLs a shim that has not gone within a timeout
+  derived from the shim's own. A shim that goes without recording its
   command's exit — killed outright, or that last resort — has the command's
   session killed when its lock is collected. Every one of those signals is
   sent only while the session is still the command's: a live process holding

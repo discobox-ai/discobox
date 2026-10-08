@@ -120,6 +120,59 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		}
 	})
 
+	// A terminal's stop is a terminal going away. An interactive shell ignores
+	// SIGTERM, so a stop that only asked would sit out the shim's whole grace
+	// on every terminal deleted, relaunched or revived; it hangs up instead.
+	t.Run("StopATerminal", func(t *testing.T) {
+		bash, err := osexec.LookPath("bash")
+		if err != nil {
+			t.Skip("bash not available")
+		}
+		agent := startContractAgent(t, newUnits, contractRuntimeDir(t), newContractAudit())
+		// The rc file says when the shell is interactive. bash sets itself to
+		// ignore SIGTERM as it initializes, before it reads its rc file, so a
+		// stop that lands after the sentinel meets the shell a terminal
+		// really holds; one that landed earlier would kill a shell that had
+		// not got that far, and pass without the hangup.
+		dir := t.TempDir()
+		ready := filepath.Join(dir, "interactive")
+		rc := filepath.Join(dir, "rc")
+		if err := os.WriteFile(rc, fmt.Appendf(nil, ": > %q\n", ready), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		exec, err := agent.manager.Create(ctx, CreateRequest{
+			Command: []string{bash, "--noprofile", "--rcfile", rc, "-i"},
+			TTY:     true,
+			Rows:    24,
+			Cols:    80,
+		})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, err := agent.manager.Start(ctx, exec.ID); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		running := agent.waitFor(t, exec.ID, "running", func(exec Exec) bool {
+			return exec.Status == StatusRunning && exec.PID > 0
+		})
+		waitUntil(t, "the shell to be interactive", func() bool {
+			_, err := os.Stat(ready)
+			return err == nil
+		})
+		began := time.Now()
+		if _, err := agent.manager.Stop(context.Background(), exec.ID); err != nil {
+			t.Fatalf("stop: %v", err)
+		}
+		if took := time.Since(began); took >= shimStopGrace/2 {
+			t.Fatalf("stopping a terminal took %s; an interactive shell has to be hung up, not waited out", took)
+		}
+		waitUntil(t, "the terminal's session to exit", func() bool {
+			return sessionGone(int(running.PID))
+		})
+	})
+
 	t.Run("ConvergesAfterAgentRestart", func(t *testing.T) {
 		runtimeDir := contractRuntimeDir(t)
 		audit := newContractAudit()
