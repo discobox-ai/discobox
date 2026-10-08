@@ -108,8 +108,8 @@ func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSo
 // made before it marked what it materialized, and which commit it has checked
 // out. A pool's checkout is told by two things a repository someone else put
 // there does not have together: a commit checked out, since a pool's clone
-// always ended in one, and an origin that is a path on a filesystem — the
-// pool's own, or the bind it pointed origin at — never a URL.
+// always ended in one, and an origin that is an absolute path on a filesystem
+// — the pool's own, or the bind it pointed origin at — never a URL.
 func (r *repository) unmarkedCheckout(ctx context.Context) (string, bool) {
 	gitDir := filepath.Join(r.dir, ".git")
 	if info, err := os.Lstat(gitDir); err != nil || !info.IsDir() {
@@ -119,7 +119,7 @@ func (r *repository) unmarkedCheckout(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	origin, err := r.configValues(ctx, "remote.origin.url")
-	if err != nil || len(origin) != 1 || !strings.HasPrefix(origin[0], "/") {
+	if err != nil || len(origin) != 1 || !(strings.HasPrefix(origin[0], "/") || filepath.IsAbs(origin[0])) {
 		return "", false
 	}
 	commit := r.head(ctx)
