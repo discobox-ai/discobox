@@ -265,6 +265,19 @@ Drive it from `-H shell` boxes of the dev pool (see the console section for
   `["runtime-config"]`) from a throwaway `go run` in the pool-agent module, and
   `curl` the route from inside the box. Restore the provider config afterwards.
 - `d rm` archives; `d admin box purge <id>` (no `--yes`) removes.
+- Certificate renewal: re-sign the box's client certificate in the pool so it
+  is inside the 30-day window — `openssl` is in the pool container; sign with
+  `/var/lib/discobox/proxy/projects/*/pools/*/certs/mtls-ca.{crt,key}` into
+  `certs/clients/<sbx>/client.{crt,key}` with `-days 10` and
+  `extendedKeyUsage=clientAuth`. The next poll (≤15s) reissues and delivers a
+  new revision; compare the bridges' `systemctl show -p MainPID,NRestarts` and
+  `openssl x509 -serial` of `/etc/discobox/proxy/client.crt` before and after.
+- `docker cp` into a box's `/tmp` lands under its tmpfs and is invisible
+  inside; pipe a file in instead (`docker exec -i <c> sh -c 'cat > /tmp/f' < f`).
+- The image watcher recreates the dev pool's container whenever the
+  pool-agent image rebuilds, which resets every bridge connection; a long
+  transfer that breaks then is the rebuild (`docker inspect -f
+  '{{.State.StartedAt}}'` on the pool container), not the change.
 
 Gotcha: a wait loop of `until ! pgrep -f "docker build"` never ends — its own
 shell's command line matches the pattern. Wait on the watcher's outputs
