@@ -194,15 +194,19 @@ func (a *SignedTokenAuthenticator) parseToken(tokenText string) (*paseto.Token, 
 }
 
 // authorizePoolToken confines a pool-signed token to what the pool may sign
-// for: exactly the runtime-config scope, on the runtime-config route, naming
-// this sandbox's pool. Its scope list is checked whole, so a pool token can
-// never carry a wildcard or a second scope that a later check would honor.
+// for: exactly the runtime-config scope, on a route whose required scope is
+// runtime-config, naming this sandbox's pool. Those routes are the pool's:
+// the document itself and a source's project layer, which the pool reads to
+// settle the spec. A route added under that scope is reachable by the pool
+// too, so putting one there is deciding that. The scope list is checked
+// whole, so a pool token can never carry a wildcard or a second scope that a
+// later check would honor.
 func (a *SignedTokenAuthenticator) authorizePoolToken(r *http.Request, claims SignedTokenClaims) error {
 	if len(claims.Scopes) != 1 || claims.Scopes[0] != ScopeRuntimeConfig {
 		return errors.New("a pool-signed token may carry only the runtime-config scope")
 	}
 	if requiredRequestScope(r) != ScopeRuntimeConfig {
-		return errors.New("a pool-signed token is accepted only on the runtime-config route")
+		return errors.New("a pool-signed token is accepted only on routes that require the runtime-config scope")
 	}
 	if claims.PoolID == "" || claims.PoolID != a.identity.PoolID {
 		return errors.New("a pool-signed token must name this sandbox's pool")
