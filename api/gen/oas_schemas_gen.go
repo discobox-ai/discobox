@@ -18101,7 +18101,9 @@ type SandboxAgentMeta struct {
 	// Everything the file now holds.
 	Meta SandboxMeta `json:"meta"`
 	// When the sandbox wrote the file, on the sandbox's own clock - the same clock its status reports
-	// are stamped with, so the two can be ordered.
+	// are stamped with, so the two can be ordered. Written to the nanosecond, since the control plane
+	// records a write only when it is newer than the last, and two writes inside one second would
+	// otherwise tie.
 	ObservedAt time.Time `json:"observedAt"`
 }
 

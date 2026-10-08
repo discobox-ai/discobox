@@ -1672,9 +1672,10 @@ components:
                     $ref: '#/components/schemas/SandboxMeta'
                     description: Everything the file now holds.
                 observedAt:
-                    description: When the sandbox wrote the file, on the sandbox's own clock - the same clock its status reports are stamped with, so the two can be ordered.
+                    description: When the sandbox wrote the file, on the sandbox's own clock - the same clock its status reports are stamped with, so the two can be ordered. Written to the nanosecond, since the control plane records a write only when it is newer than the last, and two writes inside one second would otherwise tie.
                     format: date-time
                     type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
             required:
                 - meta
                 - observedAt

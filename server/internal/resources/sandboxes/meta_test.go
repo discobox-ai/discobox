@@ -13,6 +13,7 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 	"github.com/discobox-ai/discobox/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -93,6 +94,44 @@ func TestUpdateSandboxMetaRecordsWhatTheSandboxHolds(t *testing.T) {
 	}
 	if sb.MetaObservedAt == nil || !sb.MetaObservedAt.Equal(observedAt) {
 		t.Fatalf("metaObservedAt = %v, want the sandbox's %v", sb.MetaObservedAt, observedAt)
+	}
+}
+
+// Two writes inside one second are both recorded. The sandbox agent answers
+// through the generated encoder, and the store keeps a write only when it is
+// newer than the last, so an observedAt cut to whole seconds would tie the
+// second write with the first and leave the first recorded.
+func TestUpdateSandboxMetaRecordsTwoWritesInOneSecond(t *testing.T) {
+	second := time.Now().UTC().Truncate(time.Second)
+	answers := []sandboxapi.SandboxAgentMeta{
+		{Meta: sandboxapi.SandboxMeta{Tags: sandboxapi.SandboxMetaTags{"to-delete": ""}}, ObservedAt: second.Add(100 * time.Millisecond)},
+		{Meta: sandboxapi.SandboxMeta{Tags: sandboxapi.SandboxMetaTags{}}, ObservedAt: second.Add(600 * time.Millisecond)},
+	}
+	var calls atomic.Int32
+	service := metaFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		answer := answers[calls.Add(1)-1]
+		data, err := answer.MarshalJSON()
+		if err != nil {
+			t.Errorf("encode answer: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(data)
+	})
+
+	if _, err := service.UpdateSandboxMeta(metaCaller(), "project-1", "sb-1", apimodel.UpdateSandboxMetaBody{
+		SetTags: serverapi.NewOptUpdateSandboxMetaBodySetTags(serverapi.UpdateSandboxMetaBodySetTags{"to-delete": ""}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sb, err := service.UpdateSandboxMeta(metaCaller(), "project-1", "sb-1", apimodel.UpdateSandboxMetaBody{RemoveTags: []string{"to-delete"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sb.Tags) != 0 {
+		t.Fatalf("recorded tags = %v, want the second write's none", sb.Tags)
+	}
+	if want := answers[1].ObservedAt; sb.MetaObservedAt == nil || !sb.MetaObservedAt.Equal(want) {
+		t.Fatalf("metaObservedAt = %v, want the second write's %v", sb.MetaObservedAt, want)
 	}
 }
 
