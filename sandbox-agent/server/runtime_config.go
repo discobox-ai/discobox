@@ -99,6 +99,20 @@ func (h *handler) GetSandboxSourceProjectLayer(ctx context.Context, params sandb
 	return out, nil
 }
 
+// GetSandboxSourceStates answers with each source's convergence, which the pool
+// waits on while it settles a create (ADR 0126 §4): the same states the status
+// poll carries, read when the pool needs them rather than on its interval.
+func (h *handler) GetSandboxSourceStates(context.Context, sandboxapi.GetSandboxSourceStatesParams) (*sandboxapi.SandboxSourceStates, error) {
+	if h.sourceConverger == nil {
+		return nil, errRuntimeConfigUnavailable
+	}
+	states := sandboxAgentSourceStates(h.sourceConverger.States())
+	if states == nil {
+		states = []sandboxapi.SandboxAgentSourceState{}
+	}
+	return &sandboxapi.SandboxSourceStates{Sources: states}, nil
+}
+
 // sandboxAgentSourceStates is the converger's per-source report on the wire.
 func sandboxAgentSourceStates(states []sourceconverge.SourceState) []sandboxapi.SandboxAgentSourceState {
 	if len(states) == 0 {

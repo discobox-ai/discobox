@@ -221,6 +221,10 @@ type GetSandboxSourceProjectLayerRes interface {
 	getSandboxSourceProjectLayerRes()
 }
 
+type GetSandboxSourceStatesRes interface {
+	getSandboxSourceStatesRes()
+}
+
 type GetSandboxTrustRequestRes interface {
 	getSandboxTrustRequestRes()
 }

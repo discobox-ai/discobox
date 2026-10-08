@@ -282,12 +282,12 @@ func requiredRequestScope(r *http.Request) string {
 		}
 		return ScopeSandboxRead
 	}
-	// A source's project layer is read by the pool to settle the sandbox's
-	// spec (ADR 0126 §4), on the same scope as the document that names the
-	// source. Told by its route segments, like the Git route above and for the
-	// same reason: the slug is a path segment and can spell what the tests
-	// below look for — a source named "execs" is not an exec.
-	if sourceProjectLayerRoute(r.URL.EscapedPath()) {
+	// A source's state and project layer are read by the pool to settle the
+	// sandbox's spec (ADR 0126 §4), on the same scope as the document that
+	// names the source. Told by their route segments, like the Git route above
+	// and for the same reason: the slug is a path segment and can spell what
+	// the tests below look for — a source named "execs" is not an exec.
+	if sourcesRoute(r.URL.EscapedPath()) {
 		return ScopeRuntimeConfig
 	}
 	// The status route reports git/session/connection telemetry and nothing
@@ -372,11 +372,13 @@ func gitRepositoryRoute(path string) bool {
 	return len(segments) > 6 && segments[5] == "git-repositories"
 }
 
-// sourceProjectLayerRoute reports whether path is
+// sourcesRoute reports whether path is
+// /api/projects/{projectId}/sandboxes/{sandboxId}/sources or
 // /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer.
-func sourceProjectLayerRoute(path string) bool {
+func sourcesRoute(path string) bool {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	return len(segments) == 8 && segments[5] == "sources" && segments[7] == "project-layer"
+	return (len(segments) == 6 && segments[5] == "sources") ||
+		(len(segments) == 8 && segments[5] == "sources" && segments[7] == "project-layer")
 }
 
 func bearerToken(header string) (string, bool) {

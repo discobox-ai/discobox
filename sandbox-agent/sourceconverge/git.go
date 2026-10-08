@@ -71,9 +71,10 @@ func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSo
 		return false, err
 	default:
 		if _, err := os.Stat(filepath.Join(gitDir, materializingMarker)); err != nil {
-			// Someone else's repository: the sandbox's own work, or a
-			// checkout a pool made before this agent materialized sources.
-			// Resetting it would destroy whatever it holds.
+			// Someone else's repository: one the sandbox began itself, or a
+			// clone interrupted before this agent cloned sources (#30). A
+			// pool's finished checkout was adopted before this
+			// (unmarkedCheckout). Resetting it would destroy whatever it holds.
 			return false, fmt.Errorf("%s already holds a repository this sandbox did not clone", r.dir)
 		}
 		// An attempt that moved the clone into place and stopped before it
@@ -100,6 +101,42 @@ func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSo
 		return false, err
 	}
 	return true, nil
+}
+
+// unmarkedCheckout reports whether the target holds a repository with neither
+// marker — not materialized, and not an attempt of this agent's — that a pool
+// made before it marked what it materialized, and which commit it has checked
+// out. A pool's checkout is told by two things a repository someone else put
+// there does not have together: a commit checked out, since a pool's clone
+// always ended in one, and an origin that is a path on a filesystem — the
+// pool's own, or the bind it pointed origin at — never a URL.
+func (r *repository) unmarkedCheckout(ctx context.Context) (string, bool) {
+	gitDir := filepath.Join(r.dir, ".git")
+	if info, err := os.Lstat(gitDir); err != nil || !info.IsDir() {
+		return "", false
+	}
+	if _, err := os.Lstat(filepath.Join(gitDir, materializingMarker)); err == nil {
+		return "", false
+	}
+	origin, err := r.configValues(ctx, "remote.origin.url")
+	if err != nil || len(origin) != 1 || !strings.HasPrefix(origin[0], "/") {
+		return "", false
+	}
+	commit := r.head(ctx)
+	return commit, commit != ""
+}
+
+// ensureOriginHeadRef gives the checkout an origin/HEAD when it has none,
+// from what the origin's HEAD names now. A clone of a pushed origin made the
+// moment the push landed, before the pool pointed the origin's HEAD at what
+// arrived, has none, and origin/HEAD is the upstream ref a source checked out
+// at a bare commit or tag tracks. One that cannot be resolved yet is left for
+// a later pass.
+func (r *repository) ensureOriginHeadRef(ctx context.Context) {
+	if err := r.run(ctx, nil, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"); err == nil {
+		return
+	}
+	_ = r.run(ctx, nil, "remote", "set-head", "origin", "--auto")
 }
 
 // finish marks a prepared checkout materialized and returns the commit the

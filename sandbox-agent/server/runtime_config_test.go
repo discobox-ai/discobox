@@ -204,6 +204,7 @@ func TestRuntimeConfigTakesThePoolsOwnToken(t *testing.T) {
 	// authorized), and an exec route is not.
 	for path, refused := range map[string]bool{
 		"/api/projects/project-1/sandboxes/sandbox-1/sources/primary/project-layer": false,
+		"/api/projects/project-1/sandboxes/sandbox-1/sources":                       false,
 		"/api/projects/project-1/sandboxes/sandbox-1/execs":                         true,
 	} {
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
@@ -413,6 +414,22 @@ func TestSourceProjectLayerIsReadForThePool(t *testing.T) {
 				t.Errorf("GET %s with %s = %d, want 403", slug, name, resp.Code)
 			}
 		}
+	}
+
+	// The pool reads the same states on its own scope, in the document's
+	// order, and no other scope reads them.
+	states := getPath(t, router, "/api/projects/project-1/sandboxes/sandbox-1/sources", pool)
+	var read struct {
+		Sources []struct {
+			Slug  string `json:"slug"`
+			State string `json:"state"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(states.Body.Bytes(), &read); states.Code != http.StatusOK || err != nil || len(read.Sources) != 3 || read.Sources[2].Slug != "pending" {
+		t.Fatalf("GET sources = %d %s", states.Code, states.Body.String())
+	}
+	if resp := getPath(t, router, "/api/projects/project-1/sandboxes/sandbox-1/sources", token(ScopeStatusRead)); resp.Code != http.StatusForbidden {
+		t.Fatalf("GET sources with status:read = %d, want 403", resp.Code)
 	}
 
 	// The same sources ride the status poll, in the document's order.
