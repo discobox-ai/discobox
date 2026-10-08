@@ -42,6 +42,9 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 
 	var sawAuthorization string
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+		}
 		sawAuthorization = r.Header.Get("Authorization")
 		_, _ = io.WriteString(w, "ok")
 	}))
@@ -53,6 +56,9 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 	// through.
 	var sawSentinel string
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+		}
 		// The request spends an approved use, so it is judged before anything
 		// is resolved. What the judge decides is its own test; here it allows.
 		if allowJudgingAsk(w, r) {
@@ -134,12 +140,18 @@ func TestMintedSentinelIsNotSwappedForAnotherHost(t *testing.T) {
 
 	var sawAuthorization string
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+		}
 		sawAuthorization = r.Header.Get("Authorization")
 		_, _ = io.WriteString(w, "ok")
 	}))
 	defer origin.Close()
 
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+		}
 		t.Error("control plane was asked to resolve a sentinel used against an unapproved host")
 	}))
 	defer controlPlane.Close()
