@@ -91,16 +91,26 @@ and that the process started after the build (no `ps` in the image: walk
 - A swapped credential needs `discobox-access run`, which the dev server
   refuses without a judge (no default harness) unless `judgeCommands: false`.
 - Clean up: `d rm <id>`, `d secret delete <name>`, stop origins by pid.
-- No dev pool (the sandbox-agent image will not build) → run the proxy
-  without one: a scratchpad module (`replace` the repo and goproxy's fork as
-  the root `go.mod` does, copy `go.sum`, `GOWORK=off`) whose `main` calls
-  `proxy.PrepareCertificates`, `proxy.NewServer` on `proxy.DefaultConfig()`,
-  and `bridge.New` for a plain `http://127.0.0.1:<port>` to point
-  `HTTPS_PROXY` at; trust the MITM CA with `--cacert` (curl) or
-  `PERL_LWP_SSL_CA_FILE` (LWP, extrepo). An origin on loopback is dialed
-  directly (trust its CA through the process's `SSL_CERT_FILE`); anything
-  else chains through the outer proxy, which the proxy picks up from the
-  environment.
+- No dev pool up (the sandbox-agent image will not build), or the
+  harness/sandbox-agent `:local` images missing (an isolated server then fails
+  on `has no harness to run`) → embed the real `proxy` package instead. Write a
+  scratchpad module (`replace` the repo and goproxy's fork as the root `go.mod`
+  does, copy `go.sum`, `GOWORK=off`) whose `main` calls
+  `proxy.PrepareCertificates` and `proxy.NewServer` on `proxy.DefaultConfig()`,
+  then either:
+  - `bridge.New` for a plain `http://127.0.0.1:<port>` to point `HTTPS_PROXY`
+    at; trust the MITM CA with `--cacert` (curl) or `PERL_LWP_SSL_CA_FILE`
+    (LWP, extrepo). An origin on loopback is dialed directly (trust its CA
+    through the process's `SSL_CERT_FILE`); anything else chains through the
+    outer proxy, which the proxy picks up from the environment.
+  - or serve `ControlHandler()` on a port and drive it over mTLS with
+    `curl --noproxy '' --proxy https://127.0.0.1:<port> --proxy-cert/--proxy-key/--proxy-cacert`
+    (the box's `NO_PROXY` covers 127.0.0.1) — the route for audit, cache, or
+    spool behavior.
+
+  For a cacheable blob, the origin must send `Docker-Content-Digest` or an OCI
+  media type, or the content-aware arm refuses it. Either route leaves the
+  pool-agent, server, and CLI relays unexercised.
 
 # Verifying a skill change (`.discobox/skills`, `.agents/skills`)
 
