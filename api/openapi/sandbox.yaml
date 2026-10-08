@@ -1246,6 +1246,17 @@ components:
                 - slug
                 - commit
             type: object
+        SandboxSourceStates:
+            additionalProperties: false
+            description: Each source's convergence onto its target, as the sandbox reports it.
+            properties:
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSourceState'
+                    type: array
+            required:
+                - sources
+            type: object
         SandboxTool:
             additionalProperties: false
             description: A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary source under .discobox/tools. The client merges these with the tools it declares itself and runs the result; the sandbox only lists them.
@@ -2588,6 +2599,39 @@ paths:
             summary: Stop a sandbox service.
             tags:
                 - Sandbox Services
+    /api/projects/{projectId}/sandboxes/{sandboxId}/sources:
+        get:
+            description: Reports how far each source the applied runtime-config document names has converged onto its target (ADR 0126 §4) - the same states the status poll carries, for the pool to wait on while it settles a create rather than on the poll's interval. Empty until a document has been applied. Only a token carrying the pool-only runtime-config scope may read it.
+            operationId: get-sandbox-source-states
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSourceStates'
+                    description: Each source's convergence, in the document's order.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Read how far each source has converged.
+            tags:
+                - Sandbox Runtime Config
     /api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer:
         get:
             description: Reads a materialized source's project layer (.discobox/project.json in its working tree), which the pool reads to settle the sandbox's final spec before it marks the source delivered (ADR 0055, ADR 0126 §4). 404 when no applied runtime-config document names the source, 409 while the sandbox has not materialized it, 422 when the file is not a JSON object. Only a token carrying the pool-only runtime-config scope may read it.

@@ -5364,6 +5364,22 @@ func (s *SandboxSourceProjectLayerProjectLayer) init() SandboxSourceProjectLayer
 	return m
 }
 
+// Each source's convergence onto its target, as the sandbox reports it.
+// Ref: #/components/schemas/SandboxSourceStates
+type SandboxSourceStates struct {
+	Sources []SandboxAgentSourceState `json:"sources"`
+}
+
+// GetSources returns the value of Sources.
+func (s *SandboxSourceStates) GetSources() []SandboxAgentSourceState {
+	return s.Sources
+}
+
+// SetSources sets the value of Sources.
+func (s *SandboxSourceStates) SetSources(val []SandboxAgentSourceState) {
+	s.Sources = val
+}
+
 // A tool declared by the sandbox's image under /usr/local/share/discobox/tools or by its primary
 // source under .discobox/tools. The client merges these with the tools it declares itself and runs
 // the result; the sandbox only lists them.

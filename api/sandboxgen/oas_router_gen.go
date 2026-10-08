@@ -17,16 +17,16 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn33AllowedHeaders = map[string]string{
+	rn34AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn43AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn22AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn42AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn21AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn41AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
 	rn14AllowedHeaders = map[string]string{
@@ -338,7 +338,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn33AllowedHeaders,
+													allowedHeaders: rn34AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -570,7 +570,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn42AllowedHeaders,
+													allowedHeaders: rn43AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -634,7 +634,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn21AllowedHeaders,
+									allowedHeaders: rn22AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -662,7 +662,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "PATCH",
-									allowedHeaders: rn41AllowedHeaders,
+									allowedHeaders: rn42AllowedHeaders,
 									acceptPost:     "",
 									acceptPatch:    "application/json",
 								})
@@ -928,54 +928,83 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 							}
 
-						case 'o': // Prefix: "ources/"
+						case 'o': // Prefix: "ources"
 
-							if l := len("ources/"); len(elem) >= l && elem[0:l] == "ources/" {
+							if l := len("ources"); len(elem) >= l && elem[0:l] == "ources" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
-							// Param: "slug"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[2] = elem[:idx]
-							elem = elem[idx:]
-
 							if len(elem) == 0 {
-								break
+								switch r.Method {
+								case "GET":
+									s.handleGetSandboxSourceStatesRequest([2]string{
+										args[0],
+										args[1],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "GET",
+										allowedHeaders: nil,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
+								}
+
+								return
 							}
 							switch elem[0] {
-							case '/': // Prefix: "/project-layer"
+							case '/': // Prefix: "/"
 
-								if l := len("/project-layer"); len(elem) >= l && elem[0:l] == "/project-layer" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
+								// Param: "slug"
+								// Match until "/"
+								idx := strings.IndexByte(elem, '/')
+								if idx < 0 {
+									idx = len(elem)
+								}
+								args[2] = elem[:idx]
+								elem = elem[idx:]
+
 								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "GET":
-										s.handleGetSandboxSourceProjectLayerRequest([3]string{
-											args[0],
-											args[1],
-											args[2],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET",
-											allowedHeaders: nil,
-											acceptPost:     "",
-											acceptPatch:    "",
-										})
+									break
+								}
+								switch elem[0] {
+								case '/': // Prefix: "/project-layer"
+
+									if l := len("/project-layer"); len(elem) >= l && elem[0:l] == "/project-layer" {
+										elem = elem[l:]
+									} else {
+										break
 									}
 
-									return
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "GET":
+											s.handleGetSandboxSourceProjectLayerRequest([3]string{
+												args[0],
+												args[1],
+												args[2],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, notAllowedParams{
+												allowedMethods: "GET",
+												allowedHeaders: nil,
+												acceptPost:     "",
+												acceptPatch:    "",
+											})
+										}
+
+										return
+									}
+
 								}
 
 							}
@@ -1914,50 +1943,76 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 							}
 
-						case 'o': // Prefix: "ources/"
+						case 'o': // Prefix: "ources"
 
-							if l := len("ources/"); len(elem) >= l && elem[0:l] == "ources/" {
+							if l := len("ources"); len(elem) >= l && elem[0:l] == "ources" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
-							// Param: "slug"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[2] = elem[:idx]
-							elem = elem[idx:]
-
 							if len(elem) == 0 {
-								break
+								switch method {
+								case "GET":
+									r.name = GetSandboxSourceStatesOperation
+									r.summary = "Read how far each source has converged."
+									r.operationID = "get-sandbox-source-states"
+									r.operationGroup = ""
+									r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/sources"
+									r.args = args
+									r.count = 2
+									return r, true
+								default:
+									return
+								}
 							}
 							switch elem[0] {
-							case '/': // Prefix: "/project-layer"
+							case '/': // Prefix: "/"
 
-								if l := len("/project-layer"); len(elem) >= l && elem[0:l] == "/project-layer" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
+								// Param: "slug"
+								// Match until "/"
+								idx := strings.IndexByte(elem, '/')
+								if idx < 0 {
+									idx = len(elem)
+								}
+								args[2] = elem[:idx]
+								elem = elem[idx:]
+
 								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "GET":
-										r.name = GetSandboxSourceProjectLayerOperation
-										r.summary = "Read a materialized source's project layer."
-										r.operationID = "get-sandbox-source-project-layer"
-										r.operationGroup = ""
-										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer"
-										r.args = args
-										r.count = 3
-										return r, true
-									default:
-										return
+									break
+								}
+								switch elem[0] {
+								case '/': // Prefix: "/project-layer"
+
+									if l := len("/project-layer"); len(elem) >= l && elem[0:l] == "/project-layer" {
+										elem = elem[l:]
+									} else {
+										break
 									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "GET":
+											r.name = GetSandboxSourceProjectLayerOperation
+											r.summary = "Read a materialized source's project layer."
+											r.operationID = "get-sandbox-source-project-layer"
+											r.operationGroup = ""
+											r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/project-layer"
+											r.args = args
+											r.count = 3
+											return r, true
+										default:
+											return
+										}
+									}
+
 								}
 
 							}

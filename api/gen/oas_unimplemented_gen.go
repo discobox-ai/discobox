@@ -549,6 +549,18 @@ func (UnimplementedHandler) GetSandboxSourceProjectLayer(ctx context.Context, pa
 	return r, ht.ErrNotImplemented
 }
 
+// GetSandboxSourceStates implements get-sandbox-source-states operation.
+//
+// Reports how far each source the applied runtime-config document names has converged onto its
+// target (ADR 0126 §4) - the same states the status poll carries, for the pool to wait on while it
+// settles a create rather than on the poll's interval. Empty until a document has been applied. Only
+// a token carrying the pool-only runtime-config scope may read it.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources
+func (UnimplementedHandler) GetSandboxSourceStates(ctx context.Context, params GetSandboxSourceStatesParams) (r GetSandboxSourceStatesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSandboxTrustRequest implements get-sandbox-trust-request operation.
 //
 // Poll an agent host trust request.

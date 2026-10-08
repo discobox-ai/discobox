@@ -1550,6 +1550,17 @@ components:
                 - revision
                 - updatedAt
             type: object
+        SandboxSourceStates:
+            additionalProperties: false
+            description: Each source's convergence onto its target, as the sandbox reports it.
+            properties:
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSourceState'
+                    type: array
+            required:
+                - sources
+            type: object
         SandboxSourceProjectLayer:
             additionalProperties: false
             description: A materialized source's project layer, .discobox/project.json in its working tree, as the sandbox read it.
@@ -9366,6 +9377,40 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Deliver the sandbox's runtime-config document.
+            tags:
+                - Sandbox Runtime Config
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/sources:
+        get:
+            description: Reports how far each source the applied runtime-config document names has converged onto its target (ADR 0126 §4) - the same states the status poll carries, for the pool to wait on while it settles a create rather than on the poll's interval. Empty until a document has been applied. Only a token carrying the pool-only runtime-config scope may read it.
+            operationId: get-sandbox-source-states
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxSourceStates'
+                    description: Each source's convergence, in the document's order.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Read how far each source has converged.
             tags:
                 - Sandbox Runtime Config
             x-sandbox-agent: true

@@ -244,6 +244,24 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 		if err := repo.ensureOrigin(ctx, source.OriginURL, helper); err != nil {
 			return c.failed(state, err)
 		}
+		repo.ensureOriginHeadRef(ctx)
+		state.State, state.Commit = StateMaterialized, commit
+		return c.setState(state)
+	}
+	if commit, ok := repo.unmarkedCheckout(ctx); ok {
+		// A checkout made before materializing was marked at all — a pool
+		// cloned it, from before the marker existed, into a sandbox that has
+		// not started since (unmarkedCheckout says how it is told). It is the
+		// sandbox's workspace, so it is adopted as it stands rather than
+		// refused or cloned over: marked once, at what it has checked out,
+		// and from then on like any other.
+		if err := repo.ensureOrigin(ctx, source.OriginURL, helper); err != nil {
+			return c.failed(state, err)
+		}
+		if err := repo.writeMarker(filepath.Join(source.Target, ".git", sandboxconfig.SourceMaterializedMarker), commit); err != nil {
+			return c.failed(state, err)
+		}
+		c.cfg.Logger.Info("adopted a source checkout from before the materialized marker", "slug", source.Slug, "target", source.Target, "commit", commit)
 		state.State, state.Commit = StateMaterialized, commit
 		return c.setState(state)
 	}

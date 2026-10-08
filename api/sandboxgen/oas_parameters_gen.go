@@ -1914,6 +1914,126 @@ func decodeGetSandboxSourceProjectLayerParams(args [3]string, argsEscaped bool, 
 	return params, nil
 }
 
+// GetSandboxSourceStatesParams is parameters of get-sandbox-source-states operation.
+type GetSandboxSourceStatesParams struct {
+	// Project that owns the sandbox.
+	ProjectId string
+	// Sandbox resource ID.
+	SandboxId string
+}
+
+func unpackGetSandboxSourceStatesParams(packed middleware.Parameters) (params GetSandboxSourceStatesParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "path",
+		}
+		params.SandboxId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetSandboxSourceStatesParams(args [2]string, argsEscaped bool, r *http.Request) (params GetSandboxSourceStatesParams, _ error) {
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: sandboxId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "sandboxId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SandboxId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // JudgeSandboxParams is parameters of judge-sandbox operation.
 type JudgeSandboxParams struct {
 	// Project that owns the sandbox.

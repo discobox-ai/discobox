@@ -175,6 +175,7 @@ type SandboxSecretInput = apigen.SandboxSecretInput
 type SandboxService = apigen.SandboxService
 type SandboxServicesResponse = apigen.SandboxServicesResponse
 type SandboxSourceProjectLayer = apigen.SandboxSourceProjectLayer
+type SandboxSourceStates = apigen.SandboxSourceStates
 type SandboxStorageUsage = apigen.SandboxStorageUsage
 type SandboxTool = apigen.SandboxTool
 type SandboxToolFile = apigen.SandboxToolFile

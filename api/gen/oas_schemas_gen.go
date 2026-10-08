@@ -3165,6 +3165,7 @@ func (*ErrorResponseStatusCode) getSandboxExecScreenRes()           {}
 func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()        {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
 func (*ErrorResponseStatusCode) getSandboxSourceProjectLayerRes()   {}
+func (*ErrorResponseStatusCode) getSandboxSourceStatesRes()         {}
 func (*ErrorResponseStatusCode) judgeSandboxRes()                   {}
 func (*ErrorResponseStatusCode) listExecEventsRes()                 {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
@@ -23134,6 +23135,24 @@ func (s *SandboxSourceProjectLayerProjectLayer) init() SandboxSourceProjectLayer
 	}
 	return m
 }
+
+// Each source's convergence onto its target, as the sandbox reports it.
+// Ref: #/components/schemas/SandboxSourceStates
+type SandboxSourceStates struct {
+	Sources []SandboxAgentSourceState `json:"sources"`
+}
+
+// GetSources returns the value of Sources.
+func (s *SandboxSourceStates) GetSources() []SandboxAgentSourceState {
+	return s.Sources
+}
+
+// SetSources sets the value of Sources.
+func (s *SandboxSourceStates) SetSources(val []SandboxAgentSourceState) {
+	s.Sources = val
+}
+
+func (*SandboxSourceStates) getSandboxSourceStatesRes() {}
 
 // One sandbox's durable footprint, by the tree that holds it, walked fresh.
 // There is deliberately no cache figure: cache is one pool-shared tree keyed by

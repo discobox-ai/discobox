@@ -516,6 +516,56 @@ func TestARepositoryTheSandboxDidNotCloneIsLeftAlone(t *testing.T) {
 	}
 }
 
+// A checkout a pool made before it marked what it materialized, in a sandbox
+// that has not started since, is the sandbox's workspace: it is adopted at
+// what it has checked out, its work untouched and its origin pointed at the
+// pool's route, rather than refused or cloned over.
+func TestACheckoutFromBeforeTheMarkerIsAdopted(t *testing.T) {
+	o := newOrigin(t)
+	first := o.commit("README.md", "hello\n")
+	second := o.commit("README.md", "hello again\n")
+	target := t.TempDir()
+	h := newHarness(t)
+	gitT(t, "", "clone", "--quiet", o.bare, target)
+	gitT(t, target, "checkout", "--quiet", "--detach", first)
+	writeFile(t, filepath.Join(target, "work.txt"), "uncommitted\n")
+	state := h.pass(t, document(1, sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: second}), "primary")
+	if state.State != StateMaterialized || state.Commit != first {
+		t.Fatalf("state = %+v, want adopted at %s", state, first)
+	}
+	if got, _ := os.ReadFile(filepath.Join(target, "work.txt")); string(got) != "uncommitted\n" {
+		t.Fatalf("the checkout's work was touched: %q", got)
+	}
+	if got := strings.TrimSpace(gitT(t, target, "rev-parse", "HEAD")); got != first {
+		t.Fatalf("HEAD = %s, want the checkout left at %s", got, first)
+	}
+	if got := strings.TrimSpace(gitT(t, target, "remote", "get-url", "origin")); got != o.url {
+		t.Fatalf("origin = %s, want %s", got, o.url)
+	}
+	if marker, err := os.ReadFile(filepath.Join(target, ".git", sandboxconfig.SourceMaterializedMarker)); err != nil || strings.TrimSpace(string(marker)) != first {
+		t.Fatalf("marker = %q (%v), want %s", marker, err, first)
+	}
+}
+
+// A repository someone put at the target with a commit of its own is not
+// taken for a pool's checkout: its origin is a URL, never a path a pool
+// cloned from, so it is refused and left as it is.
+func TestARepositoryWithAURLOriginIsNotAdopted(t *testing.T) {
+	o := newOrigin(t)
+	first := o.commit("README.md", "hello\n")
+	target := t.TempDir()
+	h := newHarness(t)
+	gitT(t, "", "clone", "--quiet", o.bare, target)
+	gitT(t, target, "remote", "set-url", "origin", "https://example.com/someone/else.git")
+	state := h.pass(t, document(1, sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: first}), "primary")
+	if state.State != StateFailed || !strings.Contains(state.Error, "did not clone") {
+		t.Fatalf("state = %+v, want refused", state)
+	}
+	if got := strings.TrimSpace(gitT(t, target, "remote", "get-url", "origin")); got != "https://example.com/someone/else.git" {
+		t.Fatalf("origin = %s, want it left alone", got)
+	}
+}
+
 func TestANonEmptyTargetKeepsItsFiles(t *testing.T) {
 	o := newOrigin(t)
 	first := o.commit("README.md", "hello\n")

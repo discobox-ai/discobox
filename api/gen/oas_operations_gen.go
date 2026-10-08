@@ -61,6 +61,7 @@ const (
 	GetSandboxRuntimeConfigOperation          OperationName = "GetSandboxRuntimeConfig"
 	GetSandboxServiceOperation                OperationName = "GetSandboxService"
 	GetSandboxSourceProjectLayerOperation     OperationName = "GetSandboxSourceProjectLayer"
+	GetSandboxSourceStatesOperation           OperationName = "GetSandboxSourceStates"
 	GetSandboxTrustRequestOperation           OperationName = "GetSandboxTrustRequest"
 	GetSecretOperation                        OperationName = "GetSecret"
 	GetSecretRequestOperation                 OperationName = "GetSecretRequest"
