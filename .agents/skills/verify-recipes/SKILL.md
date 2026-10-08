@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, and a change to a skill (`.discobox/skills`, `.agents/skills`) via a headless agent in an isolated HOME. Inside a discobox, the generic `verify` skill (from `.discobox/skills/verify`) reads it first and records what it learns here; outside one, Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the runtime-config intake the pool delivers to its sandboxes, and a change to a skill (`.discobox/skills`, `.agents/skills`) via a headless agent in an isolated HOME. Inside a discobox, the generic `verify` skill (from `.discobox/skills/verify`) reads it first and records what it learns here; outside one, Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the runtime-config intake, or a skill.
 ---
 
 # Verifying the console
@@ -194,9 +194,10 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
 
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 
-Nothing in the dev loop delivers a runtime-config document yet, so drive the
-in-box agent directly: `d new -H shell -d ...` a box (from a dirty checkout if
-the change reads `sandbox.json`'s source spec), then `curl` it on
+The pool delivers a runtime-config document at every boot (next section), but
+to drive one of these routes with a document of your own, call the in-box agent
+directly: `d new -H shell -d ...` a box (from a dirty checkout if the change
+reads `sandbox.json`'s source spec), then `curl` it on
 `127.0.0.1:3003/api/projects/<project>/sandboxes/<sbx>/...` from `d shell`.
 
 - **Token.** The agent trusts the server's pool-agent issuer key
@@ -207,14 +208,48 @@ the change reads `sandbox.json`'s source spec), then `curl` it on
   `server/internal/auth/poolagent.CreateTokenForAudience`) from a scratch
   module; pipe the key in and the token into the box on stdin, never argv.
   The row exists only once the server has created a pool.
-- **Read-only targets.** On a Docker pool `/etc/discobox` and
-  `/run/discobox/secrets` are the pool's read-only binds, so a `PUT
-  .../runtime-config` is a 500 until #53. In a throwaway box, `sudo mount -t
-  overlay` each over itself with a tmpfs upper. An agent restart re-binds the
-  secrets volume read-only (`boot.WireSecrets`), so a kept document cannot be
-  restored there; that path is not drivable on a Docker pool.
+- **Your document races the pool's.** The pool's status poll converges on its
+  own record, so a revision you send is overtaken at the next poll (it moves
+  past whatever the sandbox holds). Read what you need before that, or take
+  the pool's identity key instead (next section) so you deliver as it would.
 - **An origin.** Serve a bare repository from this box with a small
   `git http-backend` CGI wrapper on `0.0.0.0:<port>`; the box reaches it as
   `http://172.17.0.1:<port>` through its proxy.
 - `systemctl restart discobox-sandbox-agent` in the box ends the `d shell`
   it was run from (shells are the agent's execs): background it and reconnect.
+
+# Verifying the runtime-config intake (pool → sandbox delivery)
+
+Drive it from `-H shell` boxes of the dev pool (see the console section for
+`d`). The dev pool's sandbox containers run on this box's own Docker daemon, so
+`docker exec <discobox-sandbox-...>` reaches them directly.
+
+- What arrived: `/etc/discobox/sandbox.json` (bootstrap: `provider.publicKeys`,
+  `provider.pool`, no idle timeout), `/var/lib/discobox/runtime-config.json`
+  (kept document and revision), `/run/discobox/secrets/secrets.json`,
+  `/etc/discobox/proxy/*`, `/etc/discobox/ready`. The pool's record is
+  `/var/lib/discobox/projects/*/pools/*/sandboxes/<id>/runtime-config.json`
+  inside `discobox-vm-pool_<id>` (no `jq` there; `cat` it).
+- Ordering: compare journal timestamps (`journalctl -o short-precise`) of the
+  bridge `Started` lines and the first `discobox-exec-*` unit. A file's mtime is
+  when it was staged, not when it was renamed into place, so `ready`'s mtime
+  predates the units it waits for.
+- The applied revision the control plane sees:
+  `d admin box get <id> -o json | jq .runtime.agentStatus.runtimeConfigRevision`.
+- Secrets reaching a running box: `d secret create`, then
+  `d admin harnesses secrets bind <shell-config-id> ENV <secret>`; a new box
+  gets it at create, and rebinding to a secret of another shape re-mints the
+  sentinel and pushes it to running boxes.
+- The pool's idle timeout cannot be changed on the dev pool in place:
+  `d admin provider update --sandbox-idle-timeout` records it but did not
+  recreate the pool container within 10 minutes. To see the sandbox apply a
+  document, sign a delivery token with the dev pool's own key
+  (`/var/lib/discobox/identity/*/*/agent.key` in the pool container, base64
+  Ed25519; audience `sandbox-agent`, claims project/pool/sandbox, scopes
+  `["runtime-config"]`) from a throwaway `go run` in the pool-agent module, and
+  `curl` the route from inside the box. Restore the provider config afterwards.
+- `d rm` archives; `d admin box purge <id>` (no `--yes`) removes.
+
+Gotcha: a wait loop of `until ! pgrep -f "docker build"` never ends — its own
+shell's command line matches the pattern. Wait on the watcher's outputs
+(`.env` image tags, the harness list) instead.
