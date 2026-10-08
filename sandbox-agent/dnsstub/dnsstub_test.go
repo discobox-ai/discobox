@@ -32,6 +32,15 @@ type fakePool struct {
 	// open and peak count connections held at once, which is what the
 	// pool's per-sandbox admission bounds.
 	open, peak int
+	// serials is the client certificate each connection presented, in the
+	// order they were accepted.
+	serials []string
+}
+
+func (p *fakePool) presented() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.serials...)
 }
 
 func (p *fakePool) closeAll() {
@@ -46,6 +55,7 @@ func (p *fakePool) closeAll() {
 type pki struct {
 	server *tls.Config
 	config Config
+	bundle *proxy.CertificateBundle
 }
 
 // newPKI issues a pool server certificate for 127.0.0.1 and a sandbox client
@@ -72,6 +82,7 @@ func newPKI(t *testing.T) pki {
 			MinVersion:   tls.VersionTLS12,
 		},
 		config: cfg,
+		bundle: prepared.Bundle,
 	}
 }
 
@@ -104,6 +115,13 @@ func startPool(t *testing.T, serverTLS *tls.Config) *fakePool {
 					pool.open--
 					pool.mu.Unlock()
 				}()
+				tlsConn, _ := conn.(*tls.Conn)
+				if err := tlsConn.HandshakeContext(context.Background()); err != nil {
+					return
+				}
+				pool.mu.Lock()
+				pool.serials = append(pool.serials, tlsConn.ConnectionState().PeerCertificates[0].SerialNumber.String())
+				pool.mu.Unlock()
 				for {
 					query, err := readMessage(conn)
 					if err != nil {
@@ -159,12 +177,12 @@ func poolAnswer(t *testing.T, query []byte) []byte {
 func startStub(t *testing.T, p pki, poolAddr, poolHost string) (udp, tcp string) {
 	t.Helper()
 	p.config.Server = poolAddr
-	tlsConfig, err := p.config.TLSConfig()
+	material, err := p.config.Material()
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, port, _ := net.SplitHostPort(poolAddr)
-	stub, err := New(nil, net.JoinHostPort(poolHost, port), tlsConfig)
+	stub, err := New(nil, net.JoinHostPort(poolHost, port), material)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,12 +424,42 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
-// TLSConfig verifies the pool for the dnsServer host, the name the pool's
+// The pool renews a running sandbox's certificate by delivering new files
+// (#62). The stub takes them on its next connection, without restarting.
+func TestStubPresentsARenewedCertificateOnItsNextConnection(t *testing.T) {
+	p := newPKI(t)
+	pool := startPool(t, p.server)
+	udp, _ := startStub(t, p, pool.addr, "127.0.0.1")
+	askUDP(t, udp, query(t, 1, "example.com.", 0))
+
+	// A renewal window longer than any validity reissues the certificate now.
+	if _, err := proxy.EnsureClientCertificate(p.bundle, "sbx_a", "", "", time.Hour, 100*365*24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	pool.closeAll()
+	if answer := askUDP(t, udp, query(t, 2, "example.com.", 0)); answer.RCode != dnsmessage.RCodeSuccess {
+		t.Fatalf("after renewal: rcode %v", answer.RCode)
+	}
+	serials := pool.presented()
+	if len(serials) != 2 || serials[0] == serials[1] {
+		t.Fatalf("certificates presented = %v, want the original and then the renewed one", serials)
+	}
+}
+
+// Material verifies the pool for the dnsServer host, the name the pool's
 // certificate is issued for.
-func TestTLSConfigVerifiesTheServerHost(t *testing.T) {
+func TestMaterialVerifiesTheServerHost(t *testing.T) {
 	p := newPKI(t)
 	p.config.Server = "discobox-pool-proxy:17085"
-	cfg, err := p.config.TLSConfig()
+	material, err := p.config.Material()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub, err := New(nil, p.config.Server, material)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := stub.material.TLSConfig(stub.poolHost)
 	if err != nil {
 		t.Fatal(err)
 	}

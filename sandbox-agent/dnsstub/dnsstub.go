@@ -17,7 +17,6 @@ package dnsstub
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -33,6 +32,8 @@ import (
 	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
+
+	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
 const (
@@ -93,26 +94,11 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-// TLSConfig is the client side of the pool's mTLS: the sandbox's keypair, and
-// the pool CA verifying the pool's certificate for the server's host.
-func (c Config) TLSConfig() (*tls.Config, error) {
-	host, _, err := net.SplitHostPort(c.Server)
-	if err != nil {
-		return nil, fmt.Errorf("dns server %q: %w", c.Server, err)
-	}
-	caPEM, err := os.ReadFile(c.MTLSCAPath)
-	if err != nil {
-		return nil, fmt.Errorf("read mTLS CA: %w", err)
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("parse mTLS CA")
-	}
-	pair, err := tls.LoadX509KeyPair(c.ClientCertPath, c.ClientKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load client certificate: %w", err)
-	}
-	return &tls.Config{RootCAs: roots, Certificates: []tls.Certificate{pair}, ServerName: host, MinVersion: tls.VersionTLS12}, nil
+// Material is the client side of the pool's mTLS: the sandbox's keypair, and
+// the pool CA verifying the pool's certificate, read again whenever the intake
+// replaces them, so a renewed certificate reaches the stub's next connection.
+func (c Config) Material() (*bridge.Material, error) {
+	return bridge.LoadMaterial(c.MTLSCAPath, c.ClientCertPath, c.ClientKeyPath)
 }
 
 // ClaimAddress puts addr on the sandbox's loopback, so the stub can listen on
@@ -157,11 +143,11 @@ func run(ctx context.Context, name string, args ...string) error {
 // credentials, claims the address, and answers there. It returns early only
 // when one of those fails.
 func Run(ctx context.Context, logger *slog.Logger, cfg Config) error {
-	tlsConfig, err := cfg.TLSConfig()
+	material, err := cfg.Material()
 	if err != nil {
 		return err
 	}
-	stub, err := New(logger, cfg.Server, tlsConfig)
+	stub, err := New(logger, cfg.Server, material)
 	if err != nil {
 		return err
 	}
@@ -187,7 +173,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config) error {
 type Stub struct {
 	logger *slog.Logger
 	server string
-	tls    *tls.Config
+	// material is the sandbox's mTLS material, which each dial takes as it is
+	// then. A connection already open keeps the certificate it was opened
+	// with; it was valid when the pool verified it.
+	material *bridge.Material
 	// poolHost is the pool's name. A query for it reaching the stub means
 	// Docker's resolver could not answer it — the pool is not on the network —
 	// and asking the pool would mean resolving that same name to dial it.
@@ -202,8 +191,9 @@ type Stub struct {
 	slots chan struct{}
 }
 
-// New returns a stub that asks server, a host:port, over tlsConfig.
-func New(logger *slog.Logger, server string, tlsConfig *tls.Config) (*Stub, error) {
+// New returns a stub that asks server, a host:port, over mTLS with material,
+// verifying the pool's certificate for server's host.
+func New(logger *slog.Logger, server string, material *bridge.Material) (*Stub, error) {
 	host, _, err := net.SplitHostPort(server)
 	if err != nil {
 		return nil, fmt.Errorf("dns server %q: %w", server, err)
@@ -214,7 +204,7 @@ func New(logger *slog.Logger, server string, tlsConfig *tls.Config) (*Stub, erro
 	return &Stub{
 		logger:   logger,
 		server:   server,
-		tls:      tlsConfig,
+		material: material,
 		poolHost: strings.ToLower(strings.TrimSuffix(host, ".")),
 		idle:     make(chan *tls.Conn, maxConns),
 		open:     make(chan struct{}, maxConns),
@@ -364,7 +354,12 @@ func (s *Stub) take(ctx context.Context) (conn *tls.Conn, reused bool, err error
 	case <-ctx.Done():
 		return nil, false, ctx.Err()
 	}
-	dialer := tls.Dialer{Config: s.tls}
+	tlsConfig, err := s.material.TLSConfig(s.poolHost)
+	if err != nil {
+		<-s.open
+		return nil, false, err
+	}
+	dialer := tls.Dialer{Config: tlsConfig}
 	raw, err := dialer.DialContext(ctx, "tcp", s.server)
 	if err != nil {
 		<-s.open

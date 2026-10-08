@@ -23,26 +23,25 @@ const (
 // writes; a delivery is not held up longer than this by any one of them.
 const unitActionTimeout = 30 * time.Second
 
-// applyUnitAction asks systemd, PID 1 in the sandbox, to restart or stop a
-// unit, and waits for the job, so a restarted unit is up before readiness is
-// published.
+// applyUnitAction asks systemd, PID 1 in the sandbox, to restart, start or stop
+// a unit, and waits for the job, so a started unit is up before readiness is
+// published. Starting a unit that is already running is a no-op, which is
+// what a delivery that changed only what the unit reloads itself wants.
 func applyUnitAction(ctx context.Context, action unitAction) error {
 	ctx, cancel := context.WithTimeout(ctx, unitActionTimeout)
 	defer cancel()
-	verb := "restart"
-	if action.stop {
-		verb = "stop"
-	} else if action.unit.withDocker && !systemdUnitActive(ctx, "docker.service") {
+	verb := action.verb
+	if verb != verbStop && action.unit.withDocker && !systemdUnitActive(ctx, "docker.service") {
 		// dockerd brings this one up itself when it starts, from the files
 		// that are now in place.
 		return nil
 	}
-	//nolint:gosec // G204: the verb and unit name come from proxyUnits, a fixed list.
-	out, err := exec.CommandContext(ctx, "systemctl", verb, action.unit.name).CombinedOutput()
+	//nolint:gosec // G204: the verb is one of unitVerb's constants and the unit name comes from proxyUnits, a fixed list.
+	out, err := exec.CommandContext(ctx, "systemctl", string(verb), action.unit.name).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("systemctl %s %s: %w: %s", verb, action.unit.name, err, strings.TrimSpace(string(out)))
 	}
-	if action.stop || action.unit.listen == "" {
+	if verb == verbStop || action.unit.listen == "" {
 		return nil
 	}
 	return awaitListening(ctx, action.unit.listen)
