@@ -12,6 +12,7 @@ import (
 	"github.com/adrg/xdg"
 
 	"github.com/discobox-ai/discobox/controlplane"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 // writeConfigFile writes a configuration file and points Load at it.
@@ -352,7 +353,11 @@ func TestAuthRequiredNeedsSomeoneToAuthenticate(t *testing.T) {
 	}
 
 	clearConfigEnv(t)
-	writeConfigFile(t, "authRequired: true\nlisten: [unix://, iroh://]\n")
+	local, err := endpoint.Parse(endpoint.DefaultEndpoint())
+	if err != nil {
+		t.Fatalf("Parse(DefaultEndpoint()) error = %v", err)
+	}
+	writeConfigFile(t, "authRequired: true\nlisten: ['"+local.Scheme+"://', 'iroh://']\n")
 	if cfg, err := Load(); err != nil || !cfg.AuthRequired {
 		t.Fatalf("Load() with an iroh endpoint = %v, %v; want authRequired on", cfg, err)
 	}
