@@ -1113,7 +1113,12 @@ func TestAnAllowLetStandAnswersWhatItsRouteCovers(t *testing.T) {
 	if err != nil || len(verdicts) != 2 {
 		t.Fatalf("verdicts = %+v, %v, want the covered request recorded too", verdicts, err)
 	}
+	// Two verdicts can share a created_at on a coarse clock (Windows), and the
+	// list breaks that tie by ID, so the hit is the one that is not granted.
 	hit := verdicts[0]
+	if hit.ID == granted.ID {
+		hit = verdicts[1]
+	}
 	if hit.StandingVerdictID != granted.ID || !hit.Allow || hit.Request == nil || hit.Request.URL != "https://api.github.com/repos/org/repo/pulls/2/comments?page=3" {
 		t.Fatalf("hit = %+v, want the covered request naming the verdict that decided it", hit)
 	}
