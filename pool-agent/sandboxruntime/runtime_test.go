@@ -15,9 +15,11 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
@@ -34,7 +36,7 @@ func TestSandboxUserForwardsWhatTheRequestGave(t *testing.T) {
 			}),
 		},
 	}
-	user := resolveSandboxUser(req)
+	user := resolveSandboxUser(linuxPaths, req)
 	if idOf(user.UID) != 1000 || idOf(user.GID) != 1001 || user.Name != "sandbox" {
 		t.Fatalf("resolveSandboxUser = %#v", user)
 	}
@@ -55,7 +57,7 @@ func TestSandboxUserForwardsWhatTheRequestGave(t *testing.T) {
 // An explicit home is forwarded: the request stating it outright is the one way
 // the pool agent can know it.
 func TestSandboxUserForwardsAnExplicitHome(t *testing.T) {
-	user := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{
+	user := resolveSandboxUser(linuxPaths, &workerapimodel.PoolSandboxCreateRequest{
 		Config: workerapimodel.SandboxConfig{
 			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
 				Name:          workerclient.NewOptString("sandbox"),
@@ -82,7 +84,7 @@ func TestSandboxUserWithNoUserRequestedIsLeftUnset(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			user := resolveSandboxUser(req)
+			user := resolveSandboxUser(linuxPaths, req)
 			if user.UID != nil || user.GID != nil || user.Name != "" || user.HomeDirectory != "" {
 				t.Fatalf("resolveSandboxUser = %#v, want everything unset", user)
 			}
@@ -101,7 +103,7 @@ func TestSandboxUserWithNoUserRequestedIsLeftUnset(t *testing.T) {
 // A bare name no longer becomes uid 1000: 1000 is one distro family's
 // convention, and the account may have any id (ADR 0025 §4).
 func TestSandboxUserNameAloneInventsNoIDs(t *testing.T) {
-	user := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{
+	user := resolveSandboxUser(linuxPaths, &workerapimodel.PoolSandboxCreateRequest{
 		Config: workerapimodel.SandboxConfig{
 			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
 				Name: workerclient.NewOptString("dev"),
@@ -119,7 +121,7 @@ func TestSandboxUserNameAloneInventsNoIDs(t *testing.T) {
 // A uid with no gid keeps the gid unset rather than copying the uid; the
 // sandbox reads the account's real default group (ADR 0025 §6).
 func TestSandboxUserUIDAloneLeavesTheGIDUnset(t *testing.T) {
-	user := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{
+	user := resolveSandboxUser(linuxPaths, &workerapimodel.PoolSandboxCreateRequest{
 		Config: workerapimodel.SandboxConfig{
 			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
 				UID: workerclient.NewOptInt64(1000),
@@ -193,7 +195,7 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 			}),
 		},
 	}
-	sources := sandboxSources(req)
+	sources := sandboxSources(linuxPaths, req)
 	if len(sources) != 3 {
 		t.Fatalf("sources = %#v, want 3", sources)
 	}
@@ -202,11 +204,97 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 	assertSource(t, sources[2], "docs", "/workspace/docs")
 }
 
+// A pool's sandboxes are of the platform it hosts, and every path the pool
+// names in one — a source's target, the working root it writes into the
+// manifest, the directory the sandbox starts in — is judged that platform's
+// way (ADR 0145 §6). On Windows a path names its drive, and a source with none
+// lands under the working root by name. A working directory that names no
+// place in the sandbox fails the create, as the container runtime always made
+// it fail; one that does is passed on as asked.
+func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
+	windows := sandboxpath.For(platform.Platform{OS: "windows", Arch: "amd64"})
+	darwin := sandboxpath.For(platform.Platform{OS: "darwin", Arch: "arm64"})
+	toolsURL := mustURL(t, "https://example.com/tools.git")
+	request := func(directory, workingDirectory string) *workerapimodel.PoolSandboxCreateRequest {
+		return &workerapimodel.PoolSandboxCreateRequest{
+			SandboxId: "sandbox-1",
+			Config: workerapimodel.SandboxConfig{
+				Source: workerclient.NewOptGitSource(workerapimodel.GitSource{
+					Kind: workerclient.GitSourceKindGit,
+					URL:  workerclient.NewOptURI(toolsURL),
+					Destination: workerclient.NewOptGitSourceDestination(workerapimodel.GitSourceDestination{
+						Directory:        workerclient.NewOptString(directory),
+						WorkingDirectory: workerclient.NewOptString(workingDirectory),
+					}),
+				}),
+				SourceCodeReferences: workerclient.NewOptSandboxConfigSourceCodeReferences(workerclient.SandboxConfigSourceCodeReferences{
+					"tools": {Kind: workerclient.GitSourceKindGit, URL: workerclient.NewOptURI(toolsURL)},
+				}),
+			},
+		}
+	}
+	for _, tc := range []struct {
+		name        string
+		paths       sandboxpath.Paths
+		directory   string
+		workingDir  string
+		wantPrimary string
+		wantTools   string
+		wantWorkDir string
+		wantRefused bool
+		wantRoot    string
+	}{
+		{
+			name: "windows drive paths", paths: windows,
+			directory: "C:/src/app", workingDir: `C:\src\app\cmd`,
+			wantPrimary: `C:\src\app`, wantTools: `C:\workspace\tools`, wantWorkDir: `C:\src\app\cmd`, wantRoot: `C:\workspace`,
+		},
+		{
+			name: "windows POSIX paths name no place", paths: windows,
+			directory: "/workspace/app", workingDir: "/workspace/app",
+			wantPrimary: `C:\workspace`, wantTools: `C:\workspace\tools`, wantRefused: true, wantRoot: `C:\workspace`,
+		},
+		{
+			name: "darwin", paths: darwin,
+			directory: "/Users/ada/app/", workingDir: "/Users/ada/app/./cmd",
+			wantPrimary: "/Users/ada/app", wantTools: "/tools", wantWorkDir: "/Users/ada/app/./cmd", wantRoot: "/workspace",
+		},
+		{
+			name: "linux relative working directory", paths: linuxPaths,
+			directory: "/workspace/app", workingDir: "app",
+			wantPrimary: "/workspace/app", wantTools: "/tools", wantRefused: true, wantRoot: "/workspace",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := request(tc.directory, tc.workingDir)
+			sources := sandboxSources(tc.paths, req)
+			if len(sources) != 2 {
+				t.Fatalf("sources = %#v, want 2", sources)
+			}
+			if sources[0].target != tc.wantPrimary || sources[1].target != tc.wantTools {
+				t.Fatalf("targets = %q, %q; want %q, %q", sources[0].target, sources[1].target, tc.wantPrimary, tc.wantTools)
+			}
+			got, err := sourceWorkingDirectory(tc.paths, req)
+			if tc.wantRefused {
+				if err == nil {
+					t.Fatalf("working directory = %q, want it refused", got)
+				}
+			} else if err != nil || got != tc.wantWorkDir {
+				t.Fatalf("working directory = %q, %v; want %q", got, err, tc.wantWorkDir)
+			}
+			doc := buildSandboxDocument(tc.paths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
+			if doc.Runtime.AgentRuntime.WorkingRoot != tc.wantRoot {
+				t.Fatalf("manifest working root = %q, want %q", doc.Runtime.AgentRuntime.WorkingRoot, tc.wantRoot)
+			}
+		})
+	}
+}
+
 func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	config := workerapimodel.SandboxConfig{
 		Source: workerclient.NewOptGitSource(workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}),
 	}
-	normalizeSandboxConfig(&config)
+	normalizeSandboxConfig(linuxPaths, &config)
 	source, ok := config.Source.Get()
 	if !ok {
 		t.Fatal("normalized config lost primary source")
@@ -215,7 +303,7 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	if !ok || destination.Directory.Or("") != "/workspace" {
 		t.Fatalf("destination = %#v, want default primary bind root /workspace", destination)
 	}
-	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if len(cfg.Sources) != 1 || cfg.Sources[0].Target != "/workspace" {
 		t.Fatalf("effective sources = %#v, want runtime bind root /workspace", cfg.Sources)
@@ -224,7 +312,7 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	destination.Directory = workerclient.NewOptString("workspace/../project")
 	source.Destination = workerclient.NewOptGitSourceDestination(destination)
 	config.Source = workerclient.NewOptGitSource(source)
-	normalizeSandboxConfig(&config)
+	normalizeSandboxConfig(linuxPaths, &config)
 	source, _ = config.Source.Get()
 	destination, _ = source.Destination.Get()
 	if destination.Directory.Or("") != "/project" {
@@ -514,7 +602,7 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 		}),
 	}
 
-	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if cfg.APIVersion != sandboxconfig.APIVersion || cfg.SandboxID != "sandbox-1" {
 		t.Fatalf("effective identity = %#v, want v1 sandbox-1", cfg)
@@ -554,7 +642,7 @@ func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.
 		}),
 	}
 
-	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
 	if len(doc.Image.Files) != 2 {
 		t.Fatalf("image files = %+v, want the unmodified image baseline", doc.Image.Files)
 	}
@@ -1178,7 +1266,7 @@ func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 	}
 	identity := func(p string) string { return p }
 	originPath := func(slug string) string { return "/pool/origins/" + slug + ".git" }
-	mounts := originMounts(sandboxSources(req), originPath, identity)
+	mounts := originMounts(sandboxSources(linuxPaths, req), originPath, identity)
 
 	byTarget := map[string]mount.Mount{}
 	for _, m := range mounts {
@@ -1275,7 +1363,7 @@ func TestSourceDataPlan(t *testing.T) {
 			if tc.refs != nil {
 				req.Config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(tc.refs)
 			}
-			if got := sourceDataPlan(sandboxSources(req), tc.primary != nil); !slices.Equal(got, tc.want) {
+			if got := sourceDataPlan(sandboxSources(linuxPaths, req), tc.primary != nil); !slices.Equal(got, tc.want) {
 				t.Fatalf("sourceDataPlan = %#v, want %#v", got, tc.want)
 			}
 		})
@@ -1884,7 +1972,7 @@ func TestImageMatchesPin(t *testing.T) {
 // the mutable reference it was asked for (ADR 0016).
 func TestSandboxDocumentRecordsResolvedImageIdentity(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
-	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:resolved", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:resolved", 0, req, nil, nil)
 	if doc.Runtime.Image != "sha256:resolved" {
 		t.Fatalf("runtime image = %q, want the resolved image identity", doc.Runtime.Image)
 	}
@@ -1905,7 +1993,7 @@ func TestResolveSandboxUserNamedUserIsNotRoot(t *testing.T) {
 			}),
 		},
 	}
-	got := resolveSandboxUser(req)
+	got := resolveSandboxUser(linuxPaths, req)
 	if got.UID != nil || got.GID != nil {
 		t.Fatalf("named user invented ids: uid=%d gid=%d", idOf(got.UID), idOf(got.GID))
 	}
@@ -1932,7 +2020,7 @@ func TestResolveSandboxUserExplicitRootIsHonoured(t *testing.T) {
 			}),
 		},
 	}
-	if got := resolveSandboxUser(req); idOf(got.UID) != 0 {
+	if got := resolveSandboxUser(linuxPaths, req); idOf(got.UID) != 0 {
 		t.Fatalf("explicit root uid = %d, want 0", idOf(got.UID))
 	}
 }

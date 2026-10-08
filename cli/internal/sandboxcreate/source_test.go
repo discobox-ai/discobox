@@ -12,6 +12,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
+	"github.com/discobox-ai/discobox/platform"
 )
 
 func TestResolveRunSourceCleanLocalBranch(t *testing.T) {
@@ -19,7 +20,7 @@ func TestResolveRunSourceCleanLocalBranch(t *testing.T) {
 	git := runSourceTestGit(t, repo)
 	baseCommit := strings.TrimSpace(git("rev-parse", "HEAD"))
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -54,7 +55,7 @@ func TestResolveRunSourceCarriesTheBranchsUpstreamURL(t *testing.T) {
 	// The remote as written, not as this machine's config rewrites it.
 	git("config", "url.git@github.com:.insteadOf", "https://github.com/")
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestResolveRunSourceResolvesAnAliasedUpstreamToItsFirstURL(t *testing.T) {
 	git("config", "--add", "remote.origin.url", "https://mirror.example.com/project.git")
 	git("config", "branch.feature-foo.remote", "origin")
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestResolveRunSourceLeavesOutAnUpstreamTheSandboxCannotReach(t *testing.T) 
 			if configure[0] == "remote" {
 				git("config", "branch.feature-foo.remote", "elsewhere")
 			}
-			source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+			source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 			if err != nil {
 				t.Fatalf("resolveRunSource: %v", err)
 			}
@@ -138,7 +139,7 @@ func TestResolveRunSourceLinkedWorktreeReportsNoLocalGitDirectory(t *testing.T) 
 	worktree := filepath.Join(filepath.Dir(repo), "linked")
 	runSourceTestGit(t, repo)("worktree", "add", "-b", "linked", worktree)
 
-	source, err := resolveRunSource(context.Background(), worktree, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), worktree, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -169,7 +170,7 @@ func TestResolveRunSourceDirtyLocalCreatesHiddenSnapshotRef(t *testing.T) {
 	}
 	statusBefore := git("status", "--porcelain=v1", "--untracked-files=all")
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -197,7 +198,7 @@ func TestResolveRunSourceIncludeDirtyNeverKeepsDirtyWorkspaceOutOfTheSandbox(t *
 		t.Fatal(err)
 	}
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyNever})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestResolveRunSourceIncludeDirtyAutoAsksAndHonorsTheAnswer(t *testing.T) {
 				t.Fatal(err)
 			}
 			var asked []DirtyWorkspace
-			source, err := resolveRunSource(context.Background(), repo, runSourceOptions{
+			source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox,
 				IncludeDirty: IncludeDirtyAuto,
 				Confirm: func(_ context.Context, workspace DirtyWorkspace) (bool, error) {
 					asked = append(asked, workspace)
@@ -258,7 +259,7 @@ func TestResolveRunSourceIncludeDirtyAutoAsksAndHonorsTheAnswer(t *testing.T) {
 func TestResolveRunSourceIncludeDirtyAutoDoesNotAskWhenWorkspaceIsClean(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox,
 		IncludeDirty: IncludeDirtyAuto,
 		Confirm: func(context.Context, DirtyWorkspace) (bool, error) {
 			t.Fatal("confirm called for a clean workspace")
@@ -276,7 +277,7 @@ func TestResolveRunSourceIncludeDirtyAutoDoesNotAskWhenWorkspaceIsClean(t *testi
 func TestResolveRunSourceIncludeDirtyAlwaysRejectsAnExplicitRef(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
-	if _, err := resolveRunSource(context.Background(), repo+"@feature-foo", runSourceOptions{IncludeDirty: IncludeDirtyAlways}); err == nil {
+	if _, err := resolveRunSource(context.Background(), repo+"@feature-foo", runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAlways}); err == nil {
 		t.Fatal("explicit ref with --include-dirty=true: want error, got none")
 	}
 }
@@ -285,7 +286,7 @@ func TestResolveRunSourceIncludeDirtyAlwaysIgnoresARemoteSource(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	remoteURL := "file://" + filepath.ToSlash(repo)
 
-	source, err := resolveRunSource(context.Background(), remoteURL, runSourceOptions{IncludeDirty: IncludeDirtyAlways})
+	source, err := resolveRunSource(context.Background(), remoteURL, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAlways})
 	if err != nil {
 		t.Fatalf("remote source with --include-dirty=true: %v", err)
 	}
@@ -325,7 +326,7 @@ func TestResolveRunSourceLocalSubdirectoryUsesRepoRootDestinationAndSubdirWorkin
 	}
 	t.Chdir(subdir)
 
-	source, err := resolveRunSource(context.Background(), ".", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), ".", runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -345,7 +346,7 @@ func TestResolveRunSourceLocalSubdirectoryOutsideCurrentWorkingDirectoryKeepsSub
 	}
 	t.Chdir(testWorkspace(t))
 
-	source, err := resolveRunSource(context.Background(), subdir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), subdir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -358,7 +359,7 @@ func TestResolveRunSourceLocalRepoRootOutsideCurrentWorkingDirectoryUsesRepoRoot
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(testWorkspace(t))
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -420,7 +421,7 @@ func TestResolveRunSourceExplicitHEADIgnoresDirtyWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	source, err := resolveRunSource(context.Background(), repo+"@HEAD", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo+"@HEAD", runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -438,7 +439,7 @@ func TestResolveRunSourceRemoteBranchPinsCommitAndKeepsBranchName(t *testing.T) 
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 	remoteURL := "file://" + filepath.ToSlash(repo)
 
-	source, err := resolveRunSource(context.Background(), remoteURL+"@feature-foo", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), remoteURL+"@feature-foo", runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -494,7 +495,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCarriesEverythingAsASnapshot(
 		t.Fatal(err)
 	}
 
-	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -547,7 +548,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCarriesEverythingAsASnapshot(
 func TestResolveRunSourceEmptyDirectoryWithoutRepositoryStartsFromTheEmptyCommit(t *testing.T) {
 	dir := testWorkspace(t)
 
-	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -571,7 +572,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryRejectsARefItCannotHave(t *te
 	}
 
 	// There is no history to name a ref in.
-	if _, err := resolveRunSource(context.Background(), dir+"@main", runSourceOptions{IncludeDirty: IncludeDirtyAuto}); err == nil {
+	if _, err := resolveRunSource(context.Background(), dir+"@main", runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto}); err == nil {
 		t.Fatal("an explicit ref against a directory with no repository was accepted")
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
@@ -599,7 +600,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryNotCopiedResolvesToNoSource(t
 		return false, nil
 	}
 
-	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyAuto, ConfirmCopy: decline})
+	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto, ConfirmCopy: decline})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -635,7 +636,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryIncludeDirtyNeverResolvesToNo
 		return false, nil
 	}
 
-	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyNever, ConfirmCopy: confirm})
+	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever, ConfirmCopy: confirm})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -670,10 +671,10 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCopiesWhenItIsMeantTo(t *test
 		opts     runSourceOptions
 		snapshot bool
 	}{
-		{name: "answered yes", dir: newDir, opts: runSourceOptions{IncludeDirty: IncludeDirtyAuto, ConfirmCopy: accept}, snapshot: true},
-		{name: "include-dirty=true", dir: newDir, opts: runSourceOptions{IncludeDirty: IncludeDirtyAlways, ConfirmCopy: refuse}, snapshot: true},
-		{name: "nobody to ask", dir: newDir, opts: runSourceOptions{IncludeDirty: IncludeDirtyAuto}, snapshot: true},
-		{name: "empty directory", dir: testWorkspace, opts: runSourceOptions{IncludeDirty: IncludeDirtyAuto, ConfirmCopy: refuse}},
+		{name: "answered yes", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto, ConfirmCopy: accept}, snapshot: true},
+		{name: "include-dirty=true", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAlways, ConfirmCopy: refuse}, snapshot: true},
+		{name: "nobody to ask", dir: newDir, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto}, snapshot: true},
+		{name: "empty directory", dir: testWorkspace, opts: runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto, ConfirmCopy: refuse}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source, err := resolveRunSource(context.Background(), tc.dir(t), tc.opts)
@@ -691,7 +692,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCopiesWhenItIsMeantTo(t *test
 func TestResolveRunSourceLocalRepositoryPushesOutOfThatRepository(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -799,7 +800,7 @@ func TestResolveRunSourceUnbornRepositoryCarriesTheWorkingTreeAsASnapshot(t *tes
 	git("add", "a.txt")
 	statusBefore := git("status", "--porcelain=v1", "--untracked-files=all")
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -846,7 +847,7 @@ func TestResolveRunSourceUnbornRepositoryCarriesTheWorkingTreeAsASnapshot(t *tes
 func TestResolveRunSourceEmptyUnbornRepositoryStartsFromTheEmptyCommit(t *testing.T) {
 	repo := newUnbornRunSourceTestRepo(t)
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -874,7 +875,7 @@ func TestResolveRunSourceUnbornRepositoryWithoutDirtyStartsFromTheEmptyCommit(t 
 		t.Fatal(err)
 	}
 
-	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyNever})
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyNever})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -892,7 +893,7 @@ func TestResolveRunSourceUnbornRepositoryWithoutDirtyStartsFromTheEmptyCommit(t 
 func TestResolveRunSourceUnbornRepositoryRefusesAnExplicitRef(t *testing.T) {
 	repo := newUnbornRunSourceTestRepo(t)
 
-	_, err := resolveRunSource(context.Background(), repo+"@main", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	_, err := resolveRunSource(context.Background(), repo+"@main", runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err == nil {
 		t.Fatal("resolveRunSource accepted a ref in a repository with no commits")
 	}
@@ -941,25 +942,25 @@ func TestLocalRunDestinationMirrorsOnlySafeRoots(t *testing.T) {
 		// An ostree home, which is what git reports on Silverblue and friends.
 		{"/var/home/me/src/app", "/var/home/me/src/app"},
 
-		{"/tmp/scratch/app", defaultRunSourceDir},
-		{"/var/lib/app", defaultRunSourceDir},
-		{"/var/tmp/app", defaultRunSourceDir},
+		{"/tmp/scratch/app", defaultRunSourceDir(linuxSandbox)},
+		{"/var/lib/app", defaultRunSourceDir(linuxSandbox)},
+		{"/var/tmp/app", defaultRunSourceDir(linuxSandbox)},
 		// udisks2 mounts removable media here on Fedora and Arch, and it
 		// cannot be mirrored: /run is systemd's tmpfs inside the sandbox.
-		{"/run/media/me/stick/app", defaultRunSourceDir},
-		{"/etc/app", defaultRunSourceDir},
-		{"/usr/local/src/app", defaultRunSourceDir},
-		{"/app", defaultRunSourceDir},
+		{"/run/media/me/stick/app", defaultRunSourceDir(linuxSandbox)},
+		{"/etc/app", defaultRunSourceDir(linuxSandbox)},
+		{"/usr/local/src/app", defaultRunSourceDir(linuxSandbox)},
+		{"/app", defaultRunSourceDir(linuxSandbox)},
 		// What the image installs into a root that is otherwise the user's:
 		// mounting over it takes the discobox's own runc with it.
-		{"/opt/discobox", defaultRunSourceDir},
-		{"/opt/discobox/checkout", defaultRunSourceDir},
+		{"/opt/discobox", defaultRunSourceDir(linuxSandbox)},
+		{"/opt/discobox/checkout", defaultRunSourceDir(linuxSandbox)},
 		// The roots themselves are not sources: a repository at /home is not a
 		// checkout, and mounting over the whole of one is what this prevents.
-		{"/home", defaultRunSourceDir},
-		{"/workspace", defaultRunSourceDir},
+		{"/home", defaultRunSourceDir(linuxSandbox)},
+		{"/workspace", defaultRunSourceDir(linuxSandbox)},
 	} {
-		got := localRunDestination(tc.repo, tc.repo)
+		got := localRunDestination(linuxSandbox, tc.repo, tc.repo)
 		if got.Directory != tc.want || got.WorkingDirectory != tc.want {
 			t.Errorf("%s -> %#v, want %s", tc.repo, got, tc.want)
 		}
@@ -973,7 +974,7 @@ func TestLocalRunDestinationClampKeepsTheSubdirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX roots")
 	}
-	got := localRunDestination("/tmp/scratch/app", "/tmp/scratch/app/services/api")
+	got := localRunDestination(linuxSandbox, "/tmp/scratch/app", "/tmp/scratch/app/services/api")
 	want := resolvedRunSourceDestination{
 		Directory:        "/workspace/source",
 		WorkingDirectory: "/workspace/source/services/api",
@@ -992,15 +993,15 @@ func TestReferenceDestinationPlacesUnmirrorableSourcesByName(t *testing.T) {
 	}
 	api := resolvedRunSource{
 		LocalDirectory: "/tmp/scratch/api",
-		Destination:    localRunDestination("/tmp/scratch/api", "/tmp/scratch/api"),
+		Destination:    localRunDestination(linuxSandbox, "/tmp/scratch/api", "/tmp/scratch/api"),
 	}
 	web := resolvedRunSource{
 		LocalDirectory: "/tmp/other/web",
-		Destination:    localRunDestination("/tmp/other/web", "/tmp/other/web"),
+		Destination:    localRunDestination(linuxSandbox, "/tmp/other/web", "/tmp/other/web"),
 	}
 
-	apiDir, apiName := referenceDestination(api, referencePlacement{})
-	webDir, _ := referenceDestination(web, referencePlacement{})
+	apiDir, apiName := referenceDestination(linuxSandbox, api, referencePlacement{})
+	webDir, _ := referenceDestination(linuxSandbox, web, referencePlacement{})
 	if apiDir != "/workspace/api" || apiName != "api" {
 		t.Fatalf("api -> %q named %q, want /workspace/api named api", apiDir, apiName)
 	}
@@ -1020,11 +1021,56 @@ func TestReferenceDestinationKeepsAMirrorablePath(t *testing.T) {
 	}
 	source := resolvedRunSource{
 		LocalDirectory: "/home/darren/src/api",
-		Destination:    localRunDestination("/home/darren/src/api", "/home/darren/src/api"),
+		Destination:    localRunDestination(linuxSandbox, "/home/darren/src/api", "/home/darren/src/api"),
 	}
-	dir, name := referenceDestination(source, referencePlacement{})
+	dir, name := referenceDestination(linuxSandbox, source, referencePlacement{})
 	if dir != "/home/darren/src/api" || name != "api" {
 		t.Fatalf("reference -> %q named %q, want its own path named api", dir, name)
+	}
+}
+
+// Only a Linux sandbox keeps a source's host path. Any other is a VM sharing
+// no filesystem with this machine, so a source goes under its working root by
+// name, spelled the way that platform spells a path (ADR 0145 §6).
+func TestLocalRunDestinationOnANonLinuxSandboxIsTheWorkingRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX host paths")
+	}
+	for _, tc := range []struct {
+		name    string
+		sandbox platform.Platform
+		want    resolvedRunSourceDestination
+	}{
+		{
+			name:    "darwin",
+			sandbox: platform.Platform{OS: "darwin", Arch: "arm64"},
+			want:    resolvedRunSourceDestination{Directory: "/workspace/source", WorkingDirectory: "/workspace/source/services/api"},
+		},
+		{
+			name:    "windows",
+			sandbox: platform.Platform{OS: "windows", Arch: "amd64"},
+			want:    resolvedRunSourceDestination{Directory: `C:\workspace\source`, WorkingDirectory: `C:\workspace\source\services\api`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := localRunDestination(tc.sandbox, "/Users/darren/src/app", "/Users/darren/src/app/services/api")
+			if got != tc.want {
+				t.Fatalf("destination = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A reference on a Windows sandbox lands under its working root, by name.
+func TestReferenceDestinationOnAWindowsSandbox(t *testing.T) {
+	windows := platform.Platform{OS: "windows", Arch: "amd64"}
+	source := resolvedRunSource{URL: "https://github.com/discobox-ai/discobox.git"}
+	dir, name := referenceDestination(windows, source, referencePlacement{})
+	if dir != `C:\workspace\discobox` || name != "discobox" {
+		t.Fatalf("reference -> %q named %q, want C:\\workspace\\discobox named discobox", dir, name)
+	}
+	if got := defaultRunDestination(windows); got.Directory != `C:\workspace\source` || got.WorkingDirectory != got.Directory {
+		t.Fatalf("default destination = %#v", got)
 	}
 }
 

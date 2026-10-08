@@ -26,6 +26,8 @@ type runJSONRequest struct {
 	Env     []string       `json:"env"`
 	Secrets []string       `json:"secrets"`
 	Include []string       `json:"include"`
+	// Pool is --pool.
+	Pool string `json:"pool"`
 	// NoSource, IncludeDirty and DeclaredSources are --no-source,
 	// --include-dirty and --declared-sources. IncludeDirty left out is auto,
 	// which with nobody to ask carries the uncommitted work.
@@ -88,6 +90,7 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	opts.prompt.Env = req.Env
 	opts.prompt.Secret = req.Secrets
 	opts.prompt.Include = req.Include
+	opts.pool = req.Pool
 	opts.noSource = req.NoSource
 	if req.IncludeDirty != nil {
 		opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyNever

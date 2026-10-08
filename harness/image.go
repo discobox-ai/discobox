@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"strconv"
 	"strings"
+
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
 // ImageAPIVersion is the contract version for the payload carried by
@@ -143,22 +144,33 @@ type ResolvedVolume struct {
 }
 
 // ResolveVolumes expands every declared volume's tokens against the runtime
-// identity and validates the result.
-func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error) {
+// identity and validates the result, judging each path by the rules of the
+// sandbox's platform (ADR 0145 §6).
+//
+// A platform with no volumes refuses any declaration outright: declared
+// volumes bind an image's paths onto a container's primary volumes, and a VM
+// sandbox has nothing to bind them to. Refusing is what keeps `%UID%` and
+// `%GID%` — tokens only a volume carries — to the platform where they mean
+// something.
+func ResolveVolumes(paths sandboxpath.Paths, volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error) {
 	if len(volumes) == 0 {
 		return nil, nil
 	}
+	if !paths.Volumes() {
+		return nil, errors.New("declared volumes are a Linux container mechanism, and a sandbox on this platform has nothing to bind them to")
+	}
 	out := make([]ResolvedVolume, 0, len(volumes))
 	for idx, v := range volumes {
-		// A volume path is a path inside the sandbox, so it is a Linux path on
-		// every host and is judged as one. filepath here read "/home/ada/.cache"
-		// as relative on a Windows host and refused every declared volume — the
-		// control plane resolves these, and it runs wherever the user does.
+		// A volume path is a path inside the sandbox, judged by the sandbox's
+		// platform rather than the host's. filepath here read
+		// "/home/ada/.cache" as relative on a Windows host and refused every
+		// declared volume — the control plane resolves these, and it runs
+		// wherever the user does.
 		volumePath := expandVolumeToken(v.Path, rt)
 		if strings.TrimSpace(volumePath) == "" {
 			return nil, fmt.Errorf("volume[%d]: path is required", idx)
 		}
-		if !path.IsAbs(volumePath) {
+		if !paths.IsAbs(volumePath) {
 			return nil, fmt.Errorf("volume %q: path must be absolute", volumePath)
 		}
 		if err := ValidateVolume(v); err != nil {
@@ -170,7 +182,7 @@ func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error
 			// downstream as the user scope it means.
 			scope = VolumeScopeUser
 		}
-		rv := ResolvedVolume{Path: path.Clean(volumePath), Kind: v.Volume, Scope: scope, ExcludeFromExport: v.ExcludeFromExport}
+		rv := ResolvedVolume{Path: paths.Clean(volumePath), Kind: v.Volume, Scope: scope, ExcludeFromExport: v.ExcludeFromExport}
 		if uid, ok, err := resolveScalar(v.UID, rt); err != nil {
 			return nil, fmt.Errorf("volume %q uid: %w", volumePath, err)
 		} else if ok {

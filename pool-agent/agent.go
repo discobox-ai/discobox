@@ -144,6 +144,7 @@ func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap) (*sandboxrun
 		HostStateRoot:         bootstrap.HostStateRoot,
 		SandboxIdleTimeout:    idleTimeout,
 		SharedMemoryBytes:     sandboxSharedMemoryBytes(poolCgroupRoot),
+		Platform:              hostedPlatform(),
 	})
 }
 

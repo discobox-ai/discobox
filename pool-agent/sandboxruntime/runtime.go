@@ -26,7 +26,9 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/discobox-ai/discobox/tarsums"
 	"github.com/discobox-ai/x/id"
@@ -275,7 +277,10 @@ var (
 
 // DockerSandboxRuntime launches sandboxes as Docker containers inside a pool.
 type DockerSandboxRuntime struct {
-	client                *client.Client
+	client *client.Client
+	// paths judges every path this runtime names inside a sandbox: by the
+	// platform its sandboxes run on, the one the pool hosts (ADR 0145 §6).
+	paths                 sandboxpath.Paths
 	projectID             string
 	poolID                string
 	controlPlanePublicKey string
@@ -331,6 +336,10 @@ type DockerSandboxRuntimeConfig struct {
 	// SharedMemoryBytes is the size of every sandbox container's /dev/shm.
 	// Zero leaves Docker's default of 64 MiB.
 	SharedMemoryBytes int64
+	// Platform is the one platform the pool hosts, which every sandbox it
+	// runs is (ADR 0145 §1), and so the one every path inside them is judged
+	// by.
+	Platform platform.Platform
 }
 
 func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
@@ -340,6 +349,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 	}
 	return &DockerSandboxRuntime{
 		client:                cli,
+		paths:                 sandboxpath.For(cfg.Platform),
 		projectID:             cfg.ProjectID,
 		poolID:                cfg.PoolID,
 		controlPlanePublicKey: cfg.ControlPlanePublicKey,
@@ -434,7 +444,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// sent holds its sources under their old names, and every check below --
 	// what is materialized, what is mounted, what the git route serves --
 	// asks by slug.
-	if err := r.adoptSourcePaths(ctx, sandboxID, sandboxSources(req)); err != nil {
+	if err := r.adoptSourcePaths(ctx, sandboxID, sandboxSources(r.paths, req)); err != nil {
 		return nil, err
 	}
 	// A container this create replaces takes its power state with it: an upgrade
@@ -480,7 +490,14 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	normalizeSandboxConfig(&req.Config)
+	normalizeSandboxConfig(r.paths, &req.Config)
+	// Before anything is stopped or pulled: a working directory that names no
+	// place in the sandbox fails the create as the container runtime would
+	// have, rather than after the running container is gone.
+	workingDir, err := sourceWorkingDirectory(r.paths, req)
+	if err != nil {
+		return nil, err
+	}
 	config := req.Config
 	imageName := strings.TrimSpace(optString(config.Image))
 	imageName, err = r.resolveSandboxImage(ctx, sandboxID, imageName, strings.TrimSpace(optString(config.ImageDigest)))
@@ -504,7 +521,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			return nil, fmt.Errorf("remove sandbox container for a spec change: %w", err)
 		}
 	}
-	user := resolveSandboxUser(req)
+	user := resolveSandboxUser(r.paths, req)
 	r.publishSandboxPhase(ctx, sandboxID, PhasePreparingVolumes)
 	mounts, project, err := r.prepareSandboxVolumes(ctx, sandboxID, req, user)
 	if err != nil {
@@ -547,7 +564,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Hostname:     sandboxHostname(sandboxID),
 		Labels:       r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint))),
 		Env:          envList(envWithSandboxUser(baseEnv, user)),
-		WorkingDir:   sourceWorkingDirectory(req),
+		WorkingDir:   workingDir,
 		AttachStdout: true,
 		AttachStderr: true,
 		Tty:          true,
@@ -860,7 +877,7 @@ func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, sandb
 // not landed leaves its source unmarked, and the sandbox keeps waiting.
 func (r *DockerSandboxRuntime) pendingSourceDeliveries(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {
 	var out []sandboxSource
-	for _, source := range sandboxSources(req) {
+	for _, source := range sandboxSources(r.paths, req) {
 		if !gitSourceMaterialized(r.sandboxSourcePath(sandboxID, source.slug)) {
 			out = append(out, source)
 		}
@@ -907,7 +924,7 @@ func (r *DockerSandboxRuntime) projectLayerChanged(sandboxID string, req *worker
 		// Only the primary source carries a project layer (prepareSandboxVolumes).
 		return false, nil
 	}
-	sources := sandboxSources(req)
+	sources := sandboxSources(r.paths, req)
 	if len(sources) == 0 {
 		return false, nil
 	}
@@ -958,9 +975,9 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 	if req == nil {
 		return nil
 	}
-	normalizeSandboxConfig(&req.Config)
-	user := resolveSandboxUser(req)
-	for _, source := range sandboxSources(req) {
+	normalizeSandboxConfig(r.paths, &req.Config)
+	user := resolveSandboxUser(r.paths, req)
+	for _, source := range sandboxSources(r.paths, req) {
 		if !gitSourceAwaitsPush(source.git) {
 			continue
 		}
@@ -1028,7 +1045,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		return nil, nil, fmt.Errorf("prepare sandbox secrets volume: %w", err)
 	}
 	var project *sandboxconfig.ProjectLayer
-	sources := sandboxSources(req)
+	sources := sandboxSources(r.paths, req)
 	_, hasPrimary := req.Config.Source.Get()
 	for i, source := range sources {
 		sourcePoolPath := r.sandboxSourcePath(sandboxID, source.slug)
@@ -1256,7 +1273,7 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := os.MkdirAll(filepath.Join(configDir, "proxy"), 0o755); err != nil {
 		return err
 	}
-	doc := buildSandboxDocument(r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, resolvedImage, r.sandboxIdleTimeout, req, proxyEnv, project)
+	doc := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, resolvedImage, r.sandboxIdleTimeout, req, proxyEnv, project)
 	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
@@ -1357,7 +1374,7 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 // image's OCI label, and the caller-supplied ProjectLayer (read once from the
 // resolved source repository at clone time; nil when the project supplies
 // nothing).
-func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, resolvedImage string, idleTimeout time.Duration, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID, controlPlanePublicKey, resolvedImage string, idleTimeout time.Duration, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
 	doc := sandboxconfig.Document{
 		Runtime: sandboxconfig.RuntimeLayer{
 			SandboxID: sandboxID,
@@ -1372,7 +1389,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 			},
 			AgentRuntime: sandboxconfig.AgentRuntime{
 				ListenAddress:          fmt.Sprintf(":%d", SandboxAgentPort),
-				WorkingRoot:            sandboxconfig.DefaultWorkingRoot,
+				WorkingRoot:            paths.WorkingRoot(),
 				RuntimeDir:             "/run/discobox/agent-terminals",
 				DatabasePath:           "/var/lib/discobox/sandbox-agent.db",
 				ResourceSampleInterval: time.Second.String(),
@@ -1415,11 +1432,11 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 		// what the request left unset stays unset here, for the sandbox-agent to
 		// resolve against the image (ADR 0033 §5). It is the same value the
 		// create path uses for the home mount and container environment.
-		user := resolveSandboxUser(req)
+		user := resolveSandboxUser(paths, req)
 		doc.Runtime.User = user
 		// The sandbox-agent bind-mounts each pool-materialized source from
 		// /.discobox/sources/<slug> onto its target as this same user (ADR 0007).
-		for _, source := range sandboxSources(req) {
+		for _, source := range sandboxSources(paths, req) {
 			doc.Runtime.Sources = append(doc.Runtime.Sources, sandboxconfig.Source{
 				Slug:   source.slug,
 				Target: source.target,
@@ -2898,7 +2915,7 @@ func chownID(v *int64) int {
 // nothing was invented, and it is a guess about the image's own passwd file
 // made from outside the image. What the request did not say stays unset, and
 // the sandbox answers for it later.
-func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxuser.User {
+func resolveSandboxUser(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCreateRequest) sandboxuser.User {
 	if req == nil {
 		return sandboxuser.User{}
 	}
@@ -2909,7 +2926,7 @@ func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxuse
 	requested := &sandboxuser.User{
 		Name:             strings.TrimSpace(optString(user.Name)),
 		GroupName:        strings.TrimSpace(optString(user.GroupName)),
-		HomeDirectory:    cleanContainerPath(optString(user.HomeDirectory)),
+		HomeDirectory:    paths.Rooted(optString(user.HomeDirectory)),
 		AdditionalGroups: append([]string(nil), user.AdditionalGroups...),
 	}
 	if uid, ok := user.UID.Get(); ok {
@@ -2921,26 +2938,35 @@ func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxuse
 	return sandboxuser.Merge(sandboxuser.Layers{Request: requested})
 }
 
-func sourceWorkingDirectory(req *workerapimodel.PoolSandboxCreateRequest) string {
+// sourceWorkingDirectory is the directory the primary source asks a sandbox
+// to start in, as it asked, when it is an absolute path in the sandbox: judged
+// by the sandbox's platform. One that is not names no place there — a
+// container runtime refuses a relative one outright — and is refused with the
+// platform as the reason, rather than quietly replaced by the image's default.
+func sourceWorkingDirectory(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCreateRequest) (string, error) {
 	if req == nil {
-		return ""
+		return "", nil
 	}
 	source, ok := req.Config.Source.Get()
 	if !ok {
-		return ""
+		return "", nil
 	}
 	destination, ok := source.Destination.Get()
 	if !ok {
-		return ""
+		return "", nil
 	}
-	return optString(destination.WorkingDirectory)
+	directory := optString(destination.WorkingDirectory)
+	if directory != "" && !paths.IsAbs(directory) {
+		return "", fmt.Errorf("source working directory %q is not an absolute path in a %s sandbox", directory, paths.OS())
+	}
+	return directory, nil
 }
 
 // normalizeSandboxConfig applies provider-owned path defaults before the
 // configuration is used for either bind mounts or the public sandbox manifest.
 // This keeps manifest consumers on the documented SandboxConfig contract while
 // ensuring they observe the paths the runtime actually mounted.
-func normalizeSandboxConfig(config *workerapimodel.SandboxConfig) {
+func normalizeSandboxConfig(paths sandboxpath.Paths, config *workerapimodel.SandboxConfig) {
 	if config == nil {
 		return
 	}
@@ -2949,9 +2975,9 @@ func normalizeSandboxConfig(config *workerapimodel.SandboxConfig) {
 		return
 	}
 	destination, _ := source.Destination.Get()
-	directory := cleanContainerPath(optString(destination.Directory))
+	directory := paths.Rooted(optString(destination.Directory))
 	if directory == "" {
-		directory = sandboxconfig.DefaultWorkingRoot
+		directory = paths.WorkingRoot()
 	}
 	destination.Directory = workerclient.NewOptString(directory)
 	source.Destination = workerclient.NewOptGitSourceDestination(destination)
@@ -2970,14 +2996,14 @@ type sandboxSource struct {
 	keySlug string
 }
 
-func sandboxSources(req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {
+func sandboxSources(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {
 	if req == nil {
 		return nil
 	}
 	var out []sandboxSource
 	used := map[string]struct{}{}
 	if source, ok := req.Config.Source.Get(); ok {
-		out = append(out, sandboxSourceFor(sandboxconfig.PrimarySourceSlug, source, sandboxconfig.DefaultWorkingRoot, used))
+		out = append(out, sandboxSourceFor(paths, sandboxconfig.PrimarySourceSlug, source, paths.WorkingRoot(), used))
 	}
 	if refs, ok := req.Config.SourceCodeReferences.Get(); ok {
 		keys := make([]string, 0, len(refs))
@@ -2987,26 +3013,26 @@ func sandboxSources(req *workerapimodel.PoolSandboxCreateRequest) []sandboxSourc
 		sort.Strings(keys)
 		for _, key := range keys {
 			source := refs[key]
-			defaultTarget := cleanContainerPath(key)
+			defaultTarget := paths.Rooted(key)
 			if defaultTarget == "" {
-				defaultTarget = path.Join(sandboxconfig.DefaultWorkingRoot, defaultSourceSlug(source, key))
+				defaultTarget = paths.Join(paths.WorkingRoot(), defaultSourceSlug(source, key))
 			}
-			out = append(out, sandboxSourceFor(key, source, defaultTarget, used))
+			out = append(out, sandboxSourceFor(paths, key, source, defaultTarget, used))
 		}
 	}
 	return out
 }
 
-func sandboxSourceFor(seed string, source workerapimodel.GitSource, defaultTarget string, used map[string]struct{}) sandboxSource {
+func sandboxSourceFor(paths sandboxpath.Paths, seed string, source workerapimodel.GitSource, defaultTarget string, used map[string]struct{}) sandboxSource {
 	slug := sourceSlug(source, seed, used)
 	target := defaultTarget
 	if destination, ok := source.Destination.Get(); ok {
-		if directory := cleanContainerPath(optString(destination.Directory)); directory != "" {
+		if directory := paths.Rooted(optString(destination.Directory)); directory != "" {
 			target = directory
 		}
 	}
 	if target == "" {
-		target = path.Join(sandboxconfig.DefaultWorkingRoot, slug)
+		target = paths.Join(paths.WorkingRoot(), slug)
 	}
 	keySlug := slugifySource(seed)
 	if keySlug == slug {
@@ -3055,21 +3081,6 @@ func slugifySource(value string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-")
-}
-
-func cleanContainerPath(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	if strings.ContainsAny(value, " \t\r\n") {
-		return ""
-	}
-	cleaned := path.Clean("/" + strings.TrimPrefix(value, "/"))
-	if cleaned == "/" {
-		return ""
-	}
-	return cleaned
 }
 
 func cleanAbsPath(value string) string {

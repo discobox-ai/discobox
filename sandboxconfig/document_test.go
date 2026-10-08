@@ -1,6 +1,11 @@
 package sandboxconfig
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxpath"
+)
 
 // Boot materialized the image label's groups into /etc/group while the exec
 // defaults preferred the manifest user's. A sandbox declaring its own groups
@@ -55,29 +60,41 @@ func TestSandboxGroupsHasOneAuthoritativeAnswer(t *testing.T) {
 // there. They have to name the same directory: a manifest written by a pool
 // agent too old to state one must not send the agent somewhere boot never
 // touched.
-func TestWorkingRootFallsBackToTheDefault(t *testing.T) {
+// The default is the sandbox platform's.
+func TestWorkingRootFallsBackToThePlatformDefault(t *testing.T) {
+	linux := sandboxpath.For(platform.Platform{OS: "linux", Arch: "amd64"})
+	windows := sandboxpath.For(platform.Platform{OS: "windows", Arch: "amd64"})
 	for _, tc := range []struct {
-		name string
-		cfg  Config
-		want string
+		name  string
+		cfg   Config
+		paths sandboxpath.Paths
+		want  string
 	}{
 		{
-			name: "stated",
-			cfg:  Config{AgentRuntime: AgentRuntime{WorkingRoot: "/srv/work"}},
-			want: "/srv/work",
+			name:  "stated",
+			cfg:   Config{AgentRuntime: AgentRuntime{WorkingRoot: "/srv/work"}},
+			paths: linux,
+			want:  "/srv/work",
 		},
 		{
-			name: "not stated",
-			want: DefaultWorkingRoot,
+			name:  "not stated",
+			paths: linux,
+			want:  "/workspace",
 		},
 		{
-			name: "whitespace is not a statement",
-			cfg:  Config{AgentRuntime: AgentRuntime{WorkingRoot: "  "}},
-			want: DefaultWorkingRoot,
+			name:  "whitespace is not a statement",
+			cfg:   Config{AgentRuntime: AgentRuntime{WorkingRoot: "  "}},
+			paths: linux,
+			want:  "/workspace",
+		},
+		{
+			name:  "not stated on windows",
+			paths: windows,
+			want:  `C:\workspace`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.cfg.WorkingRoot(); got != tc.want {
+			if got := tc.cfg.WorkingRoot(tc.paths); got != tc.want {
 				t.Fatalf("WorkingRoot() = %q, want %q", got, tc.want)
 			}
 		})

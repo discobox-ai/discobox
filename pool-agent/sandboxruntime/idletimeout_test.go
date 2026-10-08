@@ -34,12 +34,12 @@ func TestConfiguredSandboxIdleTimeout(t *testing.T) {
 // (ADR 0108 §3).
 func TestSandboxDocumentCarriesThePoolIdleTimeout(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
-	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 2*time.Minute, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 2*time.Minute, req, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if cfg.AgentRuntime.IdleTimeout != "2m0s" {
 		t.Fatalf("idle timeout = %q, want 2m0s", cfg.AgentRuntime.IdleTimeout)
 	}
-	doc = buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
+	doc = buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil)
 	cfg, _ = sandboxconfig.Effective(doc)
 	if cfg.AgentRuntime.IdleTimeout != "" {
 		t.Fatalf("idle timeout = %q with none configured, want empty", cfg.AgentRuntime.IdleTimeout)
@@ -52,7 +52,7 @@ func TestSandboxDocumentCarriesThePoolIdleTimeout(t *testing.T) {
 func TestApplyIdleTimeoutRewritesOnlyTheTimeout(t *testing.T) {
 	path := filepath.Join(t.TempDir(), sandboxDocumentName)
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
-	data, err := marshalSandboxDocument(buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil))
+	data, err := marshalSandboxDocument(buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", 0, req, nil, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,8 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-
-	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // Remote is the discobox as a host tool is handed it: the ssh_config host that
@@ -17,6 +15,9 @@ type Remote struct {
 	Host      string
 	// Workdir is the working tree in the discobox, empty when none is known.
 	Workdir string
+	// WorkingRoot is the discobox's working root, which its platform decides
+	// (sandboxpath.Paths.WorkingRoot).
+	WorkingRoot string
 }
 
 // workdir is the directory a tool opens: the working tree, or the sandbox's
@@ -25,7 +26,7 @@ type Remote struct {
 // (ADR 0142).
 func (r Remote) workdir() string {
 	if r.Workdir == "" {
-		return sandboxconfig.DefaultWorkingRoot
+		return r.WorkingRoot
 	}
 	return r.Workdir
 }

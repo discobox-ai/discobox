@@ -9,6 +9,19 @@ sandbox create requests.
   over the root a create records for its source, `SourceRoot`), classifies
   environment and secret inputs, parses `--grant` (`ParseGrants`), builds the API body, and submits prompt sandbox
   creates.
+- Every path placed in the sandbox is judged by the sandbox's platform
+  (`PromptOptions.Platform`, through `sandboxpath`; ADR 0145 §6), never by this
+  machine's: where a source lands and the working root it lands under. This
+  machine's account is sent only to a sandbox with POSIX ids (Linux); any other
+  has one account its template provisions and refuses a user naming ids, groups
+  or a home (ADR 0145 §5), so it is sent none. The frontend supplies the platform,
+  read from the pool the create lands on — `--pool`'s, which the create then
+  asks for (`PromptOptions.PoolID`), or the project's default pool, which is
+  where the server puts a create that names none (`App.newSandboxPlacement`). A
+  pool that has declared no platform is taken as Linux, which every pool from
+  before platforms is, and so is the default pool of a caller the server
+  refuses those reads (a discobox creating another); such a caller naming
+  `--pool` is refused, because the platform it chose is one it cannot learn.
 - Git authorship is read with git's own resolution from the source directory, so
   a repository-local `user.email` beats the global one. Unset stays unset: git is
   the authority on whether an identity is configured, and a `$USER@$(hostname)`
@@ -32,8 +45,8 @@ sandbox create requests.
   Linux account can have becomes `discobox`. The server refuses rather than
   clamps, so this is the one place the choice is made. A root host asks for
   nobody.
-- A local source keeps its own absolute path inside the sandbox **when that path
-  is one a sandbox may hold** — a child of `/home`, `/Users`, `/mnt`,
+- A local source keeps its own absolute path inside a **Linux** sandbox **when
+  that path is one a sandbox may hold** — a child of `/home`, `/Users`, `/mnt`,
   `/workspace`, `/Volumes`, `/media`, `/srv`, `/opt`, `/data` or `/var/home`
   (the real home path on an ostree system, where `/home` is a symlink)
   (`mirrorableSourceRoots`), minus the paths the image itself occupies
@@ -63,7 +76,10 @@ sandbox create requests.
   drive letter has no `/mnt` name — a UNC share, or a path already inside a
   distro — and falls back the same way an unmirrorable POSIX path does. One
   predicate answers both (`sandboxSourceRoot`), and one routine places the
-  result (`placeRunSource`).
+  result (`placeRunSource`). A sandbox of any other platform keeps no host
+  path: it is a VM that shares no filesystem with this machine (ADR 0126), and
+  the roots above are a Linux container's, so every source in it is placed by
+  name under its working root (`C:\workspace\source` on Windows).
 - A source's path on this machine and its path in the sandbox are therefore two
   different things off a POSIX host, and the code that reads the client's disk —
   `.discobox/sources.json`, the checkout beside the primary source — takes the

@@ -13,7 +13,6 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/sandboxconfig"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -599,6 +598,9 @@ func (a *App) enrollSSHIdentity(ctx context.Context, client *apiclientgen.Client
 type sandboxSSHRemote struct {
 	host   string
 	folder string
+	// workingRoot is the discobox's working root, by its platform: where a
+	// tool opens when folder is empty.
+	workingRoot string
 }
 
 func (t sandboxSSHRemote) describe() string {
@@ -642,11 +644,19 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 		// sshConfigHostPatterns.
 		return sandboxSSHRemote{}, fmt.Errorf("discobox %s has no unambiguous SSH host alias; rename it or the discobox whose name spells its ID", sandboxID)
 	}
-	folder, err := a.sandboxSSHFolder(ctx, client, projectID, sandboxID, sourceSlug)
+	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
 		return sandboxSSHRemote{}, err
 	}
-	return sandboxSSHRemote{host: host, folder: folder}, nil
+	sandbox, err := expectResponse[apimodel.Sandbox](res)
+	if err != nil {
+		return sandboxSSHRemote{}, err
+	}
+	folder, err := sandboxSSHFolder(sandbox, sourceSlug)
+	if err != nil {
+		return sandboxSSHRemote{}, err
+	}
+	return sandboxSSHRemote{host: host, folder: folder, workingRoot: sandboxPaths(sandbox).WorkingRoot()}, nil
 }
 
 // sandboxSSHFolder is the directory in the sandbox an ssh-driven program is
@@ -657,20 +667,12 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 // directory unsaid: without one, VS Code would open a window on the home
 // directory and the working tree would be somewhere else, and a git URL would
 // name a directory that is not a repository. A primary source without an
-// explicit destination uses the runtime's default working root. Empty means
-// the sandbox has no primary source: an editor still opens on the working
-// root (tools.Remote), but there is no git URL to print.
-func (a *App) sandboxSSHFolder(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (string, error) {
+// explicit destination uses the working root of the sandbox's platform. Empty
+// means the sandbox has no primary source: an editor still opens on the
+// working root (tools.Remote), but there is no git URL to print.
+func sandboxSSHFolder(sandbox *apimodel.Sandbox, sourceSlug string) (string, error) {
 	if sourceSlug != "" {
-		return a.toolSourceWorkdir(ctx, client, projectID, sandboxID, sourceSlug)
-	}
-	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
-	if err != nil {
-		return "", err
-	}
-	sandbox, err := expectResponse[apimodel.Sandbox](res)
-	if err != nil {
-		return "", err
+		return sourceSlugWorkdir(sandbox, sourceSlug)
 	}
 	source, ok := sandbox.Config.Source.Get()
 	if !ok {
@@ -679,5 +681,5 @@ func (a *App) sandboxSSHFolder(ctx context.Context, client *apiclientgen.Client,
 	if dir := sourceWorkdir(source); dir != "" {
 		return dir, nil
 	}
-	return sandboxconfig.DefaultWorkingRoot, nil
+	return sandboxPaths(sandbox).WorkingRoot(), nil
 }

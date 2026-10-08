@@ -25,6 +25,7 @@ COPY platform ./platform
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxpath ./sandboxpath
 COPY sandboxtree ./sandboxtree
 COPY sandboxuser ./sandboxuser
 COPY secretformat ./secretformat

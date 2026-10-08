@@ -85,11 +85,12 @@ groups: a request `User.AdditionalGroups` replaces the image's
 `AdditionalGroups` entirely, and naming none inherits them (ADR 0025 §2). Boot
 and the exec defaults both read it.
 
-`Config.WorkingRoot` is the one answer for the directory a sandbox works in,
-`DefaultWorkingRoot` (`/workspace`) when the manifest names none. Pool-agent
-writes the field and places sources under the same constant; boot creates that
-directory and gives it to the sandbox user; sandbox-agent starts execs there;
-the CLI derives the source destinations it asks for from it. Two of them
+`Config.WorkingRoot` is the one answer for the directory a sandbox works in:
+the manifest's, or its platform's default (`sandboxpath.Paths.WorkingRoot`:
+`/workspace` on Linux and macOS, `C:\workspace` on Windows) when it names none.
+Pool-agent writes the field and places sources under the same default; boot
+creates that directory and gives it to the sandbox user; sandbox-agent starts
+execs there; the CLI derives the source destinations it asks for from it. Two of them
 disagreeing means a sandbox working in a directory boot never chowned, or beside
 a checkout it cannot see — and the CLI is the one server-side defaults cannot
 correct, since the destination it names is explicit in the create request.

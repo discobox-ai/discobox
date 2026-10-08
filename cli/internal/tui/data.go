@@ -1049,6 +1049,11 @@ type RunRequest struct {
 	// zero value brings them in, which is what both frontends do by default.
 	SkipDeclaredSources bool
 
+	// Pool is `--pool`: the pool to create the discobox on, by ID or name.
+	// Empty is the project's default pool. Like Include, only `discobox
+	// new`'s own request carries one.
+	Pool string
+
 	// Server is the server to create the discobox on, by name: one of
 	// Session.Servers. Empty is the primary, which is `--server` unset.
 	Server string

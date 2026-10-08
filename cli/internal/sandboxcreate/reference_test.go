@@ -15,7 +15,7 @@ func TestBuildPromptSandboxBodyPlacesAnIncludedDirectoryAtItsOwnPath(t *testing.
 	primary := newRunSourceTestRepo(t)
 	reference := newNamedRunSourceTestRepo(t, "foo")
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       primary,
 		Include:      []string{reference},
 		IncludeDirty: IncludeDirtyNever,
@@ -61,7 +61,7 @@ func TestBuildPromptSandboxBodyPlacesAnIncludedDirectoryAtItsOwnPath(t *testing.
 // Two directories can share a name. The client settles that itself so the slug
 // it will address a push with is the slug the server records.
 func TestBuildPromptSandboxBodySeparatesIncludedSourcesWithTheSameName(t *testing.T) {
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       newRunSourceTestRepo(t),
 		Include:      []string{newNamedRunSourceTestRepo(t, "foo"), newNamedRunSourceTestRepo(t, "foo")},
 		IncludeDirty: IncludeDirtyNever,
@@ -92,7 +92,7 @@ func TestBuildPromptSandboxBodySeparatesIncludedSourcesWithTheSameName(t *testin
 func TestBuildPromptSandboxBodyRefusesTheSameIncludedDirectoryTwice(t *testing.T) {
 	reference := newNamedRunSourceTestRepo(t, "foo")
 
-	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       newRunSourceTestRepo(t),
 		Include:      []string{reference, filepath.Join(reference, ".")},
 		IncludeDirty: IncludeDirtyNever,
@@ -111,7 +111,7 @@ func TestBuildPromptSandboxBodyRefusesTheSameIncludedDirectoryTwice(t *testing.T
 func TestBuildPromptSandboxBodyRefusesIncludingThePrimarySource(t *testing.T) {
 	primary := newRunSourceTestRepo(t)
 
-	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       primary,
 		Include:      []string{primary},
 		IncludeDirty: IncludeDirtyNever,
@@ -133,7 +133,7 @@ func TestBuildPromptSandboxBodyIncludesTheRepositoryHoldingASubdirectory(t *test
 		t.Fatal(err)
 	}
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       newRunSourceTestRepo(t),
 		Include:      []string{filepath.Join(reference, "sub")},
 		IncludeDirty: IncludeDirtyNever,
@@ -162,7 +162,7 @@ func TestBuildPromptSandboxBodySnapshotsEachIncludedSourceOnItsOwn(t *testing.T)
 		t.Fatal(err)
 	}
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       newRunSourceTestRepo(t),
 		Include:      []string{reference},
 		IncludeDirty: IncludeDirtyAlways,
@@ -204,7 +204,7 @@ func TestBuildPromptSandboxBodyIncludesADirectoryWithNoRepository(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:  newRunSourceTestRepo(t),
 		Include: []string{reference},
 	})

@@ -18,6 +18,8 @@ import (
 	"github.com/go-faster/jx"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxpath"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
@@ -139,7 +141,9 @@ const defaultListenAddress = ":3003"
 
 func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if cfg.WorkingRoot == "" {
-		cfg.WorkingRoot = sandboxconfig.DefaultWorkingRoot
+		// The agent runs inside the sandbox, so the sandbox's platform is
+		// the one it was built for.
+		cfg.WorkingRoot = sandboxpath.For(platform.Current()).WorkingRoot()
 	}
 	if cfg.RuntimeDir == "" {
 		cfg.RuntimeDir = "/run/discobox/harness-terminals"

@@ -188,7 +188,7 @@ func (a *App) runHostTool(ctx context.Context, def tools.Definition, target tool
 	if err != nil {
 		return err
 	}
-	handed := tools.Remote{SandboxID: target.sandboxID, Host: remote.host, Workdir: remote.folder}
+	handed := tools.Remote{SandboxID: target.sandboxID, Host: remote.host, Workdir: remote.folder, WorkingRoot: remote.workingRoot}
 	// Expanded before anything is said about opening: a tool that asked for
 	// something this discobox cannot give it never opens.
 	expanded, err := handed.Expand(launch.def.Args)

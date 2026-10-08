@@ -12,7 +12,13 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
+
+// sandboxPaths judges paths inside this sandbox. Boot runs inside it, so the
+// sandbox's platform is the one this agent was built for (ADR 0145 §6).
+var sandboxPaths = sandboxpath.For(platform.Current())
 
 const (
 	// The pool agent mounts these primary volumes at fixed paths.
