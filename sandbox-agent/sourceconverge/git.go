@@ -23,10 +23,15 @@ type repository struct {
 }
 
 const (
-	// scratchName is the directory a clone lands in before its .git is moved
-	// onto the target. It is inside the target rather than beside it: the
-	// target can be a mount point, and a rename does not cross one.
-	scratchName = ".discobox-materializing"
+	// scratchPrefix names the directory a clone lands in before its .git is
+	// moved onto the target, one per attempt. It is inside the target rather
+	// than beside it: the target can be a mount point, and a rename does not
+	// cross one.
+	scratchPrefix = ".discobox-materializing-"
+	// scratchOwnedMarker, inside a scratch directory, says this agent made it.
+	// Only a directory carrying it is ever removed, so a path in the target
+	// that merely shares the prefix is the sandbox's and is left alone.
+	scratchOwnedMarker = ".discobox-scratch"
 	// materializingMarker marks a .git this agent moved onto the target and
 	// has not finished materializing. A .git with neither it nor the
 	// materialized marker is not this agent's to touch.
@@ -36,10 +41,12 @@ const (
 	upstreamRemote = "upstream"
 )
 
-// materialize clones source onto the target, checks it out, restores its
-// workspace snapshot, adds its upstream remote and marks it materialized. It
-// returns false, having changed nothing, while the origin has nothing in it to
-// clone: a push-delivered source before the client's push lands.
+// prepare clones source onto the target, checks it out, restores its
+// workspace snapshot and adds its upstream remote — everything but marking it
+// materialized, which finish does once the converger has checked the document
+// still asks for this. It returns false, having changed nothing, while the
+// origin has nothing in it to clone: a push-delivered source before the
+// client's push lands.
 //
 // A clone is never left half-made at the target, which is what would make
 // every later attempt fail on a partial .git (#30): it lands in a scratch
@@ -52,7 +59,7 @@ const (
 //
 // helper is empty for an origin that takes no token, so that a remote-URL
 // source keeps whatever credential helper its user configures.
-func (r *repository) materialize(ctx context.Context, source sandboxconfig.RuntimeSource, spec sandboxconfig.Source, helper string) (bool, error) {
+func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSource, spec sandboxconfig.Source, helper string) (bool, error) {
 	gitDir := filepath.Join(r.dir, ".git")
 	switch _, err := os.Stat(gitDir); {
 	case errors.Is(err, os.ErrNotExist):
@@ -92,12 +99,19 @@ func (r *repository) materialize(ctx context.Context, source sandboxconfig.Runti
 	if err := r.configureUpstream(ctx, spec.UpstreamURL); err != nil {
 		return false, err
 	}
-	// The marker holds the commit materialized, which is what the source's
-	// reported state names from then on, whatever the sandbox commits since.
-	if err := r.writeMarker(filepath.Join(gitDir, sandboxconfig.SourceMaterializedMarker), r.head(ctx)); err != nil {
-		return false, err
+	return true, nil
+}
+
+// finish marks a prepared checkout materialized and returns the commit the
+// marker records, which is what the source's reported state names from then
+// on, whatever the sandbox commits since.
+func (r *repository) finish(ctx context.Context) (string, error) {
+	gitDir := filepath.Join(r.dir, ".git")
+	commit := r.head(ctx)
+	if err := r.writeMarker(filepath.Join(gitDir, sandboxconfig.SourceMaterializedMarker), commit); err != nil {
+		return "", err
 	}
-	return true, os.Remove(filepath.Join(gitDir, materializingMarker))
+	return commit, os.Remove(filepath.Join(gitDir, materializingMarker))
 }
 
 // clone fetches the origin into a scratch directory inside the target and
@@ -123,26 +137,61 @@ func (r *repository) clone(ctx context.Context, originURL string, spec sandboxco
 	if refs == "" {
 		return false, nil
 	}
-	scratch := filepath.Join(r.dir, scratchName)
-	if err := os.RemoveAll(scratch); err != nil {
+	scratch, err := r.makeScratch()
+	if err != nil {
 		return false, err
 	}
 	defer os.RemoveAll(scratch)
+	clone := filepath.Join(scratch, "clone")
 	args := append(credentials, "clone", "--no-checkout")
 	if spec.RefName != "" {
 		args = append(args, "--branch", spec.RefName)
 	}
-	args = append(args, "--", originURL, scratch)
+	args = append(args, "--", originURL, clone)
 	if err := r.run(ctx, nil, args...); err != nil {
 		return false, err
 	}
-	if err := r.writeMarker(filepath.Join(scratch, ".git", materializingMarker), ""); err != nil {
+	if err := r.writeMarker(filepath.Join(clone, ".git", materializingMarker), ""); err != nil {
 		return false, err
 	}
-	if err := os.Rename(filepath.Join(scratch, ".git"), filepath.Join(r.dir, ".git")); err != nil {
+	if err := os.Rename(filepath.Join(clone, ".git"), filepath.Join(r.dir, ".git")); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// makeScratch removes what earlier attempts left — only directories this
+// agent marked as its own — and makes a fresh one, under a name no other
+// attempt shares, that the checkout's owner can clone into.
+func (r *repository) makeScratch() (string, error) {
+	leftovers, err := filepath.Glob(filepath.Join(r.dir, scratchPrefix+"*"))
+	if err != nil {
+		return "", err
+	}
+	for _, leftover := range leftovers {
+		info, err := os.Lstat(filepath.Join(leftover, scratchOwnedMarker))
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if err := os.RemoveAll(leftover); err != nil {
+			return "", err
+		}
+	}
+	scratch, err := os.MkdirTemp(r.dir, scratchPrefix)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(scratch, scratchOwnedMarker), nil, 0o600); err != nil {
+		_ = os.RemoveAll(scratch)
+		return "", err
+	}
+	if r.owner != nil {
+		if err := chownTo(scratch, r.owner); err != nil {
+			_ = os.RemoveAll(scratch)
+			return "", err
+		}
+	}
+	return scratch, nil
 }
 
 // checkout writes the working tree at the pinned commit: on the source's

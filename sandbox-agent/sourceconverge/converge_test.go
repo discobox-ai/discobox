@@ -231,8 +231,8 @@ func TestFreshCloneMaterializesTheSourceOnce(t *testing.T) {
 	if remote, _ := h.git(t, target, "remote", "get-url", "origin"); strings.TrimSpace(remote) != o.url {
 		t.Fatalf("origin = %q, want %q", remote, o.url)
 	}
-	if _, err := os.Stat(filepath.Join(target, scratchName)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the scratch clone was left behind: %v", err)
+	if leftovers, _ := filepath.Glob(filepath.Join(target, scratchPrefix+"*")); len(leftovers) != 0 {
+		t.Fatalf("the scratch clone was left behind: %v", leftovers)
 	}
 	if _, err := os.Stat(filepath.Join(target, ".git", materializingMarker)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the in-progress marker was left behind: %v", err)
@@ -660,5 +660,59 @@ func TestHelperAnswersOnlyAGitThatTakesABearer(t *testing.T) {
 	}
 	if got := run("store", "protocol=https\nhost=pool\npath=a.git\n\n"); got != "" {
 		t.Fatalf("store answered %q", got)
+	}
+}
+
+// A document that moves the pin while an attempt runs must not let the old
+// attempt mark the source materialized at the old commit: marking is once-only,
+// so the new pin would never be applied.
+func TestASupersededAttemptDoesNotMaterializeTheOldPin(t *testing.T) {
+	o := newOrigin(t)
+	first := o.commit("README.md", "hello\n")
+	second := o.commit("README.md", "re-pinned\n")
+	target := t.TempDir()
+	h := newHarness(t, sandboxconfig.Source{Slug: "primary", Target: target, RefName: "main", RefType: "branch"})
+	old := sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: first}
+	repinned := old
+	repinned.Commit = second
+	// The re-pin arrives, then the attempt begun under revision 1 completes.
+	h.c.Converge(document(2, repinned))
+	<-h.c.wake
+	if state := h.c.converge(context.Background(), 1, old); state.State != StateCloning {
+		t.Fatalf("the superseded attempt = %+v, want it left unfinished", state)
+	}
+	if _, ok := materializedAt(target); ok {
+		t.Fatal("a superseded attempt marked the source materialized at the old pin")
+	}
+	// The next pass goes on from that checkout to the new pin.
+	h.c.pass(context.Background())
+	if state := h.state(t, "primary"); state.State != StateMaterialized || state.Commit != second || state.Revision != 2 {
+		t.Fatalf("state = %+v, want materialized at the new pin %s", state, second)
+	}
+	if got, _ := os.ReadFile(filepath.Join(target, "README.md")); string(got) != "re-pinned\n" {
+		t.Fatalf("README.md = %q, want the new pin's", got)
+	}
+}
+
+// Scratch directories are the agent's own: one in the target that merely
+// shares the name is the sandbox's, and a materialization leaves it be.
+func TestAPathSharingTheScratchNameIsKept(t *testing.T) {
+	o := newOrigin(t)
+	first := o.commit("README.md", "hello\n")
+	target := t.TempDir()
+	theirs := filepath.Join(target, scratchPrefix+"theirs")
+	writeFile(t, filepath.Join(theirs, "work.txt"), "the sandbox's\n")
+	// And one an earlier attempt of this agent's left behind, which goes.
+	ours := filepath.Join(target, scratchPrefix+"stale")
+	writeFile(t, filepath.Join(ours, scratchOwnedMarker), "")
+	h := newHarness(t)
+	if state := h.pass(t, document(1, sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: first}), "primary"); state.State != StateMaterialized {
+		t.Fatalf("state = %+v", state)
+	}
+	if got, _ := os.ReadFile(filepath.Join(theirs, "work.txt")); string(got) != "the sandbox's\n" {
+		t.Fatalf("a directory sharing the scratch name was removed: %q", got)
+	}
+	if _, err := os.Stat(ours); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("an earlier attempt's scratch was left: %v", err)
 	}
 }
