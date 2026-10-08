@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -33,9 +32,9 @@ func SocketPath(runtimeDir string) string {
 	if strings.TrimSpace(runtimeDir) == "" {
 		runtimeDir = "/run/discobox/harness-terminals"
 	}
-	// path, not filepath: a location inside the sandbox, which is always
-	// Linux, whatever host builds and tests the agent.
-	return path.Join(path.Dir(path.Clean(runtimeDir)), "git-credential", "credential.sock")
+	// filepath: the socket is on this agent's own filesystem, and the agent
+	// runs inside the sandbox, so the host's rules are the sandbox's.
+	return filepath.Join(filepath.Dir(filepath.Clean(runtimeDir)), "git-credential", "credential.sock")
 }
 
 // HelperCommand is the credential.helper value that runs executable's

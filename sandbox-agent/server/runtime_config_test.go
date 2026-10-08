@@ -12,8 +12,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
 const runtimeConfigPath = "/api/projects/project-1/sandboxes/sandbox-1/runtime-config"
@@ -27,6 +29,9 @@ func runtimeConfigRouter(t *testing.T) (http.Handler, func(scopes ...string) str
 		ProxyDir:    filepath.Join(root, "etc", "proxy"),
 		SecretsPath: filepath.Join(root, "run", "secrets.json"),
 		StatePath:   filepath.Join(root, "var", "runtime-config.json"),
+		// The test host stands in for the sandbox: its targets are real
+		// directories here, judged by this platform's rules.
+		Paths: sandboxpath.For(platform.Current()),
 	}, intake.Owner{ProjectID: "project-1", SandboxID: "sandbox-1", PoolID: "worker-1"})
 	if err != nil {
 		t.Fatal(err)

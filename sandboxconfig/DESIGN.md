@@ -170,7 +170,7 @@ sandbox, delivered as one revisioned document to the sandbox agent's
   source, so it means what the readiness file always meant (ADR 0055).
 - **`Validate` is the whole refusal.** Everything a delivery can be wrong about —
   revision, durations, env names, PEM CAs, a keypair that does not load, bridge
-  URLs, the namespace, a source target that is not a clean absolute path, an
+  URLs, the namespace, a source target that is not a clean absolute path by the sandbox's own platform's rules (`sandboxpath`, which the caller passes: the agent passes its own, ADR 0145 §6), an
   origin with no target, a token that is not one line — is checked before
   anything is written, so a refused document changes nothing.
 - The wire schema is `SandboxRuntimeConfig` in `api/openapi/server.yaml`; the

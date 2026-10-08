@@ -290,7 +290,9 @@ func TestAUserCredentialStoreIsNeverHandedTheToken(t *testing.T) {
 	target := t.TempDir()
 	h := newHarness(t)
 	store := filepath.Join(h.home, ".git-credentials")
-	writeFile(t, filepath.Join(h.home, ".gitconfig"), "[credential]\n\thelper = store --file "+store+"\n")
+	// Forward slashes, quoted: git config reads a backslash as an escape, and
+	// a Windows path has them.
+	writeFile(t, filepath.Join(h.home, ".gitconfig"), "[credential]\n\thelper = \"store --file '"+filepath.ToSlash(store)+"'\"\n")
 	if state := h.pass(t, document(1, sandboxconfig.RuntimeSource{Slug: "primary", Target: target, OriginURL: o.url, OriginToken: testToken, Commit: first}), "primary"); state.State != StateMaterialized {
 		t.Fatalf("state = %+v", state)
 	}
