@@ -18,7 +18,7 @@ func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 		}
 		byID[definition.ID] = definition
 	}
-	for _, id := range []string{"claude-code", "codex", "opencode"} {
+	for _, id := range []string{"claude-code", "codex", "opencode", "copilot"} {
 		definition, ok := byID[id]
 		if !ok {
 			t.Fatalf("missing definition %q", id)

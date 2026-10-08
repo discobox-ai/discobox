@@ -205,7 +205,7 @@ launchers, and configure scripts.
   the version source, each image also turns its agent's own updater off:
   `DISABLE_AUTOUPDATER` in claude-code's env layer, `check_for_update_on_startup`
   in codex's system config, `OPENCODE_DISABLE_AUTOUPDATE` in opencode's env
-  layer. `discobox-harness-upgrade` is the by-hand "newest, now".
+  layer, `COPILOT_AUTO_UPDATE=false` in copilot's. `discobox-harness-upgrade` is the by-hand "newest, now".
 - Every harness image that runs a model provides
   **`/usr/local/bin/discobox-prompt`**, a one-shot prompting interface a
   process in the discobox asks for a model through
@@ -245,8 +245,9 @@ launchers, and configure scripts.
   prose mentioning a brace cannot swallow the answer. `codex-cli`
   prints the agent's last message alone (`--output-last-message`) and puts it
   through the helper; `opencode`, which has no such flag, puts its whole
-  transcript through it; `claude-code` prints only what the model said and puts
-  that through it too, since a model asked for JSON may fence it anyway. Each
+  transcript through it; `claude-code` and `copilot` print only what the model
+  said and put that through it too, since a model asked for JSON may fence it
+  anyway. Each
   captures its CLI's output rather than piping it, so a failed run is a failed
   wrapper rather than a successful print of nothing. The `shell`
   image runs no model and provides no wrapper: a project whose default harness
@@ -263,6 +264,9 @@ launchers, and configure scripts.
   across the providers a user may pick, so its judge reasons as its model
   does; what its wrapper removes is the session title opencode would
   otherwise generate with a second call to the same model (`--title`).
+  `copilot` checks an effort level against each model, so its judge too
+  reasons as its model does until an eval measures the alternative
+  ([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md) §5).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,
@@ -308,7 +312,7 @@ launchers, and configure scripts.
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md).
 - Whether a harness has an interactive configure flow is the image's
   declaration (`config.command`), snapshotted as the config's config command;
-  a `Definition`'s `Configure` field (set by `claude-code`, `codex-cli`, and `opencode`, nil
+  a `Definition`'s `Configure` field (set by `claude-code`, `codex-cli`, `opencode`, and `copilot`, nil
   for `shell`) is read by nothing. The configure process writes files and
   collected secret values to `ConfigureOutputPath`. Configure files use the
   same home-relative contract as all harness files; configure commands run from
@@ -320,6 +324,8 @@ launchers, and configure scripts.
   - `codex-cli`
   - `opencode` — opencode 1 (`opencode-ai`), the release its installer and docs
     install; opencode 2 (`@opencode/cli`) is a different program.
+  - `copilot` — GitHub Copilot CLI (`@github/copilot`). Its slug, folder,
+    image and hook provider are all `copilot`.
   - `shell` — the login shell, and the end of the resolution chain. Its
     Dockerfile installs nothing (the base image already ships the shell) and it
     has no `image.json` at all: no identity to declare beyond its reserved slug,
@@ -359,6 +365,13 @@ subject to repo trust prompts or user/project override:
   neither loses to the configure flow's capture nor drops a plugin the user
   added. Its policy baseline is a launch flag rather than a system layer (see
   [OpenCode](#opencode)).
+- Copilot: `/etc/github-copilot/policy.d/discobox.json`. Copilot loads every
+  file in that directory as **policy** hooks, beside the user's own
+  (`~/.copilot/hooks`, the `hooks` setting) rather than instead of them, and
+  keeps them when the user's settings say `disableAllHooks`. Its
+  `/etc/github-copilot/managed-settings.json` is read too, but not for hooks.
+  The file uses Copilot's own hook schema (`version: 1`, `bash` commands) and
+  publishes all fifteen of its events.
 
 Every hook runs `discobox-hook-publish --provider <harness> --event <name>`,
 the sandbox agent's generic publisher; no Go code in this package writes or
@@ -419,7 +432,8 @@ The runtime exposes opaque durable data for the primary source at
 or private to the sandbox when there is no key to share it under (see
 [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md)); only harness images
 interpret anything beneath it. Claude Code and Codex keep their memory there in
-separate namespaces; opencode has no memory feature to point at it:
+separate namespaces; opencode has no memory feature to point at it, and
+Copilot's has no setting or variable that names where it keeps memories:
 
 - **Memories are keyed by the sandbox user's uid**, as the pool cache is (ADR
   0094): each harness stores them under `.../users/<uid>/harnesses/<name>/`.
@@ -841,3 +855,70 @@ that declares none. See
 - The configure image declares config ports 1455 (ChatGPT's browser sign-in)
   and 1456 (DigitalOcean's). A browser sign-in on a random port cannot be
   forwarded; those providers connect with a key.
+
+### GitHub Copilot
+
+`copilot/configure.sh` asks how to sign in before it starts Copilot, because
+the two ways differ in what they hand every discobox
+([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md)):
+
+- **A fine-grained PAT with only "Copilot Requests"**, the default, read by
+  Copilot's own `copilot login --with-token`, which validates it.
+- **`/login`** in a bare Copilot, by device code, so no callback port is
+  declared. Its token is an OAuth App `gho_` token with `repo` scope among
+  others, and Copilot sends it to both `api.github.com` and
+  `githubcopilot.com`, so its secret carries no host. The script says that
+  every discobox using the harness could then act on every repository the
+  account can, and goes on only on an explicit yes; the warning defaults to
+  no. A token pasted at the PAT prompt that is not a fine-grained PAT — gh's
+  own `gho_` token, which Copilot also takes — has to clear the same warning,
+  and is named for what it is rather than for the prompt it came in at. So
+  does any such token the session itself stores: the choice made before
+  Copilot starts binds nothing, since `/login` runs inside it from either
+  path, and what is stored is what is saved.
+
+Either way Copilot stores the token, and the script reads it back:
+
+- **Storage is `~/.copilot/config.json`**, Copilot's own state file (JSON
+  under `//` comment lines): `authTokens["<host>:<login>"].token`, for the
+  account `lastLoggedInUser` names. A sandbox has no keychain, and without
+  `storeTokenPlaintext` Copilot stops a sign-in at a consent question, so the
+  script sets that in `settings.json` while it runs and strips it from what it
+  returns. It clears `config.json` before each round so a retry never captures
+  an earlier attempt.
+- **One `token` secret, `COPILOT_GITHUB_TOKEN`, delivered in the
+  environment.** Copilot documents that variable for headless use and it
+  outranks a stored login; `gh` and git never read it, and Copilot strips it
+  from the environment of the commands its agent runs. Neither sign-in yields
+  anything to refresh. `config.json` is never returned: it is Copilot's state,
+  rewritten as it runs.
+- **Only github.com.** A login to another host is refused: an Enterprise Cloud
+  account also needs `COPILOT_GH_HOST` in every sandbox, and a configure
+  command returns no env.
+- **Reconfigure opens signed in** with the `PREV_` sentinel as
+  `COPILOT_GITHUB_TOKEN`; Enter keeps it (`usePrevious`). Copilot stores a
+  `/login` even with a token in its environment, so signing in to another
+  account inside the kept session replaces it, once that token has cleared
+  the warning. A kept token that fails
+  verification stops being offered.
+- Every path ends in a tool-free `copilot -p` with only the chosen token, in a
+  `COPILOT_HOME` of its own so the stored login cannot stand in for it.
+- It returns `~/.copilot/settings.json` as the user left it (`/config model`,
+  theme, status line), minus `storeTokenPlaintext`.
+- **The policy baseline is two switches.** `COPILOT_ALLOW_ALL=true` in the
+  image's env trusts the directory Copilot starts in — without it an
+  interactive launch stops on a folder-trust dialog that `--allow-all` does
+  not skip — and the launcher passes `--allow-all`, since the variable alone
+  leaves an interactive session on manual approval. A launch prompt goes to
+  `--interactive=`, whose `=` keeps a prompt starting with a dash a prompt;
+  resume is `--continue`, which opens a new session when there is none.
+- `discobox-prompt` runs `copilot -p --silent`. **Tools-off is an allowlist
+  naming no tool** (`--available-tools=discobox-no-tools`): an empty one is
+  read as no filter and offers every tool. With `--no-tools` it also runs in an
+  empty `COPILOT_HOME` and directory of its own, without custom instructions,
+  built-in MCP servers or `COPILOT_ALLOW_ALL`; the token needs no seeding since
+  it is in the environment. `judge` is pinned to `claude-sonnet-5.5`; an
+  account whose plan or policy does not offer it refuses every judged command.
+- Copilot unpacks itself under `~/.cache/copilot/pkg` on first run (about
+  185 MB per version), which the base layer's `%HOME%/.cache` volume already
+  makes per-user pool cache.

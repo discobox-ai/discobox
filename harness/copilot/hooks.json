@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event sessionStart", "timeoutSec": 3 }],
+    "sessionEnd": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event sessionEnd", "timeoutSec": 3 }],
+    "userPromptSubmitted": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event userPromptSubmitted", "timeoutSec": 3 }],
+    "userPromptTransformed": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event userPromptTransformed", "timeoutSec": 3 }],
+    "preToolUse": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event preToolUse", "timeoutSec": 3 }],
+    "preMcpToolCall": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event preMcpToolCall", "timeoutSec": 3 }],
+    "permissionRequest": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event permissionRequest", "timeoutSec": 3 }],
+    "postToolUse": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event postToolUse", "timeoutSec": 3 }],
+    "postToolUseFailure": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event postToolUseFailure", "timeoutSec": 3 }],
+    "errorOccurred": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event errorOccurred", "timeoutSec": 3 }],
+    "agentStop": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event agentStop", "timeoutSec": 3 }],
+    "subagentStart": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event subagentStart", "timeoutSec": 3 }],
+    "subagentStop": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event subagentStop", "timeoutSec": 3 }],
+    "preCompact": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event preCompact", "timeoutSec": 3 }],
+    "notification": [{ "type": "command", "bash": "discobox-hook-publish --provider copilot --event notification", "timeoutSec": 3 }]
+  }
+}

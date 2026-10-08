@@ -1,0 +1,24 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "COPILOT_ALLOW_ALL": "true",
+    "COPILOT_AUTO_UPDATE": "false"
+  },
+  "harness": {
+    "id": "copilot",
+    "name": "GitHub Copilot",
+    "description": "GitHub Copilot CLI coding harness.",
+    "secrets": [
+      {
+        "name": "COPILOT_GITHUB_TOKEN",
+        "required": true
+      }
+    ],
+    "config": {
+      "reminder": "Sign in, optionally set the default model with /config model, then finish configuration with /exit.",
+      "command": [
+        "/usr/local/libexec/discobox/configure-copilot"
+      ]
+    }
+  }
+}

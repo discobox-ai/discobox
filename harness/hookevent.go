@@ -49,6 +49,30 @@ var canonicalHookEvents = map[string]map[string]string{
 		"SessionStart":      "SessionStart",
 		"SessionEnd":        "SessionEnd",
 	},
+	// Copilot names its lifecycle in lowerCamelCase, so like opencode every
+	// entry is a translation. Three of the events its image publishes have
+	// no entry: userPromptTransformed (the model-facing form of a prompt) and
+	// preMcpToolCall (an MCP request about to leave) have no Claude Code
+	// counterpart, and errorOccurred is not StopFailure — it fires when a
+	// model call fails, which Copilot may retry, so a wait on it would end
+	// while the turn goes on.
+	//
+	// agentStop is the root agent's alone: Copilot reports a subagent's end as
+	// subagentStop, so unlike opencode's session.idle no filter is needed.
+	"copilot": {
+		"sessionStart":        "SessionStart",
+		"sessionEnd":          "SessionEnd",
+		"userPromptSubmitted": "UserPromptSubmit",
+		"preToolUse":          "PreToolUse",
+		"permissionRequest":   "PermissionRequest",
+		"postToolUse":         "PostToolUse",
+		"postToolUseFailure":  "PostToolUseFailure",
+		"agentStop":           "Stop",
+		"subagentStart":       "SubagentStart",
+		"subagentStop":        "SubagentStop",
+		"preCompact":          "PreCompact",
+		"notification":        "Notification",
+	},
 	// opencode names its lifecycle in dot.lower.case and shares no spelling
 	// with Claude Code, so every entry here is a real translation rather than
 	// a recorded agreement. Its image publishes more events than appear here

@@ -384,7 +384,8 @@ func harnessHookRecord(sandboxID string) func(apimodel.HarnessHookLog) auditReco
 
 // hookPayload is the part of a hook's payload that says what it was about.
 // Claude Code and Codex send tool_name and tool_input; the opencode image's
-// plugin sends tool and args, and only a title after the tool ran. Claude
+// plugin sends tool and args, and only a title after the tool ran; Copilot
+// sends toolName with toolArgs, or toolInput on a permissionRequest. Claude
 // Code's PostToolBatch names every call of a batch in tool_calls. Claude Code
 // and Codex send a UserPromptSubmit's text as prompt.
 type hookPayload struct {
@@ -393,8 +394,17 @@ type hookPayload struct {
 	ToolInput map[string]any `json:"tool_input"`
 	Tool      string         `json:"tool"`
 	Args      map[string]any `json:"args"`
-	Title     string         `json:"title"`
-	ToolCalls []struct {
+	// Copilot's spellings. Go matches JSON keys without regard to case, but
+	// not across an underscore, so these never collide with the two above.
+	// toolArgs is raw because its shape is not settled: Copilot 1.0.91 sent
+	// an object (measured 2026-10-02), and GitHub's hooks reference shows a
+	// JSON-encoded string. Decoding it as either keeps one shape from failing
+	// the whole payload, tool name included.
+	CopilotToolName  string          `json:"toolName"`
+	CopilotToolArgs  json.RawMessage `json:"toolArgs"`
+	CopilotToolInput map[string]any  `json:"toolInput"`
+	Title            string          `json:"title"`
+	ToolCalls        []struct {
 		ToolName string `json:"tool_name"`
 	} `json:"tool_calls"`
 }
@@ -438,6 +448,12 @@ func hookSummary(payload []byte) string {
 		tool, input = p.Tool, p.Args
 	}
 	if tool == "" {
+		tool, input = p.CopilotToolName, copilotToolArgs(p.CopilotToolArgs)
+		if input == nil {
+			input = p.CopilotToolInput
+		}
+	}
+	if tool == "" {
 		return ""
 	}
 	subject := p.Title
@@ -458,6 +474,23 @@ func hookSummary(payload []byte) string {
 		return tool
 	}
 	return tool + ": " + subject
+}
+
+// copilotToolArgs reads Copilot's toolArgs whether it arrives as an object or
+// as a string holding one, and answers nil for anything else.
+func copilotToolArgs(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var args map[string]any
+	if json.Unmarshal(raw, &args) == nil {
+		return args
+	}
+	var encoded string
+	if json.Unmarshal(raw, &encoded) != nil || json.Unmarshal([]byte(encoded), &args) != nil {
+		return nil
+	}
+	return args
 }
 
 // patchFiles lists the files an apply_patch envelope adds, updates, or deletes.
