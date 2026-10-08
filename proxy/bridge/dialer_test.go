@@ -36,7 +36,7 @@ func poolMaterial(t *testing.T) *proxy.PreparedCertificates {
 
 // servePool stands in for a pool service on listener: it requires a client
 // certificate signed by the pool's mTLS CA, answers each connection with the
-// certificate's common name, and then echoes.
+// certificate's common name and serial number, and then echoes.
 func servePool(t *testing.T, listener net.Listener, bundle *proxy.CertificateBundle) {
 	t.Helper()
 	tlsListener := tls.NewListener(listener, &tls.Config{
@@ -59,7 +59,7 @@ func servePool(t *testing.T, listener net.Listener, bundle *proxy.CertificateBun
 					return
 				}
 				peer := tlsConn.ConnectionState().PeerCertificates[0]
-				if _, err := io.WriteString(conn, peer.Subject.CommonName+"\n"); err != nil {
+				if _, err := io.WriteString(conn, peer.Subject.CommonName+" "+peer.SerialNumber.String()+"\n"); err != nil {
 					return
 				}
 				_, _ = io.Copy(conn, conn)
@@ -98,16 +98,18 @@ func dialConfig(material proxy.ClientMaterial, url, serverName string) bridge.Di
 	}
 }
 
-// readIdentity reads the common name the pool saw on conn.
-func readIdentity(t *testing.T, conn net.Conn) (*bufio.Reader, string) {
+// readIdentity reads the common name, and the serial number of the
+// certificate that carried it, that the pool saw on conn.
+func readIdentity(t *testing.T, conn net.Conn) (reader *bufio.Reader, identity, serial string) {
 	t.Helper()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-	reader := bufio.NewReader(conn)
+	reader = bufio.NewReader(conn)
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		t.Fatalf("read identity: %v", err)
 	}
-	return reader, strings.TrimSuffix(line, "\n")
+	identity, serial, _ = strings.Cut(strings.TrimSuffix(line, "\n"), " ")
+	return reader, identity, serial
 }
 
 // A sandbox in a host-VM pool reaches its pool through a socket rather than a
@@ -143,7 +145,7 @@ func TestForwarderDialsUnixURLWithMTLS(t *testing.T) {
 		t.Fatalf("dial forwarder: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	reader, identity := readIdentity(t, conn)
+	reader, identity, _ := readIdentity(t, conn)
 	if identity != "sandbox-1" {
 		t.Fatalf("pool saw client %q, want sandbox-1", identity)
 	}
@@ -205,7 +207,7 @@ func TestDialerHTTPSDialsTCPAndTakesServerNameFromHost(t *testing.T) {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	if _, identity := readIdentity(t, conn); identity != "sandbox-1" {
+	if _, identity, _ := readIdentity(t, conn); identity != "sandbox-1" {
 		t.Fatalf("pool saw client %q, want sandbox-1", identity)
 	}
 }
