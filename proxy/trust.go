@@ -306,6 +306,15 @@ func (h *httpProxy) trustTable() *trustTable {
 // that names the host, instead of the connection being dropped.
 func (h *httpProxy) roundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Response, error) {
 	meta, _ := ctx.UserData.(*requestMeta)
+	// A client's "Connection: close" is about its connection to this proxy,
+	// and net/http keeps it in req.Close after dropHopByHopHeaders removed
+	// the header. Sent on, it would close the upstream connection, or retire
+	// an HTTP/2 one that other requests share.
+	if req.Close {
+		outbound := *req
+		outbound.Close = false
+		req = &outbound
+	}
 	transport := ctx.Proxy.Tr
 	switch {
 	case meta != nil && meta.trust != nil:
