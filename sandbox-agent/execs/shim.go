@@ -66,9 +66,11 @@ type shimRuntime struct {
 	outputWG  sync.WaitGroup
 	startMu   sync.Mutex
 	stream    *shimruntime.Runtime
-	// started is when proc was started; guarded by startMu, like proc.
-	started time.Time
-	mu      sync.Mutex
+	// started is when proc was started, and identity the kernel's identity for
+	// it; guarded by startMu, like proc.
+	started  time.Time
+	identity string
+	mu       sync.Mutex
 	// inputClosed records that stdin has been closed, so a later write reports
 	// it rather than failing on a closed descriptor.
 	inputClosed bool
@@ -136,14 +138,14 @@ const (
 func (r *shimRuntime) stop() {
 	// startMu, not mu: it is what startProcess holds when it sets proc.
 	r.startMu.Lock()
-	proc, started := r.proc, r.started
+	proc, identity := r.proc, r.identity
 	r.startMu.Unlock()
 	if proc == nil {
 		return
 	}
 	sid := int(proc.PID())
 	proc.Terminate()
-	_ = askSessionToStop(sid, started, proc.TTY() != nil)
+	_ = askSessionToStop(sid, identity, proc.TTY() != nil)
 	grace := time.NewTimer(shimStopGrace)
 	defer grace.Stop()
 	select {
@@ -151,8 +153,16 @@ func (r *shimRuntime) stop() {
 	case <-grace.C:
 	}
 	// Whether the command ended on SIGTERM or not, what it left running in
-	// its session was asked to stop too.
-	_ = endSession(sid, started)
+	// its session was asked to stop too. A session that could not be ended
+	// is said so in the shim's log, which outlives it; the shim still goes.
+	// Holding the unit up until the session is empty would make a process in
+	// uninterruptible sleep, or one that cannot be listed, a stop that never
+	// returns — and the SIGKILL is already pending on whatever is left.
+	if identity == "" {
+		_ = proc.Signal("KILL")
+	} else if err := endSession(sid, identity); err != nil {
+		slog.Warn("end the stopped exec's session", "execID", r.cfg.ExecID, "session", sid, "error", err)
+	}
 	// The exit is recorded once the output is drained, which a killed session
 	// leaves nothing to hold up; the bound is for a process that left the
 	// session with the output still open.
@@ -234,12 +244,17 @@ func (r *shimRuntime) startProcess(opts procio.Options) error {
 		return err
 	}
 	r.proc = proc
-	// Taken the moment the process exists, before anything is typed into it:
-	// it is what the exec records as its start, and what a stop or the
-	// supervisor later checks the pid against to know it is still this
-	// command (isCommand).
+	// Taken the moment the process exists, before anything is typed into it,
+	// which is what the exec records as its start.
 	r.started = time.Now().UTC()
 	r.status.PID = proc.PID()
+	// The kernel's identity for it, read while it is this process's unreaped
+	// child and so cannot be anything else: what a stop, or the supervisor
+	// collecting a dead shim, checks the pid against before signaling it
+	// (isCommand). One that cannot be read leaves the stop to the process
+	// handle alone.
+	r.identity, _ = processIdentity(int(proc.PID()))
+	r.status.ProcessIdentity = r.identity
 
 	if tty := proc.TTY(); tty != nil {
 		// Track the screen in memory at the PTY's real size so a late attacher

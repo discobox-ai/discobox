@@ -68,12 +68,18 @@ type Supervisor struct {
 	subscribers map[*unitSubscriber]struct{}
 }
 
-// unitState is what a unit's lifetime file holds: the shim's pid, which Stop
-// signals only while the lock says the shim is still the one holding it, and
-// the exec's runtime file, which says what the shim's command was when the
-// shim went.
+// unitRecordSize is the size of every record a unit's lifetime file holds
+// (writeUnitState): a pid, an identity, a time and a runtime path, with room to
+// spare.
+const unitRecordSize = 4096
+
+// unitState is what a unit's lifetime file holds: the shim's pid and kernel
+// identity, which Stop signals only while the lock is held and the identity
+// still matches, and the exec's runtime file, which says what the shim's
+// command was when the shim went.
 type unitState struct {
 	PID         int       `json:"pid"`
+	Identity    string    `json:"identity,omitempty"`
 	StartedAt   time.Time `json:"startedAt"`
 	RuntimePath string    `json:"runtimePath,omitempty"`
 }
@@ -144,9 +150,11 @@ func (s *Supervisor) Start(ctx context.Context, req StartRequest) (StartResult, 
 			return StartResult{}, ctx.Err()
 		}
 	}
-	// The lock is taken on a file no reader can find yet and put in place only
-	// once the shim holds it, so there is no moment at which the unit exists
-	// and its lock is free — which would read as a shim that already ended.
+	// The lock is taken on a file no reader can find yet, and the file is put
+	// in place still locked, before the shim starts: there is no moment at
+	// which the unit exists and its lock is free — which would read as a shim
+	// that already ended — and none at which a shim runs under a unit nothing
+	// can find, which an agent dying between the two would otherwise leave.
 	lifetime, err := os.CreateTemp(s.dir, ".start-*")
 	if err != nil {
 		return StartResult{}, err
@@ -160,6 +168,16 @@ func (s *Supervisor) Start(ctx context.Context, req StartRequest) (StartResult, 
 		}
 		return StartResult{}, fmt.Errorf("start %s: %w", unit, err)
 	}
+	state := unitState{StartedAt: time.Now().UTC(), RuntimePath: req.RuntimePath}
+	if err := writeUnitState(int(lifetime.Fd()), state); err != nil {
+		abandon()
+		return StartResult{}, fmt.Errorf("start %s: %w", unit, err)
+	}
+	if err := os.Rename(lifetime.Name(), path); err != nil {
+		abandon()
+		return StartResult{}, fmt.Errorf("start %s: %w", unit, err)
+	}
+	abandon = func() { _ = os.Remove(path) }
 	logFile, err := os.OpenFile(s.logPath(unit), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		abandon()
@@ -184,23 +202,23 @@ func (s *Supervisor) Start(ctx context.Context, req StartRequest) (StartResult, 
 	}
 	logFile.Close()
 	pid := cmd.Process.Pid
-	// Reap it. The shim is this process's child until this process exits, and
-	// a zombie holds no lock but would still answer a signal.
-	go func() { _ = cmd.Wait() }()
-	state, err := json.Marshal(unitState{PID: pid, StartedAt: time.Now().UTC(), RuntimePath: req.RuntimePath})
-	if err == nil {
-		_, err = lifetime.WriteAt(state, 0)
-	}
-	if err == nil {
-		err = os.Rename(lifetime.Name(), path)
-	}
-	if err != nil {
-		// The shim is running under a unit nothing can find, so it is ended
-		// here rather than left to run unsupervised.
-		_ = killProcess(pid)
+	// The shim records its own pid and identity as it starts (HoldLifetime),
+	// in case this process does not live to; written here as well, it is in
+	// the file by the time Start returns.
+	state.PID = pid
+	state.Identity, _ = processIdentity(pid)
+	if err := writeUnitState(int(lifetime.Fd()), state); err != nil {
+		// A unit naming no shim could not be stopped, so the shim is ended
+		// here — through its handle, while it is still this process's
+		// unreaped child — rather than left to run unsupervised.
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 		abandon()
 		return StartResult{}, fmt.Errorf("start %s: %w", unit, err)
 	}
+	// Reap it. The shim is this process's child until this process exits, and
+	// a zombie holds no lock but would still answer a signal.
+	go func() { _ = cmd.Wait() }()
 	s.gone(unit)
 	return StartResult{Unit: unit, PID: int64(pid)}, nil
 }
@@ -229,28 +247,16 @@ func (s *Supervisor) Stop(ctx context.Context, unit string) error {
 	if unit == "" {
 		return nil
 	}
-	state, err := s.readState(unit)
-	if errors.Is(err, fs.ErrNotExist) {
+	if _, err := s.readState(unit); errors.Is(err, fs.ErrNotExist) {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("stop %s: %w", unit, err)
 	}
 	gone := s.gone(unit)
-	held, err := lockHeld(s.lockPath(unit))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
+	pid, err := s.shim(ctx, unit)
 	if err != nil {
 		return fmt.Errorf("stop %s: %w", unit, err)
 	}
-	if held {
-		// The pid is signaled only while the lock is held, which is what makes
-		// it this unit's shim rather than whatever reused the number.
-		if state.PID <= 0 {
-			return fmt.Errorf("stop %s: unit records no pid", unit)
-		}
-		if err := terminateProcess(state.PID); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if pid > 0 {
+		if err := terminateProcess(pid); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			return fmt.Errorf("stop %s: %w", unit, err)
 		}
 		timer := time.NewTimer(s.stopTimeout)
@@ -259,7 +265,11 @@ func (s *Supervisor) Stop(ctx context.Context, unit string) error {
 		case <-gone:
 			return nil
 		case <-timer.C:
-			_ = killProcess(state.PID)
+			// Asked again, because the shim may have gone and its number been
+			// taken while it was given its time.
+			if pid, err := s.shim(ctx, unit); err == nil && pid > 0 {
+				_ = killProcess(pid)
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -269,6 +279,55 @@ func (s *Supervisor) Stop(ctx context.Context, unit string) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// shimPIDWait bounds how long shim waits for a held unit to name its shim. A
+// unit is put in place before its shim starts, and the shim's pid is written
+// once it has — by the supervisor, or by the shim itself — so a held unit
+// naming none is a shim in its first moments.
+const shimPIDWait = 2 * time.Second
+
+// shim is the pid of the unit's running shim, or zero when it has none: the
+// lock is free, or the process holding that pid is no longer the shim the unit
+// recorded. Nothing signals a unit's shim without asking this first — a lock
+// held a moment ago, or a pid read from a file, says nothing about what that
+// number is now.
+func (s *Supervisor) shim(ctx context.Context, unit string) (int, error) {
+	deadline := time.Now().Add(shimPIDWait)
+	for {
+		state, err := s.readState(unit)
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		held, err := lockHeld(s.lockPath(unit))
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if !held {
+			return 0, nil
+		}
+		if state.PID > 0 {
+			// A process that is gone has no identity, which matches none.
+			if current, _ := processIdentity(state.PID); state.Identity != "" && current != state.Identity {
+				return 0, nil
+			}
+			return state.PID, nil
+		}
+		if time.Now().After(deadline) {
+			return 0, errors.New("unit names no shim")
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
 	}
 }
 
@@ -469,7 +528,7 @@ func endOrphanedCommand(state unitState) {
 		return
 	}
 	exec, err := readRuntime(state.RuntimePath)
-	if err != nil || settled(exec) || exec.PID <= 0 || exec.StartedAt == nil {
+	if err != nil || settled(exec) || exec.PID <= 0 {
 		return
 	}
 	// Only while the command itself is still alive and is that command. The
@@ -477,8 +536,8 @@ func endOrphanedCommand(state unitState) {
 	// reboot that left this file behind — so a session whose leader is gone is
 	// left alone here, unlike in the shim's own stop: by now it may be another
 	// exec's, whose command started a server and exited.
-	if pid := int(exec.PID); isCommand(pid, *exec.StartedAt) {
-		_ = endSession(pid, *exec.StartedAt)
+	if pid := int(exec.PID); isCommand(pid, exec.ProcessIdentity) {
+		_ = endSession(pid, exec.ProcessIdentity)
 	}
 }
 

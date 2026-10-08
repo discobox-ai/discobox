@@ -58,8 +58,15 @@ type Exec struct {
 	TTY            bool              `json:"tty"`
 	Unit           string            `json:"unit,omitempty"`
 	PID            int64             `json:"pid,omitempty"`
-	ExitCode       *int64            `json:"exitCode,omitempty"`
-	Error          string            `json:"error,omitempty"`
+	// ProcessIdentity is the kernel's own identity for the process PID names,
+	// recorded by the shim as the command starts: its start time as the kernel
+	// counts it, exact rather than read off a clock. Nothing signals PID's
+	// session without finding the same identity there first, because the
+	// number alone may by then be some later process's (isCommand). It lives
+	// only in the runtime file — a reboot ends every process it could name.
+	ProcessIdentity string `json:"processIdentity,omitempty"`
+	ExitCode        *int64 `json:"exitCode,omitempty"`
+	Error           string `json:"error,omitempty"`
 	// Stopped marks a run that ended because somebody asked it to, rather than
 	// on its own. It is recorded at the one place a stop is requested, because
 	// it cannot be inferred afterwards: a stopped process and a process killed
@@ -859,6 +866,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	current.User = user.Clone()
 	current.Unit = nextUnitGeneration(exec.ID, exec.Unit)
 	current.PID = 0
+	current.ProcessIdentity = ""
 	current.ExitCode = nil
 	current.Error = ""
 	current.StartedAt = nil
@@ -1455,6 +1463,9 @@ func mergeExecStatus(base, status Exec) Exec {
 	}
 	if status.PID != 0 {
 		base.PID = status.PID
+	}
+	if status.ProcessIdentity != "" {
+		base.ProcessIdentity = status.ProcessIdentity
 	}
 	if status.ExitCode != nil {
 		base.ExitCode = status.ExitCode

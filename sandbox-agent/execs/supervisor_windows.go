@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-	"time"
 )
 
 // The Supervisor's lifetime lock is a flock, which passes to a child with its
@@ -40,8 +39,12 @@ func killProcess(pid int) error {
 
 // Windows has no sessions to end; the supervisor's half there waits on the
 // same work as lockFile.
-func isCommand(int, time.Time) bool { return false }
+func isCommand(int, string) bool { return false }
 
-func askSessionToStop(int, time.Time, bool) error { return errors.ErrUnsupported }
+func processIdentity(int) (string, error) { return "", errors.ErrUnsupported }
 
-func endSession(int, time.Time) error { return errors.ErrUnsupported }
+func writeUnitState(int, unitState) error { return errors.ErrUnsupported }
+
+func askSessionToStop(int, string, bool) error { return errors.ErrUnsupported }
+
+func endSession(int, string) error { return errors.ErrUnsupported }

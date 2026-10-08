@@ -1,7 +1,7 @@
 package execs
 
 import (
-	"time"
+	"fmt"
 
 	"golang.org/x/sys/unix"
 )
@@ -25,8 +25,10 @@ func processes() ([]int, error) {
 	return out, nil
 }
 
-// inspectProcess reads when a process started and whether it has already
-// exited and waits only to be reaped.
+// inspectProcess reads a process's identity — the instant it started, to the
+// microsecond, as the kernel recorded it, which no later process holding the
+// same pid can share — and whether it has already exited and waits only to be
+// reaped.
 func inspectProcess(pid int) (processInfo, error) {
 	proc, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	if err != nil {
@@ -37,7 +39,7 @@ func inspectProcess(pid int) (processInfo, error) {
 	}
 	start := proc.Proc.P_starttime
 	return processInfo{
-		started: time.Unix(0, start.Nano()),
-		exited:  proc.Proc.P_stat == sZomb,
+		identity: fmt.Sprintf("%d.%06d", start.Sec, start.Usec),
+		exited:   proc.Proc.P_stat == sZomb,
 	}, nil
 }

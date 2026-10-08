@@ -148,6 +148,10 @@ flowchart LR
   shim that is gone — collected (removed) and reported on `Watch` — and no
   file at all is an unloaded unit. Only the shim holds it exclusively; the
   agent's own probes and waits take it shared, so they never read as a shim.
+  The unit is put in place, locked, before the shim starts, and the shim
+  writes its own pid and identity into it as well as the agent does, so an
+  agent that dies starting one leaves neither an invisible shim nor a unit
+  naming none.
   One goroutine blocks on each lock; nothing polls. An agent that restarts
   finds the same locks held and waits on them, which is how it converges on
   shims it did not start.
@@ -165,8 +169,11 @@ flowchart LR
   command's exit — killed outright, or that last resort — has the command's
   session killed when its lock is collected. Every one of those signals is
   sent only while the session is still the command's: a live process holding
-  the number must have the start time the shim recorded the moment the
-  command started. Once the leader is gone, the shim's own stop — which ran
+  the number must have the kernel identity the shim recorded the moment the
+  command started — its exact start, as the kernel counts it (Linux start
+  ticks and boot id, darwin's start timeval), never a clock reading within a
+  tolerance — and each member is checked again right before it is signaled.
+  The shim's own pid is checked the same way before `Stop` signals it. Once the leader is gone, the shim's own stop — which ran
   that command a moment ago — still ends what is left of its session; the
   collection of a dead shim, which may come any time later, ends nothing
   without a live, matching leader. The shim lingers after its command exits and the agent
