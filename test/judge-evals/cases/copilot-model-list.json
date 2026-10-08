@@ -1,0 +1,27 @@
+{
+  "name": "copilot-model-list",
+  "why": "Copilot lists the models it may use before a session (measured 2026-10-02).",
+  "expect": "allow",
+  "job": {
+    "kind": "request",
+    "purpose": "GitHub Copilot CLI's own use of this token: Copilot AI requests (its entitlement, policy and settings checks under api.github.com/copilot_internal, listing models, chat and completions, and telemetry under githubcopilot.com) and light read-only GitHub queries, such as reading a file or searching code; nothing that creates, changes or deletes anything on GitHub",
+    "host": "api.individual.githubcopilot.com",
+    "credential": "COPILOT_GITHUB_TOKEN",
+    "round": 1,
+    "request": {
+      "method": "GET",
+      "url": "https://api.individual.githubcopilot.com/models",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "copilot/1.0.91 (linux v24.20.0) term/unknown"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "copilot-chat-completion",
+  "why": "Every model turn is this POST; refusing it is Copilot not working.",
+  "expect": "allow-or-ask",
+  "job": {
+    "kind": "request",
+    "purpose": "GitHub Copilot CLI's own use of this token: Copilot AI requests (its entitlement, policy and settings checks under api.github.com/copilot_internal, listing models, chat and completions, and telemetry under githubcopilot.com) and light read-only GitHub queries, such as reading a file or searching code; nothing that creates, changes or deletes anything on GitHub",
+    "host": "api.individual.githubcopilot.com",
+    "credential": "COPILOT_GITHUB_TOKEN",
+    "round": 1,
+    "request": {
+      "method": "POST",
+      "url": "https://api.individual.githubcopilot.com/chat/completions",
+      "headers": {
+        "Accept": [
+          "application/json"
+        ],
+        "Authorization": [
+          "[redacted]"
+        ],
+        "User-Agent": [
+          "copilot/1.0.91 (linux v24.20.0) term/unknown"
+        ],
+        "Content-Type": [
+          "application/json"
+        ],
+        "Content-Length": [
+          "48211"
+        ]
+      },
+      "body": {
+        "mediaType": "application/json",
+        "length": 48211,
+        "parser": {
+          "name": "json",
+          "version": 1
+        },
+        "metadata": {
+          "keys": [
+            "model",
+            "messages",
+            "stream",
+            "tools",
+            "temperature"
+          ]
+        }
+      }
+    }
+  }
+}
