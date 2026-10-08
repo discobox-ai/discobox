@@ -196,6 +196,29 @@ can be recorded as two chunks when part of it came from the parser's buffer and
 the rest from the wire. Anything asserting on a spool reassembles the direction
 first.
 
+## Hop-by-hop Headers
+
+A request's hop-by-hop headers describe the sandbox's connection to the proxy,
+not the request, so the request handler drops them before anything judges,
+rewrites, audits or forwards it (`dropHopByHopHeaders`; RFC 9110 §7.6.1):
+`Connection` and every header it names, `Keep-Alive`, `Proxy-Connection`,
+`Proxy-Authenticate`, `Proxy-Authorization`, `TE`, `Trailer`,
+`Transfer-Encoding` and `Upgrade` — `httputil.ReverseProxy`'s list. Two
+survive: `TE: trailers` when the client's `TE` asks for trailers, which gRPC
+needs, and a WebSocket handshake's `Connection: Upgrade` with its `Upgrade`,
+which [Upgraded Streams](#upgraded-streams) needs. WebSocket is the one upgrade
+`goproxy` forwards — it deletes `Connection` from any other — so another
+upgrade loses both rather than going out with a bare `Upgrade`.
+
+HTTP/2 is why this is not cosmetic. An HTTP/1.1 request can go out over
+HTTP/2 (below), where `TE` may only be `trailers` (RFC 9113 §8.2.2) and any
+other connection-specific header is malformed: a strict origin ends the whole
+connection with `GOAWAY PROTOCOL_ERROR`. libwww-perl sends
+`TE: deflate,gzip;q=0.3` on every request, so `extrepo` — and the
+sandbox-agent image's `extrepo enable mise` — failed behind the proxy until
+these were dropped. `TestHTTPProxyDropsHopByHopHeadersBeforeAnHTTP2Upstream`
+pins it.
+
 ## HTTP/2 and gRPC
 
 HTTP/2 is end to end and still MITM'd. The sandbox's leg offers `h2` over ALPN
