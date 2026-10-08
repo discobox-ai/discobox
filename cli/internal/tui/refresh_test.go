@@ -302,10 +302,51 @@ func TestTheNewSecretFormOffersAWellKnownKind(t *testing.T) {
 	}
 
 	// Back to a plain token, what the choice filled in goes with it.
-	send(t, m, keyPress("n"), keyPress("down"), keyPress("right"), keyPress("right"), keyPress("right"))
+	send(t, m, keyPress("n"), keyPress("down"))
+	for range len(f.rows[1].choices) { // every kind once round, back to token
+		send(t, m, keyPress("right"))
+	}
 	f = m.dialog.form
 	if f.chosen("kind") != "token" || f.value("name") != "" || f.value("command") != "" || f.chosen("lasts") != "300" {
 		t.Fatalf("after wrapping back: kind %q name %q command %q", f.chosen("kind"), f.value("name"), f.value("command"))
+	}
+}
+
+// An exchange credential is never a kind the new card offers — its recipe is
+// given with `secret create --exchange-recipe` — but one that exists opens on
+// its fields, masked, and its key is replaced whole (ADR 26-10-08-452).
+func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
+	t.Parallel()
+	m, ds := secretsFixture(t)
+
+	send(t, m, keyPress("n"), keyPress("down"))
+	for _, c := range m.dialog.form.rows[1].choices {
+		if c.key == "exchange" {
+			t.Fatal("the new card offers an exchange credential, whose recipe it cannot take")
+		}
+	}
+	send(t, m, keyPress("esc"))
+
+	secret := Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Host: "boxd.sh",
+		Exchange: &SecretExchange{URL: "https://app.boxd.sh/api/v1/auth/token", Fields: []string{"api_key", "org"}}}
+	drain(t, m, m.editSecretForm("", secret), 0)
+	f := m.dialog.form
+	if f.chosen("kind") != "exchange" {
+		t.Fatalf("kind = %q, want exchange", f.chosen("kind"))
+	}
+	typeInto(t, m, exchangeFieldPrefix+"api_key", "bxd_secret")
+	if strings.Contains(m.View().Content, "bxd_secret") {
+		t.Fatal("the key is drawn in the clear")
+	}
+	send(t, m, keyPress("enter"))
+	if len(ds.updated) != 0 {
+		t.Fatalf("half a replacement was saved: %#v", ds.updated)
+	}
+	typeInto(t, m, exchangeFieldPrefix+"org", "acme")
+	send(t, m, keyPress("enter"))
+	if len(ds.updated) != 1 || ds.updated[0].Value == nil ||
+		ds.updated[0].Value.Exchange["api_key"] != "bxd_secret" || ds.updated[0].Value.Exchange["org"] != "acme" {
+		t.Fatalf("update = %#v, want both fields replaced", ds.updated)
 	}
 }
 

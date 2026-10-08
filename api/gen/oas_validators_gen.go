@@ -995,6 +995,24 @@ func (s *CreateSecretBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Exchange.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "exchange",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.RefreshCommand.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -1068,6 +1086,8 @@ func (s CreateSecretBodyType) Validate() error {
 	case "token":
 		return nil
 	case "oauth":
+		return nil
+	case "exchange":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1185,6 +1205,8 @@ func (s CreateSecretRequestBodyType) Validate() error {
 	case "token":
 		return nil
 	case "oauth":
+		return nil
+	case "exchange":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1411,6 +1433,29 @@ func (s *ErrorModelStatusCode) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "Response",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ExchangeRecipe) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Fields == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "fields",
 			Error: err,
 		})
 	}
@@ -6709,6 +6754,24 @@ func (s *Secret) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Exchange.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "exchange",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.RefreshCommand.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -6734,6 +6797,36 @@ func (s *Secret) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *SecretExchange) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Recipe.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "recipe",
 			Error: err,
 		})
 	}
@@ -7046,6 +7139,8 @@ func (s SecretRejectionSecretType) Validate() error {
 		return nil
 	case "oauth":
 		return nil
+	case "exchange":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -7225,6 +7320,8 @@ func (s SecretRequestType) Validate() error {
 		return nil
 	case "oauth":
 		return nil
+	case "exchange":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -7235,6 +7332,8 @@ func (s SecretType) Validate() error {
 	case "token":
 		return nil
 	case "oauth":
+		return nil
+	case "exchange":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -7702,6 +7801,24 @@ func (s *UpdateSecretBody) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Exchange.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "exchange",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.RefreshCommand.Get(); ok {
 			if err := func() error {

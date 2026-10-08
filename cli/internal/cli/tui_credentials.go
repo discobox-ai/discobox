@@ -356,6 +356,15 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 				row.OAuth.AccessTokenExpiresAt = time.UnixMilli(expires).UTC()
 			}
 		}
+		if exchange, ok := s.Exchange.Get(); ok {
+			row.Exchange = &tui.SecretExchange{}
+			if recipe, ok := exchange.Recipe.Get(); ok {
+				row.Exchange.URL, row.Exchange.Fields = recipe.URL, recipe.Fields
+			}
+			if expires := exchange.TokenExpiresAt.Or(0); expires > 0 {
+				row.Exchange.TokenExpiresAt = time.UnixMilli(expires).UTC()
+			}
+		}
 		row.Format = s.Format.Or("")
 		row.FormatSet = s.FormatSet.Or(false)
 		row.RefreshCommand = s.RefreshCommand.Or(nil)
@@ -446,6 +455,9 @@ func secretValueBody(value tui.SecretValue) apimodel.SecretValue {
 	}
 	if len(value.Scopes) > 0 {
 		body.SetScopes(apiclientgen.NewOptNilStringArray(value.Scopes))
+	}
+	if len(value.Exchange) > 0 {
+		body.SetExchange(apiclientgen.NewOptSecretValueExchange(value.Exchange))
 	}
 	return body
 }

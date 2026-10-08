@@ -717,6 +717,15 @@ func describeSecret(secret Secret, now time.Time) []section {
 		}
 		credential.fields = append(credential.fields, field{label: "value", value: stale, tone: toneDim})
 	}
+	if secret.Exchange != nil {
+		exchange := section{label: "exchanged"}
+		exchange.fields = append(exchange.fields, field{label: "at", value: secret.Exchange.URL})
+		exchange.fields = append(exchange.fields, field{label: "holds", value: strings.Join(secret.Exchange.Fields, " ")})
+		if !secret.Exchange.TokenExpiresAt.IsZero() {
+			exchange.fields = append(exchange.fields, field{label: "token stale", value: accessTokenExpiry(secret.Exchange.TokenExpiresAt, now)})
+		}
+		return []section{credential, exchange}
+	}
 	if secret.OAuth == nil {
 		return []section{credential}
 	}
@@ -1056,8 +1065,12 @@ func secretForm(existing *Secret) *form {
 	const what, value = "the credential", "what it is"
 	editing := existing != nil
 	oauth := func(f *form) bool { return f.chosen("kind") == "oauth" }
+	// An exchange credential is the fields its recipe names (ADR 26-10-08-452).
+	// It is only ever opened here, never chosen: its recipe says where a key
+	// is sent, and is given with `discobox secret create --exchange-recipe`.
+	exchanged := func(f *form) bool { return f.chosen("kind") == "exchange" }
 	// A well-known credential is a token the project stores for that ID.
-	token := func(f *form) bool { return f.chosen("kind") != "oauth" }
+	token := func(f *form) bool { return !oauth(f) && !exchanged(f) }
 
 	name := textRow("name", "name", "e.g. github", "")
 	name.section = what
@@ -1199,6 +1212,10 @@ func secretForm(existing *Secret) *form {
 		if existing.Type == "oauth" {
 			kind.at = 1
 		}
+		if existing.Type == "exchange" {
+			kind.choices = append(kind.choices, choice{key: "exchange", label: "an exchange credential", hint: "fields the control plane trades for a short-lived token"})
+			kind.at = len(kind.choices) - 1
+		}
 		for i, c := range kind.choices {
 			if existing.WellKnownID != "" && c.key == wellKnownKind+existing.WellKnownID {
 				kind.at = i
@@ -1250,16 +1267,45 @@ func secretForm(existing *Secret) *form {
 		refresh.hint = access.hint
 		tokenURL.hint = access.hint
 	}
+	var exchangeRows []formRow
+	if editing && existing.Exchange != nil {
+		exchangeRows = exchangeFieldRows(value, existing.Exchange.Fields, exchanged)
+	}
 	rows := append([]formRow{name, kind, host}, limit...)
 	if editing {
 		rows = append(rows, plain, command)
 		rows = append(rows, lasts...)
+		rows = append(rows, exchangeRows...)
 		return newForm(append(rows, access, refresh, tokenURL, client, scopes, format)...)
 	}
 	rows = append(rows, source, command)
 	rows = append(rows, lasts...)
-	return newForm(append(rows, plain, access, refresh, tokenURL, client, scopes, format)...)
+	rows = append(rows, plain)
+	rows = append(rows, exchangeRows...)
+	return newForm(append(rows, access, refresh, tokenURL, client, scopes, format)...)
 }
+
+// exchangeFieldRows are the rows an exchange credential's fields are replaced
+// through, one per field its recipe names. None is required, since leaving
+// them all empty keeps what is stored.
+func exchangeFieldRows(section string, fields []string, when func(*form) bool) []formRow {
+	rows := make([]formRow, 0, len(fields))
+	for _, name := range fields {
+		row := textRow(exchangeFieldPrefix+name, name, "", "")
+		row.section = section
+		row.masked = true
+		row.input.Placeholder = keepStored
+		row.hint = "exchanged for a short-lived token by the control plane, which is all a discobox ever holds · typing here replaces what is stored"
+		row.when = when
+		row.why = "only for an exchange credential"
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// exchangeFieldPrefix prefixes the key of a row an exchange field is typed
+// into.
+const exchangeFieldPrefix = "exchange:"
 
 // wellKnownKind prefixes the kind a well-known credential is chosen by.
 const wellKnownKind = "known:"
@@ -1373,6 +1419,17 @@ func (m *Model) newSecretForm() tea.Cmd {
 // credential is the several fields the control plane renews with; a token is
 // the one field that travels.
 func formSecretValue(f *form) SecretValue {
+	if f.chosen("kind") == "exchange" {
+		fields := map[string]string{}
+		for _, row := range f.rows {
+			if name, ok := strings.CutPrefix(row.key, exchangeFieldPrefix); ok {
+				if v := strings.TrimSpace(row.input.Value()); v != "" {
+					fields[name] = v
+				}
+			}
+		}
+		return SecretValue{Exchange: fields}
+	}
 	if f.chosen("kind") != "oauth" {
 		return SecretValue{Token: f.value("token")}
 	}
@@ -1506,6 +1563,24 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 // worth refusing rather than sending.
 func replacementValue(f *form, was Secret) (*SecretValue, string) {
 	value := formSecretValue(f)
+	if was.Type == "exchange" {
+		// Replaced whole, like an oauth credential: every field, or none.
+		var missing []string
+		if was.Exchange != nil {
+			for _, name := range was.Exchange.Fields {
+				if value.Exchange[name] == "" {
+					missing = append(missing, name)
+				}
+			}
+		}
+		switch {
+		case len(value.Exchange) == 0:
+			return nil, ""
+		case len(missing) > 0:
+			return nil, "replacing it means every field: " + strings.Join(missing, ", ") + " too, since the stored ones cannot be read back"
+		}
+		return &value, ""
+	}
 	if was.Type != "oauth" {
 		if value.Token == "" {
 			return nil, ""

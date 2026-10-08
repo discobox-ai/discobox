@@ -173,7 +173,7 @@ const (
 // judgeRejection decides what a refused credential means, renewing it first
 // where renewing is possible.
 func (s *Service) judgeRejection(ctx context.Context, secret *model.Secret) verdict {
-	if secret.Type != model.SecretTypeOAuth {
+	if !renews(secret.Type) {
 		// An API key is what was stored, and what was stored was refused.
 		return verdict(model.SecretRejectionReasonUnrefreshable)
 	}
@@ -182,7 +182,7 @@ func (s *Service) judgeRejection(ctx context.Context, secret *model.Secret) verd
 		// The renewal is not the answer, whatever the token endpoint says.
 		return verdict(model.SecretRejectionReasonRejectedAfterRefresh)
 	}
-	switch s.forceRefreshOAuth(ctx, secret) {
+	switch s.forceRenew(ctx, secret) {
 	case renewalRotated:
 		s.noteRenewal(secret.ID)
 		return verdictRecovered

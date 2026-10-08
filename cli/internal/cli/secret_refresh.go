@@ -63,7 +63,7 @@ this says what it would run and stops. --value gives the value instead;
 			}
 			body := &apimodel.RefreshSecretBody{}
 			if cmd.Flags().Changed("value") {
-				entered, err := enteredRefreshValue(value, cmd.InOrStdin())
+				entered, err := enteredValue("--value", value, cmd.InOrStdin())
 				if err != nil {
 					return err
 				}
@@ -108,12 +108,12 @@ this says what it would run and stops. --value gives the value instead;
 	return cmd
 }
 
-// enteredRefreshValue is the value --value names: itself, or stdin's first
+// enteredValue is the value a flag such as --value names: itself, or stdin's first
 // line for "-".
-func enteredRefreshValue(flag string, stdin io.Reader) (string, error) {
+func enteredValue(name, flag string, stdin io.Reader) (string, error) {
 	if flag != "-" {
 		if strings.TrimSpace(flag) == "" {
-			return "", fmt.Errorf("--value is empty")
+			return "", fmt.Errorf("%s is empty", name)
 		}
 		return strings.TrimSpace(flag), nil
 	}

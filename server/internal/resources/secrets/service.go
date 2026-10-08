@@ -32,9 +32,10 @@ const defaultMaxGrantTTLSeconds = 3600
 
 type Service struct {
 	store *store.Store
-	// oauthRefresh collapses concurrent resolves of the same OAuth secret onto a
-	// single upstream token refresh, so a rotating refresh token is spent once.
-	oauthRefresh singleflight.Group
+	// renewing collapses concurrent resolves of the same OAuth or exchange
+	// secret onto a single upstream renewal, so a rotating refresh token is
+	// spent once.
+	renewing singleflight.Group
 	// renewals is when a rejection last forced a renewal of each credential,
 	// which bounds how often a refused credential may spend a refresh token.
 	// See renewedRecently.
@@ -72,6 +73,7 @@ func (s *Service) ListSecrets(ctx context.Context, projectID string) ([]model.Se
 	}
 	for i := range secrets {
 		s.describeOAuth(ctx, &secrets[i])
+		s.describeExchange(ctx, &secrets[i])
 		describeStaleness(&secrets[i])
 		withholdRenewalFromSandbox(ctx, &secrets[i])
 	}
@@ -180,6 +182,16 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 			return nil, err
 		}
 	}
+	if sec.ExchangeRecipe, err = exchangeRecipe(ctx, secretType, sec.Host, input.Exchange); err != nil {
+		return nil, err
+	}
+	if sec.Type == model.SecretTypeExchange {
+		// Exchanged before it is stored, so a key the endpoint refuses is
+		// never stored (ADR 26-10-08-452 §3).
+		if sec.EncryptedValue, err = firstExchange(ctx, sec, input.Value); err != nil {
+			return nil, err
+		}
+	}
 	if err := createLifetime(input).apply(sec, true); err != nil {
 		return nil, err
 	}
@@ -197,6 +209,7 @@ func (s *Service) GetSecret(ctx context.Context, projectID, secretID string) (*m
 		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	s.describeOAuth(ctx, sec)
+	s.describeExchange(ctx, sec)
 	describeStaleness(sec)
 	withholdRenewalFromSandbox(ctx, sec)
 	return sec, nil
@@ -244,10 +257,32 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	if err := updateLifetime(input).apply(sec, input.Value.IsSet()); err != nil {
 		return nil, err
 	}
+	// A recipe says where a stored key is sent, so it changes only with the
+	// key beside it: pointing a stored key at a new endpoint would hand it to
+	// whoever runs that endpoint. A new binding is held to the recipe too.
+	recipe, err := exchangeRecipe(ctx, sec.Type, sec.Host, input.Exchange)
+	switch {
+	case err != nil:
+		return nil, err
+	case recipe != nil && !input.Value.IsSet():
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"a new exchange recipe is given with the value it exchanges: the stored fields are not sent anywhere new")
+	case recipe != nil:
+		sec.ExchangeRecipe = recipe
+	case sec.ExchangeRecipe != nil && input.Host.IsSet():
+		if err := checkRecipe(sec.ExchangeRecipe, sec.Host); err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		}
+	}
 	if valueVal, ok := input.Value.Get(); ok {
 		valueBytes, err := marshalSecretValue(valueVal)
 		if err != nil {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
+		}
+		if sec.Type == model.SecretTypeExchange {
+			if valueBytes, err = firstExchange(ctx, sec, valueVal); err != nil {
+				return nil, err
+			}
 		}
 		sec.EncryptedValue = valueBytes
 	}
@@ -441,6 +476,13 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if bindTo != nil && isGateSecret(secret) {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
 				fmt.Sprintf("%s is a gate, and its host is where the pool admits the discobox API", secret.WellKnownID))
+		}
+		// An exchange secret's binding is where its key may be sent, which
+		// UpdateSecret holds to the recipe; an approval is no way around it.
+		if bindTo != nil && secret.ExchangeRecipe != nil {
+			if err := checkRecipe(secret.ExchangeRecipe, *bindTo); err != nil {
+				return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+			}
 		}
 		// A discobox answering the inbox approves with the secret as it is:
 		// its role does not change secrets, and an approval is not a way
@@ -691,15 +733,15 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 			return nil, fmt.Errorf("decrypt secret: %w", err)
 		}
 		expiresAt := grant.ExpiresAt
-		if secret.Type == model.SecretTypeOAuth {
-			// Refresh a near-expired access token before handing it out, and cap the
+		if renews(secret.Type) {
+			// Renew a near-expired token before handing it out, and cap the
 			// cache lifetime the proxy honors by the token's own expiry so it
-			// re-resolves — and re-refreshes — as the token ages out.
-			val, err = s.ensureFreshOAuth(ctx, secret, val)
+			// re-resolves — and renews again — as the token ages out.
+			val, err = s.ensureFresh(ctx, secret, val)
 			if err != nil {
 				return nil, err
 			}
-			expiresAt = oauthResolutionExpiry(grant.ExpiresAt, val)
+			expiresAt = tokenResolutionExpiry(grant.ExpiresAt, val)
 		}
 		if secret.Renewable() {
 			expiresAt = s.renewableResolution(ctx, secret, sandbox.ID, grant.ExpiresAt)
@@ -1068,7 +1110,7 @@ func checkOAuthValue(secretType string, val apigen.SecretValue) error {
 }
 
 func validSecretType(t string) bool {
-	return t == model.SecretTypeToken || t == model.SecretTypeOAuth
+	return t == model.SecretTypeToken || t == model.SecretTypeOAuth || t == model.SecretTypeExchange
 }
 
 // isGenerationConflict reports whether err is the store's optimistic-concurrency

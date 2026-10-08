@@ -395,23 +395,26 @@ model in the handlers over this resource's `ListSecretRequests` and
 `ListTrustRequests`: one call per server per beat, each item answered on its
 own resource's routes.
 
-## Two types, both doing work
+## Three types, all doing work
 
-A secret is a **token** or an **oauth** credential, and nothing else.
+A secret is a **token**, an **oauth** credential, or an **exchange** credential,
+and nothing else.
 
 `token` is one opaque string, not named after an HTTP scheme: the proxy swaps
 the value into whatever header the sandbox put it in — `x-api-key`,
 `PRIVATE-TOKEN`, `Authorization` — so a name like `bearer` would state a
 requirement nothing enforces. `oauth` is a token that rotates, and the
-distinction is load-bearing: `ensureFreshOAuth` refreshes a near-expired access
+distinction is load-bearing: `ensureFresh` refreshes a near-expired access
 token on resolve and the resolution's expiry is capped by the token's own
-(ADR 0011). Both swap identically, because an OAuth secret's current access
-token lives in the same field.
+(ADR 0011). `exchange` is fields a person stores, such as an API key, that the
+server trades for a short-lived token (ADR 26-10-08-452; see
+[Exchange](#exchange)). All three swap identically, because the current token
+of each lives in the same field.
 
 There is no username/password or private-key type: cleartext leaves only
 through `ResolveSandboxSecret`, which emits `Value.Token`, so such a credential
 has no path into a sandbox. `migrateSecretTypes` (in `internal/database`'s
-`DB.Migrate`, at every startup) holds stored data to the two types: it renames
+`DB.Migrate`, at every startup) holds stored data to these types: it renames
 `bearer` rows to `token` and deletes `git` and `ssh` ones with the grants,
 requests, and bindings standing on them. The API validates the enum on the way
 out as well as in, so one row left behind would fail to serialize and take the
@@ -679,3 +682,44 @@ before the field existed was refreshed that way. The encoding is recorded at
 capture and never guessed at refresh time: a refresh token rotates on use, so a
 request retried in the other encoding may be spending a token the first attempt
 already spent. See ADR 0127 §3.
+
+## Exchange
+
+An exchange credential's renewal is OAuth's with a different request
+(ADR 26-10-08-452). `renew.go` owns what the two share: renewal on resolve
+within `tokenRenewSkew`, one renewal per secret at a time (`renewing`), the
+`updated_at` guard, the resolution's expiry capped by the token's own, the
+token on hand served when a renewal fails, and `forceRenew` on a rejection.
+`oauth.go` makes OAuth's refresh request; `exchange.go` makes the exchange, by
+the recipe `recipe.go` reads.
+
+- **The recipe is the secret's** (`Secret.ExchangeRecipe`, a column, shown on
+  read as `exchange.recipe`): the https endpoint, the body and headers built
+  from the stored fields, and where the token and its expiry are in the
+  answer. The fields themselves are sealed in the value.
+- **A key goes only where its token may go** (`checkRecipe`): the URL's host
+  sits inside the secret's binding, which an exchange secret must have, and a
+  new binding — by an update or by an approval — is held to the recipe.
+  `tokenHTTPClient` follows no redirect, since a 307 would re-send the key to
+  whatever it names.
+- **An exchange never reaches an internal address** (`internalAddress`):
+  loopback, private, CGNAT, link-local, unspecified, multicast. The recipe's
+  host is resolved and refused at create and at every exchange, and
+  `exchangeClient` checks the address the direct dial connects to, so a name
+  that resolves inward the second time is still refused; a dial to the
+  configured proxy is left alone. A recipe is somebody's to write, and the
+  server's own network position is not theirs.
+- **A recipe changes only with the key** (`UpdateSecret`), so a stored key is
+  never pointed at a new endpoint, and only a person gives one
+  (`exchangeRecipe` refuses a sandbox principal).
+- **Stored fields are exchanged before they are stored** (`firstExchange`), on
+  create and on a replaced value: a key the endpoint refuses is a 400 to the
+  person storing it, and the sentinel takes the token's shape, not the key's.
+- **Nothing is spent by an exchange**, unlike a refresh token, so one may be
+  repeated; the singleflight still keeps concurrent resolves to one exchange.
+  A token whose lifetime neither the answer nor the token states is trusted
+  for `exchangeUnknownLifetime`, not renewed on every resolve.
+- **A 429 is not a refusal**, for an exchange or an OAuth refresh
+  (`refusedStatus`): it says nothing about the credential.
+- **A refused exchange is `refresh-failed`**: the key is dead and a person
+  replaces it. A refused token whose exchange then succeeds is recovered.

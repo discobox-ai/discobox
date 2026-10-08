@@ -4660,6 +4660,8 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                exchange:
+                    "$ref": '#/components/schemas/ExchangeRecipe'
                 maxGrantTTLSeconds:
                     description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
                     format: int64
@@ -4693,6 +4695,7 @@ components:
                     enum:
                         - token
                         - oauth
+                        - exchange
                     type: string
                 value:
                     $ref: '#/components/schemas/SecretValue'
@@ -4771,6 +4774,7 @@ components:
                     enum:
                         - token
                         - oauth
+                        - exchange
                     type: string
             required:
                 - type
@@ -4815,6 +4819,7 @@ components:
                     enum:
                         - token
                         - oauth
+                        - exchange
                     type: string
                 host:
                     description: Destination host that refused the credential
@@ -4928,6 +4933,8 @@ components:
                     type: string
                 oauth:
                     "$ref": '#/components/schemas/SecretOAuth'
+                exchange:
+                    "$ref": '#/components/schemas/SecretExchange'
                 refreshCommand:
                     description: The command a person's client may run to produce a new value (ADR 26-09-25-122). Advice to the client; the server never runs it.
                     items:
@@ -4958,6 +4965,7 @@ components:
                     enum:
                         - token
                         - oauth
+                        - exchange
                     type: string
                 wellKnownId:
                     description: The well-known credential this secret fulfills, such as com.github.api. A request for that ID resolves to this secret. Absent on a secret nothing asks for by ID.
@@ -5314,6 +5322,7 @@ components:
                     enum:
                         - token
                         - oauth
+                        - exchange
                     type: string
                 wellKnownId:
                     description: The well-known credential the agent asked for by ID. Approving it binds the secret that fulfills that ID.
@@ -5343,6 +5352,11 @@ components:
                 clientId:
                     description: OAuth client the grant belongs to (type=oauth)
                     type: string
+                exchange:
+                    additionalProperties:
+                        type: string
+                    description: What an exchange secret trades for its token, by the field names its recipe declares, such as api_key (type=exchange; ADR 26-10-08-452). Sealed with the value, never returned.
+                    type: object
                 clientSecret:
                     description: The OAuth client's secret, for a confidential client, which must authenticate on refresh as well as on the code exchange (RFC 6749 §6). Sent with each refresh, sealed with the value, never returned (type=oauth). Absent for a public client.
                     type: string
@@ -5359,7 +5373,7 @@ components:
                     description: The plan or account kind the grant belongs to, when the authorization server names one
                     type: string
                 token:
-                    description: The credential itself (type=token), or an OAuth access token
+                    description: The credential itself (type=token), or an OAuth access token. An exchange secret's token is the server's to obtain, and one given is ignored.
                     type: string
                 tokenRequestEncoding:
                     description: How the refresh request's body is encoded (type=oauth). Absent means JSON; form is application/x-www-form-urlencoded, as RFC 6749 defines it.
@@ -5397,6 +5411,56 @@ components:
                     description: Where the access token is renewed
                     type: string
             type: object
+        ExchangeRecipe:
+            additionalProperties: false
+            description: How an exchange secret's stored fields are traded for a short-lived token (ADR 26-10-08-452). A POST to url, its body and headers templated from the stored fields as {name}, and the token read out of the JSON answer. On create it is required for type=exchange; on update it is replaced only with the value beside it. Its host must sit inside the secret's host binding, so a key is only ever sent where its token may go.
+            properties:
+                body:
+                    additionalProperties:
+                        type: string
+                    description: The request body, one string per key; {name} is replaced with the stored field of that name
+                    type: object
+                expiresAtPath:
+                    description: Dot-separated path to the token's expiry in the answer, as unix seconds. With neither this nor expiresInPath, a JWT's exp claim is read.
+                    type: string
+                expiresInPath:
+                    description: Dot-separated path to the token's lifetime in the answer, in seconds
+                    type: string
+                fields:
+                    description: The fields a person stores, by name, such as api_key. Each must be used by the body or a header.
+                    items:
+                        type: string
+                    type: array
+                form:
+                    description: Send the body form-encoded rather than as JSON
+                    type: boolean
+                header:
+                    additionalProperties:
+                        type: string
+                    description: Request headers, templated like the body
+                    type: object
+                tokenPath:
+                    description: Dot-separated path to the token in the JSON answer, such as token or auth.client_token
+                    type: string
+                url:
+                    description: The https token endpoint the request is POSTed to
+                    type: string
+            required:
+                - url
+                - fields
+                - tokenPath
+            type: object
+        SecretExchange:
+            additionalProperties: false
+            description: What an exchange credential is, without being it (ADR 26-10-08-452). Never the stored fields and never the token.
+            properties:
+                recipe:
+                    "$ref": '#/components/schemas/ExchangeRecipe'
+                tokenExpiresAt:
+                    description: When the current token goes stale, unix milliseconds; absent when unknown
+                    format: int64
+                    type: integer
+            type: object
         UpdateSecretBody:
             additionalProperties: false
             properties:
@@ -5406,6 +5470,8 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                exchange:
+                    "$ref": '#/components/schemas/ExchangeRecipe'
                 maxGrantTTLSeconds:
                     description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
                     format: int64

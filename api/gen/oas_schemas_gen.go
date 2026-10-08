@@ -1608,7 +1608,8 @@ func (s *CreateSandboxTrustRequestBody) SetUses(val []SecretUse) {
 // Ref: #/components/schemas/CreateSecretBody
 type CreateSecretBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
+	Schema   OptURI            `json:"$schema"`
+	Exchange OptExchangeRecipe `json:"exchange"`
 	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
 	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Template the sentinels for this secret are minted from: literal text with {charset:length} tokens,
@@ -1643,6 +1644,11 @@ type CreateSecretBody struct {
 // GetSchema returns the value of Schema.
 func (s *CreateSecretBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetExchange returns the value of Exchange.
+func (s *CreateSecretBody) GetExchange() OptExchangeRecipe {
+	return s.Exchange
 }
 
 // GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
@@ -1700,6 +1706,11 @@ func (s *CreateSecretBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetExchange sets the value of Exchange.
+func (s *CreateSecretBody) SetExchange(val OptExchangeRecipe) {
+	s.Exchange = val
+}
+
 // SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
 func (s *CreateSecretBody) SetMaxGrantTTLSeconds(val OptInt64) {
 	s.MaxGrantTTLSeconds = val
@@ -1754,8 +1765,9 @@ func (s *CreateSecretBody) SetWellKnownId(val OptString) {
 type CreateSecretBodyType string
 
 const (
-	CreateSecretBodyTypeToken CreateSecretBodyType = "token"
-	CreateSecretBodyTypeOAuth CreateSecretBodyType = "oauth"
+	CreateSecretBodyTypeToken    CreateSecretBodyType = "token"
+	CreateSecretBodyTypeOAuth    CreateSecretBodyType = "oauth"
+	CreateSecretBodyTypeExchange CreateSecretBodyType = "exchange"
 )
 
 // AllValues returns all CreateSecretBodyType values.
@@ -1763,6 +1775,7 @@ func (CreateSecretBodyType) AllValues() []CreateSecretBodyType {
 	return []CreateSecretBodyType{
 		CreateSecretBodyTypeToken,
 		CreateSecretBodyTypeOAuth,
+		CreateSecretBodyTypeExchange,
 	}
 }
 
@@ -1772,6 +1785,8 @@ func (s CreateSecretBodyType) MarshalText() ([]byte, error) {
 	case CreateSecretBodyTypeToken:
 		return []byte(s), nil
 	case CreateSecretBodyTypeOAuth:
+		return []byte(s), nil
+	case CreateSecretBodyTypeExchange:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -1786,6 +1801,9 @@ func (s *CreateSecretBodyType) UnmarshalText(data []byte) error {
 		return nil
 	case CreateSecretBodyTypeOAuth:
 		*s = CreateSecretBodyTypeOAuth
+		return nil
+	case CreateSecretBodyTypeExchange:
+		*s = CreateSecretBodyTypeExchange
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -2049,8 +2067,9 @@ func (s *CreateSecretRequestBody) SetType(val CreateSecretRequestBodyType) {
 type CreateSecretRequestBodyType string
 
 const (
-	CreateSecretRequestBodyTypeToken CreateSecretRequestBodyType = "token"
-	CreateSecretRequestBodyTypeOAuth CreateSecretRequestBodyType = "oauth"
+	CreateSecretRequestBodyTypeToken    CreateSecretRequestBodyType = "token"
+	CreateSecretRequestBodyTypeOAuth    CreateSecretRequestBodyType = "oauth"
+	CreateSecretRequestBodyTypeExchange CreateSecretRequestBodyType = "exchange"
 )
 
 // AllValues returns all CreateSecretRequestBodyType values.
@@ -2058,6 +2077,7 @@ func (CreateSecretRequestBodyType) AllValues() []CreateSecretRequestBodyType {
 	return []CreateSecretRequestBodyType{
 		CreateSecretRequestBodyTypeToken,
 		CreateSecretRequestBodyTypeOAuth,
+		CreateSecretRequestBodyTypeExchange,
 	}
 }
 
@@ -2067,6 +2087,8 @@ func (s CreateSecretRequestBodyType) MarshalText() ([]byte, error) {
 	case CreateSecretRequestBodyTypeToken:
 		return []byte(s), nil
 	case CreateSecretRequestBodyTypeOAuth:
+		return []byte(s), nil
+	case CreateSecretRequestBodyTypeExchange:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2081,6 +2103,9 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 		return nil
 	case CreateSecretRequestBodyTypeOAuth:
 		*s = CreateSecretRequestBodyTypeOAuth
+		return nil
+	case CreateSecretRequestBodyTypeExchange:
+		*s = CreateSecretRequestBodyTypeExchange
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -3159,6 +3184,136 @@ func (*ErrorResponseStatusCode) stopSandboxServiceRes()             {}
 func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()     {}
 func (*ErrorResponseStatusCode) updateSandboxAgentMetaRes()         {}
 func (*ErrorResponseStatusCode) waitSandboxExecRes()                {}
+
+// How an exchange secret's stored fields are traded for a short-lived token (ADR 26-10-08-452). A
+// POST to url, its body and headers templated from the stored fields as {name}, and the token read
+// out of the JSON answer. On create it is required for type=exchange; on update it is replaced only
+// with the value beside it. Its host must sit inside the secret's host binding, so a key is only
+// ever sent where its token may go.
+// Ref: #/components/schemas/ExchangeRecipe
+type ExchangeRecipe struct {
+	// The request body, one string per key; {name} is replaced with the stored field of that name.
+	Body OptExchangeRecipeBody `json:"body"`
+	// Dot-separated path to the token's expiry in the answer, as unix seconds. With neither this nor
+	// expiresInPath, a JWT's exp claim is read.
+	ExpiresAtPath OptString `json:"expiresAtPath"`
+	// Dot-separated path to the token's lifetime in the answer, in seconds.
+	ExpiresInPath OptString `json:"expiresInPath"`
+	// The fields a person stores, by name, such as api_key. Each must be used by the body or a header.
+	Fields []string `json:"fields"`
+	// Send the body form-encoded rather than as JSON.
+	Form OptBool `json:"form"`
+	// Request headers, templated like the body.
+	Header OptExchangeRecipeHeader `json:"header"`
+	// Dot-separated path to the token in the JSON answer, such as token or auth.client_token.
+	TokenPath string `json:"tokenPath"`
+	// The https token endpoint the request is POSTed to.
+	URL string `json:"url"`
+}
+
+// GetBody returns the value of Body.
+func (s *ExchangeRecipe) GetBody() OptExchangeRecipeBody {
+	return s.Body
+}
+
+// GetExpiresAtPath returns the value of ExpiresAtPath.
+func (s *ExchangeRecipe) GetExpiresAtPath() OptString {
+	return s.ExpiresAtPath
+}
+
+// GetExpiresInPath returns the value of ExpiresInPath.
+func (s *ExchangeRecipe) GetExpiresInPath() OptString {
+	return s.ExpiresInPath
+}
+
+// GetFields returns the value of Fields.
+func (s *ExchangeRecipe) GetFields() []string {
+	return s.Fields
+}
+
+// GetForm returns the value of Form.
+func (s *ExchangeRecipe) GetForm() OptBool {
+	return s.Form
+}
+
+// GetHeader returns the value of Header.
+func (s *ExchangeRecipe) GetHeader() OptExchangeRecipeHeader {
+	return s.Header
+}
+
+// GetTokenPath returns the value of TokenPath.
+func (s *ExchangeRecipe) GetTokenPath() string {
+	return s.TokenPath
+}
+
+// GetURL returns the value of URL.
+func (s *ExchangeRecipe) GetURL() string {
+	return s.URL
+}
+
+// SetBody sets the value of Body.
+func (s *ExchangeRecipe) SetBody(val OptExchangeRecipeBody) {
+	s.Body = val
+}
+
+// SetExpiresAtPath sets the value of ExpiresAtPath.
+func (s *ExchangeRecipe) SetExpiresAtPath(val OptString) {
+	s.ExpiresAtPath = val
+}
+
+// SetExpiresInPath sets the value of ExpiresInPath.
+func (s *ExchangeRecipe) SetExpiresInPath(val OptString) {
+	s.ExpiresInPath = val
+}
+
+// SetFields sets the value of Fields.
+func (s *ExchangeRecipe) SetFields(val []string) {
+	s.Fields = val
+}
+
+// SetForm sets the value of Form.
+func (s *ExchangeRecipe) SetForm(val OptBool) {
+	s.Form = val
+}
+
+// SetHeader sets the value of Header.
+func (s *ExchangeRecipe) SetHeader(val OptExchangeRecipeHeader) {
+	s.Header = val
+}
+
+// SetTokenPath sets the value of TokenPath.
+func (s *ExchangeRecipe) SetTokenPath(val string) {
+	s.TokenPath = val
+}
+
+// SetURL sets the value of URL.
+func (s *ExchangeRecipe) SetURL(val string) {
+	s.URL = val
+}
+
+// The request body, one string per key; {name} is replaced with the stored field of that name.
+type ExchangeRecipeBody map[string]string
+
+func (s *ExchangeRecipeBody) init() ExchangeRecipeBody {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Request headers, templated like the body.
+type ExchangeRecipeHeader map[string]string
+
+func (s *ExchangeRecipeHeader) init() ExchangeRecipeHeader {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
 
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
@@ -8395,6 +8550,144 @@ func (o OptDateTime) Or(d time.Time) time.Time {
 	return d
 }
 
+// NewOptExchangeRecipe returns new OptExchangeRecipe with value set to v.
+func NewOptExchangeRecipe(v ExchangeRecipe) OptExchangeRecipe {
+	return OptExchangeRecipe{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptExchangeRecipe is optional ExchangeRecipe.
+type OptExchangeRecipe struct {
+	Value ExchangeRecipe
+	Set   bool
+}
+
+// IsSet returns true if OptExchangeRecipe was set.
+func (o OptExchangeRecipe) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptExchangeRecipe) Reset() {
+	var v ExchangeRecipe
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptExchangeRecipe) SetTo(v ExchangeRecipe) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptExchangeRecipe) Get() (v ExchangeRecipe, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptExchangeRecipe) Or(d ExchangeRecipe) ExchangeRecipe {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptExchangeRecipeBody returns new OptExchangeRecipeBody with value set to v.
+func NewOptExchangeRecipeBody(v ExchangeRecipeBody) OptExchangeRecipeBody {
+	return OptExchangeRecipeBody{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptExchangeRecipeBody is optional ExchangeRecipeBody.
+type OptExchangeRecipeBody struct {
+	Value ExchangeRecipeBody
+	Set   bool
+}
+
+// IsSet returns true if OptExchangeRecipeBody was set.
+func (o OptExchangeRecipeBody) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptExchangeRecipeBody) Reset() {
+	var v ExchangeRecipeBody
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptExchangeRecipeBody) SetTo(v ExchangeRecipeBody) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptExchangeRecipeBody) Get() (v ExchangeRecipeBody, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptExchangeRecipeBody) Or(d ExchangeRecipeBody) ExchangeRecipeBody {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptExchangeRecipeHeader returns new OptExchangeRecipeHeader with value set to v.
+func NewOptExchangeRecipeHeader(v ExchangeRecipeHeader) OptExchangeRecipeHeader {
+	return OptExchangeRecipeHeader{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptExchangeRecipeHeader is optional ExchangeRecipeHeader.
+type OptExchangeRecipeHeader struct {
+	Value ExchangeRecipeHeader
+	Set   bool
+}
+
+// IsSet returns true if OptExchangeRecipeHeader was set.
+func (o OptExchangeRecipeHeader) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptExchangeRecipeHeader) Reset() {
+	var v ExchangeRecipeHeader
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptExchangeRecipeHeader) SetTo(v ExchangeRecipeHeader) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptExchangeRecipeHeader) Get() (v ExchangeRecipeHeader, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptExchangeRecipeHeader) Or(d ExchangeRecipeHeader) ExchangeRecipeHeader {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptFloat64 returns new OptFloat64 with value set to v.
 func NewOptFloat64(v float64) OptFloat64 {
 	return OptFloat64{
@@ -12921,6 +13214,52 @@ func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
 	return d
 }
 
+// NewOptSecretExchange returns new OptSecretExchange with value set to v.
+func NewOptSecretExchange(v SecretExchange) OptSecretExchange {
+	return OptSecretExchange{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretExchange is optional SecretExchange.
+type OptSecretExchange struct {
+	Value SecretExchange
+	Set   bool
+}
+
+// IsSet returns true if OptSecretExchange was set.
+func (o OptSecretExchange) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretExchange) Reset() {
+	var v SecretExchange
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretExchange) SetTo(v SecretExchange) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretExchange) Get() (v SecretExchange, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretExchange) Or(d SecretExchange) SecretExchange {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSecretOAuth returns new OptSecretOAuth with value set to v.
 func NewOptSecretOAuth(v SecretOAuth) OptSecretOAuth {
 	return OptSecretOAuth{
@@ -13329,6 +13668,52 @@ func (o OptSecretValue) Get() (v SecretValue, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretValue) Or(d SecretValue) SecretValue {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretValueExchange returns new OptSecretValueExchange with value set to v.
+func NewOptSecretValueExchange(v SecretValueExchange) OptSecretValueExchange {
+	return OptSecretValueExchange{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretValueExchange is optional SecretValueExchange.
+type OptSecretValueExchange struct {
+	Value SecretValueExchange
+	Set   bool
+}
+
+// IsSet returns true if OptSecretValueExchange was set.
+func (o OptSecretValueExchange) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretValueExchange) Reset() {
+	var v SecretValueExchange
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretValueExchange) SetTo(v SecretValueExchange) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretValueExchange) Get() (v SecretValueExchange, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretValueExchange) Or(d SecretValueExchange) SecretValueExchange {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -23547,8 +23932,9 @@ type Secret struct {
 	// Optional host used to match requests (e.g. github.com).
 	Host OptString `json:"host"`
 	// Stable secret ID.
-	ID    string         `json:"id"`
-	OAuth OptSecretOAuth `json:"oauth"`
+	ID       string            `json:"id"`
+	OAuth    OptSecretOAuth    `json:"oauth"`
+	Exchange OptSecretExchange `json:"exchange"`
 	// The command a person's client may run to produce a new value (ADR 26-09-25-122). Advice to the
 	// client; the server never runs it.
 	RefreshCommand OptNilStringArray `json:"refreshCommand"`
@@ -23615,6 +24001,11 @@ func (s *Secret) GetID() string {
 // GetOAuth returns the value of OAuth.
 func (s *Secret) GetOAuth() OptSecretOAuth {
 	return s.OAuth
+}
+
+// GetExchange returns the value of Exchange.
+func (s *Secret) GetExchange() OptSecretExchange {
+	return s.Exchange
 }
 
 // GetRefreshCommand returns the value of RefreshCommand.
@@ -23707,6 +24098,11 @@ func (s *Secret) SetOAuth(val OptSecretOAuth) {
 	s.OAuth = val
 }
 
+// SetExchange sets the value of Exchange.
+func (s *Secret) SetExchange(val OptSecretExchange) {
+	s.Exchange = val
+}
+
 // SetRefreshCommand sets the value of RefreshCommand.
 func (s *Secret) SetRefreshCommand(val OptNilStringArray) {
 	s.RefreshCommand = val
@@ -23756,6 +24152,35 @@ func (*Secret) createSecretRes()  {}
 func (*Secret) getSecretRes()     {}
 func (*Secret) refreshSecretRes() {}
 func (*Secret) updateSecretRes()  {}
+
+// What an exchange credential is, without being it (ADR 26-10-08-452). Never the stored fields and
+// never the token.
+// Ref: #/components/schemas/SecretExchange
+type SecretExchange struct {
+	Recipe OptExchangeRecipe `json:"recipe"`
+	// When the current token goes stale, unix milliseconds; absent when unknown.
+	TokenExpiresAt OptInt64 `json:"tokenExpiresAt"`
+}
+
+// GetRecipe returns the value of Recipe.
+func (s *SecretExchange) GetRecipe() OptExchangeRecipe {
+	return s.Recipe
+}
+
+// GetTokenExpiresAt returns the value of TokenExpiresAt.
+func (s *SecretExchange) GetTokenExpiresAt() OptInt64 {
+	return s.TokenExpiresAt
+}
+
+// SetRecipe sets the value of Recipe.
+func (s *SecretExchange) SetRecipe(val OptExchangeRecipe) {
+	s.Recipe = val
+}
+
+// SetTokenExpiresAt sets the value of TokenExpiresAt.
+func (s *SecretExchange) SetTokenExpiresAt(val OptInt64) {
+	s.TokenExpiresAt = val
+}
 
 // Ref: #/components/schemas/SecretGrant
 type SecretGrant struct {
@@ -24715,8 +25140,9 @@ func (s *SecretRejectionReason) UnmarshalText(data []byte) error {
 type SecretRejectionSecretType string
 
 const (
-	SecretRejectionSecretTypeToken SecretRejectionSecretType = "token"
-	SecretRejectionSecretTypeOAuth SecretRejectionSecretType = "oauth"
+	SecretRejectionSecretTypeToken    SecretRejectionSecretType = "token"
+	SecretRejectionSecretTypeOAuth    SecretRejectionSecretType = "oauth"
+	SecretRejectionSecretTypeExchange SecretRejectionSecretType = "exchange"
 )
 
 // AllValues returns all SecretRejectionSecretType values.
@@ -24724,6 +25150,7 @@ func (SecretRejectionSecretType) AllValues() []SecretRejectionSecretType {
 	return []SecretRejectionSecretType{
 		SecretRejectionSecretTypeToken,
 		SecretRejectionSecretTypeOAuth,
+		SecretRejectionSecretTypeExchange,
 	}
 }
 
@@ -24733,6 +25160,8 @@ func (s SecretRejectionSecretType) MarshalText() ([]byte, error) {
 	case SecretRejectionSecretTypeToken:
 		return []byte(s), nil
 	case SecretRejectionSecretTypeOAuth:
+		return []byte(s), nil
+	case SecretRejectionSecretTypeExchange:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -24747,6 +25176,9 @@ func (s *SecretRejectionSecretType) UnmarshalText(data []byte) error {
 		return nil
 	case SecretRejectionSecretTypeOAuth:
 		*s = SecretRejectionSecretTypeOAuth
+		return nil
+	case SecretRejectionSecretTypeExchange:
+		*s = SecretRejectionSecretTypeExchange
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -25205,8 +25637,9 @@ func (s *SecretRequestStatus) UnmarshalText(data []byte) error {
 type SecretRequestType string
 
 const (
-	SecretRequestTypeToken SecretRequestType = "token"
-	SecretRequestTypeOAuth SecretRequestType = "oauth"
+	SecretRequestTypeToken    SecretRequestType = "token"
+	SecretRequestTypeOAuth    SecretRequestType = "oauth"
+	SecretRequestTypeExchange SecretRequestType = "exchange"
 )
 
 // AllValues returns all SecretRequestType values.
@@ -25214,6 +25647,7 @@ func (SecretRequestType) AllValues() []SecretRequestType {
 	return []SecretRequestType{
 		SecretRequestTypeToken,
 		SecretRequestTypeOAuth,
+		SecretRequestTypeExchange,
 	}
 }
 
@@ -25223,6 +25657,8 @@ func (s SecretRequestType) MarshalText() ([]byte, error) {
 	case SecretRequestTypeToken:
 		return []byte(s), nil
 	case SecretRequestTypeOAuth:
+		return []byte(s), nil
+	case SecretRequestTypeExchange:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -25238,6 +25674,9 @@ func (s *SecretRequestType) UnmarshalText(data []byte) error {
 	case SecretRequestTypeOAuth:
 		*s = SecretRequestTypeOAuth
 		return nil
+	case SecretRequestTypeExchange:
+		*s = SecretRequestTypeExchange
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
@@ -25247,8 +25686,9 @@ func (s *SecretRequestType) UnmarshalText(data []byte) error {
 type SecretType string
 
 const (
-	SecretTypeToken SecretType = "token"
-	SecretTypeOAuth SecretType = "oauth"
+	SecretTypeToken    SecretType = "token"
+	SecretTypeOAuth    SecretType = "oauth"
+	SecretTypeExchange SecretType = "exchange"
 )
 
 // AllValues returns all SecretType values.
@@ -25256,6 +25696,7 @@ func (SecretType) AllValues() []SecretType {
 	return []SecretType{
 		SecretTypeToken,
 		SecretTypeOAuth,
+		SecretTypeExchange,
 	}
 }
 
@@ -25265,6 +25706,8 @@ func (s SecretType) MarshalText() ([]byte, error) {
 	case SecretTypeToken:
 		return []byte(s), nil
 	case SecretTypeOAuth:
+		return []byte(s), nil
+	case SecretTypeExchange:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -25279,6 +25722,9 @@ func (s *SecretType) UnmarshalText(data []byte) error {
 		return nil
 	case SecretTypeOAuth:
 		*s = SecretTypeOAuth
+		return nil
+	case SecretTypeExchange:
+		*s = SecretTypeExchange
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -25324,6 +25770,9 @@ type SecretValue struct {
 	AccessTokenExpiresAt OptInt64 `json:"accessTokenExpiresAt"`
 	// OAuth client the grant belongs to (type=oauth).
 	ClientId OptString `json:"clientId"`
+	// What an exchange secret trades for its token, by the field names its recipe declares, such as
+	// api_key (type=exchange; ADR 26-10-08-452). Sealed with the value, never returned.
+	Exchange OptSecretValueExchange `json:"exchange"`
 	// The OAuth client's secret, for a confidential client, which must authenticate on refresh as well
 	// as on the code exchange (RFC 6749 §6). Sent with each refresh, sealed with the value, never
 	// returned (type=oauth). Absent for a public client.
@@ -25335,7 +25784,8 @@ type SecretValue struct {
 	Scopes OptNilStringArray `json:"scopes"`
 	// The plan or account kind the grant belongs to, when the authorization server names one.
 	SubscriptionType OptString `json:"subscriptionType"`
-	// The credential itself (type=token), or an OAuth access token.
+	// The credential itself (type=token), or an OAuth access token. An exchange secret's token is the
+	// server's to obtain, and one given is ignored.
 	Token OptString `json:"token"`
 	// How the refresh request's body is encoded (type=oauth). Absent means JSON; form is
 	// application/x-www-form-urlencoded, as RFC 6749 defines it.
@@ -25352,6 +25802,11 @@ func (s *SecretValue) GetAccessTokenExpiresAt() OptInt64 {
 // GetClientId returns the value of ClientId.
 func (s *SecretValue) GetClientId() OptString {
 	return s.ClientId
+}
+
+// GetExchange returns the value of Exchange.
+func (s *SecretValue) GetExchange() OptSecretValueExchange {
+	return s.Exchange
 }
 
 // GetClientSecret returns the value of ClientSecret.
@@ -25399,6 +25854,11 @@ func (s *SecretValue) SetClientId(val OptString) {
 	s.ClientId = val
 }
 
+// SetExchange sets the value of Exchange.
+func (s *SecretValue) SetExchange(val OptSecretValueExchange) {
+	s.Exchange = val
+}
+
 // SetClientSecret sets the value of ClientSecret.
 func (s *SecretValue) SetClientSecret(val OptString) {
 	s.ClientSecret = val
@@ -25432,6 +25892,19 @@ func (s *SecretValue) SetTokenRequestEncoding(val OptSecretValueTokenRequestEnco
 // SetTokenUrl sets the value of TokenUrl.
 func (s *SecretValue) SetTokenUrl(val OptString) {
 	s.TokenUrl = val
+}
+
+// What an exchange secret trades for its token, by the field names its recipe declares, such as
+// api_key (type=exchange; ADR 26-10-08-452). Sealed with the value, never returned.
+type SecretValueExchange map[string]string
+
+func (s *SecretValueExchange) init() SecretValueExchange {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // How the refresh request's body is encoded (type=oauth). Absent means JSON; form is
@@ -26254,7 +26727,8 @@ func (s *UpdateSandboxProviderInstanceBody) SetName(val OptString) {
 // Ref: #/components/schemas/UpdateSecretBody
 type UpdateSecretBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
+	Schema   OptURI            `json:"$schema"`
+	Exchange OptExchangeRecipe `json:"exchange"`
 	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
 	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Template the sentinels for this secret are minted from: literal text with {charset:length} tokens,
@@ -26284,6 +26758,11 @@ type UpdateSecretBody struct {
 // GetSchema returns the value of Schema.
 func (s *UpdateSecretBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetExchange returns the value of Exchange.
+func (s *UpdateSecretBody) GetExchange() OptExchangeRecipe {
+	return s.Exchange
 }
 
 // GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
@@ -26329,6 +26808,11 @@ func (s *UpdateSecretBody) GetValue() OptSecretValue {
 // SetSchema sets the value of Schema.
 func (s *UpdateSecretBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetExchange sets the value of Exchange.
+func (s *UpdateSecretBody) SetExchange(val OptExchangeRecipe) {
+	s.Exchange = val
 }
 
 // SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.

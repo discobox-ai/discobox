@@ -947,6 +947,12 @@ const (
 	// token expiry ride alongside it and never leave the control plane. The
 	// server refreshes the access token on resolve when it is near expiry.
 	SecretTypeOAuth = "oauth"
+	// SecretTypeExchange is fields a person stores, such as an API key, that
+	// the server trades at the token endpoint its recipe names for a
+	// short-lived token (ADR 26-10-08-452). The token lives in
+	// SecretValue.Token and is renewed like an OAuth access token; the stored
+	// fields never leave the control plane.
+	SecretTypeExchange = "exchange"
 
 	SecretRequestStatusPending  = "pending"
 	SecretRequestStatusApproved = "approved"
@@ -1027,7 +1033,7 @@ type Secret struct {
 	// an ambiguous match at the moment it matters, with a sentence rather than
 	// a constraint violation.
 	Name      string `gorm:"column:name;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"name" doc:"Secret name"`
-	Type      string `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:3" json:"type" doc:"Secret type" enum:"token,oauth"`
+	Type      string `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:3" json:"type" doc:"Secret type" enum:"token,oauth,exchange"`
 	Host      string `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"host,omitempty" doc:"Optional host used to match requests"`
 	UniqueKey string `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:5" json:"-"`
 	Anonymous bool   `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
@@ -1045,6 +1051,14 @@ type Secret struct {
 	// they were captured with it; this is filled in on read, so a caller can
 	// see what a credential is good for without the credential.
 	OAuth *SecretOAuth `gorm:"-" json:"oauth,omitempty" doc:"What an OAuth credential is; never the tokens themselves"`
+	// ExchangeRecipe is how an exchange credential's stored fields are traded
+	// for its token. It says where the key is sent, never what the key is, so
+	// it is a column rather than part of the sealed value; it is shown on
+	// read through Exchange.
+	ExchangeRecipe *ExchangeRecipe `gorm:"column:exchange_recipe;type:text;serializer:json" json:"-"`
+	// Exchange is the same for an exchange credential: its recipe and when
+	// the token goes stale. Filled in on read.
+	Exchange *SecretExchange `gorm:"-" json:"exchange,omitempty" doc:"What an exchange credential is; never the stored fields or the token"`
 	// MaxGrantTTL is the longest a grant on this credential may live, and the
 	// lifetime a grant takes when nobody names one. It is a ceiling rather
 	// than a suggestion: a longer grant, or a grant that never expires, is
@@ -1153,6 +1167,27 @@ type SecretOAuth struct {
 	Refreshable          bool     `json:"refreshable,omitempty" doc:"Whether it carries what it needs to renew itself"`
 }
 
+// SecretExchange is the non-secret half of an exchange credential.
+type SecretExchange struct {
+	Recipe         *ExchangeRecipe `json:"recipe,omitempty" doc:"How the stored fields are exchanged for a token"`
+	TokenExpiresAt int64           `json:"tokenExpiresAt,omitempty" doc:"When the current token goes stale, unix milliseconds"`
+}
+
+// ExchangeRecipe is a templated token request and a reading of its answer
+// (ADR 26-10-08-452): a POST to URL whose body and headers name the stored
+// fields as {name}, and the paths to the token and its expiry in the JSON that
+// comes back.
+type ExchangeRecipe struct {
+	URL           string            `json:"url"`
+	Form          bool              `json:"form,omitempty"`
+	Fields        []string          `json:"fields"`
+	Body          map[string]string `json:"body,omitempty"`
+	Header        map[string]string `json:"header,omitempty"`
+	TokenPath     string            `json:"tokenPath"`
+	ExpiresAtPath string            `json:"expiresAtPath,omitempty"`
+	ExpiresInPath string            `json:"expiresInPath,omitempty"`
+}
+
 // SecretValue holds the type-specific plaintext credential fields.
 // Only fields relevant to the secret type will be populated.
 type SecretValue struct {
@@ -1193,6 +1228,9 @@ type SecretValue struct {
 	// the same grant, not a new grant.
 	Scopes           []string `json:"scopes,omitempty"`
 	SubscriptionType string   `json:"subscriptionType,omitempty"`
+	// Exchange is what an exchange secret trades for Token, by the field
+	// names its recipe declares. It never leaves the server.
+	Exchange map[string]string `json:"exchange,omitempty"`
 }
 
 // SecretUse is one way a credential may be used: a human-readable sentence an
@@ -1226,7 +1264,7 @@ type SecretRequest struct {
 	ProjectID   string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_request_open_refresh,priority:1" json:"projectId" doc:"Project ID"`
 	RequestedBy string `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
 	SandboxID   string `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
-	Type        string `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"token,oauth"`
+	Type        string `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"token,oauth,exchange"`
 	// Hosts are where the credential is asked for (ADR 26-10-02-393 §1): the
 	// destination the proxy observed, for a reactive or refresh request, and
 	// every host an agent named, for one from the protocol.
@@ -1648,7 +1686,7 @@ type SecretRejection struct {
 	// column — the answer belongs to the secret and its bindings, and a copy
 	// here would be a second writer of it.
 	SecretName        string `gorm:"-" json:"secretName,omitempty" doc:"Name of the refused secret"`
-	SecretType        string `gorm:"-" json:"secretType,omitempty" doc:"Type of the refused secret" enum:"token,oauth"`
+	SecretType        string `gorm:"-" json:"secretType,omitempty" doc:"Type of the refused secret" enum:"token,oauth,exchange"`
 	EnvName           string `gorm:"-" json:"envName,omitempty" doc:"Environment variable the credential is delivered in, when one names it"`
 	HarnessConfigID   string `gorm:"-" json:"harnessConfigId,omitempty" doc:"Harness config whose configure flow owns this credential, when one does"`
 	HarnessConfigName string `gorm:"-" json:"harnessConfigName,omitempty" doc:"Display name of that harness config"`

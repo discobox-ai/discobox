@@ -3477,6 +3477,12 @@ func (s *CreateSecretBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Exchange.Set {
+			e.FieldStart("exchange")
+			s.Exchange.Encode(e)
+		}
+	}
+	{
 		if s.MaxGrantTTLSeconds.Set {
 			e.FieldStart("maxGrantTTLSeconds")
 			s.MaxGrantTTLSeconds.Encode(e)
@@ -3532,18 +3538,19 @@ func (s *CreateSecretBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSecretBody = [11]string{
+var jsonFieldsNameOfCreateSecretBody = [12]string{
 	0:  "$schema",
-	1:  "maxGrantTTLSeconds",
-	2:  "format",
-	3:  "host",
-	4:  "refreshCommand",
-	5:  "ttlSeconds",
-	6:  "valueExpiresAt",
-	7:  "name",
-	8:  "type",
-	9:  "value",
-	10: "wellKnownId",
+	1:  "exchange",
+	2:  "maxGrantTTLSeconds",
+	3:  "format",
+	4:  "host",
+	5:  "refreshCommand",
+	6:  "ttlSeconds",
+	7:  "valueExpiresAt",
+	8:  "name",
+	9:  "type",
+	10: "value",
+	11: "wellKnownId",
 }
 
 // Decode decodes CreateSecretBody from json.
@@ -3564,6 +3571,16 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "exchange":
+			if err := func() error {
+				s.Exchange.Reset()
+				if err := s.Exchange.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"exchange\"")
 			}
 		case "maxGrantTTLSeconds":
 			if err := func() error {
@@ -3626,7 +3643,7 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"valueExpiresAt\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -3638,7 +3655,7 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				if err := s.Type.Decode(d); err != nil {
 					return err
@@ -3648,7 +3665,7 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
 		case "value":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				if err := s.Value.Decode(d); err != nil {
 					return err
@@ -3677,8 +3694,8 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10000000,
-		0b00000011,
+		0b00000000,
+		0b00000111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -3744,6 +3761,8 @@ func (s *CreateSecretBodyType) Decode(d *jx.Decoder) error {
 		*s = CreateSecretBodyTypeToken
 	case CreateSecretBodyTypeOAuth:
 		*s = CreateSecretBodyTypeOAuth
+	case CreateSecretBodyTypeExchange:
+		*s = CreateSecretBodyTypeExchange
 	default:
 		*s = CreateSecretBodyType(v)
 	}
@@ -4238,6 +4257,8 @@ func (s *CreateSecretRequestBodyType) Decode(d *jx.Decoder) error {
 		*s = CreateSecretRequestBodyTypeToken
 	case CreateSecretRequestBodyTypeOAuth:
 		*s = CreateSecretRequestBodyTypeOAuth
+	case CreateSecretRequestBodyTypeExchange:
+		*s = CreateSecretRequestBodyTypeExchange
 	default:
 		*s = CreateSecretRequestBodyType(v)
 	}
@@ -5671,6 +5692,345 @@ func (s *ErrorResponse) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ErrorResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *ExchangeRecipe) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ExchangeRecipe) encodeFields(e *jx.Encoder) {
+	{
+		if s.Body.Set {
+			e.FieldStart("body")
+			s.Body.Encode(e)
+		}
+	}
+	{
+		if s.ExpiresAtPath.Set {
+			e.FieldStart("expiresAtPath")
+			s.ExpiresAtPath.Encode(e)
+		}
+	}
+	{
+		if s.ExpiresInPath.Set {
+			e.FieldStart("expiresInPath")
+			s.ExpiresInPath.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("fields")
+		e.ArrStart()
+		for _, elem := range s.Fields {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.Form.Set {
+			e.FieldStart("form")
+			s.Form.Encode(e)
+		}
+	}
+	{
+		if s.Header.Set {
+			e.FieldStart("header")
+			s.Header.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("tokenPath")
+		e.Str(s.TokenPath)
+	}
+	{
+		e.FieldStart("url")
+		e.Str(s.URL)
+	}
+}
+
+var jsonFieldsNameOfExchangeRecipe = [8]string{
+	0: "body",
+	1: "expiresAtPath",
+	2: "expiresInPath",
+	3: "fields",
+	4: "form",
+	5: "header",
+	6: "tokenPath",
+	7: "url",
+}
+
+// Decode decodes ExchangeRecipe from json.
+func (s *ExchangeRecipe) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ExchangeRecipe to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "body":
+			if err := func() error {
+				s.Body.Reset()
+				if err := s.Body.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"body\"")
+			}
+		case "expiresAtPath":
+			if err := func() error {
+				s.ExpiresAtPath.Reset()
+				if err := s.ExpiresAtPath.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"expiresAtPath\"")
+			}
+		case "expiresInPath":
+			if err := func() error {
+				s.ExpiresInPath.Reset()
+				if err := s.ExpiresInPath.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"expiresInPath\"")
+			}
+		case "fields":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				s.Fields = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Fields = append(s.Fields, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"fields\"")
+			}
+		case "form":
+			if err := func() error {
+				s.Form.Reset()
+				if err := s.Form.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"form\"")
+			}
+		case "header":
+			if err := func() error {
+				s.Header.Reset()
+				if err := s.Header.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"header\"")
+			}
+		case "tokenPath":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Str()
+				s.TokenPath = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tokenPath\"")
+			}
+		case "url":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Str()
+				s.URL = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"url\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ExchangeRecipe")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b11001000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfExchangeRecipe) {
+					name = jsonFieldsNameOfExchangeRecipe[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ExchangeRecipe) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ExchangeRecipe) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s ExchangeRecipeBody) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s ExchangeRecipeBody) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes ExchangeRecipeBody from json.
+func (s *ExchangeRecipeBody) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ExchangeRecipeBody to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ExchangeRecipeBody")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ExchangeRecipeBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ExchangeRecipeBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s ExchangeRecipeHeader) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s ExchangeRecipeHeader) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes ExchangeRecipeHeader from json.
+func (s *ExchangeRecipeHeader) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ExchangeRecipeHeader to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ExchangeRecipeHeader")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ExchangeRecipeHeader) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ExchangeRecipeHeader) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -16019,6 +16379,107 @@ func (s *OptDateTime) UnmarshalJSON(data []byte) error {
 	return s.Decode(d, json.DecodeDateTime)
 }
 
+// Encode encodes ExchangeRecipe as json.
+func (o OptExchangeRecipe) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes ExchangeRecipe from json.
+func (o *OptExchangeRecipe) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptExchangeRecipe to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptExchangeRecipe) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptExchangeRecipe) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ExchangeRecipeBody as json.
+func (o OptExchangeRecipeBody) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes ExchangeRecipeBody from json.
+func (o *OptExchangeRecipeBody) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptExchangeRecipeBody to nil")
+	}
+	o.Set = true
+	o.Value = make(ExchangeRecipeBody)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptExchangeRecipeBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptExchangeRecipeBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ExchangeRecipeHeader as json.
+func (o OptExchangeRecipeHeader) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes ExchangeRecipeHeader from json.
+func (o *OptExchangeRecipeHeader) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptExchangeRecipeHeader to nil")
+	}
+	o.Set = true
+	o.Value = make(ExchangeRecipeHeader)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptExchangeRecipeHeader) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptExchangeRecipeHeader) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes float64 as json.
 func (o OptFloat64) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -19226,6 +19687,39 @@ func (s *OptSandboxUser) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SecretExchange as json.
+func (o OptSecretExchange) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SecretExchange from json.
+func (o *OptSecretExchange) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretExchange to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretExchange) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretExchange) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SecretOAuth as json.
 func (o OptSecretOAuth) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -19519,6 +20013,40 @@ func (s OptSecretValue) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSecretValue) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretValueExchange as json.
+func (o OptSecretValueExchange) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SecretValueExchange from json.
+func (o *OptSecretValueExchange) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretValueExchange to nil")
+	}
+	o.Set = true
+	o.Value = make(SecretValueExchange)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretValueExchange) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretValueExchange) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -40244,6 +40772,12 @@ func (s *Secret) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Exchange.Set {
+			e.FieldStart("exchange")
+			s.Exchange.Encode(e)
+		}
+	}
+	{
 		if s.RefreshCommand.Set {
 			e.FieldStart("refreshCommand")
 			s.RefreshCommand.Encode(e)
@@ -40291,7 +40825,7 @@ func (s *Secret) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecret = [18]string{
+var jsonFieldsNameOfSecret = [19]string{
 	0:  "$schema",
 	1:  "anonymous",
 	2:  "createdAt",
@@ -40301,15 +40835,16 @@ var jsonFieldsNameOfSecret = [18]string{
 	6:  "host",
 	7:  "id",
 	8:  "oauth",
-	9:  "refreshCommand",
-	10: "staleAt",
-	11: "ttlSeconds",
-	12: "valueUpdatedAt",
-	13: "name",
-	14: "projectId",
-	15: "type",
-	16: "wellKnownId",
-	17: "updatedAt",
+	9:  "exchange",
+	10: "refreshCommand",
+	11: "staleAt",
+	12: "ttlSeconds",
+	13: "valueUpdatedAt",
+	14: "name",
+	15: "projectId",
+	16: "type",
+	17: "wellKnownId",
+	18: "updatedAt",
 }
 
 // Decode decodes Secret from json.
@@ -40417,6 +40952,16 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"oauth\"")
 			}
+		case "exchange":
+			if err := func() error {
+				s.Exchange.Reset()
+				if err := s.Exchange.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"exchange\"")
+			}
 		case "refreshCommand":
 			if err := func() error {
 				s.RefreshCommand.Reset()
@@ -40458,7 +41003,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"valueUpdatedAt\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -40470,7 +41015,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -40482,7 +41027,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"projectId\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				if err := s.Type.Decode(d); err != nil {
 					return err
@@ -40502,7 +41047,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"wellKnownId\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -40524,8 +41069,8 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b10001100,
-		0b11100000,
-		0b00000010,
+		0b11000000,
+		0b00000101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -40567,6 +41112,86 @@ func (s *Secret) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *Secret) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SecretExchange) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretExchange) encodeFields(e *jx.Encoder) {
+	{
+		if s.Recipe.Set {
+			e.FieldStart("recipe")
+			s.Recipe.Encode(e)
+		}
+	}
+	{
+		if s.TokenExpiresAt.Set {
+			e.FieldStart("tokenExpiresAt")
+			s.TokenExpiresAt.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSecretExchange = [2]string{
+	0: "recipe",
+	1: "tokenExpiresAt",
+}
+
+// Decode decodes SecretExchange from json.
+func (s *SecretExchange) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretExchange to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "recipe":
+			if err := func() error {
+				s.Recipe.Reset()
+				if err := s.Recipe.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"recipe\"")
+			}
+		case "tokenExpiresAt":
+			if err := func() error {
+				s.TokenExpiresAt.Reset()
+				if err := s.TokenExpiresAt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tokenExpiresAt\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretExchange")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretExchange) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretExchange) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -42108,6 +42733,8 @@ func (s *SecretRejectionSecretType) Decode(d *jx.Decoder) error {
 		*s = SecretRejectionSecretTypeToken
 	case SecretRejectionSecretTypeOAuth:
 		*s = SecretRejectionSecretTypeOAuth
+	case SecretRejectionSecretTypeExchange:
+		*s = SecretRejectionSecretTypeExchange
 	default:
 		*s = SecretRejectionSecretType(v)
 	}
@@ -42772,6 +43399,8 @@ func (s *SecretRequestType) Decode(d *jx.Decoder) error {
 		*s = SecretRequestTypeToken
 	case SecretRequestTypeOAuth:
 		*s = SecretRequestTypeOAuth
+	case SecretRequestTypeExchange:
+		*s = SecretRequestTypeExchange
 	default:
 		*s = SecretRequestType(v)
 	}
@@ -42812,6 +43441,8 @@ func (s *SecretType) Decode(d *jx.Decoder) error {
 		*s = SecretTypeToken
 	case SecretTypeOAuth:
 		*s = SecretTypeOAuth
+	case SecretTypeExchange:
+		*s = SecretTypeExchange
 	default:
 		*s = SecretType(v)
 	}
@@ -42967,6 +43598,12 @@ func (s *SecretValue) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Exchange.Set {
+			e.FieldStart("exchange")
+			s.Exchange.Encode(e)
+		}
+	}
+	{
 		if s.ClientSecret.Set {
 			e.FieldStart("clientSecret")
 			s.ClientSecret.Encode(e)
@@ -43010,16 +43647,17 @@ func (s *SecretValue) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretValue = [9]string{
+var jsonFieldsNameOfSecretValue = [10]string{
 	0: "accessTokenExpiresAt",
 	1: "clientId",
-	2: "clientSecret",
-	3: "refreshToken",
-	4: "scopes",
-	5: "subscriptionType",
-	6: "token",
-	7: "tokenRequestEncoding",
-	8: "tokenUrl",
+	2: "exchange",
+	3: "clientSecret",
+	4: "refreshToken",
+	5: "scopes",
+	6: "subscriptionType",
+	7: "token",
+	8: "tokenRequestEncoding",
+	9: "tokenUrl",
 }
 
 // Decode decodes SecretValue from json.
@@ -43049,6 +43687,16 @@ func (s *SecretValue) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"clientId\"")
+			}
+		case "exchange":
+			if err := func() error {
+				s.Exchange.Reset()
+				if err := s.Exchange.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"exchange\"")
 			}
 		case "clientSecret":
 			if err := func() error {
@@ -43140,6 +43788,62 @@ func (s *SecretValue) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SecretValue) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SecretValueExchange) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SecretValueExchange) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes SecretValueExchange from json.
+func (s *SecretValueExchange) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretValueExchange to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretValueExchange")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SecretValueExchange) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretValueExchange) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -44942,6 +45646,12 @@ func (s *UpdateSecretBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Exchange.Set {
+			e.FieldStart("exchange")
+			s.Exchange.Encode(e)
+		}
+	}
+	{
 		if s.MaxGrantTTLSeconds.Set {
 			e.FieldStart("maxGrantTTLSeconds")
 			s.MaxGrantTTLSeconds.Encode(e)
@@ -44991,16 +45701,17 @@ func (s *UpdateSecretBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateSecretBody = [9]string{
+var jsonFieldsNameOfUpdateSecretBody = [10]string{
 	0: "$schema",
-	1: "maxGrantTTLSeconds",
-	2: "format",
-	3: "host",
-	4: "refreshCommand",
-	5: "ttlSeconds",
-	6: "valueExpiresAt",
-	7: "name",
-	8: "value",
+	1: "exchange",
+	2: "maxGrantTTLSeconds",
+	3: "format",
+	4: "host",
+	5: "refreshCommand",
+	6: "ttlSeconds",
+	7: "valueExpiresAt",
+	8: "name",
+	9: "value",
 }
 
 // Decode decodes UpdateSecretBody from json.
@@ -45020,6 +45731,16 @@ func (s *UpdateSecretBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "exchange":
+			if err := func() error {
+				s.Exchange.Reset()
+				if err := s.Exchange.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"exchange\"")
 			}
 		case "maxGrantTTLSeconds":
 			if err := func() error {

@@ -1437,6 +1437,10 @@ type Secret struct {
 	// OAuth is what an oauth credential is, without being it. Nil for a token,
 	// and never the tokens themselves.
 	OAuth *SecretOAuth
+	// Exchange is the same for an exchange credential: where its recipe
+	// exchanges its fields, which fields it holds, and when its token goes
+	// stale (ADR 26-10-08-452).
+	Exchange *SecretExchange
 
 	// RefreshCommand is the command a token suggests for its own renewal,
 	// run only on a person's say-so (ADR 26-09-25-122). ValueTTL is how long a
@@ -1463,6 +1467,13 @@ type SecretOAuth struct {
 	SubscriptionType     string
 	AccessTokenExpiresAt time.Time
 	Refreshable          bool
+}
+
+// SecretExchange is the half of an exchange credential that can be shown.
+type SecretExchange struct {
+	URL            string
+	Fields         []string
+	TokenExpiresAt time.Time
 }
 
 // GrantUse is one approved way to use a credential, as the window shows it.
@@ -1568,6 +1579,10 @@ type SecretValue struct {
 	TokenURL     string
 	ClientID     string
 	Scopes       []string
+
+	// Exchange is what an exchange credential stores, by its recipe's field
+	// names; the server exchanges it for the token, so Token is then empty.
+	Exchange map[string]string
 }
 
 // SecretUpdate is what an edit says about a secret. Every field is a pointer
