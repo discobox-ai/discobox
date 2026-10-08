@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
@@ -51,6 +52,9 @@ type handler struct {
 	// sourceConverger clones the sources the applied document names (ADR
 	// 0126 §4), nil when the handler was built without one.
 	sourceConverger *sourceconverge.Converger
+	// runtimeConfigMu makes applying a delivered document and setting the
+	// idle timeout it carries one step (PutSandboxRuntimeConfig).
+	runtimeConfigMu sync.Mutex
 }
 
 type terminalStore interface {

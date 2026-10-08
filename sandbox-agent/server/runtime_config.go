@@ -42,12 +42,21 @@ func (h *handler) PutSandboxRuntimeConfig(ctx context.Context, req *sandboxapi.S
 	if err != nil {
 		return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
 	}
+	// Applying and setting the idle timeout are one step: two deliveries that
+	// overlap must not leave the older one's timeout in force under the newer
+	// one's revision, which the pool would then see as converged.
+	h.runtimeConfigMu.Lock()
+	defer h.runtimeConfigMu.Unlock()
 	held, err := h.runtimeConfig.Apply(context.WithoutCancel(ctx), doc)
 	switch {
 	case errors.Is(err, intake.ErrInvalid):
 		return nil, statusError{status: http.StatusUnprocessableEntity, message: err.Error()}
 	case errors.Is(err, intake.ErrConflict):
 		return nil, statusError{status: http.StatusConflict, message: err.Error()}
+	case errors.Is(err, intake.ErrActivation):
+		// The files are in place and what reads them is not up yet; the pool
+		// delivers again and the units are tried again.
+		return nil, statusError{status: http.StatusServiceUnavailable, message: err.Error()}
 	case err != nil:
 		return nil, err
 	}

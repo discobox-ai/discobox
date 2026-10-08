@@ -205,7 +205,7 @@ func (r *DockerSandboxRuntime) deliverRuntimeConfig(ctx context.Context, sandbox
 }
 
 // ConvergeRuntimeConfig delivers the sandbox's document when the revision its
-// agent reports applying is older than the one decided, deciding it again
+// agent reports applying is not the one decided, deciding it again
 // first so a changed idle timeout or renewed material reaches a sandbox that is
 // already running. It is how a delivery that did not land is repaired: the
 // pool converges on what the sandbox says it applied, never on having sent it.
@@ -230,7 +230,11 @@ func (r *DockerSandboxRuntime) ConvergeRuntimeConfig(ctx context.Context, sandbo
 	if err != nil {
 		return err
 	}
-	if applied >= doc.Revision {
+	// Only an equal revision is converged. A sandbox ahead of the record —
+	// the record lost, or the sandbox moved here with its kept document — is
+	// delivered to as well, so putRuntimeConfig can learn its revision, move
+	// the record past it, and deliver what the pool decides now.
+	if applied == doc.Revision {
 		return nil
 	}
 	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)

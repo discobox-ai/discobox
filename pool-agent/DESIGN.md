@@ -308,8 +308,9 @@ flowchart LR
   against the key in its bootstrap. It happens at the end of every boot, when a
   running sandbox's secrets change, and when a pushed source settles.
 - **Convergence**: the status poll reads `runtimeConfigRevision` and calls
-  `Runtime.ConvergeRuntimeConfig`, which decides again and delivers when the
-  sandbox is behind — one delivery per sandbox at a time, and none while
+  `Runtime.ConvergeRuntimeConfig`, which decides again and delivers whenever
+  the sandbox's revision is not the record's — behind, or ahead of a record that
+  fell behind it — one delivery per sandbox at a time, and none while
   anything holds the sandbox's power lock (a create, start, archive or delete
   ends in its own delivery or in no sandbox at all). The pool converges on what
   the sandbox says it applied, never on having sent it, so a transient failure
@@ -326,7 +327,13 @@ flowchart LR
   outright — the pool's token not accepted, the document refused (400, 401,
   403, 422) — cannot be fixed by a retry: the boot fails with
   `ErrRuntimeConfigUnsupported` or `ErrRuntimeConfigRefused` rather than the
-  pool staging files around it.
+  pool staging files around it, and the container is stopped, so the next
+  request meets the refusal again instead of a running sandbox that looks
+  healthy.
+- A pushed source's settle is finished by the next create whenever it is
+  outstanding on either side: not yet on disk, or on disk while the record has
+  not marked it delivered (a settle cut short between materializing and
+  recording).
 - A container built before its bootstrap named the pool's key carries no
   `discobox.runtime_config` label and takes no deliveries: while it runs, it
   runs on what was staged for it then, and a change decided for it is recorded

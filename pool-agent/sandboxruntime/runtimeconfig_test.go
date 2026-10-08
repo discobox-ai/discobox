@@ -156,6 +156,9 @@ type fakeIntake struct {
 }
 
 func (f *fakeIntake) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+		return // the sandbox agent's port probe, inside a discobox; see REVIEW.md
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.puts++

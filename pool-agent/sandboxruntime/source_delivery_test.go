@@ -125,6 +125,33 @@ func TestSettleDeliveredSourcesIsANoOpOnceEverythingIsInPlace(t *testing.T) {
 	}
 }
 
+// A settle that materialized a source and stopped before recording it — the
+// pool restarting between the two — is finished by the next create, rather
+// than leaving a checkout on disk that the sandbox is never told it has.
+func TestSettleFinishesASourceMaterializedButNotRecorded(t *testing.T) {
+	runtime := deliveryTestRuntime(t)
+	req := deliveryTestRequest()
+	if err := os.MkdirAll(runtime.sandboxRoot(deliveryTestSandboxID), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.recordRuntimeConfig(deliveryTestSandboxID, func(doc *sandboxconfig.RuntimeConfig) {
+		doc.Sources = runtimeSources(sandboxSources(linuxPaths, req), runtime.sourceMaterialized(deliveryTestSandboxID))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	markMaterialized(t, runtime, "primary")
+	if !runtime.recordAwaitsSources(deliveryTestSandboxID) {
+		t.Fatal("the record does not say the source is still awaited")
+	}
+	rebuild, err := runtime.settleDeliveredSources(context.Background(), &Sandbox{SandboxID: deliveryTestSandboxID, Status: StatusStopped}, req)
+	if err != nil || rebuild {
+		t.Fatalf("settle = %v, %v; want it finished without a rebuild", rebuild, err)
+	}
+	if runtime.recordAwaitsSources(deliveryTestSandboxID) {
+		t.Fatal("the settle did not record the source delivered")
+	}
+}
+
 // The sandbox reads a stated intent rather than inferring one: a source the
 // client still owes is marked on the document it boots from, and a source that
 // was materialized before the container existed is not.

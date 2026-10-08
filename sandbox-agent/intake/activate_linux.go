@@ -5,9 +5,17 @@ package intake
 import (
 	"context"
 	"fmt"
+	"net"
 	"os/exec"
 	"strings"
 	"time"
+)
+
+// listenWait bounds the wait for a started bridge to accept connections, and
+// listenPoll is how often it looks.
+const (
+	listenWait = 15 * time.Second
+	listenPoll = 50 * time.Millisecond
 )
 
 // unitActionTimeout bounds one systemctl call. A restart waits for the unit's
@@ -34,7 +42,31 @@ func applyUnitAction(ctx context.Context, action unitAction) error {
 	if err != nil {
 		return fmt.Errorf("systemctl %s %s: %w: %s", verb, action.unit.name, err, strings.TrimSpace(string(out)))
 	}
-	return nil
+	if action.stop || action.unit.listen == "" {
+		return nil
+	}
+	return awaitListening(ctx, action.unit.listen)
+}
+
+// awaitListening returns once address accepts a TCP connection, or fails after
+// listenWait. The connection is closed at once: the bridge is a forwarder, and
+// one that carries nothing is the cheapest proof it is up.
+func awaitListening(ctx context.Context, address string) error {
+	ctx, cancel := context.WithTimeout(ctx, listenWait)
+	defer cancel()
+	var dialer net.Dialer
+	for {
+		conn, err := dialer.DialContext(ctx, "tcp", address)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s did not start listening: %w", address, err)
+		case <-time.After(listenPoll):
+		}
+	}
 }
 
 func systemdUnitActive(ctx context.Context, unit string) bool {

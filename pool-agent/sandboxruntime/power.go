@@ -304,6 +304,23 @@ func (r *DockerSandboxRuntime) endBoot(sandboxID string, boot *sandboxBoot, err 
 	close(boot.done)
 }
 
+// stopRefusedSandbox stops a container whose agent refused the pool's
+// runtime-config delivery outright. It runs inside the boot, which the caller
+// holding the sandbox's power lock is waiting on, so it acts on the container
+// directly rather than through stopLocked.
+func (r *DockerSandboxRuntime) stopRefusedSandbox(ctx context.Context, sandboxID string, refusal error) {
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if err != nil {
+		return
+	}
+	slog.WarnContext(ctx, "stopping a sandbox that refuses the pool's runtime config", "sandboxId", sandboxID, "error", refusal)
+	r.publishSandboxState(ctx, sandboxID, StateStopping)
+	timeout := sandboxStopTimeoutSeconds
+	if _, err := r.client.ContainerStop(ctx, sb.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !cerrdefs.IsNotFound(err) {
+		slog.WarnContext(ctx, "stop a sandbox that refuses the pool's runtime config", "sandboxId", sandboxID, "error", err)
+	}
+}
+
 // errContainerRetired is a start that found the sandbox's container built from
 // a bootstrap with no pool key — a container from before the pool delivered
 // runtime config — and removed it, so the control plane rebuilds it onto one
@@ -366,6 +383,13 @@ func (r *DockerSandboxRuntime) finishBoot(ctx context.Context, sandboxID string,
 		err := r.waitForSandboxAgent(detached, sandboxID)
 		if err == nil {
 			err = logRuntimeConfigFailure(detached, sandboxID, r.deliverRuntimeConfig(detached, sandboxID, nil))
+			if err != nil {
+				// The agent will never take this pool's document. Left running,
+				// the container would read as a healthy sandbox to the next
+				// request once this boot's mark is gone; stopped, every start
+				// meets the refusal again and says so.
+				r.stopRefusedSandbox(detached, sandboxID, err)
+			}
 		}
 		r.endBoot(sandboxID, boot, err)
 	}()

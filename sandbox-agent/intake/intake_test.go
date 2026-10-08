@@ -424,10 +424,11 @@ func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 	next := testDocument(t, 2)
 	next.SecretEnv = map[string]string{"NEXT": "discobox-sentinel-next"}
 	next.Proxy.RegistryNamespace = ""
-	ops, _, err := in.plan(next, true)
+	body, tail, err := in.plan(next, true)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ops := append(body, tail...)
 	if err := stageAll(ops); err != nil {
 		t.Fatal(err)
 	}
@@ -576,32 +577,35 @@ func TestReadinessIsRemovedFirstAndPublishedLast(t *testing.T) {
 	in := &Intake{layout: layout, owner: testOwner, pool: testPool}
 	ready := filepath.Join(layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 
-	delivered, gate, err := in.plan(testDocument(t, 1), true)
+	body, tail, err := in.plan(testDocument(t, 1), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Removed first even when this document grants readiness: a marker left
 	// up from the previous one would be open over this one's files.
-	if delivered[0].path != ready || !delivered[0].remove {
-		t.Fatalf("first op = %+v, want the readiness removal", delivered[0])
+	if body[0].path != ready || !body[0].remove {
+		t.Fatalf("first op = %+v, want the readiness removal", body[0])
 	}
-	// Readiness follows everything, the state file included: a failed state
-	// rename rolls everything back, and must do so before any gate has opened.
-	if gate == nil || gate.path != ready || gate.remove {
-		t.Fatalf("gate = %+v, want the readiness write", gate)
+	// The tail says the delivery took — the state file, then readiness — and
+	// goes in only after the body's readers are started: a failed state rename
+	// rolls everything back before any gate has opened.
+	if len(tail) != 2 || tail[0].path != layout.StatePath || tail[1].path != ready || tail[1].remove {
+		t.Fatalf("tail = %+v, want the state file then the readiness write", tail)
 	}
-	if got := delivered[len(delivered)-1]; got.path != layout.StatePath {
-		t.Fatalf("last op before the gate = %+v, want the state file", got)
+	for _, o := range body {
+		if o.path == layout.StatePath {
+			t.Fatal("the state file is written before the readers are started")
+		}
 	}
 
 	pending := testDocument(t, 1)
 	pending.Sources[0].Delivered = false
-	ops, gate, err := in.plan(pending, true)
+	body, tail, err = in.plan(pending, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ops[0].path != ready || !ops[0].remove || gate != nil {
-		t.Fatalf("first op = %+v, gate %+v; want the readiness removal and no gate", ops[0], gate)
+	if body[0].path != ready || !body[0].remove || len(tail) != 1 || tail[0].path != layout.StatePath {
+		t.Fatalf("first op = %+v, tail %+v; want the readiness removal and only the state file after", body[0], tail)
 	}
 }
 
@@ -614,7 +618,7 @@ func TestApplyActivatesWhatChangedBeforeReadiness(t *testing.T) {
 	ready := filepath.Join(layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 	var calls [][]string
 	cfg := testConfig(layout, testOwner)
-	cfg.Activate = func(_ context.Context, changed []string) {
+	cfg.Activate = func(_ context.Context, changed []string) error {
 		if exists(ready) {
 			t.Error("activated after readiness was published")
 		}
@@ -622,6 +626,7 @@ func TestApplyActivatesWhatChangedBeforeReadiness(t *testing.T) {
 			t.Error("activated before the bridge config was in place")
 		}
 		calls = append(calls, changed)
+		return nil
 	}
 	in, err := Open(context.Background(), cfg)
 	if err != nil {
@@ -650,6 +655,84 @@ func TestApplyActivatesWhatChangedBeforeReadiness(t *testing.T) {
 		if actions := unitActions(layout.ProxyDir, call); len(actions) != 0 {
 			t.Fatalf("a secrets-only delivery touched units %+v", actions)
 		}
+	}
+}
+
+// A reader that will not start keeps the delivery from publishing readiness or
+// counting as applied, so the pool delivers again — and the next delivery,
+// though it changes no file, tries the same readers again.
+func TestAFailedActivationWithholdsReadinessUntilARetrySucceeds(t *testing.T) {
+	layout := testLayout(t)
+	ready := filepath.Join(layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
+	fail := true
+	var calls [][]string
+	cfg := testConfig(layout, testOwner)
+	cfg.Activate = func(_ context.Context, changed []string) error {
+		calls = append(calls, changed)
+		if fail {
+			return errors.New("discobox-trust-ca.service failed")
+		}
+		return nil
+	}
+	in, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := testDocument(t, 1)
+	if _, err := in.Apply(context.Background(), doc); !errors.Is(err, ErrActivation) {
+		t.Fatalf("Apply with a failing reader: %v, want ErrActivation", err)
+	}
+	if exists(ready) || in.Revision() != 0 {
+		t.Fatalf("a failed activation published readiness (%v) or applied revision %d", exists(ready), in.Revision())
+	}
+	fail = false
+	if _, err := in.Apply(context.Background(), doc); err != nil {
+		t.Fatalf("redelivering the same document: %v", err)
+	}
+	if !exists(ready) || in.Revision() != 1 {
+		t.Fatalf("after a successful retry: ready %v, revision %d", exists(ready), in.Revision())
+	}
+	if len(calls) != 2 || !containsPath(calls[1], filepath.Join(layout.ProxyDir, mitmCAFile)) {
+		t.Fatalf("activations = %v, want the retry to try the same readers though no file changed", calls)
+	}
+}
+
+// A delivery whose readers did not come up is not kept: an agent that restarts
+// before the pool redelivers neither reports that revision nor is ready, so the
+// pool delivers it again.
+func TestAFailedActivationIsNotKept(t *testing.T) {
+	layout := testLayout(t)
+	fail := false
+	cfg := testConfig(layout, testOwner)
+	cfg.Activate = func(context.Context, []string) error {
+		if fail {
+			return errors.New("discobox-proxy-bridge.service did not start listening")
+		}
+		return nil
+	}
+	in, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.Apply(context.Background(), testDocument(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	fail = true
+	if _, err := in.Apply(context.Background(), testDocument(t, 2)); !errors.Is(err, ErrActivation) {
+		t.Fatalf("Apply with a failing reader: %v, want ErrActivation", err)
+	}
+
+	// The body of revision 2 is in place, its keypair included, and the state
+	// file still names revision 1, whose certificate does not match that key:
+	// the restore refuses it. Either way the restarted agent does not claim
+	// revision 2 and publishes no readiness, so the pool delivers again.
+	fail = false
+	restarted, _ := Open(context.Background(), cfg)
+	if restarted.Revision() == 2 {
+		t.Fatal("after a restart the sandbox reports the revision whose readers never started")
+	}
+	if exists(filepath.Join(layout.ConfigDir, sandboxconfig.SourcesReadyFileName)) {
+		t.Fatal("after a restart the sandbox is ready over a delivery whose readers never started")
 	}
 }
 

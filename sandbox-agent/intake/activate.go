@@ -2,9 +2,13 @@ package intake
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // proxyUnit is a unit that reads the proxy material, and what it reads.
@@ -19,6 +23,10 @@ type proxyUnit struct {
 	// does (docker.service Upholds= it): it is restarted when dockerd is up and
 	// otherwise left for dockerd to bring up.
 	withDocker bool
+	// listen is the address a started unit serves on. The bridges are
+	// Type=simple, so their start job ends when the process is forked; what
+	// says one is up is that its address accepts a connection.
+	listen string
 }
 
 // proxyUnits are the sandbox's units that read the proxy material, in the
@@ -26,8 +34,8 @@ type proxyUnit struct {
 // come up is not used by a client that does not yet trust what it intercepts.
 var proxyUnits = []proxyUnit{
 	{name: "discobox-trust-ca.service", config: mitmCAFile, inputs: []string{mitmCAFile}},
-	{name: "discobox-proxy-bridge.service", config: egressBridgeFile, inputs: bridgeInputs(egressBridgeFile)},
-	{name: "discobox-buildkit-bridge.service", config: buildKitBridgeFile, inputs: bridgeInputs(buildKitBridgeFile)},
+	{name: "discobox-proxy-bridge.service", config: egressBridgeFile, inputs: bridgeInputs(egressBridgeFile), listen: sandboxconfig.SandboxEgressListenAddress},
+	{name: "discobox-buildkit-bridge.service", config: buildKitBridgeFile, inputs: bridgeInputs(buildKitBridgeFile), listen: sandboxconfig.SandboxBuildKitListenAddress},
 	{name: "discobox-proxy-bridge-docker.service", config: nestedDockerBridgeFile, inputs: bridgeInputs(nestedDockerBridgeFile), withDocker: true},
 }
 
@@ -70,17 +78,22 @@ func unitActions(proxyDir string, changed []string) []unitAction {
 // UnitActivator starts, restarts or stops the units that read the proxy
 // material a delivery changed (ADR 26-10-08-127 §5). They read it when they
 // start and are conditioned on it being there, so material that arrives after
-// boot reaches them only this way. A unit that fails is logged and left to its
-// own restart policy: the files are already the document's.
+// boot reaches them only this way. A started unit counts once it is up — a
+// bridge once its address accepts connections — and any unit that is not is an
+// error, which keeps the delivery from publishing readiness over a hop that is
+// not there; the next delivery tries it again.
 func UnitActivator(proxyDir string, logger *slog.Logger) Activator {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return func(ctx context.Context, changed []string) {
+	return func(ctx context.Context, changed []string) error {
+		var errs []error
 		for _, action := range unitActions(proxyDir, changed) {
 			if err := applyUnitAction(ctx, action); err != nil {
 				logger.Warn("start a unit for the delivered runtime config", "unit", action.unit.name, "stop", action.stop, "error", err)
+				errs = append(errs, fmt.Errorf("%s: %w", action.unit.name, err))
 			}
 		}
+		return errors.Join(errs...)
 	}
 }

@@ -98,9 +98,15 @@ type keptDocument struct {
 
 // Activator starts what reads the files a delivery changed, named by their
 // paths. It is called after they are in place and before readiness is
-// published; it reports nothing back, because the files are already the
-// document's and a unit that will not start is the unit's to say so.
-type Activator func(ctx context.Context, changed []string)
+// published, and an error is a reader that is not up: the delivery then
+// publishes no readiness and is not applied, and the paths are handed to the
+// activator again with the next delivery — the pool's convergence redelivers
+// the same document — until it succeeds.
+type Activator func(ctx context.Context, changed []string) error
+
+// ErrActivation is a delivery whose files are in place but whose readers could
+// not all be started; it is neither applied nor ready yet.
+var ErrActivation = errors.New("the units that read the runtime config did not all start")
 
 // Config is what an intake applies documents for.
 type Config struct {
@@ -126,6 +132,9 @@ type Intake struct {
 	// must not wait out a delivery restarting units.
 	mu      sync.Mutex
 	applied atomic.Pointer[sandboxconfig.RuntimeConfig]
+	// pending is the files whose readers an earlier delivery could not start,
+	// handed to the activator again with the next one. Guarded by mu.
+	pending []string
 }
 
 // Open returns the intake for cfg.Owner's sandbox, and applies the document it
@@ -228,26 +237,35 @@ func (in *Intake) Apply(ctx context.Context, doc sandboxconfig.RuntimeConfig) (s
 // change, then starts what reads the files that changed, then publishes
 // readiness when doc grants it.
 func (in *Intake) commit(ctx context.Context, doc sandboxconfig.RuntimeConfig, keep bool) error {
-	ops, gate, err := in.plan(doc, keep)
+	body, tail, err := in.plan(doc, keep)
 	if err != nil {
 		return err
 	}
-	if gate != nil {
-		ops = append(ops, *gate)
-	}
-	activate := func(done []op) {
+	activate := func(done []op) error {
 		if in.activate == nil {
-			return
+			return nil
 		}
-		if changed := changedPaths(done); len(changed) > 0 {
-			in.activate(ctx, changed)
+		changed := unionPaths(changedPaths(done), in.pending)
+		if len(changed) == 0 {
+			return nil
 		}
+		if err := in.activate(ctx, changed); err != nil {
+			in.pending = changed
+			return fmt.Errorf("%w: %w", ErrActivation, err)
+		}
+		in.pending = nil
+		return nil
 	}
-	return run(ops, gate != nil, activate)
+	return run(append(body, tail...), len(tail), activate)
 }
 
-// plan renders every file doc implies, in the order they are to be replaced,
-// and the readiness marker that follows them when doc grants it.
+// plan renders every file doc implies, in the order they are to be replaced:
+// the body, which the units the activator starts read, and the tail, which says
+// the delivery took — the kept state file, then the readiness marker when doc
+// grants it. The tail goes in only once the activator has started what reads
+// the body, so a delivery whose readers did not come up is neither kept nor
+// ready, and an agent that restarts before the pool redelivers restores the
+// document before it rather than one it never finished applying.
 //
 // The readiness marker brackets the rest. It is removed before anything else
 // changes, whatever the document says — a marker left up from the previous
@@ -258,7 +276,7 @@ func (in *Intake) commit(ctx context.Context, doc sandboxconfig.RuntimeConfig, k
 // been started, so that a waiter never runs ahead of the hop it needs. The
 // state file comes after every file it describes, so a kept document is never
 // newer than they are.
-func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, *op, error) {
+func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, []op, error) {
 	ready := filepath.Join(in.layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 	var ops []op
 	ops = append(ops, op{path: ready, remove: true})
@@ -272,6 +290,7 @@ func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, *op, e
 		return nil, nil, err
 	}
 	ops = append(ops, secrets)
+	var tail []op
 	if keep {
 		// /var/lib/discobox is a data volume, which an export carries, so the
 		// kept document leaves the client key out: client.key in the proxy
@@ -280,13 +299,27 @@ func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, *op, e
 		if err != nil {
 			return nil, nil, err
 		}
-		ops = append(ops, op{path: in.layout.StatePath, data: state, mode: 0o600})
+		tail = append(tail, op{path: in.layout.StatePath, data: state, mode: 0o600})
 	}
-	if !doc.SourcesDelivered() {
-		return ops, nil, nil
+	if doc.SourcesDelivered() {
+		//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
+		tail = append(tail, op{path: ready, data: []byte{}, mode: 0o644})
 	}
-	//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
-	return ops, &op{path: ready, data: []byte{}, mode: 0o644}, nil
+	return ops, tail, nil
+}
+
+// unionPaths is a and b without repeats, sorted.
+func unionPaths(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, path := range append(append([]string{}, a...), b...) {
+		if !seen[path] {
+			seen[path] = true
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // changedPaths are the targets of done whose contents a replacement changed,
