@@ -1161,6 +1161,9 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report f
 	if err := d.app.resolveGrantSecrets(ctx, d.client, d.projectID, opts.Grants); err != nil {
 		return tui.Sandbox{}, err
 	}
+	if opts.PoolID, opts.Platform, err = d.app.newSandboxPlacement(ctx, d.client, d.projectID, req.Pool); err != nil {
+		return tui.Sandbox{}, err
+	}
 
 	step := func(step sandboxcreate.Step) {
 		if report != nil {
@@ -1343,7 +1346,7 @@ func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Ad
 	if err != nil {
 		return tui.Addresses{}, err
 	}
-	return tui.Addresses{SSH: "ssh " + remote.host, Git: tools.Remote{Host: remote.host, Workdir: remote.folder}.GitURL()}, nil
+	return tui.Addresses{SSH: "ssh " + remote.host, Git: tools.Remote{Host: remote.host, Workdir: remote.folder, WorkingRoot: remote.workingRoot}.GitURL()}, nil
 }
 
 // Tools is every tool one sandbox can be worked on with (ADR 0125).

@@ -30,8 +30,12 @@ launchers, and configure scripts.
   from the base as one Discobox may reclaim (ADR 0040).
 - A declared volume says which primary volume backs it (`data` or `cache`),
   and `path` may use `%HOME%` and `uid`/`gid` `%UID%`/`%GID%`; `ResolveVolumes`
-  expands them against the sandbox user and judges the path as a Linux path on
-  every host. A cache path is per sandbox user unless it declares
+  expands them against the sandbox user and judges the path by the sandbox's
+  platform (`sandboxpath`), never by the host's. Declared volumes are a Linux
+  container mechanism: on any other platform there is nothing to bind, and
+  `ResolveVolumes` refuses a declaration rather than ignoring it — which is
+  also what keeps `%UID%`/`%GID%`, tokens only a volume carries, to the
+  platform where they mean something (ADR 0145 §6). A cache path is per sandbox user unless it declares
   `scope: shared`, which is refused on a `data` path (`ValidateVolumeScope`,
   [ADR 0094](../docs/adr/0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)).
   An env value's `%HOME%` is expanded by `ExpandEnvHomeTokens`, and left in

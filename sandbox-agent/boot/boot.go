@@ -74,7 +74,7 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		}
 		// Before the volumes and the sources, per seedWorkingRoot: anything
 		// wired onto the working root itself carries its own ownership.
-		if err := b.seedWorkingRoot(effective.WorkingRoot(), id); err != nil {
+		if err := b.seedWorkingRoot(effective.WorkingRoot(sandboxPaths), id); err != nil {
 			return fmt.Errorf("seed working root: %w", err)
 		}
 		volumes, err := loadResolvedVolumes(id, effective.Volumes)

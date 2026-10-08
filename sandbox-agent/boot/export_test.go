@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/discobox/sandboxtree"
 	"github.com/discobox-ai/discobox/tarsums"
 )
@@ -19,7 +21,7 @@ import (
 // export and the boot that wrote the tree cannot disagree about a location --
 // including a %HOME% path, which only the sandbox can resolve (ADR 0129 §1).
 func TestExportExcludedNamesAreTheBackingDirectories(t *testing.T) {
-	volumes, err := harness.ResolveVolumes([]harness.Volume{
+	volumes, err := harness.ResolveVolumes(sandboxpath.For(platform.Platform{OS: "linux", Arch: "amd64"}), []harness.Volume{
 		{Path: "%HOME%", Volume: harness.VolumeData},
 		{Path: "/var/lib/docker", Volume: harness.VolumeData, ExcludeFromExport: true},
 		{Path: "/home/linuxbrew/.linuxbrew", Volume: harness.VolumeData, ExcludeFromExport: true},

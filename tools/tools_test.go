@@ -199,7 +199,7 @@ func TestRemoteExpand(t *testing.T) {
 		t.Errorf("expanded = %q\nwant %q", got, want)
 	}
 
-	root := Remote{Host: "discobox.box"}
+	root := Remote{Host: "discobox.box", WorkingRoot: "/workspace"}
 	if got, _ := root.Expand([]string{"{ssh.url}"}); got[0] != "ssh://discobox.box/workspace" {
 		t.Errorf("no working tree ssh url = %q", got[0])
 	}

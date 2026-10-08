@@ -5,16 +5,21 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
 var testRuntime = VolumeRuntime{Home: "/home/darren", UID: 1000, GID: 1000}
+
+var linuxPaths = sandboxpath.For(platform.Platform{OS: "linux", Arch: "amd64"})
 
 // The default is the safe one. A cache path that says nothing about scope
 // belongs to the sandbox user, because that is what a directory the sandbox user
 // fills needs, and because an image that never considered the question must not
 // be answered with "share it" (ADR 0094 §3 on the pool cache).
 func TestResolveVolumesScopesToTheUserByDefault(t *testing.T) {
-	volumes, err := ResolveVolumes([]Volume{
+	volumes, err := ResolveVolumes(linuxPaths, []Volume{
 		{Path: "%HOME%/.cache", Volume: VolumeCache, UID: "%UID%", GID: "%GID%"},
 		// Root-owned and still the user's: ownership of the mountpoint is not a
 		// claim about who may share it.
@@ -34,7 +39,7 @@ func TestResolveVolumesScopesToTheUserByDefault(t *testing.T) {
 // Sharing is the claim that has to be made out loud, and it survives resolution
 // intact so boot can act on it.
 func TestResolveVolumesKeepsADeclaredSharedScope(t *testing.T) {
-	volumes, err := ResolveVolumes([]Volume{
+	volumes, err := ResolveVolumes(linuxPaths, []Volume{
 		{Path: "/nix", Volume: VolumeCache, Scope: VolumeScopeShared, UID: "0", GID: "0"},
 	}, testRuntime)
 	if err != nil {
@@ -49,7 +54,7 @@ func TestResolveVolumesKeepsADeclaredSharedScope(t *testing.T) {
 // share it. Refusing names the path; honoring it silently would leave the image
 // believing in sharing that never happens.
 func TestResolveVolumesRejectsASharedDataPath(t *testing.T) {
-	_, err := ResolveVolumes([]Volume{
+	_, err := ResolveVolumes(linuxPaths, []Volume{
 		{Path: "%HOME%", Volume: VolumeData, Scope: VolumeScopeShared},
 	}, testRuntime)
 	if err == nil {
@@ -61,7 +66,7 @@ func TestResolveVolumesRejectsASharedDataPath(t *testing.T) {
 }
 
 func TestResolveVolumesRejectsAnUnknownScope(t *testing.T) {
-	_, err := ResolveVolumes([]Volume{
+	_, err := ResolveVolumes(linuxPaths, []Volume{
 		{Path: "/nix", Volume: VolumeCache, Scope: "pool"},
 	}, testRuntime)
 	if err == nil {
@@ -118,7 +123,7 @@ func TestResolveVolumesModeCarriesSetgid(t *testing.T) {
 		{"1777", 0o777, os.ModeSticky},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
-			resolved, err := ResolveVolumes(
+			resolved, err := ResolveVolumes(linuxPaths,
 				[]Volume{{Path: "/x", Volume: VolumeData, Mode: tc.mode}},
 				VolumeRuntime{Home: "/home/u", UID: 1000, GID: 1000},
 			)
@@ -144,7 +149,7 @@ func TestResolveVolumesModeCarriesSetgid(t *testing.T) {
 // ExcludeFromExport survives resolution, since what reads it -- the sandbox
 // agent's export mode -- works from resolved volumes (ADR 0129 §2).
 func TestResolveVolumesCarriesExcludeFromExport(t *testing.T) {
-	volumes, err := ResolveVolumes([]Volume{
+	volumes, err := ResolveVolumes(linuxPaths, []Volume{
 		{Path: "/var/lib/docker", Volume: VolumeData, ExcludeFromExport: true},
 		{Path: "%HOME%", Volume: VolumeData},
 	}, testRuntime)

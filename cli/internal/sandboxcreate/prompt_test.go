@@ -10,6 +10,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/platform"
 )
 
 // fakeCreator answers with a name conflict until conflicts is exhausted,
@@ -41,7 +42,7 @@ func (f *fakeCreator) CreateSandbox(_ context.Context, body *apimodel.CreateSand
 // user's to see.
 func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
 	creator := &fakeCreator{conflicts: 2}
-	sandbox, local, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)}, nil)
+	sandbox, local, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil)
 	if err != nil {
 		t.Fatalf("create prompt sandbox: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
 // from becoming an infinite loop of sandbox creations.
 func TestCreatePromptSandboxGivesUpOnAPersistentConflict(t *testing.T) {
 	creator := &fakeCreator{conflicts: 100}
-	_, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)}, nil)
+	_, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil)
 	if err == nil {
 		t.Fatal("expected a persistent conflict to surface")
 	}
@@ -81,7 +82,7 @@ func TestCreatePromptSandboxGivesUpOnAPersistentConflict(t *testing.T) {
 // ours to fix by renaming.
 func TestCreatePromptSandboxDoesNotRetryOtherFailures(t *testing.T) {
 	creator := &fakeCreator{conflicts: 100, status: http.StatusBadRequest}
-	if _, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)}, nil); err == nil {
+	if _, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil); err == nil {
 		t.Fatal("expected the error to surface")
 	}
 	if len(creator.names) != 1 {
@@ -95,7 +96,7 @@ func TestCreatePromptSandboxDoesNotRetryOtherFailures(t *testing.T) {
 func TestNoSourceCreatesWithNothingToMaterialize(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Source: repo, NoSource: true})
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox, Source: repo, NoSource: true})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -117,6 +118,23 @@ func TestNoSourceCreatesWithNothingToMaterialize(t *testing.T) {
 	}
 }
 
+// A sandbox with no POSIX ids has one account, the one its template
+// provisions, and is refused a user naming ids, groups or a home (ADR 0145
+// §5) — so a create for one carries no user at all.
+func TestANonLinuxSandboxIsSentNoUser(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	for _, goos := range []string{"darwin", "windows"} {
+		body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: platform.Platform{OS: goos, Arch: "arm64"}, Source: repo, NoSource: true})
+		if err != nil {
+			t.Fatalf("%s: build: %v", goos, err)
+		}
+		local.Close()
+		if user, ok := body.Config.User.Get(); ok {
+			t.Fatalf("%s: user = %+v, want none", goos, user)
+		}
+	}
+}
+
 // --no-source still brings in what -i names: a discobox holding the extra
 // sources and nothing else.
 func TestNoSourceStillTakesIncludes(t *testing.T) {
@@ -124,7 +142,7 @@ func TestNoSourceStillTakesIncludes(t *testing.T) {
 	other := newRunSourceTestRepo(t)
 
 	body, local, err := BuildPromptSandboxBody(context.Background(),
-		PromptOptions{Source: repo, NoSource: true, Include: []string{other}, IncludeDirty: IncludeDirtyNever})
+		PromptOptions{Platform: linuxSandbox, Source: repo, NoSource: true, Include: []string{other}, IncludeDirty: IncludeDirtyNever})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -150,7 +168,7 @@ func TestDeclinedDirectoryCopyCreatesWithNoSource(t *testing.T) {
 	}
 	decline := func(context.Context, DirectoryCopy) (bool, error) { return false, nil }
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:               dir,
 		IncludeDirty:         IncludeDirtyAuto,
 		ConfirmCopyDirectory: decline,
@@ -181,7 +199,7 @@ func TestDeclinedIncludeIsLeftOut(t *testing.T) {
 	}
 	decline := func(context.Context, DirectoryCopy) (bool, error) { return false, nil }
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:               repo,
 		Include:              []string{dir},
 		IncludeDirty:         IncludeDirtyAuto,
@@ -205,7 +223,7 @@ func TestDeclinedIncludeIsLeftOut(t *testing.T) {
 // out of. Saying both is a contradiction rather than a preference.
 func TestNoSourceRefusesARef(t *testing.T) {
 	_, _, err := BuildPromptSandboxBody(context.Background(),
-		PromptOptions{Source: newRunSourceTestRepo(t), Ref: "main", NoSource: true})
+		PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t), Ref: "main", NoSource: true})
 	if err == nil || !strings.Contains(err.Error(), "no ref") {
 		t.Fatalf("err = %v, want a refusal naming the ref", err)
 	}

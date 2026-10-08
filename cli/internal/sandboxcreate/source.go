@@ -17,7 +17,8 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/origin"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
-	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/platform"
+	"github.com/discobox-ai/discobox/sandboxpath"
 	"github.com/discobox-ai/x/gitutil"
 	"github.com/discobox-ai/x/id"
 )
@@ -30,19 +31,11 @@ const (
 	runSourceRefTypeTag    = "tag"
 	runSourceRefTypeCommit = "commit"
 	runSnapshotRefPrefix   = "refs/discobox/run/"
-	// The source goes in a subdirectory of the sandbox's working root, and the
-	// discobox starts there. Derived from sandboxconfig rather than spelled
-	// out, because a destination this names is explicit in the create request
-	// and so overrides pool-agent's own default: a CLI that spelled the root
-	// itself would keep checking out under the old one while the sandbox worked
-	// in the new.
-	defaultRunSourceDir  = referenceRunSourceRoot + "/source"
-	defaultRunWorkingDir = defaultRunSourceDir
+	// defaultRunSourceName is the subdirectory of the sandbox's working root a
+	// source with no host path of its own to keep goes in, and where the
+	// discobox starts (defaultRunSourceDir).
+	defaultRunSourceName = "source"
 	defaultRemoteBranch  = "HEAD"
-	// referenceRunSourceRoot holds an extra source with no host path of its own
-	// to keep: every remote one, and every local one whose path a sandbox may
-	// not hold (mirrorableSourceRoots).
-	referenceRunSourceRoot = sandboxconfig.DefaultWorkingRoot
 	// wslDriveRoot is where WSL mounts the Windows drives, and so where a
 	// Windows host path is mirrored to inside a sandbox.
 	wslDriveRoot = "/mnt"
@@ -121,6 +114,9 @@ type ConfirmCopyDirectoryFunc func(context.Context, DirectoryCopy) (bool, error)
 // runSourceOptions carries the caller's policy for what local content reaches
 // the sandbox into source resolution.
 type runSourceOptions struct {
+	// Platform is the sandbox's, which every path placed in it is judged by
+	// (ADR 0145 §6).
+	Platform     platform.Platform
 	IncludeDirty IncludeDirty
 	Confirm      ConfirmIncludeDirtyFunc
 	ConfirmCopy  ConfirmCopyDirectoryFunc
@@ -248,7 +244,7 @@ func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptio
 	if IsRemoteGitSource(source) {
 		// A remote repository has no working tree, so it has no uncommitted
 		// work for --include-dirty to decide about, whatever its value.
-		return resolveRemoteRunSource(ctx, source, ref, explicitRef)
+		return resolveRemoteRunSource(ctx, source, ref, explicitRef, opts.Platform)
 	}
 	return resolveLocalRunSource(ctx, source, ref, explicitRef, opts)
 }
@@ -392,7 +388,7 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 		resolved.UpstreamURL = localUpstreamURL(ctx, repoRoot, resolved.Checkout)
 		return resolved, nil
 	}
-	destination := localRunDestination(repoRoot, absSource)
+	destination := localRunDestination(opts.Platform, repoRoot, absSource)
 	resolved := resolvedRunSource{
 		Kind:                runSourceKindGit,
 		LocalDirectory:      repoRoot,
@@ -554,7 +550,7 @@ func resolveUnbornRunSource(ctx context.Context, repoRoot, absSource, ref string
 			RefType: runSourceRefTypeBranch,
 		},
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
-		Destination: localRunDestination(repoRoot, absSource),
+		Destination: localRunDestination(opts.Platform, repoRoot, absSource),
 	}
 	if opts.IncludeDirty == IncludeDirtyNever {
 		return resolved, nil
@@ -620,7 +616,7 @@ func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	resolved, err := directoryRunSource(ctx, dir, repoRoot)
+	resolved, err := directoryRunSource(ctx, dir, repoRoot, opts.Platform)
 	if err != nil {
 		cleanup()
 		return resolvedRunSource{}, err
@@ -668,7 +664,7 @@ func copyDirectoryContent(ctx context.Context, dir string, opts runSourceOptions
 // directoryRunSource fills in the source that repoRoot, a fresh repository over
 // dir, describes: the directory's content snapshotted onto an empty base commit,
 // and the empty base commit alone when the directory holds nothing.
-func directoryRunSource(ctx context.Context, dir, repoRoot string) (resolvedRunSource, error) {
+func directoryRunSource(ctx context.Context, dir, repoRoot string, sandbox platform.Platform) (resolvedRunSource, error) {
 	emptyTree, err := gitutil.EmptyTree(ctx, repoRoot)
 	if err != nil {
 		return resolvedRunSource{}, err
@@ -698,7 +694,7 @@ func directoryRunSource(ctx context.Context, dir, repoRoot string) (resolvedRunS
 			RefType: runSourceRefTypeBranch,
 		},
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
-		Destination: localRunDestination(dir, dir),
+		Destination: localRunDestination(sandbox, dir, dir),
 	}
 	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
 	if err != nil {
@@ -734,7 +730,7 @@ func includeDirtyWorkspace(ctx context.Context, repoRoot, baseCommit string, opt
 	return opts.Confirm(ctx, DirtyWorkspace{RepoRoot: repoRoot, BaseCommit: baseCommit, Changes: changes})
 }
 
-func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef bool) (resolvedRunSource, error) {
+func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef bool, sandbox platform.Platform) (resolvedRunSource, error) {
 	if !explicitRef {
 		ref = defaultRemoteBranch
 	}
@@ -753,7 +749,7 @@ func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef
 		Workspace: resolvedRunSourceWorkspace{
 			Mode: runWorkspaceModeClean,
 		},
-		Destination: defaultRunDestination(),
+		Destination: defaultRunDestination(sandbox),
 	}, nil
 }
 
@@ -1061,7 +1057,7 @@ func resolveRunSourceReference(ctx context.Context, arg string, placement refere
 		// this source being left out of it (ADR 0077 §4).
 		return resolvedReference{}, nil
 	}
-	directory, name := referenceDestination(resolved, placement)
+	directory, name := referenceDestination(opts.Platform, resolved, placement)
 	if directory == "" {
 		resolved.close()
 		return resolvedReference{}, fmt.Errorf("cannot tell where to put source %s in the discobox", arg)
@@ -1082,9 +1078,10 @@ func resolveRunSourceReference(ctx context.Context, arg string, placement refere
 // source host paths) — is placed by name under the reference root, which is
 // also what keeps two such sources from both landing on the primary's default
 // directory.
-func referenceDestination(resolved resolvedRunSource, placement referencePlacement) (directory, name string) {
+func referenceDestination(sandbox platform.Platform, resolved resolvedRunSource, placement referencePlacement) (directory, name string) {
+	paths := sandboxpath.For(sandbox)
 	if resolved.URL == "" {
-		if _, mirrored := sandboxSourceRoot(resolved.LocalDirectory); mirrored {
+		if _, mirrored := sandboxSourceRoot(sandbox, resolved.LocalDirectory); mirrored {
 			// The local destination is the repository root, not the directory
 			// that was named: running against a subdirectory brings in the
 			// repository that holds it, and the source is named after what it
@@ -1109,9 +1106,12 @@ func referenceDestination(resolved resolvedRunSource, placement referencePlaceme
 	}
 	root := placement.Root
 	if root == "" {
-		root = referenceRunSourceRoot
+		// The working root holds an extra source with no host path of its own
+		// to keep: every remote one, and every local one whose path a sandbox
+		// may not hold (sandboxSourceRoot).
+		root = paths.WorkingRoot()
 	}
-	return path.Join(filepath.ToSlash(root), slugifySource(name)), name
+	return paths.Join(root, slugifySource(name)), name
 }
 
 // remoteSourceName is the repository name a remote URL ends in.
@@ -1175,11 +1175,21 @@ func slugifySource(value string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func defaultRunDestination() resolvedRunSourceDestination {
-	return resolvedRunSourceDestination{
-		Directory:        defaultRunSourceDir,
-		WorkingDirectory: defaultRunWorkingDir,
-	}
+func defaultRunDestination(sandbox platform.Platform) resolvedRunSourceDestination {
+	dir := defaultRunSourceDir(sandbox)
+	return resolvedRunSourceDestination{Directory: dir, WorkingDirectory: dir}
+}
+
+// defaultRunSourceDir is where a source with no host path of its own to keep
+// goes: a subdirectory of the sandbox's working root, where the discobox
+// starts. Derived from the sandbox platform's working root rather than spelled
+// out, because a destination this names is explicit in the create request and
+// so overrides pool-agent's own default: a CLI that spelled the root itself
+// would keep checking out under the old one while the sandbox worked in the
+// new.
+func defaultRunSourceDir(sandbox platform.Platform) string {
+	paths := sandboxpath.For(sandbox)
+	return paths.Join(paths.WorkingRoot(), defaultRunSourceName)
 }
 
 // localRunDestination is where a local source lands inside the sandbox: the
@@ -1194,16 +1204,16 @@ func defaultRunDestination() resolvedRunSourceDestination {
 // source host paths). That is a placement, not a refusal: the host directory is
 // the caller's, the mount point inside the sandbox is ours, and only the second
 // one can collide with the sandbox's own operating system.
-func localRunDestination(repoRoot, sourceDir string) resolvedRunSourceDestination {
+func localRunDestination(sandbox platform.Platform, repoRoot, sourceDir string) resolvedRunSourceDestination {
 	workingDirectory := repoRoot
 	if dir := filepath.Clean(sourceDir); pathInsideDirectory(repoRoot, dir) {
 		workingDirectory = dir
 	}
-	root, ok := sandboxSourceRoot(repoRoot)
+	root, ok := sandboxSourceRoot(sandbox, repoRoot)
 	if !ok {
-		root = defaultRunSourceDir
+		root = defaultRunSourceDir(sandbox)
 	}
-	return placeRunSource(repoRoot, workingDirectory, root)
+	return placeRunSource(sandboxpath.For(sandbox), repoRoot, workingDirectory, root)
 }
 
 // placeRunSource puts a repository at root inside the sandbox, carrying the
@@ -1211,13 +1221,13 @@ func localRunDestination(repoRoot, sourceDir string) resolvedRunSourceDestinatio
 // its spelling on this machine. A root that is the repository's own mirrored
 // path reproduces both paths exactly; any other root keeps the subdirectory the
 // caller asked for.
-func placeRunSource(repoRoot, workingDirectory, root string) resolvedRunSourceDestination {
+func placeRunSource(paths sandboxpath.Paths, repoRoot, workingDirectory, root string) resolvedRunSourceDestination {
 	destination := resolvedRunSourceDestination{Directory: root, WorkingDirectory: root}
 	rel, err := filepath.Rel(repoRoot, workingDirectory)
 	if err != nil || rel == "." {
 		return destination
 	}
-	destination.WorkingDirectory = path.Join(root, filepath.ToSlash(rel))
+	destination.WorkingDirectory = paths.Join(root, filepath.ToSlash(rel))
 	return destination
 }
 
@@ -1285,7 +1295,17 @@ var sandboxOwnedPaths = []string{"/opt/discobox"}
 // is mirrored as itself when it comes from a root a sandbox may hold. Either
 // way, "no" means the source is placed where one with no host path is placed
 // rather than refused (ADR 26-09-09-044 §2 on source host paths).
-func sandboxSourceRoot(hostPath string) (string, bool) {
+//
+// Only a Linux sandbox keeps a host path. The mirror is a Linux container's:
+// the roots above are judged against what its image and its systemd own, and
+// WSL's /mnt is a Linux name. A sandbox of another platform is a VM that shares
+// no filesystem with the host (ADR 0126), with its own account's directories
+// where these roots would be, so every source in it is placed by name under its
+// working root.
+func sandboxSourceRoot(sandbox platform.Platform, hostPath string) (string, bool) {
+	if sandbox.OS != "linux" {
+		return "", false
+	}
 	if runtime.GOOS == "windows" {
 		return wslPath(hostPath)
 	}

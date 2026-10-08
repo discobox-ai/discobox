@@ -1081,7 +1081,7 @@ flowchart LR
   `tools.Remote` expands into `{ssh.host}`, `{ssh.url}`, `{git.url}`,
   `{workdir}`, `{workdir.urlpath}`, `{discobox.id}` and exports as
   `DISCOBOX_*`. A box with no source has no working tree: `{workdir}` is the
-  sandbox working root (`sandboxconfig.DefaultWorkingRoot`) and `{git.url}` an
+  sandbox's working root, by its platform (`sandboxpath.Paths.WorkingRoot`), and `{git.url}` an
   error (ADR 0141). The args are expanded before "opening" is printed, so a
   tool that asked for what the box cannot give never claims to open. Nothing is
   held open afterwards (ADR 0057).

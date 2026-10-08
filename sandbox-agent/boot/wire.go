@@ -253,7 +253,7 @@ func loadEffectiveConfig() (sandboxconfig.Config, error) {
 }
 
 func loadResolvedVolumes(id identity, volumes []harness.Volume) ([]harness.ResolvedVolume, error) {
-	return harness.ResolveVolumes(volumes, harness.VolumeRuntime{Home: id.home, UID: id.uid, GID: id.gid})
+	return harness.ResolveVolumes(sandboxPaths, volumes, harness.VolumeRuntime{Home: id.home, UID: id.uid, GID: id.gid})
 }
 
 // mkdirAllOwned creates dir, giving the components it had to create to

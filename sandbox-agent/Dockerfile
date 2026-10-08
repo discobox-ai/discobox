@@ -25,6 +25,7 @@ COPY platform ./platform
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxpath ./sandboxpath
 COPY sandboxmeta ./sandboxmeta
 COPY sandboxservices ./sandboxservices
 COPY sandboxshell ./sandboxshell
@@ -129,6 +130,7 @@ COPY platform ./platform
 COPY randomname ./randomname
 COPY releasemanifest ./releasemanifest
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxpath ./sandboxpath
 COPY sandboxmeta ./sandboxmeta
 COPY sandboxservices ./sandboxservices
 COPY sandboxshell ./sandboxshell

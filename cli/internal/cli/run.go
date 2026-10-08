@@ -32,6 +32,9 @@ type runCommandOptions struct {
 	// from it, or read from a --json request.
 	grant  []string
 	grants []apimodel.SandboxGrant
+	// pool is --pool as given: the pool the discobox is placed on, by ID,
+	// short ID, or name. Empty is the project's default pool.
+	pool string
 	// json reads the request from stdin instead of the command line, and
 	// prints the created discobox as JSON (runJSONRequest).
 	json bool
@@ -68,6 +71,7 @@ func (a *App) newRunCommand(name, short string, hidden bool) *cobra.Command {
 		},
 	}
 	addRunFlags(cmd, &opts)
+	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
 	return cmd
 }
 
@@ -185,6 +189,7 @@ const runCommandExample = `  discobox new 'fix the failing tests'
   discobox new -e GITHUB_TOKEN -e MODE=test -p 'fix the failing tests'
   discobox new -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> -p 'fix the failing tests'
   discobox new -d -p 'fix the failing tests'
+  discobox new --pool mac-mini -p 'fix the failing tests'
   discobox new -d --grant 'com.github.api=push a branch to org/repo' -p 'fix issue 42'
   echo '{"prompt": "fix the failing tests"}' | discobox new --json
   discobox new --raw -p 'fix the failing tests'
@@ -274,6 +279,9 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		return err
 	}
 	parsedOpts.Grants = opts.grants
+	if parsedOpts.PoolID, parsedOpts.Platform, err = a.newSandboxPlacement(cmd.Context(), client, projectID, opts.pool); err != nil {
+		return err
+	}
 	report := func(step sandboxcreate.Step) { status.set(string(step)) }
 	sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
 	if err != nil {
@@ -323,8 +331,9 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"new\"")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
-	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under /workspace where it cannot; either way it is named after itself, so -i ../foo is the source foo")
+	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
+	flags.StringVar(&opts.pool, "pool", "", "Pool to create the discobox on, by ID or name; defaults to the project's default pool. The discobox runs on the platform the pool hosts, and every path placed in it is that platform's")
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
 	flags.BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")
 	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it; the directory you run in still decides where it is filed and what Git authorship it commits under")
@@ -517,6 +526,7 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Grant:               opts.grant,
 		Include:             opts.prompt.Include,
 		SkipDeclaredSources: !opts.declaredSources,
+		Pool:                opts.pool,
 	}
 	// auto is the window's empty: the question it puts up. The other two are
 	// answers already given, and the window hands them to the create for every

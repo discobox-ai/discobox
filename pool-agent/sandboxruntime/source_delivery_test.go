@@ -157,7 +157,7 @@ func TestSandboxDocumentMarksSourcesAwaitingDelivery(t *testing.T) {
 		},
 	})
 
-	doc := buildSandboxDocument("proj_a", deliveryTestSandboxID, "pool_a", "", "image", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "image", 0, req, nil, nil)
 	byslug := map[string]sandboxconfig.Source{}
 	for _, source := range doc.Runtime.Sources {
 		byslug[source.Slug] = source
@@ -220,7 +220,7 @@ func TestSourcesMaterializedUnderTheirKeyAreAdoptedByTheirSlug(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := runtime.adoptSourcePaths(context.Background(), deliveryTestSandboxID, sandboxSources(req)); err != nil {
+	if err := runtime.adoptSourcePaths(context.Background(), deliveryTestSandboxID, sandboxSources(linuxPaths, req)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -261,7 +261,7 @@ func TestAdoptionLeavesASourceThatAlreadyHasItsSlugAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := runtime.adoptSourcePaths(context.Background(), deliveryTestSandboxID, sandboxSources(req)); err != nil {
+	if err := runtime.adoptSourcePaths(context.Background(), deliveryTestSandboxID, sandboxSources(linuxPaths, req)); err != nil {
 		t.Fatal(err)
 	}
 

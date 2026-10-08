@@ -160,7 +160,7 @@ func TestPushSourceDeliversADirectoryWithNoRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	source, err := resolveRunSource(ctx, dir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(ctx, dir, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestPushSourceDeliversARepositoryWithNoCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	source, err := resolveRunSource(ctx, repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	source, err := resolveRunSource(ctx, repo, runSourceOptions{Platform: linuxSandbox, IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}

@@ -8,8 +8,14 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
+
+// sandboxPaths judges paths inside this sandbox. The agent runs inside it, so
+// the sandbox's platform is the one the agent was built for (ADR 0145 §6).
+var sandboxPaths = sandboxpath.For(platform.Current())
 
 const (
 	DefaultPath = "/etc/discobox/sandbox.json"
@@ -168,7 +174,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		},
 		ControlPlanePublicKey: publicKey(effective.Provider.PublicKeys),
 		ListenAddress:         effective.AgentRuntime.ListenAddress,
-		WorkingRoot:           effective.WorkingRoot(),
+		WorkingRoot:           effective.WorkingRoot(sandboxPaths),
 		RuntimeDir:            effective.AgentRuntime.RuntimeDir,
 		DatabasePath:          effective.AgentRuntime.DatabasePath,
 		Env:                   effective.Env,
@@ -308,10 +314,10 @@ func applyDefaults(cfg *Config) {
 	// A manifest's working root is already normalized by
 	// sandboxconfig.Config.WorkingRoot in configFromEffective, so this answers
 	// only for the config Load builds when there is no manifest file at all --
-	// with the same constant, because there is one answer to where a sandbox
+	// with the same default, because there is one answer to where a sandbox
 	// works.
 	if cfg.WorkingRoot == "" {
-		cfg.WorkingRoot = sandboxconfig.DefaultWorkingRoot
+		cfg.WorkingRoot = sandboxPaths.WorkingRoot()
 	}
 	if cfg.RuntimeDir == "" {
 		cfg.RuntimeDir = "/run/discobox/harness-terminals"

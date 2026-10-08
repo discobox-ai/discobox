@@ -18,7 +18,7 @@ func TestBuildPromptSandboxBodyPrefersACheckoutOfADeclaredSource(t *testing.T) {
 	declareSources(t, primary, map[string]string{"foo": "https://github.com/acme/foo"})
 
 	var reported []DeclaredSource
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:               primary,
 		IncludeDirty:         IncludeDirtyNever,
 		ReportDeclaredSource: func(source DeclaredSource) { reported = append(reported, source) },
@@ -57,7 +57,7 @@ func TestBuildPromptSandboxBodyClonesADeclaredSourceToTheSamePath(t *testing.T) 
 	declareSources(t, primary, map[string]string{"foo": remote})
 
 	var reported []DeclaredSource
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:               primary,
 		IncludeDirty:         IncludeDirtyNever,
 		ReportDeclaredSource: func(source DeclaredSource) { reported = append(reported, source) },
@@ -96,7 +96,7 @@ func TestBuildPromptSandboxBodyReportsACheckoutThatDisagreesWithTheDeclaredURL(t
 	declareSources(t, primary, map[string]string{"foo": "https://github.com/acme/foo"})
 
 	var reported []DeclaredSource
-	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:               primary,
 		IncludeDirty:         IncludeDirtyNever,
 		ReportDeclaredSource: func(source DeclaredSource) { reported = append(reported, source) },
@@ -141,7 +141,7 @@ func TestBuildPromptSandboxBodyLetsIncludeOverrideADeclaredSource(t *testing.T) 
 	reference := newRunSourceTestRepoIn(t, workspace, "foo")
 	declareSources(t, primary, map[string]string{"foo": "https://github.com/acme/foo"})
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       primary,
 		Include:      []string{reference},
 		IncludeDirty: IncludeDirtyNever,
@@ -168,7 +168,7 @@ func TestBuildPromptSandboxBodySkipsDeclaredSourcesWhenAsked(t *testing.T) {
 	newRunSourceTestRepoIn(t, workspace, "foo")
 	declareSources(t, primary, map[string]string{"foo": "https://github.com/acme/foo"})
 
-	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:              primary,
 		IncludeDirty:        IncludeDirtyNever,
 		SkipDeclaredSources: true,
@@ -196,7 +196,7 @@ func TestBuildPromptSandboxBodyRefusesAMalformedDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+	_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 		Source:       primary,
 		IncludeDirty: IncludeDirtyNever,
 	})
@@ -221,7 +221,7 @@ func TestBuildPromptSandboxBodyRefusesAPathInsteadOfAURL(t *testing.T) {
 			newRunSourceTestRepoIn(t, workspace, "foo")
 			declareSources(t, primary, map[string]string{"foo": value})
 
-			_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+			_, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
 				Source:       primary,
 				IncludeDirty: IncludeDirtyNever,
 			})

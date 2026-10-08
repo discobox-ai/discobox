@@ -5,22 +5,31 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"path"
-	"path/filepath"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
+	"github.com/discobox-ai/discobox/platform"
 	"github.com/discobox-ai/discobox/randomname"
+	"github.com/discobox-ai/discobox/sandboxpath"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // PromptOptions describes the client-side inputs used to create a sandbox for
 // a prompt. Frontends should populate this type and let this package normalize
 // and resolve the request consistently.
 type PromptOptions struct {
-	Source string
-	Ref    string
+	// PoolID is the pool the discobox is placed on. Empty leaves it to the
+	// server, which places it on the project's default pool.
+	PoolID string
+	// Platform is what that pool hosts, which the discobox runs on. Every path
+	// this package places in it — where a source lands, the user's home — is
+	// judged by it (ADR 0145 §6), so a frontend reads it from the pool before
+	// building a request.
+	Platform platform.Platform
+	Source   string
+	Ref      string
 	// NoSource creates the sandbox with nothing materialized in it. Source is
 	// then only where the request came from — the origin the sandbox is filed
 	// under and the Git identity it commits as — and nothing is cut from it.
@@ -127,15 +136,27 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		body.Config.SetSecrets(secrets)
 	}
 	body.Grants = opts.Grants
-	userIdentity, userNamed, err := resolveRunUserIdentity()
-	if err != nil {
-		return nil, nil, err
+	if poolID := strings.TrimSpace(opts.PoolID); poolID != "" {
+		body.SetPoolId(apiclientgen.NewOptString(poolID))
+	}
+	// This machine's account is asked for only where the sandbox has POSIX
+	// ids. Elsewhere it has one account, the one its template provisions, and
+	// a user naming a uid, a group or a home is refused there — even the
+	// account's own (ADR 0145 §5) — so none is sent and the sandbox runs as
+	// that account.
+	var userIdentity runUserIdentity
+	userNamed := false
+	if sandboxuser.HasPOSIXIDs(opts.Platform.OS) {
+		if userIdentity, userNamed, err = resolveRunUserIdentity(); err != nil {
+			return nil, nil, err
+		}
 	}
 	sourceArg := opts.Source
 	if opts.Ref != "" {
 		sourceArg += "@" + opts.Ref
 	}
 	sourceOptions := runSourceOptions{
+		Platform:     opts.Platform,
 		IncludeDirty: opts.IncludeDirty,
 		Confirm:      opts.ConfirmIncludeDirty,
 		ConfirmCopy:  opts.ConfirmCopyDirectory,
@@ -240,11 +261,12 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 	// source is found on the host filesystem, and where a clone lands is named
 	// in the sandbox's. They read the same on a POSIX host, where the primary
 	// source keeps its own path, and differ on Windows, where it is mirrored
-	// under /mnt.
+	// under /mnt, and whenever the sandbox is not Linux, where it is placed by
+	// name.
 	primaryRoot := primary.LocalDirectory
 	sandboxRoot := ""
 	if primary.Destination.Directory != "" {
-		sandboxRoot = path.Dir(filepath.ToSlash(primary.Destination.Directory))
+		sandboxRoot = sandboxpath.For(opts.Platform).Dir(primary.Destination.Directory)
 	}
 	for _, name := range declaredSourceNames(declared) {
 		arg, report := resolveDeclaredSourceArg(ctx, primaryRoot, name, declared[name])

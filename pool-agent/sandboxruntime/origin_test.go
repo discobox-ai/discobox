@@ -92,7 +92,7 @@ func TestTheOriginRouteServesALocalSourcesLiveRepository(t *testing.T) {
 	gitDir := makeGitDirectory(t, filepath.Join(r.hostMountPrefix, "home", "dev", "project"))
 	bare := makeBareOrigin(t, r, "hooks")
 
-	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(originTestRequest("/home/dev/project"))); err != nil {
+	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(linuxPaths, originTestRequest("/home/dev/project"))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,7 +129,7 @@ func TestTheOriginRouteServesALocalSourcesLiveRepository(t *testing.T) {
 func TestTheOriginRouteFallsBackToTheBareOrigin(t *testing.T) {
 	requirePOSIXHost(t)
 	r := originTestRuntime(t)
-	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(originTestRequest("/home/dev/unseen"))); err != nil {
+	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(linuxPaths, originTestRequest("/home/dev/unseen"))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,7 +160,7 @@ func TestALiveOriginThatIsNoLongerADirectoryIsNotServed(t *testing.T) {
 	if err := os.Symlink(filepath.Join(r.hostMountPrefix, "elsewhere", ".git"), filepath.Join(project, ".git")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(originTestRequest("/home/dev/project"))); err != nil {
+	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(linuxPaths, originTestRequest("/home/dev/project"))); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.originLocation(deliveryTestSandboxID, "primary", nil); !errors.Is(err, ErrRepositoryNotFound) {
@@ -173,7 +173,7 @@ func TestALiveOriginThatIsNoLongerADirectoryIsNotServed(t *testing.T) {
 func TestLiveOriginsAreRewrittenOnEveryCreate(t *testing.T) {
 	requirePOSIXHost(t)
 	r := originTestRuntime(t)
-	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(originTestRequest("/home/dev/project"))); err != nil {
+	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(linuxPaths, originTestRequest("/home/dev/project"))); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, err := r.readLiveOrigin(deliveryTestSandboxID, "primary"); err != nil || !ok {
@@ -183,7 +183,7 @@ func TestLiveOriginsAreRewrittenOnEveryCreate(t *testing.T) {
 		t.Fatal("a push-delivered source was recorded as a live origin")
 	}
 
-	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(deliveryTestRequest())); err != nil {
+	if err := r.writeLiveOrigins(deliveryTestSandboxID, sandboxSources(linuxPaths, deliveryTestRequest())); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(r.sandboxRoot(deliveryTestSandboxID), liveOriginsFileName)); !os.IsNotExist(err) {
