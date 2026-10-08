@@ -191,6 +191,22 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   any harness through as a pre-platform pool. Add
   `DISCOBOX_DOCKER_POOL_IMAGE=<the dev loop's image>` (`docker ps` shows the
   `discobox-pool-agent:dev-*` its pool runs) to the env above.
+  For every dev image at once — sandbox, pool, and harnesses, the in-box
+  `discobox` CLI included — make `DISCOBOX_ENV_FILE` a copy of the
+  `DISCOBOX_DEFAULT_SANDBOX_*`, `DISCOBOX_DOCKER_POOL_*` and
+  `DISCOBOX_HARNESS_*` lines of the checkout's `.env`.
+
+## A lead discobox's calls (the sandbox role)
+
+The dev loop judges every `discobox-access run` with the project's default
+harness, which has no model credential here, so a lead's call never gets a
+verdict. Use the isolated server above with `DISCOBOX_JUDGE_COMMANDS=false`
+in its env file. Then: `new -d -H shell` a lead; inside it,
+`discobox-access request --json` for `ai.discobox.sandbox` with the uses to
+drive (no `wait`); approve it from outside with `discobox secret request
+approve <id>`; read the use IDs with `discobox-access list --json` in the
+lead; and run `discobox-access run --use <id> -- discobox …` there. A worker
+the lead creates with `--no-source` is listed outside only by `ls --all`.
 
 # Verifying a sandbox-agent route the pool drives (runtime-config, sources)
 
