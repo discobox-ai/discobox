@@ -191,3 +191,30 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   any harness through as a pre-platform pool. Add
   `DISCOBOX_DOCKER_POOL_IMAGE=<the dev loop's image>` (`docker ps` shows the
   `discobox-pool-agent:dev-*` its pool runs) to the env above.
+
+# Verifying a sandbox-agent route the pool drives (runtime-config, sources)
+
+Nothing in the dev loop delivers a runtime-config document yet, so drive the
+in-box agent directly: `d new -H shell -d ...` a box (from a dirty checkout if
+the change reads `sandbox.json`'s source spec), then `curl` it on
+`127.0.0.1:3003/api/projects/<project>/sandboxes/<sbx>/...` from `d shell`.
+
+- **Token.** The agent trusts the server's pool-agent issuer key
+  (`server_state` row `worker_agent_request_issuer`; unsealed in dev, so
+  `json_extract(value,'$.encryptedPrivateKey')` base64-decodes to the key
+  text). Sign a PASETO v4.public with audience `sandbox-agent`, claims
+  `project_id`/`pool_id`/`sandbox_id`/`scopes` (as
+  `server/internal/auth/poolagent.CreateTokenForAudience`) from a scratch
+  module; pipe the key in and the token into the box on stdin, never argv.
+  The row exists only once the server has created a pool.
+- **Read-only targets.** On a Docker pool `/etc/discobox` and
+  `/run/discobox/secrets` are the pool's read-only binds, so a `PUT
+  .../runtime-config` is a 500 until #53. In a throwaway box, `sudo mount -t
+  overlay` each over itself with a tmpfs upper. An agent restart re-binds the
+  secrets volume read-only (`boot.WireSecrets`), so a kept document cannot be
+  restored there; that path is not drivable on a Docker pool.
+- **An origin.** Serve a bare repository from this box with a small
+  `git http-backend` CGI wrapper on `0.0.0.0:<port>`; the box reaches it as
+  `http://172.17.0.1:<port>` through its proxy.
+- `systemctl restart discobox-sandbox-agent` in the box ends the `d shell`
+  it was run from (shells are the agent's execs): background it and reconnect.
