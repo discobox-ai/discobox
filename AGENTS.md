@@ -87,16 +87,16 @@ go tool task build      # build all binaries and local Docker images
 What CI runs, and what to run before pushing something build-related:
 
 ```bash
-go tool task ci:check   # check, the windows/amd64 cross type-check, and Dockerfile COPY paths
+go tool task ci:check   # check, shellcheck, the windows/amd64 cross type-check, and Dockerfile COPY paths
 go tool task ci:test    # every module's tests, the way CI runs them
 go tool task verify     # fmt, go.mod, generated files, and Mermaid are current
 ```
 
 At the end of a code-changing task, run `go tool task check-hooks` before
 handing work back. The hooks in `.discobox/hooks` run in the background as
-files change — formatting, tidy, codegen, Dockerfile builds, lint, tests,
-Mermaid validation, and whether a `task dev` loop's build is broken — and this
-is what reports whether any of them failed. If its output looks stale, meaning a
+files change — formatting, tidy, codegen, Dockerfile builds, lint, shellcheck,
+tests, Mermaid validation, and whether a `task dev` loop's build is broken — and
+this is what reports whether any of them failed. If its output looks stale, meaning a
 reported failure names code you have already fixed, run
 `go tool task rerun-hooks` and check again. The hooks are this repository's;
 what runs them is the `discobox-hooks` tool from `discobox-ai/hooks`,

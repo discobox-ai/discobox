@@ -214,7 +214,7 @@ failure here costs seconds rather than a seven-minute round trip:
 
 ```bash
 go tool task ci:test    # every module's tests, the way CI runs them
-go tool task ci:check   # lint plus the windows/amd64 cross type-check
+go tool task ci:check   # lint, shellcheck, and the windows/amd64 cross type-check
 ```
 
 Then push and watch the run:

@@ -841,6 +841,14 @@ tasks:
           exit 1
         fi
 
+  check:shell:
+    desc: Run shellcheck over every shell script in the working tree
+    # The rule is not here: scripts/shellcheck.sh owns which files are shell
+    # scripts, so this and the hook of the same name check the same set
+    # (ADR 0066 §1). shellcheck itself comes from the flake's devShell.
+    cmds:
+      - scripts/shellcheck.sh
+
   check:mermaid:
     desc: Validate Mermaid diagrams in Markdown files
     cmds:
@@ -952,12 +960,13 @@ tasks:
       - docker buildx create --name {{.BUILDX_BUILDER}} --driver docker-container >/dev/null
 
   ci:check:
-    desc: "The static half of CI on Linux: every lint pass plus the windows/amd64 cross type-check"
+    desc: "The static half of CI on Linux: every lint pass, shellcheck, and the windows/amd64 cross type-check"
     cmds:
       - task: check
       - task: check:windows
       - task: check:dockerfiles
       - task: check:dockerfile-deps
+      - task: check:shell
 
   ci:test:
     desc: Run every module's tests the way CI does
