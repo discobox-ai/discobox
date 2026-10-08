@@ -284,6 +284,16 @@
       "description": "Export OpenTelemetry metrics over OTLP/HTTP, to the collector the standard OTEL_EXPORTER_OTLP_ENDPOINT environment variable names, such as http://otel-collector:4318. The OTEL_METRICS_EXPORTER=otlp environment variable sets this too.",
       "type": "boolean"
     },
+    "overlayDir": {
+      "description": "Directory the overlays of non-Linux sandbox templates are staged in, and the only one a harness's file:// manifest reference may name a file in. Defaults to \u003ccacheDir\u003e/overlays. Environment: DISCOBOX_OVERLAY_DIR (takes precedence over this file).",
+      "examples": [
+        "/var/cache/discobox/overlays"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "port": {
       "default": 18080,
       "description": "TCP port for an http:// listen endpoint that does not name one. Environment: PORT (takes precedence over this file).",

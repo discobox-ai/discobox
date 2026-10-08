@@ -73,7 +73,27 @@ true of it, and true *by rule* rather than by slug:
   rewritten at the next start. An empty set — a config not inspected since —
   rules no pool out. There is no platform on a harness's catalog entry
   (`harness.Definition`): the image is the template, and its index is what
-  declares where it runs. Sandboxes are placed by it (`resources/sandboxes`).
+  declares where it runs — or, for a manifest file, the file. Sandboxes are placed by it (`resources/sandboxes`).
+- A **`file://` reference** names a manifest file instead of an image: the
+  template with no image a non-Linux sandbox runs, whose overlay ships the same
+  layers as a file (ADR 0145 §3). `inspectManifestFile` reads it from this
+  server's disk ahead of any daemon or registry — `file://` is no image
+  reference either would answer — and only from the overlay directory
+  (`overlayDir`, under the cache by default), through an `os.Root` that
+  neither `..` nor a symlink leaves: any project member registers a harness,
+  and a path read from anywhere would answer them with what the server's own
+  files hold. It resolves the file through the same
+  `harness.ResolveImageLabels` (`harness.ReadManifestFile` turns the file into
+  that label set). Its digest is the file's sha256, so a changed overlay moves
+  the pin as a rebuilt tag does, and its platforms are the one platform the
+  file declares, which it must. Both sources require the base layer and judge
+  the merged result by its platform (`harness.ImageMetadata.ValidateFor`): an
+  image is Linux's, and a label naming a platform, an account or a shell is
+  refused — its platforms are its registry's to say. A manifest file is never
+  Linux's: a Linux template is an image, and a Linux pool would run a
+  `file://` reference as one. The account, shell and features are validated
+  here and not snapshotted: nothing reads them from a config yet, and the
+  change that does adds them to the snapshot with its migration.
 - In build-mode dev (`SetDevelopmentImages`), `devImageInspector` answers first:
   it rebuilds the label set, inherited base layer included, from the dev image
   manifest's build args, because the image does not exist anywhere until a pool
