@@ -1,12 +1,14 @@
 package docker
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/releasemanifest"
 
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 func TestEffectivePoolImagePrefersTheProviderThenTheServer(t *testing.T) {
@@ -95,5 +97,24 @@ func TestReleaseManifestSupersedesProviderPoolImage(t *testing.T) {
 	}
 	if got := dockerworker.PoolImageSource("provider:local", defaults); got != "release manifest" {
 		t.Fatalf("image source = %s", got)
+	}
+}
+
+// The pool agent dials the control-plane socket by parsing this URL with wire,
+// so a socket path holding a character a URL gives meaning to must reach it
+// escaped: unescaped, "#" and "?" end the path early and "%" fails to parse.
+func TestControlPlaneReachEscapesTheSocketPath(t *testing.T) {
+	const socket = "/run/a b#c?d%e/server.sock"
+	listen := (&url.URL{Scheme: "unix", Path: socket}).String()
+	reach, err := resolveControlPlaneReach([]string{listen}, "unix:///var/run/docker.sock")
+	if err != nil {
+		t.Fatalf("resolveControlPlaneReach: %v", err)
+	}
+	got, err := wire.Parse(reach.url)
+	if err != nil || got.Scheme != "unix" || got.Path != socket {
+		t.Fatalf("the pool reads %q as %+v, err=%v; want socket %q", reach.url, got, err, socket)
+	}
+	if reach.socketDir != "/run/a b#c?d%e" {
+		t.Fatalf("socketDir = %q", reach.socketDir)
 	}
 }

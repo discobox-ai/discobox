@@ -20,6 +20,7 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
+	"github.com/discobox-ai/discobox/wire"
 )
 
 const (
@@ -212,7 +213,7 @@ func resolveControlPlaneReach(listenEndpoints []string, daemonHost string) (cont
 			// backend is wslc, which brings its own relay.
 			if daemonIsLocal(daemonHost) {
 				return controlPlaneReach{
-					url:       "unix://" + parsed.Value,
+					url:       wire.UnixURL(parsed.Value),
 					socketDir: path.Dir(parsed.Value),
 				}, nil
 			}
