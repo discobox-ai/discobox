@@ -65,11 +65,13 @@ func resolveOneAccount(goos string, l Layers, need Fields) (User, error) {
 
 	// The manifest names the account the template provisioned. The agent runs
 	// as it, so the two are one account or the sandbox was assembled wrong --
-	// and nothing here can switch to another account to make up for it.
+	// and nothing here can switch to another account to make up for it. The
+	// spelling the OS reports is the one kept: a manifest may name the account
+	// in another case (sandboxuser.SameAccount).
 	if named := strings.TrimSpace(nameOf(l.Manifest)); named != "" {
 		if account == "" {
 			account = named
-		} else if named != account {
+		} else if !sandboxuser.SameAccount(named, account) {
 			return User{}, fmt.Errorf("the sandbox's manifest names account %q, but the sandbox agent runs as %q: a %s sandbox runs every process as the agent's own account", named, account, goos)
 		}
 	}

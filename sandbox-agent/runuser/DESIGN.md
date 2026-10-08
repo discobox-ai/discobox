@@ -55,10 +55,14 @@ the sandbox resolves its own identity, with nothing left to choose:
 - The image layer is the agent's own account (`os/user.Current`, a Windows
   `DOMAIN\` prefix dropped).
 - The manifest names that account and nothing more. Naming another is an error
-  saying the sandbox was assembled wrong, not a switch.
+  saying the sandbox was assembled wrong, not a switch. Names compare without
+  case (`sandboxuser.SameAccount`), as neither Windows nor macOS tells account
+  names apart by it; the OS's spelling is the one resolved.
 - A request may name the account again, or nothing. Another user, a uid, a
-  primary group, a group set or a home is a `*sandboxuser.OneAccountError`
-  naming the field and the platform — refused, never ignored.
+  primary group, a group set or a home directory — even the account's own,
+  which is read from the account rather than said by a layer — is a
+  `*sandboxuser.OneAccountError` naming the field and the platform: refused,
+  never ignored.
 - Asking for `FieldUID`, `FieldGID` or `FieldGroups` is an `*UnresolvedError`:
   they are not fields an identity has there, and a caller about to `setuid`
   learns that instead of receiving a zero.

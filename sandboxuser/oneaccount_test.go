@@ -15,7 +15,9 @@ func TestHasPOSIXIDsOnlyOnLinux(t *testing.T) {
 }
 
 func TestValidateOneAccountAcceptsTheAccountOrNobody(t *testing.T) {
-	for _, u := range []*User{nil, {}, {Name: "dev"}, {Name: " dev "}} {
+	// An account name in another case is the same account: neither Windows nor
+	// macOS tells names apart by case.
+	for _, u := range []*User{nil, {}, {Name: "dev"}, {Name: " dev "}, {Name: "Dev"}} {
 		if err := u.ValidateOneAccount("darwin", "dev"); err != nil {
 			t.Errorf("ValidateOneAccount(%+v) = %v, want nil", u, err)
 		}
@@ -37,7 +39,7 @@ func TestValidateOneAccountRefusesWhatTheSandboxDoesNotHave(t *testing.T) {
 		"a gid":                  {User{GID: ID(20)}, FieldGID, "a primary group (20)"},
 		"a group name":           {User{GroupName: "staff"}, FieldGID, `a primary group ("staff")`},
 		"a group set":            {User{AdditionalGroups: []string{"docker", "video"}}, FieldGroups, "a group set (docker, video)"},
-		"another home":           {User{HomeDirectory: "/Users/other"}, FieldHome, `another home directory ("/Users/other")`},
+		"another home":           {User{HomeDirectory: "/Users/other"}, FieldHome, `a home directory ("/Users/other")`},
 		"its own name and a uid": {User{Name: "dev", UID: ID(1000)}, FieldUID, "a uid (1000)"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -81,5 +83,19 @@ func TestValidateAccountOffLinuxIsTheOneAccountRule(t *testing.T) {
 		if err := u.ValidateAccount("windows"); !errors.As(err, &refused) {
 			t.Errorf("ValidateAccount(%+v) = %v, want a OneAccountError", u, err)
 		}
+	}
+}
+
+// The home is the account's to have, not a layer's to name, so even the
+// account's own home is refused -- and the message says "a home directory",
+// not "another".
+func TestValidateOneAccountRefusesEvenTheAccountsOwnHome(t *testing.T) {
+	err := (&User{Name: "dev", HomeDirectory: "/Users/dev"}).ValidateOneAccount("darwin", "dev")
+	var refused *OneAccountError
+	if !errors.As(err, &refused) || refused.Field != FieldHome {
+		t.Fatalf("err = %v, want the home refused", err)
+	}
+	if strings.Contains(err.Error(), "another home") {
+		t.Fatalf("message %q calls the account's own home another", err)
 	}
 }

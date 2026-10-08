@@ -117,3 +117,18 @@ func TestAccountNameDropsTheWindowsDomain(t *testing.T) {
 		}
 	}
 }
+
+// Neither Windows nor macOS tells account names apart by case, so a manifest
+// or a request spelling the account differently still names it, and the
+// spelling the OS reports is the one resolved.
+func TestResolveOneAccountComparesNamesWithoutCase(t *testing.T) {
+	t.Cleanup(FixedDatabase())
+	got, err := resolveOneAccount("windows", Layers{
+		Image:    currentAccount(),
+		Manifest: &User{Name: "Image"},
+		Request:  &User{Name: "IMAGE"},
+	}, sandboxuser.FieldName)
+	if err != nil || got.Name != "image" {
+		t.Fatalf("resolve = %+v, %v; want the OS's spelling, image", got, err)
+	}
+}
