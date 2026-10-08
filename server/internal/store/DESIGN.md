@@ -79,7 +79,11 @@ save silently replays a stale value.
   [`resources/sandboxes/DESIGN.md`](../resources/sandboxes/DESIGN.md) for who
   owns what and
   [ADR 0034](../../../docs/adr/0034-sandbox-state-and-runtime-state-are-separate-fields.md)
-  for the incident.
+  for the incident. It omits `sandboxMetaColumns` (ADR 0136's meta copy) and
+  `sandboxPlatformColumns` too, for the same reason: the sandbox's platform is
+  written by the insert and by placement (`SchedulablePoolForSandbox`), which
+  runs inside the reconciler's provider call, and the reconciler then saves the
+  row it loaded before that call.
 - Agent telemetry is written as narrow column updates, never a row `Save`:
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
   `RecordPoolProvisionProgress`, `RecordPoolResources`.

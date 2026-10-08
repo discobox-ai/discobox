@@ -780,3 +780,21 @@ func TestImportOfAnArchiveFromBeforePlatformsGuessesNone(t *testing.T) {
 		t.Fatalf("platform = %q, want none guessed", result.Sandbox.Platform)
 	}
 }
+
+// A pool whose agent has not reported yet — a new machine's, where a transfer
+// usually goes — is not refused up front: the import goes on to the provider,
+// whose placement waits for the pool and checks the archive's platform once
+// the pool declares one (store.SchedulablePoolForSandbox, which refuses a pool
+// that never does).
+func TestImportWaitsOnAPoolThatHasNotDeclaredYet(t *testing.T) {
+	ctx, svc, st, provider := transferFixture(t)
+	configuredHarness(t, st, "codex", "Codex")
+	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, map[string]string{"data/x": "x"})
+	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
+	if err != nil {
+		t.Fatalf("import onto a pool that has not reported yet: %v", err)
+	}
+	if provider.importedPool != "pool-1" || result.Sandbox.Platform != platform.Pool() {
+		t.Fatalf("tree landed on %q with platform %q, want pool-1 and the archive's %q", provider.importedPool, result.Sandbox.Platform, platform.Pool())
+	}
+}

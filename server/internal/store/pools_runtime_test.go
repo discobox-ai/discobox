@@ -463,3 +463,58 @@ func TestPlacementOfAStandInFromBeforePlatforms(t *testing.T) {
 		t.Fatalf("err = %v, want a stand-in of another platform refused", err)
 	}
 }
+
+// Placement writes the platform it settles onto the row, and the reconciler
+// then saves the sandbox it loaded before placing it — whose platform is
+// still empty. That save must not undo the settlement.
+func TestASettledPlatformSurvivesTheReconcilersSave(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	schedulablePool(t, s, "pool-1", riscv)
+	if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-1", ProjectID: "project-1", PoolID: "pool-1", Name: "one", CreatedByUserID: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := s.GetSandbox(ctx, "project-1", "sbx-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: "sbx-1", ProjectID: "project-1", PoolID: "pool-1"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, update := range []func() error{
+		func() error { return s.UpdateSandbox(ctx, loaded) },
+		func() error { return s.UpdateSandbox(ctx, loaded, store.WithGeneration(loaded.Generation)) },
+	} {
+		if err := update(); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.GetSandbox(ctx, "project-1", "sbx-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Platform != riscv {
+			t.Fatalf("platform = %q after the reconciler's save, want the settled %q", got.Platform, riscv)
+		}
+	}
+}
+
+// A pool that has declared no platform places a sandbox that has none, as
+// before platforms, but refuses one that has: only an import's tree brings a
+// platform onto such a pool, and nothing could check it there.
+func TestAnUndeclaredPoolRefusesASandboxWithAPlatform(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	schedulablePool(t, s, "pool-1", platform.Platform{})
+	_, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: "sbx-import", ProjectID: "project-1", PoolID: "pool-1", Platform: platform.Pool()})
+	var mismatch *platform.MismatchError
+	if !errors.As(err, &mismatch) || errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("err = %v, want a mismatch for a stand-in with a platform", err)
+	}
+	if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-row", ProjectID: "project-1", PoolID: "pool-1", Name: "row", CreatedByUserID: "user-1", Platform: platform.Pool()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: "sbx-row", ProjectID: "project-1", PoolID: "pool-1"}); !errors.As(err, &mismatch) {
+		t.Fatalf("err = %v, want a mismatch for a row with a platform", err)
+	}
+}

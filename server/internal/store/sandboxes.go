@@ -381,8 +381,17 @@ var sandboxMetaColumns = []string{
 	"meta_observed_at",
 }
 
+// sandboxPlatformColumns is the sandbox's platform (ADR 0145 §1), written by
+// the create or import that inserts the row and by placement, which settles it
+// for a row that has none yet (SchedulablePoolForSandbox), and by nothing
+// else. UpdateSandbox omits it for the reason it omits the columns above: the
+// reconciler loads a sandbox, asks its provider to create it — which is where
+// placement writes the platform — and saves the row it loaded, which would put
+// the empty platform back over the one just settled.
+var sandboxPlatformColumns = []string{"platform"}
+
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...)
+var sandboxOmittedColumns = append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...)
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
 	var opts sandboxGetOptions

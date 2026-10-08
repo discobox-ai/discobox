@@ -37,7 +37,7 @@ func TestPoolPlatformsRunOnlyWhatAPoolHosts(t *testing.T) {
 	if !platformsOf([]apimodel.Pool{pool("linux/arm64"), pool("")}).run(harness("darwin/arm64")) {
 		t.Error("an undeclared pool ruled a harness out")
 	}
-	if platformsOf(nil).run(harness("linux/arm64")) {
+	if platformsOf(nil).run(harness("linux/arm64")) || platformsOf(nil).run(harness()) {
 		t.Error("a harness is offered with no pool to run it")
 	}
 }

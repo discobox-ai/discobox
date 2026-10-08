@@ -209,8 +209,10 @@ that makes it schedulable again. Nor does a report touch the pool's sandboxes;
 a sandbox takes its platform when it is placed.
 
 `SchedulablePoolForSandbox` is where a sandbox's platform is settled, on a pool
-that has declared one; a pool that has not places as every pool did before
-platforms, settling and checking nothing. A
+that has declared one. A pool that has not places a sandbox that has no
+platform as every pool did before platforms, settling and checking nothing,
+and refuses one that has — only an import's tree brings a platform onto such a
+pool, and nothing could check it there (ADR 0145 §8). A
 sandbox with none yet — created while its pool's agent had declared nothing,
 or before platforms were recorded — takes the pool's, written to its row, but
 only if its harness's image is published for it. It refuses a harness whose

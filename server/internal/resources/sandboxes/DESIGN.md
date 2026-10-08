@@ -347,7 +347,9 @@ and is answered as a 400 about the archive rather than an error about the pool
   recorded. Import refuses, with 409 and before the upload, a destination
   harness whose image is not published for the archive's platform, or a
   destination pool of another platform, and passes the platform to
-  `Provider.ImportTree`, whose placement checks the pool it lands on. An archive
+  `Provider.ImportTree`, whose placement checks the pool it lands on — waiting
+  for one that has not reported yet, and refusing one that never declares a
+  platform — before the tree is read. An archive
   from before platforms names none and is not guessed at: nothing refuses it,
   and the sandbox it becomes takes its pool's platform when it is placed.
 - **`Origin` travels beside the manifest.** It is a fact about the client, not
