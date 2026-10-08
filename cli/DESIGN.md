@@ -871,6 +871,20 @@ ambiguity is refused, naming the IDs to choose between, and only that argument
 fails. Archiving is reversible, but archiving the wrong discobox still takes a
 running agent out from under somebody.
 
+`discobox tag DISCOBOX [KEY[=VALUE]...] [--rm KEY]... [--description TEXT]`
+(`internal/cli/tag.go`) is the CLI's one writer of a discobox's meta, over
+`update-sandbox-meta` (ADR 0136). It is a root command beside `ls --tag`, which
+filters on what it sets, and has no `admin box` twin: there is no raw option
+to carry, and `admin box get` already prints the record, meta included. It
+resolves its one discobox by the power commands' rule, full ID skipping the
+listing, because a lead tags the workers it created under the sandbox role
+(ADR 26-10-08-447). Arguments are parsed with `sandboxmeta` (`ParseTag`,
+`ValidateKey`, `Change.Check`) and refused before any call, the listing
+included, naming the argument. The server checks the change again before it
+reaches the discobox, so neither check stands in for the other. It prints
+the tags the discobox holds afterwards, one per line, or its ID, description,
+and tags as terminal-safe JSON.
+
 `discobox shell` is the exception: the root command is the everyday one-shot "run
 this in my sandbox" verb, while `admin exec create` stays the raw, fully
 configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive

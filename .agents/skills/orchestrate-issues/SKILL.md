@@ -32,11 +32,12 @@ long as the run (a day or more); renew before it lapses, in one request.
 discobox-access request --json <<'EOF'
 {
   "id": "ai.discobox.sandbox",
-  "justification": "the user asked me to deliver issues <list> through worker discoboxes I create; I launch them with no credentials, watch and answer them, start and stop them, and answer their credential requests",
+  "justification": "the user asked me to deliver issues <list> through worker discoboxes I create; I launch them with no credentials, watch and answer them, start and stop them, tag the finished ones, and answer their credential requests",
   "uses": [
     {"description": "discobox new -d -C https://github.com/discobox-ai/discobox[@ref] -p <any prompt>: create a discobox with any prompt and no grants or secrets, cloned from the GitHub repository discobox-ai/discobox, including the polling discobox new makes for the discobox it just created"},
     {"description": "discobox admin box ls and discobox admin box get <discobox-id>, to watch the discoboxes I created"},
     {"description": "discobox start <discobox-id>, discobox stop <discobox-id> and discobox restart <discobox-id> (or discobox admin box start|stop|restart <discobox-id>): start, stop or restart a discobox I created"},
+    {"description": "discobox tag <discobox-id> to-delete: tag a discobox I created whose pull request merged, so its user can find it with discobox ls --all --tag to-delete"},
     {"description": "discobox admin terminal ls --discobox-id <discobox-id>, discobox admin terminal screen <terminal-id> --discobox-id <discobox-id> [--scrollback N], and discobox admin terminal wait <terminal-id> --discobox-id <discobox-id> [flags]: read what a discobox I created shows in its terminals"},
     {"description": "discobox admin terminal input <terminal-id> --discobox-id <discobox-id> [--literal] <keys or text>: type keys and messages into the terminal of a discobox I created, to answer its questions, give it its next step, tell it to continue, or ask it to free its own Docker build cache"},
     {"description": "discobox secret request ls, to see what the discoboxes I created are asking for"},
@@ -164,7 +165,8 @@ and has every PR that went `dirty` rebase its own branch. A PR that
 conflicts repeatedly should be merged as soon as it is green, and nothing
 pushed straight to `main` in between.
 
-When a PR merges, stop its worker; tell the user it can be purged (you can
-stop a discobox, not delete it). When the batch is done, report what merged,
-what each worker could not verify, the follow-ups worth filing, and take the
-next wave.
+When a PR merges, tag its worker `to-delete` (`discobox tag <discobox-id>
+to-delete`) and stop it; tell the user `discobox ls --all --tag to-delete` lists
+the ones that can be purged (you can tag and stop a discobox, not delete it).
+When the batch is done, report what merged, what each worker could not
+verify, the follow-ups worth filing, and take the next wave.

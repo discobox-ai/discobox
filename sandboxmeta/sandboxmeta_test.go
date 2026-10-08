@@ -2,6 +2,7 @@ package sandboxmeta
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -196,5 +197,26 @@ func TestSelectors(t *testing.T) {
 	}
 	if !MatchesAll(tags, all) || MatchesAll(map[string]string{"wip": ""}, all) || !MatchesAll(nil, nil) {
 		t.Fatal("MatchesAll() did not require every selector")
+	}
+}
+
+// ParseTag reads back what TagStrings writes, and names the argument it
+// refuses.
+func TestParseTag(t *testing.T) {
+	for _, tt := range []struct{ text, key, value string }{
+		{"wip", "wip", ""},
+		{"wip=", "wip", ""},
+		{"ticket=ENG-12", "ticket", "ENG-12"},
+		{"query=a=b c", "query", "a=b c"},
+	} {
+		key, value, err := ParseTag(tt.text)
+		if err != nil || key != tt.key || value != tt.value {
+			t.Errorf("ParseTag(%q) = %q, %q, %v; want %q, %q", tt.text, key, value, err, tt.key, tt.value)
+		}
+	}
+	for _, text := range []string{"", "=x", "bad key", "a,b", "ticket=a,b", "ticket=a\nb"} {
+		if _, _, err := ParseTag(text); err == nil || !strings.Contains(err.Error(), strconv.Quote(text)) {
+			t.Errorf("ParseTag(%q) error = %v, want one naming the argument", text, err)
+		}
 	}
 }
