@@ -208,7 +208,10 @@ survive: `TE: trailers` when the client's `TE` asks for trailers, which gRPC
 needs, and a WebSocket handshake's `Connection: Upgrade` with its `Upgrade`,
 which [Upgraded Streams](#upgraded-streams) needs. WebSocket is the one upgrade
 `goproxy` forwards — it deletes `Connection` from any other — so another
-upgrade loses both rather than going out with a bare `Upgrade`.
+upgrade loses both rather than going out with a bare `Upgrade`. A client's
+`Connection: close` outlives its header in `req.Close`, so `roundTrip` sends a
+copy without it: it would otherwise close the upstream connection, or retire a
+pooled HTTP/2 one that other sandboxes' requests share.
 
 HTTP/2 is why this is not cosmetic. An HTTP/1.1 request can go out over
 HTTP/2 (below), where `TE` may only be `trailers` (RFC 9113 §8.2.2) and any

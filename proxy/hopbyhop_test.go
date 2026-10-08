@@ -24,10 +24,10 @@ func TestHTTPProxyDropsHopByHopHeadersBeforeAnHTTP2Upstream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	type seen struct{ proto, te, keepAlive, named string }
+	type seen struct{ proto, te, keepAlive, named, from string }
 	saw := make(chan seen, 1)
 	origin := httptest.NewUnstartedServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		saw <- seen{proto: r.Proto, te: r.Header.Get("Te"), keepAlive: r.Header.Get("Keep-Alive"), named: r.Header.Get("X-Hop")}
+		saw <- seen{proto: r.Proto, te: r.Header.Get("Te"), keepAlive: r.Header.Get("Keep-Alive"), named: r.Header.Get("X-Hop"), from: r.RemoteAddr}
 		_, _ = io.WriteString(w, "ok")
 	}))
 	origin.EnableHTTP2 = true
@@ -62,13 +62,19 @@ func TestHTTPProxyDropsHopByHopHeadersBeforeAnHTTP2Upstream(t *testing.T) {
 	t.Cleanup(func() { _ = server.Close(); <-errCh })
 	client := mitmClient(t, waitForAddr(t, server).String(), prepared.Clients["sandbox-1"])
 
+	// Every request should share one upstream connection: a client's
+	// "Connection: close" is about its own connection to the proxy, and must
+	// not retire the HTTP/2 one the proxy pools.
+	var upstreamConn string
+
 	for _, tc := range []struct {
 		name   string
 		header http.Header
 		wantTE string
 	}{
 		// What libwww-perl, and so extrepo, sends on every request.
-		{name: "libwww-perl", header: http.Header{"Te": {"deflate,gzip;q=0.3"}, "Connection": {"TE"}}},
+		{name: "libwww-perl", header: http.Header{"Te": {"deflate,gzip;q=0.3"}, "Connection": {"TE, close"}}},
+		{name: "after a close", header: http.Header{"Te": {"gzip"}}},
 		{name: "TE gzip", header: http.Header{"Te": {"gzip"}}},
 		{name: "named by Connection", header: http.Header{"Connection": {"X-Hop"}, "X-Hop": {"1"}, "Keep-Alive": {"timeout=5"}}},
 		{name: "trailers", header: http.Header{"Te": {"trailers"}}, wantTE: "trailers"},
@@ -95,6 +101,12 @@ func TestHTTPProxyDropsHopByHopHeadersBeforeAnHTTP2Upstream(t *testing.T) {
 			}
 			if got.te != tc.wantTE || got.keepAlive != "" || got.named != "" {
 				t.Fatalf("origin saw TE %q, Keep-Alive %q, X-Hop %q; want TE %q and neither of the others", got.te, got.keepAlive, got.named, tc.wantTE)
+			}
+			if upstreamConn == "" {
+				upstreamConn = got.from
+			}
+			if got.from != upstreamConn {
+				t.Fatalf("request came from %s, want the pooled upstream connection %s", got.from, upstreamConn)
 			}
 		})
 	}
