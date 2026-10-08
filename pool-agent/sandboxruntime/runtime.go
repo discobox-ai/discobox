@@ -118,6 +118,10 @@ var (
 	// that this slug names no source on it.
 	ErrRepositoryNotFound = errors.New("sandbox git repository not found")
 	ErrAlreadyExists      = errors.New("sandbox already exists")
+	// ErrWorktreeUnsupported is a sandbox whose image's agent predates serving
+	// the sandbox's own repository. Its work is still in it; an upgrade, which
+	// keeps the workspace, is what makes it reachable again.
+	ErrWorktreeUnsupported = errors.New("the sandbox's image predates serving its own repository; run `discobox admin box upgrade` on it, then try again")
 	// ErrImageUnavailable is the pool being unable to obtain the image a
 	// sandbox is pinned to. It is not transient: the pin names an image this
 	// pool does not have and cannot get, so the way forward is an upgrade that
@@ -140,10 +144,11 @@ type Sandbox struct {
 	Env       map[string]string
 }
 
-// GitRepositoryLocation is the on-host location of a sandbox's git repository,
-// together with the OS identity that owns it. The git CGI backend must run as
-// this identity, not as the pool-agent process's own identity, or it trips
-// git's dubious-ownership check against the sandbox user's checked-out worktree.
+// GitRepositoryLocation is the on-host location of a source's origin
+// repository, together with the OS identity that owns it. The git CGI backend
+// must run as this identity, not as the pool-agent process's own identity, or
+// it trips git's dubious-ownership check against a repository the sandbox user
+// owns.
 type GitRepositoryLocation struct {
 	Path string
 	// UID and GID are the owning user. A negative value means the caller
@@ -241,12 +246,15 @@ type Runtime interface {
 	// sandbox agent has not answered yet: Docker calls it running, and nothing
 	// in it can be reached.
 	SandboxBooting(sandboxID string) bool
-	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error)
 	// GitOriginPath is the repository behind a source's origin route: the
 	// developer's live Git directory when this pool can see it (ADR 0126 §4),
 	// and otherwise the bare origin repository the client pushes into
 	// (ADR 0058 §3).
 	GitOriginPath(ctx context.Context, sandboxID, slug string) (GitRepositoryLocation, error)
+	// SandboxServesWorktree is nil when the sandbox's agent serves its own
+	// repository, which the worktree route forwards to (ADR 0126 §4), and
+	// ErrWorktreeUnsupported when the sandbox runs an agent from before it did.
+	SandboxServesWorktree(ctx context.Context, sandboxID string) error
 	// SandboxDialer resolves how to reach port inside the sandbox — its agent
 	// on SandboxAgentPort, or a port something in it listens on — and returns
 	// the dial for it (ADR 0126 §5). A sandbox that cannot be reached at all
@@ -2122,22 +2130,6 @@ func (r *DockerSandboxRuntime) adoptSourcePaths(ctx context.Context, sandboxID s
 	return nil
 }
 
-func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {
-	sb, err := r.GetSandbox(ctx, sandboxID)
-	if err != nil {
-		return GitRepositoryLocation{}, err
-	}
-	repoPath := r.sandboxSourcePath(sandboxID, repositoryID)
-	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
-		if os.IsNotExist(err) {
-			return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, repositoryID)
-		}
-		return GitRepositoryLocation{}, err
-	}
-	uid, gid := sandboxUserFromEnv(sb.Env)
-	return GitRepositoryLocation{Path: repoPath, UID: uid, GID: gid}, nil
-}
-
 // GitOriginPath is where a source's origin is served from; see
 // originLocation. A bare origin is probed for HEAD rather than `.git`, which
 // is what every repository has and a directory does not, and it exists from
@@ -2181,6 +2173,23 @@ func (r *DockerSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID stri
 		return nil, err
 	}
 	return containerDialer(sandboxID, inspect.Container, port)
+}
+
+// SandboxServesWorktree reads the label the sandbox's image carries: the
+// container's labels are its image's, so an image too old to have the label
+// runs an agent too old to serve the route (harness.WorktreeGitLabel).
+func (r *DockerSandboxRuntime) SandboxServesWorktree(ctx context.Context, sandboxID string) error {
+	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters(sandboxID)})
+	if err != nil {
+		return err
+	}
+	if len(containers.Items) == 0 {
+		return ErrNotFound
+	}
+	if containers.Items[0].Labels[harness.WorktreeGitLabel] != harness.WorktreeGitLabelValue {
+		return ErrWorktreeUnsupported
+	}
+	return nil
 }
 
 // containerDialer reaches a port in a sandbox container at its address on the
@@ -2425,10 +2434,9 @@ type MemorySandboxRuntime struct {
 	sandboxes map[string]*Sandbox
 	// archived stands in for the on-disk marker: an entry here has no sandbox
 	// in the map (archiving drops the container) but is still held as data.
-	archived        map[string]struct{}
-	gitRepositories map[string]map[string]string
-	gitOrigins      map[string]map[string]string
-	liveOrigins     map[string]map[string]GitRepositoryLocation
+	archived    map[string]struct{}
+	gitOrigins  map[string]map[string]string
+	liveOrigins map[string]map[string]GitRepositoryLocation
 	// trees stands in for the durable tree on disk: the tar bytes a sandbox was
 	// imported with, handed back by an export.
 	trees map[string][]byte
@@ -2436,12 +2444,11 @@ type MemorySandboxRuntime struct {
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 	return &MemorySandboxRuntime{
-		sandboxes:       map[string]*Sandbox{},
-		archived:        map[string]struct{}{},
-		gitRepositories: map[string]map[string]string{},
-		gitOrigins:      map[string]map[string]string{},
-		liveOrigins:     map[string]map[string]GitRepositoryLocation{},
-		trees:           map[string][]byte{},
+		sandboxes:   map[string]*Sandbox{},
+		archived:    map[string]struct{}{},
+		gitOrigins:  map[string]map[string]string{},
+		liveOrigins: map[string]map[string]GitRepositoryLocation{},
+		trees:       map[string][]byte{},
 	}
 }
 
@@ -2648,19 +2655,6 @@ func (r *MemorySandboxRuntime) SandboxBooting(string) bool {
 	return false
 }
 
-func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.sandboxes[sandboxID] == nil {
-		return GitRepositoryLocation{}, ErrNotFound
-	}
-	repositories := r.gitRepositories[sandboxID]
-	if repositories == nil || repositories[repositoryID] == "" {
-		return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, repositoryID)
-	}
-	return GitRepositoryLocation{Path: repositories[repositoryID], UID: -1, GID: -1}, nil
-}
-
 func (r *MemorySandboxRuntime) GitOriginPath(_ context.Context, sandboxID, slug string) (GitRepositoryLocation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -2675,6 +2669,17 @@ func (r *MemorySandboxRuntime) GitOriginPath(_ context.Context, sandboxID, slug 
 		return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, slug)
 	}
 	return GitRepositoryLocation{Path: origins[slug], UID: -1, GID: -1}, nil
+}
+
+// SandboxServesWorktree answers for any sandbox it holds: a memory sandbox has
+// no image to be too old.
+func (r *MemorySandboxRuntime) SandboxServesWorktree(_ context.Context, sandboxID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sandboxes[sandboxID] == nil {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SandboxDialer reaches nothing: a memory sandbox has nothing in it to dial.
@@ -2729,15 +2734,6 @@ func (r *MemorySandboxRuntime) WatchSandboxVolumes(ctx context.Context, _ *slog.
 // WatchProxyMaterial reclaims nothing: this runtime stages no proxy material.
 func (r *MemorySandboxRuntime) WatchProxyMaterial(ctx context.Context, _ *slog.Logger) {
 	<-ctx.Done()
-}
-
-func (r *MemorySandboxRuntime) SetGitRepositoryPath(sandboxID, repositoryID, path string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.gitRepositories[sandboxID] == nil {
-		r.gitRepositories[sandboxID] = map[string]string{}
-	}
-	r.gitRepositories[sandboxID][repositoryID] = path
 }
 
 func (r *MemorySandboxRuntime) SetGitOriginPath(sandboxID, slug, path string) {

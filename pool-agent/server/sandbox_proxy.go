@@ -115,28 +115,36 @@ func (s *sandboxService) sandboxAgentProxyHandler() http.Handler {
 			http.Error(w, err.Error(), statusCodeForGitError(err))
 			return
 		}
-		downstreamAuth := strings.TrimSpace(r.Header.Get(sandboxAgentAuthorizationHeader))
-		if downstreamAuth == "" {
-			http.Error(w, "sandbox-agent authorization is required", http.StatusUnauthorized)
-			return
-		}
-		dial, err := s.runtime.SandboxDialer(r.Context(), chi.URLParam(r, "sandboxId"), sandboxruntime.SandboxAgentPort)
-		if err != nil {
-			http.Error(w, err.Error(), statusCodeForGitError(mapRuntimeError(err)))
-			return
-		}
-		target := sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, sandboxAgentPath(
-			chi.URLParam(r, "projectId"),
-			chi.URLParam(r, "sandboxId"),
-			strings.TrimPrefix(r.URL.Path, fmt.Sprintf(
-				"/api/project/%s/pool/%s/sandboxes/%s",
-				chi.URLParam(r, "projectId"),
-				chi.URLParam(r, "poolId"),
-				chi.URLParam(r, "sandboxId"),
-			)),
-		))
-		sandboxProxy(dial, target, downstreamAuth).ServeHTTP(w, r)
+		s.forwardToSandboxAgent(w, r)
 	})
+}
+
+// forwardToSandboxAgent sends an authorized request on to the sandbox's agent,
+// at the same path below the sandbox, carrying the sandbox-agent token the
+// control plane forwarded. The agent checks that token itself: what the pool
+// checked authorizes the hop to the pool, never what the sandbox serves.
+func (s *sandboxService) forwardToSandboxAgent(w http.ResponseWriter, r *http.Request) {
+	downstreamAuth := strings.TrimSpace(r.Header.Get(sandboxAgentAuthorizationHeader))
+	if downstreamAuth == "" {
+		http.Error(w, "sandbox-agent authorization is required", http.StatusUnauthorized)
+		return
+	}
+	dial, err := s.runtime.SandboxDialer(r.Context(), chi.URLParam(r, "sandboxId"), sandboxruntime.SandboxAgentPort)
+	if err != nil {
+		http.Error(w, err.Error(), statusCodeForGitError(mapRuntimeError(err)))
+		return
+	}
+	target := sandboxruntime.HTTPURL(sandboxruntime.SandboxAgentPort, sandboxAgentPath(
+		chi.URLParam(r, "projectId"),
+		chi.URLParam(r, "sandboxId"),
+		strings.TrimPrefix(r.URL.Path, fmt.Sprintf(
+			"/api/project/%s/pool/%s/sandboxes/%s",
+			chi.URLParam(r, "projectId"),
+			chi.URLParam(r, "poolId"),
+			chi.URLParam(r, "sandboxId"),
+		)),
+	))
+	sandboxProxy(dial, target, downstreamAuth).ServeHTTP(w, r)
 }
 
 func authorizeProxyScope(r *http.Request, scope string) error {

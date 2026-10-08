@@ -1,4 +1,4 @@
-package githttp
+package gitbackend
 
 import (
 	"io"
@@ -22,7 +22,7 @@ func TestBackendEnvForwardsContentEncoding(t *testing.T) {
 	r.Header.Set("Content-Type", "application/x-git-upload-pack-request")
 	r.Header.Set("Content-Encoding", "gzip")
 
-	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/git-upload-pack")
+	env := backendEnv(r, Backend{Root: "/srv/repo", RemoteUser: "pool-agent"}, "/git-upload-pack")
 	if !slices.Contains(env, "HTTP_CONTENT_ENCODING=gzip") {
 		t.Fatalf("HTTP_CONTENT_ENCODING missing from CGI environment: %v", env)
 	}
@@ -30,7 +30,7 @@ func TestBackendEnvForwardsContentEncoding(t *testing.T) {
 
 func TestBackendEnvOmitsContentEncodingWhenAbsent(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), "POST", "/repo.git/git-upload-pack", strings.NewReader("body"))
-	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/git-upload-pack")
+	env := backendEnv(r, Backend{Root: "/srv/repo", RemoteUser: "pool-agent"}, "/git-upload-pack")
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "HTTP_CONTENT_ENCODING=") {
 			t.Fatalf("unencoded request must not claim an encoding: %q", entry)
@@ -41,8 +41,9 @@ func TestBackendEnvOmitsContentEncodingWhenAbsent(t *testing.T) {
 // TestBackendEnvIsNotInheritedFromTheAgent pins that the backend's environment
 // is built rather than inherited. The agent runs as root and holds the pool's
 // bootstrap token; the backend runs as the repository's owner over a worktree
-// the sandbox can write, whose .git/config can name the program git runs there.
-// So everything the agent was started with stays with the agent, PATH aside.
+// someone else can write, whose .git/config can name the program git runs
+// there. So everything the agent was started with stays with the agent, PATH
+// aside.
 func TestBackendEnvIsNotInheritedFromTheAgent(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("HOME", "/root")
@@ -54,7 +55,7 @@ func TestBackendEnvIsNotInheritedFromTheAgent(t *testing.T) {
 	t.Setenv("GIT_NAMESPACE", "hidden")
 
 	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack", nil)
-	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/info/refs")
+	env := backendEnv(r, Backend{Root: "/srv/repo", RemoteUser: "pool-agent"}, "/info/refs")
 
 	want := []string{
 		"PATH=/usr/bin",
@@ -82,7 +83,7 @@ func TestBackendEnvForwardsGitProtocol(t *testing.T) {
 	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack", nil)
 	r.Header.Set("Git-Protocol", "version=2")
 
-	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/info/refs")
+	env := backendEnv(r, Backend{Root: "/srv/repo", RemoteUser: "pool-agent"}, "/info/refs")
 	if !slices.Contains(env, "GIT_PROTOCOL=version=2") {
 		t.Fatalf("GIT_PROTOCOL missing from CGI environment: %v", env)
 	}
@@ -94,7 +95,7 @@ func TestBackendEnvOmitsGitProtocolWhenAbsent(t *testing.T) {
 	t.Setenv("GIT_PROTOCOL", "version=2")
 
 	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack", nil)
-	env := backendEnv(r, Repository{Path: "/srv/repo"}, "/info/refs")
+	env := backendEnv(r, Backend{Root: "/srv/repo", RemoteUser: "pool-agent"}, "/info/refs")
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GIT_PROTOCOL=") {
 			t.Fatalf("request naming no protocol version must not claim one: %q", entry)
@@ -102,12 +103,44 @@ func TestBackendEnvOmitsGitProtocolWhenAbsent(t *testing.T) {
 	}
 }
 
-// TestServeBackendAnswersInTheProtocolVersionTheClientAsked runs the real
+// A backend that fixes its protocol answers v0 whatever the client asked: the
+// pool's live origin relies on it, because a v2 upload-pack serves any object
+// it is asked for by id.
+func TestBackendEnvIgnoresGitProtocolWhenFixed(t *testing.T) {
+	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack", nil)
+	r.Header.Set("Git-Protocol", "version=2")
+
+	env := backendEnv(r, Backend{Root: "/srv/repo", FixedProtocol: true}, "/info/refs")
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "GIT_PROTOCOL=") {
+			t.Fatalf("a fixed-protocol backend was handed the client's version: %q", entry)
+		}
+	}
+}
+
+// http-backend reads the last service parameter and Go the first, so a
+// request naming both is a push wherever it is judged.
+func TestARequestNamingBothServicesIsAPush(t *testing.T) {
+	r := httptest.NewRequestWithContext(t.Context(), "GET", "/repo.git/info/refs?service=git-upload-pack&service=git-receive-pack", nil)
+	if !IsReceivePack(r) {
+		t.Fatal("a request naming receive-pack second was not taken for a push")
+	}
+	r = httptest.NewRequestWithContext(t.Context(), "POST", "/repo.git/git-receive-pack", nil)
+	if !IsReceivePack(r) {
+		t.Fatal("a pack sent to git-receive-pack was not taken for a push")
+	}
+	r = httptest.NewRequestWithContext(t.Context(), "POST", "/repo.git/git-upload-pack", nil)
+	if IsReceivePack(r) {
+		t.Fatal("an upload-pack request was taken for a push")
+	}
+}
+
+// TestServeAnswersInTheProtocolVersionTheClientAsked runs the real
 // backend over a real repository, because the header-to-CGI mapping above is
 // only worth anything if git acts on it: a client asking for v2 gets the v2
 // capability list, and one asking for nothing still gets the v0 advertisement
 // every older client expects.
-func TestServeBackendAnswersInTheProtocolVersionTheClientAsked(t *testing.T) {
+func TestServeAnswersInTheProtocolVersionTheClientAsked(t *testing.T) {
 	repo := initTestRepository(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, suffix, ok := ParseRepositoryPath(strings.TrimPrefix(r.URL.Path, "/"))
@@ -115,7 +148,7 @@ func TestServeBackendAnswersInTheProtocolVersionTheClientAsked(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		ServeBackend(w, r, Repository{Path: repo, UID: -1, GID: -1}, suffix)
+		Serve(w, r, Backend{Root: repo}, suffix)
 	}))
 	defer server.Close()
 

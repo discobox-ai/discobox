@@ -416,69 +416,6 @@ func TestPoolSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) {
 	}
 }
 
-func TestPoolSandboxGitRepositoryRouteServesCheckedOutRepository(t *testing.T) {
-	// git on Windows applies its own line-ending translation, so content
-	// pushed with a bare newline is checked out with a carriage return and the
-	// comparison below measures git's configuration rather than the route's
-	// behavior. The pool agent only ever runs inside a Linux container.
-	if runtime.GOOS == "windows" {
-		t.Skip("requires a POSIX host: git line-ending translation")
-	}
-	ctx := context.Background()
-	runtime := poolagent.NewMemorySandboxRuntime()
-	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.PoolSandboxCreateRequest{
-		SandboxId: "sandbox-1",
-		Config: workerapimodel.SandboxConfig{
-			Image: workerclient.NewOptString("alpine"),
-		},
-	}); err != nil {
-		t.Fatalf("create sandbox: %v", err)
-	}
-
-	repo := filepath.Join(t.TempDir(), "primary")
-	initGitRepo(t, repo, "one\n")
-	runtime.SetGitRepositoryPath("sandbox-1", "primary", repo)
-
-	controlPlaneKey, signToken := workerAgentTestSigner(t)
-	readToken := signToken("project-1", "pool-1", "sandbox-1", poolagentserver.ScopeSandboxRead)
-	writeToken := signToken("project-1", "pool-1", "sandbox-1", poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite)
-	server := httptest.NewServer(poolagent.NewSandboxHandler(poolagent.Bootstrap{ProjectID: "project-1", PoolID: "pool-1", ControlPlaneKey: controlPlaneKey}, runtime))
-	defer server.Close()
-
-	gitURL := server.URL + "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/git-repositories/primary.git"
-	if out := gitOutput(t, "", "-c", "http.extraHeader=Authorization: Bearer "+readToken, "ls-remote", gitURL, "HEAD"); !strings.Contains(out, "HEAD") {
-		t.Fatalf("ls-remote output = %q, want HEAD", out)
-	}
-
-	clientRepo := filepath.Join(t.TempDir(), "client")
-	git(t, "", "-c", "http.extraHeader=Authorization: Bearer "+writeToken, "clone", gitURL, clientRepo)
-	if err := os.WriteFile(filepath.Join(clientRepo, "README.md"), []byte("two\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git(t, clientRepo, "add", "README.md")
-	git(t, clientRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "two")
-	git(t, clientRepo, "-c", "http.extraHeader=Authorization: Bearer "+writeToken, "push", "origin", "main")
-
-	data, err := os.ReadFile(filepath.Join(repo, "README.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "two\n" {
-		t.Fatalf("sandbox worktree README = %q, want pushed content", string(data))
-	}
-
-	readOnlyClientRepo := filepath.Join(t.TempDir(), "readonly-client")
-	git(t, "", "-c", "http.extraHeader=Authorization: Bearer "+readToken, "clone", gitURL, readOnlyClientRepo)
-	if err := os.WriteFile(filepath.Join(readOnlyClientRepo, "README.md"), []byte("three\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git(t, readOnlyClientRepo, "add", "README.md")
-	git(t, readOnlyClientRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "three")
-	if err := gitErr(readOnlyClientRepo, "-c", "http.extraHeader=Authorization: Bearer "+readToken, "push", "origin", "main"); err == nil {
-		t.Fatal("read-only token push succeeded, want failure")
-	}
-}
-
 // The origin route serves a source's own bare repository, on its own path, with
 // the same scope rules: a re-push from the client lands there and the sandbox's
 // checkout is untouched (ADR 0058 §3).

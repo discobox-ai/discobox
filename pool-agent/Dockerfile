@@ -17,6 +17,7 @@ COPY api ./api
 COPY auditid ./auditid
 COPY controlplane ./controlplane
 COPY fsdurable ./fsdurable
+COPY gitbackend ./gitbackend
 COPY harness ./harness
 COPY hostscope ./hostscope
 COPY judge ./judge

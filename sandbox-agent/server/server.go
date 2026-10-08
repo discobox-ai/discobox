@@ -310,6 +310,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		})
 		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach", handler.attachTCPTunnelHTTP)
 		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/udp/attach", handler.attachUDPTunnelHTTP)
+		protected.Handle("/api/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*", http.HandlerFunc(handler.serveGitRepositoryHTTP))
 		protected.Mount("/", generated)
 	})
 	return agentRuntime{

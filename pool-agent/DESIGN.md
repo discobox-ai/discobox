@@ -24,10 +24,10 @@ from the in-sandbox `sandbox-agent` API.
 | `poolauth` | Pool-to-control-plane assertions: PASETO v4.public signed with the pool's Ed25519 key. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
-| `githttp` | `git http-backend` CGI bridge behind the `git-repositories`/`git-origins` routes, run as the repository's owner. A live origin is served fetch-only with a ref allow-list; see [Git origins](#git-origins). |
+| `githttp` | Serves the `git-origins` route through the shared [`gitbackend`](../gitbackend) CGI bridge, run as the repository's owner. A live origin is served fetch-only with a ref allow-list; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
-| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, Git paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`; it also records each local source's live origin for the `git-origins` route (`origin.go`). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the sandbox's pinned image as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — refuses an image without `harness.TreeExportLabel`, verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129). Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key) and binds each source's origin, read-only, at `/.discobox/origins/<slug>`; it also records each local source's live origin for the `git-origins` route (`origin.go`). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
@@ -343,10 +343,14 @@ sandbox-directed routes — the HTTP proxy, the sandbox-agent proxy, the Git
 proxy, and the SSH ingress's TCP tunnel route (ADR 0024 §7) — start a stopped
 sandbox before proxying (`server/autostart.go`), and ten concurrent requests
 produce one start. Control operations never auto-start. A failed on-demand
-start refuses the routes that reach into the sandbox with its error, so a runtime
-failure such as a missing bind mount is not hidden behind a missing sandbox IP
-address. The Git routes still serve: the pool host answers them from the
-sandbox's files, so the work in a sandbox that cannot start can still be fetched.
+start refuses the routes that reach into the sandbox with its error and names
+`discobox admin box repair` for when it persists, so a runtime failure such as a
+missing bind mount is not hidden behind a missing sandbox IP address. The
+worktree's Git route is one of those routes: the repository is the sandbox's
+own (ADR 0126 §4), so the work in a sandbox that cannot start cannot be fetched
+until it is repaired, and the refusal's plain-text body is what `git` — and so
+`discobox apply` — prints. The origin route still serves, from the pool's own
+files.
 
 Every start — explicit, restart, or auto-start — first writes the pool's current
 idle timeout into the sandbox's `sandbox.json` (`applySandboxIdleTimeout`,
@@ -669,6 +673,22 @@ namespace, not this one, so `localhost` in a forwarded connection means what
 the user meant. `.../udp/attach` (scope `udp:connect`) is registered the same
 way for the datagram tunnel
 ([ADR 0109](../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)).
+
+### The worktree route
+
+`.../sandboxes/{sandbox_id}/git-repositories/{slug}.git` is the sandbox's own
+checkout — what `discobox apply` fetches and a client clones, fetches and
+pushes. The sandbox agent serves it
+([ADR 0126 §4](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md));
+the pool checks its own token's scope (`sandbox:read`, or `sandbox:write` for
+receive-pack), starts the sandbox on demand, and forwards the request over
+`SandboxDialer` with the sandbox-agent token the control plane sent
+(`server/sandbox_git.go`). The agent checks that token again. The pool runs no
+git against a checkout for this route, and `Runtime` has no worktree path.
+A sandbox pinned to an image whose agent predates the route — its image lacks
+`harness.WorktreeGitLabel` (`SandboxServesWorktree`) — is answered 409 naming
+`discobox admin box upgrade`, not forwarded: its agent would answer its
+router's bare 404, which git reports as no such repository.
 
 ### Git origins
 

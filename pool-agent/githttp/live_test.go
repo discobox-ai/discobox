@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/gitbackend"
 )
 
 // liveFixture is a developer's repository served as a live origin: HEAD on
@@ -48,7 +50,7 @@ func newLiveFixture(t *testing.T) *liveFixture {
 
 	repo := Repository{Path: filepath.Join(worktree, ".git"), UID: -1, GID: -1, Live: true, Refs: []string{"refs/heads/declared"}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, suffix, ok := ParseRepositoryPath(strings.TrimPrefix(r.URL.Path, "/"))
+		_, suffix, ok := gitbackend.ParseRepositoryPath(strings.TrimPrefix(r.URL.Path, "/"))
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -270,7 +272,7 @@ func TestARequestNamingBothServicesIsAPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !IsReceivePack(req) {
+	if !gitbackend.IsReceivePack(req) {
 		t.Fatal("a request naming receive-pack second was not taken for a push")
 	}
 	resp, err := http.DefaultClient.Do(req)
@@ -341,7 +343,7 @@ func serveLive(t *testing.T, gitDir string, refs []string) string {
 	t.Helper()
 	repo := Repository{Path: gitDir, UID: -1, GID: -1, Live: true, Refs: refs}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, suffix, ok := ParseRepositoryPath(strings.TrimPrefix(r.URL.Path, "/"))
+		_, suffix, ok := gitbackend.ParseRepositoryPath(strings.TrimPrefix(r.URL.Path, "/"))
 		if !ok {
 			http.NotFound(w, r)
 			return

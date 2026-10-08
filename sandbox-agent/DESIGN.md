@@ -699,6 +699,20 @@ development images without a registry.
   The route has its own scope (`judge:run`),
   which no token for a discobox's own work carries, and a discobox that is not
   a judge refuses the ask outright.
+- **The sandbox serves its own repositories** (`server/git.go`,
+  [ADR 0126 §4](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)).
+  `.../git-repositories/{slug}.git` runs `git http-backend` through the shared
+  [`gitbackend`](../gitbackend) bridge against the checkout of the source
+  named `slug`, as the sandbox's user (the identity `agentstatus` already runs
+  git as), with a push updating the checked-out branch in place
+  (`updateInstead`). This is what `discobox apply` fetches and a client clones
+  and pushes through; the pool forwards its worktree route here. A fetch takes
+  `sandbox:read` and a push `sandbox:write`, decided from the route segment
+  before any suffix rule, since a slug may read like another route. A slug
+  resolves only among this sandbox's sources, so no name reaches another
+  sandbox or any other directory; a checkout that has not arrived — a
+  push-delivered source before its delivery — is not found. Each request
+  holds the idle stop while it runs.
 - Every sandbox has a default terminal: on sandbox start the harness always
   launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
   clients such as `discobox new` can rely on one existing and attach to it. The
