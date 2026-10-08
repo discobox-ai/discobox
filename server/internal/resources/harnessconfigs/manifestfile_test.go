@@ -75,6 +75,23 @@ func TestInspectReadsAManifestFile(t *testing.T) {
 	}
 }
 
+// A configured overlay directory may be relative, as any configured path may;
+// the reference is absolute, and still reads.
+func TestInspectReadsAManifestFileUnderARelativeOverlayDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll("overlays", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "overlays", "manifest.json")
+	if err := os.WriteFile(path, []byte(overlayManifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (defaultImageInspector{overlayDir: "overlays"}).Inspect(context.Background(), fileReference(path)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInspectRefusesAManifestFileReferenceItCannotRead(t *testing.T) {
 	overlayDir := t.TempDir()
 	// A readable file outside the overlay directory, and a symlink inside it
@@ -83,6 +100,15 @@ func TestInspectRefusesAManifestFileReferenceItCannotRead(t *testing.T) {
 	outsideDir := t.TempDir()
 	outside := filepath.Join(outsideDir, "secret.json")
 	if err := os.WriteFile(outside, []byte(`{"auths": {}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// An overlay also holds the agent's binaries: something too large to be a
+	// manifest is refused without being read whole, and so is a directory.
+	large := filepath.Join(overlayDir, "discobox-sandbox-agent")
+	if err := os.WriteFile(large, make([]byte, maxManifestFileBytes+1), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(overlayDir, "darwin-arm64"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(overlayDir, "link.json")
@@ -103,6 +129,8 @@ func TestInspectRefusesAManifestFileReferenceItCannotRead(t *testing.T) {
 		"climbing out":         {fileReference(overlayDir) + "/" + filepath.ToSlash(climb), overlayDir, "is not in the overlay directory"},
 		"the directory itself": {fileReference(overlayDir), overlayDir, "is not in the overlay directory"},
 		"no overlay directory": {fileReference(outside), "", "has no overlay directory"},
+		"a binary":             {fileReference(large), overlayDir, "which no manifest is"},
+		"a directory":          {fileReference(filepath.Join(overlayDir, "darwin-arm64")), overlayDir, "not a regular file"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := defaultImageInspector{overlayDir: tc.overlayDir}.Inspect(context.Background(), tc.ref)
