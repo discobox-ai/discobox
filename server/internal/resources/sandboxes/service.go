@@ -405,9 +405,12 @@ func platformOnPool(harness *model.HarnessConfig, pool *model.Pool) (platform.Pl
 // refuseOtherPlatform refuses a sandbox of sandboxPlatform on a pool that
 // hosts another, with the platforms as the reason (ADR 0145 §1). It is the
 // placement check as import makes it, for a sandbox whose platform its tree
-// already fixed, before anything is written. A pool that has not yet
-// declared what it hosts is not refused here; the provider makes the same
-// check once it is schedulable (store.SchedulablePoolForSandbox).
+// already fixed, before anything is written. A pool that has not declared
+// what it hosts is not refused here: one whose agent has not reported yet — a
+// new machine's, which is where a transfer usually goes — is waited for by
+// the provider's placement (store.SchedulablePoolForSandbox), which checks the
+// platform once it is declared, and refuses a pool that never declares one,
+// before the tree is read (ADR 0145 §8).
 func refuseOtherPlatform(sandboxPlatform platform.Platform, pool *model.Pool) error {
 	if pool.Platform.IsZero() {
 		return nil

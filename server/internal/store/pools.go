@@ -421,9 +421,20 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		return nil, ErrNotFound
 	}
 	// A pool whose agent has declared nothing — one from before platforms —
-	// places as every pool did before them: there is nothing to settle a
-	// sandbox's platform from, or to check it against.
+	// places as every pool did before them a sandbox that has no platform
+	// either: there is nothing to settle it from, or to check it against. A
+	// sandbox that has one — only an import's tree can bring one onto such a
+	// pool — is refused: its platform cannot be checked against a pool that
+	// has not said what it hosts, and a tree is never moved onto another
+	// platform unchecked (ADR 0145 §8).
 	if pool.Platform.IsZero() {
+		recorded, err := s.recordedSandboxPlatform(ctx, sandbox)
+		if err != nil {
+			return nil, err
+		}
+		if !recorded.IsZero() {
+			return nil, &platform.MismatchError{Sandbox: recorded, Pool: pool.Platform}
+		}
 		return pool, nil
 	}
 	sandboxPlatform, err := s.settleSandboxPlatform(ctx, sandbox, pool)
@@ -434,6 +445,25 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		return nil, err
 	}
 	return pool, nil
+}
+
+// recordedSandboxPlatform is the platform the sandbox already has: the one a
+// stand-in carries, or its row's. Zero for one that has none yet.
+func (s *Store) recordedSandboxPlatform(ctx context.Context, sandbox *model.Sandbox) (platform.Platform, error) {
+	if !sandbox.Platform.IsZero() || sandbox.ID == "" {
+		return sandbox.Platform, nil
+	}
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return platform.Platform{}, err
+	}
+	var row model.Sandbox
+	err = read.WithContext(ctx).Select("id", "platform").
+		First(&row, "id = ? AND project_id = ?", sandbox.ID, sandbox.ProjectID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return platform.Platform{}, nil
+	}
+	return row.Platform, err
 }
 
 // settleSandboxPlatform is the platform the sandbox runs on: its row's, or,

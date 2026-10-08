@@ -46,8 +46,11 @@ func platformsOf(pools []apimodel.Pool) poolPlatforms {
 // run reports whether a pool can run the harness: one hosts a platform its
 // image is published for. A harness with no platforms has not been inspected
 // since they were recorded, or comes from a server that records none, and
-// rules nothing out.
+// rules out no pool — but there has to be a pool for it to run on.
 func (p poolPlatforms) run(harness apimodel.HarnessConfig) bool {
+	if len(p.hosted) == 0 && !p.undeclared {
+		return false
+	}
 	if len(harness.Platforms) == 0 || p.undeclared {
 		return true
 	}
