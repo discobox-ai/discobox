@@ -353,7 +353,10 @@ func writeSnapshot(dir, head, objectFormat, objects string, refs []snapshotRef, 
 	}
 	var packed strings.Builder
 	for _, ref := range refs {
-		packed.WriteString(ref.id + " " + ref.name + "\n")
+		packed.WriteString(ref.id)
+		packed.WriteString(" ")
+		packed.WriteString(ref.name)
+		packed.WriteString("\n")
 	}
 	files := map[string]string{
 		"HEAD":                    head + "\n",
