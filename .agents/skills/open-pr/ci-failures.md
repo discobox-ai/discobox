@@ -36,10 +36,11 @@ not promise a single round trip.
 - **Windows has no POSIX file mode.** `os.Chmod(dir, 0o000)` leaves it readable
   and there is no executable bit. Skip such assertions on
   `runtime.GOOS == "windows"` and say why.
-- **`filepath` vs `path`.** Guest paths — anything inside a sandbox or pool, so
-  all of `layout` and the sandbox agent's workdirs — are Linux paths on every
-  host. Build and compare them with `path`; `filepath.Dir` cleans to backslashes
-  on Windows and quietly stops matching.
+- **`filepath` vs `path`.** Guest paths — anything inside a sandbox or pool —
+  are never host paths. A path inside a sandbox is its platform's: build and
+  compare it with `sandboxpath`. A pool's own paths, which is all of `layout`,
+  are Linux paths on every host: use `path`. `filepath.Dir` cleans to
+  backslashes on Windows and quietly stops matching.
 - **Host paths fed to guest-path code.** The exec manager resolves workdirs as
   guest paths, so a `C:\...` source is read as relative and joined onto the
   working root. Such a test is POSIX-only; skip it on Windows.
