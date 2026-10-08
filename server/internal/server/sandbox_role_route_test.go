@@ -115,6 +115,45 @@ func TestASandboxPowersOnlyTheDiscoboxesItCreated(t *testing.T) {
 	}
 }
 
+// A discobox changes the meta of the discoboxes it created, and the call gets
+// past the role and the handler into the sandbox service: neither refuses a
+// sandbox caller (ADR 26-10-08-447 §1). The change both sets and removes one
+// tag, so the service refuses it as the caller's mistake before it starts the
+// worker or leases a client to it; what lies past that point is the scope
+// check authorizeRequestedScopes already admits, and is not reached here.
+func TestASandboxTagsOnlyTheDiscoboxesItCreated(t *testing.T) {
+	skipWithoutDocker(t)
+	ctx := context.Background()
+	db := newAppTestDB(ctx, t)
+	router := newTestApp(ctx, t, db)
+	projectID, key := seedCredentialRoutePool(ctx, t, db.Write, router)
+	token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
+	lead := routeTestSandboxID
+	for _, sandbox := range []*model.Sandbox{
+		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead},
+		{ID: "sbx-persons", Name: "persons"},
+	} {
+		sandbox.ProjectID, sandbox.PoolID = projectID, routeTestPoolID
+		if err := db.Write.WithContext(ctx).Create(sandbox).Error; err != nil {
+			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
+		}
+	}
+	const body = `{"setTags":{"to-delete":""},"removeTags":["to-delete"]}`
+
+	t.Run("its worker", func(t *testing.T) {
+		resp := forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/sbx-worker/meta", body, token, routeTestPoolID, lead)
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "both set and removed") {
+			t.Fatalf("status = %d, want the service's 400 for the change; body = %s", resp.Code, resp.Body.String())
+		}
+	})
+	t.Run("a person's discobox", func(t *testing.T) {
+		resp := forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/sbx-persons/meta", body, token, routeTestPoolID, lead)
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403; body = %s", resp.Code, resp.Body.String())
+		}
+	})
+}
+
 // A forwarded call is the pool's word for which sandbox is calling, and it is
 // taken only when that word is good. Anything less is refused outright: the
 // authenticator after it answers every request as the default user, so a
