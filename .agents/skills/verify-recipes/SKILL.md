@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, and a change to a skill (`.discobox/skills`, `.agents/skills`) via a headless agent in an isolated HOME. Inside a discobox, the generic `verify` skill (from `.discobox/skills/verify`) reads it first and records what it learns here; outside one, Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / sandbox-agent/cmd/discobox-runc) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, and a change to a skill (`.discobox/skills`, `.agents/skills`) via a headless agent in an isolated HOME. Inside a discobox, the generic `verify` skill (from `.discobox/skills/verify`) reads it first and records what it learns here; outside one, Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, or a skill.
 ---
 
 # Verifying the console
@@ -66,6 +66,31 @@ sudo install -m 0755 $S/runc.orig /opt/discobox/bin/runc   # always restore
   kind forwards the caller's proxy env into the node, so its containerd's env
   (`/proc/$(pidof containerd)/environ`) shows what the wrapper left there.
   Delete the cluster afterwards.
+
+# Verifying the pool proxy (`proxy/`)
+
+The dev pool's container runs it as `discobox-pool-agent proxy`, built from
+this checkout by the image watcher. Confirm the running binary has the change
+(`docker exec <pool> grep -c '<new string>' /usr/local/bin/discobox-pool-agent`)
+and that the process started after the build (no `ps` in the image: walk
+`/proc/*/cmdline`, `stat -c %y /proc/<pid>`).
+
+- Drive it from a `-H shell` box: its `HTTPS_PROXY` is the box's bridge to the
+  pool proxy, and `SSL_CERT_FILE` trusts the MITM CA. `d cp` a static binary in
+  for anything the image lacks (python3, perl, curl are there).
+- An origin on this box at `172.17.0.1:<port>` is in the pool proxy's
+  `NO_PROXY`, so it is dialed directly. Anything else leaves through the outer
+  discobox's proxy — older code, HTTP/1.1-only MITM — so a public endpoint
+  cannot show what the dev pool proxy sends upstream.
+- A self-signed TLS origin is refused (`502`, audited `blocked / policy`) until
+  trusted: `discobox-access trust -use ... -why ... HOST:PORT` in the box, then
+  `d trust request approve <treq>`.
+- What the proxy saw: `d admin audit http --discobox-id <id> --since 10m`;
+  bodies with `--discobox-id <id> --body http_N --part request|response`
+  (`--body` alone errors). `--host 172.17.0.1` matched nothing.
+- A swapped credential needs `discobox-access run`, which the dev server
+  refuses without a judge (no default harness) unless `judgeCommands: false`.
+- Clean up: `d rm <id>`, `d secret delete <name>`, stop origins by pid.
 
 # Verifying a skill change (`.discobox/skills`, `.agents/skills`)
 
