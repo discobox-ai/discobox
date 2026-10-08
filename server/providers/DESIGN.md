@@ -633,6 +633,16 @@ the recorded body or upgraded stream it names
 It does not govern the proxy's response cache, which is content-addressed and
 bounded by bytes rather than time.
 
+`proxyAuditMaxSize`, `proxyAuditMaxPercent` and `proxyAuditBodyHead` are the
+pool proxy's spool budget
+([proxy/DESIGN.md](../../proxy/DESIGN.md#spool-budget)). They are declared once
+as `proxyagent.AuditSpoolBudget` and embedded in both `PoolPolicy` and the
+Docker engine's `Config`. Each value is validated when a provider configuration
+is read, kept as written, and passed verbatim to the pool container's
+`DISCOBOX_PROXY_AUDIT_*` environment. That keeps an unset field (serialized
+away, so revisions are unchanged) distinct from an explicit `0` (which drops
+that term from the budget).
+
 `SandboxIdleTimeout` is how long a sandbox on the provider's pools runs with
 nothing happening in it before it powers itself off (ADR 0108). The pool agent
 reads it from `DISCOBOX_SANDBOX_IDLE_TIMEOUT` and writes it into a sandbox's

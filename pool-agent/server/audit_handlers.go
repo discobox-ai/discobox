@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -164,6 +165,9 @@ func (s *sandboxService) PoolGetHTTPAudit(ctx context.Context, params workerapi.
 // caller can do about them is read them through the artifact route, which the
 // recorded flags say is possible.
 func poolHTTPAuditExchangeDetail(row proxy.AuditHTTPExchange) workerapimodel.PoolHTTPAuditExchangeDetail {
+	// A response served through the cache is recorded by reference to its
+	// entry, with no spool file of its own (ADR 26-10-08-698 §1).
+	responseBodyRecorded := row.ResponseBodyFile != "" || row.ResponseBodyFormat == proxy.AuditBodyFormatCache
 	detail := workerapimodel.PoolHTTPAuditExchangeDetail{
 		ID:                   row.ID.String(),
 		CreatedAt:            row.CreatedAt,
@@ -186,7 +190,7 @@ func poolHTTPAuditExchangeDetail(row proxy.AuditHTTPExchange) workerapimodel.Poo
 		RequestBodyBytes:     workerapi.NewOptInt64(row.RequestBodyBytes),
 		ResponseBytes:        workerapi.NewOptInt64(row.ResponseBytes),
 		RequestBodyRecorded:  workerapi.NewOptBool(row.RequestBodyFile != ""),
-		ResponseBodyRecorded: workerapi.NewOptBool(row.ResponseBodyFile != ""),
+		ResponseBodyRecorded: workerapi.NewOptBool(responseBodyRecorded),
 		StreamRecorded:       workerapi.NewOptBool(row.StreamFile != ""),
 		Upgrade:              workerapi.NewOptBool(row.Upgrade),
 		UpgradeC2sBytes:      workerapi.NewOptInt64(row.UpgradeC2SBytes),
@@ -289,6 +293,10 @@ func (s *sandboxService) httpAuditArtifactHandler() http.Handler {
 			// not read alike.
 			writeProblem(w, http.StatusNotFound, "the pool proxy recorded no "+chi.URLParam(r, "artifact")+" for exchange "+id.String())
 			return
+		case errors.Is(err, proxy.ErrAuditArtifactReclaimed):
+			writeProblem(w, http.StatusGone, "the pool proxy recorded the "+chi.URLParam(r, "artifact")+" for exchange "+id.String()+
+				" but has since reclaimed it, to keep its audit spool within budget or because its response cache evicted it")
+			return
 		case err != nil:
 			writeProblem(w, http.StatusServiceUnavailable, "read the pool proxy's audit: "+err.Error())
 			return
@@ -296,6 +304,9 @@ func (s *sandboxService) httpAuditArtifactHandler() http.Handler {
 		defer artifact.Body.Close()
 		w.Header().Set("Content-Type", artifact.ContentType)
 		w.Header().Set(AuditArtifactFormatHeader, artifact.Format)
+		if artifact.TruncatedFrom > 0 {
+			w.Header().Set(proxy.AuditTruncatedHeader, strconv.FormatInt(artifact.TruncatedFrom, 10))
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.Copy(w, artifact.Body)

@@ -64,6 +64,11 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 	}
 	recorder.ConfigureStreamSpool(cfg.Recording.StreamDir, cfg.Recording.StreamQueueSize)
 	recorder.ConfigureBodySpool(cfg.Recording.BodyDir)
+	recorder.ConfigureSpoolBudget(audit.SpoolBudget{
+		MaxBytes:   cfg.Recording.MaxSpoolBytes,
+		MaxPercent: cfg.Recording.MaxSpoolPercent,
+		HeadBytes:  cfg.Recording.BodyHeadBytes,
+	})
 	c, err := cache.New(cache.Config{
 		Enabled:      cfg.Cache.Enabled,
 		Dir:          cfg.Cache.Dir,
@@ -248,33 +253,72 @@ func (s *Server) ListenAndServe() error {
 // startRetentionSweeper runs the audit retention pass on an interval derived
 // from the configured window, beginning with one immediate pass so a proxy that
 // was down longer than the window reclaims on start rather than an interval
-// later.
+// later. The spool budget pass runs beside it on the same tick, and also
+// whenever spool writes take the trees over their budget (ADR 26-10-08-698).
+// Both run on this one goroutine, so they never race over the same file.
 //
 // It is driven from the configuration rather than by the pool agent so that the
 // bound travels with the recorder: anything that records is swept, and there is
 // no deployment in which the two can be wired apart.
 func (s *Server) startRetentionSweeper() {
 	retention := s.cfg.Recording.Retention
-	if !s.cfg.Recording.Enabled || retention <= 0 {
+	budgeted := s.audit.SpoolBudget().Enabled()
+	if !s.cfg.Recording.Enabled || (retention <= 0 && !budgeted) {
 		return
+	}
+	interval := maxSweepInterval
+	if retention > 0 {
+		interval = SweepInterval(retention)
 	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		ticker := time.NewTicker(SweepInterval(retention))
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
+		var lastBudgetPass time.Time
 		for {
-			s.sweepAudit(retention)
+			if retention > 0 {
+				s.sweepAudit(retention)
+			}
+			if budgeted {
+				s.enforceSpoolBudget()
+				lastBudgetPass = time.Now()
+			}
 			select {
 			case <-s.closed:
 				return
 			case <-s.ctx.Done():
 				return
+			case <-s.audit.OverBudget():
+				// A long upload keeps the total over the budget while it is
+				// written, and its tail cannot be cut until it closes, so
+				// every write would wake a pass that walks both trees. Passes
+				// woken this way are spaced out instead.
+				if wait := budgetPassSpacing - time.Since(lastBudgetPass); wait > 0 {
+					timer := time.NewTimer(wait)
+					select {
+					case <-s.closed:
+						timer.Stop()
+						return
+					case <-s.ctx.Done():
+						timer.Stop()
+						return
+					case <-timer.C:
+					}
+				}
+				s.enforceSpoolBudget()
+				lastBudgetPass = time.Now()
+				continue
 			case <-ticker.C:
 			}
 		}
 	}()
 }
+
+// budgetPassSpacing is the least time between budget passes woken by spool
+// writes. It bounds how far past the budget a burst of writes can take the
+// trees before a pass reclaims them.
+const budgetPassSpacing = 10 * time.Second
 
 // sweepAudit runs one retention pass and reports it on a span. The proxy has no
 // logger of its own, and this is where the rest of its background work — cache
@@ -289,6 +333,22 @@ func (s *Server) sweepAudit(retention time.Duration) {
 		attribute.Int64("proxy.audit.retention.dns_rows", result.DNSRows),
 		attribute.Int64("proxy.audit.retention.files", result.Files),
 		attribute.Int64("proxy.audit.retention.bytes", result.Bytes),
+	)
+	recordSpanError(span, err)
+}
+
+// enforceSpoolBudget runs one spool budget pass and reports it on a span, as
+// sweepAudit does.
+func (s *Server) enforceSpoolBudget() {
+	ctx, span := proxyTracer().Start(contextOrBackground(s.ctx), "proxy.audit.budget.enforce")
+	defer span.End()
+	result, err := s.audit.EnforceBudget(ctx)
+	span.SetAttributes(
+		attribute.Int64("proxy.audit.budget.limit", result.Limit),
+		attribute.Int64("proxy.audit.budget.bytes", result.Bytes),
+		attribute.Int64("proxy.audit.budget.remaining", result.Remaining),
+		attribute.Int64("proxy.audit.budget.truncated", result.Truncated),
+		attribute.Int64("proxy.audit.budget.deleted", result.Deleted),
 	)
 	recordSpanError(span, err)
 }

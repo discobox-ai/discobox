@@ -161,6 +161,35 @@ func (c *Cache) Get(key string) (*Entry, error) {
 	return entry, nil
 }
 
+// OpenBody opens the body of the entry stored under key for an audit read
+// (ADR 26-10-08-698 §1). Unlike Get it neither moves the entry in the LRU nor
+// counts as a hit or a miss: reading what a sandbox was sent says nothing about
+// what the cache should keep. An entry that is not there is ErrMiss.
+func (c *Cache) OpenBody(key string) (io.ReadSeekCloser, error) {
+	if c == nil || !c.enabled {
+		return nil, ErrDisabled
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.index.exists(key) {
+		return nil, ErrMiss
+	}
+	file, _, offset, size, err := c.openEntry(key)
+	if err != nil {
+		return nil, err
+	}
+	return &sectionFile{SectionReader: io.NewSectionReader(file, offset, size), file: file}, nil
+}
+
+// sectionFile is the body section of an entry file: a seek is relative to the
+// body, so a reader seeking to the start never reads the header line.
+type sectionFile struct {
+	*io.SectionReader
+	file *os.File
+}
+
+func (f *sectionFile) Close() error { return f.file.Close() }
+
 // BeginStreamingPut begins a streaming cache write.
 func (c *Cache) BeginStreamingPut(key string, resp *http.Response) (*StreamingPut, error) {
 	if c == nil || !c.enabled {
@@ -268,28 +297,11 @@ func RestoreResponse(entry *Entry, req *http.Request) *http.Response {
 }
 
 func (c *Cache) readEntry(key string) (*Entry, error) {
-	file, err := os.Open(filepath.Join(c.dir, cacheKey(key)))
+	file, header, offset, size, err := c.openEntry(key)
 	if err != nil {
-		return nil, ErrMiss
-	}
-	reader := bufio.NewReader(file)
-	headerLine, err := reader.ReadBytes('\n')
-	if err != nil {
-		_ = file.Close()
 		return nil, err
 	}
-	var header entryHeader
-	if err := json.Unmarshal([]byte(strings.TrimSpace(string(headerLine))), &header); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	info, err := file.Stat()
-	if err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	bodyOffset := int64(len(headerLine))
-	if _, err := file.Seek(bodyOffset, io.SeekStart); err != nil {
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		_ = file.Close()
 		return nil, err
 	}
@@ -297,9 +309,35 @@ func (c *Cache) readEntry(key string) (*Entry, error) {
 		StatusCode: header.StatusCode,
 		Headers:    header.Headers,
 		Body:       file,
-		Size:       info.Size() - bodyOffset,
+		Size:       size,
 		CachedAt:   header.CachedAt,
 	}, nil
+}
+
+// openEntry opens the file stored under key and reads its header line,
+// returning where the body starts and how long it is.
+func (c *Cache) openEntry(key string) (*os.File, entryHeader, int64, int64, error) {
+	var header entryHeader
+	file, err := os.Open(filepath.Join(c.dir, cacheKey(key)))
+	if err != nil {
+		return nil, header, 0, 0, ErrMiss
+	}
+	headerLine, err := bufio.NewReader(file).ReadBytes('\n')
+	if err != nil {
+		_ = file.Close()
+		return nil, header, 0, 0, err
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(headerLine))), &header); err != nil {
+		_ = file.Close()
+		return nil, header, 0, 0, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, header, 0, 0, err
+	}
+	offset := int64(len(headerLine))
+	return file, header, offset, info.Size() - offset, nil
 }
 
 func (c *Cache) recordStore(key string, size int64) {

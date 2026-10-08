@@ -63,3 +63,34 @@ func TestZeroRetentionSweepsNothing(t *testing.T) {
 		t.Fatal("a zero retention window started a sweeper")
 	}
 }
+
+// ADR 26-10-08-698 §5: min(100 GiB, 5% of the disk), truncating to 64 KiB.
+func TestDefaultSpoolBudget(t *testing.T) {
+	recording := DefaultConfig().Recording
+	if recording.MaxSpoolBytes != 100<<30 || recording.MaxSpoolPercent != 5 || recording.BodyHeadBytes != 64<<10 {
+		t.Fatalf("default budget = %d bytes, %v%%, head %d", recording.MaxSpoolBytes, recording.MaxSpoolPercent, recording.BodyHeadBytes)
+	}
+}
+
+func TestSpoolBudgetValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		edit  func(*RecordingConfig)
+		valid bool
+	}{
+		{"defaults", func(*RecordingConfig) {}, true},
+		{"both terms dropped", func(r *RecordingConfig) { r.MaxSpoolBytes, r.MaxSpoolPercent, r.BodyHeadBytes = 0, 0, 0 }, true},
+		{"negative ceiling", func(r *RecordingConfig) { r.MaxSpoolBytes = -1 }, false},
+		{"percent over 100", func(r *RecordingConfig) { r.MaxSpoolPercent = 101 }, false},
+		{"negative percent", func(r *RecordingConfig) { r.MaxSpoolPercent = -1 }, false},
+		{"budget with no head", func(r *RecordingConfig) { r.BodyHeadBytes = 0 }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			tc.edit(&cfg.Recording)
+			if err := cfg.Validate(); (err == nil) != tc.valid {
+				t.Fatalf("Validate() = %v, want valid %v", err, tc.valid)
+			}
+		})
+	}
+}

@@ -246,6 +246,13 @@ type Recorder struct {
 	// retention sweep does not reclaim one out from under a live stream.
 	spoolMu   sync.Mutex
 	openSpool map[string]struct{}
+	// budget bounds the spool trees by bytes (ADR 26-10-08-698). spoolBytes
+	// is their running total, spoolLimit the budget the last pass resolved,
+	// and overBudget wakes a pass when writes take the total past it.
+	budget     SpoolBudget
+	spoolBytes atomic.Int64
+	spoolLimit atomic.Int64
+	overBudget chan struct{}
 	// pools owns the database handle db borrows. Close releases it: without
 	// that the connection outlives the recorder, which on Linux merely leaks
 	// and on Windows makes the database file undeletable for the life of the
@@ -354,6 +361,7 @@ func (r *Recorder) BeginUpgradeStream(clientID, upgradeType string) (*StreamReco
 		return record, session, err
 	}
 	session.onClose = r.trackSpool(record.File)
+	session.onWrite = r.addSpoolBytes
 	return record, session, nil
 }
 
@@ -367,6 +375,7 @@ func (r *Recorder) BeginBody(clientID, kind string) (*BodyRecord, *BodySpool, er
 		return record, spool, err
 	}
 	spool.onClose = r.trackSpool(record.File)
+	spool.onWrite = r.addSpoolBytes
 	return record, spool, nil
 }
 
@@ -387,12 +396,13 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 		return nil, err
 	}
 	r := &Recorder{
-		enabled: true,
-		db:      pools.Write,
-		pools:   pools,
-		ch:      make(chan any, queueSize),
-		dnsCh:   make(chan any, queueSize),
-		done:    make(chan struct{}),
+		enabled:    true,
+		overBudget: make(chan struct{}, 1),
+		db:         pools.Write,
+		pools:      pools,
+		ch:         make(chan any, queueSize),
+		dnsCh:      make(chan any, queueSize),
+		done:       make(chan struct{}),
 	}
 	r.wg.Add(1)
 	go r.run()
@@ -539,34 +549,20 @@ func (r *Recorder) GetHTTP(ctx context.Context, id auditid.ExchangeID, clientID 
 }
 
 // OpenStream opens the raw upgraded-stream spool file for row.
-func (r *Recorder) OpenStream(row HTTPExchange) (*os.File, error) {
+func (r *Recorder) OpenStream(row HTTPExchange) (*OpenedSpool, error) {
 	if r == nil || !r.enabled || r.streamDir == "" {
 		return nil, os.ErrNotExist
 	}
 	if row.StreamFile == "" {
 		return nil, os.ErrNotExist
 	}
-	cleaned := filepath.Clean(row.StreamFile)
-	if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) || cleaned == ".." {
-		return nil, fmt.Errorf("invalid stream path")
-	}
-	fullPath := filepath.Join(r.streamDir, cleaned)
-	streamRoot, err := filepath.Abs(r.streamDir)
-	if err != nil {
-		return nil, err
-	}
-	fullAbs, err := filepath.Abs(fullPath)
-	if err != nil {
-		return nil, err
-	}
-	if fullAbs != streamRoot && !strings.HasPrefix(fullAbs, streamRoot+string(filepath.Separator)) {
-		return nil, fmt.Errorf("stream path escapes stream dir")
-	}
-	return os.Open(fullAbs)
+	return openSpool(r.streamDir, row.StreamFile, "stream")
 }
 
-// OpenBody opens a request or response body spool file for row.
-func (r *Recorder) OpenBody(row HTTPExchange, kind string) (*os.File, error) {
+// OpenBody opens a request or response body spool file for row. A response
+// body recorded by reference to the response cache (BodyFormatCache) is not
+// here: the cache is the proxy's, and it resolves that reference itself.
+func (r *Recorder) OpenBody(row HTTPExchange, kind string) (*OpenedSpool, error) {
 	if r == nil || !r.enabled || r.bodyDir == "" {
 		return nil, os.ErrNotExist
 	}
@@ -579,7 +575,20 @@ func (r *Recorder) OpenBody(row HTTPExchange, kind string) (*os.File, error) {
 	if bodyFile == "" {
 		return nil, os.ErrNotExist
 	}
-	return openRelativeSpoolFile(r.bodyDir, bodyFile, "body")
+	opened, err := openSpool(r.bodyDir, bodyFile, "body")
+	if err != nil || opened.TruncatedFrom > 0 {
+		return opened, err
+	}
+	// The row recorded every byte the spool took, so a shorter file was cut
+	// even if its marker was lost, as ADR 26-10-08-698 §6 has it.
+	recorded := row.RequestBodyBytes
+	if kind == BodyKindResponse {
+		recorded = row.ResponseBodyBytes
+	}
+	if info, statErr := opened.Stat(); statErr == nil && info.Size() < recorded {
+		opened.TruncatedFrom = recorded
+	}
+	return opened, nil
 }
 
 // Close flushes queued events.

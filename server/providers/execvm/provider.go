@@ -96,6 +96,7 @@ func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) docker
 		PublicAgentPort:     publicAgentPort,
 		Labels:              map[string]string{labelProviderType: ProviderType},
 		ProxyAuditRetention: cfg.ProxyAuditRetention.Value(),
+		AuditSpoolBudget:    cfg.AuditSpoolBudget,
 		SandboxIdleTimeout:  cfg.SandboxIdleTimeout.Value(),
 	}
 }

@@ -230,6 +230,25 @@ func TestPoolHTTPAuditArtifactRelaysTheRecordedBody(t *testing.T) {
 	}
 }
 
+// A body the spool budget cut to its head says what it was cut from, so a
+// reader never takes the head for the whole body (ADR 26-10-08-698 §6).
+func TestPoolHTTPAuditArtifactRelaysTruncation(t *testing.T) {
+	reader := &recordingAuditReader{artifact: &proxy.AuditArtifact{
+		Body: io.NopCloser(strings.NewReader("head")), Format: "raw", ContentType: "application/octet-stream", TruncatedFrom: 9000,
+	}}
+	router, sign := newAuditRouter(t, reader)
+	resp := artifactRequest(router, "http_42/response-body", sign("project-1", "pool-1", "sandbox-1", ScopeAuditRead))
+	if resp.Code != http.StatusOK || resp.Header().Get(proxy.AuditTruncatedHeader) != "9000" {
+		t.Fatalf("status = %d, %s = %q; want the original size relayed", resp.Code, proxy.AuditTruncatedHeader, resp.Header().Get(proxy.AuditTruncatedHeader))
+	}
+	whole := &recordingAuditReader{artifact: &proxy.AuditArtifact{Body: io.NopCloser(strings.NewReader("all")), Format: "raw"}}
+	router, sign = newAuditRouter(t, whole)
+	resp = artifactRequest(router, "http_42/response-body", sign("project-1", "pool-1", "sandbox-1", ScopeAuditRead))
+	if _, ok := resp.Header()[proxy.AuditTruncatedHeader]; ok {
+		t.Fatalf("a whole body carried %s", proxy.AuditTruncatedHeader)
+	}
+}
+
 func TestPoolHTTPAuditArtifactAuthorization(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -247,6 +266,11 @@ func TestPoolHTTPAuditArtifactAuthorization(t *testing.T) {
 		{name: "not the token's row", path: "http_42/request-body", token: func(sign func(string, string, string, ...string) string) string {
 			return sign("project-1", "pool-1", "sandbox-1", ScopeAuditRead)
 		}, readerErr: proxy.ErrAuditArtifactNotFound, wantStatus: http.StatusNotFound},
+		// Recorded, then reclaimed to keep the spool within its budget (ADR
+		// 26-10-08-698 §6): gone, which a reader can tell from never recorded.
+		{name: "reclaimed", path: "http_42/response-body", token: func(sign func(string, string, string, ...string) string) string {
+			return sign("project-1", "pool-1", "sandbox-1", ScopeAuditRead)
+		}, readerErr: proxy.ErrAuditArtifactReclaimed, wantStatus: http.StatusGone},
 		{name: "id is not an exchange id", path: "latest/request-body", token: func(sign func(string, string, string, ...string) string) string {
 			return sign("project-1", "pool-1", "", ScopeAuditRead)
 		}, wantStatus: http.StatusBadRequest},

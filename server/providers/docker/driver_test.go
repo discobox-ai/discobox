@@ -159,6 +159,11 @@ func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 		// container's environment at start and writes it into each sandbox.json
 		// it renders, so a pool left running would hand out the old one.
 		"sandboxIdleTimeout": func(cfg *Config) { cfg.SandboxIdleTimeout = poolruntime.Duration(2 * time.Minute) },
+		// The spool budget too: the proxy unit reads it from the container's
+		// environment at start (ADR 26-10-08-698 §5).
+		"proxyAuditMaxSize":    func(cfg *Config) { cfg.MaxSize = "20GiB" },
+		"proxyAuditMaxPercent": func(cfg *Config) { cfg.MaxPercent = "10%" },
+		"proxyAuditBodyHead":   func(cfg *Config) { cfg.BodyHead = "1MiB" },
 	}
 
 	for _, field := range configJSONFields(t, reflect.TypeOf(Config{})) {

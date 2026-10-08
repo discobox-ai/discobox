@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -27,6 +28,11 @@ const (
 // httpAuditFormatHeader names how a recording was spooled: raw bytes for a
 // body, framed chunks for an upgraded stream.
 const httpAuditFormatHeader = "X-Discobox-Audit-Format"
+
+// httpAuditTruncatedHeader is present on a recording the pool cut to its head
+// to keep its audit spool within budget, and carries the size it had before
+// the cut (ADR 26-10-08-698 §6).
+const httpAuditTruncatedHeader = "X-Discobox-Audit-Truncated"
 
 // writeHTTPAuditArtifact writes one recording from the pool trail to out,
 // escaped for a terminal when safe, and tells errOut how it was spooled when
@@ -74,14 +80,36 @@ func (a *App) writeHTTPAuditArtifact(ctx context.Context, out, errOut io.Writer,
 	if format := resp.Header.Get(httpAuditFormatHeader); format != "" && format != "raw" {
 		_, _ = fmt.Fprintf(errOut, "recorded as %s\n", terminalSafe(format))
 	}
+	body := &countingReader{Reader: resp.Body}
 	if safe {
 		// What a service answered a discobox is display data like everything
 		// else it recorded (ADR 0130 §6), and a body is the likeliest place
 		// for bytes a terminal would act on.
-		return copyTerminalSafe(out, resp.Body)
+		err = copyTerminalSafe(out, body)
+	} else {
+		_, err = io.Copy(out, body)
 	}
-	_, err = io.Copy(out, resp.Body)
-	return err
+	if err != nil {
+		return err
+	}
+	// Said after the bytes, so it is the last thing read and a partial
+	// recording is never taken for the whole one.
+	if truncatedFrom, parseErr := strconv.ParseInt(resp.Header.Get(httpAuditTruncatedHeader), 10, 64); parseErr == nil && truncatedFrom > 0 {
+		_, _ = fmt.Fprintf(errOut, "truncated to keep the pool's audit spool within budget: %d of %d bytes kept\n", body.n, truncatedFrom)
+	}
+	return nil
+}
+
+// countingReader counts the bytes read through it.
+type countingReader struct {
+	io.Reader
+	n int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	r.n += int64(n)
+	return n, err
 }
 
 // copyTerminalSafe copies src to dst as terminalSafeMultiline would print it,

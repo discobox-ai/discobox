@@ -3,6 +3,7 @@ package server
 import (
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -16,6 +17,10 @@ import (
 // bytes for a body, framed chunks for an upgraded stream. A client needs it to
 // read a stream back into its two directions.
 const httpAuditFormatHeader = "X-Discobox-Audit-Format"
+
+// httpAuditTruncatedHeader carries, on an artifact the pool's spool budget cut
+// to its head, the size it had before the cut (ADR 26-10-08-698 §6).
+const httpAuditTruncatedHeader = "X-Discobox-Audit-Truncated"
 
 // registerPoolHTTPAuditRoutes exposes the bodies and upgraded streams a pool's
 // proxy recorded beside its HTTP audit rows (ADR 0130 §5).
@@ -74,6 +79,9 @@ func poolHTTPAuditArtifactHandler(service services.PoolService) http.Handler {
 		}
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set(httpAuditFormatHeader, opened.Format)
+		if opened.TruncatedFrom > 0 {
+			w.Header().Set(httpAuditTruncatedHeader, strconv.FormatInt(opened.TruncatedFrom, 10))
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		// What a proxied service answered is served back to whoever reads the
 		// trail; it must never be rendered as this server's own page.

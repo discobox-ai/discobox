@@ -292,15 +292,19 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	cfg.Cache.Dir = root.ProxyCache(projectID, poolID)
 	cfg.Recording.StreamDir = root.ProxyStreams(projectID, poolID)
 	cfg.Recording.BodyDir = root.ProxyBodies(projectID, poolID)
-	// Nothing else bounds the audit trail: a sandbox's rows and recordings
-	// deliberately outlive the sandbox, so age is the only thing that can
-	// reclaim them.
+	// A sandbox's rows and recordings deliberately outlive the sandbox, so
+	// age and the spool budget below are all that reclaim them.
 	retention, err := ConfiguredAuditRetention()
 	if err != nil {
 		return err
 	}
 	if retention > 0 {
 		cfg.Recording.Retention = retention
+	}
+	// Age alone bounds the trees by time, not bytes: a busy pool fills its
+	// disk well inside the window. The budget is what bounds them by size.
+	if err := ConfigureAuditSpoolBudget(&cfg.Recording); err != nil {
+		return err
 	}
 	// The read-only control API the pool agent relays audit reads through
 	// (ADR 0130 §4). The agent prepared its key before systemd started this

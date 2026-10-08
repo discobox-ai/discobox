@@ -51,6 +51,7 @@ func (e *Engine) poolContainerEnv(bootstrap poolagent.Bootstrap) map[string]stri
 	if e.cfg.ProxyAuditRetention > 0 {
 		env[proxyagent.EnvAuditRetention] = e.cfg.ProxyAuditRetention.String()
 	}
+	e.cfg.SetAuditSpoolEnv(env)
 	if e.cfg.SandboxIdleTimeout > 0 {
 		env[sandboxruntime.EnvSandboxIdleTimeout] = e.cfg.SandboxIdleTimeout.String()
 	}

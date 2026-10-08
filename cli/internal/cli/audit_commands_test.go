@@ -125,6 +125,32 @@ func TestAuditHTTPBodyReadsTheRecordingFromItsPool(t *testing.T) {
 	}
 }
 
+// A recording the pool cut to its head says so after the bytes, so the head is
+// never taken for the whole recording (ADR 26-10-08-698 §6).
+func TestAuditHTTPBodySaysWhenTheRecordingWasTruncated(t *testing.T) {
+	poolID, err := idpkg.New("pool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runAudit(context.Background(), t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(httpAuditTruncatedHeader, "9000")
+		_, _ = w.Write([]byte("the head"))
+	}, "http", "--pool", poolID, "--body", "http_42")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if stdout != "the head" || !strings.Contains(stderr, "8 of 9000 bytes kept") {
+		t.Fatalf("stdout = %q, stderr = %q; want the head and how much of the body it is", stdout, stderr)
+	}
+
+	_, stderr, err = runAudit(context.Background(), t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("all of it"))
+	}, "http", "--pool", poolID, "--body", "http_42")
+	if err != nil || strings.Contains(stderr, "truncated") {
+		t.Fatalf("whole body: stderr = %q, %v", stderr, err)
+	}
+}
+
 func TestAuditHooksAndExecsSendTheirFiltersAndPrintNewestFirst(t *testing.T) {
 	sandboxID, err := idpkg.New("sbx")
 	if err != nil {

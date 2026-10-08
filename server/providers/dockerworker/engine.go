@@ -157,6 +157,10 @@ type Config struct {
 	// reason ImageRetention does: materializing a default would change
 	// configRevision and recreate every existing pool.
 	ProxyAuditRetention time.Duration `json:"proxyAuditRetention,omitempty"`
+	// AuditSpoolBudget overrides the pool proxy's audit spool budget (ADR
+	// 26-10-08-698). Its unset fields serialize away for the reason
+	// ImageRetention does.
+	proxyagent.AuditSpoolBudget
 	// SandboxIdleTimeout overrides how long a sandbox on this pool runs with
 	// nothing happening in it before it powers itself off (ADR 0108). Zero
 	// leaves every sandbox-agent on its own default, and serializes away for

@@ -197,6 +197,10 @@ const treeMediaType = "application/x-tar"
 // audit artifact's spool format, stated here for the same reason.
 const auditArtifactFormatHeader = "X-Discobox-Audit-Format"
 
+// auditArtifactTruncatedHeader mirrors the pool agent's header carrying the
+// size a relayed artifact had before the pool's spool budget cut it.
+const auditArtifactTruncatedHeader = "X-Discobox-Audit-Truncated"
+
 // poolAgentTransportError reports a failed hop to the pool agent without the
 // pool agent's address in it.
 //

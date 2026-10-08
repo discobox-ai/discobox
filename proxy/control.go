@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/discobox-ai/discobox/auditid"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
+	"github.com/discobox-ai/discobox/proxy/internal/cache"
 	"gorm.io/gorm"
 )
 
@@ -159,34 +161,68 @@ func (s *Server) handleControlHTTPArtifact(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var (
-		file        httpFile
-		contentType string
-		format      string
-		name        string
-		openErr     error
+		file          io.ReadSeekCloser
+		truncatedFrom int64
+		contentType   string
+		format        string
+		name          string
+		openErr       error
 	)
+	// openSpool takes a spool open's result apart: what a truncated file was
+	// cut from, and the file only on success, since a nil *OpenedSpool in
+	// file would not compare equal to nil.
+	openSpool := func(opened *audit.OpenedSpool, err error) {
+		openErr = err
+		if err == nil {
+			file = opened
+			truncatedFrom = opened.TruncatedFrom
+		}
+	}
 	switch artifact {
 	case "stream":
-		file, openErr = s.audit.OpenStream(row)
+		openSpool(s.audit.OpenStream(row))
 		contentType = "application/vnd.discobox.upgrade-stream"
 		format = row.StreamFormat
 		name = row.StreamFile
 	case "request-body":
-		file, openErr = s.audit.OpenBody(row, audit.BodyKindRequest)
+		openSpool(s.audit.OpenBody(row, audit.BodyKindRequest))
 		contentType = "application/octet-stream"
 		format = row.RequestBodyFormat
 		name = row.RequestBodyFile
 	case "response-body":
-		file, openErr = s.audit.OpenBody(row, audit.BodyKindResponse)
 		contentType = "application/octet-stream"
 		format = row.ResponseBodyFormat
 		name = row.ResponseBodyFile
+		if row.ResponseBodyFormat == audit.BodyFormatCache {
+			// Recorded by reference to the cache entry it was served from
+			// or stored as (ADR 26-10-08-698 §1). The cache bounds itself,
+			// so the entry can be gone while the row remains.
+			file, openErr = s.cache.OpenBody(row.CacheKey)
+			if errors.Is(openErr, cache.ErrMiss) || errors.Is(openErr, cache.ErrDisabled) {
+				openErr = audit.ErrSpoolReclaimed
+			}
+			format = audit.BodyFormatRaw
+			name = "response-body"
+		} else {
+			openSpool(s.audit.OpenBody(row, audit.BodyKindResponse))
+		}
 	default:
 		http.NotFound(w, r)
 		return
 	}
 	if errors.Is(openErr, net.ErrClosed) {
 		http.NotFound(w, r)
+		return
+	}
+	if errors.Is(openErr, audit.ErrSpoolReclaimed) {
+		// Gone rather than not found: the row recorded this artifact, and the
+		// spool budget or the response cache has since reclaimed it. The two
+		// are bounded by different settings, so the answer names which.
+		reason := "reclaimed to keep the pool's audit spool within its budget"
+		if artifact == "response-body" && row.ResponseBodyFormat == audit.BodyFormatCache {
+			reason = "no longer held by the pool's response cache, which holds the recorded body: evicted under its own size ceiling, or the cache is off"
+		}
+		http.Error(w, reason, http.StatusGone)
 		return
 	}
 	if openErr != nil {
@@ -200,8 +236,16 @@ func (s *Server) handleControlHTTPArtifact(w http.ResponseWriter, r *http.Reques
 	} else {
 		w.Header().Set("X-Discobox-Body-Format", format)
 	}
+	if truncatedFrom > 0 {
+		w.Header().Set(AuditTruncatedHeader, strconv.FormatInt(truncatedFrom, 10))
+	}
 	http.ServeContent(w, r, name, row.CreatedAt, file)
 }
+
+// AuditTruncatedHeader carries, on an artifact the spool budget cut to its
+// head, the size it had before the cut (ADR 26-10-08-698 §6). Absent, the
+// artifact is whole. Every relay between the proxy and a reader forwards it.
+const AuditTruncatedHeader = "X-Discobox-Audit-Truncated"
 
 // httpOnlyControlParams are the filters that only mean something for an HTTP
 // exchange.
@@ -288,10 +332,6 @@ func controlHTTPArtifact(path string) (auditid.ExchangeID, string, bool) {
 		return 0, "", false
 	}
 	return id, artifact, true
-}
-
-type httpFile interface {
-	http.File
 }
 
 func writeControlJSON(w http.ResponseWriter, value any, err error) {

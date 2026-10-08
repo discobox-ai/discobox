@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -24,10 +25,17 @@ type PoolPolicy struct {
 	// request/response body or upgraded-stream capture it names. Empty leaves
 	// the pool proxy on proxy.DefaultRetention.
 	//
-	// Nothing else reclaims those trees. Deleting a sandbox deliberately does
-	// not: what its sandbox sent is the question the audit trail exists to
-	// answer, and it is most often asked after the sandbox is gone.
+	// It and the spool budget below are all that reclaim those trees.
+	// Deleting a sandbox deliberately does not: what its sandbox sent is the
+	// question the audit trail exists to answer, and it is most often asked
+	// after the sandbox is gone.
 	ProxyAuditRetention Duration `json:"proxyAuditRetention,omitempty"`
+	// AuditSpoolBudget bounds the pool proxy's recorded bodies and streams by
+	// bytes (ADR 26-10-08-698): the lesser of proxyAuditMaxSize and
+	// proxyAuditMaxPercent of the pool's disk, truncating files to
+	// proxyAuditBodyHead before deleting any. Unset fields leave the pool
+	// proxy on its defaults.
+	proxyagent.AuditSpoolBudget
 	// SandboxIdleTimeout is how long a sandbox on this provider's pools runs
 	// with nothing happening in it — nothing on a terminal changing, no client
 	// connected, no keepalive lease — before it powers itself off (ADR 0108,
@@ -38,12 +46,10 @@ type PoolPolicy struct {
 }
 
 // defaultRetentionHint mirrors proxy.DefaultRetention for display only. It is
-// written out rather than imported because the pool proxy lives in the root
-// module and pulls a whole HTTP proxy stack behind it, which the workspace
-// would then propagate into every module that reaches this one — a lot of
-// dependency for a placeholder in a form. Nothing reads it: the actual default
-// is applied by the proxy itself when this setting is left empty, so the two
-// drifting costs a stale hint and nothing more.
+// written out rather than formatted from that constant, whose String is
+// "48h0m0s", which is not what anyone would type into the field. Nothing reads
+// it: the actual default is applied by the proxy itself when this setting is
+// left empty, so the two drifting costs a stale hint and nothing more.
 const defaultRetentionHint = "48h"
 
 // defaultIdleTimeoutHint mirrors autostop.DefaultIdleTimeout for display only,
@@ -63,6 +69,30 @@ func PoolPolicyConfigFields() []sandbox.ProviderConfigField {
 			Type:        "string",
 			Description: "How long the pool proxy keeps request audit records and recorded bodies, as a Go duration.",
 			Placeholder: defaultRetentionHint,
+			Advanced:    true,
+		},
+		{
+			Key:         "proxyAuditMaxSize",
+			Label:       "Proxy Audit Max Size",
+			Type:        "string",
+			Description: "The most disk the pool proxy's recorded bodies and streams may use, such as 100GiB. The budget is the lesser of this and the max percent; 0 drops this term.",
+			Placeholder: "100GiB",
+			Advanced:    true,
+		},
+		{
+			Key:         "proxyAuditMaxPercent",
+			Label:       "Proxy Audit Max Percent",
+			Type:        "string",
+			Description: "The share of the pool's disk its proxy's recorded bodies and streams may use, such as 5%. The budget is the lesser of this and the max size; 0 drops this term.",
+			Placeholder: "5%",
+			Advanced:    true,
+		},
+		{
+			Key:         "proxyAuditBodyHead",
+			Label:       "Proxy Audit Body Head",
+			Type:        "string",
+			Description: "How much of a recorded body or stream is kept when the budget truncates it, such as 64KiB.",
+			Placeholder: "64KiB",
 			Advanced:    true,
 		},
 		{

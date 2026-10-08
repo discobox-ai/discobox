@@ -20,6 +20,10 @@ import (
 // AuditHTTPExchange is one audited HTTP exchange, as the control API returns it.
 type AuditHTTPExchange = audit.HTTPExchange
 
+// AuditBodyFormatCache is the body format of a response recorded by reference
+// to the response cache entry it was served from (ADR 26-10-08-698 §1).
+const AuditBodyFormatCache = audit.BodyFormatCache
+
 // AuditDNSQuery is one audited DNS query, as the control API returns it.
 type AuditDNSQuery = audit.DNSQuery
 
@@ -187,6 +191,11 @@ const (
 // spool has been reclaimed by retention.
 var ErrAuditArtifactNotFound = errors.New("audit artifact not found")
 
+// ErrAuditArtifactReclaimed is an artifact its row recorded that is no longer
+// held: the spool budget deleted it, or the response cache the row references
+// evicted it (ADR 26-10-08-698 §6).
+var ErrAuditArtifactReclaimed = errors.New("audit artifact reclaimed")
+
 // AuditArtifact is a recorded body or upgraded stream, still being read.
 type AuditArtifact struct {
 	Body io.ReadCloser
@@ -194,6 +203,9 @@ type AuditArtifact struct {
 	// a stream is framed.
 	Format      string
 	ContentType string
+	// TruncatedFrom is the size the artifact had before the spool budget cut
+	// it to its head, and zero when it is whole.
+	TruncatedFrom int64
 }
 
 // GetHTTP reads one audited exchange in full: every field the recorder wrote,
@@ -256,6 +268,10 @@ func (c *ControlClient) OpenHTTPArtifact(ctx context.Context, sandboxID string, 
 		resp.Body.Close()
 		return nil, ErrAuditArtifactNotFound
 	}
+	if resp.StatusCode == http.StatusGone {
+		resp.Body.Close()
+		return nil, ErrAuditArtifactReclaimed
+	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -265,7 +281,8 @@ func (c *ControlClient) OpenHTTPArtifact(ctx context.Context, sandboxID string, 
 	if artifact == AuditArtifactStream {
 		format = resp.Header.Get("X-Discobox-Stream-Format")
 	}
-	return &AuditArtifact{Body: resp.Body, Format: format, ContentType: resp.Header.Get("Content-Type")}, nil
+	truncatedFrom, _ := strconv.ParseInt(resp.Header.Get(AuditTruncatedHeader), 10, 64)
+	return &AuditArtifact{Body: resp.Body, Format: format, ContentType: resp.Header.Get("Content-Type"), TruncatedFrom: truncatedFrom}, nil
 }
 
 // sandboxParams is the query half of a sandbox scope. The token half is what an

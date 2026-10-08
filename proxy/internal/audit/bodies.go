@@ -10,6 +10,10 @@ import (
 const (
 	// BodyFormatRaw is the on-disk format for normal HTTP request/response bodies.
 	BodyFormatRaw = "discobox-http-body-v1"
+	// BodyFormatCache marks a response body recorded by reference to the
+	// response cache entry its row's cache key names, rather than spooled (ADR
+	// 26-10-08-698 §1). The bytes it reads as are raw, as BodyFormatRaw's are.
+	BodyFormatCache = "discobox-http-body-cache-v1"
 
 	BodyKindRequest  = "request"
 	BodyKindResponse = "response"
@@ -33,6 +37,8 @@ type BodySpool struct {
 	// onClose releases the recorder's hold on this spool file; see
 	// StreamSession.onClose.
 	onClose func()
+	// onWrite counts written bytes toward the recorder's spool budget.
+	onWrite func(int64)
 }
 
 // BeginBody creates a raw body spool file.
@@ -71,6 +77,9 @@ func (s *BodySpool) Write(p []byte) (int, error) {
 	}
 	n, err := s.file.Write(p)
 	s.bytes += int64(n)
+	if s.onWrite != nil {
+		s.onWrite(int64(n))
+	}
 	if err != nil {
 		s.writeErr = err
 	}

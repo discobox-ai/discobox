@@ -297,6 +297,10 @@ type HTTPAuditArtifact struct {
 	Body        io.ReadCloser
 	Format      string
 	ContentType string
+	// TruncatedFrom is the size the artifact had before the pool's spool
+	// budget cut it to its head, and zero when it is whole (ADR 26-10-08-698
+	// §6).
+	TruncatedFrom int64
 }
 
 // HTTPAuditExchange is one HTTP exchange a pool proxy audited. Headers and

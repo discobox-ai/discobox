@@ -112,10 +112,20 @@ type RecordingConfig struct {
 	BodyDir         string
 	// Retention is how long an audit row and the spool files it names are kept.
 	// Zero keeps them forever, which is what an embedder that manages the
-	// database itself wants; every Discobox pool sets a window, because nothing
-	// else bounds these trees. Sandbox deletion deliberately does not: the
-	// audit trail of a sandbox that has been deleted is the case it exists for.
+	// database itself wants; every Discobox pool sets a window, because it is
+	// the only thing that removes rows. Sandbox deletion deliberately does
+	// not: the audit trail of a sandbox that has been deleted is the case it
+	// exists for.
 	Retention time.Duration
+	// MaxSpoolBytes and MaxSpoolPercent bound the body and stream spool trees
+	// together, by bytes rather than age (ADR 26-10-08-698): the budget is the
+	// lesser of an absolute ceiling and a percentage of the filesystem holding
+	// them. A zero term drops out, and with both zero the trees are bounded by
+	// Retention alone.
+	MaxSpoolBytes   int64
+	MaxSpoolPercent float64
+	// BodyHeadBytes is what a spool file keeps when the budget truncates it.
+	BodyHeadBytes int64
 }
 
 // AllowlistConfig controls destination filtering.
@@ -157,6 +167,15 @@ const (
 	// day either side of it, which is the window in which someone actually goes
 	// looking at what a sandbox sent.
 	DefaultRetention = 48 * time.Hour
+
+	// DefaultMaxSpoolBytes and DefaultMaxSpoolPercent are the spool budget's
+	// terms: 5% of the default 100 GiB pool VM data disk is 5 GiB, and the
+	// ceiling applies once a Docker pool's host filesystem reaches 2 TB.
+	DefaultMaxSpoolBytes   = 100 << 30
+	DefaultMaxSpoolPercent = 5
+	// DefaultBodyHeadBytes keeps enough of a body to identify it: a status
+	// line, a JSON envelope, an archive's first entries.
+	DefaultBodyHeadBytes = 64 << 10
 
 	// minSweepInterval and maxSweepInterval bound how often a retention pass
 	// runs, whatever the window is set to.
@@ -200,6 +219,9 @@ func DefaultConfig() Config {
 			StreamQueueSize: 1024,
 			BodyDir:         "./proxy-bodies",
 			Retention:       DefaultRetention,
+			MaxSpoolBytes:   DefaultMaxSpoolBytes,
+			MaxSpoolPercent: DefaultMaxSpoolPercent,
+			BodyHeadBytes:   DefaultBodyHeadBytes,
 		},
 		Secrets: SecretsConfig{
 			PositiveTTLSeconds: DefaultSecretPositiveTTLSeconds,
@@ -230,6 +252,18 @@ func (c Config) Validate() error {
 		}
 		if c.Recording.Retention < 0 {
 			return errors.New("recording retention cannot be negative")
+		}
+		if c.Recording.MaxSpoolBytes < 0 {
+			return errors.New("recording max spool bytes cannot be negative")
+		}
+		if c.Recording.MaxSpoolPercent < 0 || c.Recording.MaxSpoolPercent > 100 {
+			return errors.New("recording max spool percent must be within [0, 100]")
+		}
+		if c.Recording.BodyHeadBytes < 0 {
+			return errors.New("recording body head bytes cannot be negative")
+		}
+		if (c.Recording.MaxSpoolBytes > 0 || c.Recording.MaxSpoolPercent > 0) && c.Recording.BodyHeadBytes == 0 {
+			return errors.New("recording body head bytes must be positive when a spool budget is set")
 		}
 	}
 	if strings.TrimSpace(c.Control.ListenAddress) != "" {

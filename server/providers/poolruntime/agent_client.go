@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -327,10 +328,12 @@ func (p *poolAgentClient) OpenHTTPAuditArtifact(ctx context.Context, projectID, 
 	}
 	// The lease holds the transport this body is being read over, so it is
 	// released when the body is closed and not when this returns.
+	truncatedFrom, _ := strconv.ParseInt(resp.Header.Get(auditArtifactTruncatedHeader), 10, 64)
 	return &sandbox.HTTPAuditArtifact{
-		Body:        &leasedReader{ReadCloser: resp.Body, lease: lease},
-		Format:      resp.Header.Get(auditArtifactFormatHeader),
-		ContentType: resp.Header.Get("Content-Type"),
+		Body:          &leasedReader{ReadCloser: resp.Body, lease: lease},
+		Format:        resp.Header.Get(auditArtifactFormatHeader),
+		ContentType:   resp.Header.Get("Content-Type"),
+		TruncatedFrom: truncatedFrom,
 	}, nil
 }
 

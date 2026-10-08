@@ -121,6 +121,9 @@ type responseStream struct {
 	audit        *audit.Recorder
 	cacheStore   *cache.StreamingPut
 	cacheMatcher *cache.Matcher
+	// cacheBody records the body as a reference to its cache entry, the one
+	// served on a hit or being stored on a miss, rather than as a spool file.
+	cacheBody    bool
 	bodyRecord   *audit.BodyRecord
 	bodySpool    *audit.BodySpool
 	bodyError    string
@@ -419,20 +422,17 @@ func (h *httpProxy) setupHandlers() {
 					span.End()
 					return req, resp
 				}
-				bodyRecord, bodySpool, err := h.beginResponseBody(meta)
-				if err != nil {
-					meta.cacheError = err.Error()
-					recordSpanError(span, err)
-				}
+				// The cache entry is the recorded body: spooling it again
+				// would write a second copy of every blob on every hit (ADR
+				// 26-10-08-698 §1).
 				resp.Body = &responseStream{
-					source:     resp.Body,
-					req:        req,
-					meta:       meta,
-					audit:      h.audit,
-					bodyRecord: bodyRecord,
-					bodySpool:  bodySpool,
-					status:     resp.StatusCode,
-					headers:    resp.Header.Clone(),
+					source:    resp.Body,
+					req:       req,
+					meta:      meta,
+					audit:     h.audit,
+					cacheBody: true,
+					status:    resp.StatusCode,
+					headers:   resp.Header.Clone(),
 				}
 				return req, resp
 			} else if !errors.Is(err, cache.ErrMiss) {
@@ -554,10 +554,19 @@ func (h *httpProxy) setupHandlers() {
 			}
 			cacheSpan.End()
 		}
-		bodyRecord, bodySpool, err := h.beginResponseBody(meta)
-		if err != nil {
-			meta.cacheError = err.Error()
-			recordSpanError(meta.span, err)
+		// A body the cache is storing is recorded by reference to the entry
+		// it becomes rather than spooled beside it (ADR 26-10-08-698 §1).
+		var (
+			bodyRecord *audit.BodyRecord
+			bodySpool  *audit.BodySpool
+		)
+		if store == nil {
+			var err error
+			bodyRecord, bodySpool, err = h.beginResponseBody(meta)
+			if err != nil {
+				meta.cacheError = err.Error()
+				recordSpanError(meta.span, err)
+			}
 		}
 		resp.Body = &responseStream{
 			source:       resp.Body,
@@ -566,6 +575,7 @@ func (h *httpProxy) setupHandlers() {
 			audit:        h.audit,
 			cacheStore:   store,
 			cacheMatcher: h.cache.Matcher(),
+			cacheBody:    store != nil,
 			bodyRecord:   bodyRecord,
 			bodySpool:    bodySpool,
 			status:       resp.StatusCode,
@@ -1337,8 +1347,6 @@ func (s *responseStream) Close() error {
 
 func (s *responseStream) finish(aborted bool, readErr error) {
 	s.finalizeOnce.Do(func() {
-		responseBodyFile, responseBodyFormat, responseBodyBytes, responseBodyError := s.responseBodyMetadata()
-		responseBodyError = mergeResponseBodyError(responseBodyError, readErr)
 		cacheStored := false
 		if s.cacheStore != nil {
 			_, cacheSpan := proxyTracer().Start(s.meta.ctx, "proxy.cache.store.finish")
@@ -1358,6 +1366,8 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			}
 			cacheSpan.End()
 		}
+		responseBodyFile, responseBodyFormat, responseBodyBytes, responseBodyError := s.responseBodyMetadata(cacheStored)
+		responseBodyError = mergeResponseBodyError(responseBodyError, readErr)
 		requestBodyFile, requestBodyFormat, requestBodyBytes, requestBodyError := s.meta.requestBodyMetadata()
 		event := audit.HTTPEvent{
 			Context:              s.meta.ctx,
@@ -1408,7 +1418,16 @@ func mergeResponseBodyError(bodyError string, readErr error) string {
 	return bodyError + "; response read: " + readErr.Error()
 }
 
-func (s *responseStream) responseBodyMetadata() (file string, format string, bytes int64, errText string) {
+func (s *responseStream) responseBodyMetadata(cacheStored bool) (file string, format string, bytes int64, errText string) {
+	if s.cacheBody {
+		// A miss whose store did not commit has already streamed to the client
+		// with nothing spooled, so the body is not retained, and the row says
+		// so rather than reading as a body never sent.
+		if s.meta.cacheHit || cacheStored {
+			return "", audit.BodyFormatCache, s.bytesRead, ""
+		}
+		return "", "", 0, "not retained: the response cache did not store it"
+	}
 	if s.bodySpool != nil {
 		if err := s.bodySpool.Close(); err != nil && s.bodyError == "" {
 			s.bodyError = err.Error()

@@ -122,17 +122,28 @@ headers, cache state, policy decisions, authenticated client identity, and the
 approved credential uses the request spent. Large
 response assets remain in the disk cache, not SQLite.
 
+A response the cache stores or serves is not spooled. Its row's body format is
+`BodyFormatCache`, and its existing `cache_key` is the reference: a body read
+resolves it through `Cache.OpenBody`, which leaves the entry's LRU position and
+hit counters alone. Spooling it as well would write a second copy of every
+registry blob, and another copy on every hit
+([ADR 26-10-08-698](../docs/adr/26-10-08-698-the-pool-audit-spool-is-bounded-by-bytes-and-truncates-before-it-deletes.md)
+§1). A miss whose store aborts keeps no body, and its row says why in
+`response_body_error`.
+
 ## Retention
 
 Audit rows, recorded bodies, and upgraded-stream captures are kept for
 `Recording.Retention` and then reclaimed. Zero opts out, for an embedder that
-manages the database itself; every Discobox pool sets a window, because nothing
-else bounds these trees — `DefaultRetention` (48h) unless the pool container's
-`DISCOBOX_PROXY_AUDIT_RETENTION` overrides it.
+manages the database itself; every Discobox pool sets a window, because it is
+the only thing that removes rows — `DefaultRetention` (48h) unless the pool
+container's `DISCOBOX_PROXY_AUDIT_RETENTION` overrides it. Files are also held to
+a byte budget, below.
 
 Deleting a sandbox deliberately does **not** reclaim its audit trail. What a
 sandbox sent is the question the trail exists to answer, and it is most often
-asked after that sandbox is gone, so age is the only thing that reclaims here.
+asked after that sandbox is gone, so age and the [spool budget](#spool-budget)
+are all that reclaim here.
 
 One pass deletes rows by their creation timestamp and spool files by their
 modification time, against the one cutoff. Pairing them that way is exact
@@ -158,6 +169,61 @@ that was down longer than its window reclaims on the way up.
 The response cache is not swept. See [Response Cache](#response-cache): its
 entries are keyed by content digest and bounded by a byte ceiling, so age says
 nothing about what belongs in it.
+
+### Spool budget
+
+Age bounds how long a byte is kept, not how many there are. The body and stream
+trees together are also held to a byte budget
+([ADR 26-10-08-698](../docs/adr/26-10-08-698-the-pool-audit-spool-is-bounded-by-bytes-and-truncates-before-it-deletes.md)).
+The budget is the lesser of `Recording.MaxSpoolBytes` and
+`Recording.MaxSpoolPercent` of the filesystem holding the trees: 100 GiB and
+5% by default. A zero term drops out of the minimum, and with both zero the
+trees have no budget. The filesystem is sized on every pass, so a resized disk
+moves the budget with it.
+
+```mermaid
+flowchart TD
+    over{"spool over budget?"} -->|no| done["done"]
+    over -->|yes| tail{"a closed file larger<br/>than the head?"}
+    tail -->|yes| cut["truncate the largest to its head,<br/>write a .truncated marker,<br/>restore its mtime"]
+    cut --> low{"under 90% of budget?"}
+    tail -->|no| del["delete the oldest file<br/>and its marker"]
+    del --> low
+    low -->|no| tail
+    low -->|yes| done
+```
+
+- **Tails first, largest first.** Every large file's tail goes before any whole
+  file does, so one large body never costs a small one its existence. Only
+  when no file has a tail left are whole files deleted, oldest first.
+- **What is kept.** A truncated file keeps `Recording.BodyHeadBytes` (64 KiB). A
+  stream is cut at the last whole frame that fits and never inside its header,
+  so it still parses and loses only its trailing frames and summary.
+- **What the age sweep relies on.** A truncated file keeps its modification
+  time, so the sweep still pairs it with its row. An open spool is never cut
+  or deleted, and when the pass decides what to reclaim it counts only as its
+  head: its tail is cut by the first pass after it closes. Otherwise one upload
+  still being written would have the pass delete every closed file to make room
+  for it.
+- **The marker.** `<file>.truncated` holds the size before the cut. It lives in
+  the tree, not in a column, because the pass works from the trees and has no
+  index from a spool path back to its row. It has the same mtime as its file,
+  so the age sweep takes both together.
+- **Rows outlive their files.** The budget never deletes a row; the age sweep
+  does.
+- **When a pass runs.** Each spool write adds to a running total. Crossing the
+  budget the last pass resolved wakes the sweeper through `OverBudget`, without
+  blocking the write. Passes woken this way are spaced at least
+  `budgetPassSpacing` (10s) apart, because a long upload keeps the total over
+  budget on every write. A pass also runs on every retention tick, and each
+  pass corrects the total from its own walk. The age sweep and the budget pass share
+  one goroutine, so they never race over a file.
+
+A reader is told what it is reading. A cut file is served with
+`X-Discobox-Audit-Truncated: <original size>`, which the pool agent and the
+server relay. A file a row names that is gone, or a cache entry the cache has
+evicted, answers `410 Gone` rather than 404, because the artifact was recorded
+and has since been reclaimed.
 
 ## Upgraded Streams
 

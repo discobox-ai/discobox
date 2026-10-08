@@ -2,6 +2,7 @@ package poolruntime
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 )
@@ -68,14 +69,37 @@ func TestRetentionRoundTripsAsADurationString(t *testing.T) {
 
 func TestPolicyFieldsAreOfferedByProviderCatalogs(t *testing.T) {
 	fields := PoolPolicyConfigFields()
-	if len(fields) != 2 || fields[0].Key != "proxyAuditRetention" || fields[1].Key != "sandboxIdleTimeout" {
-		t.Fatalf("PoolPolicyConfigFields() = %+v", fields)
+	var keys []string
+	placeholders := map[string]string{}
+	for _, field := range fields {
+		keys = append(keys, field.Key)
+		placeholders[field.Key] = field.Placeholder
 	}
-	if fields[0].Placeholder != defaultRetentionHint {
-		t.Fatalf("placeholder = %q, want %q", fields[0].Placeholder, defaultRetentionHint)
+	want := []string{"proxyAuditRetention", "proxyAuditMaxSize", "proxyAuditMaxPercent", "proxyAuditBodyHead", "sandboxIdleTimeout"}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("PoolPolicyConfigFields() keys = %v, want %v", keys, want)
 	}
-	if fields[1].Placeholder != defaultIdleTimeoutHint {
-		t.Fatalf("placeholder = %q, want %q", fields[1].Placeholder, defaultIdleTimeoutHint)
+	if placeholders["proxyAuditRetention"] != defaultRetentionHint {
+		t.Fatalf("placeholder = %q, want %q", placeholders["proxyAuditRetention"], defaultRetentionHint)
+	}
+	if placeholders["sandboxIdleTimeout"] != defaultIdleTimeoutHint {
+		t.Fatalf("placeholder = %q, want %q", placeholders["sandboxIdleTimeout"], defaultIdleTimeoutHint)
+	}
+}
+
+// The spool budget's fields flatten into the policy under the keys its catalog
+// offers (ADR 26-10-08-698 §5), and are refused when written rather than when
+// a pool starts.
+func TestAuditSpoolBudgetFlattensIntoThePolicy(t *testing.T) {
+	var cfg PoolPolicy
+	if err := json.Unmarshal([]byte(`{"proxyAuditMaxSize":"20GiB","proxyAuditMaxPercent":"10%","proxyAuditBodyHead":"1MiB"}`), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if cfg.MaxSize != "20GiB" || cfg.MaxPercent != "10%" || cfg.BodyHead != "1MiB" {
+		t.Fatalf("budget = %+v", cfg.AuditSpoolBudget)
+	}
+	if err := json.Unmarshal([]byte(`{"proxyAuditMaxPercent":"200%"}`), &cfg); err == nil {
+		t.Fatal("Unmarshal() accepted a percentage over 100")
 	}
 }
 

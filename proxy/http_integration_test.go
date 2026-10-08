@@ -990,7 +990,11 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 	}
 }
 
-func TestHTTPProxyCapturesCachedResponseBody(t *testing.T) {
+// TestHTTPProxyRecordsCachedResponseBodyByReference is ADR 26-10-08-698 §1: a
+// response the cache stores or serves is recorded as a reference to the cache
+// entry rather than spooled beside it, reads back through the control API all
+// the same, and reads as reclaimed once the cache has let the entry go.
+func TestHTTPProxyRecordsCachedResponseBodyByReference(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1065,21 +1069,41 @@ func TestHTTPProxyCapturesCachedResponseBody(t *testing.T) {
 		t.Fatalf("originHits = %d, want 1", originHits)
 	}
 
-	closeServer()
+	for _, column := range []string{"cache_stored", "cache_hit"} {
+		exchange := waitForHTTPExchange(t, dbPath, "client_id = ? AND "+column+" = ?", "sandbox-1", true)
+		if exchange.ResponseBodyFormat != audit.BodyFormatCache || exchange.ResponseBodyFile != "" ||
+			exchange.ResponseBodyBytes != int64(len(responseBody)) || exchange.ResponseBodyError != "" {
+			t.Fatalf("%s row body = format %q file %q bytes %d error %q, want a %d-byte reference to the cache",
+				column, exchange.ResponseBodyFormat, exchange.ResponseBodyFile, exchange.ResponseBodyBytes, exchange.ResponseBodyError, len(responseBody))
+		}
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+exchange.ID.String()+"/response-body?client_id=sandbox-1", nil)
+		rec := httptest.NewRecorder()
+		server.ControlHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || rec.Body.String() != responseBody {
+			t.Fatalf("control response-body for the %s row = %d %q, want the cached body", column, rec.Code, rec.Body.String())
+		}
+	}
+	// Neither exchange wrote a copy of its own.
+	if entries, err := os.ReadDir(filepath.Join(bodyDir, "bodies", "sandbox-1")); err == nil && len(entries) > 0 {
+		t.Fatalf("body spool holds %d files, want none for cached responses", len(entries))
+	}
 
-	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
+	// The cache bounds itself: once the entry is gone the row still says the
+	// body was recorded, and the read answers that it was reclaimed.
+	if err := os.RemoveAll(filepath.Join(dir, "cache")); err != nil {
+		t.Fatal(err)
+	}
+	exchange := waitForHTTPExchange(t, dbPath, "client_id = ? AND cache_hit = ?", "sandbox-1", true)
+	control := httptest.NewServer(server.ControlHandler())
+	defer control.Close()
+	_, readerKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		t.Fatalf("open audit db: %v", err)
+		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = pools.Close() })
-	var exchange audit.HTTPExchange
-	if err := pools.Read.Where("client_id = ? AND cache_hit = ?", "sandbox-1", true).First(&exchange).Error; err != nil {
-		t.Fatalf("read cache-hit audit exchange: %v", err)
+	reader := NewControlClient(control.URL, readerKey, "", "", nil)
+	if _, err := reader.OpenHTTPArtifact(ctx, "sandbox-1", exchange.ID, AuditArtifactResponseBody); !errors.Is(err, ErrAuditArtifactReclaimed) {
+		t.Fatalf("OpenHTTPArtifact() after eviction = %v, want reclaimed", err)
 	}
-	if exchange.ResponseBodyBytes != int64(len(responseBody)) || exchange.ResponseBodyFile == "" {
-		t.Fatalf("cached response body metadata bytes=%d file=%q", exchange.ResponseBodyBytes, exchange.ResponseBodyFile)
-	}
-	assertSpoolFile(t, filepath.Join(bodyDir, filepath.FromSlash(exchange.ResponseBodyFile)), responseBody)
 }
 
 func TestHTTPProxyUpgradeAudit(t *testing.T) {

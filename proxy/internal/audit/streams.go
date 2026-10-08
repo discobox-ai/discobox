@@ -20,6 +20,11 @@ const (
 	streamFrameTypeData    = 1
 	streamFrameTypeSummary = 2
 
+	// streamDataFrameOverhead is a data frame's type, timestamp, direction,
+	// and payload length; streamSummaryFrameSize is the whole summary frame.
+	streamDataFrameOverhead = 1 + 8 + 1 + 4
+	streamSummaryFrameSize  = 1 + 8 + 4*8
+
 	StreamClientToServer StreamDirection = 1
 	StreamServerToClient StreamDirection = 2
 )
@@ -50,6 +55,8 @@ type StreamSession struct {
 	// the last frame is flushed, so the retention sweep cannot reclaim the
 	// file while anything is still being written to it.
 	onClose func()
+	// onWrite counts written frames toward the recorder's spool budget.
+	onWrite func(int64)
 
 	droppedChunks atomic.Uint64
 	droppedBytes  atomic.Uint64
@@ -178,6 +185,9 @@ func (s *StreamSession) run() {
 			s.droppedChunks.Add(1)
 			s.droppedBytes.Add(uint64(len(event.payload)))
 			continue
+		}
+		if s.onWrite != nil {
+			s.onWrite(streamDataFrameOverhead + int64(len(event.payload)))
 		}
 		switch event.direction {
 		case byte(StreamClientToServer):

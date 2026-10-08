@@ -9,8 +9,15 @@
 - Audit rows and their spool files must stay reclaimable together. A new spool
   kind must be swept by `Recorder.Sweep`, and anything that holds one open past
   the retention window must be tracked open so the sweep skips it.
+- A new spool kind counts toward the spool budget (`Recorder.EnforceBudget`),
+  reports its writes to the running total, and defines a truncation point that
+  leaves it readable, as `streamCut` does for streams.
+- A budget pass must never change a spool file's modification time, delete a
+  row, or touch an open spool. The age sweep pairs files with rows by mtime.
+- Do not spool a response body the cache stores or serves. The cache entry is
+  the record (`BodyFormatCache`), and reading it must not touch the cache's LRU.
 - Do not reclaim audit data on sandbox deletion. The trail deliberately outlives
-  the sandbox; retention is the only thing that removes it.
+  the sandbox; retention and the spool budget are all that remove it.
 - Do not sweep the response cache by age. Its entries are content-addressed and
   bounded by the LRU byte ceiling; anything that puts a file in the cache
   directory must be describable by the index, or it leaks past that ceiling.
