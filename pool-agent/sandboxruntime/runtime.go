@@ -120,8 +120,9 @@ var (
 	ErrAlreadyExists      = errors.New("sandbox already exists")
 	// ErrWorktreeUnsupported is a sandbox whose image's agent predates serving
 	// the sandbox's own repository. Its work is still in it; an upgrade, which
-	// keeps the workspace, is what makes it reachable again.
-	ErrWorktreeUnsupported = errors.New("the sandbox's image predates serving its own repository; run `discobox admin box upgrade` on it, then try again")
+	// keeps the workspace, is what makes it reachable again; SandboxServesWorktree
+	// wraps it with the command that does that for the sandbox it names.
+	ErrWorktreeUnsupported = errors.New("the sandbox's image predates serving its own repository")
 	// ErrImageUnavailable is the pool being unable to obtain the image a
 	// sandbox is pinned to. It is not transient: the pin names an image this
 	// pool does not have and cannot get, so the way forward is an upgrade that
@@ -145,10 +146,11 @@ type Sandbox struct {
 }
 
 // GitRepositoryLocation is the on-host location of a source's origin
-// repository, together with the OS identity that owns it. The git CGI backend
-// must run as this identity, not as the pool-agent process's own identity, or
-// it trips git's dubious-ownership check against a repository the sandbox user
-// owns.
+// repository, together with the OS identity that owns it: the owner of the
+// developer's Git directory for a live origin, the sandbox user for the bare
+// origin the pool holds. The git CGI backend must run as this identity, not as
+// the pool-agent process's own identity, or it trips git's dubious-ownership
+// check against the repository.
 type GitRepositoryLocation struct {
 	Path string
 	// UID and GID are the owning user. A negative value means the caller
@@ -2187,7 +2189,7 @@ func (r *DockerSandboxRuntime) SandboxServesWorktree(ctx context.Context, sandbo
 		return ErrNotFound
 	}
 	if containers.Items[0].Labels[harness.WorktreeGitLabel] != harness.WorktreeGitLabelValue {
-		return ErrWorktreeUnsupported
+		return fmt.Errorf("%w; run `discobox admin box upgrade %s`, then try again", ErrWorktreeUnsupported, sandboxID)
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -145,7 +146,7 @@ func TestWorktreeRouteTellsAnOldSandboxToUpgrade(t *testing.T) {
 	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
-	if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "discobox admin box upgrade") {
+	if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "discobox admin box upgrade sandbox-1") {
 		t.Fatalf("status = %d, body = %q; want 409 naming the upgrade", resp.Code, resp.Body.String())
 	}
 }
@@ -153,6 +154,6 @@ func TestWorktreeRouteTellsAnOldSandboxToUpgrade(t *testing.T) {
 // oldAgentRuntime is a sandbox whose image predates the worktree route.
 type oldAgentRuntime struct{ proxyTestRuntime }
 
-func (oldAgentRuntime) SandboxServesWorktree(context.Context, string) error {
-	return sandboxruntime.ErrWorktreeUnsupported
+func (oldAgentRuntime) SandboxServesWorktree(_ context.Context, sandboxID string) error {
+	return fmt.Errorf("%w; run `discobox admin box upgrade %s`, then try again", sandboxruntime.ErrWorktreeUnsupported, sandboxID)
 }

@@ -687,7 +687,7 @@ receive-pack), starts the sandbox on demand, and forwards the request over
 git against a checkout for this route, and `Runtime` has no worktree path.
 A sandbox pinned to an image whose agent predates the route — its image lacks
 `harness.WorktreeGitLabel` (`SandboxServesWorktree`) — is answered 409 naming
-`discobox admin box upgrade`, not forwarded: its agent would answer its
+`discobox admin box upgrade <id>`, not forwarded: its agent would answer its
 router's bare 404, which git reports as no such repository.
 
 ### Git origins
