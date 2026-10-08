@@ -42,6 +42,6 @@ func killProcess(pid int) error {
 // same work as lockFile.
 func isCommand(int, time.Time) bool { return false }
 
-func signalSession(int, time.Time, syscall.Signal) error { return errors.ErrUnsupported }
+func askSessionToStop(int, time.Time, bool) error { return errors.ErrUnsupported }
 
 func endSession(int, time.Time) error { return errors.ErrUnsupported }
