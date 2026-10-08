@@ -122,6 +122,16 @@ func TestRuntimeConfigIsDeliveredAppliedAndReported(t *testing.T) {
 	}
 }
 
+// Every invalid document is the sandbox's to refuse, the same way: revision 0
+// included, which the schema leaves to the intake's validation.
+func TestRuntimeConfigRevisionZeroIsInvalid(t *testing.T) {
+	router, token := runtimeConfigRouter(t)
+	resp := serveRuntimeConfig(t, router, http.MethodPut, token(ScopeRuntimeConfig), plainRuntimeConfig(0, "discobox-sentinel-0"))
+	if resp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("PUT revision 0 = %d %s, want 422", resp.Code, resp.Body.String())
+	}
+}
+
 func TestRuntimeConfigIsThePoolsAlone(t *testing.T) {
 	router, token := runtimeConfigRouter(t)
 	for name, scopes := range map[string][]string{

@@ -163,9 +163,10 @@ func (in *Intake) Revision() int64 {
 func (in *Intake) Apply(doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, error) {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	if err := doc.Validate(); err != nil {
-		return sandboxconfig.RuntimeConfig{}, fmt.Errorf("%w: %w", ErrInvalid, err)
-	}
+	// Ordering comes first: only a document newer than the held one can
+	// change anything, so only that one is worth validating. An out-of-date
+	// delivery is ignored whatever it says, and anything but the held
+	// document under the held revision is a conflict, malformed or not.
 	if held := in.applied; held != nil {
 		switch {
 		case doc.Revision < held.Revision:
@@ -175,6 +176,9 @@ func (in *Intake) Apply(doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeC
 		case doc.Revision == held.Revision:
 			return sandboxconfig.RuntimeConfig{}, fmt.Errorf("%w (revision %d)", ErrConflict, doc.Revision)
 		}
+	}
+	if err := doc.Validate(); err != nil {
+		return sandboxconfig.RuntimeConfig{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	if err := in.commit(doc, true); err != nil {
 		return sandboxconfig.RuntimeConfig{}, err
@@ -195,21 +199,20 @@ func (in *Intake) commit(doc sandboxconfig.RuntimeConfig, keep bool) error {
 
 // plan renders every file doc implies, in the order they are to be replaced.
 //
-// The readiness marker brackets the rest: a document that withholds readiness
-// removes the marker before anything else changes, and one that grants it
-// writes the marker after everything else is in place — the state file
-// included, since a failed rename there rolls the rest back, and a waiter that
-// had already seen the marker would be running over files that no longer
-// exist. Either way a gate is never open over files from two documents. The
+// The readiness marker brackets the rest. It is removed before anything else
+// changes, whatever the document says — a marker left up from the previous
+// document while this one's files go in would be a gate open over files from
+// two documents. A document that grants readiness writes it again after
+// everything else is in place, the state file included, since a failed rename
+// there rolls the rest back, and a waiter that had already seen the marker
+// would be running over files that no longer exist. The
 // state file comes after every file it describes, so a kept document is never
 // newer than they are.
 func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, error) {
 	ready := filepath.Join(in.layout.ConfigDir, sandboxconfig.SourcesReadyFileName)
 	var ops []op
 	delivered := doc.SourcesDelivered()
-	if !delivered {
-		ops = append(ops, op{path: ready, remove: true})
-	}
+	ops = append(ops, op{path: ready, remove: true})
 	proxyOps, err := proxyFiles(in.layout.ProxyDir, doc.Proxy)
 	if err != nil {
 		return nil, err

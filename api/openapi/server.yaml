@@ -1511,9 +1511,8 @@ components:
             description: The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126 §3). Whole rather than incremental - a field that is absent is something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
             properties:
                 revision:
-                    description: Orders documents. A sandbox applies a newer revision than it holds and ignores an older one.
+                    description: Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates it, not the schema, so every invalid document is answered alike.
                     format: int64
-                    minimum: 1
                     type: integer
                 agent:
                     $ref: '#/components/schemas/SandboxRuntimeConfigAgent'

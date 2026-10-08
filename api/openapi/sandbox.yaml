@@ -1042,9 +1042,8 @@ components:
                     $ref: '#/components/schemas/SandboxRuntimeConfigProxy'
                     description: Material for the sandbox's hop to its pool. Absent when it has none.
                 revision:
-                    description: Orders documents. A sandbox applies a newer revision than it holds and ignores an older one.
+                    description: Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates it, not the schema, so every invalid document is answered alike.
                     format: int64
-                    minimum: 1
                     type: integer
                 secretEnv:
                     additionalProperties:
