@@ -80,8 +80,8 @@ func TestAMalformedNamespaceIsReported(t *testing.T) {
 	}
 }
 
-// The namespace outlives an archive. The material a sandbox reads it from is
-// disposable — archiving deletes it and creation stages it again — but the
+// The namespace outlives an archive. The material a sandbox is delivered it in
+// is disposable — archiving deletes it and creation issues it again — but the
 // repositories it names in the pool registry are not, and an unarchive that
 // minted a fresh one would orphan everything published under the old one with
 // nothing left able to name it.
@@ -93,9 +93,9 @@ func TestTheNamespaceSurvivesArchivingTheMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stage material: %v", err)
 	}
-	staged, err := ReadRegistryNamespace(filepath.Join(material.MountSource, RegistryNamespaceFile))
-	if err != nil || staged == "" {
-		t.Fatalf("staged namespace = %q, %v", staged, err)
+	staged := material.Proxy.RegistryNamespace
+	if staged == "" {
+		t.Fatal("no namespace delivered")
 	}
 
 	// Archive: the material goes, the sandbox's durable tree stays.
@@ -110,15 +110,12 @@ func TestTheNamespaceSurvivesArchivingTheMaterial(t *testing.T) {
 		t.Fatalf("durable namespace %q != the one staged %q", durable, staged)
 	}
 
-	// Unarchive: the same namespace is staged again, not a new one.
-	if _, err := EnsureSandboxMaterial(root, projectID, poolID, sandboxID); err != nil {
-		t.Fatalf("re-stage material: %v", err)
-	}
-	again, err := ReadRegistryNamespace(filepath.Join(material.MountSource, RegistryNamespaceFile))
+	// Unarchive: the same namespace is delivered again, not a new one.
+	reissued, err := EnsureSandboxMaterial(root, projectID, poolID, sandboxID)
 	if err != nil {
-		t.Fatalf("re-read staged namespace: %v", err)
+		t.Fatalf("re-issue material: %v", err)
 	}
-	if again != staged {
+	if again := reissued.Proxy.RegistryNamespace; again != staged {
 		t.Fatalf("unarchive minted a new namespace %q, orphaning %q", again, staged)
 	}
 }

@@ -156,4 +156,22 @@ func TestRelayDialsUnixURLWithMTLS(t *testing.T) {
 	if len(credentials) != 1 || credentials[0].Name != "sandbox-1" {
 		t.Fatalf("pool saw %+v, want one credential naming sandbox-1", credentials)
 	}
+
+	// The pool renews the sandbox's certificate while it runs, delivering new
+	// material over the old (ADR 26-10-08-127 §5): the next call presents it.
+	issue(t, dir, "client", &x509.Certificate{
+		SerialNumber: big.NewInt(4),
+		Subject:      pkix.Name{CommonName: "sandbox-1-renewed"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     notAfter,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}, ca, caKey)
+	credentials, err = relay.List(context.Background())
+	if err != nil {
+		t.Fatalf("List after renewal: %v", err)
+	}
+	if len(credentials) != 1 || credentials[0].Name != "sandbox-1-renewed" {
+		t.Fatalf("pool saw %+v after renewal, want the renewed certificate", credentials)
+	}
 }

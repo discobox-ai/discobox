@@ -85,6 +85,9 @@ type sandboxAgentStatusPoller struct {
 	// the resource reporter so the two loops share one poll of each sandbox
 	// rather than each making its own (ADR 0071 resource accounting §2).
 	samples map[string]sandboxResourceSample
+	// converging holds the sandboxes a runtime-config delivery is under way
+	// for (convergeRuntimeConfig).
+	converging sync.Map
 }
 
 // ResourceSamples is the newest counters this poller has seen, by sandbox ID.
@@ -188,18 +191,26 @@ func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return SandboxAgentStatusEntry{}, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
-	// Two fields are read out of the payload; the payload itself is still
+	// Three fields are read out of the payload; the payload itself is still
 	// relayed as received below, never re-serialized from a parsed structure:
 	// a field this agent does not model still reaches the control plane.
-	// observedAt orders the report, and resources
-	// carries the cumulative counters the resource reporter differences.
+	// observedAt orders the report, resources carries the cumulative counters
+	// the resource reporter differences, and runtimeConfigRevision is what the
+	// sandbox has applied of the pool's runtime-config document.
 	var decoded struct {
-		ObservedAt time.Time                           `json:"observedAt"`
-		Resources  *apimodel.SandboxAgentResourceUsage `json:"resources"`
+		ObservedAt            time.Time                           `json:"observedAt"`
+		Resources             *apimodel.SandboxAgentResourceUsage `json:"resources"`
+		RuntimeConfigRevision int64                               `json:"runtimeConfigRevision"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return SandboxAgentStatusEntry{}, err
 	}
+	// The pool converges on what the sandbox says it applied, never on having
+	// sent it (ADR 0126 §3): a delivery that did not land, a changed idle
+	// timeout, renewed material — each is delivered here, at the next poll.
+	// It runs beside the report rather than in it, so a slow delivery never
+	// holds the batch.
+	go p.convergeRuntimeConfig(context.WithoutCancel(ctx), sandboxID, decoded.RuntimeConfigRevision)
 	observedAt := decoded.ObservedAt
 	if observedAt.IsZero() {
 		observedAt = time.Now().UTC()
@@ -216,6 +227,19 @@ func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token
 		ObservedAt: observedAt,
 		Resources:  decoded.Resources,
 	}, nil
+}
+
+// convergeRuntimeConfig delivers a sandbox's runtime-config document when the
+// revision it reported is behind the pool's, one delivery per sandbox at a time:
+// a poll that comes round while the last one is still going skips it.
+func (p *sandboxAgentStatusPoller) convergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64) {
+	if _, busy := p.converging.LoadOrStore(sandboxID, struct{}{}); busy {
+		return
+	}
+	defer p.converging.Delete(sandboxID)
+	if err := p.runtime.ConvergeRuntimeConfig(ctx, sandboxID, applied); err != nil {
+		p.logger.Warn("converge sandbox runtime config", "sandboxId", sandboxID, "applied", applied, "error", err)
+	}
 }
 
 // ensureTokens mints tokens for any sandboxID missing from the cache or

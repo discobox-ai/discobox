@@ -1,132 +1,97 @@
 package proxyagent
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxpath"
 )
 
-func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
+// materialRecord is the per-sandbox directory EnsureSandboxMaterial makes as
+// the reaper's record of the sandbox.
+func materialRecord(root layout.Root, projectID, poolID, sandboxID string) string {
+	return filepath.Join(PoolSandboxMaterialRoot(root, projectID, poolID), sandboxID)
+}
+
+// The material is delivered in the sandbox's runtime-config document, not
+// staged for it: what comes back is the sandbox's keypair, the pool's public
+// CAs and its registry namespace, and nothing of the CAs' private keys
+// (ADR 26-10-08-127 §1).
+func TestEnsureSandboxMaterialDeliversClientOnly(t *testing.T) {
 	root := withTestRoot(t)
 
 	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
-
-	if want := filepath.Join(PoolSandboxMaterialRoot(root, "project-1", "pool-1"), "sandbox-1"); material.MountSource != want {
-		t.Fatalf("MountSource = %q, want %q", material.MountSource, want)
-	}
-
-	dir := material.MountSource
-	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json", "bridge-docker.json"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
-			t.Fatalf("expected staged file %q: %v", name, err)
+	proxy := material.Proxy
+	for name, pem := range map[string]string{"mtlsCa": proxy.MTLSCA, "mitmCa": proxy.MITMCA, "clientCert": proxy.ClientCert} {
+		if !strings.Contains(pem, "BEGIN CERTIFICATE") || strings.Contains(pem, "PRIVATE KEY") {
+			t.Fatalf("%s = %q, want a certificate and no private key", name, pem)
 		}
 	}
-
-	// The CA private keys must never be exposed to a sandbox.
-	for _, leaked := range []string{"mtls-ca.key", "mitm-ca.key"} {
-		if _, err := os.Stat(filepath.Join(dir, leaked)); !os.IsNotExist(err) {
-			t.Fatalf("CA private key %q must not be staged into sandbox material", leaked)
-		}
+	if !strings.Contains(proxy.ClientKey, "PRIVATE KEY") {
+		t.Fatal("the sandbox's client key is missing")
+	}
+	if proxy.RegistryNamespace == "" || strings.ContainsAny(proxy.RegistryNamespace, " \n") {
+		t.Fatalf("registry namespace = %q", proxy.RegistryNamespace)
+	}
+	doc := sandboxconfig.RuntimeConfig{Revision: 1, Proxy: &proxy}
+	if err := doc.Validate(sandboxpath.Paths{}); err != nil {
+		t.Fatalf("the material does not make a valid document: %v", err)
+	}
+	// Nothing is staged for the sandbox to read; the directory is only the
+	// reaper's record.
+	entries, err := os.ReadDir(materialRecord(root, "project-1", "pool-1", "sandbox-1"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("material record = %v, %v; want an empty directory", entries, err)
 	}
 
-	if got := material.Env["HTTP_PROXY"]; got != "http://"+SandboxForwarderListen {
-		t.Fatalf("HTTP_PROXY = %q, want %q", got, "http://"+SandboxForwarderListen)
+	if got := material.Env["HTTP_PROXY"]; got != "http://"+sandboxconfig.SandboxEgressListenAddress {
+		t.Fatalf("HTTP_PROXY = %q, want %q", got, "http://"+sandboxconfig.SandboxEgressListenAddress)
 	}
 	// Node.js/Claude Code, Python/requests, and pip all bundle their own root
 	// store, so each points at the system bundle the boot-time trust step
 	// augments — not the raw MITM CA file, so a nested Docker container gets
 	// the identical value working once its runc wrapper mounts the same
 	// bundle at the same path (docs/adr/0020).
-	if got := material.Env["NODE_EXTRA_CA_CERTS"]; got != SystemCABundle {
-		t.Fatalf("NODE_EXTRA_CA_CERTS = %q, want system CA bundle", got)
-	}
-	if got := material.Env["SSL_CERT_FILE"]; got != SystemCABundle {
-		t.Fatalf("SSL_CERT_FILE = %q, want system CA bundle", got)
-	}
-	if got := material.Env["REQUESTS_CA_BUNDLE"]; got != SystemCABundle {
-		t.Fatalf("REQUESTS_CA_BUNDLE = %q, want system CA bundle", got)
-	}
-	if got := material.Env["PIP_CERT"]; got != SystemCABundle {
-		t.Fatalf("PIP_CERT = %q, want system CA bundle", got)
-	}
-}
-
-// The sandbox's DNS stub reads these two fields from bridge.json: where to
-// listen (the DNS server its container was created with) and where to dial.
-func TestEnsureSandboxMaterialStagesDNS(t *testing.T) {
-	root := withTestRoot(t)
-
-	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
-	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(material.MountSource, "bridge.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var bridge struct {
-		DNSServer        string `json:"dnsServer"`
-		DNSListenAddress string `json:"dnsListenAddress"`
-	}
-	if err := json.Unmarshal(data, &bridge); err != nil {
-		t.Fatal(err)
-	}
-	if bridge.DNSServer != "discobox-pool-proxy:17085" {
-		t.Fatalf("dnsServer = %q", bridge.DNSServer)
-	}
-	if bridge.DNSListenAddress != "169.254.53.53:53" {
-		t.Fatalf("dnsListenAddress = %q", bridge.DNSListenAddress)
+	for _, name := range []string{"NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "PIP_CERT"} {
+		if got := material.Env[name]; got != SystemCABundle {
+			t.Fatalf("%s = %q, want system CA bundle", name, got)
+		}
 	}
 }
 
 // A Docker pool's sandboxes reach its services over TCP by the pool's DNS
-// name, so every bridge config names an https URL. The server name is stated
-// beside it because it is what a vsock or unix URL could not carry, and it is
-// the name the pool's one server certificate is issued for.
-func TestEnsureSandboxMaterialStagesPoolEndpoints(t *testing.T) {
-	root := withTestRoot(t)
-
-	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
-	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+// name, which is also the name its one server certificate is issued for.
+func TestPoolEndpointsNameThePoolsServices(t *testing.T) {
+	got := PoolEndpoints()
+	//nolint:gosec // G101: service URLs, not credentials.
+	want := sandboxconfig.PoolEndpoints{
+		Proxy:       "https://discobox-pool-proxy:17080",
+		Credentials: "https://discobox-pool-proxy:17083",
+		DNS:         "discobox-pool-proxy:17085",
+		BuildKit:    "https://discobox-pool-proxy:17081",
+		ServerName:  "discobox-pool-proxy",
 	}
-	for file, want := range map[string]struct{ pool, creds string }{
-		"bridge.json":          {"https://discobox-pool-proxy:17080", "https://discobox-pool-proxy:17083"},
-		"bridge-docker.json":   {"https://discobox-pool-proxy:17080", ""},
-		"bridge-buildkit.json": {"https://discobox-pool-proxy:17081", ""},
-	} {
-		data, err := os.ReadFile(filepath.Join(material.MountSource, file))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var got bridgeConfig
-		if err := json.Unmarshal(data, &got); err != nil {
-			t.Fatal(err)
-		}
-		if got.PoolProxyURL != want.pool || got.CredentialsURL != want.creds {
-			t.Fatalf("%s: workerProxyUrl = %q, credentialsUrl = %q; want %q, %q", file, got.PoolProxyURL, got.CredentialsURL, want.pool, want.creds)
-		}
-		if got.ServerName != ServerName {
-			t.Fatalf("%s: serverName = %q, want %q", file, got.ServerName, ServerName)
-		}
+	if got != want {
+		t.Fatalf("PoolEndpoints() = %+v, want %+v", got, want)
 	}
 }
 
 func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
 	root := withTestRoot(t)
 
-	material, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
-	if err != nil {
+	if _, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1"); err != nil {
 		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
-	materialDir := material.MountSource
+	materialDir := materialRecord(root, "project-1", "pool-1", "sandbox-1")
 	clientCertDir := filepath.Join(root.ProxyCerts("project-1", "pool-1"), "clients", "sandbox-1")
 	for _, dir := range []string{materialDir, clientCertDir} {
 		if _, err := os.Stat(dir); err != nil {
@@ -152,11 +117,11 @@ func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
 func TestPruneOrphanedMaterialRemovesOnlyOrphans(t *testing.T) {
 	root := withTestRoot(t)
 
-	live, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "live-sandbox")
+	_, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "live-sandbox")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial(root, live) error = %v", err)
 	}
-	orphan, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "orphan-sandbox")
+	_, err = EnsureSandboxMaterial(root, "project-1", "pool-1", "orphan-sandbox")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial(root, orphan) error = %v", err)
 	}
@@ -176,10 +141,10 @@ func TestPruneOrphanedMaterialRemovesOnlyOrphans(t *testing.T) {
 		t.Fatalf("PruneOrphanedMaterial(root, ) error = %v", err)
 	}
 
-	if _, err := os.Stat(live.MountSource); err != nil {
+	if _, err := os.Stat(materialRecord(root, "project-1", "pool-1", "live-sandbox")); err != nil {
 		t.Fatalf("live sandbox material should be kept: %v", err)
 	}
-	if _, err := os.Stat(orphan.MountSource); !os.IsNotExist(err) {
+	if _, err := os.Stat(materialRecord(root, "project-1", "pool-1", "orphan-sandbox")); !os.IsNotExist(err) {
 		t.Fatalf("orphan sandbox material should be removed, stat err = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root.ProxyCerts("project-1", "pool-1"), "clients", "orphan-sandbox")); !os.IsNotExist(err) {
@@ -203,20 +168,20 @@ func TestPruneOrphanedMaterialRemovesOnlyOrphans(t *testing.T) {
 func TestPruneOrphanedMaterialIsPoolScoped(t *testing.T) {
 	root := withTestRoot(t)
 
-	poolBMaterial, err := EnsureSandboxMaterial(root, "project-1", "pool-b", "sandbox-b")
+	_, err := EnsureSandboxMaterial(root, "project-1", "pool-b", "sandbox-b")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial(root, pool-b) error = %v", err)
 	}
 	// Age it past any grace window so only scoping — not the grace period —
 	// protects it.
 	past := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(poolBMaterial.MountSource, past, past)
+	_ = os.Chtimes(materialRecord(root, "project-1", "pool-b", "sandbox-b"), past, past)
 
 	// Pool A prunes with an empty live set: it must not see pool B's material.
 	if err := PruneOrphanedMaterial(root, "project-1", "pool-a", nil, time.Minute); err != nil {
 		t.Fatalf("PruneOrphanedMaterial(root, pool-a) error = %v", err)
 	}
-	if _, err := os.Stat(poolBMaterial.MountSource); err != nil {
+	if _, err := os.Stat(materialRecord(root, "project-1", "pool-b", "sandbox-b")); err != nil {
 		t.Fatalf("pool A reaped pool B's material: %v", err)
 	}
 }
@@ -227,17 +192,17 @@ func TestPruneOrphanedMaterialIsPoolScoped(t *testing.T) {
 func TestPruneOrphanedMaterialIsProjectScoped(t *testing.T) {
 	root := withTestRoot(t)
 
-	otherProject, err := EnsureSandboxMaterial(root, "project-2", "pool-1", "sandbox-b")
+	_, err := EnsureSandboxMaterial(root, "project-2", "pool-1", "sandbox-b")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial(root, project-2) error = %v", err)
 	}
 	past := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(otherProject.MountSource, past, past)
+	_ = os.Chtimes(materialRecord(root, "project-2", "pool-1", "sandbox-b"), past, past)
 
 	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", nil, time.Minute); err != nil {
 		t.Fatalf("PruneOrphanedMaterial(root, project-1) error = %v", err)
 	}
-	if _, err := os.Stat(otherProject.MountSource); err != nil {
+	if _, err := os.Stat(materialRecord(root, "project-2", "pool-1", "sandbox-b")); err != nil {
 		t.Fatalf("project 1 reaped project 2's material: %v", err)
 	}
 }
@@ -245,7 +210,7 @@ func TestPruneOrphanedMaterialIsProjectScoped(t *testing.T) {
 func TestPruneOrphanedMaterialProtectsFreshMaterial(t *testing.T) {
 	root := withTestRoot(t)
 
-	fresh, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "fresh-sandbox")
+	_, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "fresh-sandbox")
 	if err != nil {
 		t.Fatalf("EnsureSandboxMaterial(root, ) error = %v", err)
 	}
@@ -254,7 +219,7 @@ func TestPruneOrphanedMaterialProtectsFreshMaterial(t *testing.T) {
 	if err := PruneOrphanedMaterial(root, "project-1", "pool-1", nil, time.Hour); err != nil {
 		t.Fatalf("PruneOrphanedMaterial(root, ) error = %v", err)
 	}
-	if _, err := os.Stat(fresh.MountSource); err != nil {
+	if _, err := os.Stat(materialRecord(root, "project-1", "pool-1", "fresh-sandbox")); err != nil {
 		t.Fatalf("fresh material should be protected by grace period: %v", err)
 	}
 }
@@ -266,21 +231,15 @@ func TestEnsureSandboxMaterialReusesClientCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first EnsureSandboxMaterial(root, ) error = %v", err)
 	}
-	firstCert, err := os.ReadFile(filepath.Join(first.MountSource, "client.crt"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	firstCert := first.Proxy.ClientCert
 
 	second, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1")
 	if err != nil {
 		t.Fatalf("second EnsureSandboxMaterial(root, ) error = %v", err)
 	}
-	secondCert, err := os.ReadFile(filepath.Join(second.MountSource, "client.crt"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	secondCert := second.Proxy.ClientCert
 
-	if string(firstCert) != string(secondCert) {
+	if firstCert != secondCert {
 		t.Fatal("client certificate was not reused across calls")
 	}
 }

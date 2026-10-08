@@ -83,8 +83,9 @@ surface:
   in `api/openapi/server.yaml` and marked `x-sandbox-agent` for subset
   generation. `api/openapi/sandbox.yaml` is generated from that server contract
   by `api/internal/gensandboxopenapi` and must not be edited directly.
-- `/etc/discobox/sandbox.json` (the sandbox's effective runtime config) is
-  not a REST contract and is not OpenAPI-generated. It is the hand-written
+- `/etc/discobox/sandbox.json` (the sandbox's effective runtime config, and its
+  static bootstrap: placed before the agent exists, never rewritten, no private
+  key — ADR 26-10-08-127) is not a REST contract and is not OpenAPI-generated. It is the hand-written
   `sandboxconfig` package — see `sandboxconfig/DESIGN.md` and
   `docs/adr/0012-sandbox-config-is-three-attribute-owned-layers.md`.
 - The runtime-config document a pool delivers to a running sandbox is both: a

@@ -2284,52 +2284,6 @@ func (o OptSandboxMeta) Or(d SandboxMeta) SandboxMeta {
 	return d
 }
 
-// NewOptSandboxRuntimeConfigBridge returns new OptSandboxRuntimeConfigBridge with value set to v.
-func NewOptSandboxRuntimeConfigBridge(v SandboxRuntimeConfigBridge) OptSandboxRuntimeConfigBridge {
-	return OptSandboxRuntimeConfigBridge{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSandboxRuntimeConfigBridge is optional SandboxRuntimeConfigBridge.
-type OptSandboxRuntimeConfigBridge struct {
-	Value SandboxRuntimeConfigBridge
-	Set   bool
-}
-
-// IsSet returns true if OptSandboxRuntimeConfigBridge was set.
-func (o OptSandboxRuntimeConfigBridge) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSandboxRuntimeConfigBridge) Reset() {
-	var v SandboxRuntimeConfigBridge
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSandboxRuntimeConfigBridge) SetTo(v SandboxRuntimeConfigBridge) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxRuntimeConfigBridge) Get() (v SandboxRuntimeConfigBridge, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSandboxRuntimeConfigBridge) Or(d SandboxRuntimeConfigBridge) SandboxRuntimeConfigBridge {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptSandboxRuntimeConfigProxy returns new OptSandboxRuntimeConfigProxy with value set to v.
 func NewOptSandboxRuntimeConfigProxy(v SandboxRuntimeConfigProxy) OptSandboxRuntimeConfigProxy {
 	return OptSandboxRuntimeConfigProxy{
@@ -4840,8 +4794,9 @@ func (s *SandboxMetaTags) init() SandboxMetaTags {
 }
 
 // The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126
-// §3). Whole rather than incremental - a field that is absent is something the sandbox no longer
-// has. The Go type is sandboxconfig.RuntimeConfig.
+// §3) - everything about it that can change while it exists. What cannot is the static bootstrap,
+// sandbox.json (ADR 26-10-08-127). Whole rather than incremental - a field that is absent is
+// something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
 // Ref: #/components/schemas/SandboxRuntimeConfig
 type SandboxRuntimeConfig struct {
 	Agent SandboxRuntimeConfigAgent `json:"agent"`
@@ -4907,12 +4862,12 @@ func (s *SandboxRuntimeConfig) SetSources(val []SandboxRuntimeConfigSource) {
 	s.Sources = val
 }
 
-// The sandbox-agent configuration the pool may change after create, applied into sandbox.json's
-// agentRuntime.
+// The sandbox-agent configuration the pool may change while the sandbox exists, applied to the
+// running agent.
 // Ref: #/components/schemas/SandboxRuntimeConfigAgent
 type SandboxRuntimeConfigAgent struct {
-	// The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect on
-	// the agent's next start.
+	// The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect
+	// when applied.
 	IdleTimeout OptString `json:"idleTimeout"`
 }
 
@@ -4926,93 +4881,22 @@ func (s *SandboxRuntimeConfigAgent) SetIdleTimeout(val OptString) {
 	s.IdleTimeout = val
 }
 
-// One sandbox-side forwarder to the pool.
-// Ref: #/components/schemas/SandboxRuntimeConfigBridge
-type SandboxRuntimeConfigBridge struct {
-	CredentialsUrl   OptString `json:"credentialsUrl"`
-	DnsListenAddress OptString `json:"dnsListenAddress"`
-	DnsServer        OptString `json:"dnsServer"`
-	ListenAddress    OptString `json:"listenAddress"`
-	UpstreamUrl      string    `json:"upstreamUrl"`
-}
-
-// GetCredentialsUrl returns the value of CredentialsUrl.
-func (s *SandboxRuntimeConfigBridge) GetCredentialsUrl() OptString {
-	return s.CredentialsUrl
-}
-
-// GetDnsListenAddress returns the value of DnsListenAddress.
-func (s *SandboxRuntimeConfigBridge) GetDnsListenAddress() OptString {
-	return s.DnsListenAddress
-}
-
-// GetDnsServer returns the value of DnsServer.
-func (s *SandboxRuntimeConfigBridge) GetDnsServer() OptString {
-	return s.DnsServer
-}
-
-// GetListenAddress returns the value of ListenAddress.
-func (s *SandboxRuntimeConfigBridge) GetListenAddress() OptString {
-	return s.ListenAddress
-}
-
-// GetUpstreamUrl returns the value of UpstreamUrl.
-func (s *SandboxRuntimeConfigBridge) GetUpstreamUrl() string {
-	return s.UpstreamUrl
-}
-
-// SetCredentialsUrl sets the value of CredentialsUrl.
-func (s *SandboxRuntimeConfigBridge) SetCredentialsUrl(val OptString) {
-	s.CredentialsUrl = val
-}
-
-// SetDnsListenAddress sets the value of DnsListenAddress.
-func (s *SandboxRuntimeConfigBridge) SetDnsListenAddress(val OptString) {
-	s.DnsListenAddress = val
-}
-
-// SetDnsServer sets the value of DnsServer.
-func (s *SandboxRuntimeConfigBridge) SetDnsServer(val OptString) {
-	s.DnsServer = val
-}
-
-// SetListenAddress sets the value of ListenAddress.
-func (s *SandboxRuntimeConfigBridge) SetListenAddress(val OptString) {
-	s.ListenAddress = val
-}
-
-// SetUpstreamUrl sets the value of UpstreamUrl.
-func (s *SandboxRuntimeConfigBridge) SetUpstreamUrl(val string) {
-	s.UpstreamUrl = val
-}
-
-// Proxy client material and trust for the sandbox's hop to its pool. The sandbox writes each piece
-// where its readers look and renders the bridge configs with its own paths.
+// The credential and trust for the sandbox's hop to its pool. Where the pool is comes from the
+// sandbox's bootstrap and where it listens is its own; the sandbox renders its bridge configs from
+// the three and starts the units that read them.
 // Ref: #/components/schemas/SandboxRuntimeConfigProxy
 type SandboxRuntimeConfigProxy struct {
-	// The forwarder to the pool's BuildKit mediator.
-	Buildkit OptSandboxRuntimeConfigBridge `json:"buildkit"`
 	// This sandbox's PEM client certificate.
 	ClientCert string `json:"clientCert"`
 	// This sandbox's PEM client private key. Required on delivery; never returned, so a document read
 	// back omits it.
 	ClientKey OptString `json:"clientKey"`
-	// The loopback forwarder to the pool proxy, which also carries the credentials endpoint and the DNS
-	// stub.
-	Egress OptSandboxRuntimeConfigBridge `json:"egress"`
 	// PEM CA the egress proxy signs intercepted connections with.
 	MitmCa string `json:"mitmCa"`
 	// PEM CA the pool's mTLS endpoints present certificates from.
 	MtlsCa string `json:"mtlsCa"`
-	// The forwarder for containers the sandbox's own dockerd creates.
-	NestedDocker OptSandboxRuntimeConfigBridge `json:"nestedDocker"`
 	// The sandbox's namespace in the pool build registry.
 	RegistryNamespace OptString `json:"registryNamespace"`
-}
-
-// GetBuildkit returns the value of Buildkit.
-func (s *SandboxRuntimeConfigProxy) GetBuildkit() OptSandboxRuntimeConfigBridge {
-	return s.Buildkit
 }
 
 // GetClientCert returns the value of ClientCert.
@@ -5025,11 +4909,6 @@ func (s *SandboxRuntimeConfigProxy) GetClientKey() OptString {
 	return s.ClientKey
 }
 
-// GetEgress returns the value of Egress.
-func (s *SandboxRuntimeConfigProxy) GetEgress() OptSandboxRuntimeConfigBridge {
-	return s.Egress
-}
-
 // GetMitmCa returns the value of MitmCa.
 func (s *SandboxRuntimeConfigProxy) GetMitmCa() string {
 	return s.MitmCa
@@ -5040,19 +4919,9 @@ func (s *SandboxRuntimeConfigProxy) GetMtlsCa() string {
 	return s.MtlsCa
 }
 
-// GetNestedDocker returns the value of NestedDocker.
-func (s *SandboxRuntimeConfigProxy) GetNestedDocker() OptSandboxRuntimeConfigBridge {
-	return s.NestedDocker
-}
-
 // GetRegistryNamespace returns the value of RegistryNamespace.
 func (s *SandboxRuntimeConfigProxy) GetRegistryNamespace() OptString {
 	return s.RegistryNamespace
-}
-
-// SetBuildkit sets the value of Buildkit.
-func (s *SandboxRuntimeConfigProxy) SetBuildkit(val OptSandboxRuntimeConfigBridge) {
-	s.Buildkit = val
 }
 
 // SetClientCert sets the value of ClientCert.
@@ -5065,11 +4934,6 @@ func (s *SandboxRuntimeConfigProxy) SetClientKey(val OptString) {
 	s.ClientKey = val
 }
 
-// SetEgress sets the value of Egress.
-func (s *SandboxRuntimeConfigProxy) SetEgress(val OptSandboxRuntimeConfigBridge) {
-	s.Egress = val
-}
-
 // SetMitmCa sets the value of MitmCa.
 func (s *SandboxRuntimeConfigProxy) SetMitmCa(val string) {
 	s.MitmCa = val
@@ -5078,11 +4942,6 @@ func (s *SandboxRuntimeConfigProxy) SetMitmCa(val string) {
 // SetMtlsCa sets the value of MtlsCa.
 func (s *SandboxRuntimeConfigProxy) SetMtlsCa(val string) {
 	s.MtlsCa = val
-}
-
-// SetNestedDocker sets the value of NestedDocker.
-func (s *SandboxRuntimeConfigProxy) SetNestedDocker(val OptSandboxRuntimeConfigBridge) {
-	s.NestedDocker = val
 }
 
 // SetRegistryNamespace sets the value of RegistryNamespace.

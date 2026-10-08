@@ -24,7 +24,6 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
-	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
@@ -62,16 +61,20 @@ type Config struct {
 	Description string
 	HarnessMode string
 	Resources   config.ResourceConfig
-	// IdleTimeout is the pool's idle timeout for autostop; zero is its
-	// default (ADR 0108).
-	IdleTimeout       time.Duration
-	Harness           config.Harness
-	Sources           []sandboxconfig.Source
-	SandboxConfig     map[string]any
-	Installer         terminal.Installer
-	ExecUnitManager   execs.UnitManager
-	ExecAuditRecorder execs.AuditRecorder
-	Store             *agentstore.Store
+	// PoolPublicKey verifies the tokens the pool signs to deliver runtime
+	// config, and nothing else (ADR 26-10-08-127 §3). Empty accepts none.
+	PoolPublicKey string
+	// AwaitsRuntimeConfig holds the first harness launch and the declared
+	// services until an applied runtime-config document grants readiness
+	// (ADR 26-10-08-127 §6).
+	AwaitsRuntimeConfig bool
+	Harness             config.Harness
+	Sources             []sandboxconfig.Source
+	SandboxConfig       map[string]any
+	Installer           terminal.Installer
+	ExecUnitManager     execs.UnitManager
+	ExecAuditRecorder   execs.AuditRecorder
+	Store               *agentstore.Store
 	// SecretEnv returns the sandbox's current secret-bound env->sentinel map.
 	// Serve wires this to a live secretswatch.Watcher; callers that build a
 	// router directly (e.g. tests) may leave it nil.
@@ -81,9 +84,10 @@ type Config struct {
 	// mount path.
 	CredentialsBridgePath string
 	// RuntimeConfig is the runtime-config intake the pool delivers to (ADR
-	// 0126 §3). The binary opens it before loading sandbox.json, so the
-	// document it kept is applied before anything reads its files; nil leaves
-	// the routes answering that there is no intake.
+	// 0126 §3). The binary opens it before serving, so the document it kept is
+	// applied before anything reads its files, and the idle timeout that
+	// document carries is the one the idle stop starts with; nil leaves the
+	// routes answering that there is no intake.
 	RuntimeConfig *intake.Intake
 }
 
@@ -105,7 +109,8 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Description:           cfg.Description,
 		HarnessMode:           cfg.HarnessMode,
 		Resources:             cfg.Resources,
-		IdleTimeout:           cfg.IdleTimeout,
+		PoolPublicKey:         cfg.PoolPublicKey,
+		AwaitsRuntimeConfig:   cfg.AwaitsRuntimeConfig,
 		Harness:               cfg.Harness,
 		Sources:               cfg.Sources,
 		SandboxConfig:         cfg.SandboxConfig,
@@ -128,8 +133,9 @@ type agentRuntime struct {
 	portsWatch *ports.Watcher
 	autostop   *autostop.Policy
 	listenAddr string
-	// awaitSources is the wait for a push-delivered sandbox's working tree,
-	// nil when there is nothing to wait for. Built once and shared, because
+	// awaitSources is the readiness gate — a push-delivered sandbox's working
+	// tree, or the first runtime-config document a pool delivers — nil when
+	// there is nothing to wait for. Built once and shared, because
 	// everything that reads the tree at boot has to be behind the same answer:
 	// a second, independently constructed copy of "wait for delivery" is how
 	// one of them goes stale.
@@ -174,7 +180,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if execAudit == nil && localStore != nil {
 		execAudit = localStore
 	}
-	authenticator, err := NewSignedTokenAuthenticator(cfg.Identity, cfg.ControlPlanePublicKey)
+	authenticator, err := NewSignedTokenAuthenticator(cfg.Identity, cfg.ControlPlanePublicKey, cfg.PoolPublicKey)
 	if err != nil {
 		return agentRuntime{}, err
 	}
@@ -193,9 +199,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	// nil for every sandbox whose sources were in place before its container
-	// was created, which is all of them but a push-delivered one.
-	awaitSources := sourcesready.Gate(cfg.Sources, "", slog.Default())
+	// nil only for a sandbox no pool delivers runtime config to and whose
+	// sources were in place before its container was created.
+	awaitSources := sourcesready.Gate(cfg.Sources, cfg.AwaitsRuntimeConfig, "", slog.Default())
 	manager, err := terminal.NewService(terminal.ServiceConfig{
 		Execs:         execManager,
 		Harness:       cfg.Harness,
@@ -250,7 +256,10 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// The idle stop reads every exec's shim-reported activity — screen
 	// changes, attachers, last access — fresh on each evaluation (ADR 0108,
 	// ADR 0124).
-	idleStop := autostop.New(autostop.Config{Execs: execManager.List, IdleTimeout: cfg.IdleTimeout})
+	//
+	// Its timeout is the pool's, from the runtime-config document the sandbox
+	// holds, and a later delivery changes it in place (ADR 26-10-08-127 §5).
+	idleStop := autostop.New(autostop.Config{Execs: execManager.List, IdleTimeout: appliedIdleTimeout(cfg.RuntimeConfig)})
 	metaFile, err := newMetaFile(execManager)
 	if err != nil {
 		// Like the port watcher: meta is not worth failing a boot over, and a
@@ -395,7 +404,7 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 	}
 	watcher := ports.Config{
 		UID:             uid,
-		ExcludeTCPPorts: agentListenPorts(cfg.ListenAddress, bridgeConfigPath(cfg.CredentialsBridgePath), dockercache.BridgeConfig),
+		ExcludeTCPPorts: agentListenPorts(cfg.ListenAddress),
 	}
 	// One seam, two directories behind it: the image's declarations and the
 	// repository's, which services.Discover already merges. A declaration that
@@ -435,58 +444,40 @@ func newMetaFile(execManager *execs.Manager) (*meta.File, error) {
 
 // agentListenPorts are the TCP ports Discobox's own plumbing listens on inside
 // the sandbox, which are never a discobox's ports: the agent itself, the
-// credentials endpoint, and the forwarders the pool stages bridge configs for
-// (egress, BuildKit). The uid filter does not keep them out when the sandbox
-// user is root. They must not be probed either: a forwarder carries what it is
-// sent out of the sandbox, so a classification probe of one is traffic nobody
-// meant.
+// credentials endpoint, and the forwarders (egress, BuildKit, the DNS stub).
+// The uid filter does not keep them out when the sandbox user is root. They
+// must not be probed either: a forwarder carries what it is sent out of the
+// sandbox, so a classification probe of one is traffic nobody meant.
 //
-// A forwarder's address is read from the bridge config naming it rather than
-// assumed, because that config is where the pool decides it; a config that is
-// absent names nothing.
-func agentListenPorts(listenAddress string, bridgeConfigs ...string) []int {
-	addresses := []string{listenAddress, credentials.ListenAddress}
-	for _, path := range bridgeConfigs {
-		addresses = append(addresses, bridgeListenAddresses(path)...)
-	}
+// The forwarders' addresses are the sandbox's own (ADR 26-10-08-127 §4), so
+// they are excluded whether or not the pool has delivered the material that
+// starts them yet.
+func agentListenPorts(listenAddress string) []int {
 	var out []int
-	for _, address := range addresses {
+	for _, address := range []string{
+		listenAddress,
+		credentials.ListenAddress,
+		sandboxconfig.SandboxEgressListenAddress,
+		sandboxconfig.SandboxBuildKitListenAddress,
+		sandboxconfig.SandboxDNSListenAddress,
+	} {
 		out = append(out, listenPorts(address)...)
 	}
 	return out
 }
 
-// bridgeListenAddresses are the addresses a pool-staged bridge config tells
-// the sandbox's own services to listen on — its forwarder's and, in the egress
-// bridge's config, the DNS stub's — or none when there is no such config.
-func bridgeListenAddresses(path string) []string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
+// appliedIdleTimeout is the idle timeout of the runtime-config document the
+// sandbox holds, zero — the idle stop's default — when it holds none or the
+// document sets none.
+func appliedIdleTimeout(runtimeConfig *intake.Intake) time.Duration {
+	if runtimeConfig == nil {
+		return 0
 	}
-	var bridge struct {
-		ListenAddress    string `json:"listenAddress"`
-		DNSListenAddress string `json:"dnsListenAddress"`
+	applied, ok := runtimeConfig.Applied()
+	if !ok {
+		return 0
 	}
-	if json.Unmarshal(data, &bridge) != nil {
-		return nil
-	}
-	var out []string
-	for _, address := range []string{bridge.ListenAddress, bridge.DNSListenAddress} {
-		if address = strings.TrimSpace(address); address != "" {
-			out = append(out, address)
-		}
-	}
-	return out
-}
-
-// bridgeConfigPath is the egress bridge config the agent reads, defaulted the
-// way the credentials relay defaults it.
-func bridgeConfigPath(override string) string {
-	if override != "" {
-		return override
-	}
-	return credentials.DefaultBridgeConfigPath
+	return applied.Agent.IdleTimeoutDuration()
 }
 
 // listenPorts is the port a listen address binds, or nothing when the address
@@ -654,12 +645,20 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 
 // serveCredentials runs the in-sandbox agent credentials endpoint (ADR 0031).
 //
-// A sandbox with no staged proxy material has no identity to relay with, so the
-// endpoint simply does not come up. That is not a startup failure: the sandbox
-// works exactly as it did before the protocol existed, and the CLI reports a
-// refused connection, which says more than an endpoint that answers "denied" to
+// The endpoint relays with the sandbox's proxy identity, which arrives in the
+// pool's runtime-config document once the agent is up (ADR 26-10-08-127 §1),
+// so it waits for the bridge config that names it rather than looking once at
+// start. A sandbox no pool delivers proxy material to waits for as long as it
+// runs, which is the same as the endpoint never coming up: the CLI reports a
+// refused connection, which says more than an endpoint answering "denied" to
 // everything.
 func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath string) {
+	if bridgePath == "" {
+		bridgePath = credentials.DefaultBridgeConfigPath
+	}
+	if err := sourcesready.Wait(ctx, bridgePath, logger); err != nil {
+		return
+	}
 	relay, err := credentials.New(bridgePath)
 	if err != nil {
 		logger.Info("sandbox credentials endpoint not started", "reason", err)

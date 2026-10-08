@@ -1072,7 +1072,7 @@ components:
             type: object
         SandboxRuntimeConfig:
             additionalProperties: false
-            description: The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126 §3). Whole rather than incremental - a field that is absent is something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
+            description: The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126 §3) - everything about it that can change while it exists. What cannot is the static bootstrap, sandbox.json (ADR 26-10-08-127). Whole rather than incremental - a field that is absent is something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
             properties:
                 agent:
                     $ref: '#/components/schemas/SandboxRuntimeConfigAgent'
@@ -1098,54 +1098,28 @@ components:
             type: object
         SandboxRuntimeConfigAgent:
             additionalProperties: false
-            description: The sandbox-agent configuration the pool may change after create, applied into sandbox.json's agentRuntime.
+            description: The sandbox-agent configuration the pool may change while the sandbox exists, applied to the running agent.
             properties:
                 idleTimeout:
-                    description: The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect on the agent's next start.
+                    description: The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect when applied.
                     type: string
-            type: object
-        SandboxRuntimeConfigBridge:
-            additionalProperties: false
-            description: One sandbox-side forwarder to the pool.
-            properties:
-                credentialsUrl:
-                    type: string
-                dnsListenAddress:
-                    type: string
-                dnsServer:
-                    type: string
-                listenAddress:
-                    type: string
-                upstreamUrl:
-                    type: string
-            required:
-                - upstreamUrl
             type: object
         SandboxRuntimeConfigProxy:
             additionalProperties: false
-            description: Proxy client material and trust for the sandbox's hop to its pool. The sandbox writes each piece where its readers look and renders the bridge configs with its own paths.
+            description: The credential and trust for the sandbox's hop to its pool. Where the pool is comes from the sandbox's bootstrap and where it listens is its own; the sandbox renders its bridge configs from the three and starts the units that read them.
             properties:
-                buildkit:
-                    $ref: '#/components/schemas/SandboxRuntimeConfigBridge'
-                    description: The forwarder to the pool's BuildKit mediator.
                 clientCert:
                     description: This sandbox's PEM client certificate.
                     type: string
                 clientKey:
                     description: This sandbox's PEM client private key. Required on delivery; never returned, so a document read back omits it.
                     type: string
-                egress:
-                    $ref: '#/components/schemas/SandboxRuntimeConfigBridge'
-                    description: The loopback forwarder to the pool proxy, which also carries the credentials endpoint and the DNS stub.
                 mitmCa:
                     description: PEM CA the egress proxy signs intercepted connections with.
                     type: string
                 mtlsCa:
                     description: PEM CA the pool's mTLS endpoints present certificates from.
                     type: string
-                nestedDocker:
-                    $ref: '#/components/schemas/SandboxRuntimeConfigBridge'
-                    description: The forwarder for containers the sandbox's own dockerd creates.
                 registryNamespace:
                     description: The sandbox's namespace in the pool build registry.
                     type: string

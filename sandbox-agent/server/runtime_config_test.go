@@ -22,27 +22,44 @@ const runtimeConfigPath = "/api/projects/project-1/sandboxes/sandbox-1/runtime-c
 
 func runtimeConfigRouter(t *testing.T) (http.Handler, func(scopes ...string) string) {
 	t.Helper()
+	router, token, _ := runtimeConfigRouterWithPool(t)
+	return router, token
+}
+
+// runtimeConfigRouterWithPool is runtimeConfigRouter with the pool's key in the
+// bootstrap, and returns a signer for it beside the control plane's.
+func runtimeConfigRouterWithPool(t *testing.T) (http.Handler, func(scopes ...string) string, func(poolID string, scopes ...string) string) {
+	t.Helper()
 	publicKey, signToken := sandboxAgentTestSigner(t)
+	poolKey, signPoolToken := sandboxAgentTestSigner(t)
 	root := t.TempDir()
-	in, err := intake.Open(intake.Layout{
-		ConfigDir:   filepath.Join(root, "etc"),
-		ProxyDir:    filepath.Join(root, "etc", "proxy"),
-		SecretsPath: filepath.Join(root, "run", "secrets.json"),
-		StatePath:   filepath.Join(root, "var", "runtime-config.json"),
-		// The test host stands in for the sandbox: its targets are real
-		// directories here, judged by this platform's rules.
-		Paths: sandboxpath.For(platform.Current()),
-	}, intake.Owner{ProjectID: "project-1", SandboxID: "sandbox-1", PoolID: "worker-1"})
+	in, err := intake.Open(context.Background(), intake.Config{
+		Layout: intake.Layout{
+			ConfigDir:   filepath.Join(root, "etc"),
+			ProxyDir:    filepath.Join(root, "etc", "proxy"),
+			SecretsPath: filepath.Join(root, "run", "secrets.json"),
+			StatePath:   filepath.Join(root, "var", "runtime-config.json"),
+			// The test host stands in for the sandbox: its targets are real
+			// directories here, judged by this platform's rules.
+			Paths: sandboxpath.For(platform.Current()),
+		},
+		Owner: intake.Owner{ProjectID: "project-1", SandboxID: "sandbox-1", PoolID: "worker-1"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := testConfig(publicKey)
+	cfg.PoolPublicKey = poolKey
 	cfg.RuntimeConfig = in
 	router, err := NewRouter(cfg)
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
-	return router, func(scopes ...string) string { return signToken("project-1", "sandbox-1", "worker-1", scopes...) }
+	return router,
+		func(scopes ...string) string { return signToken("project-1", "sandbox-1", "worker-1", scopes...) },
+		func(poolID string, scopes ...string) string {
+			return signPoolToken("project-1", "sandbox-1", poolID, scopes...)
+		}
 }
 
 func serveRuntimeConfig(t *testing.T, router http.Handler, method, token string, doc *sandboxconfig.RuntimeConfig) *httptest.ResponseRecorder {
@@ -155,6 +172,48 @@ func TestRuntimeConfigIsThePoolsAlone(t *testing.T) {
 	}
 }
 
+// The pool signs the token that delivers a document with its own key, and that
+// key authorizes the runtime-config route and nothing else (ADR 26-10-08-127 §3).
+func TestRuntimeConfigTakesThePoolsOwnToken(t *testing.T) {
+	router, _, poolToken := runtimeConfigRouterWithPool(t)
+	resp := serveRuntimeConfig(t, router, http.MethodPut, poolToken("worker-1", ScopeRuntimeConfig), plainRuntimeConfig(1, "discobox-sentinel-1"))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("PUT with the pool's token = %d %s", resp.Code, resp.Body.String())
+	}
+	for name, token := range map[string]string{
+		"a second scope":  poolToken("worker-1", ScopeRuntimeConfig, ScopeExecRead),
+		"a wildcard":      poolToken("worker-1", "*"),
+		"another pool":    poolToken("worker-2", ScopeRuntimeConfig),
+		"no pool claimed": poolToken("", ScopeRuntimeConfig),
+	} {
+		if resp := serveRuntimeConfig(t, router, http.MethodPut, token, plainRuntimeConfig(2, "discobox-sentinel-2")); resp.Code != http.StatusForbidden {
+			t.Errorf("PUT with a pool token carrying %s = %d, want 403", name, resp.Code)
+		}
+	}
+	// Not even the scope the control plane mints the pool may be signed by it.
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+poolToken("worker-1", ScopeRuntimeConfig))
+	status := httptest.NewRecorder()
+	router.ServeHTTP(status, req)
+	if status.Code != http.StatusForbidden {
+		t.Fatalf("status with a pool-signed token = %d, want 403", status.Code)
+	}
+}
+
+// A sandbox whose bootstrap names no pool key trusts no pool-signed token.
+func TestRuntimeConfigRefusesAPoolTokenWithoutAPoolKey(t *testing.T) {
+	publicKey, _ := sandboxAgentTestSigner(t)
+	_, signPoolToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := serveRuntimeConfig(t, router, http.MethodPut, signPoolToken("project-1", "sandbox-1", "worker-1", ScopeRuntimeConfig), plainRuntimeConfig(1, "s"))
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("PUT with an unknown pool's token = %d, want 401", resp.Code)
+	}
+}
+
 func TestRuntimeConfigWithoutAnIntake(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	router, err := NewRouter(testConfig(publicKey))
@@ -171,15 +230,6 @@ func TestRuntimeConfigWithoutAnIntake(t *testing.T) {
 // document with every field set must come back through the generated type
 // unchanged; a field added to one and not the other fails here.
 func TestRuntimeConfigWireRoundTrip(t *testing.T) {
-	bridge := func(prefix string) *sandboxconfig.RuntimeBridge {
-		return &sandboxconfig.RuntimeBridge{
-			ListenAddress:    prefix + "-listen",
-			UpstreamURL:      prefix + "-upstream",
-			CredentialsURL:   prefix + "-credentials",
-			DNSServer:        prefix + "-dns",
-			DNSListenAddress: prefix + "-dns-listen",
-		}
-	}
 	full := sandboxconfig.RuntimeConfig{
 		Revision:  7,
 		Agent:     sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s"},
@@ -189,9 +239,6 @@ func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 			MITMCA:            "mitm",
 			ClientCert:        "cert",
 			ClientKey:         "key",
-			Egress:            bridge("egress"),
-			NestedDocker:      bridge("docker"),
-			BuildKit:          bridge("buildkit"),
 			RegistryNamespace: "ns",
 		},
 		Sources: []sandboxconfig.RuntimeSource{{Slug: "primary", Target: "/workspace", OriginURL: "https://pool/o", OriginToken: "token", Commit: "abc", Delivered: true}},

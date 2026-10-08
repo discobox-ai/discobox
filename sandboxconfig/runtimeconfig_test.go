@@ -49,9 +49,6 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		"bad registry namespace": {func(c *RuntimeConfig) {
 			c.Proxy = &RuntimeProxy{RegistryNamespace: "Has/Slash"}
 		}, "registryNamespace"},
-		"relative bridge upstream": {func(c *RuntimeConfig) {
-			c.Proxy = &RuntimeProxy{Egress: &RuntimeBridge{UpstreamURL: "pool:17443"}}
-		}, "proxy.egress.upstreamUrl"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := valid
@@ -113,5 +110,14 @@ func TestRuntimeConfigTargetsAreTheSandboxPlatforms(t *testing.T) {
 		if (err == nil) != tc.ok {
 			t.Errorf("Validate(%s) of target %q = %v, want ok=%v", tc.paths.OS(), tc.target, err, tc.ok)
 		}
+	}
+}
+
+func TestProviderAwaitsRuntimeConfigWhenItNamesAPoolKey(t *testing.T) {
+	if (Provider{PublicKeys: map[string]string{ControlPlanePublicKeyName: "cp"}}).AwaitsRuntimeConfig() {
+		t.Fatal("a bootstrap with no pool key awaits a runtime config")
+	}
+	if !(Provider{PublicKeys: map[string]string{PoolPublicKeyName: "pool"}}).AwaitsRuntimeConfig() {
+		t.Fatal("a bootstrap naming a pool key does not await a runtime config")
 	}
 }

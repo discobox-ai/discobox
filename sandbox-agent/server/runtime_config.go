@@ -29,8 +29,12 @@ func (h *handler) GetSandboxRuntimeConfig(_ context.Context, _ sandboxapi.GetSan
 // PutSandboxRuntimeConfig applies a delivered document and answers with the
 // one the sandbox now holds, which is older than the delivery only when the
 // delivery was itself out of date. Neither route answers with the client key:
-// it is delivered, never read back.
-func (h *handler) PutSandboxRuntimeConfig(_ context.Context, req *sandboxapi.SandboxRuntimeConfig, _ sandboxapi.PutSandboxRuntimeConfigParams) (*sandboxapi.SandboxRuntimeConfig, error) {
+// it is delivered, never read back. The idle timeout the held document carries
+// is the one the idle stop runs on from here (ADR 26-10-08-127 §5).
+//
+// The apply runs detached from the request: it starts units and publishes
+// readiness, and a caller that goes away part way must not leave it half done.
+func (h *handler) PutSandboxRuntimeConfig(ctx context.Context, req *sandboxapi.SandboxRuntimeConfig, _ sandboxapi.PutSandboxRuntimeConfigParams) (*sandboxapi.SandboxRuntimeConfig, error) {
 	if h.runtimeConfig == nil {
 		return nil, errRuntimeConfigUnavailable
 	}
@@ -38,7 +42,7 @@ func (h *handler) PutSandboxRuntimeConfig(_ context.Context, req *sandboxapi.San
 	if err != nil {
 		return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
 	}
-	held, err := h.runtimeConfig.Apply(doc)
+	held, err := h.runtimeConfig.Apply(context.WithoutCancel(ctx), doc)
 	switch {
 	case errors.Is(err, intake.ErrInvalid):
 		return nil, statusError{status: http.StatusUnprocessableEntity, message: err.Error()}
@@ -47,6 +51,7 @@ func (h *handler) PutSandboxRuntimeConfig(_ context.Context, req *sandboxapi.San
 	case err != nil:
 		return nil, err
 	}
+	h.autostop.SetIdleTimeout(held.Agent.IdleTimeoutDuration())
 	// The sources converge on what the sandbox now holds, which is this
 	// document unless it was out of date; converging on the held one again is
 	// a no-op for every source already materialized.

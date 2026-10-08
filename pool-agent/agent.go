@@ -118,7 +118,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 
 	startResolveTokenRefresher(ctx, logger, root, bootstrap, registration)
 
-	runtime, err := newDockerSandboxRuntime(root, bootstrap)
+	runtime, err := newDockerSandboxRuntime(root, bootstrap, registration.PrivateKey)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,10 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 
 // newDockerSandboxRuntime is this pool's runtime: sandboxes as containers on
 // the Docker daemon beside the agent, with pool state under root.
-func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap) (*sandboxruntime.DockerSandboxRuntime, error) {
+//
+// The pool's identity key signs the runtime-config documents it delivers, which
+// is why the runtime is built only once the key is known to be this pool's.
+func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, identityKey ed25519.PrivateKey) (*sandboxruntime.DockerSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return nil, err
@@ -143,6 +146,7 @@ func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap) (*sandboxrun
 		Root:                  root,
 		HostStateRoot:         bootstrap.HostStateRoot,
 		SandboxIdleTimeout:    idleTimeout,
+		IdentityKey:           identityKey,
 		SharedMemoryBytes:     sandboxSharedMemoryBytes(poolCgroupRoot),
 		Platform:              hostedPlatform(),
 	})

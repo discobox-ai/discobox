@@ -71,20 +71,22 @@ type Config struct {
 // would stop at the next tick. Leases are the exception, and are never
 // remembered: removing one has to release it.
 type Policy struct {
-	execs       func() []execs.Exec
-	leaseDir    string
-	idleTimeout time.Duration
-	interval    time.Duration
-	powerOff    func(context.Context) error
-	now         func() time.Time
-	logger      *slog.Logger
-	startedAt   time.Time
+	execs     func() []execs.Exec
+	leaseDir  string
+	interval  time.Duration
+	powerOff  func(context.Context) error
+	now       func() time.Time
+	logger    *slog.Logger
+	startedAt time.Time
 
 	// running is set while Run is: the policy's view is only reported while
 	// the policy is actually in force.
 	running atomic.Bool
 
 	mu sync.Mutex
+	// idleTimeout is the timeout in force. It changes when the pool delivers a
+	// new one (SetIdleTimeout), which takes effect at the next evaluation.
+	idleTimeout time.Duration
 	// holds are the client connections this process is serving, by the order
 	// they arrived, each with what it is for the log line a stop leaves.
 	holds    map[uint64]string
@@ -149,6 +151,24 @@ func New(cfg Config) *Policy {
 		holds:       map[uint64]string{},
 		seen:        activity{at: start, what: "sandbox agent start"},
 	}
+}
+
+// SetIdleTimeout replaces the timeout in force, from the next evaluation on:
+// the pool delivers its idle timeout in the sandbox's runtime config, and a
+// changed one applies to the running sandbox rather than at its next start
+// (ADR 26-10-08-127 §5). Zero or less restores DefaultIdleTimeout. Activity
+// already seen is kept, so a shorter timeout can stop a sandbox at the next
+// tick when it has already been idle that long.
+func (p *Policy) SetIdleTimeout(timeout time.Duration) {
+	if p == nil {
+		return
+	}
+	if timeout <= 0 {
+		timeout = DefaultIdleTimeout
+	}
+	p.mu.Lock()
+	p.idleTimeout = timeout
+	p.mu.Unlock()
 }
 
 // Hold marks a client connection this process serves — an exec attach, a TCP
@@ -216,6 +236,7 @@ func (p *Policy) Evaluate(now time.Time) State {
 	}
 	p.seen.consider(observed.at, observed.what)
 	latest := p.seen
+	idleTimeout := p.idleTimeout
 	p.mu.Unlock()
 
 	var leaseUntil time.Time
@@ -226,10 +247,10 @@ func (p *Policy) Evaluate(now time.Time) State {
 		}
 	}
 	return State{
-		IdleTimeout:    p.idleTimeout,
+		IdleTimeout:    idleTimeout,
 		LastActivityAt: latest.at,
 		LastActivity:   latest.what,
-		StopsAt:        latest.at.Add(p.idleTimeout),
+		StopsAt:        latest.at.Add(idleTimeout),
 		LeaseUntil:     leaseUntil,
 	}
 }

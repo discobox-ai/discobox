@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -114,6 +116,15 @@ func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 	}
 	for {
 		booting, err := r.startUnlessRunning(ctx, sandboxID)
+		if errors.Is(err, errContainerRetired) && awaitContainer {
+			// The start retired a container from before the bootstrap named
+			// the pool's key; the control plane rebuilds it, and the caller
+			// waits for that like any other rebuild.
+			if _, err := r.sandboxContainer(ctx, sandboxID, true); err != nil {
+				return err
+			}
+			continue
+		}
 		if err != nil || !booting {
 			return err
 		}
@@ -242,10 +253,8 @@ func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string
 	if sb.Status == StatusRunning {
 		return nil
 	}
-	// The pool's idle timeout as it is now, not as it was when the sandbox was
-	// created: the sandbox-agent reads it once, at the boot this starts.
-	if err := r.applySandboxIdleTimeout(sandboxID); err != nil {
-		return fmt.Errorf("apply idle timeout to sandbox %s: %w", sandboxID, err)
+	if err := r.retireContainerWithoutRuntimeConfig(ctx, sb); err != nil {
+		return err
 	}
 	// Announce the transition before making it. The Docker event only arrives
 	// once the container is up, and waitForSandboxAgent can take a while after
@@ -295,8 +304,55 @@ func (r *DockerSandboxRuntime) endBoot(sandboxID string, boot *sandboxBoot, err 
 	close(boot.done)
 }
 
+// errContainerRetired is a start that found the sandbox's container built from
+// a bootstrap with no pool key — a container from before the pool delivered
+// runtime config — and removed it, so the control plane rebuilds it onto one
+// that does (ADR 26-10-08-127). It is a no-container answer: the sandbox is
+// being rebuilt.
+var errContainerRetired = fmt.Errorf("%w: its container was built before its pool delivered runtime config, and is being rebuilt", ErrNoContainer)
+
+// retireContainerWithoutRuntimeConfig removes a stopped container that cannot
+// take the pool's runtime-config documents, and returns errContainerRetired.
+//
+// Such a container runs on the files staged for it before this pool stopped
+// staging any, so nothing it is told after — a rotated secret, a changed idle
+// timeout — reaches it. Its next start is where it moves: the durable tree is
+// in the pool-host binds, so removing the container loses nothing, the state
+// channel reports it gone, and the control plane's ensure recreates it from the
+// spec it holds, on the bootstrap that names the pool's key.
+func (r *DockerSandboxRuntime) retireContainerWithoutRuntimeConfig(ctx context.Context, sb *Sandbox) error {
+	// A runtime with no key builds no container that takes runtime config, so
+	// it has nothing to retire them for.
+	if r.poolPublicKey() == "" {
+		return nil
+	}
+	takes, err := r.containerTakesRuntimeConfig(ctx, sb.ID)
+	if err != nil || takes {
+		return err
+	}
+	slog.InfoContext(ctx, "retiring a sandbox container built before its pool delivered runtime config; the control plane rebuilds it", "sandboxId", sb.SandboxID)
+	if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("retire sandbox container: %w", err)
+	}
+	// The control plane learns a container is gone from a complete sync's
+	// omission, so one goes now rather than at the next interval: the rebuild
+	// starts while an on-demand start is still waiting for it.
+	if publish, _ := r.statePublisher.Load().(func(context.Context, SandboxStateBatch) error); publish != nil {
+		r.publishCompleteSync(ctx, slog.Default(), publish)
+	}
+	return errContainerRetired
+}
+
 // finishBoot waits for the sandbox agent of a container that has just started,
-// and ends the boot when it answers or the wait gives up.
+// delivers it the sandbox's runtime-config document, and ends the boot when
+// that is done or the wait gives up.
+//
+// Every start ends here — create, start, restart, and an on-demand start — so
+// every boot is given the pool's current view of the sandbox: its secrets, its
+// proxy credential, the pool's idle timeout as it is now, and its sources'
+// delivery (ADR 0126 §3). A delivery that does not land is the status poll's to
+// repair and does not fail the boot; an agent with no intake does, since nothing
+// the pool could do would make that sandbox usable (ADR 26-10-08-127 §7).
 //
 // The wait belongs to the boot, not to the request that began it: that request
 // going away — a client that reconnects, an attach canceled mid-start — must
@@ -306,7 +362,12 @@ func (r *DockerSandboxRuntime) endBoot(sandboxID string, boot *sandboxBoot, err 
 // as its own context allows.
 func (r *DockerSandboxRuntime) finishBoot(ctx context.Context, sandboxID string, boot *sandboxBoot) error {
 	go func() {
-		r.endBoot(sandboxID, boot, r.waitForSandboxAgent(context.WithoutCancel(ctx), sandboxID))
+		detached := context.WithoutCancel(ctx)
+		err := r.waitForSandboxAgent(detached, sandboxID)
+		if err == nil {
+			err = logRuntimeConfigFailure(detached, sandboxID, r.deliverRuntimeConfig(detached, sandboxID, nil))
+		}
+		r.endBoot(sandboxID, boot, err)
 	}()
 	select {
 	case <-boot.done:

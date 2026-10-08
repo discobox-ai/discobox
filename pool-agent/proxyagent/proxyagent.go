@@ -7,7 +7,6 @@ package proxyagent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -66,37 +65,20 @@ const (
 	// PoolProxyURL is the address sandbox forwarders dial.
 	PoolProxyURL = "https://" + ServerName + ":17080"
 
-	// SandboxProxyMount is where per-sandbox proxy material is mounted inside the
-	// sandbox container.
-	SandboxProxyMount = "/etc/discobox/proxy"
-
 	// SystemCABundle is the Debian system CA bundle inside the sandbox. The
 	// boot-time trust step adds the MITM CA to it via update-ca-certificates.
 	SystemCABundle = "/etc/ssl/certs/ca-certificates.crt"
 
-	// SandboxForwarderListen is the sandbox-local forwarder address that sandbox
-	// processes use as their HTTP/HTTPS/ALL proxy.
-	SandboxForwarderListen = "127.0.0.1:17008"
-
 	// RegistryNamespaceFile is the sandbox's namespace in the pool build
-	// registry, staged with the rest of its proxy material and read by the
-	// docker shim. It is world-readable inside the sandbox: the boundary it
-	// defends is other sandboxes, and this sandbox's own user is the tenant it
-	// belongs to.
+	// registry, kept in the sandbox's durable tree (RegistryNamespacePath) and
+	// delivered in its runtime-config document.
 	RegistryNamespaceFile = "registry-namespace"
 
-	// SandboxBuildkitBridgeListen is where a sandbox-local forwarder accepts
-	// plaintext connections for the pool's BuildKit mediator.
-	//
-	// It exists for the same reason the HTTP forwarder does: the client cannot
-	// present the mTLS certificate itself. buildx runs as the sandbox user,
-	// while the client key is root-owned — reading it is not something a
-	// sandbox user can do, and the key must not be world-readable just to make
-	// one tool work. The forwarder runs as root, holds the key, and speaks
-	// plaintext to loopback, which is private to this sandbox.
-	SandboxBuildkitBridgeListen = "127.0.0.1:17082"
-
-	// BuildkitMediatorURL is the pool endpoint that forwarder dials. The port
+	// BuildkitMediatorURL is the pool endpoint the sandbox's BuildKit
+	// forwarder dials. The forwarder exists because the client cannot present
+	// the mTLS certificate itself: buildx runs as the sandbox user, the client
+	// key is root's, and the forwarder holds it and speaks plaintext to the
+	// sandbox's own loopback (sandboxconfig.SandboxBuildKitListenAddress). The port
 	// mirrors buildkitagent.MediatorListen; it is duplicated rather than
 	// imported to keep the proxy wiring independent of the builder's.
 	BuildkitMediatorURL = "https://" + ServerName + ":17081"
@@ -375,43 +357,34 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	}
 }
 
-// SandboxMaterial describes how a sandbox container is wired to the pool
-// proxy.
+// SandboxMaterial is what wires a sandbox to the pool proxy: the credential and
+// trust its runtime-config document delivers, and the env its bootstrap
+// carries.
 type SandboxMaterial struct {
-	// MountSource is the directory holding the sandbox's proxy material, as
-	// the agent's layout.Root names it. It is bind-mounted read-only into the
-	// container at SandboxProxyMount, after the runtime translates it to the
-	// daemon's view (daemonPath).
-	MountSource string
+	// Proxy is the sandbox's client keypair, the pool's CAs and the sandbox's
+	// registry namespace — the dynamic half, delivered in the runtime-config
+	// document rather than placed in the sandbox (ADR 26-10-08-127 §1).
+	Proxy sandboxconfig.RuntimeProxy
 	// Env holds the proxy-related environment variables injected into the
 	// sandbox so its processes route outbound traffic through the local
 	// forwarder and trust the MITM CA.
 	Env map[string]string
 }
 
-// bridgeConfig is the on-disk config read by the sandbox proxy-bridge service.
-// Paths are expressed as seen inside the sandbox container.
-//
-// It also carries the pool's agent credentials endpoint and DNS server, because
-// both authenticate with the same client keypair named here: one file, one set
-// of material, every thing the sandbox reaches the pool with (ADR 0031 §2).
-// DNSListenAddress is where the sandbox's DNS stub listens: the address its
-// container was created with as DNS server.
-//
-// The pool URLs are wire URLs: their scheme picks the transport the sandbox
-// dials, and every one carries mTLS on top (ADR 0144 §4). ServerName is the
-// name the pool's server certificate is verified as, stated apart from the URLs
-// because a vsock or unix URL has no host to take it from.
-type bridgeConfig struct {
-	ListenAddress    string `json:"listenAddress"`
-	PoolProxyURL     string `json:"workerProxyUrl"`
-	ServerName       string `json:"serverName,omitempty"`
-	CredentialsURL   string `json:"credentialsUrl,omitempty"`
-	DNSServer        string `json:"dnsServer,omitempty"`
-	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
-	MTLSCAPath       string `json:"mtlsCaPath"`
-	ClientCertPath   string `json:"clientCertPath"`
-	ClientKeyPath    string `json:"clientKeyPath"`
+// PoolEndpoints is where this pool serves a sandbox, as the sandbox's
+// bootstrap names it: the far end of each of its bridges. The pool URLs are
+// wire URLs: their scheme picks the transport the sandbox dials, and every one
+// carries mTLS on top (ADR 0144 §4). A Docker pool's sandboxes reach them over
+// TCP by ServerName, which is also the name its one server certificate is
+// issued for.
+func PoolEndpoints() sandboxconfig.PoolEndpoints {
+	return sandboxconfig.PoolEndpoints{
+		Proxy:       PoolProxyURL,
+		Credentials: CredentialsURL,
+		DNS:         DNSServerAddress,
+		BuildKit:    BuildkitMediatorURL,
+		ServerName:  ServerName,
+	}
 }
 
 // validateIDSegment rejects IDs that could escape the directories they become
@@ -552,10 +525,14 @@ func materialModTime(root layout.Root, projectID, poolID, id string) (time.Time,
 }
 
 // EnsureSandboxMaterial issues (or reuses) a client certificate for sandboxID
-// and stages the certificate material and bridge config into a per-sandbox
-// directory. Paths are under root, which is where the pool agent process can
-// actually write to; the returned MountSource is that directory as root names
-// it, which the runtime translates to the daemon's view before binding it.
+// and returns it with the pool's CAs and the sandbox's registry namespace, for
+// its runtime-config document. Nothing is staged for the sandbox to read: the
+// sandbox is delivered the material and writes it itself (ADR 0126 §§1, 3).
+//
+// The per-sandbox directory under PoolSandboxMaterialRoot is still made: it is
+// this pool's record of which sandboxes it has issued material for, which the
+// orphan reaper reads (OrphanedSandboxIDs), and its age is what protects a
+// create in flight from being reaped.
 func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string) (*SandboxMaterial, error) {
 	if err := validateMaterialScope(projectID, poolID, sandboxID); err != nil {
 		return nil, err
@@ -568,106 +545,46 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 	if err != nil {
 		return nil, fmt.Errorf("ensure sandbox proxy certificate: %w", err)
 	}
-
-	mountSource := filepath.Join(PoolSandboxMaterialRoot(root, projectID, poolID), sandboxID)
-	writeDir := mountSource
-	if err := os.MkdirAll(writeDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create sandbox proxy material dir: %w", err)
+	if err := os.MkdirAll(filepath.Join(PoolSandboxMaterialRoot(root, projectID, poolID), sandboxID), 0o755); err != nil {
+		return nil, fmt.Errorf("create sandbox proxy material record: %w", err)
 	}
 
-	// Copy only the public CAs and this sandbox's client keypair. Never expose
-	// the CA private keys or other sandboxes' material.
-	files := []struct {
-		name string
-		src  string
-		mode os.FileMode
+	// Only the public CAs and this sandbox's client keypair. Never the CA
+	// private keys or other sandboxes' material.
+	read := func(path string) (string, error) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", path, err)
+		}
+		return string(data), nil
+	}
+	var out sandboxconfig.RuntimeProxy
+	for _, piece := range []struct {
+		into *string
+		path string
 	}{
-		{"mtls-ca.crt", bundle.MTLSCAPath, 0o644},
-		{"mitm-ca.crt", bundle.MITMCAPath, 0o644},
-		{"client.crt", material.ClientCertPath, 0o644},
-		{"client.key", material.ClientKeyPath, 0o600},
-	}
-	for _, f := range files {
-		if err := copyFile(filepath.Join(writeDir, f.name), f.src, f.mode); err != nil {
+		{&out.MTLSCA, bundle.MTLSCAPath},
+		{&out.MITMCA, bundle.MITMCAPath},
+		{&out.ClientCert, material.ClientCertPath},
+		{&out.ClientKey, material.ClientKeyPath},
+	} {
+		if *piece.into, err = read(piece.path); err != nil {
 			return nil, err
 		}
 	}
 
-	bridge := bridgeConfig{
-		ListenAddress:    SandboxForwarderListen,
-		PoolProxyURL:     PoolProxyURL,
-		ServerName:       ServerName,
-		CredentialsURL:   CredentialsURL,
-		DNSServer:        DNSServerAddress,
-		DNSListenAddress: sandboxDNSListenAddress,
-		MTLSCAPath:       filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
-		ClientCertPath:   filepath.Join(SandboxProxyMount, "client.crt"),
-		ClientKeyPath:    filepath.Join(SandboxProxyMount, "client.key"),
-	}
-	bridgeJSON, err := json.MarshalIndent(&bridge, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(writeDir, "bridge.json"), bridgeJSON, 0o600); err != nil {
-		return nil, fmt.Errorf("write bridge config: %w", err)
-	}
-
-	// Material for the sandbox's second forwarder instance, which serves
-	// containers a nested dockerd creates: SandboxForwarderListen is
-	// loopback-only from the sandbox's own point of view, so a nested
-	// container cannot reach it. Only the upstream and credentials are set
-	// here — the listen address belongs to the sandbox.
-	// No ListenAddress: the sandbox's nested Docker bridge subnet is chosen by
-	// its own dockerd (its daemon.json pins no "bip"), so the address is not
-	// knowable out here and is not pool-agent's to decide. sandbox-agent
-	// discovers docker0's address at runtime and publishes it; see the
-	// sandbox-agent/nestedbridge package.
-	dockerBridge := bridgeConfig{
-		PoolProxyURL:   PoolProxyURL,
-		ServerName:     ServerName,
-		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
-		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
-		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),
-	}
-	dockerBridgeJSON, err := json.MarshalIndent(&dockerBridge, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(writeDir, "bridge-docker.json"), dockerBridgeJSON, 0o600); err != nil {
-		return nil, fmt.Errorf("write nested-docker bridge config: %w", err)
-	}
-
-	// Minted in the sandbox's durable tree and copied into the material it
-	// reads from, so an archive that drops the material does not drop the
-	// namespace with it. See RegistryNamespacePath.
+	// Minted in the sandbox's durable tree, so an archive that drops the
+	// material record does not drop the namespace with it. See
+	// RegistryNamespacePath.
 	durableNamespace := RegistryNamespacePath(root, projectID, poolID, sandboxID)
 	if err := ensureRegistryNamespace(durableNamespace); err != nil {
 		return nil, err
 	}
-	if err := copyFile(filepath.Join(writeDir, RegistryNamespaceFile), durableNamespace, 0o644); err != nil {
+	if out.RegistryNamespace, err = ReadRegistryNamespace(durableNamespace); err != nil {
 		return nil, err
 	}
 
-	// The sandbox's forwarder for the pool's BuildKit mediator. Unlike the two
-	// above it carries a listen address, because loopback inside the sandbox is
-	// known here and needs no discovery.
-	buildkitBridge := bridgeConfig{
-		ListenAddress:  SandboxBuildkitBridgeListen,
-		PoolProxyURL:   BuildkitMediatorURL,
-		ServerName:     ServerName,
-		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
-		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
-		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),
-	}
-	buildkitBridgeJSON, err := json.MarshalIndent(&buildkitBridge, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(writeDir, "bridge-buildkit.json"), buildkitBridgeJSON, 0o600); err != nil {
-		return nil, fmt.Errorf("write buildkit bridge config: %w", err)
-	}
-
-	proxyURL := "http://" + SandboxForwarderListen
+	proxyURL := "http://" + sandboxconfig.SandboxEgressListenAddress
 	env := map[string]string{
 		"HTTP_PROXY":  proxyURL,
 		"http_proxy":  proxyURL,
@@ -729,21 +646,5 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 	// derives its own systemd EnvironmentFile from sandbox.json's Env/ProxyEnvs
 	// at boot. See sandbox-agent's proxyenv package and
 	// discobox-render-proxy-env.service.
-	return &SandboxMaterial{MountSource: mountSource, Env: env}, nil
-}
-
-// copyFile copies proxy material into a per-sandbox directory. dst is always
-// under the validated per-sandbox material directory, and public CA
-// certificates are intentionally world-readable so non-root sandbox tools can
-// trust the MITM CA.
-func copyFile(dst, src string, mode os.FileMode) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", src, err)
-	}
-	//nolint:gosec // dst is under a validated per-sandbox dir; public CAs are 0644 by design.
-	if err := os.WriteFile(dst, data, mode); err != nil {
-		return fmt.Errorf("write %s: %w", dst, err)
-	}
-	return nil
+	return &SandboxMaterial{Proxy: out, Env: env}, nil
 }

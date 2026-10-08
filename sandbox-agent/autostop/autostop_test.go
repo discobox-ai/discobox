@@ -48,6 +48,22 @@ func at(d time.Duration) *time.Time {
 	return &t
 }
 
+// A delivered idle timeout applies to the running policy at its next
+// evaluation, and no timeout restores the default (ADR 26-10-08-127 §5).
+func TestSetIdleTimeoutAppliesToTheRunningPolicy(t *testing.T) {
+	c := &clock{now: epoch}
+	p := newPolicy(t, c, nil)
+	p.SetIdleTimeout(5 * time.Minute)
+	state := p.Evaluate(epoch.Add(time.Minute))
+	if state.IdleTimeout != 5*time.Minute || !state.StopsAt.Equal(epoch.Add(5*time.Minute)) {
+		t.Fatalf("after SetIdleTimeout(5m): timeout %s, stops at %v", state.IdleTimeout, state.StopsAt)
+	}
+	p.SetIdleTimeout(0)
+	if state := p.Evaluate(epoch.Add(time.Minute)); state.IdleTimeout != DefaultIdleTimeout {
+		t.Fatalf("after SetIdleTimeout(0): timeout %s, want the default %s", state.IdleTimeout, DefaultIdleTimeout)
+	}
+}
+
 // A sandbox nothing has happened in is idle from the moment the agent started,
 // so a fresh or just-auto-started sandbox gets a whole window.
 func TestEvaluateCountsFromAgentStart(t *testing.T) {

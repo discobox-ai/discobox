@@ -3,6 +3,7 @@ package sandboxruntime
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -101,8 +102,7 @@ const (
 	// from (ADR 0017 §5). Comparing it is how the runtime decides drift: one
 	// check covers the image pin, resources, sources, and anything added to the
 	// spec later, because the control plane hashes the whole manifest.
-	sandboxLabelSpec         = "discobox.spec_fingerprint"
-	sandboxManifestPublicKey = "controlPlane"
+	sandboxLabelSpec = "discobox.spec_fingerprint"
 )
 
 var (
@@ -262,6 +262,13 @@ type Runtime interface {
 	// the dial for it (ADR 0126 §5). A sandbox that cannot be reached at all
 	// is an error here, so a caller can answer it before sending anything.
 	SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error)
+	// ConvergeRuntimeConfig delivers the sandbox's runtime-config document when
+	// the revision its agent reports having applied is older than the one the
+	// pool has decided (ADR 0126 §3). The status poll calls it with what each
+	// sandbox reports, so a delivery that did not land is repaired rather than
+	// assumed, and a changed idle timeout or renewed credential reaches a
+	// sandbox that is already running.
+	ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64) error
 
 	// The rest run until ctx ends, and the agent starts each once.
 	//
@@ -323,10 +330,17 @@ type DockerSandboxRuntime struct {
 	// that has no state transition to hang off — an image pull, above all
 	// (see statereport.go, ADR 0039).
 	progressPublisher atomic.Value
-	// sandboxIdleTimeout is the pool policy's idle timeout, written into each
-	// sandbox's sandbox.json at create and again before every start; zero
-	// leaves the sandbox-agent's default (ADR 0108).
+	// sandboxIdleTimeout is the pool policy's idle timeout, delivered in each
+	// sandbox's runtime-config document; zero leaves the sandbox-agent's
+	// default (ADR 0108).
 	sandboxIdleTimeout time.Duration
+	// identityKey is the pool's identity key. It signs runtime-config
+	// deliveries, and its public half is in every sandbox's bootstrap
+	// (ADR 26-10-08-127 §3).
+	identityKey ed25519.PrivateKey
+	// runtimeConfigLocks serializes deciding and delivering each sandbox's
+	// runtime-config document (see runtimeconfig.go).
+	runtimeConfigLocks sync.Map
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -343,6 +357,9 @@ type DockerSandboxRuntimeConfig struct {
 	// SandboxIdleTimeout is how long a sandbox runs idle before it powers
 	// itself off (ADR 0108). Zero leaves the sandbox-agent's default.
 	SandboxIdleTimeout time.Duration
+	// IdentityKey is the pool's identity key, which signs the runtime-config
+	// documents the pool delivers its sandboxes (ADR 26-10-08-127 §3).
+	IdentityKey ed25519.PrivateKey
 	// SharedMemoryBytes is the size of every sandbox container's /dev/shm.
 	// Zero leaves Docker's default of 64 MiB.
 	SharedMemoryBytes int64
@@ -364,6 +381,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		poolID:                cfg.PoolID,
 		controlPlanePublicKey: cfg.ControlPlanePublicKey,
 		sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
+		identityKey:           cfg.IdentityKey,
 		sharedMemoryBytes:     cfg.SharedMemoryBytes,
 		hostMountPrefix:       cleanAbsPath(cfg.HostMountPrefix),
 		root:                  cfg.Root,
@@ -477,7 +495,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			// resume, so finish those sources rather than returning a sandbox whose
 			// workspace is still empty.
 			r.publishSandboxPhase(ctx, sandboxID, PhaseMaterializingSource)
-			rebuild, err := r.settleDeliveredSources(ctx, sandboxID, req)
+			rebuild, err := r.settleDeliveredSources(ctx, existing, req)
 			if err != nil {
 				return nil, err
 			}
@@ -545,27 +563,22 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels); err != nil {
 		return nil, err
 	}
-	// Nest the proxy material inside the config volume at /.discobox/config/proxy
-	// so it rides along when the sandbox-agent recursively rebinds the config
-	// volume onto /etc/discobox; the in-sandbox path stays proxyagent.SandboxProxyMount.
-	mounts = append(mounts, mount.Mount{
-		Type:     mount.TypeBind,
-		Source:   r.daemonPath(proxyMaterial.MountSource),
-		Target:   filepath.Join(sandboxConfigMount, "proxy"),
-		ReadOnly: true,
-	})
-	// Published beside the document it belongs to, and before the container
-	// exists, so a sandbox whose sources are all in place never waits.
-	if err := r.refreshSourcesReady(sandboxID, req); err != nil {
-		return nil, err
-	}
+	// The bootstrap: placed before the container exists, and the one thing the
+	// pool ever writes into the sandbox's config volume (ADR 0126 §3).
 	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, imageName, req, proxyMaterial.Env, project); err != nil {
 		return nil, err
 	}
-	if secretEnv, ok := req.SecretEnv.Get(); ok {
-		if err := r.writeSandboxSecrets(ctx, sandboxID, secretEnv); err != nil {
-			return nil, err
-		}
+	// Everything else the sandbox is told is its runtime-config document,
+	// delivered once its agent answers (finishBoot). The secrets the control
+	// plane sends a create are the sandbox's whole set; a source is delivered
+	// once it is in place, which is now for every source but a pushed one
+	// still on its way.
+	secretEnv, _ := req.SecretEnv.Get()
+	if err := r.recordRuntimeConfig(sandboxID, func(doc *sandboxconfig.RuntimeConfig) {
+		doc.SecretEnv = cloneStringMap(secretEnv)
+		doc.Sources = runtimeSources(sandboxSources(r.paths, req), r.sourceMaterialized(sandboxID))
+	}); err != nil {
+		return nil, err
 	}
 	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
 	name := sandboxContainerName(r.poolID, sandboxID)
@@ -755,16 +768,23 @@ func (r *DockerSandboxRuntime) containerSpecDrifted(ctx context.Context, existin
 	if req == nil {
 		return false, nil
 	}
-	fingerprint := strings.TrimSpace(optString(req.Config.SpecFingerprint))
-	if fingerprint == "" {
-		return false, nil
-	}
 	inspect, err := r.client.ContainerInspect(ctx, existing.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
+	}
+	// A container built from a bootstrap that names no pool key cannot take
+	// the pool's runtime-config documents, so it runs on whatever was staged
+	// for it before; the create that reaches it is what moves it onto the
+	// bootstrap that can (ADR 26-10-08-127).
+	if r.poolPublicKey() != "" && inspect.Container.Config != nil && inspect.Container.Config.Labels[sandboxLabelRuntimeConfig] == "" {
+		return true, nil
+	}
+	fingerprint := strings.TrimSpace(optString(req.Config.SpecFingerprint))
+	if fingerprint == "" {
+		return false, nil
 	}
 	return specDrifted(
 		inspect.Container.Config.Labels[sandboxLabelSpec],
@@ -853,16 +873,18 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 // be read when the container was created — the repository was empty, which is
 // what the client was pushing into — so it is read here, and a project that
 // declares its own harness command or files is honored by building the
-// container again against a document that includes it. Nothing is lost by
-// replacing the container: the sandbox holds its harness launch until this
-// publishes readiness, so it has not run anything yet, and its state lives in
-// the pool-host binds rather than in the container.
+// container again against a bootstrap that includes it. Nothing is lost by
+// replacing the container: the sandbox holds its harness launch until its
+// runtime-config document says its sources are delivered, so it has not run
+// anything yet, and its state lives in the pool-host binds rather than in the
+// container.
 //
 // A sandbox with nothing outstanding does no work here, which is what keeps a
 // repeat create — a retry, a later reconcile — from rebuilding forever: once a
-// rebuilt container's document records the project layer, there is no longer a
+// rebuilt container's bootstrap records the project layer, there is no longer a
 // pending delivery to re-read it from.
-func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
+func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
+	sandboxID := existing.SandboxID
 	if len(r.pendingSourceDeliveries(sandboxID, req)) == 0 {
 		return false, nil
 	}
@@ -874,11 +896,19 @@ func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, sandb
 		return false, err
 	}
 	if changed {
-		// The rebuild publishes readiness itself, once the document that
-		// carries the project layer has been written.
+		// The rebuild records the sources' delivery itself, beside the
+		// bootstrap that carries the project layer.
 		return true, nil
 	}
-	return false, r.refreshSourcesReady(sandboxID, req)
+	// The spec is final: the sandbox is told its sources are delivered, which
+	// is what clears its readiness gate (ADR 0055).
+	setSources := func(doc *sandboxconfig.RuntimeConfig) {
+		doc.Sources = runtimeSources(sandboxSources(r.paths, req), r.sourceMaterialized(sandboxID))
+	}
+	if existing.Status != StatusRunning {
+		return false, r.recordRuntimeConfig(sandboxID, setSources)
+	}
+	return false, logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, setSources))
 }
 
 // pendingSourceDeliveries are the sandbox's sources whose content is not in
@@ -887,38 +917,26 @@ func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, sandb
 // not landed leaves its source unmarked, and the sandbox keeps waiting.
 func (r *DockerSandboxRuntime) pendingSourceDeliveries(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {
 	var out []sandboxSource
+	materialized := r.sourceMaterialized(sandboxID)
 	for _, source := range sandboxSources(r.paths, req) {
-		if !gitSourceMaterialized(r.sandboxSourcePath(sandboxID, source.slug)) {
+		if !materialized(source) {
 			out = append(out, source)
 		}
 	}
 	return out
 }
 
-// refreshSourcesReady publishes whether every source is in place, as the file
-// the sandbox waits on before launching its harness
-// (sandboxconfig.SourcesReadyFileName).
+// sourceMaterialized reports whether one of the sandbox's sources is in place.
 //
-// It is deliberately not the per-source materialized marker the sandbox could
-// read for itself: this is written only where the document beside it is final
-// too, so a sandbox that starts on it can never be running a configuration
-// that is about to be replaced.
-func (r *DockerSandboxRuntime) refreshSourcesReady(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
-	path := filepath.Join(r.sandboxConfigRoot(sandboxID), sandboxconfig.SourcesReadyFileName)
-	if len(r.pendingSourceDeliveries(sandboxID, req)) > 0 {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("clear sandbox source readiness: %w", err)
-		}
-		return nil
+// It is deliberately what decides a source's Delivered in the runtime-config
+// document only where the pool has also settled the spec on it — at create,
+// after the project layer was read, and once settleDeliveredSources has
+// decided no rebuild is due — so a sandbox that starts on it can never be
+// running a configuration that is about to be replaced.
+func (r *DockerSandboxRuntime) sourceMaterialized(sandboxID string) func(sandboxSource) bool {
+	return func(source sandboxSource) bool {
+		return gitSourceMaterialized(r.sandboxSourcePath(sandboxID, source.slug))
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("publish sandbox source readiness: %w", err)
-	}
-	//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		return fmt.Errorf("publish sandbox source readiness: %w", err)
-	}
-	return nil
 }
 
 // projectLayerChanged reports whether the project layer readable from the
@@ -949,23 +967,37 @@ func (r *DockerSandboxRuntime) projectLayerChanged(sandboxID string, req *worker
 	return !reflect.DeepEqual(current, recorded), nil
 }
 
-// recordedProjectLayer reads back the project layer the sandbox's written
-// document was built from. The document keeps every layer's raw input beside
-// the merged result (ADR 0012 §8), so what the project contributed is
-// recoverable without re-deriving it.
+// recordedProjectLayer is the project layer the sandbox's bootstrap was last
+// built from, as the pool recorded it (writeSandboxHarnessConfig). It is the
+// pool's own record rather than sandbox.json's _provenance read back: that file
+// is the sandbox's once it boots, and nothing the pool decides is read from
+// what a sandbox can write (ADR 26-10-08-127).
 func (r *DockerSandboxRuntime) recordedProjectLayer(sandboxID string) (*sandboxconfig.ProjectLayer, error) {
-	data, err := os.ReadFile(filepath.Join(r.sandboxConfigRoot(sandboxID), sandboxDocumentName))
+	data, err := os.ReadFile(r.projectLayerRecordPath(sandboxID))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	var file sandboxDocumentFile
-	if err := json.Unmarshal(data, &file); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", sandboxDocumentName, err)
+	var record projectLayerRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", projectLayerRecordName, err)
 	}
-	return file.Provenance.Project, nil
+	return record.Project, nil
+}
+
+// projectLayerRecordName is the pool's record of the project layer a sandbox's
+// bootstrap was built from, in the sandbox's tree root beside — not inside —
+// the volumes it mounts.
+const projectLayerRecordName = "project-layer.json"
+
+type projectLayerRecord struct {
+	Project *sandboxconfig.ProjectLayer `json:"project,omitempty"`
+}
+
+func (r *DockerSandboxRuntime) projectLayerRecordPath(sandboxID string) string {
+	return filepath.Join(r.sandboxRoot(sandboxID), projectLayerRecordName)
 }
 
 // materializePushedSources completes the push-delivered sources of a sandbox
@@ -1114,7 +1146,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: r.daemonPath(dataHostPath), Target: sandboxDataMount},
 		{Type: mount.TypeBind, Source: r.daemonPath(cacheHostPath), Target: sandboxCacheMount},
-		{Type: mount.TypeBind, Source: r.daemonPath(configHostPath), Target: sandboxConfigMount, ReadOnly: true},
+		{Type: mount.TypeBind, Source: r.daemonPath(configHostPath), Target: sandboxConfigMount},
 		{Type: mount.TypeBind, Source: r.daemonPath(sourcesHostPath), Target: sandboxSourcesMount},
 		{Type: mount.TypeBind, Source: r.daemonPath(secretsHostPath), Target: sandboxSecretsMount},
 	}
@@ -1229,31 +1261,6 @@ func originMounts(sources []sandboxSource, originPath func(slug string) string, 
 	return mounts
 }
 
-// writeSandboxSecrets atomically writes the sandbox's secret-bound
-// envName->sentinel map to its secrets volume, root-owned and mode 0600 so
-// only sandbox-agent (running as root) can read it; the harness process
-// (unprivileged) never gets filesystem access, only the env sandbox-agent
-// injects at exec time (ADR 0012 §3).
-func (r *DockerSandboxRuntime) writeSandboxSecrets(ctx context.Context, sandboxID string, secretEnv map[string]string) error {
-	dir := r.sandboxSecretsRoot(sandboxID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(secretEnv, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(dir, "secrets.json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	return chownRecursive(ctx, dir, 0, 0)
-}
-
 // readProjectLayer reads .discobox/project.json from a materialized source's
 // root, if present. A missing file is not an error: the project layer is
 // optional (ADR 0012 §7).
@@ -1277,13 +1284,7 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
-	// The proxy material is bind-mounted at /.discobox/config/proxy, nested under
-	// the config volume. Pre-create the mountpoint here so the container runtime
-	// does not have to create it inside the read-only parent.
-	if err := os.MkdirAll(filepath.Join(configDir, "proxy"), 0o755); err != nil {
-		return err
-	}
-	doc := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, resolvedImage, r.sandboxIdleTimeout, req, proxyEnv, project)
+	doc := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, r.poolPublicKey(), resolvedImage, req, proxyEnv, project)
 	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
@@ -1292,11 +1293,37 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := writeSandboxManifest(path, data); err != nil {
 		return err
 	}
+	// A readiness marker left in the volume by an earlier container — or by
+	// the pool, before the intake wrote it — would open this container's gate
+	// before its agent has applied anything. The agent puts back what its own
+	// kept document grants when it starts.
+	if err := os.Remove(filepath.Join(configDir, sandboxconfig.SourcesReadyFileName)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("clear readiness from before this container: %w", err)
+	}
+	if err := r.writeProjectLayerRecord(sandboxID, project); err != nil {
+		return err
+	}
 	return chownRecursive(ctx, configDir, 0, 0)
 }
 
-// sandboxDocumentName is the sandbox's effective configuration, in the config
-// volume the sandbox sees read-only at /etc/discobox.
+func (r *DockerSandboxRuntime) writeProjectLayerRecord(sandboxID string, project *sandboxconfig.ProjectLayer) error {
+	data, err := json.MarshalIndent(projectLayerRecord{Project: project}, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := r.projectLayerRecordPath(sandboxID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("record project layer: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("record project layer: %w", err)
+	}
+	return os.Rename(tmp, path)
+}
+
+// sandboxDocumentName is the sandbox's effective configuration — its static
+// bootstrap — in the config volume the sandbox sees at /etc/discobox.
 const sandboxDocumentName = "sandbox.json"
 
 // sandboxDocumentFile is the on-disk sandbox.json shape (ADR 0012 §8): the
@@ -1384,18 +1411,27 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 // image's OCI label, and the caller-supplied ProjectLayer (read once from the
 // resolved source repository at clone time; nil when the project supplies
 // nothing).
-func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID, controlPlanePublicKey, resolvedImage string, idleTimeout time.Duration, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+//
+// It is the sandbox's static bootstrap (ADR 26-10-08-127 §1): public keys to
+// trust — the control plane's, and the pool's for runtime-config deliveries —
+// where the pool serves it, and the create-time config, and no private key or
+// secret.
+func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID, controlPlanePublicKey, poolPublicKey, resolvedImage string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+	publicKeys := map[string]string{sandboxconfig.ControlPlanePublicKeyName: controlPlanePublicKey}
+	if poolPublicKey != "" {
+		publicKeys[sandboxconfig.PoolPublicKeyName] = poolPublicKey
+	}
+	pool := proxyagent.PoolEndpoints()
 	doc := sandboxconfig.Document{
 		Runtime: sandboxconfig.RuntimeLayer{
 			SandboxID: sandboxID,
 			Image:     resolvedImage,
 			Provider: sandboxconfig.Provider{
-				Kind:      "discobox-pool",
-				ProjectID: projectID,
-				PoolID:    poolID,
-				PublicKeys: map[string]string{
-					sandboxManifestPublicKey: controlPlanePublicKey,
-				},
+				Kind:       "discobox-pool",
+				ProjectID:  projectID,
+				PoolID:     poolID,
+				PublicKeys: publicKeys,
+				Pool:       &pool,
 			},
 			AgentRuntime: sandboxconfig.AgentRuntime{
 				ListenAddress:          fmt.Sprintf(":%d", SandboxAgentPort),
@@ -1407,12 +1443,6 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 			},
 		},
 		Project: project,
-	}
-	// The pool's policy, not the request's: every sandbox on a pool stops on
-	// the same terms (ADR 0108 §3). Unset stays unset, so the sandbox-agent's
-	// own default applies rather than one written down here.
-	if idleTimeout > 0 {
-		doc.Runtime.AgentRuntime.IdleTimeout = idleTimeout.String()
 	}
 	if req != nil {
 		config := req.Config
@@ -1605,14 +1635,42 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 			}
 		}
 		if secretEnv, ok := req.SecretEnv.Get(); ok {
-			// Refresh the sandbox-agent-side secrets file so newly bound secrets
-			// (or a rotated sentinel) resolve without a restart.
-			if err := r.writeSandboxSecrets(ctx, sandboxID, secretEnv); err != nil {
+			// Newly bound secrets, or a rotated sentinel, reach the sandbox in
+			// its runtime-config document: delivered now to a sandbox that is
+			// up, and at its next start to one that is not.
+			if err := r.updateSandboxSecretEnv(ctx, sandboxID, cloneStringMap(secretEnv)); err != nil {
 				return nil, err
 			}
 		}
 	}
 	return r.GetSandbox(ctx, sandboxID)
+}
+
+// updateSandboxSecretEnv replaces the sandbox's secret environment in its
+// runtime-config document and delivers it when the sandbox is running.
+//
+// It holds the sandbox's power lock, so it is ordered against a delete or an
+// archive rather than racing it, and a boot that a start under way began has
+// already delivered by the time it runs. A sandbox with no container — archived,
+// or between containers — is left alone: the create that gives it one sends its
+// whole secret set.
+func (r *DockerSandboxRuntime) updateSandboxSecretEnv(ctx context.Context, sandboxID string, secretEnv map[string]string) error {
+	power := r.sandboxLock(sandboxID)
+	power.Lock()
+	defer power.Unlock()
+	set := func(doc *sandboxconfig.RuntimeConfig) { doc.SecretEnv = secretEnv }
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if errors.Is(err, ErrNotFound) || (err == nil && r.isArchived(sandboxID)) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if sb.Status != StatusRunning {
+		// The next start delivers what is recorded.
+		return r.recordRuntimeConfig(sandboxID, set)
+	}
+	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, set))
 }
 
 // DeleteSandbox removes the sandbox's container, its proxy material, and its
@@ -2338,6 +2396,9 @@ func (r *DockerSandboxRuntime) labels(sandboxID, specFingerprint string) map[str
 	if specFingerprint != "" {
 		labels[sandboxLabelSpec] = specFingerprint
 	}
+	if r.poolPublicKey() != "" {
+		labels[sandboxLabelRuntimeConfig] = "true"
+	}
 	return labels
 }
 
@@ -2449,6 +2510,9 @@ type MemorySandboxRuntime struct {
 	// trees stands in for the durable tree on disk: the tar bytes a sandbox was
 	// imported with, handed back by an export.
 	trees map[string][]byte
+	// appliedRuntimeConfig is the revision the status poll last reported for
+	// each sandbox (ConvergeRuntimeConfig).
+	appliedRuntimeConfig map[string]int64
 }
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
@@ -2689,6 +2753,27 @@ func (r *MemorySandboxRuntime) SandboxServesWorktree(_ context.Context, sandboxI
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ConvergeRuntimeConfig records what the poll reported: a memory sandbox has no
+// agent to deliver to.
+func (r *MemorySandboxRuntime) ConvergeRuntimeConfig(_ context.Context, sandboxID string, applied int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.appliedRuntimeConfig == nil {
+		r.appliedRuntimeConfig = map[string]int64{}
+	}
+	r.appliedRuntimeConfig[sandboxID] = applied
+	return nil
+}
+
+// AppliedRuntimeConfig is the revision the status poll last reported for a
+// sandbox, and false when it has reported none.
+func (r *MemorySandboxRuntime) AppliedRuntimeConfig(sandboxID string) (int64, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	applied, ok := r.appliedRuntimeConfig[sandboxID]
+	return applied, ok
 }
 
 // SandboxDialer reaches nothing: a memory sandbox has nothing in it to dial.

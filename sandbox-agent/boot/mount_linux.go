@@ -24,16 +24,11 @@ func bindMount(source, target string, readOnly bool) error {
 	return nil
 }
 
-// recursiveBindMount binds source onto target carrying nested submounts (the
-// config volume nests the proxy material), then remounts the top read-only.
-func recursiveBindMount(source, target string, readOnly bool) error {
+// recursiveBindMount binds source onto target carrying any submounts beneath
+// it, writable: what it binds is written by the runtime-config intake.
+func recursiveBindMount(source, target string) error {
 	if err := syscall.Mount(source, target, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		return fmt.Errorf("recursive bind %s -> %s: %w", source, target, err)
-	}
-	if readOnly {
-		if err := syscall.Mount("", target, "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY, ""); err != nil {
-			return fmt.Errorf("remount read-only %s: %w", target, err)
-		}
 	}
 	return nil
 }

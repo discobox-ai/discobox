@@ -10,6 +10,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pool-agent/dnsforward"
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (
@@ -29,12 +30,10 @@ const (
 // SandboxDNSAddress is the DNS server every sandbox container is created with.
 // It is link-local and belongs to nobody on the network: the sandbox's DNS stub
 // claims it on the sandbox's own loopback, so Docker's embedded resolver hands
-// the stub what it cannot answer, without that traffic leaving the sandbox.
-var SandboxDNSAddress = netip.MustParseAddr("169.254.53.53")
-
-// sandboxDNSListenAddress is where the sandbox's stub listens, as staged in
-// its bridge config.
-var sandboxDNSListenAddress = netip.AddrPortFrom(SandboxDNSAddress, dnsforward.Port).String()
+// the stub what it cannot answer, without that traffic leaving the sandbox. The
+// address is the sandbox's (sandboxconfig.SandboxDNSAddress); the pool reads it
+// only to hand it to the container runtime (ADR 26-10-08-127 §4).
+var SandboxDNSAddress = netip.MustParseAddr(sandboxconfig.SandboxDNSAddress)
 
 // serveDNS answers sandboxes' DNS until ctx is done. The upstream is this
 // container's own resolver, which reaches the outside; every query is audited

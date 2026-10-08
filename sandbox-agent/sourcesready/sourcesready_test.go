@@ -14,19 +14,31 @@ import (
 // must not acquire a wait — including every sandbox created before the field,
 // whose config names no source that awaits delivery.
 func TestGateIsAbsentWhenNothingAwaitsDelivery(t *testing.T) {
-	if gate := Gate(nil, "", nil); gate != nil {
+	if gate := Gate(nil, false, "", nil); gate != nil {
 		t.Fatal("a sandbox with no sources acquired a wait")
 	}
 	clone := []sandboxconfig.Source{{Slug: "primary", Target: "/workspace"}}
-	if gate := Gate(clone, "", nil); gate != nil {
+	if gate := Gate(clone, false, "", nil); gate != nil {
 		t.Fatal("a clone-delivered source acquired a wait")
 	}
 	pushed := []sandboxconfig.Source{
 		{Slug: "primary", Target: "/workspace"},
 		{Slug: "foo", Target: "/src/foo", AwaitsDelivery: true},
 	}
-	if gate := Gate(pushed, "", nil); gate == nil {
+	if gate := Gate(pushed, false, "", nil); gate == nil {
 		t.Fatal("a source awaiting delivery did not acquire a wait")
+	}
+}
+
+// A sandbox a pool delivers runtime config to waits for its first document
+// whatever its sources are: its secrets and proxy credential arrive in it
+// (ADR 26-10-08-127 §6).
+func TestGateHoldsEverySandboxAPoolDeliversRuntimeConfigTo(t *testing.T) {
+	clone := []sandboxconfig.Source{{Slug: "primary", Target: "/workspace"}}
+	for name, sources := range map[string][]sandboxconfig.Source{"no sources": nil, "clone-delivered": clone} {
+		if gate := Gate(sources, true, "", nil); gate == nil {
+			t.Fatalf("%s: a sandbox awaiting its runtime config acquired no wait", name)
+		}
 	}
 }
 

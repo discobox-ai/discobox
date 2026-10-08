@@ -200,7 +200,7 @@ func TestSandboxDocumentCarriesEachSourcesCheckout(t *testing.T) {
 	primary.UpstreamUrl = workerclient.NewOptString("https://github.com/example/app.git")
 	req.Config.Source = workerclient.NewOptGitSource(primary)
 
-	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "image", 0, req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
 	bySlug := map[string]sandboxconfig.Source{}
 	for _, source := range doc.Runtime.Sources {
 		bySlug[source.Slug] = source

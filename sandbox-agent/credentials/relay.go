@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
@@ -26,8 +27,9 @@ import (
 )
 
 const (
-	// DefaultBridgeConfigPath is the per-sandbox proxy material the pool stages,
-	// which carries both the mTLS keypair and the pool endpoint to dial.
+	// DefaultBridgeConfigPath is the egress bridge config the runtime-config
+	// intake renders, which carries both the mTLS keypair and the pool endpoint
+	// to dial.
 	DefaultBridgeConfigPath = "/etc/discobox/proxy/bridge.json"
 )
 
@@ -53,29 +55,68 @@ type bridgeConfig struct {
 // Relay implements the protocol by forwarding to the pool. Every method is a
 // pass-through: interpreting a request here would be interpreting it on the
 // untrusted side of the boundary.
+//
+// The material it relays with is delivered to the sandbox while it runs — in
+// the pool's runtime-config document, and again whenever the pool renews or
+// replaces it (ADR 26-10-08-127 §5) — so a relay built once at start would go
+// on presenting a certificate the pool has moved past. Each call checks the
+// files it was built from and rebuilds when any has changed.
 type Relay struct {
+	path string
+
+	mu     sync.Mutex
+	built  materialStamp
 	client *agentcreds.Client
 }
 
 var _ agentcreds.Service = (*Relay)(nil)
 
-// New builds a relay from the pool-staged bridge config at path (or
+// New builds a relay from the intake-rendered bridge config at path (or
 // DefaultBridgeConfigPath when empty).
 func New(path string) (*Relay, error) {
 	if path == "" {
 		path = DefaultBridgeConfigPath
 	}
+	client, stamp, err := load(path)
+	if err != nil {
+		return nil, err
+	}
+	return &Relay{path: path, built: stamp, client: client}, nil
+}
+
+// materialStamp is the size and modification time of each file a relay was
+// built from: the bridge config and the material it names. The intake replaces
+// a file by renaming a new one over it, so any change shows here.
+type materialStamp [4]struct {
+	size    int64
+	modTime time.Time
+}
+
+func stampOf(paths ...string) materialStamp {
+	var out materialStamp
+	for i, path := range paths {
+		if info, err := os.Stat(path); err == nil {
+			out[i].size, out[i].modTime = info.Size(), info.ModTime()
+		}
+	}
+	return out
+}
+
+// load builds the protocol client from the bridge config at path, and stamps
+// the files it read.
+func load(path string) (*agentcreds.Client, materialStamp, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read proxy material: %w", err)
+		return nil, materialStamp{}, fmt.Errorf("read proxy material: %w", err)
 	}
 	var cfg bridgeConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, materialStamp{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if cfg.CredentialsURL == "" {
-		return nil, fmt.Errorf("%s names no pool credentials endpoint", path)
+		return nil, materialStamp{}, fmt.Errorf("%s names no pool credentials endpoint", path)
 	}
+	stamp := stampOf(path, cfg.MTLSCAPath, cfg.ClientCertPath, cfg.ClientKeyPath)
 	pool, err := bridge.NewDialer(bridge.DialConfig{
 		URL:            cfg.CredentialsURL,
 		ServerName:     cfg.ServerName,
@@ -84,7 +125,7 @@ func New(path string) (*Relay, error) {
 		ClientKeyPath:  cfg.ClientKeyPath,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("pool credentials endpoint: %w", err)
+		return nil, materialStamp{}, fmt.Errorf("pool credentials endpoint: %w", err)
 	}
 	// No client-wide timeout: the protocol client bounds each call itself,
 	// and a use waits on the pool's judge for far longer than any other call.
@@ -97,35 +138,64 @@ func New(path string) (*Relay, error) {
 			DialTLSContext: pool.DialTLSContext,
 		},
 	}
-	return &Relay{client: agentcreds.NewClient(pool.ServerURL(), agentcreds.WithHTTPClient(httpClient))}, nil
+	return agentcreds.NewClient(pool.ServerURL(), agentcreds.WithHTTPClient(httpClient)), stamp, nil
+}
+
+// current is the client for the material as it is now. A rebuild that fails
+// — a delivery caught half way is not one, since the intake replaces whole
+// files — keeps the client that worked, and is tried again on the next call.
+func (r *Relay) current() *agentcreds.Client {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.path == "" {
+		return r.client
+	}
+	data, err := os.ReadFile(r.path)
+	if err != nil {
+		return r.client
+	}
+	var cfg bridgeConfig
+	if json.Unmarshal(data, &cfg) != nil {
+		return r.client
+	}
+	if stampOf(r.path, cfg.MTLSCAPath, cfg.ClientCertPath, cfg.ClientKeyPath) == r.built {
+		return r.client
+	}
+	client, stamp, err := load(r.path)
+	if err != nil {
+		slog.Warn("reload sandbox credentials material; keeping the previous", "error", err)
+		return r.client
+	}
+	r.client, r.built = client, stamp
+	return r.client
 }
 
 func (r *Relay) List(ctx context.Context) ([]agentcreds.Credential, error) {
-	return r.client.List(ctx)
+	return r.current().List(ctx)
 }
 
 func (r *Relay) Request(ctx context.Context, body agentcreds.RequestBody) (agentcreds.RequestStatus, error) {
-	return r.client.Request(ctx, body)
+	return r.current().Request(ctx, body)
 }
 
 func (r *Relay) RequestStatus(ctx context.Context, requestID string) (agentcreds.RequestStatus, error) {
-	return r.client.RequestStatus(ctx, requestID)
+	return r.current().RequestStatus(ctx, requestID)
 }
 
 func (r *Relay) Get(ctx context.Context, body agentcreds.UseBody) (agentcreds.UseResponse, error) {
-	return r.client.Get(ctx, body)
+	return r.current().Get(ctx, body)
 }
 
 func (r *Relay) Trusts(ctx context.Context) ([]agentcreds.Trust, error) {
-	return r.client.Trusts(ctx)
+	return r.current().Trusts(ctx)
 }
 
 func (r *Relay) RequestTrust(ctx context.Context, body agentcreds.TrustRequestBody) (agentcreds.TrustRequestStatus, error) {
-	return r.client.RequestTrust(ctx, body)
+	return r.current().RequestTrust(ctx, body)
 }
 
 func (r *Relay) TrustRequestStatus(ctx context.Context, requestID string) (agentcreds.TrustRequestStatus, error) {
-	return r.client.TrustRequestStatus(ctx, requestID)
+	return r.current().TrustRequestStatus(ctx, requestID)
 }
 
 // Serve runs the loopback protocol endpoint until ctx is done.

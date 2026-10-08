@@ -32,12 +32,35 @@ type op struct {
 // Staging is where nearly everything that can go wrong does — a directory that
 // cannot be made, a full or read-only filesystem — and it touches no target. A
 // rename in the same directory is what is left, and it is the step undone.
-func run(ops []op) error {
+//
+// When gated, the last op is the readiness marker, and activate is called with
+// every other op once they are in place and before the marker is: whatever
+// reads the new files is started before anything waiting on the marker runs.
+// A marker that then fails to go in rolls the rest back like any other
+// replacement, and activate is called again so what it started reads what is
+// there once more.
+func run(ops []op, gated bool, activate func(done []op)) error {
 	defer discardStaged(ops)
 	if err := stageAll(ops); err != nil {
 		return err
 	}
-	return replaceAll(ops)
+	body := ops
+	if gated {
+		body = ops[:len(ops)-1]
+	}
+	if err := replaceAll(body); err != nil {
+		return err
+	}
+	activate(body)
+	if !gated {
+		return nil
+	}
+	if err := ops[len(ops)-1].replace(); err != nil {
+		restoreErr := restoreAll(body)
+		activate(body)
+		return errors.Join(err, restoreErr)
+	}
+	return nil
 }
 
 func stageAll(ops []op) error {
@@ -61,16 +84,21 @@ func discardStaged(ops []op) {
 func replaceAll(ops []op) error {
 	for i := range ops {
 		if err := ops[i].replace(); err != nil {
-			var restoreErrs []error
-			for j := i - 1; j >= 0; j-- {
-				if restoreErr := ops[j].restore(); restoreErr != nil {
-					restoreErrs = append(restoreErrs, restoreErr)
-				}
-			}
-			return errors.Join(err, errors.Join(restoreErrs...))
+			return errors.Join(err, restoreAll(ops[:i]))
 		}
 	}
 	return nil
+}
+
+// restoreAll puts back what every op in done replaced, last first.
+func restoreAll(done []op) error {
+	var errs []error
+	for j := len(done) - 1; j >= 0; j-- {
+		if err := done[j].restore(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // stage records what path holds now and, for a write, writes data to a

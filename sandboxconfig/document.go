@@ -71,12 +71,78 @@ type RuntimeLayer struct {
 
 // Provider is non-secret provider context for the sandbox runtime.
 type Provider struct {
-	Kind       string            `json:"kind"`
-	ProjectID  string            `json:"projectId,omitempty"`
-	PoolID     string            `json:"poolId,omitempty"`
-	Endpoints  map[string]string `json:"endpoints,omitempty"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	Kind      string            `json:"kind"`
+	ProjectID string            `json:"projectId,omitempty"`
+	PoolID    string            `json:"poolId,omitempty"`
+	Endpoints map[string]string `json:"endpoints,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	// PublicKeys are the keys the sandbox trusts, by name
+	// (ControlPlanePublicKeyName, PoolPublicKeyName). Public halves only: the
+	// bootstrap holds no private key (ADR 26-10-08-127 §1).
 	PublicKeys map[string]string `json:"publicKeys,omitempty"`
+	// Pool is where the sandbox's pool serves it, when it has one. Static:
+	// it is part of the bootstrap, and the sandbox renders its bridges from it
+	// and the credentials a runtime-config document delivers
+	// (ADR 26-10-08-127 §4).
+	Pool *PoolEndpoints `json:"pool,omitempty"`
+}
+
+const (
+	// ControlPlanePublicKeyName is the control plane's key in
+	// Provider.PublicKeys, which verifies every sandbox-agent token it mints.
+	ControlPlanePublicKeyName = "controlPlane"
+	// PoolPublicKeyName is the pool's key in Provider.PublicKeys. It verifies
+	// the tokens the pool signs to deliver runtime-config documents, and
+	// nothing else (ADR 26-10-08-127 §3). A bootstrap that names it is one a
+	// pool delivers runtime config to.
+	PoolPublicKeyName = "pool"
+)
+
+// PoolEndpoints is where a pool serves its sandbox: the far end of each of
+// the sandbox's bridges. Only the pool knows these; where the sandbox listens
+// for them is the sandbox's own (SandboxEgressListenAddress and its
+// siblings).
+type PoolEndpoints struct {
+	// Proxy is the pool's egress proxy, which both the sandbox's egress
+	// forwarder and its nested-Docker forwarder reach.
+	Proxy string `json:"proxy"`
+	// Credentials is the pool's agent-credentials endpoint (ADR 0031).
+	Credentials string `json:"credentials,omitempty"`
+	// DNS is the pool's DNS-over-TLS server, as host:port.
+	DNS string `json:"dns,omitempty"`
+	// BuildKit is the pool's BuildKit mediator (ADR 0044); empty for a pool
+	// with no builder.
+	BuildKit string `json:"buildkit,omitempty"`
+	// ServerName is the name the pool's server certificate is verified as.
+	// The URLs above are wire URLs whose scheme picks the transport, and a
+	// vsock or unix one has no host to take the name from (ADR 0144 §4).
+	ServerName string `json:"serverName,omitempty"`
+}
+
+// The addresses the sandbox's own forwarders listen on. They are the
+// sandbox's, not the pool's: the sandbox renders its bridges with them, and a
+// pool reads the same constants only for the settings it makes that must agree
+// with them — the proxy env in the bootstrap, and the DNS server a container
+// runtime hands the sandbox (ADR 26-10-08-127 §4).
+const (
+	// SandboxEgressListenAddress is the loopback egress forwarder every
+	// HTTP(S)_PROXY in the sandbox names.
+	SandboxEgressListenAddress = "127.0.0.1:17008"
+	// SandboxBuildKitListenAddress is the loopback forwarder to the pool's
+	// BuildKit mediator.
+	SandboxBuildKitListenAddress = "127.0.0.1:17082"
+	// SandboxDNSAddress is the link-local address the sandbox's DNS stub
+	// claims, and the one name server its runtime gives it.
+	SandboxDNSAddress = "169.254.53.53"
+	// SandboxDNSListenAddress is the stub's listener.
+	SandboxDNSListenAddress = SandboxDNSAddress + ":53"
+)
+
+// AwaitsRuntimeConfig reports whether a pool delivers this sandbox a
+// runtime-config document, which is what holds its first harness launch until
+// one is applied (ADR 26-10-08-127 §6).
+func (p Provider) AwaitsRuntimeConfig() bool {
+	return strings.TrimSpace(p.PublicKeys[PoolPublicKeyName]) != ""
 }
 
 // AgentRuntime holds sandbox-agent daemon-local runtime settings.
@@ -87,11 +153,6 @@ type AgentRuntime struct {
 	DatabasePath           string `json:"databasePath"`
 	ResourceSampleInterval string `json:"resourceSampleInterval,omitempty"`
 	ResourceRetentionCount int    `json:"resourceRetentionCount,omitempty"`
-	// IdleTimeout is how long the sandbox runs with nothing happening in it
-	// before it powers itself off (ADR 0108), as a Go duration. The pool sets
-	// it from its provider instance's pool policy; empty leaves the
-	// sandbox-agent on its default.
-	IdleTimeout string `json:"idleTimeout,omitempty"`
 }
 
 // Source is a pool-agent-materialized source the sandbox-agent bind-mounts from
