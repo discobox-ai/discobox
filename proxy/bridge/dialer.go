@@ -52,9 +52,15 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 	var address, serverURL string
 	switch endpoint.Scheme {
 	case "https":
-		host, _, err := net.SplitHostPort(endpoint.Host)
+		// SplitHostPort accepts ":17080" and "pool:", so an empty half is
+		// refused here: either one fails every connection rather than this
+		// one call, and a failure at startup is the one a log shows once.
+		host, port, err := net.SplitHostPort(endpoint.Host)
 		if err != nil {
 			return nil, fmt.Errorf("pool URL %q must name a host and port: %w", cfg.URL, err)
+		}
+		if host == "" || port == "" {
+			return nil, fmt.Errorf("pool URL %q must name a host and port", cfg.URL)
 		}
 		if serverName == "" {
 			serverName = host
