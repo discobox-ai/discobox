@@ -1,6 +1,7 @@
 package githttp
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -279,5 +280,126 @@ func TestARequestNamingBothServicesIsAPush(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("live origin answered %d, want 403", resp.StatusCode)
+	}
+}
+
+// What a request serves is fixed when its snapshot is taken: a developer who
+// deletes an allowed branch and creates a private one beneath its name before
+// the backend reads anything — the gap a check-then-hideRefs design leaves —
+// changes nothing the backend can see.
+func TestALiveOriginSnapshotIsFixedBeforeTheBackendReadsIt(t *testing.T) {
+	f := newLiveFixture(t)
+	declared := f.git("rev-parse", "refs/heads/declared")
+	repo := Repository{Path: filepath.Join(f.worktree, ".git"), UID: -1, GID: -1, Live: true, Refs: []string{"refs/heads/declared"}}
+	snapshot, err := liveSnapshot(t.Context(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(snapshot) })
+
+	f.git("branch", "-D", "declared")
+	f.git("branch", "declared/private", "private")
+
+	refs := strings.Split(runGit(t, "", "ls-remote", snapshot), "\n")
+	want := []string{
+		f.git("rev-parse", "main") + "\tHEAD",
+		declared + "\trefs/heads/declared",
+		f.git("rev-parse", "main") + "\trefs/heads/main",
+	}
+	if !slices.Equal(refs, want) {
+		t.Fatalf("the snapshot serves %q, want %q", refs, want)
+	}
+}
+
+// A detached HEAD is served as the commit it is, and only that.
+func TestALiveOriginServesADetachedHEAD(t *testing.T) {
+	f := newLiveFixture(t)
+	f.git("checkout", "-q", "--detach", "main")
+	if got, want := f.advertisedRefs("2"), []string{"HEAD", "refs/heads/declared"}; !slices.Equal(got, want) {
+		t.Fatalf("with HEAD detached the origin advertised %v, want %v", got, want)
+	}
+}
+
+// Every snapshot is removed once its request is answered.
+func TestALiveOriginLeavesNoSnapshotBehind(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	f := newLiveFixture(t)
+	f.advertisedRefs("0")
+	runGit(t, "", "clone", "-q", f.url, filepath.Join(t.TempDir(), "clone"))
+	left, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("snapshots left behind: %v", left)
+	}
+}
+
+// serveLive serves gitDir as a live origin with the given declared refs.
+func serveLive(t *testing.T, gitDir string, refs []string) string {
+	t.Helper()
+	repo := Repository{Path: gitDir, UID: -1, GID: -1, Live: true, Refs: refs}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, suffix, ok := ParseRepositoryPath(strings.TrimPrefix(r.URL.Path, "/"))
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		ServeBackend(w, r, repo, suffix)
+	}))
+	t.Cleanup(server.Close)
+	return server.URL + "/primary.git"
+}
+
+// A developer's repository that is itself a shallow clone is served with its
+// history cut where theirs is.
+func TestALiveOriginServesAShallowRepository(t *testing.T) {
+	f := newLiveFixture(t)
+	f.commit("TWO.md", "two\n")
+	shallow := filepath.Join(t.TempDir(), "shallow")
+	runGit(t, "", "clone", "-q", "--depth=1", "--no-local", "file://"+f.worktree, shallow)
+	url := serveLive(t, filepath.Join(shallow, ".git"), nil)
+
+	client := filepath.Join(t.TempDir(), "client")
+	runGit(t, "", "clone", "-q", url, client)
+	if got, want := runGit(t, client, "rev-parse", "HEAD"), runGit(t, shallow, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("cloned HEAD %s, want %s", got, want)
+	}
+}
+
+// The shallow file is the one read the pool makes as root rather than as the
+// developer, and upload-pack echoes a bad line back to the client. So a
+// shallow that leads out of the Git directory, or holds anything but object
+// ids, fails the request without its contents reaching the client.
+func TestALiveOriginsShallowFileCannotCarryAnotherFileOut(t *testing.T) {
+	const secret = "pool-identity-key-material"
+	outside := filepath.Join(t.TempDir(), "agent.key")
+	if err := os.WriteFile(outside, []byte(secret+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, plant := range map[string]func(path string) error{
+		"a link out of the Git directory": func(path string) error { return os.Symlink(outside, path) },
+		"a file that is not object ids":   func(path string) error { return os.WriteFile(path, []byte(secret+"\n"), 0o600) },
+	} {
+		f := newLiveFixture(t)
+		gitDir := filepath.Join(f.worktree, ".git")
+		if err := plant(filepath.Join(gitDir, "shallow")); err != nil {
+			t.Fatal(err)
+		}
+		url := serveLive(t, gitDir, nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url+"/info/refs?service=git-upload-pack", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK || strings.Contains(string(body), secret) {
+			t.Fatalf("%s: status %d, body %q", name, resp.StatusCode, body)
+		}
 	}
 }
